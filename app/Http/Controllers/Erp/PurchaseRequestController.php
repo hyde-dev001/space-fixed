@@ -7,26 +7,23 @@ use App\Models\PurchaseRequest;
 use App\Http\Requests\StorePurchaseRequestRequest;
 use App\Http\Requests\ApprovePurchaseRequestRequest;
 use App\Http\Requests\RejectPurchaseRequestRequest;
-use App\Models\InventoryItem;
 use App\Models\StockRequestApproval;
-use App\Services\ShopOwnerApprovalPolicyService;
 use App\Services\PurchaseRequestService;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class PurchaseRequestController extends Controller
 {
     use AuthorizesRequests;
 
-    public function __construct(
-        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
-        private PurchaseRequestService $purchaseRequestService
-    ) {}
+    public function __construct(private PurchaseRequestService $purchaseRequestService) {}
 
     /**
      * Display a listing of purchase requests with filters.
@@ -111,15 +108,8 @@ class PurchaseRequestController extends Controller
                         (int) $purchaseRequest->shop_owner_id
                     );
 
-                    $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService
-                        ->requiresOwnerApprovalForPurchaseRequest(
-                            (int) $purchaseRequest->shop_owner_id,
-                            $recalculatedTotalCost
-                        );
-
                     $payload = $purchaseRequest->toArray();
                     $payload['total_cost'] = $recalculatedTotalCost;
-                    $payload['requires_owner_approval'] = $requiresOwnerApproval;
                     $payload['approval_stage'] = $purchaseRequest->status === 'pending_finance_final'
                         ? 'finance_final'
                         : ($purchaseRequest->status === 'pending_finance' ? 'finance_initial' : null);
@@ -137,6 +127,10 @@ class PurchaseRequestController extends Controller
     public function store(StorePurchaseRequestRequest $request)
     {
         $this->authorize('create', PurchaseRequest::class);
+        $submitToFinance = $request->boolean('submit_to_finance');
+        if ($submitToFinance) {
+            abort_unless($request->user()->can('procurement.submit_purchase_requests'), 403);
+        }
 
         try {
             DB::beginTransaction();
@@ -150,92 +144,58 @@ class PurchaseRequestController extends Controller
                 ], 422);
             }
 
-            $stockRequestId = isset($data['stock_request_id']) ? (int) $data['stock_request_id'] : null;
-            $sourceStockRequest = null;
-            $hasNotesColumn = Schema::hasColumn('purchase_requests', 'notes');
+            $stockRequestId = (int) $data['stock_request_id'];
+            $sourceStockRequest = StockRequestApproval::query()
+                ->where('id', $stockRequestId)
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('status', 'accepted')
+                ->lockForUpdate()
+                ->first();
 
-            if ($stockRequestId) {
-                $sourceStockRequest = StockRequestApproval::query()
-                    ->where('id', $stockRequestId)
-                    ->where('shop_owner_id', $shopOwnerId)
-                    ->where('status', 'accepted')
-                    ->first();
-
-                if (!$sourceStockRequest) {
-                    DB::rollBack();
-                    return response()->json([
-                        'message' => 'Selected stock request is not available for purchase request creation.',
-                    ], 422);
-                }
-
-                if ($hasNotesColumn) {
-                    $sourceMarker = "[stock_request_id:{$stockRequestId}]";
-                    $alreadyProcessed = PurchaseRequest::query()
-                        ->where('shop_owner_id', $shopOwnerId)
-                        ->where('status', '!=', 'rejected')
-                        ->where('notes', 'LIKE', "%{$sourceMarker}%")
-                        ->exists();
-
-                    if ($alreadyProcessed) {
-                        DB::rollBack();
-                        return response()->json([
-                            'message' => 'This approved stock request has already been processed into a purchase request.'
-                        ], 422);
-                    }
-                }
+            if (!$sourceStockRequest || PurchaseRequest::where('stock_request_id', $stockRequestId)->exists()) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Selected stock request is not available for purchase request creation.',
+                ], 422);
+            }
+            if ($sourceStockRequest->request_source === 'repair' && !$sourceStockRequest->inventory_approved_date) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Repair material request must be approved by Inventory first before procurement processing.',
+                ], 422);
             }
 
-            if ($sourceStockRequest && $hasNotesColumn) {
+
+            $data = $this->lockToAcceptedStockRequest($data, $sourceStockRequest);
+
+            if (Schema::hasColumn('purchase_requests', 'notes')) {
                 $sourceNumber = $sourceStockRequest->request_number ?: (string) $sourceStockRequest->id;
-                $sourceMarker = "[stock_request_id:{$sourceStockRequest->id}]";
                 $sourceSummary = "Source Stock Request: {$sourceNumber}";
                 $existingNotes = trim((string) ($data['notes'] ?? ''));
-                $data['notes'] = trim(implode("\n", array_filter([$existingNotes, $sourceSummary, $sourceMarker])));
+                $data['notes'] = trim(implode("\n", array_filter([$existingNotes, $sourceSummary])));
             }
 
-            unset($data['stock_request_id']);
             $data = $this->sanitizePurchaseRequestPayloadForSchema($data);
+
+            $data['product_name'] = $sourceStockRequest->product_name;
+            $data['inventory_item_id'] = $sourceStockRequest->inventory_item_id;
+            $data['requested_size'] = $sourceStockRequest->requested_size;
+            $data['requested_color'] = $sourceStockRequest->requested_color;
+            $data['quantity'] = $sourceStockRequest->quantity_needed;
+            $data['priority'] = $sourceStockRequest->priority;
 
             $data['shop_owner_id'] = $shopOwnerId;
             $data['requested_by'] = Auth::id();
             $data['requested_date'] = now();
             $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $data['shop_owner_id']);
 
-            // Set status
-            $data['status'] = $request->boolean('submit_to_finance') ? 'pending_finance' : 'draft';
-
-            $candidatePrNumber = $this->generatePRNumber();
-            $purchaseRequest = null;
-
-            for ($attempt = 0; $attempt < 10; $attempt++) {
-                $data['pr_number'] = $candidatePrNumber;
-
-                try {
-                    $purchaseRequest = PurchaseRequest::create($data);
-                    break;
-                } catch (QueryException $queryException) {
-                    if (!$this->isPrNumberDuplicateException($queryException) || $attempt === 9) {
-                        throw $queryException;
-                    }
-
-                    Log::warning('PR number collision detected; retrying with next sequence.', [
-                        'candidate_pr_number' => $candidatePrNumber,
-                        'attempt' => $attempt + 1,
-                    ]);
-
-                    $candidatePrNumber = $this->incrementPrNumber($candidatePrNumber);
-                }
-            }
-
-            if (!$purchaseRequest) {
-                throw new \RuntimeException('Unable to generate a unique purchase request number.');
-            }
+            $purchaseRequest = $this->purchaseRequestService->createPurchaseRequest($data, $submitToFinance);
 
             DB::commit();
 
             return response()->json([
                 'message' => 'Purchase request created successfully.',
-                'purchase_request' => $purchaseRequest->load([
+                'data' => $purchaseRequest->load([
                     'shopOwner',
                     'supplier',
                     'inventoryItem',
@@ -245,6 +205,9 @@ class PurchaseRequestController extends Controller
                 ])
             ], 201);
 
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
 
@@ -254,10 +217,7 @@ class PurchaseRequestController extends Controller
                 'error' => $e->getMessage(),
             ]);
 
-            return response()->json([
-                'message' => 'Failed to create purchase request.',
-                'error' => $e->getMessage()
-            ], 500);
+            return FinanceErrorResponse::json($e, 'purchase_request.create', 500, ['shop_id' => (int) (Auth::user()->shop_owner_id ?? 0)]);
         }
     }
 
@@ -276,7 +236,7 @@ class PurchaseRequestController extends Controller
             'reviewer', 
             'approver',
             'purchaseOrders'
-        ])->findOrFail($id);
+        ])->where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
 
         $this->authorize('view', $purchaseRequest);
 
@@ -299,7 +259,7 @@ class PurchaseRequestController extends Controller
      */
     public function update(StorePurchaseRequestRequest $request, $id)
     {
-        $purchaseRequest = PurchaseRequest::findOrFail($id);
+        $purchaseRequest = PurchaseRequest::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
         $this->authorize('update', $purchaseRequest);
 
@@ -314,6 +274,20 @@ class PurchaseRequestController extends Controller
             DB::beginTransaction();
 
             $data = $request->validated();
+            $sourceStockRequest = StockRequestApproval::query()
+                ->where('id', (int) $data['stock_request_id'])
+                ->where('shop_owner_id', (int) $purchaseRequest->shop_owner_id)
+                ->where('status', 'accepted')
+                ->lockForUpdate()
+                ->firstOrFail();
+            if ($sourceStockRequest->request_source === 'repair' && !$sourceStockRequest->inventory_approved_date) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'Repair material request must be approved by Inventory first before procurement processing.',
+                ], 422);
+            }
+
+            $data = $this->lockToAcceptedStockRequest($data, $sourceStockRequest);
             $data = $this->sanitizePurchaseRequestPayloadForSchema($data);
             $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $purchaseRequest->shop_owner_id);
             
@@ -327,7 +301,7 @@ class PurchaseRequestController extends Controller
 
             return response()->json([
                 'message' => 'Purchase request updated successfully.',
-                'purchase_request' => $purchaseRequest->load([
+                'data' => $purchaseRequest->load([
                     'shopOwner',
                     'supplier',
                     'inventoryItem',
@@ -337,12 +311,12 @@ class PurchaseRequestController extends Controller
                 ])
             ]);
 
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'message' => 'Failed to update purchase request.',
-                'error' => $e->getMessage()
-            ], 500);
+            return FinanceErrorResponse::json($e, 'purchase_request.update', 500, ['record_id' => $id, 'shop_id' => (int) (Auth::user()->shop_owner_id ?? 0)]);
         }
     }
 
@@ -351,7 +325,7 @@ class PurchaseRequestController extends Controller
      */
     public function destroy($id)
     {
-        $purchaseRequest = PurchaseRequest::findOrFail($id);
+        $purchaseRequest = PurchaseRequest::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
         $this->authorize('delete', $purchaseRequest);
 
@@ -365,7 +339,8 @@ class PurchaseRequestController extends Controller
         $purchaseRequest->delete();
 
         return response()->json([
-            'message' => 'Purchase request deleted successfully.'
+            'message' => 'Purchase request deleted successfully.',
+            'data' => $purchaseRequest
         ]);
     }
 
@@ -374,7 +349,7 @@ class PurchaseRequestController extends Controller
      */
     public function submitToFinance($id)
     {
-        $purchaseRequest = PurchaseRequest::findOrFail($id);
+        $purchaseRequest = PurchaseRequest::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
         $this->authorize('submitToFinance', $purchaseRequest);
 
@@ -388,7 +363,7 @@ class PurchaseRequestController extends Controller
 
         return response()->json([
             'message' => 'Purchase request submitted to finance successfully.',
-            'purchase_request' => $purchaseRequest->fresh()
+            'data' => $purchaseRequest->fresh()
         ]);
     }
 
@@ -397,64 +372,22 @@ class PurchaseRequestController extends Controller
      */
     public function approve(ApprovePurchaseRequestRequest $request, $id)
     {
-        $purchaseRequest = PurchaseRequest::findOrFail($id);
+        $purchaseRequest = PurchaseRequest::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
         $this->authorize('approve', $purchaseRequest);
 
-        if (!$purchaseRequest->canBeApproved()) {
-            return response()->json([
-                'message' => 'Purchase request cannot be approved in its current state.'
-            ], 403);
-        }
+        $isFinanceFinalStage = $purchaseRequest->status === 'pending_finance_final';
+        $freshRequest = ($isFinanceFinalStage
+            ? $this->purchaseRequestService->releaseByFinance((int) $purchaseRequest->id, Auth::user(), $request->approval_notes)
+            : $this->purchaseRequestService->reviewByFinance((int) $purchaseRequest->id, Auth::user(), $request->approval_notes)
+        )->load(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer', 'approver', 'shopOwnerApprover']);
 
-        try {
-            $recalculatedTotalCost = $this->calculatePurchaseRequestTotalCost(
-                [
-                    'inventory_item_id' => $purchaseRequest->inventory_item_id,
-                    'requested_size' => $purchaseRequest->requested_size,
-                    'requested_color' => $purchaseRequest->requested_color,
-                    'quantity' => $purchaseRequest->quantity,
-                    'unit_cost' => $purchaseRequest->unit_cost,
-                ],
-                (int) $purchaseRequest->shop_owner_id
-            );
-
-            if (round((float) $purchaseRequest->total_cost, 2) !== round($recalculatedTotalCost, 2)) {
-                $purchaseRequest->total_cost = $recalculatedTotalCost;
-                $purchaseRequest->save();
-            }
-
-            $isFinanceFinalStage = $purchaseRequest->status === 'pending_finance_final';
-            $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPurchaseRequest(
-                (int) $purchaseRequest->shop_owner_id,
-                $recalculatedTotalCost
-            );
-
-            $freshRequest = $this->purchaseRequestService->approvePurchaseRequest(
-                (int) $purchaseRequest->id,
-                (int) Auth::id(),
-                $request->approval_notes
-            )->load(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'approver']);
-
-            $payload = $freshRequest->toArray();
-            $payload['requires_owner_approval'] = $requiresOwnerApproval;
-            $payload['approval_stage'] = $freshRequest->status === 'pending_finance_final'
-                ? 'finance_final'
-                : ($freshRequest->status === 'pending_finance' ? 'finance_initial' : null);
-
-            return response()->json([
-                'message' => $isFinanceFinalStage
-                    ? 'Purchase request finalized by Finance successfully.'
-                    : 'Purchase request approved successfully.',
-                'purchase_request' => $payload
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to approve purchase request.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'message' => $isFinanceFinalStage
+                ? 'Purchase request released by Finance successfully.'
+                : 'Purchase request sent to the Shop Owner successfully.',
+            'data' => $freshRequest,
+        ]);
     }
 
     /**
@@ -462,88 +395,28 @@ class PurchaseRequestController extends Controller
      */
     public function reject(RejectPurchaseRequestRequest $request, $id)
     {
-        $purchaseRequest = PurchaseRequest::findOrFail($id);
+        $purchaseRequest = PurchaseRequest::where('shop_owner_id', Auth::user()->shop_owner_id)->findOrFail($id);
         
         $this->authorize('reject', $purchaseRequest);
 
-        if (!$purchaseRequest->canBeRejected()) {
-            return response()->json([
-                'message' => 'Purchase request cannot be rejected in its current state.'
-            ], 403);
-        }
+        $purchaseRequest = $this->purchaseRequestService->rejectByFinance(
+            (int) $purchaseRequest->id,
+            Auth::user(),
+            $request->rejection_reason
+        );
 
-        try {
-            $purchaseRequest = $this->purchaseRequestService->rejectPurchaseRequest(
-                (int) $purchaseRequest->id,
-                (int) Auth::id(),
-                $request->rejection_reason
-            );
-
-            return response()->json([
-                'message' => 'Purchase request rejected successfully.',
-                'purchase_request' => $purchaseRequest->fresh(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer'])
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Failed to reject purchase request.',
-                'error' => $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'message' => 'Purchase request rejected successfully.',
+            'data' => $purchaseRequest->fresh(['shopOwner', 'supplier', 'inventoryItem', 'requester', 'reviewer'])
+        ]);
     }
 
-    /**
-     * Calculate PR total cost with support for all-size requests.
-     *
-     * For blank/all requested_size values, quantity is treated per size row.
-     */
     private function calculatePurchaseRequestTotalCost(array $data, int $shopOwnerId): float
     {
         $quantity = (int) ($data['quantity'] ?? 0);
         $unitCost = (float) ($data['unit_cost'] ?? 0);
 
-        if ($quantity <= 0 || $unitCost < 0) {
-            return 0;
-        }
-
-        $requestedSize = trim((string) ($data['requested_size'] ?? ''));
-        $requestedColor = trim((string) ($data['requested_color'] ?? ''));
-
-        // Specific size keeps the original formula.
-        if (!$this->isAllSizesRequest($requestedSize)) {
-            return round($quantity * $unitCost, 2);
-        }
-
-        $inventoryItemId = $data['inventory_item_id'] ?? null;
-        if (!$inventoryItemId) {
-            return round($quantity * $unitCost, 2);
-        }
-
-        $inventoryItem = InventoryItem::query()
-            ->whereKey($inventoryItemId)
-            ->where('shop_owner_id', $shopOwnerId)
-            ->first();
-
-        if (!$inventoryItem) {
-            return round($quantity * $unitCost, 2);
-        }
-
-        $sizeRowsQuery = $inventoryItem->sizes();
-
-        if ($requestedColor !== '') {
-            $targetColorVariant = $inventoryItem->colorVariants()
-                ->whereRaw('LOWER(color_name) = ?', [strtolower($requestedColor)])
-                ->first();
-
-            if ($targetColorVariant) {
-                $sizeRowsQuery->where('inventory_color_variant_id', $targetColorVariant->id);
-            }
-        }
-
-        $sizeRowCount = $sizeRowsQuery->count();
-        $effectiveQuantity = $quantity * max(1, $sizeRowCount);
-
-        return round($effectiveQuantity * $unitCost, 2);
+        return $quantity > 0 && $unitCost >= 0 ? round($quantity * $unitCost, 2) : 0;
     }
 
     private function isAllSizesRequest(?string $requestedSize): bool
@@ -580,6 +453,49 @@ class PurchaseRequestController extends Controller
     }
 
     /**
+     * Keep the PR's demand fields aligned with the accepted stock request.
+     */
+    private function lockToAcceptedStockRequest(array $data, StockRequestApproval $source): array
+    {
+        $lockedFields = [
+            'product_name' => $source->product_name,
+            'inventory_item_id' => $source->inventory_item_id,
+            'requested_size' => $source->requested_size,
+            'requested_color' => $source->requested_color,
+            'quantity' => $source->quantity_needed,
+            'priority' => $source->priority,
+        ];
+
+        foreach ($lockedFields as $field => $expected) {
+            if (array_key_exists($field, $data)
+                && $this->normalizeStockRequestField($field, $data[$field])
+                    !== $this->normalizeStockRequestField($field, $expected)) {
+                throw ValidationException::withMessages([
+                    $field => 'This value must match the accepted stock request.',
+                ]);
+            }
+
+            $data[$field] = $expected;
+        }
+
+        return $data;
+    }
+
+    private function normalizeStockRequestField(string $field, mixed $value): mixed
+    {
+        if (in_array($field, ['requested_size', 'requested_color'], true)) {
+            $value = trim((string) $value);
+            return $value === '' ? null : $value;
+        }
+
+        if (in_array($field, ['inventory_item_id', 'quantity'], true)) {
+            return $value === null ? null : (int) $value;
+        }
+
+        return is_string($value) ? trim($value) : $value;
+    }
+
+    /**
      * Get procurement metrics.
      */
     public function getMetrics()
@@ -613,8 +529,8 @@ class PurchaseRequestController extends Controller
         $approvedPRs = PurchaseRequest::with(['supplier', 'inventoryItem', 'requester'])
             ->where('shop_owner_id', Auth::user()->shop_owner_id)
             ->approved()
-            ->whereDoesntHave('purchaseOrders', function ($query) {
-                $query->whereNotIn('status', ['cancelled']);
+            ->whereDoesntHave('purchaseOrderItems.purchaseOrder', function ($query) {
+                $query->where('status', '!=', 'cancelled');
             })
             ->orderBy('approved_date', 'desc')
             ->get();

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Staff;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\User;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -17,16 +18,19 @@ class CustomerController extends Controller
     public function index(Request $request)
     {
         try {
+            $context = $this->erpContext();
             $user = Auth::guard('user')->user();
-            
-            if (!$user || !$user->shop_owner_id) {
+
+            $shopOwnerId = $context instanceof ErpActorContext
+                ? (int) $context->tenantOwner()->getKey()
+                : (int) ($user?->shop_owner_id ?? 0);
+
+            if ($shopOwnerId <= 0) {
                 return response()->json([
                     'message' => 'No shop assigned to this user',
                     'customers' => []
                 ], 200);
             }
-
-            $shopOwnerId = $user->shop_owner_id;
             
             // Get search and filter parameters
             $search = $request->input('search', '');
@@ -43,7 +47,11 @@ class CustomerController extends Controller
                 DB::raw('COUNT(DISTINCT orders.id) as total_orders'),
                 DB::raw('COALESCE(SUM(orders.total_amount), 0) as total_spent'),
                 DB::raw('MAX(orders.created_at) as last_order_date'),
-                DB::raw('CASE WHEN MAX(orders.created_at) >= DATE_SUB(NOW(), INTERVAL 90 DAY) THEN "active" ELSE "inactive" END as status')
+            ])
+            ->selectRaw('CASE WHEN MAX(orders.created_at) >= ? THEN ? ELSE ? END as status', [
+                now()->subDays(90),
+                'active',
+                'inactive',
             ])
             ->join('orders', 'users.id', '=', 'orders.customer_id')
             ->where('orders.shop_owner_id', $shopOwnerId)
@@ -100,9 +108,14 @@ class CustomerController extends Controller
     public function stats(Request $request)
     {
         try {
+            $context = $this->erpContext();
             $user = Auth::guard('user')->user();
-            
-            if (!$user || !$user->shop_owner_id) {
+
+            $shopOwnerId = $context instanceof ErpActorContext
+                ? (int) $context->tenantOwner()->getKey()
+                : (int) ($user?->shop_owner_id ?? 0);
+
+            if ($shopOwnerId <= 0) {
                 return response()->json([
                     'totalCustomers' => 0,
                     'totalCustomersChange' => 0,
@@ -114,8 +127,6 @@ class CustomerController extends Controller
                     'totalRevenueChange' => 0,
                 ]);
             }
-
-            $shopOwnerId = $user->shop_owner_id;
 
             // Current period stats
             $totalCustomers = User::join('orders', 'users.id', '=', 'orders.customer_id')
@@ -198,5 +209,12 @@ class CustomerController extends Controller
                 'totalRevenueChange' => 0,
             ], 500);
         }
+    }
+
+    private function erpContext(): ?ErpActorContext
+    {
+        $context = request()->attributes->get('erp.actor_context');
+
+        return $context instanceof ErpActorContext ? $context : null;
     }
 }

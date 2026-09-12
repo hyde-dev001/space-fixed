@@ -12,13 +12,13 @@ const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   return (
-    <div className="min-h-screen xl:flex bg-gray-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
+    <div className="erp-theme super-admin-shell min-h-screen xl:flex bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
       <div>
         <AppSidebar />
         <Backdrop />
       </div>
       <div
-        className={`flex-1 transition-all duration-300 ease-in-out bg-gray-50 dark:bg-gray-950 ${
+        className={`flex-1 transition-all duration-300 ease-in-out bg-white dark:bg-gray-950 ${
           isExpanded || isHovered ? "lg:ml-[290px]" : "lg:ml-[90px]"
         } ${isMobileOpen ? "ml-0" : ""}`}
       >

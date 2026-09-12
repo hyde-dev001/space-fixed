@@ -2,7 +2,6 @@
 
 namespace Tests\Unit;
 
-use App\Models\ShopOwner;
 use App\Models\Supplier;
 use App\Models\SupplierOrder;
 use App\Models\User;
@@ -17,20 +16,22 @@ class SupplierOrderTest extends TestCase
     public function it_can_create_supplier_order()
     {
         $supplier = Supplier::factory()->create();
-        $user = User::factory()->create();
+        $user = User::factory()->create(['shop_owner_id' => $supplier->shop_owner_id]);
 
         $order = SupplierOrder::create([
+            'shop_owner_id' => $supplier->shop_owner_id,
             'supplier_id' => $supplier->id,
-            'order_number' => 'PO-001',
-            'status' => 'pending',
+            'po_number' => 'PO-001',
+            'status' => 'draft',
+            'order_date' => now(),
             'total_amount' => 1000,
             'expected_delivery_date' => now()->addDays(7),
             'created_by' => $user->id,
         ]);
 
         $this->assertDatabaseHas('supplier_orders', [
-            'order_number' => 'PO-001',
-            'status' => 'pending',
+            'po_number' => 'PO-001',
+            'status' => 'draft',
         ]);
     }
 
@@ -69,8 +70,8 @@ class SupplierOrderTest extends TestCase
             'expected_delivery_date' => now()->addDays(1),
         ]);
 
-        $this->assertTrue($overdueOrder->isOverdue());
-        $this->assertFalse($onTimeOrder->isOverdue());
+        $this->assertTrue($overdueOrder->is_overdue);
+        $this->assertFalse($onTimeOrder->is_overdue);
     }
 
     /** @test */
@@ -81,7 +82,7 @@ class SupplierOrderTest extends TestCase
             'expected_delivery_date' => now()->subDays(1),
         ]);
 
-        $this->assertFalse($deliveredOrder->isOverdue());
+        $this->assertFalse($deliveredOrder->is_overdue);
     }
 
     /** @test */
@@ -94,6 +95,6 @@ class SupplierOrderTest extends TestCase
         $order->markAsDelivered();
 
         $this->assertEquals('delivered', $order->status);
-        $this->assertNotNull($order->received_date);
+        $this->assertNotNull($order->actual_delivery_date);
     }
 }

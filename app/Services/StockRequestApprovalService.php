@@ -3,7 +3,13 @@
 namespace App\Services;
 
 use App\Enums\NotificationType;
+use App\Models\InventoryItem;
+use App\Models\InventoryColorVariant;
+use App\Models\InventorySize;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\StockRequestApproval;
+use App\Models\ReplenishmentRequest;
 use App\Models\PurchaseRequest;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -11,9 +17,304 @@ use Illuminate\Support\Facades\Log;
 
 class StockRequestApprovalService
 {
+    private const OPEN_STOCK_REQUEST_STATUSES = ['pending', 'accepted', 'needs_details'];
+
+    private const OPEN_REPLENISHMENT_STATUSES = ['pending', 'accepted', 'needs_details'];
+
+    private const OPEN_PURCHASE_REQUEST_STATUSES = [
+        'draft',
+        'pending_finance',
+        'pending_shop_owner',
+        'pending_finance_final',
+        'approved',
+    ];
+
+    private const OPEN_PURCHASE_ORDER_STATUSES = [
+        'draft',
+        'sent',
+        'confirmed',
+        'in_transit',
+        'partially_received',
+    ];
+
     public function __construct(
         private NotificationService $notificationService
     ) {}
+
+    /**
+     * Persist a manually submitted request through the same path used by
+     * automatic requests.
+     */
+    public function createStockRequest(array $data): StockRequestApproval
+    {
+        $stockRequest = DB::transaction(function () use ($data): StockRequestApproval {
+            $inventoryItem = InventoryItem::query()
+                ->where('shop_owner_id', (int) $data['shop_owner_id'])
+                ->lockForUpdate()
+                ->findOrFail((int) $data['inventory_item_id']);
+
+            return $this->persistStockRequest($inventoryItem, $data);
+        }, 3);
+
+        $stockRequest = $stockRequest->fresh(['inventoryItem', 'requester']);
+        $this->notifyStockRequestSubmitted($stockRequest);
+
+        return $stockRequest;
+    }
+
+    /**
+     * Create the uncovered portion of an inventory target's automatic replenishment need.
+     *
+     * The optional target keeps existing item-only callers compatible while allowing the
+     * low-stock job to pass the exact color/size target being evaluated.
+     */
+    public function createAutomaticStockRequest(InventoryItem $item, string $priority, ?array $target = null): ?StockRequestApproval
+    {
+        $stockRequest = DB::transaction(function () use ($item, $priority, $target): ?StockRequestApproval {
+            $lockedItem = InventoryItem::query()
+                ->where('shop_owner_id', $item->shop_owner_id)
+                ->whereKey($item->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $target = $this->resolveAutomaticTarget($lockedItem, $target);
+            if (! $target
+                || ! $target['auto_stock_request_enabled']
+                || (int) $target['quantity'] > (int) $target['reorder_level']) {
+                return null;
+            }
+
+            $reorderQuantity = max(0, (int) $target['reorder_quantity']);
+            if ($reorderQuantity === 0) {
+                return null;
+            }
+
+            $coveredQuantity = $this->openStockRequestQuantity($lockedItem, $target)
+                + $this->openReplenishmentQuantity($lockedItem, $target)
+                + $this->openPurchaseRequestQuantity($lockedItem, $target)
+                + $this->openPurchaseOrderQuantity($lockedItem, $target);
+            $quantityNeeded = max(0, $reorderQuantity - $coveredQuantity);
+
+            if ($quantityNeeded === 0) {
+                return null;
+            }
+
+            return $this->persistStockRequest($lockedItem, [
+                'shop_owner_id' => $lockedItem->shop_owner_id,
+                'quantity_needed' => $quantityNeeded,
+                'requested_size' => $target['requested_size'],
+                'requested_color' => $target['requested_color'],
+                'priority' => $priority,
+                'request_source' => 'manual',
+                'status' => 'pending',
+                'requested_by' => null,
+                'requested_date' => now(),
+                'notes' => 'Automatically created by the low-stock check.',
+                'is_auto_generated' => true,
+            ]);
+        }, 3);
+
+        if (! $stockRequest) {
+            return null;
+        }
+
+        $stockRequest = $stockRequest->fresh(['inventoryItem', 'requester']);
+        $this->notifyStockRequestSubmitted($stockRequest);
+
+        Log::info('Automatic stock request created.', [
+            'request_id' => $stockRequest->id,
+            'inventory_item_id' => $stockRequest->inventory_item_id,
+            'requested_color' => $stockRequest->requested_color,
+            'requested_size' => $stockRequest->requested_size,
+            'quantity_needed' => $stockRequest->quantity_needed,
+        ]);
+
+        return $stockRequest;
+    }
+
+    /** @return array<string, mixed>|null */
+    private function resolveAutomaticTarget(InventoryItem $item, ?array $requestedTarget): ?array
+    {
+        $target = $requestedTarget ?? ['type' => 'item', 'id' => $item->id];
+        $type = (string) ($target['type'] ?? '');
+        $id = (int) ($target['id'] ?? 0);
+
+        if ($type === 'item' && $id !== (int) $item->id) {
+            return null;
+        }
+
+        if ($type === 'color') {
+            $color = InventoryColorVariant::query()
+                ->where('inventory_item_id', $item->id)
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->first();
+            if (! $color || $color->sizes()->exists()) {
+                return null;
+            }
+        }
+
+        if ($type === 'size') {
+            $size = InventorySize::query()
+                ->where('inventory_item_id', $item->id)
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->first();
+            if (! $size) {
+                return null;
+            }
+
+            if ($size->inventory_color_variant_id
+                && ! $size->colorVariant()->where('inventory_item_id', $item->id)->exists()) {
+                return null;
+            }
+        }
+
+        if (! in_array($type, ['item', 'color', 'size'], true)) {
+            return null;
+        }
+
+        $item->unsetRelation('sizes')->unsetRelation('colorVariants');
+
+        return app(InventoryReplenishmentService::class)
+            ->effectiveTargets($item)
+            ->first(fn (array $candidate): bool => $candidate['type'] === $type && (int) $candidate['id'] === $id);
+    }
+
+    private function persistStockRequest(InventoryItem $inventoryItem, array $data): StockRequestApproval
+    {
+        $year = now()->year;
+        $last = StockRequestApproval::query()
+            ->where('request_number', 'LIKE', 'SR-' . $year . '-%')
+            ->lockForUpdate()
+            ->orderByDesc('request_number')
+            ->first();
+        $nextNumber = $last ? ((int) substr($last->request_number, -3)) + 1 : 1;
+
+        return StockRequestApproval::create([
+            'request_number' => 'SR-' . $year . '-' . str_pad($nextNumber, 3, '0', STR_PAD_LEFT),
+            'shop_owner_id' => $inventoryItem->shop_owner_id,
+            'inventory_item_id' => $inventoryItem->id,
+            'repair_request_id' => $data['repair_request_id'] ?? null,
+            'product_name' => $inventoryItem->name,
+            'sku_code' => $inventoryItem->sku ?? '',
+            'quantity_needed' => (int) $data['quantity_needed'],
+            'requested_size' => $data['requested_size'] ?? null,
+            'requested_color' => $data['requested_color'] ?? null,
+            'priority' => $data['priority'],
+            'request_source' => $data['request_source'] ?? 'manual',
+            'status' => $data['status'] ?? 'pending',
+            'requested_by' => $data['requested_by'] ?? null,
+            'requested_date' => $data['requested_date'] ?? now(),
+            'notes' => $data['notes'] ?? null,
+            'is_auto_generated' => (bool) ($data['is_auto_generated'] ?? false),
+        ]);
+    }
+
+    private function openStockRequestQuantity(InventoryItem $item, array $target): int
+    {
+        return (int) StockRequestApproval::query()
+            ->where('shop_owner_id', $item->shop_owner_id)
+            ->where('inventory_item_id', $item->id)
+            ->whereIn('status', self::OPEN_STOCK_REQUEST_STATUSES)
+            ->whereDoesntHave('purchaseRequest', function ($query): void {
+                $query->whereIn('status', self::OPEN_PURCHASE_REQUEST_STATUSES);
+            })
+            ->get(['quantity_needed', 'requested_color', 'requested_size'])
+            ->filter(fn (StockRequestApproval $request): bool => $this->targetMatches($request, $target))
+            ->sum('quantity_needed');
+    }
+
+    private function openReplenishmentQuantity(InventoryItem $item, array $target): int
+    {
+        if ($target['type'] !== 'item') {
+            return 0;
+        }
+
+        return (int) ReplenishmentRequest::query()
+            ->where('shop_owner_id', $item->shop_owner_id)
+            ->where('inventory_item_id', $item->id)
+            ->whereIn('status', self::OPEN_REPLENISHMENT_STATUSES)
+            ->whereNotExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('stock_request_approvals')
+                    ->whereColumn(
+                        'stock_request_approvals.request_number',
+                        'replenishment_requests.request_number',
+                    );
+            })
+            ->sum('quantity_needed');
+    }
+
+    private function openPurchaseRequestQuantity(InventoryItem $item, array $target): int
+    {
+        return (int) PurchaseRequest::query()
+            ->where('shop_owner_id', $item->shop_owner_id)
+            ->where('inventory_item_id', $item->id)
+            ->whereIn('status', self::OPEN_PURCHASE_REQUEST_STATUSES)
+            ->whereDoesntHave('purchaseOrders', function ($query): void {
+                $query->whereIn('status', self::OPEN_PURCHASE_ORDER_STATUSES);
+            })
+            ->whereDoesntHave('purchaseOrderItems', function ($query): void {
+                $query->whereHas('purchaseOrder', function ($purchaseOrderQuery): void {
+                    $purchaseOrderQuery->whereIn('status', self::OPEN_PURCHASE_ORDER_STATUSES);
+                });
+            })
+            ->get(['quantity', 'requested_color', 'requested_size'])
+            ->filter(fn (PurchaseRequest $request): bool => $this->targetMatches($request, $target))
+            ->sum('quantity');
+    }
+
+    private function openPurchaseOrderQuantity(InventoryItem $item, array $target): int
+    {
+        $itemQuantity = PurchaseOrderItem::query()
+            ->with('receiptItems.receipt')
+            ->where('inventory_item_id', $item->id)
+            ->whereHas('purchaseOrder', function ($query) use ($item): void {
+                $query->where('shop_owner_id', $item->shop_owner_id)
+                    ->whereIn('status', self::OPEN_PURCHASE_ORDER_STATUSES);
+            })
+            ->get()
+            ->filter(fn (PurchaseOrderItem $purchaseOrderItem): bool => $this->targetMatches($purchaseOrderItem, $target))
+            ->sum(function (PurchaseOrderItem $purchaseOrderItem): int {
+                $acceptedQuantity = $purchaseOrderItem->receiptItems
+                    ->filter(fn ($receiptItem) => $receiptItem->receipt?->status === 'posted')
+                    ->sum('accepted_quantity');
+
+                return max(0, (int) $purchaseOrderItem->ordered_quantity - (int) $acceptedQuantity);
+            });
+
+        $legacyQuantity = PurchaseOrder::query()
+            ->where('shop_owner_id', $item->shop_owner_id)
+            ->where('inventory_item_id', $item->id)
+            ->whereIn('status', self::OPEN_PURCHASE_ORDER_STATUSES)
+            ->whereDoesntHave('items')
+            ->get([
+                'quantity',
+                'received_quantity',
+                'defective_quantity',
+                'requested_color',
+                'requested_size',
+            ])
+            ->filter(fn (PurchaseOrder $purchaseOrder): bool => $this->targetMatches($purchaseOrder, $target))
+            ->sum(function (PurchaseOrder $purchaseOrder): int {
+                $receivedQuantity = (int) ($purchaseOrder->received_quantity ?? 0);
+                $defectiveQuantity = (int) ($purchaseOrder->defective_quantity ?? 0);
+                $acceptedQuantity = max(0, $receivedQuantity - $defectiveQuantity);
+
+                return max(0, (int) $purchaseOrder->quantity - $acceptedQuantity);
+            });
+
+        return (int) $itemQuantity + (int) $legacyQuantity;
+    }
+
+    private function targetMatches(object $record, array $target): bool
+    {
+        return InventoryVariantIdentity::normalizeColor($record->requested_color ?? null)
+            === ($target['requested_color'] ?? null)
+            && InventoryVariantIdentity::normalizeSize($record->requested_size ?? null)
+                === ($target['requested_size'] ?? null);
+    }
 
     /**
      * Approve a stock request.
@@ -160,6 +461,10 @@ class StockRequestApprovalService
             if ($stockRequest->status !== 'accepted') {
                 throw new \Exception('Only accepted stock requests can be converted to purchase requests.');
             }
+            if ($stockRequest->request_source === 'repair' && !$stockRequest->inventory_approved_date) {
+                throw new \Exception('Repair material request must be approved by Inventory first before procurement processing.');
+            }
+
 
             // Create PR data from stock request
             $prData = [
@@ -255,7 +560,7 @@ class StockRequestApprovalService
             title: 'New Stock Request Submitted',
             message: "Stock request {$payload['request_number']} for {$payload['product_name']} (Qty: {$payload['quantity_needed']}) needs review.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/procurement/stock-request-approval?stock_request={$stockRequest->id}",
             priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
         );
     }
@@ -270,7 +575,7 @@ class StockRequestApprovalService
             title: 'Repair Material Request Forwarded',
             message: "Repair material request {$payload['request_number']} for {$payload['product_name']} is now ready for procurement approval.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/procurement/stock-request-approval?stock_request={$stockRequest->id}",
             priority: $stockRequest->priority === 'high' ? 'high' : 'medium'
         );
     }
@@ -290,7 +595,7 @@ class StockRequestApprovalService
             title: 'Stock Request Approved',
             message: "Your stock request {$payload['request_number']} for {$payload['product_name']} was approved.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
             shopId: (int) $stockRequest->shop_owner_id,
             priority: 'medium'
         );
@@ -311,7 +616,7 @@ class StockRequestApprovalService
             title: 'Stock Request Rejected',
             message: "Your stock request {$payload['request_number']} was rejected. Reason: {$reason}",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
             shopId: (int) $stockRequest->shop_owner_id,
             priority: 'medium'
         );
@@ -332,7 +637,7 @@ class StockRequestApprovalService
             title: 'Stock Request Needs Details',
             message: "More details were requested for {$payload['request_number']}.",
             data: $payload,
-            actionUrl: '/erp/procurement/stock-request-approval',
+            actionUrl: "/erp/inventory/stock-request?stock_request={$stockRequest->id}",
             shopId: (int) $stockRequest->shop_owner_id,
             priority: 'medium'
         );
@@ -345,17 +650,18 @@ class StockRequestApprovalService
         string $message,
         array $data,
         string $actionUrl,
-        string $priority
+        string $priority,
+        bool $requiresAction = true
     ): void {
         $recipients = User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', fn ($q) => $q->where('name', 'Procurement Manager'))
+            ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['procurement manager']))
             ->get();
 
         if ($recipients->isEmpty()) {
             $recipients = User::query()
                 ->where('shop_owner_id', $shopOwnerId)
-                ->whereHas('roles', fn ($q) => $q->where('name', 'Finance'))
+                ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['finance']))
                 ->get();
         }
 
@@ -368,7 +674,8 @@ class StockRequestApprovalService
                 data: $data,
                 actionUrl: $actionUrl,
                 shopId: $shopOwnerId,
-                priority: $priority
+                priority: $priority,
+                requiresAction: $requiresAction,
             );
         }
     }
@@ -385,6 +692,8 @@ class StockRequestApprovalService
             'requested_color' => $stockRequest->requested_color,
             'status' => $stockRequest->status,
             'request_source' => $stockRequest->request_source,
+            'is_auto_generated' => (bool) $stockRequest->is_auto_generated,
+            'source_label' => $stockRequest->source_label,
             'notes' => $note,
             'acted_by' => $actorId,
         ];

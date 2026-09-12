@@ -61,7 +61,7 @@ const Services: React.FC<Props> = () => {
   return (
     <>
       <Head title="Services - SoleSpace" />
-      <div className="min-h-screen overflow-x-hidden bg-[#f4f5f8] xl:bg-white font-outfit antialiased">
+      <div className="userside-services-page min-h-screen overflow-x-hidden bg-[#f4f5f8] xl:bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <Navigation />
         </div>

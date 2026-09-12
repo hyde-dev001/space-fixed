@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
@@ -149,19 +150,16 @@ const UserIcon = ({ className }: { className?: string }) => (
 );
 
 type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
 
 interface MetricCardProps {
-	title: string;
-	value: number | string;
-	change: number;
-	changeType: ChangeType;
-	icon: ComponentType<{ className?: string }>;
+  title: string;
+  value: number | string;
+  icon: ComponentType<{ className?: string }>;
 	color: MetricColor;
 	description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
 	const getColorClasses = () => {
 		switch (color) {
 			case "success":
@@ -179,19 +177,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 		<div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
 			<div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 			<div className="relative">
-				<div className="flex items-center justify-between mb-4">
+				<div className="flex items-center mb-4">
 					<div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
 						<Icon className="text-white size-7 drop-shadow-sm" />
-					</div>
-					<div
-						className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-							changeType === "increase"
-								? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-								: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-						}`}
-					>
-						{changeType === "increase" ? <CheckIcon className="size-3" /> : <XIcon className="size-3" />}
-						{Math.abs(change)}%
 					</div>
 				</div>
 				<div className="space-y-2">
@@ -1012,20 +1000,20 @@ export default function PayslipApproval({
 							<li><strong>Total Net:</strong> ${formatCurrency(previewData.summary.total_net)}</li>
 						</ul>
 					</div>
-					
+
 					<div class="bg-green-50 border border-green-200 rounded-lg p-4">
 						<label class="flex items-center gap-2 text-sm cursor-pointer">
 							<input type="checkbox" id="addBatchNotes" class="rounded text-green-600" />
 							<span class="text-green-800">📝 Add approval notes</span>
 						</label>
-						<textarea 
-							id="batchNotes" 
-							class="mt-2 w-full rounded border-green-300 text-sm" 
+						<textarea
+							id="batchNotes"
+							class="mt-2 w-full rounded border-green-300 text-sm"
 							placeholder="Optional notes for all payslips..."
 							rows="2"
 						></textarea>
 					</div>
-					
+
 					<p class="text-xs text-gray-600">
 						This will approve all pending payslips and notify HR for release.
 					</p>
@@ -1034,7 +1022,7 @@ export default function PayslipApproval({
 			showCancelButton: true,
 			confirmButtonText: "Approve All",
 			cancelButtonText: "Cancel",
-			confirmButtonColor: "#16a34a",
+			confirmButtonColor: "#030712",
 			cancelButtonColor: "#6b7280",
 			preConfirm: () => {
 				return {
@@ -1134,57 +1122,12 @@ export default function PayslipApproval({
 		<>
 			<Head title={headTitle} />
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1 text-gray-900 dark:text-white">Payslip Approvals</h1>
-						<p className="text-gray-600 dark:text-gray-400">Review HR-generated payslips before employee release.</p>
-					</div>
-					<div className="flex flex-wrap items-center justify-end gap-3">
-						{pendingCount > 0 && canCheckerApprove && (
-							<button
-								onClick={handleApproveAll}
-								disabled={isBatchApproving || isApproving}
-								className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-							>
-								<CheckIcon className="size-4" />
-								Approve All ({pendingCount})
-							</button>
-						)}
-						{allowFinalApproveAll && awaitingFinalApprovalCount > 0 && canFinalApprove && (
-							<button
-								onClick={handleFinalApproveAll}
-								disabled={isApproving || isBatchApproving}
-								className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-							>
-								<CheckIcon className="size-4" />
-								Approve All Owner ({awaitingFinalApprovalCount})
-							</button>
-						)}
-						{readyForDisbursementCount > 0 && canDisburse && (
-							<button
-								onClick={handleApproveAllReadyForDisbursement}
-								disabled={isApproving || isBatchApproving}
-								className="px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-							>
-								<CalendarIcon className="size-4" />
-								Approve All Ready ({readyForDisbursementCount})
-							</button>
-						)}
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-							Finance Review
-						</span>
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-							HR Generated
-						</span>
-					</div>
-				</div>
+				<h1 className="sr-only">Payslip Approvals</h1>
 
 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
 				<MetricCard
 					title="Awaiting Finance"
 					value={pendingCount}
-					change={0}
-					changeType="increase"
 					icon={DocumentIcon}
 					color="warning"
 					description="Needs checker approval"
@@ -1192,8 +1135,6 @@ export default function PayslipApproval({
 				<MetricCard
 					title="Awaiting Owner"
 					value={awaitingFinalApprovalCount}
-					change={0}
-					changeType="increase"
 					icon={UserIcon}
 					color="info"
 					description="Needs final approval"
@@ -1201,8 +1142,6 @@ export default function PayslipApproval({
 				<MetricCard
 					title="Ready to Disburse"
 					value={readyForDisbursementCount}
-					change={0}
-					changeType="increase"
 					icon={CheckIcon}
 					color="success"
 					description="Owner-approved, pending payment"
@@ -1210,8 +1149,6 @@ export default function PayslipApproval({
 				<MetricCard
 					title="Paid"
 					value={paidCount}
-					change={0}
-					changeType="increase"
 					icon={CalendarIcon}
 					color="info"
 					description="Disbursement complete"
@@ -1219,9 +1156,43 @@ export default function PayslipApproval({
 				</div>
 
 				<div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
-					<div className="mb-4 flex flex-col gap-2">
-						<h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payslip Approval Queue</h2>
-						<p className="text-sm text-gray-500 dark:text-gray-400">Verify amounts, deductions, and attachments before approval.</p>
+					<div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+						<div>
+							<h2 className="text-lg font-semibold text-gray-900 dark:text-white">Payslip Approval Queue</h2>
+							<p className="text-sm text-gray-500 dark:text-gray-400">Verify amounts, deductions, and attachments before approval.</p>
+						</div>
+						<div className="flex flex-wrap items-center justify-end gap-3">
+							{pendingCount > 0 && canCheckerApprove && (
+								<button
+									onClick={handleApproveAll}
+									disabled={isBatchApproving || isApproving}
+									className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+								>
+									<CheckIcon className="size-4" />
+									Approve All ({pendingCount})
+								</button>
+							)}
+							{allowFinalApproveAll && awaitingFinalApprovalCount > 0 && canFinalApprove && (
+								<button
+									onClick={handleFinalApproveAll}
+									disabled={isApproving || isBatchApproving}
+									className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+								>
+									<CheckIcon className="size-4" />
+									Approve All Owner ({awaitingFinalApprovalCount})
+								</button>
+							)}
+							{readyForDisbursementCount > 0 && canDisburse && (
+								<button
+									onClick={handleApproveAllReadyForDisbursement}
+									disabled={isApproving || isBatchApproving}
+									className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
+								>
+									<CalendarIcon className="size-4" />
+									Approve All Ready ({readyForDisbursementCount})
+								</button>
+							)}
+						</div>
 					</div>
 
 					<div className="mb-4 flex flex-col sm:flex-row gap-3">
@@ -1238,7 +1209,7 @@ export default function PayslipApproval({
 							/>
 						</div>
 						<div className="sm:w-48">
-							<select
+							<MonochromeSelect
 								value={statusFilter}
 								onChange={(event) => {
 									setStatusFilter(event.target.value as any);
@@ -1253,7 +1224,7 @@ export default function PayslipApproval({
 								<option value="ready_for_disbursement">Ready For Disbursement</option>
 								<option value="paid">Paid</option>
 								<option value="rejected">Rejected</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 
@@ -1419,7 +1390,7 @@ export default function PayslipApproval({
 			</div>
 
 			{viewModalOpen && selectedRequest && (
-				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
 					<div className="w-full max-w-3xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl">
 						<div className="flex items-start justify-between mb-4 px-6 py-4">
 							<div>
@@ -1581,9 +1552,9 @@ export default function PayslipApproval({
 
 			{/* Batch Approval Preview Modal */}
 			{showPreviewModal && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm erp-modal-backdrop">
 					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
-						<div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+						<div className="p-6 overflow-y-auto no-scrollbar max-h-[calc(90vh-120px)]">
 							{isLoadingPreview ? (
 								<div className="flex items-center justify-center py-12">
 									<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
@@ -1591,20 +1562,20 @@ export default function PayslipApproval({
 							) : previewData ? (
 								<div className="space-y-4">
 									{/* Summary Card */}
-									<div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6">
-										<h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-3">📊 Approval Summary</h3>
+									<div className="rounded-xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-950">
+										<h3 className="mb-3 font-semibold text-gray-950 dark:text-white">Approval Summary</h3>
 										<div className="grid grid-cols-3 gap-4">
 											<div>
-												<p className="text-sm text-blue-600 dark:text-blue-300">Payslips</p>
-												<p className="text-2xl font-bold text-blue-900 dark:text-blue-50">{previewData.summary.count}</p>
+												<p className="text-sm text-gray-600 dark:text-gray-400">Payslips</p>
+												<p className="text-2xl font-bold text-gray-950 dark:text-white">{previewData.summary.count}</p>
 											</div>
 											<div>
-												<p className="text-sm text-blue-600 dark:text-blue-300">Total Gross</p>
-												<p className="text-2xl font-bold text-blue-900 dark:text-blue-50">{formatCurrency(previewData.summary.total_gross)}</p>
+												<p className="text-sm text-gray-600 dark:text-gray-400">Total Gross</p>
+												<p className="text-2xl font-bold text-gray-950 dark:text-white">{formatCurrency(previewData.summary.total_gross)}</p>
 											</div>
 											<div>
-												<p className="text-sm text-blue-600 dark:text-blue-300">Total Net</p>
-												<p className="text-2xl font-bold text-blue-900 dark:text-blue-50">{formatCurrency(previewData.summary.total_net)}</p>
+												<p className="text-sm text-gray-600 dark:text-gray-400">Total Net</p>
+												<p className="text-2xl font-bold text-gray-950 dark:text-white">{formatCurrency(previewData.summary.total_net)}</p>
 											</div>
 										</div>
 									</div>
@@ -1649,7 +1620,7 @@ export default function PayslipApproval({
 							<button
 								onClick={handleConfirmBatchApproval}
 								disabled={isLoadingPreview || !previewData}
-								className="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
 							>
 								<CheckIcon className="size-4" />
 								Confirm Approval
@@ -1661,7 +1632,7 @@ export default function PayslipApproval({
 
 			{/* Batch Approval Progress Modal */}
 			{isBatchApproving && approvalProgress.total > 0 && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+				<div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm erp-modal-backdrop">
 					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-md w-full p-8">
 						<div className="text-center">
 							<div className="mx-auto w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-4">

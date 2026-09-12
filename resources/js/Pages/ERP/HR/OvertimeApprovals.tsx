@@ -1,4 +1,6 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useState, useEffect, useCallback } from "react";
+import { usePage } from "@inertiajs/react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
 
@@ -31,8 +33,6 @@ type OvertimeRequest = {
 type MetricCardProps = {
   title: string;
   value: number;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -75,18 +75,6 @@ const AlertIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -98,8 +86,6 @@ const EyeIcon: React.FC<{ className?: string }> = ({ className }) => (
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
@@ -118,20 +104,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -215,8 +191,11 @@ const transformOvertimeFromApi = (apiOvertime: any): OvertimeRequest => {
 };
 
 export function OvertimeRequests() {
-  const [overtimeRequestsState, setOvertimeRequestsState] = useState<OvertimeRequest[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { auth, initialOvertimeRequests } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const seededRequests = initialOvertimeRequests?.data?.map(transformOvertimeFromApi) ?? [];
+  const [overtimeRequestsState, setOvertimeRequestsState] = useState<OvertimeRequest[]>(seededRequests);
+  const [isLoading, setIsLoading] = useState(!ownerMode && !initialOvertimeRequests);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<OvertimeStatus | "">("");
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -242,6 +221,8 @@ export function OvertimeRequests() {
   const [paginationMeta, setPaginationMeta] = useState<any>(null);
 
   const fetchOvertimeRequests = useCallback(async () => {
+    if (ownerMode || initialOvertimeRequests) return;
+
     setIsLoading(true);
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
@@ -292,7 +273,7 @@ export function OvertimeRequests() {
     } finally {
       setIsLoading(false);
     }
-  }, [searchTerm, selectedStatus, currentPage, itemsPerPage]);
+  }, [searchTerm, selectedStatus, currentPage, itemsPerPage, ownerMode, initialOvertimeRequests]);
 
   // Fetch overtime requests from API
   useEffect(() => {
@@ -335,7 +316,7 @@ export function OvertimeRequests() {
   };
 
   const handleApprove = async (request: OvertimeRequest) => {
-    if (processingAction) return;
+    if (ownerMode || processingAction) return;
 
     const result = await Swal.fire({
       title: "Approve Overtime Request?",
@@ -408,6 +389,8 @@ export function OvertimeRequests() {
   };
 
   const handleReject = (request: OvertimeRequest) => {
+    if (ownerMode) return;
+
     setRequestToReject(request);
     setRejectionReason("");
     setOtherRejectionReason("");
@@ -415,7 +398,7 @@ export function OvertimeRequests() {
   };
 
   const handleConfirmReject = async () => {
-    if (processingAction) return;
+    if (ownerMode || processingAction) return;
 
     const finalRejectionReason =
       rejectionReason === "Other" ? otherRejectionReason.trim() : rejectionReason.trim();
@@ -486,6 +469,8 @@ export function OvertimeRequests() {
 
   // Fetch employees when assign modal opens
   useEffect(() => {
+    if (ownerMode) return;
+
     if (isAssignModalOpen && employees.length === 0) {
       const fetchEmployees = async () => {
         try {
@@ -521,9 +506,11 @@ export function OvertimeRequests() {
       };
       fetchEmployees();
     }
-  }, [isAssignModalOpen, employees.length]);
+  }, [isAssignModalOpen, employees.length, ownerMode]);
 
   const handleAssignOvertime = async () => {
+    if (ownerMode) return;
+
     if (!assignData.employee_id || !assignData.overtime_date || !assignData.start_time || 
         !assignData.end_time || !assignData.reason.trim()) {
       Swal.fire({
@@ -616,20 +603,19 @@ export function OvertimeRequests() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Overtime Requests</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">Manage and review employee overtime requests</p>
-        </div>
-        <button
-          onClick={() => setIsAssignModalOpen(true)}
-          className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors duration-200 shadow-md hover:shadow-lg flex items-center gap-2"
-        >
-          <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          Assign Overtime
-        </button>
+      <div className="flex justify-end">
+        <h1 className="sr-only">Overtime Requests</h1>
+        {!ownerMode && (
+          <button
+            onClick={() => setIsAssignModalOpen(true)}
+            className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:focus-visible:ring-white dark:focus-visible:ring-offset-gray-950"
+          >
+            <svg className="size-5" fill="none" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            Assign Overtime
+          </button>
+        )}
       </div>
 
       {/* Metrics */}
@@ -637,8 +623,6 @@ export function OvertimeRequests() {
         <MetricCard
           title="Total Requests"
           value={stats.total}
-          change={12}
-          changeType="increase"
           icon={CalendarIcon}
           color="info"
           description="Overtime requests this period"
@@ -646,8 +630,6 @@ export function OvertimeRequests() {
         <MetricCard
           title="Pending"
           value={stats.pending}
-          change={5}
-          changeType="increase"
           icon={ClockIcon}
           color="warning"
           description="Awaiting approval"
@@ -655,8 +637,6 @@ export function OvertimeRequests() {
         <MetricCard
           title="Approved"
           value={stats.approved}
-          change={8}
-          changeType="increase"
           icon={CheckCircleIcon}
           color="success"
           description="Successfully approved"
@@ -664,8 +644,6 @@ export function OvertimeRequests() {
         <MetricCard
           title="Rejected"
           value={stats.rejected}
-          change={2}
-          changeType="decrease"
           icon={AlertIcon}
           color="error"
           description="Rejected requests"
@@ -696,7 +674,7 @@ export function OvertimeRequests() {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Status
             </label>
-            <select
+            <MonochromeSelect
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value as OvertimeStatus | "")}
               className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"
@@ -705,7 +683,7 @@ export function OvertimeRequests() {
               <option value="pending">Pending</option>
               <option value="approved">Approved</option>
               <option value="rejected">Rejected</option>
-            </select>
+            </MonochromeSelect>
           </div>
         </div>
       </div>
@@ -748,8 +726,8 @@ export function OvertimeRequests() {
                   <td className="px-6 py-4">
                     <div className="flex items-center space-x-3">
                       <div className="flex-shrink-0 h-10 w-10">
-                        <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                          <span className="text-blue-600 dark:text-blue-300 font-medium text-sm">
+                        <div className="h-10 w-10 rounded-full bg-gray-950 flex items-center justify-center">
+                          <span className="text-white font-medium text-sm">
                             {request.employeeName
                               .split(" ")
                               .map((n) => n[0])
@@ -897,7 +875,7 @@ export function OvertimeRequests() {
       {/* View Details Modal */}
       {isViewModalOpen && selectedRequest && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto">
               {/* Header with Status */}
               <div className="sticky top-0 border-b border-gray-200 dark:border-gray-700 px-6 py-5 flex justify-between items-start">
@@ -925,8 +903,8 @@ export function OvertimeRequests() {
                   <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-5">
                     <div className="flex items-start gap-4">
                       <div className="flex-shrink-0">
-                        <div className="h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                          <span className="text-blue-600 dark:text-blue-300 font-bold text-sm">
+                        <div className="h-12 w-12 rounded-full bg-gray-950 flex items-center justify-center">
+                          <span className="text-white font-bold text-sm">
                             {selectedRequest.employeeName
                               .split(" ")
                               .map((n) => n[0])
@@ -1017,7 +995,7 @@ export function OvertimeRequests() {
                   {/* Modal Actions */}
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                     <div className="flex justify-end gap-3">
-                      {selectedRequest.status === "pending" && (
+                      {!ownerMode && selectedRequest.status === "pending" && (
                         <>
                           <button
                             onClick={() => handleApprove(selectedRequest)}
@@ -1057,7 +1035,7 @@ export function OvertimeRequests() {
       {/* Reject Overtime Request Modal */}
       {isRejectModalOpen && requestToReject && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-xl w-full">
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Reject Overtime Request</h3>
@@ -1080,7 +1058,7 @@ export function OvertimeRequests() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Reason for Rejection
                   </label>
-                  <select
+                  <MonochromeSelect
                     value={rejectionReason}
                     onChange={(e) => setRejectionReason(e.target.value)}
                     className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -1091,7 +1069,7 @@ export function OvertimeRequests() {
                     <option value="Insufficient Justification">Insufficient Justification</option>
                     <option value="Duplicate Request">Duplicate Request</option>
                     <option value="Other">Other</option>
-                  </select>
+                  </MonochromeSelect>
 
                   {rejectionReason === "Other" && (
                     <textarea
@@ -1167,7 +1145,7 @@ export function OvertimeRequests() {
       {/* Assign Overtime Modal */}
       {isAssignModalOpen && (
         <ModalPortal>
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
                 <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Assign Overtime to Employee</h3>
@@ -1178,7 +1156,7 @@ export function OvertimeRequests() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Employee <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={assignData.employee_id}
                       onChange={(e) => setAssignData({ ...assignData, employee_id: e.target.value })}
                       className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -1196,7 +1174,7 @@ export function OvertimeRequests() {
                           </option>
                         );
                       })}
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   {/* Overtime Date */}
@@ -1302,7 +1280,7 @@ export function OvertimeRequests() {
                   </button>
                   <button
                     onClick={handleAssignOvertime}
-                    className="px-6 py-2.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                    className="px-6 py-2.5 text-sm font-medium text-white bg-black hover:bg-gray-800 rounded-lg transition-colors"
                   >
                     Assign Overtime
                   </button>

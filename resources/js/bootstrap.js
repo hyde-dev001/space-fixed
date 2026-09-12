@@ -51,6 +51,7 @@ if (typeof window !== 'undefined') {
             if (!runtimeZiggy?.routes?.[trimmed]) {
                 const fallbackNamedRoutes = {
                     'password.request': '/forgot-password',
+                    'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
                     'admin.suspension-appeals': '/admin/appeals',
                 };
 

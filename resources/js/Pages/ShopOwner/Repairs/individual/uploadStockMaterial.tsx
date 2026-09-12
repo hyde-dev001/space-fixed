@@ -1,9 +1,10 @@
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayoutShopOwner from '../../../../layout/AppLayout_shopOwner';
+import AppLayoutERP from '../../../../layout/AppLayout_ERP';
 
 type MaterialItem = {
   id: number;
@@ -110,26 +111,11 @@ const LowStockIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 type MetricTone = 'blue' | 'indigo' | 'amber';
-type ChangeType = 'increase' | 'decrease';
 
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: ChangeType;
   description?: string;
   icon: ComponentType<{ className?: string }>;
   tone: MetricTone;
@@ -147,29 +133,17 @@ const metricToneStyles: Record<MetricTone, { gradient: string }> = {
   },
 };
 
-const MetricCard = ({ title, value, change, changeType, description, icon: Icon, tone }: MetricCardProps) => {
+const MetricCard = ({ title, value, description, icon: Icon, tone }: MetricCardProps) => {
   const palette = metricToneStyles[tone];
 
   return (
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:-translate-y-1 hover:border-gray-300 hover:shadow-xl dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-linear-to-br ${palette.gradient} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center">
           <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br ${palette.gradient} shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="size-7 text-white drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div
-              className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
-                changeType === 'decrease'
-                  ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-                  : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              }`}
-            >
-              {changeType === 'decrease' ? <ArrowDownIcon className="size-3" /> : <ArrowUpIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -182,6 +156,8 @@ const MetricCard = ({ title, value, change, changeType, description, icon: Icon,
 };
 
 export default function UploadStockMaterial() {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [materials, setMaterials] = useState<MaterialItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -213,15 +189,29 @@ export default function UploadStockMaterial() {
   const fetchMaterials = async (archived: boolean = showArchived) => {
     try {
       setLoading(true);
-      const response = await axios.get('/api/shop-owner/inventory/items', {
-        params: {
-          category: 'repair_materials',
-          per_page: 100,
-          ...(archived ? { archived: true } : {}),
-        },
-      });
+      const baseParams = {
+        category: 'repair_materials',
+        per_page: 100,
+        ...(archived ? { archived: true } : {}),
+      };
+      const fetchPage = async (page: number) => {
+        const response = await axios.get('/api/shop-owner/inventory/items', {
+          params: { ...baseParams, page },
+        });
 
-      setMaterials(response.data?.data ?? []);
+        return response.data ?? {};
+      };
+
+      const firstPage = await fetchPage(1);
+      const allMaterials = [...(firstPage.data ?? [])];
+      const lastPage = Math.max(1, Number(firstPage.last_page ?? 1));
+
+      for (let page = 2; page <= lastPage; page += 1) {
+        const nextPage = await fetchPage(page);
+        allMaterials.push(...(nextPage.data ?? []));
+      }
+
+      setMaterials(allMaterials);
     } catch (error) {
       console.error('Failed to load repair materials', error);
       Swal.fire({
@@ -402,16 +392,13 @@ export default function UploadStockMaterial() {
   };
 
   return (
-    <AppLayoutShopOwner hideHeader={isModalOpen}>
+    <Layout hideHeader={isModalOpen}>
       <Head title="Upload Stock Materials" />
 
       <div className="space-y-6 p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Upload Stock Materials</h1>
-            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-              Add and manage repair material inventory for individual shop operations.
-            </p>
+            <h1 className="sr-only">Upload Stock Materials</h1>
           </div>
 
           <div className="flex items-center gap-3">
@@ -438,8 +425,6 @@ export default function UploadStockMaterial() {
           <MetricCard
             title="Total Materials"
             value={metrics.totalItems}
-            change={12}
-            changeType="increase"
             description={showArchived ? 'Archived materials in view' : 'Active materials in inventory'}
             icon={MaterialsIcon}
             tone="blue"
@@ -447,8 +432,6 @@ export default function UploadStockMaterial() {
           <MetricCard
             title="Total Quantity"
             value={metrics.totalQuantity.toLocaleString()}
-            change={8}
-            changeType="increase"
             description="Combined quantity across listed materials"
             icon={QuantityIcon}
             tone="indigo"
@@ -456,8 +439,6 @@ export default function UploadStockMaterial() {
           <MetricCard
             title="Low Stock Items"
             value={metrics.lowStockCount}
-            change={15}
-            changeType="increase"
             description="Items at or below reorder level"
             icon={LowStockIcon}
             tone="amber"
@@ -555,7 +536,7 @@ export default function UploadStockMaterial() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-999999 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm erp-modal-backdrop">
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white shadow-2xl dark:bg-gray-900">
             <div className="border-b border-gray-200 p-6 dark:border-gray-800">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -637,6 +618,6 @@ export default function UploadStockMaterial() {
           </div>
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

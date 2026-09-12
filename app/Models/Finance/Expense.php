@@ -18,14 +18,13 @@ class Expense extends Model
     protected $fillable = [
         'reference',
         'date',
+        'due_date',
         'category',
         'vendor',
         'description',
         'amount',
         'tax_amount',
         'status',
-        'expense_account_id',
-        'payment_account_id',
         'approved_by',
         'approved_at',
         'approval_notes',
@@ -34,15 +33,17 @@ class Expense extends Model
         'receipt_mime_type',
         'receipt_size',
         'shop_id',
+        'created_by',
         'purchase_order_id',
+        'procurement_receipt_id',
         'meta',
         'approval_id',
         'current_approval_level',
-        'approval_workflow_version',
     ];
 
     protected $casts = [
         'date' => 'date',
+        'due_date' => 'date',
         'amount' => 'decimal:2',
         'tax_amount' => 'decimal:2',
         'approved_at' => 'datetime',
@@ -54,12 +55,32 @@ class Expense extends Model
         return $this->belongsTo(\App\Models\SupplierOrder::class, 'purchase_order_id');
     }
 
+    public function procurementReceipt()
+    {
+        return $this->belongsTo(\App\Models\PurchaseOrderReceipt::class, 'procurement_receipt_id');
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(\App\Models\User::class, 'created_by');
+    }
+
     /**
      * Get the approval workflow for this expense (polymorphic)
      */
     public function approval()
     {
         return $this->morphOne(\App\Models\Approval::class, 'approvable');
+    }
+
+    public function settlements()
+    {
+        return $this->hasMany(ExpenseSettlement::class, 'expense_id');
+    }
+
+    public function validSettledAmount(): string
+    {
+        return ExpenseSettlement::validSettledAmountForExpense((int) $this->getKey());
     }
 
     /**

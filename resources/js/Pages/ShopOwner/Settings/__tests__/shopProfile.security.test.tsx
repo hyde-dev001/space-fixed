@@ -46,5 +46,7 @@ describe("shop owner profile security card", () => {
     render(<ShopProfile />);
 
     expect(screen.getAllByText(/change password/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("At least 8 characters").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("One special character").length).toBeGreaterThan(0);
   });
 });

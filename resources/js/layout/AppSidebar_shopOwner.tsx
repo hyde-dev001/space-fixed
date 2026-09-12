@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
 import { route } from "ziggy-js";
 
@@ -12,13 +12,39 @@ import {
   BoxIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
+import type { ShopModuleKey } from "../types/shopModules";
+import { canRenderShopModule } from "../utils/shopModuleAccess";
+import { readCanonicalOwnerShell } from "./ownerShellMetadata";
 
 type NavItem = {
   name: string;
   icon: React.ReactNode;
   route?: string; // Changed from 'path' to 'route' to use Laravel route names
   path?: string;
-  subItems?: { name: string; route: string; pro?: boolean; new?: boolean }[];
+  moduleKey?: ShopModuleKey;
+  subItems?: { name: string; route: string; moduleKey?: ShopModuleKey; pro?: boolean; new?: boolean }[];
+};
+
+type OwnerErpPage = {
+  label: string;
+  routeName: string;
+  url: string;
+  groupKey?: string | null;
+  groupLabel?: string | null;
+  groupOrder?: number | null;
+  pageOrder?: number | null;
+};
+
+type OwnerErpModule = {
+  key: string;
+  slug: string;
+  label: string;
+  description?: string;
+  pages: OwnerErpPage[];
+};
+
+type AppSidebarShopOwnerProps = {
+  activeModule?: OwnerErpModule | null;
 };
 
 const navItems: NavItem[] = [
@@ -33,6 +59,25 @@ const navItems: NavItem[] = [
     name: "Dashboard",
     route: "shop-owner.dashboard",
     path: "/shop-owner/dashboard",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h11v10H3z"></path>
+        <path d="M14 10h4l3 3v4h-7z"></path>
+        <circle cx="7" cy="19" r="2"></circle>
+        <circle cx="17" cy="19" r="2"></circle>
+      </svg>
+    ),
+    name: "Logistics",
+    route: "shop-owner.logistics.dashboard",
+    path: "/shop-owner/logistics",
+    moduleKey: "logistics",
+    subItems: [
+      { name: "Dashboard", route: "shop-owner.logistics.dashboard", moduleKey: "logistics" },
+      { name: "Shipments", route: "shop-owner.logistics.shipments", moduleKey: "logistics" },
+      { name: "Riders", route: "shop-owner.logistics.riders", moduleKey: "logistics" },
+    ],
   },
   {
     icon: (
@@ -99,180 +144,170 @@ const approvalWorkflowItems: NavItem[] = [
         <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
       </svg>
     ),
-    name: "Approval Pages",
-    subItems: [
-      { name: "Refund Approval", route: "shop-owner.refund-approvals" },
-      { name: "Price Approvals", route: "shop-owner.price-approvals" },
-      { name: "Payslip Approval", route: "shop-owner.payslip-approvals" },
-      { name: "Salary Adjustment Approval", route: "shop-owner.salary-adjustment-approvals" },
-      { name: "Purchase Request Approval", route: "shop-owner.purchase-request-approval" },
-      { name: "Expense Approvals", route: "shop-owner.expense-approvals" },
-      { name: "Repair Reject Approval", route: "shop-owner.repair-reject-approval" },
-    ],
+    name: "Approval Center",
+    path: "/shop-owner/action-center",
   },
 ];
 
-const productManagementItems: NavItem[] = [
+const ownerArticlesItem: NavItem = {
+  icon: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 4h10l4 4v12H5z" />
+      <path d="M15 4v4h4" />
+      <path d="M8 13h8M8 17h6" />
+    </svg>
+  ),
+  name: "Articles",
+  path: "/shop-owner/erp/articles",
+};
+
+const individualOperationsItems: NavItem[] = [
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
-        <path d="M6 6h15l-1.5 9h-12z" />
-        <circle cx="9" cy="19" r="1.5" />
-        <circle cx="18" cy="19" r="1.5" />
-        <path d="M6 6L4 2" />
-      </svg>
-    ),
+    icon: <CalenderIcon className="w-5 h-5" />,
     name: "Job Orders Retail",
     route: "shop-owner.job-orders-retail",
     path: "/shop-owner/job-orders-retail",
+    moduleKey: "retail_operations",
   },
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-        <line x1="16" y1="2" x2="16" y2="6"></line>
-        <line x1="8" y1="2" x2="8" y2="6"></line>
-        <line x1="3" y1="10" x2="21" y2="10"></line>
-      </svg>
-    ),
+    icon: <CalenderIcon className="w-5 h-5" />,
     name: "Job Orders Repair",
     route: "shop-owner.job-orders-repair",
     path: "/shop-owner/job-orders-repair",
+    moduleKey: "repair_operations",
   },
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M9 12h6M9 16h6M9 8h6" />
-        <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
-        <path d="M4 12h1M19 12h1" />
-      </svg>
-    ),
+    icon: <CheckLineIcon className="w-5 h-5" />,
     name: "Warranty Queue",
     route: "shop-owner.warranty-queue",
     path: "/shop-owner/warranty-queue",
+    moduleKey: "repair_operations",
   },
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
-        <path d="M3 15h4.5l2.5-3.5h3.5l2.2 2.2c.8.8 1.9 1.3 3 1.3H21a1 1 0 0 1 1 1v1a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1a2 2 0 0 1 1-1z" />
-        <path d="M8 15l1.5 1.5" />
-        <path d="M11 15l1.5 1.5" />
-      </svg>
-    ),
+    icon: <BoxIcon className="w-5 h-5" />,
     name: "Product Management",
     route: "shop-owner.product-uploder",
     path: "/shop-owner/product-uploder",
+    moduleKey: "retail_operations",
   },
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-        <path d="M2 10h20"></path>
-        <path d="M6 14h2"></path>
-      </svg>
-    ),
+    icon: <BoxIcon className="w-5 h-5" />,
     name: "Cashier",
     route: "shop-owner.point-of-sale",
     path: "/shop-owner/point-of-sale",
+    moduleKey: "retail_operations",
   },
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9"></path>
-        <path d="M15 13l-3-3m0 0l-3 3m3-3v12"></path>
-      </svg>
-    ),
+    icon: <BoxIcon className="w-5 h-5" />,
     name: "Services Management",
     route: "shop-owner.upload-services",
     path: "/shop-owner/upload-services",
+    moduleKey: "repair_operations",
   },
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 3v18"></path>
-        <path d="M3 12h18"></path>
-        <rect x="4" y="4" width="16" height="16" rx="2"></rect>
-      </svg>
-    ),
+    icon: <BoxIcon className="w-5 h-5" />,
     name: "Stock Management",
     route: "shop-owner.upload-stock-materials",
     path: "/shop-owner/upload-stock-materials",
-  },
-  {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-      </svg>
-    ),
-    name: "Refund Approval",
-    route: "shop-owner.refund-approvals",
-    path: "/shop-owner/refund-approvals",
+    moduleKey: "repair_operations",
   },
 ];
 
-const customerManagementItems: NavItem[] = [
+const individualCustomerManagementItems: NavItem[] = [
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M8 10h8m-8 4h5" />
-        <path d="M21 12c0 4.418-4.03 8-9 8a9.97 9.97 0 01-4.39-.99L3 20l1.33-3.57A7.95 7.95 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-      </svg>
-    ),
+    icon: <CheckLineIcon className="w-5 h-5" />,
     name: "Customer Support",
     route: "shop-owner.customer-support",
     path: "/shop-owner/customer-support",
+    moduleKey: "crm",
   },
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-        <path d="M14 2v6h6" />
-        <path d="M9 15h6" />
-        <path d="M9 11h6" />
-      </svg>
-    ),
+    icon: <CheckLineIcon className="w-5 h-5" />,
     name: "Repair Support",
     route: "shop-owner.repair-support",
     path: "/shop-owner/repair-support",
+    moduleKey: "repair_operations",
   },
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
-        <circle cx="9" cy="7" r="4" />
-        <path d="M23 21v-2a4 4 0 00-3-3.87" />
-        <path d="M16 3.13a4 4 0 010 7.75" />
-      </svg>
-    ),
+    icon: <UserCircleIcon className="w-5 h-5" />,
     name: "Customers",
     route: "shop-owner.customers",
     path: "/shop-owner/customers",
+    moduleKey: "crm",
   },
   {
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 17l-5 3 1.5-5.5L4 10.5l5.6-.5L12 5l2.4 5 5.6.5-4.5 4 1.5 5.5z" />
-      </svg>
-    ),
+    icon: <CheckLineIcon className="w-5 h-5" />,
     name: "Customer Reviews",
     route: "shop-owner.customer-reviews",
     path: "/shop-owner/customer-reviews",
+    moduleKey: "crm",
   },
 ];
 
-type MenuType = "main" | "approval" | "product" | "customer";
+type MenuType = "main" | "approval" | "operations" | "customer";
 const SIDEBAR_PREFETCH: Array<"hover"> = ["hover"];
 const SIDEBAR_PREFETCH_CACHE = "30s";
 
-const AppSidebar_shopOwner: React.FC = () => {
+const normalizePath = (value: string): string => value
+  .replace(/^https?:\/\/[^/]+/i, "")
+  .split("?")[0]
+  .replace(/\/$/, "") || "/";
+
+const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule: activeModuleProp }) => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu } = useSidebar();
   const { url, props } = usePage();
   const auth = (props as any).auth;
+  const canonicalOwnerShell = readCanonicalOwnerShell((props as any)?.ownerShell);
+  const actionCenterAvailable = canonicalOwnerShell === null
+    ? (props as any)?.ownerShell === undefined
+    : canonicalOwnerShell.groups.some((group) => group.items.some((item) => (
+      item.key === "action-center" && item.available
+    )));
   const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || (props as any)?.shop_owner;
-  const isIndividualAccount = shopOwner?.registration_type?.toLowerCase() === "individual";
+  const authModuleStates = auth?.shopModules;
+  const sharedModuleStates = (props as any)?.moduleStates;
+  const currentPath = normalizePath(url);
+  const isModuleScopedErpRoute = /^\/shop-owner\/erp\//i.test(currentPath);
+  const activeModule = isModuleScopedErpRoute
+    ? activeModuleProp ?? ((props as any)?.activeModule as OwnerErpModule | null | undefined) ?? null
+    : null;
+  const shopModules = authModuleStates && typeof authModuleStates === "object" && Object.keys(authModuleStates).length > 0
+    ? authModuleStates
+    : sharedModuleStates;
+  const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled
+    ?? (props as any)?.shopModuleEnforcementEnabled
+    ?? Boolean(shopModules);
+  const erpUrls = (props as any)?.erpUrls as { portal?: string | null; workspace?: string | null } | undefined;
+  const ownerPortalUrl = typeof erpUrls?.portal === "string"
+    ? erpUrls.portal
+    : route("shop-owner.dashboard");
+  const isCompanyAccount = shopOwner?.is_company === true
+    || shopOwner?.registration_type?.toLowerCase() === "company";
+  const isIndividualAccount = shopOwner?.registration_type?.toLowerCase() === "individual"
+    && !isCompanyAccount;
+  const ownerWorkspaceUrl = isCompanyAccount && typeof erpUrls?.workspace === "string"
+    ? erpUrls.workspace
+    : null;
+  const mainMenuItems = useMemo<NavItem[]>(() => ownerWorkspaceUrl
+    ? [
+        navItems[0],
+        {
+          icon: (
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+          ),
+          name: "ERP Workspace",
+          path: ownerWorkspaceUrl,
+        },
+        ...navItems.slice(1),
+      ]
+    : navItems, [ownerWorkspaceUrl]);
   const rawBusinessType = shopOwner?.business_type?.toLowerCase();
-  // Normalize business type - handle "both (retail & repair)" and "both"
-  const businessType = rawBusinessType?.includes('both') ? 'both' : rawBusinessType;
+  const businessType = rawBusinessType?.includes("both") ? "both" : rawBusinessType;
   const individualAccountSectionLabel =
     businessType === "repair"
       ? "Repair"
@@ -281,47 +316,96 @@ const AppSidebar_shopOwner: React.FC = () => {
         : businessType === "both"
           ? "Repair & Sales"
           : "Sales";
-  // Business accounts only see approval items, so always show "Approval Workflow"
   const businessAccountSectionLabel = "Approval Workflow";
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
     {}
   );
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [openModuleGroup, setOpenModuleGroup] = useState<string | null>(null);
+  const [pendingActionCount, setPendingActionCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!actionCenterAvailable || typeof fetch !== "function") {
+      return;
+    }
+
+    let active = true;
+    fetch("/api/shop-owner/action-center/summary", {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((payload: unknown) => {
+        if (!active || typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+          return;
+        }
+
+        const count = (payload as { pending_count?: unknown }).pending_count;
+        setPendingActionCount(
+          typeof count === "number" && Number.isSafeInteger(count) && count > 0
+            ? count
+            : null,
+        );
+      })
+      .catch(() => {
+        if (active) {
+          setPendingActionCount(null);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [actionCenterAvailable]);
+
+  const visibleApprovalWorkflowItems = actionCenterAvailable ? approvalWorkflowItems : [];
 
   // Check if menu item should be visible based on shop owner's registration and business type
+  const isModuleVisible = useCallback((menuItem: { moduleKey?: ShopModuleKey }) => {
+    return canRenderShopModule(shopModules, menuItem.moduleKey, moduleEnforcementEnabled);
+  }, [shopModules, moduleEnforcementEnabled]);
+
+  const isSubItemVisible = useCallback((subItem: { route: string; moduleKey?: ShopModuleKey }) => {
+    return isModuleVisible(subItem);
+  }, [isModuleVisible]);
+
   const isMenuItemVisible = useCallback((menuItem: NavItem) => {
+    if (!isModuleVisible(menuItem)) {
+      return false;
+    }
+
     if (!shopOwner) return true; // Show all if no shop owner data
 
-    const registrationType = shopOwner.registration_type?.toLowerCase();
     const rawBusinessType = shopOwner.business_type?.toLowerCase();
-    // Normalize business type - handle "both (retail & repair)" and "both"
     const itemBusinessType = rawBusinessType?.includes('both') ? 'both' : rawBusinessType;
-    const isCompany = shopOwner.is_company === true;
+    const isCompany = shopOwner.is_company === true
+      || shopOwner.registration_type?.toLowerCase() === 'company';
     const canManageStaff = shopOwner.can_manage_staff === true;
 
-    // DSS Insights - visible to ALL individual accounts (repair, retail, both) AND company accounts
     if (menuItem.route === 'shop-owner.dss-insights') {
       return true;
     }
 
-    // Vouchers & Discount - visible to retail-capable shops only
     if (menuItem.route === 'shop-owner.vouchers-discount') {
       return itemBusinessType === 'retail' || itemBusinessType === 'both';
     }
 
-    // Repair Reject Approval - business registration + repair-capable shops only
-    if (menuItem.route === 'shop-owner.repair-reject-approval') {
-      return (isCompany || canManageStaff) && (itemBusinessType === 'repair' || itemBusinessType === 'both');
+    if (menuItem.route === 'shop-owner.logistics.dashboard') {
+      return !isCompany && !canManageStaff;
     }
 
-    // Business-only features (require Business registration)
+    if (menuItem.moduleKey === 'retail_operations') {
+      return itemBusinessType === 'retail' || itemBusinessType === 'both';
+    }
+
+    if (menuItem.moduleKey === 'repair_operations') {
+      return itemBusinessType === 'repair' || itemBusinessType === 'both';
+    }
+
     const companyOnlyRoutes = [
       'shopOwner.user-access-control',
       'shop-owner.audit-logs',
-      'shop-owner.price-approvals',
-      'shop-owner.salary-adjustment-approvals',
-      'shop-owner.purchase-request-approval',
       'shopOwner.suspend-accounts'
     ];
 
@@ -329,64 +413,37 @@ const AppSidebar_shopOwner: React.FC = () => {
       return isCompany || canManageStaff;
     }
 
-    // Operational routes - only visible to individual accounts, NOT business accounts
-    // Business accounts have staff to handle these tasks
-    const operationalRoutes = [
-      'shop-owner.job-orders-retail',
-      'shop-owner.job-orders-repair',
+    const individualOnlyOperationalRoutes = [
       'shop-owner.warranty-queue',
-      'shop-owner.product-uploder',
-      'shop-owner.upload-services',
       'shop-owner.upload-stock-materials',
     ];
 
-    if (menuItem.route && operationalRoutes.includes(menuItem.route)) {
-      // Hide from business accounts - they manage staff who do these tasks
-      if (isCompany || canManageStaff) {
-        return false;
-      }
-
-      // For individual accounts, show based on business type
-      const retailRoutes = ['shop-owner.job-orders-retail', 'shop-owner.product-uploder'];
-      const repairRoutes = ['shop-owner.job-orders-repair', 'shop-owner.warranty-queue', 'shop-owner.upload-services', 'shop-owner.upload-stock-materials'];
-
-      if (retailRoutes.includes(menuItem.route)) {
-        return itemBusinessType === 'retail' || itemBusinessType === 'both';
-      }
-
-      if (repairRoutes.includes(menuItem.route)) {
-        return itemBusinessType === 'repair' || itemBusinessType === 'both';
-      }
+    if (menuItem.route && individualOnlyOperationalRoutes.includes(menuItem.route)) {
+      return !isCompany && !canManageStaff;
     }
 
-    // Business type specific support/management routes
-    // Business accounts should not see support pages in the sidebar
     if (menuItem.route === 'shop-owner.customer-support') {
-      if (registrationType === 'company') {
-        return false;
-      }
-      return itemBusinessType === 'retail' || itemBusinessType === 'both';
+      return !isCompany && (itemBusinessType === 'retail' || itemBusinessType === 'both');
     }
 
-    // Business accounts should not see support pages in the sidebar
     if (menuItem.route === 'shop-owner.repair-support') {
-      if (registrationType === 'company') {
-        return false;
-      }
-      return itemBusinessType === 'repair' || itemBusinessType === 'both';
+      return !isCompany && (itemBusinessType === 'repair' || itemBusinessType === 'both');
     }
 
-    // All other items are visible to everyone
     return true;
-  }, [shopOwner]);
+  }, [isModuleVisible, shopOwner]);
+
+  const hasVisibleMenuItems = useCallback((items: NavItem[]) => (
+    items.some((item) => (
+      isMenuItemVisible(item)
+      && (!item.subItems || item.subItems.some(isSubItemVisible))
+    ))
+  ), [isMenuItemVisible, isSubItemVisible]);
 
   // Check if route is active using Inertia's route() helper
   const isActive = useCallback(
     (routeName: string) => {
       try {
-        if (routeName === "shop-owner.repair-reject-approval" && url.startsWith("/shop-owner/history-rejection")) {
-          return true;
-        }
         // Prefer Ziggy's router check when available: route() -> Router.current(name)
         try {
           if (typeof route === "function") {
@@ -411,7 +468,11 @@ const AppSidebar_shopOwner: React.FC = () => {
   const isPathActive = useCallback(
     (path?: string) => {
       if (!path) return false;
-      return url === path || url.startsWith(path);
+
+      const currentPath = normalizePath(url);
+      const targetPath = normalizePath(path);
+
+      return currentPath === targetPath || currentPath.startsWith(`${targetPath}/`);
     },
     [url]
   );
@@ -424,18 +485,178 @@ const AppSidebar_shopOwner: React.FC = () => {
       return path;
     }
   }, []);
+
+  const isScopedPageActive = useCallback((pageUrl: string) => {
+    const currentPath = normalizePath(url);
+    const pagePath = normalizePath(pageUrl);
+
+    return currentPath === pagePath || currentPath.startsWith(`${pagePath}/`);
+  }, [url]);
+
+  const scopedModuleNavigation = useMemo(() => {
+    const directPages: OwnerErpPage[] = [];
+    const groups = new Map<string, {
+      key: string;
+      label: string;
+      order: number;
+      pages: OwnerErpPage[];
+    }>();
+
+    activeModule?.pages.forEach((page) => {
+      if (!page.groupKey) {
+        directPages.push(page);
+        return;
+      }
+
+      const existing = groups.get(page.groupKey);
+      if (existing) {
+        existing.pages.push(page);
+        return;
+      }
+
+      groups.set(page.groupKey, {
+        key: page.groupKey,
+        label: page.groupLabel || page.groupKey,
+        order: page.groupOrder ?? Number.MAX_SAFE_INTEGER,
+        pages: [page],
+      });
+    });
+
+    const sortPages = (pages: OwnerErpPage[]) => pages.sort((left, right) => (
+      (left.pageOrder ?? Number.MAX_SAFE_INTEGER) - (right.pageOrder ?? Number.MAX_SAFE_INTEGER)
+    ));
+
+    sortPages(directPages);
+    const groupedPages = Array.from(groups.values())
+      .map((group) => ({ ...group, pages: sortPages(group.pages) }))
+      .sort((left, right) => left.order - right.order);
+
+    return { directPages, groupedPages };
+  }, [activeModule]);
+
+  useEffect(() => {
+    const activeGroup = scopedModuleNavigation.groupedPages.find((group) => (
+      group.pages.some((page) => isScopedPageActive(page.url))
+    ));
+
+    setOpenModuleGroup(activeGroup?.key ?? null);
+  }, [isScopedPageActive, scopedModuleNavigation]);
+
+  const renderScopedModuleItems = () => {
+    if (!activeModule) {
+      return null;
+    }
+
+    return (
+      <div>
+        <h2
+          className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+              ? "lg:justify-center"
+              : "justify-start"
+            }`}
+        >
+          {isExpanded || isHovered || isMobileOpen ? (
+            activeModule.label
+          ) : (
+            <HorizontaLDots className="size-6" />
+          )}
+        </h2>
+        <ul className="flex flex-col gap-4">
+          {scopedModuleNavigation.directPages.map((page) => {
+            const active = isScopedPageActive(page.url);
+
+            return (
+              <li key={page.routeName}>
+                <Link
+                  href={page.url}
+                  prefetch={SIDEBAR_PREFETCH}
+                  cacheFor={SIDEBAR_PREFETCH_CACHE}
+                  className={`menu-item group ${active ? "menu-item-active" : "menu-item-inactive"}`}
+                >
+                  <span className={`menu-item-icon-size w-6 h-6 ${active ? "menu-item-icon-active" : "menu-item-icon-inactive"}`}>
+                    <BoxIcon className="w-5 h-5" />
+                  </span>
+                  {(isExpanded || isHovered || isMobileOpen) && (
+                    <span className="menu-item-text">{page.label}</span>
+                  )}
+                </Link>
+              </li>
+            );
+          })}
+          {scopedModuleNavigation.groupedPages.map((group) => {
+            const isOpen = openModuleGroup === group.key;
+
+            return (
+              <li key={group.key}>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => setOpenModuleGroup((current) => current === group.key ? null : group.key)}
+                  className={`menu-item group ${isOpen ? "menu-item-active" : "menu-item-inactive"} cursor-pointer ${!isExpanded && !isHovered
+                      ? "lg:justify-center"
+                      : "lg:justify-start"
+                    }`}
+                >
+                  <span className={`menu-item-icon-size w-6 h-6 ${isOpen ? "menu-item-icon-active" : "menu-item-icon-inactive"}`}>
+                    <BoxIcon className="w-5 h-5" />
+                  </span>
+                  {(isExpanded || isHovered || isMobileOpen) && (
+                    <span className="menu-item-text">{group.label}</span>
+                  )}
+                  {(isExpanded || isHovered || isMobileOpen) && (
+                    <svg
+                      className={`ml-auto w-5 h-5 transition-transform duration-200 ${isOpen ? "rotate-180 text-brand-500" : ""}`}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M6 9l6 6 6-6" />
+                    </svg>
+                  )}
+                </button>
+                {isOpen && (isExpanded || isHovered || isMobileOpen) && (
+                  <ul className="mt-2 space-y-1 ml-9">
+                    {group.pages.map((page) => {
+                      const active = isScopedPageActive(page.url);
+
+                      return (
+                        <li key={page.routeName}>
+                          <Link
+                            href={page.url}
+                            prefetch={SIDEBAR_PREFETCH}
+                            cacheFor={SIDEBAR_PREFETCH_CACHE}
+                            className={`menu-dropdown-item ${active ? "menu-dropdown-item-active" : "menu-dropdown-item-inactive"}`}
+                          >
+                            {page.label}
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    );
+  };
   useEffect(() => {
     let submenuMatched = false;
     let matchedKey: string | null = null;
 
-    ["main", "approval", "product", "customer"].forEach((menuType) => {
+    (["main", "approval", "operations", "customer"] as const).forEach((menuType) => {
       const items = menuType === "main"
-        ? navItems
+        ? mainMenuItems
         : menuType === "approval"
-          ? approvalWorkflowItems
-          : menuType === "product"
-            ? productManagementItems
-            : customerManagementItems;
+          ? visibleApprovalWorkflowItems
+          : menuType === "operations"
+            ? individualOperationsItems
+            : individualCustomerManagementItems;
       items.forEach((nav, index) => {
         if (nav.subItems) {
           nav.subItems.forEach((subItem) => {
@@ -453,7 +674,7 @@ const AppSidebar_shopOwner: React.FC = () => {
     if (submenuMatched && matchedKey && openSubmenu !== matchedKey) {
       toggleSubmenu(matchedKey);
     }
-  }, [url, isActive]);
+  }, [url, isActive, mainMenuItems, visibleApprovalWorkflowItems]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
@@ -474,8 +695,14 @@ const AppSidebar_shopOwner: React.FC = () => {
 
   const renderMenuItems = (items: NavItem[], menuType: MenuType) => (
     <ul className="flex flex-col gap-4">
-      {items.filter(isMenuItemVisible).map((nav, index) => (
-        <li key={nav.name}>
+      {items.filter((item) => (
+        isMenuItemVisible(item)
+        && (!item.subItems || item.subItems.some(isSubItemVisible))
+      )).map((nav, index) => {
+        const active = nav.route ? isActive(nav.route) : isPathActive(nav.path);
+
+        return (
+          <li key={nav.name}>
           {nav.subItems ? (
             <button
               onClick={() => handleSubmenuToggle(index, menuType)}
@@ -522,29 +749,31 @@ const AppSidebar_shopOwner: React.FC = () => {
                 href={getHref(nav.route, nav.path) || "#"}
                 prefetch={SIDEBAR_PREFETCH}
                 cacheFor={SIDEBAR_PREFETCH_CACHE}
-                className={`menu-item group ${nav.route
-                    ? isActive(nav.route)
-                      ? "menu-item-active"
-                      : "menu-item-inactive"
-                    : isPathActive(nav.path)
-                      ? "menu-item-active"
-                      : "menu-item-inactive"
+                aria-current={active ? "page" : undefined}
+                className={`menu-item group ${active
+                    ? "menu-item-active lg:border-l-2 lg:border-brand-500 lg:shadow-theme-sm"
+                    : "menu-item-inactive lg:border-l-2 lg:border-transparent"
                   }`}
               >
                 <span
-                  className={`menu-item-icon-size w-6 h-6 ${nav.route
-                      ? isActive(nav.route)
-                        ? "menu-item-icon-active"
-                        : "menu-item-icon-inactive"
-                      : isPathActive(nav.path)
-                        ? "menu-item-icon-active"
-                        : "menu-item-icon-inactive"
+                  className={`menu-item-icon-size w-6 h-6 ${active
+                      ? "menu-item-icon-active"
+                      : "menu-item-icon-inactive"
                     }`}
                 >
                   {nav.icon}
                 </span>
                 {(isExpanded || isHovered || isMobileOpen) && (
                   <span className="menu-item-text">{nav.name}</span>
+                )}
+                {nav.path === "/shop-owner/action-center" && pendingActionCount !== null && (
+                  <span
+                    role="status"
+                    aria-label={`${pendingActionCount} pending approvals`}
+                    className="ml-auto inline-flex min-w-6 items-center justify-center rounded-full bg-brand-100 px-1.5 py-0.5 text-xs font-semibold text-brand-700"
+                  >
+                    {pendingActionCount}
+                  </span>
                 )}
               </Link>
             )
@@ -563,23 +792,7 @@ const AppSidebar_shopOwner: React.FC = () => {
               }}
             >
               <ul className="mt-2 space-y-1 ml-9">
-                {nav.subItems.filter((subItem) => {
-                  if (subItem.route !== 'shop-owner.repair-reject-approval') {
-                    return true;
-                  }
-
-                  if (!shopOwner) {
-                    return false;
-                  }
-
-                  const rawSubItemBusinessType = String(shopOwner.business_type || '').toLowerCase();
-                  const subItemBusinessType = rawSubItemBusinessType.includes('both') ? 'both' : rawSubItemBusinessType;
-                  const isCompanySubItem = shopOwner.is_company === true || shopOwner.registration_type?.toLowerCase() === 'company';
-                  const canManageStaffSubItem = shopOwner.can_manage_staff === true;
-
-                  return (isCompanySubItem || canManageStaffSubItem)
-                    && (subItemBusinessType === 'repair' || subItemBusinessType === 'both');
-                }).map((subItem) => (
+                {nav.subItems.filter(isSubItemVisible).map((subItem) => (
                   <li key={subItem.name}>
                     <Link
                       href={route(subItem.route)}
@@ -619,14 +832,15 @@ const AppSidebar_shopOwner: React.FC = () => {
               </ul>
             </div>
           )}
-        </li>
-      ))}
+          </li>
+        );
+      })}
     </ul>
   );
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
+      className={`erp-sidebar fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
         ${isExpanded || isMobileOpen
           ? "w-[290px]"
           : isHovered
@@ -642,21 +856,21 @@ const AppSidebar_shopOwner: React.FC = () => {
         className={`py-8 flex ${!isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
           }`}
       >
-                <Link
-          href={route("landing")}
+        <Link
+          href={ownerPortalUrl}
           prefetch={SIDEBAR_PREFETCH}
           cacheFor={SIDEBAR_PREFETCH_CACHE}
           className="flex items-center gap-2 hover:scale-105 transition-transform duration-200"
         >
           {isExpanded || isHovered || isMobileOpen ? (
             <>
-              <ShootingStarIcon className="w-6 h-6 text-yellow-500 animate-pulse" />
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              <ShootingStarIcon className="w-6 h-6 text-gray-900 dark:text-gray-100" />
+              <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-gray-100">
                 SoleSpace
               </span>
             </>
           ) : (
-            <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="text-lg font-bold tracking-tight text-gray-900 dark:text-gray-100">
               SS
             </span>
           )}
@@ -678,41 +892,72 @@ const AppSidebar_shopOwner: React.FC = () => {
                   <HorizontaLDots className="size-6" />
                 )}
               </h2>
-              {renderMenuItems(navItems, "main")}
-            </div>
+              {activeModule ? (
+                <>
+                  {renderScopedModuleItems()}
+                </>
+              ) : (
+                <>
+                  {renderMenuItems(mainMenuItems, "main")}
 
-            <div>
-              <h2
-                className={`${isIndividualAccount ? "mb-1" : "mb-4"} text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
-                    ? "lg:justify-center"
-                    : "justify-start"
-                  }`}
-              >
-                {isExpanded || isHovered || isMobileOpen ? (
-                  isIndividualAccount ? individualAccountSectionLabel : businessAccountSectionLabel
-                ) : (
-                  <HorizontaLDots className="size-6" />
-                )}
-              </h2>
-              {renderMenuItems(isIndividualAccount ? productManagementItems : approvalWorkflowItems, isIndividualAccount ? "product" : "approval")}
-            </div>
+                  {isIndividualAccount && hasVisibleMenuItems(individualOperationsItems) && (
+                    <div>
+                      <h2
+                        className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                            ? "lg:justify-center"
+                            : "justify-start"
+                          }`}
+                      >
+                        {isExpanded || isHovered || isMobileOpen ? (
+                          individualAccountSectionLabel
+                        ) : (
+                          <HorizontaLDots className="size-6" />
+                        )}
+                      </h2>
+                      {renderMenuItems(individualOperationsItems, "operations")}
+                    </div>
+                  )}
 
-            <div>
-              <h2
-                className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
-                    ? "lg:justify-center"
-                    : "justify-start"
-                  }`}
-              >
-                {isExpanded || isHovered || isMobileOpen ? (
-                  "Customer Management"
-                ) : (
-                  <HorizontaLDots className="size-6" />
-                )}
-              </h2>
-              {renderMenuItems(customerManagementItems, "customer")}
+                  {isIndividualAccount && hasVisibleMenuItems(individualCustomerManagementItems) && (
+                    <div>
+                      <h2
+                        className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                            ? "lg:justify-center"
+                            : "justify-start"
+                          }`}
+                      >
+                        {isExpanded || isHovered || isMobileOpen ? (
+                          "Customer Management"
+                        ) : (
+                          <HorizontaLDots className="size-6" />
+                        )}
+                      </h2>
+                      {renderMenuItems(individualCustomerManagementItems, "customer")}
+                    </div>
+                  )}
+
+                  {hasVisibleMenuItems(visibleApprovalWorkflowItems) && (
+                    <div>
+                      <h2
+                        className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${!isExpanded && !isHovered
+                            ? "lg:justify-center"
+                            : "justify-start"
+                          }`}
+                      >
+                        {isExpanded || isHovered || isMobileOpen ? (
+                          businessAccountSectionLabel
+                        ) : (
+                          <HorizontaLDots className="size-6" />
+                        )}
+                      </h2>
+                      {renderMenuItems(visibleApprovalWorkflowItems, "approval")}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
+          {!activeModule && renderMenuItems([ownerArticlesItem], "main")}
         </nav>
 
       </div>

@@ -112,6 +112,7 @@ export const stockRequestApi = {
     async createFromInventory(data: {
         inventory_item_id: number;
         quantity_needed: number;
+        quantity_basis?: 'total' | 'per_size';
         priority: string;
         requested_size?: string;
         requested_color?: string;

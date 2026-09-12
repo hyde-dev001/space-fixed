@@ -13,15 +13,15 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
-use App\Http\Controllers\FinancialReportController;
-// use App\Http\Controllers\Api\Finance\BudgetController;
-use App\Http\Controllers\Api\PriceChangeRequestController;
+use App\Http\Controllers\UserSide\AddressGeocodingController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login', [AuthController::class, 'login']);
 Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:web');
+Route::get('/address/geocode', AddressGeocodingController::class)
+    ->middleware(['web', 'throttle:10,1,nominatim:']);
 
 /**
  * PayMongo Webhook - Must be accessible without authentication
@@ -32,7 +32,7 @@ Route::post('/webhooks/paymongo', [\App\Http\Controllers\PaymongoWebhookControll
  * PayMongo Proxy - Frontend calls this to avoid CORS
  * Uses payment links API (the one that was working for you last week)
  */
-Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy', function (Request $request) {
+Route::middleware(['web', 'auth:user', 'customer.identity.approved', 'throttle:10,1'])->post('/paymongo-proxy', function (Request $request) {
     try {
         $validated = $request->validate([
             'order_id' => ['nullable', 'integer', 'required_without:repair_request_id'],
@@ -42,6 +42,14 @@ Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy'
         $customer = Auth::guard('user')->user();
         if (!$customer) {
             return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        if (! empty($validated['repair_request_id'])) {
+            return app(\App\Http\Controllers\Api\RepairRequestController::class)->retryPaymentSession(
+                $request,
+                (int) $validated['repair_request_id'],
+                app(\App\Services\PaymentSettlementService::class),
+            );
         }
 
         // --- Resolve the correct PayMongo key ---
@@ -234,6 +242,7 @@ Route::middleware(['web', 'auth:user,shop_owner'])->prefix('repair-pos')->group(
     Route::get('/transactions', [\App\Http\Controllers\Api\RepairPosController::class, 'listTransactions']);
     Route::post('/payment-lines/{line}/verify', [\App\Http\Controllers\Api\RepairPosController::class, 'verifyPaymentLine']);
     Route::post('/refunds', [\App\Http\Controllers\Api\RepairPosController::class, 'requestRefund']);
+    Route::post('/refunds/manual-rejected-no-account', [\App\Http\Controllers\Api\RepairPosController::class, 'manualRefundRejectedNoAccount']);
     Route::get('/refunds/mine', [\App\Http\Controllers\Api\RepairPosController::class, 'listMyRefunds']);
     Route::get('/refunds/queue', [\App\Http\Controllers\Api\RepairPosController::class, 'listRefundQueue']);
     Route::post('/refunds/{refund}/approve', [\App\Http\Controllers\Api\RepairPosController::class, 'approveRefund']);
@@ -253,15 +262,6 @@ Route::middleware(['web', 'auth:user,shop_owner'])->prefix('retail-pos')->group(
     Route::post('/refunds/{refund}/execute', [\App\Http\Controllers\Api\RetailPosController::class, 'executeRefund']);
 });
 
-/**
- * Price Change Requests - Staff endpoints
- * MOVED TO web.php for proper session handling
- * Using web.php ensures session persistence across navigation
- */
-// Route::middleware(['web', 'auth:user'])->prefix('price-change-requests')->group(function () {
-//     Route::get('/my-pending', [PriceChangeRequestController::class, 'myPending']);
-// });
-
 // Debug endpoint to check current user (disabled in production)
 if (!app()->environment('production')) {
     Route::get('/debug/me', function () {
@@ -279,75 +279,19 @@ if (!app()->environment('production')) {
 }
 
 /**
- * Legacy Finance Routes (to be migrated to finance-api.php)
- * These are kept for backward compatibility
- * TODO: Move to finance-api.php and update frontend to use new endpoints
+ * Finance approval review routes.
+ *
+ * Invoice, expense, tax, receipt, and payment routes live exclusively in
+ * routes/finance-api.php. These approval endpoints remain here because the
+ * shared ApprovalController also serves non-expense approval records.
  */
-Route::prefix('finance/public')->group(function () {
-    // Route::get('budgets', [BudgetController::class, 'index']);
-});
-
-/**
- * Legacy Finance Module Routes (for backward compatibility)
- * Protected by session-based authentication and role-based middleware
- * TODO: Migrate frontend to use routes/finance-api.php
- */
-Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manager,Manager,Staff', 'shop.isolation'])->prefix('finance')->group(function () {
-    // Financial Reports
-    Route::prefix('reports')->group(function () {
-        Route::get('balance-sheet', [FinancialReportController::class, 'balanceSheet']);
-        Route::get('profit-loss', [FinancialReportController::class, 'profitLoss']);
-        Route::get('trial-balance', [FinancialReportController::class, 'trialBalance']);
-        Route::get('ar-aging', [FinancialReportController::class, 'arAging']);
-        Route::get('ap-aging', [FinancialReportController::class, 'apAging']);
-    });
-
-    // Invoices
-    Route::get('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'index']);
-    Route::post('invoices', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'store']);
-    Route::get('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'show']);
-    Route::put('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'update']);
-    Route::delete('invoices/{id}', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'destroy']);
-    Route::post('invoices/{id}/restore', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'restore']);
-    Route::post('invoices/{id}/send', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'send']);
-    Route::post('invoices/{id}/void', [\App\Http\Controllers\Api\Finance\InvoiceController::class, 'void']);
-
-    // Expenses
-    Route::get('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'index']);
-    Route::post('expenses', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'store']);
-    Route::get('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'show']);
-    Route::put('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'update']);
-    Route::delete('expenses/{id}', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'destroy']);
-    Route::post('expenses/{id}/restore', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'restore']);
-    Route::post('expenses/{id}/approve', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'approve'])->middleware('permission:approve-expenses');
-    Route::post('expenses/{id}/reject', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'reject'])->middleware('permission:approve-expenses');
-
-    // Expense Receipt Management
-    Route::post('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'uploadReceipt']);
-    Route::get('expenses/{id}/receipt/download', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'downloadReceipt']);
-    Route::delete('expenses/{id}/receipt', [\App\Http\Controllers\Api\Finance\ExpenseController::class, 'deleteReceipt']);
-
-    // Tax Rates Management
-    Route::get('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'index']);
-    Route::post('tax-rates', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'store']);
-    Route::get('tax-rates/effective', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'effective']);
-    Route::get('tax-rates/default', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'getDefault']);
-    Route::post('tax-rates/calculate', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'calculate']);
-    Route::get('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'show']);
-    Route::put('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'update']);
-    Route::delete('tax-rates/{id}', [\App\Http\Controllers\Api\Finance\TaxRateController::class, 'destroy']);
-
-    // Approval Workflow routes
-    Route::prefix('approvals')->group(function () {
+Route::middleware(['web', 'auth:user', 'shop.isolation'])->prefix('finance/approvals')->group(function () {
+    Route::middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
         Route::get('pending', [\App\Http\Controllers\ApprovalController::class, 'getPending']);
         Route::get('history', [\App\Http\Controllers\ApprovalController::class, 'getHistory']);
         Route::get('{id}/history', [\App\Http\Controllers\ApprovalController::class, 'getApprovalHistory']);
-
-        // Only users with approve-expenses permission can approve/reject transactions
-        Route::middleware('permission:approve-expenses')->group(function () {
-            Route::post('{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
-            Route::post('{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
-        });
+        Route::post('{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
+        Route::post('{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
     });
 });
 
@@ -355,7 +299,7 @@ Route::middleware(['web', 'auth:web,user', 'old_role:Finance Staff,Finance Manag
  * Checkout and Order Management
  */
 Route::post('/checkout/create-order', [\App\Http\Controllers\UserSide\CheckoutController::class, 'createOrder'])
-    ->middleware(['web', 'auth:user']);
+    ->middleware(['web', 'auth:user', 'customer.identity.approved']);
 Route::post('/orders/{id}/update-payment-link', [\App\Http\Controllers\UserSide\CheckoutController::class, 'updatePaymentLink'])
     ->middleware(['web', 'auth:user', 'throttle:20,1']);
 Route::post('/orders/{id}/verify-payment', [\App\Http\Controllers\UserSide\CheckoutController::class, 'verifyPayment'])
@@ -373,7 +317,8 @@ Route::post('/shipping/estimate', [\App\Http\Controllers\UserSide\ShippingEstima
  * Staff/Manager Customer Management API
  */
 Route::prefix('staff')->middleware(['web', 'auth:user'])->group(function () {
-    Route::get('/customers', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'index']);
+    Route::get('/customers', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'index'])
+        ->name('erp.staff.api.customers');
     Route::get('/customers/stats', [\App\Http\Controllers\Api\Staff\CustomerController::class, 'stats']);
 });
 
@@ -413,8 +358,10 @@ Route::prefix('crm/conversations')->middleware(['web', 'auth:user', 'permission:
  * CRM Customer Routes - Manage customer profiles, history and staff notes
  */
 Route::prefix('crm/customers')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
-    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'index']);
-    Route::get('/{id}',              [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'show']);
+    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'index'])
+        ->name('crm.api.customers.index');
+    Route::get('/{id}',              [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'show'])
+        ->name('crm.api.customers.show');
     Route::put('/{id}',              [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'update']);
     Route::post('/{id}/notes',       [\App\Http\Controllers\Api\CRM\CRMCustomerController::class, 'storeNote']);
 });
@@ -423,7 +370,8 @@ Route::prefix('crm/customers')->middleware(['web', 'auth:user', 'permission:acce
  * CRM Review Routes - Manage customer reviews and staff responses
  */
 Route::prefix('crm/reviews')->middleware(['web', 'auth:user', 'permission:access-customer-support'])->group(function () {
-    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'index']);
+    Route::get('/',                  [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'index'])
+        ->name('crm.api.reviews.index');
     Route::post('/report',           [\App\Http\Controllers\Api\CRM\CRMReviewController::class, 'reportReview']);
 });
 
@@ -431,7 +379,8 @@ Route::prefix('crm/reviews')->middleware(['web', 'auth:user', 'permission:access
  * CRM Dashboard Stats - Aggregate data for the CRM overview page
  */
 Route::get('crm/dashboard-stats', [\App\Http\Controllers\Api\CRM\CRMDashboardController::class, 'index'])
-    ->middleware(['web', 'auth:user', 'permission:access-customer-support']);
+    ->middleware(['web', 'auth:user', 'permission:access-customer-support'])
+    ->name('crm.api.dashboard-stats');
 
 /**
  * Repairer Conversation Routes - Repair technicians handling technical support
@@ -448,9 +397,9 @@ Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permis
 
 /**
  * Customer Notifications API
- * Middleware: auth:user (for customers only)
+ * Middleware: web, auth:user (for customers only)
  */
-Route::prefix('notifications')->middleware(['auth:user'])->group(function () {
+Route::prefix('notifications')->middleware(['web', 'auth:user'])->group(function () {
     Route::get('/', [\App\Http\Controllers\NotificationController::class, 'index'])->name('api.notifications.index');
     Route::get('/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('api.notifications.unread-count');
     Route::get('/recent', [\App\Http\Controllers\NotificationController::class, 'recent'])->name('api.notifications.recent');

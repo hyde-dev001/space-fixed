@@ -1,26 +1,44 @@
+import MonochromeSelect from "@/components/form/Select";
+import { Modal } from "@/components/ui/modal";
 import { Head, usePage } from "@inertiajs/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
-import { computeCanPay, getPhoneDisplayForReceipt } from "../../Repairs/posPaymentValidation";
+import {
+	computeCanPay,
+	getPhoneDisplayForReceipt,
+	isOptionalEmailValid,
+	normalizeCustomerField,
+	normalizeOptionalCustomerEmail,
+	normalizeOptionalCustomerId,
+} from "../../Repairs/posPaymentValidation";
 import { repairPosHistoryApi } from "../../../services/repairPosHistoryApi";
 import { buildRepairBreakdown } from "../../../utils/repairPricing";
 import { PosMode, resolveAllowedModes } from "./posModeResolver";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
-type ManualPaymentPolicy = "deposit_50" | "full_upfront";
+type ManualPaymentPolicy = "full_upfront";
 
 type RepairOrderOption = {
 	id: string;
+	requestNumber?: string;
 	customer: string;
+	customerName: string;
+	customerPhone: string;
+	customerEmail: string;
 	customerId?: number | null;
 	paymentPolicy?: "deposit_50" | "full_upfront";
 	paymentStatus?: string;
 	status?: string;
 	returnDeliveryMethod?: "walk_in" | "customer_pickup" | "shop_delivery" | string;
 	dueTypeToCollect?: PosDueType | null;
+	paymentPhase?: string | null;
+	collectible?: boolean;
+	collectibleAmount: number;
+	outstandingBalance: number;
+	totalPaidAmount: number;
 	service: string;
 	amount: number;
 	requestedServices: string[];
@@ -74,6 +92,15 @@ type ReceiptRefundEntry = {
 	items?: ReceiptRefundEntryItem[];
 };
 
+type ReceiptLatestRefund = {
+	id: number;
+	status: string;
+	workflowSource?: string | null;
+	repairerStatus?: string | null;
+	financeStatus?: string | null;
+	shopOwnerStatus?: string | null;
+};
+
 type ReceiptSnapshot = {
 	moduleType?: "repair" | "retail";
 	transactionId?: number;
@@ -85,10 +112,7 @@ type ReceiptSnapshot = {
 	dueType?: PosDueType | null;
 	paidAmount: number;
 	refundEntries: ReceiptRefundEntry[];
-	latestRefund?: {
-		id: number;
-		status: string;
-	};
+	latestRefund?: ReceiptLatestRefund;
 	receiptNo: string;
 	createdAtISO: string;
 	dateLabel: string;
@@ -139,6 +163,9 @@ type RetailProductVariant = {
 	color: string;
 	stock: number;
 	image?: string | null;
+	inventoryItemId?: number | null;
+	inventoryColorVariantId?: number | null;
+	inventorySizeId?: number | null;
 };
 
 type RetailCartItem = {
@@ -152,6 +179,27 @@ type RetailCartItem = {
 	variantId?: number | null;
 	size?: string | null;
 	color?: string | null;
+	inventoryItemId?: number | null;
+	inventoryColorVariantId?: number | null;
+	inventorySizeId?: number | null;
+};
+
+type RetailVariantSelection = {
+	size: string;
+	color: string;
+};
+
+type RetailVariantOptions = RetailVariantSelection & {
+	sizeOptions: string[];
+	colorOptions: string[];
+	selectedVariant: RetailProductVariant | null;
+	selectedStock: number;
+};
+
+type RetailVariantModalTarget = RetailVariantSelection & {
+	kind: "catalog" | "cart";
+	productId: number;
+	lineId?: string;
 };
 
 const OPEN_REFUND_STATUSES = ["requested", "approved", "processing"];
@@ -173,6 +221,12 @@ const hasOpenOrCompletedRefund = (receipt: ReceiptSnapshot): boolean => {
 
 const canExecuteReceiptRefund = (receipt: ReceiptSnapshot): boolean => {
 	return receipt.customerType === "walk_in" && String(receipt.latestRefund?.status || "").toLowerCase() === "approved";
+};
+
+const isManualRejectedNoAccountRepair = (receipt: ReceiptSnapshot): boolean => {
+	return receipt.moduleType !== "retail"
+		&& receipt.customerType === "walk_in"
+		&& String(receipt.repairStatus || "").toLowerCase() === "rejected";
 };
 
 const hasRefundLifecycleRecord = (receipt: ReceiptSnapshot): boolean => {
@@ -261,6 +315,60 @@ const getRefundStatusHint = (status: string | undefined): string => {
 	return "";
 };
 
+export const getRepairRefundStatusPresentation = (
+	refund: Pick<ReceiptLatestRefund, "status" | "workflowSource" | "repairerStatus" | "financeStatus" | "shopOwnerStatus">,
+): { label: string; hint: string } => {
+	const rawStatus = String(refund.status || "").toLowerCase();
+	const workflowSource = String(refund.workflowSource || "").toLowerCase();
+	const repairerStatus = String(refund.repairerStatus || "").toLowerCase();
+	const financeStatus = String(refund.financeStatus || "").toLowerCase();
+	const shopOwnerStatus = String(refund.shopOwnerStatus || "").toLowerCase();
+
+	if (["succeeded", "completed", "paid"].includes(rawStatus)) {
+		return { label: "Refunded", hint: "Refund payout completed" };
+	}
+
+	if (["failed", "rejected", "cancelled", "canceled"].includes(rawStatus)) {
+		return rawStatus === "failed"
+			? { label: "Refund Failed", hint: "Refund payout failed" }
+			: { label: "Rejected", hint: "Refund request was rejected" };
+	}
+
+	if (rawStatus === "processing") {
+		return { label: "Processing", hint: "Refund payout is being processed" };
+	}
+
+	if (workflowSource === "online_myrepair" && repairerStatus === "pending") {
+		return { label: "Under Repairer Review", hint: "Waiting for repairer review" };
+	}
+
+	if (financeStatus === "pending") {
+		return { label: "Under Finance Review", hint: "Pending Finance approval" };
+	}
+
+	if (financeStatus === "approved_initial" && !["approved", "skipped"].includes(shopOwnerStatus)) {
+		return { label: "Under Owner Review", hint: "Pending shop owner approval" };
+	}
+
+	if (rawStatus === "approved") {
+		return { label: "Approved", hint: "Approved, ready for payout execution" };
+	}
+
+	if (rawStatus === "requested") {
+		return { label: "Requested", hint: "Refund request submitted" };
+	}
+
+	return { label: rawStatus || "Refund update", hint: "Refund status updated" };
+};
+
+const getReceiptLatestRefundPresentation = (receipt: ReceiptSnapshot): { label: string; hint: string } | null => {
+	if (receipt.moduleType !== "repair" || !receipt.latestRefund) {
+		return null;
+	}
+
+	return getRepairRefundStatusPresentation(receipt.latestRefund);
+};
+
 const getRefundStatusClass = (status: string): string => {
 	switch (String(status || "").toLowerCase()) {
 		case "succeeded":
@@ -278,6 +386,7 @@ const getRefundStatusClass = (status: string): string => {
 };
 
 const SERVICES_PER_PAGE = 6;
+const RETAIL_PRODUCTS_PER_PAGE = 9;
 const VAT_RATE = 12;
 
 const normalizeDueType = (value: string | null): PosDueType => {
@@ -289,73 +398,7 @@ const normalizeDueType = (value: string | null): PosDueType => {
 };
 
 const normalizePaymentPolicy = (value: unknown): "deposit_50" | "full_upfront" => {
-	return value === "full_upfront" ? "full_upfront" : "deposit_50";
-};
-
-const POS_ATTACHABLE_WORKFLOW_STATUSES = new Set([
-	"repairer_accepted",
-	"waiting_customer_confirmation",
-	"owner_approval_pending",
-	"owner_approved",
-	"confirmed",
-	"pending",
-	"received",
-	"in_progress",
-	"in-progress",
-	"awaiting_parts",
-	"ready_for_pickup",
-	"ready-for-pickup",
-]);
-
-const isPosAttachEligibleStatus = (status: string): boolean => {
-	return POS_ATTACHABLE_WORKFLOW_STATUSES.has(status);
-};
-
-const resolveDueTypeForPolicy = (policy: "deposit_50" | "full_upfront", requestedDueType: PosDueType): PosDueType => {
-	if (policy === "full_upfront") return "full";
-	if (requestedDueType === "deposit" || requestedDueType === "balance") return requestedDueType;
-	return "deposit";
-};
-
-const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy" | "paymentStatus" | "status" | "returnDeliveryMethod">): PosDueType | null => {
-	const policy = order.paymentPolicy ?? "deposit_50";
-	const paymentStatus = String(order.paymentStatus ?? "").toLowerCase();
-	const workflowStatus = String(order.status ?? "").toLowerCase();
-	const returnMethod = String(order.returnDeliveryMethod ?? "").toLowerCase();
-	const isDepositSettled = paymentStatus === "paid" || paymentStatus === "partially_paid";
-
-	if (!isPosAttachEligibleStatus(workflowStatus)) {
-		return null;
-	}
-
-	if (paymentStatus === "refunded" || paymentStatus === "partially_refunded") {
-		return null;
-	}
-
-	if (policy === "full_upfront") {
-		return paymentStatus === "paid" || paymentStatus === "completed" || paymentStatus === "partially_paid" ? null : "full";
-	}
-
-	if (paymentStatus === "completed") return null;
-	if (isDepositSettled) {
-		if (returnMethod === "shop_delivery") return null;
-
-		if (workflowStatus === "ready-for-pickup" || workflowStatus === "ready_for_pickup") {
-			return "balance";
-		}
-
-		return null;
-	}
-
-	return "deposit";
-};
-
-const computeDueAmountForOrder = (order: RepairOrderOption, dueType: PosDueType): number => {
-	if (dueType === "full") {
-		return Number(order.amount || 0);
-	}
-
-	return Math.round((Number(order.amount || 0) / 2) * 100) / 100;
+	return value === "deposit_50" ? "deposit_50" : "full_upfront";
 };
 
 const mapTenderType = (method: PaymentMethod): "cash" | "paymongo_card" | "paymongo_wallet" => {
@@ -442,6 +485,233 @@ const normalizeVariantToken = (value: unknown): string => {
 		.toLowerCase();
 };
 
+const getUniqueVariantValues = (variants: RetailProductVariant[], field: "size" | "color"): string[] => {
+	return Array.from(new Set(variants.map((variant) => variant[field]).filter((value) => value.length > 0)));
+};
+
+const getRetailVariantOptions = (
+	product: RetailCatalogProduct,
+	selection: RetailVariantSelection,
+): RetailVariantOptions => {
+	const colorSourceVariants = product.variants.some((variant) => variant.stock > 0)
+		? product.variants.filter((variant) => variant.stock > 0)
+		: product.variants;
+	const colorOptions = getUniqueVariantValues(colorSourceVariants, "color");
+	const selectedColor = colorOptions.find((color) => normalizeVariantToken(color) === normalizeVariantToken(selection.color))
+		?? colorOptions[0]
+		?? selection.color;
+	const variantsForSelectedColor = product.variants.filter((variant) => (
+		normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
+	));
+	const sizeSourceVariants = variantsForSelectedColor.length > 0
+		? (variantsForSelectedColor.some((variant) => variant.stock > 0)
+			? variantsForSelectedColor.filter((variant) => variant.stock > 0)
+			: variantsForSelectedColor)
+		: (product.variants.some((variant) => variant.stock > 0)
+			? product.variants.filter((variant) => variant.stock > 0)
+			: product.variants);
+	const sizeOptions = getUniqueVariantValues(sizeSourceVariants, "size");
+	const selectedSize = sizeOptions.find((size) => normalizeVariantToken(size) === normalizeVariantToken(selection.size))
+		?? sizeOptions[0]
+		?? selection.size;
+	const selectedVariant = product.variants.find((variant) => (
+		normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize)
+		&& normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
+	)) ?? null;
+
+	return {
+		sizeOptions,
+		colorOptions,
+		selectedSize,
+		selectedColor,
+		selectedVariant,
+		selectedStock: selectedVariant ? selectedVariant.stock : product.stock,
+	};
+};
+
+const getRetailSelectionAfterSizeChange = (
+	product: RetailCatalogProduct,
+	selection: RetailVariantSelection,
+	nextSize: string,
+): RetailVariantSelection => {
+	const hasCurrentColorForSize = product.variants.some((variant) => (
+		normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
+		&& normalizeVariantToken(variant.color) === normalizeVariantToken(selection.color)
+	));
+	const nextColor = product.variants.find((variant) => (
+		normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
+		&& variant.stock > 0
+	))?.color
+		?? product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
+		?? "";
+
+	return {
+		size: nextSize,
+		color: hasCurrentColorForSize ? selection.color : nextColor,
+	};
+};
+
+const getRetailSelectionAfterColorChange = (
+	product: RetailCatalogProduct,
+	selection: RetailVariantSelection,
+	nextColor: string,
+): RetailVariantSelection => {
+	const hasCurrentSizeForColor = product.variants.some((variant) => (
+		normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
+		&& normalizeVariantToken(variant.size) === normalizeVariantToken(selection.size)
+	));
+	const nextSize = product.variants.find((variant) => (
+		normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
+		&& variant.stock > 0
+	))?.size
+		?? product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor))?.size
+		?? "";
+
+	return {
+		color: nextColor,
+		size: hasCurrentSizeForColor ? selection.size : nextSize,
+	};
+};
+
+type RetailVariantModalProps = {
+	isOpen: boolean;
+	product: RetailCatalogProduct;
+	selection: RetailVariantSelection;
+	onCancel: () => void;
+	onApply: (selection: RetailVariantSelection) => void;
+};
+
+const retailVariantOptionButtonClass = (isSelected: boolean): string => (
+	`flex min-h-11 cursor-pointer items-center justify-between rounded-xl border px-3 py-2 text-left text-sm font-semibold transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:focus-visible:ring-gray-300 dark:focus-visible:ring-offset-gray-900 ${isSelected
+		? "border-gray-950 bg-gray-950 text-white hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:text-white dark:hover:bg-black"
+		: "border-gray-200 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-800"}`
+);
+
+function RetailVariantModal({ isOpen, product, selection, onCancel, onApply }: RetailVariantModalProps) {
+	const headingId = useId();
+	const [draft, setDraft] = useState<RetailVariantSelection>(selection);
+	const options = getRetailVariantOptions(product, draft);
+	const selectedVariant = options.selectedVariant;
+	const canApply = Boolean(selectedVariant && selectedVariant.stock > 0);
+
+	useEffect(() => {
+		if (isOpen) {
+			setDraft(selection);
+		}
+	}, [isOpen, selection.color, selection.size]);
+
+	return (
+		<Modal
+			isOpen={isOpen}
+			onClose={onCancel}
+			showCloseButton={false}
+			size="md"
+			className="!w-[calc(100vw-2rem)] !max-w-xl overflow-hidden border border-gray-200 shadow-2xl dark:border-gray-700"
+		>
+			<div
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby={headingId}
+				className="max-h-[calc(100dvh-2rem)] overflow-y-auto bg-white p-4 text-gray-950 dark:bg-gray-900 dark:text-white sm:p-6"
+			>
+				<div className="flex items-start justify-between gap-4 border-b border-gray-200 pb-4 dark:border-gray-700">
+					<div className="min-w-0">
+						<p className="text-xs font-semibold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">Product options</p>
+						<h2 id={headingId} className="mt-1 break-words text-lg font-bold tracking-tight">Choose options for {product.name}</h2>
+						<p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Select a size and color before adding or updating this item.</p>
+					</div>
+					<button
+						type="button"
+						aria-label={`Close options for ${product.name}`}
+						onClick={onCancel}
+						className="flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-gray-200 text-gray-500 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:text-gray-400 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white"
+					>
+						<svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+							<path d="M6 6l12 12M18 6L6 18" strokeLinecap="round" />
+						</svg>
+					</button>
+				</div>
+
+				<div className="mt-5 space-y-5">
+					<fieldset>
+						<legend className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">Size</legend>
+						<div role="radiogroup" aria-label="Size options" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+							{options.sizeOptions.map((size) => (
+								<button
+									key={size}
+									type="button"
+									role="radio"
+									aria-checked={normalizeVariantToken(draft.size) === normalizeVariantToken(size)}
+									onClick={() => setDraft((current) => getRetailSelectionAfterSizeChange(product, current, size))}
+									className={retailVariantOptionButtonClass(normalizeVariantToken(draft.size) === normalizeVariantToken(size))}
+								>
+									<span>{size}</span>
+									{normalizeVariantToken(draft.size) === normalizeVariantToken(size) && (
+										<svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+											<path d="m4 10 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
+										</svg>
+									)}
+								</button>
+							))}
+						</div>
+					</fieldset>
+
+					<fieldset>
+						<legend className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500 dark:text-gray-400">Color</legend>
+						<div role="radiogroup" aria-label="Color options" className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+							{options.colorOptions.map((color) => (
+								<button
+									key={color}
+									type="button"
+									role="radio"
+									aria-checked={normalizeVariantToken(draft.color) === normalizeVariantToken(color)}
+									onClick={() => setDraft((current) => getRetailSelectionAfterColorChange(product, current, color))}
+									className={retailVariantOptionButtonClass(normalizeVariantToken(draft.color) === normalizeVariantToken(color))}
+								>
+									<span>{color}</span>
+									{normalizeVariantToken(draft.color) === normalizeVariantToken(color) && (
+										<svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2">
+											<path d="m4 10 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
+										</svg>
+									)}
+								</button>
+							))}
+						</div>
+					</fieldset>
+
+					<div aria-live="polite" className={`rounded-xl border px-3 py-2 text-sm font-semibold ${canApply
+						? "border-gray-200 bg-gray-50 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
+						: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-200"}`}>
+						{selectedVariant
+							? canApply
+								? `${selectedVariant.stock} in stock for ${options.selectedSize} / ${options.selectedColor}`
+								: `Out of stock for ${options.selectedSize} / ${options.selectedColor}`
+							: "This size and color combination is unavailable."}
+					</div>
+				</div>
+
+				<div className="mt-5 flex flex-col-reverse gap-3 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end dark:border-gray-700">
+					<button
+						type="button"
+						onClick={onCancel}
+						className="min-h-11 cursor-pointer rounded-xl border border-gray-200 px-5 font-semibold text-gray-700 transition-colors duration-150 hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white"
+					>
+						Cancel
+					</button>
+					<button
+						type="button"
+						disabled={!canApply}
+						onClick={() => onApply({ size: options.selectedSize, color: options.selectedColor })}
+						className="min-h-11 cursor-pointer rounded-xl bg-gray-950 px-5 font-semibold text-white transition-colors duration-150 hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-950 dark:hover:bg-black dark:focus-visible:ring-offset-gray-900"
+					>
+						Apply
+					</button>
+				</div>
+			</div>
+		</Modal>
+	);
+}
+
 const getRetailVariantIdentity = (
 	productId: number,
 	variantId?: number | null,
@@ -510,14 +780,7 @@ const PointOfSalePage = () => {
 	const businessType = resolvePosBusinessType(props as any);
 	const allowedModes = useMemo(() => resolveAllowedModes(businessType), [businessType]);
 	const [mode, setMode] = useState<PosMode>(allowedModes[0]);
-	const shopRepairPaymentPolicy: ManualPaymentPolicy =
-		String(
-			(props as any)?.auth?.shop_owner?.repair_payment_policy
-			?? (props as any)?.auth?.user?.shop_owner?.repair_payment_policy
-			?? (props as any)?.shop_settings?.repair_payment_policy
-		) === "full_upfront"
-			? "full_upfront"
-			: "deposit_50";
+	const shopRepairPaymentPolicy: ManualPaymentPolicy = "full_upfront";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
 	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
@@ -555,9 +818,11 @@ const PointOfSalePage = () => {
 	const [isLoadingData, setIsLoadingData] = useState<boolean>(false);
 	const [retailSearch, setRetailSearch] = useState<string>("");
 	const [retailProducts, setRetailProducts] = useState<RetailCatalogProduct[]>([]);
+	const [retailPage, setRetailPage] = useState<number>(1);
 	const [retailLoading, setRetailLoading] = useState<boolean>(false);
 	const [retailCart, setRetailCart] = useState<RetailCartItem[]>([]);
 	const [retailSelectionByProduct, setRetailSelectionByProduct] = useState<Record<number, { size: string; color: string }>>({});
+	const [retailVariantModal, setRetailVariantModal] = useState<RetailVariantModalTarget | null>(null);
 	const [retailCustomerName, setRetailCustomerName] = useState<string>("");
 	const [retailCustomerPhone, setRetailCustomerPhone] = useState<string>("");
 	const [retailCustomerEmail, setRetailCustomerEmail] = useState<string>("");
@@ -574,6 +839,8 @@ const PointOfSalePage = () => {
 	}, [allowedModes, mode]);
 
 	useEffect(() => {
+		setRetailVariantModal(null);
+
 		if (mode === "retail") {
 			setIsOrderModalOpen(false);
 			setIsRefundQueueOpen(false);
@@ -645,7 +912,8 @@ const PointOfSalePage = () => {
 					const mappedOrders: RepairOrderOption[] = rawOrders
 						.map((entry: any, index: number) => {
 							const amount = Number(
-								entry?.final_total
+								entry?.collection_summary?.grand_total
+								?? entry?.final_total
 								?? entry?.pricing_breakdown?.final_total
 								?? entry?.total
 								?? entry?.finalPrice
@@ -676,6 +944,12 @@ const PointOfSalePage = () => {
 								.filter((serviceName: string) => serviceName.length > 0);
 
 							const packageName = String(entry?.pricing_breakdown?.package_name ?? "").trim();
+							const customerName = normalizeCustomerField(entry?.customer_name)
+								|| normalizeCustomerField(entry?.user?.name)
+								|| [entry?.user?.first_name, entry?.user?.last_name].map(normalizeCustomerField).filter(Boolean).join(' ');
+							const customerPhone = normalizeCustomerField(entry?.phone) || normalizeCustomerField(entry?.user?.phone);
+							const customerEmail = normalizeOptionalCustomerEmail(entry?.email)
+								|| normalizeOptionalCustomerEmail(entry?.user?.email);
 							const primaryService = String(
 								entry?.service
 								?? entry?.item
@@ -684,24 +958,45 @@ const PointOfSalePage = () => {
 								?? requestedServices[0]
 								?? "Repair Service"
 							);
+							const collectibleAmount = Number(
+								entry?.collectible_amount
+								?? entry?.collection_summary?.collectible_amount
+								?? 0,
+							);
+							const outstandingBalance = Number(
+								entry?.outstanding_balance
+								?? entry?.collection_summary?.outstanding_balance
+								?? 0,
+							);
+							const totalPaidAmount = Number(
+								entry?.collection_summary?.total_paid_amount
+								?? entry?.total_paid_amount
+								?? 0,
+							);
 							return {
 								id: String(entry?.id ?? `R-${index}`),
-								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
-								customerId: Number.isFinite(Number(entry?.customer_id)) ? Number(entry.customer_id) : null,
+								requestNumber: String(entry?.request_id ?? "").trim() || undefined,
+								customer: customerName || "Walk-in Customer",
+								customerId: normalizeOptionalCustomerId(entry?.customer_id ?? entry?.user_id),
+								customerName,
+								customerPhone,
+								customerEmail,
 								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
 								paymentStatus: String(entry?.payment_status ?? "pending"),
 								status: String(entry?.status ?? ""),
 								returnDeliveryMethod: String(entry?.return_delivery_method ?? (entry?.delivery_method === "walk_in" ? "walk_in" : "customer_pickup")),
+								dueTypeToCollect: parseDueType(entry?.due_type ?? entry?.collection_summary?.due_type),
+								paymentPhase: entry?.phase ?? entry?.collection_summary?.phase ?? null,
+								collectible: Boolean(entry?.collectible ?? entry?.collection_summary?.collectible),
+								collectibleAmount: Number.isFinite(collectibleAmount) ? collectibleAmount : 0,
+								outstandingBalance: Number.isFinite(outstandingBalance) ? outstandingBalance : 0,
+								totalPaidAmount: Number.isFinite(totalPaidAmount) ? totalPaidAmount : 0,
 								service: primaryService,
 								amount: Number.isFinite(amount) ? amount : 0,
 								requestedServices: requestedServices.length > 0 ? requestedServices : [primaryService],
 							};
 						})
-						.filter((entry: RepairOrderOption) => entry.amount > 0)
-						.map((entry: RepairOrderOption) => ({
-							...entry,
-							dueTypeToCollect: resolveOutstandingDueType(entry),
-						}));
+						.filter((entry: RepairOrderOption) => entry.amount > 0 && entry.collectibleAmount > 0 && entry.collectible === true && entry.dueTypeToCollect !== null);
 
 					const mappedManualQueueOrders: RepairOrderOption[] = rawManualQueue
 						.map((row: any, index: number) => {
@@ -711,14 +1006,24 @@ const PointOfSalePage = () => {
 
 							return {
 								id: String(row?.id ?? `MQ-${index}`),
-								customer: String(row?.customer_name ?? "Walk-in Customer"),
-								customerId: null,
+								requestNumber: requestNo,
+								customer: normalizeCustomerField(row?.customer_name) || "Walk-in Customer",
+								customerId: normalizeOptionalCustomerId(row?.customer_id),
+								customerName: normalizeCustomerField(row?.customer_name),
+								customerPhone: normalizeCustomerField(row?.phone),
+								customerEmail: normalizeOptionalCustomerEmail(row?.email),
 								paymentPolicy: normalizePaymentPolicy(row?.payment_policy),
 								paymentStatus: queueDueType === null ? "completed" : "partially_paid",
 								status: String(row?.status ?? ""),
 								returnDeliveryMethod: "walk_in",
 								service: `Manual Walk-in (${requestNo})`,
 								amount: Number.isFinite(amount) ? amount : 0,
+								collectible: queueDueType !== null,
+								collectibleAmount: Number.isFinite(Number(row?.remaining_balance))
+									? Number(row.remaining_balance)
+									: (queueDueType === "full" ? amount : Math.round((amount / 2) * 100) / 100),
+								outstandingBalance: Number(row?.remaining_balance ?? 0),
+								totalPaidAmount: Number(row?.paid ?? 0),
 								requestedServices: [`Manual Walk-in (${requestNo})`],
 								dueTypeToCollect: queueDueType,
 							};
@@ -742,6 +1047,9 @@ const PointOfSalePage = () => {
 							customer: queueOrder.customer || existing.customer,
 							service: queueOrder.service || existing.service,
 							amount: queueOrder.amount > 0 ? queueOrder.amount : existing.amount,
+							collectibleAmount: queueOrder.collectibleAmount > 0 ? queueOrder.collectibleAmount : existing.collectibleAmount,
+							outstandingBalance: queueOrder.outstandingBalance > 0 ? queueOrder.outstandingBalance : existing.outstandingBalance,
+							totalPaidAmount: queueOrder.totalPaidAmount > 0 ? queueOrder.totalPaidAmount : existing.totalPaidAmount,
 							dueTypeToCollect: queueOrder.dueTypeToCollect ?? existing.dueTypeToCollect,
 						});
 					}
@@ -841,6 +1149,9 @@ const PointOfSalePage = () => {
 						color: String(variant?.color ?? "").trim(),
 						stock: Number(variant?.quantity ?? 0),
 						image: variant?.image ? String(variant.image) : null,
+						inventoryItemId: Number(variant?.inventory_item_id ?? 0) || null,
+						inventoryColorVariantId: Number(variant?.inventory_color_variant_id ?? 0) || null,
+						inventorySizeId: Number(variant?.inventory_size_id ?? 0) || null,
 					})).filter((variant: RetailProductVariant) => variant.id > 0)
 					: [],
 			})).filter((row: RetailCatalogProduct) => row.id > 0);
@@ -1024,6 +1335,10 @@ const PointOfSalePage = () => {
 						latestRefund: latestRefund ? {
 							id: Number(latestRefund?.id || 0),
 							status: String(latestRefund?.status || "requested"),
+							workflowSource: latestRefund?.workflow_source,
+							repairerStatus: latestRefund?.repairer_status,
+							financeStatus: latestRefund?.finance_status,
+							shopOwnerStatus: latestRefund?.shop_owner_status,
 						} : undefined,
 						receiptNo: String(row?.receipt?.receipt_no ?? row?.transaction_no ?? `POS-${index + 1}`),
 						createdAtISO: issuedAt,
@@ -1036,7 +1351,7 @@ const PointOfSalePage = () => {
 							minute: "2-digit",
 						}),
 						cashierName: String(row?.created_by ?? cashierName),
-						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? "Customer"),
+						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? (moduleType === 'retail' ? 'Walk-in Customer' : 'Customer')),
 						customerPhone: String(receiptPayload?.customer?.phone ?? row?.walk_in_phone ?? ""),
 						paymentReference: String(row?.payment_lines?.[0]?.provider_reference ?? "") || null,
 						paymentMethod,
@@ -1098,6 +1413,80 @@ const PointOfSalePage = () => {
 		fetchRefundQueue();
 	}, [isRefundQueueOpen]);
 
+	const handleManualRejectedNoAccountRefund = async (receipt: ReceiptSnapshot) => {
+		const transactionId = Number(receipt.transactionId ?? 0);
+		if (transactionId <= 0) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Refund Unavailable",
+				text: "This record has no linked transaction reference.",
+				confirmButtonColor: "#b45309",
+			});
+			return;
+		}
+
+		const requestedAmount = resolveRefundRequestAmount(receipt);
+		const refundConfirmation = await Swal.fire({
+			icon: "warning",
+			title: "Confirm Manual POS Refund",
+			html: `Record a manual refund for <b>${formatPeso(requestedAmount)}</b> after the Manager rejected this repair.`,
+			showCancelButton: true,
+			confirmButtonText: "Yes, Refund",
+			cancelButtonText: "Cancel",
+			confirmButtonColor: "#dc2626",
+		});
+
+		if (!refundConfirmation.isConfirmed) {
+			return;
+		}
+
+		try {
+			const response = await repairPosHistoryApi.manualRefundRejectedNoAccount({
+				source_transaction_id: transactionId,
+				receipt_no: receipt.receiptNo,
+			});
+			const refundId = Number((response.data as any)?.refund_id ?? 0);
+			const approvedAmount = Number(
+				(response.data as any)?.data?.approved_amount ?? requestedAmount,
+			);
+			const nextStatus = String((response.data as any)?.data?.status ?? "succeeded").toLowerCase();
+
+			setReceiptHistory((prev) => prev.map((entry) => (
+				entry.receiptNo === receipt.receiptNo
+					? {
+						...entry,
+						refundEntries: [
+							{
+								status: nextStatus,
+								approvedAmount: nextStatus === "succeeded" ? approvedAmount : 0,
+							},
+							...entry.refundEntries,
+						],
+						latestRefund: {
+							id: refundId > 0 ? refundId : Number(entry.latestRefund?.id ?? 0),
+							status: nextStatus,
+						},
+					}
+					: entry
+			)));
+
+			await Swal.fire({
+				icon: "success",
+				title: "Manual POS Refund Recorded",
+				text: "The refund was recorded successfully. No Finance approval is required.",
+				confirmButtonColor: "#10b981",
+			});
+		} catch (error: any) {
+			const message = error?.response?.data?.message || "Unable to record the manual POS refund.";
+			await Swal.fire({
+				icon: "error",
+				title: "Refund Failed",
+				text: message,
+				confirmButtonColor: "#dc2626",
+			});
+		}
+	};
+
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
 		if (isActiveWarrantyClaimStatus(receipt.latestWarrantyClaimStatus)) {
 			await Swal.fire({
@@ -1116,6 +1505,11 @@ const PointOfSalePage = () => {
 				text: "A refund is already in progress/completed for this receipt or its repair request.",
 				confirmButtonColor: "#2563eb",
 			});
+			return;
+		}
+
+		if (isManualRejectedNoAccountRepair(receipt)) {
+			await handleManualRejectedNoAccountRefund(receipt);
 			return;
 		}
 
@@ -1688,13 +2082,14 @@ const PointOfSalePage = () => {
 		if (!requestedRepairRequestId || selectedRepairOrder) return;
 
 		const targetOrder = repairOrders.find((entry) => entry.id === requestedRepairRequestId);
-		if (!targetOrder) return;
+		if (!targetOrder || !targetOrder.collectible || !targetOrder.dueTypeToCollect || targetOrder.collectibleAmount <= 0) return;
 
-		const resolvedDueType = resolveDueTypeForPolicy(targetOrder.paymentPolicy ?? "deposit_50", requestedDueType);
-		const dueAmount = computeDueAmountForOrder(targetOrder, resolvedDueType);
+		const resolvedDueType = targetOrder.dueTypeToCollect;
+		const dueAmount = targetOrder.collectibleAmount;
 		setSelectedRepairOrder(targetOrder);
-		setCustomerName(targetOrder.customer);
-		setCustomerEmail("");
+		setCustomerName(targetOrder.customerName);
+		setCustomerPhone(targetOrder.customerPhone);
+		setCustomerEmail(targetOrder.customerEmail);
 		setItems([
 			{
 				id: `order-${targetOrder.id}-${resolvedDueType}`,
@@ -1714,7 +2109,7 @@ const PointOfSalePage = () => {
 		return !selectedRepairOrder && !requestedRepairRequestId;
 	}, [requestedRepairRequestId, selectedRepairOrder]);
 
-	const dueTypeForManualCheckout: PosDueType = shopRepairPaymentPolicy === "deposit_50" ? "deposit" : "full";
+	const dueTypeForManualCheckout: PosDueType = "full";
 
 	const chargeableSubtotal = useMemo(() => {
 		if (!isManualStandaloneCheckout) {
@@ -1755,6 +2150,7 @@ const PointOfSalePage = () => {
 		itemsCount: items.length,
 		customerName,
 		customerPhone,
+		customerEmail,
 		paymentMethod,
 		cashReceivedInput,
 		hasInsufficientCash,
@@ -1764,13 +2160,15 @@ const PointOfSalePage = () => {
 	const payDisableReason = useMemo(() => {
 		if (isProcessingPayment) return "Processing payment...";
 		if (items.length === 0) return "Add at least one service before checkout.";
-		if (customerName.trim().length === 0) return "Customer name is required.";
-		if (paymentMethod === "cash" && !isCustomerPhoneValid) return "Cash payments require an 11-digit phone number.";
+		if (selectedRepairOrder && (customerName.trim().length === 0 || !isCustomerPhoneValid)) return 'This repair order is missing canonical customer name or phone. Update the repair record before checkout.';
+		if (customerName.trim().length === 0) return 'Customer name is required.';
+		if (!isCustomerPhoneValid) return 'Repair checkout requires an 11-digit phone number.';
+		if (!isOptionalEmailValid(customerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (paymentMethod === "cash" && !hasCashInput) return "Enter cash received for cash payments.";
 		if (paymentMethod !== "cash" && !hasProofReference) return "Enter proof reference for GCash/Card payments.";
 		if (hasInsufficientCash) return `Insufficient cash by ${formatPeso(shortValue)}.`;
 		return "";
-	}, [customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, shortValue]);
+	}, [customerEmail, customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, selectedRepairOrder, shortValue]);
 	const retailSubtotal = useMemo(() => {
 		return retailCart.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
 	}, [retailCart]);
@@ -1792,24 +2190,29 @@ const PointOfSalePage = () => {
 		itemsCount: retailCart.length,
 		customerName: retailCustomerName,
 		customerPhone: retailCustomerPhone,
+		customerEmail: retailCustomerEmail,
 		paymentMethod: retailPaymentMethod,
 		cashReceivedInput: retailCashReceivedInput,
 		hasInsufficientCash: retailHasInsufficientCash,
 		proofReference: retailProofReference,
+		requireCustomerInfo: false,
 	});
 	const retailPayDisableReason = useMemo(() => {
 		if (retailProcessingPayment) return "Processing payment...";
 		if (retailCart.length === 0) return "Add at least one product before checkout.";
-		if (retailCustomerName.trim().length === 0) return "Customer name is required.";
+		if (!isOptionalEmailValid(retailCustomerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (retailPaymentMethod === "cash" && retailCashReceivedInput.trim().length === 0) return "Enter cash received for cash payments.";
 		if (retailPaymentMethod !== "cash" && retailProofReference.trim().length === 0) return "Enter proof reference for GCash/Card payments.";
 		if (retailHasInsufficientCash) return `Insufficient cash by ${formatPeso(retailShortValue)}.`;
 		return "";
-	}, [retailCart.length, retailCashReceivedInput, retailCustomerName, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
+	}, [retailCart.length, retailCashReceivedInput, retailCustomerEmail, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
 	const effectiveDueType = useMemo(() => {
-		const policy = selectedRepairOrder?.paymentPolicy ?? "deposit_50";
-		return resolveDueTypeForPolicy(policy, requestedDueType);
-	}, [requestedDueType, selectedRepairOrder]);
+		if (selectedRepairOrder) {
+			return selectedRepairOrder.dueTypeToCollect ?? "full";
+		}
+
+		return dueTypeForManualCheckout;
+	}, [dueTypeForManualCheckout, selectedRepairOrder]);
 	const hasRepairOrderItem = useMemo(() => items.some((item) => item.source === "repair-order"), [items]);
 
 	useEffect(() => {
@@ -1891,8 +2294,9 @@ const PointOfSalePage = () => {
 	};
 
 	const addFromRepairOrder = (order: RepairOrderOption) => {
-		const resolvedDueType = order.dueTypeToCollect ?? resolveDueTypeForPolicy(order.paymentPolicy ?? "deposit_50", requestedDueType);
-		const dueAmount = computeDueAmountForOrder(order, resolvedDueType);
+		const resolvedDueType = order.dueTypeToCollect;
+		const dueAmount = order.collectibleAmount;
+		if (!order.collectible || !resolvedDueType || dueAmount <= 0) return;
 		setItems([
 			{
 				id: `order-${order.id}-${resolvedDueType}`,
@@ -1903,8 +2307,9 @@ const PointOfSalePage = () => {
 			},
 		]);
 		setSelectedRepairOrder(order);
-		setCustomerName(order.customer);
-		setCustomerEmail("");
+		setCustomerName(order.customerName);
+		setCustomerPhone(order.customerPhone);
+		setCustomerEmail(order.customerEmail);
 		setOrderSearch("");
 		setIsOrderModalOpen(false);
 	};
@@ -1999,7 +2404,7 @@ const PointOfSalePage = () => {
 	const filteredRepairOrders = useMemo(() => {
 		const query = orderSearch.trim().toLowerCase();
 		const attachableOrders = repairOrders
-			.filter((order) => order.dueTypeToCollect !== null)
+			.filter((order) => order.collectible === true && order.collectibleAmount > 0 && order.dueTypeToCollect !== null)
 			.filter((order) => !hasRequestedDueType || order.dueTypeToCollect === requestedDueType);
 
 		if (!query) return attachableOrders;
@@ -2179,6 +2584,15 @@ const PointOfSalePage = () => {
 		return filteredServiceCatalog.slice(start, start + SERVICES_PER_PAGE);
 	}, [filteredServiceCatalog, servicePage]);
 
+	const totalRetailPages = useMemo(() => {
+		return Math.max(1, Math.ceil(retailProducts.length / RETAIL_PRODUCTS_PER_PAGE));
+	}, [retailProducts.length]);
+
+	const paginatedRetailProducts = useMemo(() => {
+		const start = (retailPage - 1) * RETAIL_PRODUCTS_PER_PAGE;
+		return retailProducts.slice(start, start + RETAIL_PRODUCTS_PER_PAGE);
+	}, [retailPage, retailProducts]);
+
 	useEffect(() => {
 		setServicePage(1);
 	}, [serviceSearch]);
@@ -2188,6 +2602,16 @@ const PointOfSalePage = () => {
 			setServicePage(totalServicePages);
 		}
 	}, [servicePage, totalServicePages]);
+
+	useEffect(() => {
+		setRetailPage(1);
+	}, [retailSearch]);
+
+	useEffect(() => {
+		if (retailPage > totalRetailPages) {
+			setRetailPage(totalRetailPages);
+		}
+	}, [retailPage, totalRetailPages]);
 
 	const removeItem = (id: string) => {
 		setItems((prev) => {
@@ -2285,6 +2709,9 @@ const PointOfSalePage = () => {
 						variantId: selectedVariant?.id ?? null,
 						size: selectedVariant?.size ?? null,
 						color: selectedVariant?.color ?? null,
+						inventoryItemId: selectedVariant?.inventoryItemId ?? null,
+						inventoryColorVariantId: selectedVariant?.inventoryColorVariantId ?? null,
+						inventorySizeId: selectedVariant?.inventorySizeId ?? null,
 					},
 				];
 			}
@@ -2303,6 +2730,9 @@ const PointOfSalePage = () => {
 					size: selectedVariant?.size ?? null,
 					color: selectedVariant?.color ?? null,
 					image: selectedVariant?.image ?? product.image ?? null,
+					inventoryItemId: selectedVariant?.inventoryItemId ?? null,
+					inventoryColorVariantId: selectedVariant?.inventoryColorVariantId ?? null,
+					inventorySizeId: selectedVariant?.inventorySizeId ?? null,
 				}
 				: item);
 		});
@@ -2353,6 +2783,9 @@ const PointOfSalePage = () => {
 						variantId: matchedVariant?.id ?? null,
 						size: matchedVariant?.size ?? null,
 						color: matchedVariant?.color ?? null,
+						inventoryItemId: matchedVariant?.inventoryItemId ?? null,
+						inventoryColorVariantId: matchedVariant?.inventoryColorVariantId ?? null,
+						inventorySizeId: matchedVariant?.inventorySizeId ?? null,
 						stock: availableStock,
 						qty: Math.min(item.qty, Math.max(1, availableStock)),
 						unitPrice: product.price,
@@ -2377,6 +2810,9 @@ const PointOfSalePage = () => {
 						variantId: matchedVariant?.id ?? null,
 						size: matchedVariant?.size ?? null,
 						color: matchedVariant?.color ?? null,
+						inventoryItemId: matchedVariant?.inventoryItemId ?? null,
+						inventoryColorVariantId: matchedVariant?.inventoryColorVariantId ?? null,
+						inventorySizeId: matchedVariant?.inventorySizeId ?? null,
 						image: matchedVariant?.image ?? product.image ?? null,
 					};
 				});
@@ -2390,6 +2826,33 @@ const PointOfSalePage = () => {
 				confirmButtonColor: "#b45309",
 			});
 		}
+	};
+
+	const openRetailVariantModal = (
+		kind: RetailVariantModalTarget["kind"],
+		product: RetailCatalogProduct,
+		selection: RetailVariantSelection,
+		lineId?: string,
+	) => {
+		setRetailVariantModal({
+			kind,
+			productId: product.id,
+			lineId,
+			...selection,
+		});
+	};
+
+	const applyRetailVariantSelection = (selection: RetailVariantSelection) => {
+		const target = retailVariantModal;
+		if (!target) return;
+
+		if (target.kind === "catalog") {
+			updateRetailSelection(target.productId, selection);
+		} else if (target.lineId) {
+			updateRetailCartVariant(target.lineId, selection.size, selection.color);
+		}
+
+		setRetailVariantModal(null);
 	};
 
 	const updateRetailCartQty = (lineId: string, nextQty: number) => {
@@ -2484,6 +2947,7 @@ const PointOfSalePage = () => {
 					manual_payment_policy: hasRepairReference ? null : shopRepairPaymentPolicy,
 					manual_repair_package_id: hasRepairReference ? null : manualRepairPackageId,
 					manual_service_ids: hasRepairReference ? [] : manualServiceIds,
+					cash_received: paymentMethod === 'cash' ? Number(tenderedAmount.toFixed(2)) : null,
 					payment_lines: [
 						{
 							tender_type: mapTenderType(paymentMethod),
@@ -2605,7 +3069,7 @@ const PointOfSalePage = () => {
 				{
 					idempotency_key: idempotencyKey,
 					customer_type: "walk_in",
-					walk_in_name: retailCustomerName.trim(),
+					walk_in_name: retailCustomerName.trim() || null,
 					walk_in_phone: retailCustomerPhone.trim() || null,
 					walk_in_email: retailCustomerEmail.trim() || null,
 					items: retailCart.map((item) => ({
@@ -2614,6 +3078,9 @@ const PointOfSalePage = () => {
 						unit_price: Number(item.unitPrice.toFixed(2)),
 						size: item.size || null,
 						color: item.color || null,
+						variant_id: item.variantId ?? null,
+						inventory_color_variant_id: item.inventoryColorVariantId ?? null,
+						inventory_size_id: item.inventorySizeId ?? null,
 						image: item.image || null,
 					})),
 					payment_lines: [
@@ -2649,7 +3116,7 @@ const PointOfSalePage = () => {
 					minute: "2-digit",
 				}),
 				cashierName,
-				customerName: retailCustomerName.trim(),
+				customerName: retailCustomerName.trim() || 'Walk-in Customer',
 				customerPhone: getPhoneDisplayForReceipt(retailPaymentMethod, retailCustomerPhone),
 				paymentReference: retailPaymentMethod === "cash" ? null : retailProofReference.trim(),
 				paymentMethod: retailPaymentMethod,
@@ -2711,62 +3178,115 @@ const PointOfSalePage = () => {
 		setIsReceiptModalOpen(true);
 		window.print();
 	};
+	const retailVariantModalProduct = retailVariantModal
+		? retailProducts.find((product) => product.id === retailVariantModal.productId) ?? null
+		: null;
+	const isRetailVariantModalOpen = Boolean(retailVariantModalProduct);
 
 	return (
-		<AppLayoutERP hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen}>
+		<AppLayoutERP hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen || isRetailVariantModalOpen}>
 			<Head title="Point of Sale" />
 
 			<style>{`
 				@media print {
 					@page {
 						size: A4;
-						margin: 12mm;
+						margin: 10mm;
+					}
+
+					html,
+					body {
+						width: auto !important;
+						min-width: 0 !important;
+						height: auto !important;
+						min-height: 0 !important;
+						margin: 0 !important;
+						padding: 0 !important;
+						background: #fff !important;
 					}
 
 					body * {
 						visibility: hidden !important;
 					}
 
-					body {
+					.cashier-pos-page {
+						position: absolute !important;
+						inset: 0 !important;
+						width: 100% !important;
+						min-width: 0 !important;
+						min-height: 0 !important;
+						margin: 0 !important;
+						padding: 0 !important;
+						overflow: visible !important;
 						background: #fff !important;
 					}
 
-					.pos-print-area,
-					.pos-print-area * {
+					.cashier-pos-page > * {
+						display: none !important;
+					}
+
+					.cashier-pos-page > .receipt-print-modal {
+						display: block !important;
+					}
+
+					.receipt-print-modal,
+					.receipt-print-modal * {
 						visibility: visible !important;
 					}
 
-					.pos-print-area {
+					.receipt-print-modal {
 						position: static !important;
-						inset: auto !important;
+						width: 100% !important;
+						min-height: 0 !important;
+						padding: 0 !important;
+						background: #fff !important;
+					}
+
+					.receipt-print-card {
 						width: 100% !important;
 						max-width: none !important;
-						min-height: calc(297mm - 24mm);
-						padding: 16mm !important;
 						margin: 0 !important;
-						background: #fff !important;
 						border: 0 !important;
 						border-radius: 0 !important;
 						box-shadow: none !important;
+						background: #fff !important;
 					}
 
+					.receipt-modal-header,
 					.receipt-modal-actions {
 						display: none !important;
 					}
+
+					.receipt-modal-content {
+						max-height: none !important;
+						overflow: visible !important;
+						padding: 0 !important;
+					}
+
+					.pos-print-area {
+						width: 100% !important;
+						max-width: none !important;
+						min-height: calc(297mm - 20mm);
+						box-sizing: border-box !important;
+						padding: 12mm !important;
+						margin: 0 !important;
+						border: 0 !important;
+						border-radius: 0 !important;
+						box-shadow: none !important;
+						background: #fff !important;
+						color: #111827 !important;
+						font-size: 14px !important;
+						line-height: 1.5 !important;
+					}
+
 				}
 			`}</style>
 
-			<div className="space-y-6 p-4 md:p-6">
-				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
+			<div className="cashier-pos-page space-y-6 p-4 md:p-6">
+				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && !isRetailVariantModalOpen && (
 				<div className="flex items-center justify-between">
-					<div>
-						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
-						<p className="mt-1 text-sm text-slate-500">
-							{mode === "repair"
-								? "Manage repair cashier transactions and payment processing."
-								: "Process retail walk-in sales with the same POS design system."}
-						</p>
-						<div className="mt-3 flex flex-wrap gap-2">
+					<h1 className="sr-only">Point of Sale</h1>
+					<div className="flex flex-wrap gap-2">
 							{allowedModes.includes("repair") && (
 								<button
 									type="button"
@@ -2792,9 +3312,8 @@ const PointOfSalePage = () => {
 								>
 									Retail Mode
 								</button>
-							)}
+								)}
 						</div>
-					</div>
 					{(mode === "repair" || mode === "retail") && (
 						<div className="flex items-center gap-2">
 							<button
@@ -2824,7 +3343,7 @@ const PointOfSalePage = () => {
 						<section className="space-y-6 xl:col-span-8 xl:flex xl:h-full xl:flex-col xl:space-y-0 xl:gap-6">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Capture walk-in details before checkout.</p>
+								<p className="mb-3 text-xs text-slate-500">Optional for walk-in purchases. Add details if the customer wants them on the receipt.</p>
 								<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 									<input
 										title="Retail customer name"
@@ -2891,39 +3410,15 @@ const PointOfSalePage = () => {
 								) : retailProducts.length === 0 ? (
 									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">No retail products found for this shop.</div>
 								) : (
-									<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
-										{retailProducts.map((product) => {
+									<div className="flex min-h-0 flex-col xl:flex-1">
+										<div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 xl:flex-1 xl:min-h-0 xl:content-start xl:overflow-y-auto xl:pr-1">
+										{paginatedRetailProducts.map((product) => {
 											const isSelected = retailCart.some((entry) => entry.productId === product.id);
 											const inCartQty = retailCart
 												.filter((entry) => entry.productId === product.id)
 												.reduce((sum, entry) => sum + entry.qty, 0);
 											const selection = getRetailSelectionForProduct(product);
-											const colorOptions = Array.from(new Set(
-												(product.variants.some((variant) => variant.stock > 0)
-													? product.variants.filter((variant) => variant.stock > 0)
-													: product.variants)
-													.map((variant) => variant.color)
-													.filter((color) => color.length > 0),
-											));
-											const selectedColor = colorOptions.find((color) => normalizeVariantToken(color) === normalizeVariantToken(selection.color))
-												?? colorOptions[0]
-												?? selection.color;
-											const variantsForSelectedColor = product.variants.filter((variant) => (
-												normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
-											));
-											const sizeSourceVariants = variantsForSelectedColor.length > 0
-												? (variantsForSelectedColor.some((variant) => variant.stock > 0)
-													? variantsForSelectedColor.filter((variant) => variant.stock > 0)
-													: variantsForSelectedColor)
-												: (product.variants.some((variant) => variant.stock > 0)
-													? product.variants.filter((variant) => variant.stock > 0)
-													: product.variants);
-											const sizeOptions = Array.from(new Set(sizeSourceVariants.map((variant) => variant.size).filter((size) => size.length > 0)));
-											const selectedSize = sizeOptions.find((size) => normalizeVariantToken(size) === normalizeVariantToken(selection.size))
-												?? sizeOptions[0]
-												?? selection.size;
-											const selectedVariant = resolveRetailVariant(product, selectedSize, selectedColor);
-											const selectedStock = selectedVariant ? selectedVariant.stock : product.stock;
+											const { selectedColor, selectedSize, selectedStock } = getRetailVariantOptions(product, selection);
 
 											return (
 												<div
@@ -2943,55 +3438,33 @@ const PointOfSalePage = () => {
 																{isSelected ? `In cart (${inCartQty})` : "Tap to add"}
 															</span>
 														</div>
-														<p className="mt-3 line-clamp-2 text-xl font-semibold text-slate-900">{product.name}</p>
+														<p data-testid={`retail-product-title-${product.id}`} className="mt-3 h-14 min-h-14 overflow-hidden line-clamp-2 text-xl leading-7 font-semibold text-slate-900">{product.name}</p>
 														{product.variants.length > 0 && (
-															<div className="mt-2 grid grid-cols-2 gap-2">
-																<select
-																	title={`Select size for ${product.name}`}
-																	value={selectedSize}
-																	onChange={(event) => {
-																		const nextSize = event.target.value;
-																		const hasCurrentColorForSize = product.variants.some((variant) => (
-																			normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
-																			&& normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
-																		));
-																		const firstColorForSize = product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
-																			?? product.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
-																			?? "";
-																		updateRetailSelection(product.id, {
-																			size: nextSize,
-																			color: hasCurrentColorForSize ? selectedColor : firstColorForSize,
-																		});
-																	}}
-																	className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+															<div className="mt-2 grid h-11 min-h-11 grid-cols-2 gap-2">
+																<button
+																	type="button"
+																	aria-haspopup="dialog"
+																	aria-label={`Select size for ${product.name} (currently ${selectedSize || "not selected"})`}
+																	onClick={() => openRetailVariantModal("catalog", product, { size: selectedSize, color: selectedColor })}
+																	className="flex min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-700 outline-none transition-colors hover:bg-slate-50 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
 																>
-																	{sizeOptions.map((size) => (
-																		<option key={size} value={size}>{size}</option>
-																	))}
-																</select>
-																<select
-																	title={`Select color for ${product.name}`}
-																	value={selectedColor}
-																	onChange={(event) => {
-																		const nextColor = event.target.value;
-																		const hasCurrentSizeForColor = product.variants.some((variant) => (
-																			normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
-																			&& normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize)
-																		));
-																		const firstSizeForColor = product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor) && variant.stock > 0)?.size
-																			?? product.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor))?.size
-																			?? "";
-																		updateRetailSelection(product.id, {
-																			color: nextColor,
-																			size: hasCurrentSizeForColor ? selectedSize : firstSizeForColor,
-																		});
-																	}}
-																	className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+																	<span className="mr-1 truncate"><span className="sr-only">Size: </span>{selectedSize || "Select size"}</span>
+																	<svg aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+																		<path d="m5 7 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+																	</svg>
+																</button>
+																<button
+																	type="button"
+																	aria-haspopup="dialog"
+																	aria-label={`Select color for ${product.name} (currently ${selectedColor || "not selected"})`}
+																	onClick={() => openRetailVariantModal("catalog", product, { size: selectedSize, color: selectedColor })}
+																	className="flex min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-700 outline-none transition-colors hover:bg-slate-50 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
 																>
-																	{colorOptions.map((color) => (
-																		<option key={color} value={color}>{color}</option>
-																	))}
-																</select>
+																	<span className="mr-1 truncate"><span className="sr-only">Color: </span>{selectedColor || "Select color"}</span>
+																	<svg aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+																		<path d="m5 7 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+																	</svg>
+																</button>
 															</div>
 														)}
 														<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
@@ -3008,7 +3481,36 @@ const PointOfSalePage = () => {
 													</div>
 												</div>
 											);
-										})}
+											})}
+										</div>
+										<nav className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 text-sm text-slate-700 sm:flex-row sm:items-center sm:justify-between" aria-label="Retail product pagination">
+										<p>
+											Showing {(retailPage - 1) * RETAIL_PRODUCTS_PER_PAGE + 1} to {Math.min(retailPage * RETAIL_PRODUCTS_PER_PAGE, retailProducts.length)} of {retailProducts.length} products
+										</p>
+										<div className="flex items-center gap-2">
+											<button
+												type="button"
+												aria-label="Previous retail product page"
+												onClick={() => setRetailPage((prev) => Math.max(prev - 1, 1))}
+												disabled={retailPage === 1}
+												className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+											>
+												&#8249;
+											</button>
+											<div aria-current="page" className="h-9 min-w-10 rounded-lg bg-[#111111] px-3 text-center text-sm font-semibold leading-9 text-white">
+												{retailPage}
+											</div>
+											<button
+												type="button"
+												aria-label="Next retail product page"
+												onClick={() => setRetailPage((prev) => Math.min(prev + 1, totalRetailPages))}
+												disabled={retailPage === totalRetailPages}
+												className="h-9 w-9 rounded-lg border border-slate-300 text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+											>
+												&#8250;
+											</button>
+										</div>
+										</nav>
 									</div>
 								)}
 							</div>
@@ -3034,6 +3536,8 @@ const PointOfSalePage = () => {
 														onClick={() => removeRetailCartItem(item.lineId)}
 														title="Remove product"
 														aria-label="Remove product"
+														data-erp-icon-action="true"
+														data-semantic-color="danger"
 														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
 													>
 														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3047,74 +3551,37 @@ const PointOfSalePage = () => {
 													const sourceProduct = retailProducts.find((entry) => entry.id === item.productId);
 													if (!sourceProduct || sourceProduct.variants.length === 0) return null;
 
-													const colorOptions = Array.from(new Set(
-														(sourceProduct.variants.some((variant) => variant.stock > 0)
-															? sourceProduct.variants.filter((variant) => variant.stock > 0)
-															: sourceProduct.variants)
-															.map((variant) => variant.color)
-															.filter((color) => color.length > 0),
-													));
-													const selectedColor = colorOptions.find((color) => normalizeVariantToken(color) === normalizeVariantToken(item.color ?? ""))
-														?? colorOptions[0]
-														?? item.color
-														?? "";
-													const variantsForSelectedColor = sourceProduct.variants.filter((variant) => (
-														normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
-													));
-													const sizeSourceVariants = variantsForSelectedColor.length > 0
-														? (variantsForSelectedColor.some((variant) => variant.stock > 0)
-															? variantsForSelectedColor.filter((variant) => variant.stock > 0)
-															: variantsForSelectedColor)
-														: (sourceProduct.variants.some((variant) => variant.stock > 0)
-															? sourceProduct.variants.filter((variant) => variant.stock > 0)
-															: sourceProduct.variants);
-													const sizeOptions = Array.from(new Set(sizeSourceVariants.map((variant) => variant.size).filter((size) => size.length > 0)));
-													const selectedSize = sizeOptions.find((size) => normalizeVariantToken(size) === normalizeVariantToken(item.size ?? ""))
-														?? sizeOptions[0]
-														?? "";
+													const { selectedColor, selectedSize } = getRetailVariantOptions(sourceProduct, {
+														size: item.size ?? "",
+														color: item.color ?? "",
+													});
 
 													return (
-														<div className="mb-2 grid grid-cols-2 gap-2">
-															<select
-																title={`Cart size for ${item.name}`}
-																value={selectedSize}
-																onChange={(event) => {
-																	const nextSize = event.target.value;
-																	const hasCurrentColorForSize = sourceProduct.variants.some((variant) => (
-																		normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize)
-																		&& normalizeVariantToken(variant.color) === normalizeVariantToken(selectedColor)
-																	));
-																	const nextColor = sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize) && variant.stock > 0)?.color
-																		?? sourceProduct.variants.find((variant) => normalizeVariantToken(variant.size) === normalizeVariantToken(nextSize))?.color
-																		?? "";
-																	updateRetailCartVariant(item.lineId, nextSize, hasCurrentColorForSize ? selectedColor : nextColor);
-																}}
-																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+														<div className="mb-2 grid h-11 min-h-11 grid-cols-2 gap-2">
+															<button
+																type="button"
+																aria-haspopup="dialog"
+																aria-label={`Select size for ${item.name} in current order (currently ${selectedSize || "not selected"})`}
+																onClick={() => openRetailVariantModal("cart", sourceProduct, { size: selectedSize, color: selectedColor }, item.lineId)}
+																className="flex min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-700 outline-none transition-colors hover:bg-slate-50 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
 															>
-																{sizeOptions.map((size) => (
-																	<option key={size} value={size}>{size}</option>
-																))}
-															</select>
-															<select
-																title={`Cart color for ${item.name}`}
-																value={selectedColor}
-																onChange={(event) => {
-																	const nextColor = event.target.value;
-																	const hasCurrentSizeForColor = sourceProduct.variants.some((variant) => (
-																		normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor)
-																		&& normalizeVariantToken(variant.size) === normalizeVariantToken(selectedSize)
-																	));
-																	const nextSizeForColor = sourceProduct.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor) && variant.stock > 0)?.size
-																		?? sourceProduct.variants.find((variant) => normalizeVariantToken(variant.color) === normalizeVariantToken(nextColor))?.size
-																		?? selectedSize;
-																	updateRetailCartVariant(item.lineId, hasCurrentSizeForColor ? selectedSize : nextSizeForColor, nextColor);
-																}}
-																className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 outline-none focus:border-blue-500"
+																<span className="mr-1 truncate"><span className="sr-only">Size: </span>{selectedSize || "Select size"}</span>
+																<svg aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+																	<path d="m5 7 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+																</svg>
+															</button>
+															<button
+																type="button"
+																aria-haspopup="dialog"
+																aria-label={`Select color for ${item.name} in current order (currently ${selectedColor || "not selected"})`}
+																onClick={() => openRetailVariantModal("cart", sourceProduct, { size: selectedSize, color: selectedColor }, item.lineId)}
+																className="flex min-w-0 cursor-pointer items-center justify-between gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-xs text-slate-700 outline-none transition-colors hover:bg-slate-50 focus-visible:border-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/20"
 															>
-																{colorOptions.map((color) => (
-																	<option key={color} value={color}>{color}</option>
-																))}
-															</select>
+																<span className="mr-1 truncate"><span className="sr-only">Color: </span>{selectedColor || "Select color"}</span>
+																<svg aria-hidden="true" className="h-4 w-4 shrink-0 text-slate-500" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6">
+																	<path d="m5 7 5 5 5-5" strokeLinecap="round" strokeLinejoin="round" />
+																</svg>
+															</button>
 														</div>
 													);
 												})()}
@@ -3149,7 +3616,7 @@ const PointOfSalePage = () => {
 								</div>
 
 								<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
-								<select
+								<MonochromeSelect
 									title="Retail payment method"
 									value={retailPaymentMethod}
 									onChange={(event) => setRetailPaymentMethod(event.target.value as PaymentMethod)}
@@ -3158,7 +3625,7 @@ const PointOfSalePage = () => {
 									<option value="cash">Cash</option>
 									<option value="gcash">GCash</option>
 									<option value="card">Card</option>
-								</select>
+								</MonochromeSelect>
 
 								<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 								<input
@@ -3206,7 +3673,7 @@ const PointOfSalePage = () => {
 								/>
 
 								{!retailCanPay && retailPayDisableReason.length > 0 && (
-									<div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+									<div className="rounded-xl border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
 										{retailPayDisableReason}
 									</div>
 								)}
@@ -3237,7 +3704,7 @@ const PointOfSalePage = () => {
 						<div data-testid="repair-pos-mode" className="hidden" />
 
 				{isRefundQueueOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Repair Refund Queue</h3>
@@ -3294,10 +3761,12 @@ const PointOfSalePage = () => {
 						<div className="grid grid-cols-1 gap-4">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Input customer name. Phone is required for cash and optional for GCash/Card. Email is optional.</p>
+								<p className="mb-3 text-xs text-slate-500">Customer Name * and Phone Number * are required for every repair checkout. Email is optional.</p>
 								<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 									<input
 										title="Customer name"
+										required
+										aria-required="true"
 										value={customerName}
 										onChange={(event) => setCustomerName(event.target.value)}
 										disabled={!!selectedRepairOrder}
@@ -3306,12 +3775,15 @@ const PointOfSalePage = () => {
 									/>
 									<input
 										title="Customer phone number"
+										required
+										aria-required="true"
 										type="text"
 										inputMode="numeric"
 										pattern="[0-9]*"
 										maxLength={11}
 										value={customerPhone}
 										onChange={(event) => setCustomerPhone(toDigitsOnly(event.target.value).slice(0, 11))}
+										disabled={!!selectedRepairOrder}
 										placeholder="Phone number"
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
 									/>
@@ -3325,12 +3797,12 @@ const PointOfSalePage = () => {
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
 									/>
 								</div>
-								{paymentMethod === "cash" && customerPhone.length > 0 && !isCustomerPhoneValid && (
+								{customerPhone.length > 0 && !isCustomerPhoneValid && (
 									<p className="mt-2 text-xs font-semibold text-red-600">Phone number must be exactly 11 digits.</p>
 								)}
 								<p className="mt-2 text-xs text-slate-500">These details will appear on the printed receipt.</p>
 								{selectedRepairOrder && (
-									<p className="mt-1 text-xs font-semibold text-blue-700">Customer name is locked because this order is attached from Job Order Repair.</p>
+									<p className="mt-1 text-xs font-semibold text-blue-700">Customer details are locked because this order is attached from Job Order Repair.</p>
 								)}
 							</div>
 						</div>
@@ -3364,7 +3836,7 @@ const PointOfSalePage = () => {
 										<span className="text-xs text-slate-500">Bundle pricing</span>
 									</div>
 									{visiblePackages.length === 0 ? (
-										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4 text-center text-xs text-slate-500">
+										<div className="rounded-xl border border-dashed border-black bg-white p-4 text-center text-xs text-black">
 											No package matches your current search.
 										</div>
 									) : (
@@ -3377,12 +3849,13 @@ const PointOfSalePage = () => {
 														key={`package-${pkg.id}`}
 														onClick={() => addPackageToOrder(pkg)}
 														disabled={!!selectedRepairOrder}
-														className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+														data-catalog-card="true"
+														className="h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition enabled:hover:border-black enabled:hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold uppercase text-black">Package</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -3390,13 +3863,13 @@ const PointOfSalePage = () => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{pkg.name}</p>
-															<p className="mt-1 text-xs text-slate-600">{pkg.description}</p>
-															<p className="mt-2 text-xs text-slate-700">Includes {pkg.includedServices.length} services</p>
-															<p className="text-xs text-slate-700">{pkg.saveText}</p>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(pkg.price)}</p>
-																<p className="text-xs text-slate-500">Bundle offer</p>
+															<p className="mt-3 text-xl font-semibold text-black">{pkg.name}</p>
+															<p className="mt-1 text-xs text-black">{pkg.description}</p>
+															<p className="mt-2 text-xs text-black">Includes {pkg.includedServices.length} services</p>
+															<p className="text-xs text-black">{pkg.saveText}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(pkg.price)}</p>
+																<p className="text-xs text-black">Bundle offer</p>
 															</div>
 														</div>
 													</button>
@@ -3439,16 +3912,17 @@ const PointOfSalePage = () => {
 														key={`service-${service.id}`}
 														onClick={() => addFromServiceCatalog(service)}
 														disabled={!canSelectService}
-														className={`h-56 rounded-xl border p-4 text-left transition ${
+														data-catalog-card="true"
+														className={`h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition ${
 															canSelectService
-																? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
-																: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
+																? "enabled:hover:border-black enabled:hover:bg-white"
+																: "opacity-50 grayscale cursor-not-allowed"
 														}`}
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{service.category}</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold text-black">{service.category}</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -3456,18 +3930,18 @@ const PointOfSalePage = () => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{service.name}</p>
-															<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
+															<p className="mt-3 text-xl font-semibold text-black">{service.name}</p>
+															<ul className="mt-2 list-disc pl-5 text-xs text-black">
 																<li>{service.category} service for customer request.</li>
 																<li>Estimated turnaround: {service.duration}.</li>
 															</ul>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(service.price)}</p>
-																<p className="text-xs text-slate-500">{service.duration}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(service.price)}</p>
+																<p className="text-xs text-black">{service.duration}</p>
 															</div>
-															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Included in package</span>}
-															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Add-on</span>}
-															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
+															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Included in package</span>}
+															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Add-on</span>}
+															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Requested</span>}
 														</div>
 													</button>
 												);
@@ -3491,7 +3965,7 @@ const PointOfSalePage = () => {
 										>
 											&#8249;
 										</button>
-										<div className="h-9 min-w-10 rounded-lg bg-blue-600 px-3 text-center text-sm font-semibold leading-9 text-white">
+										<div className="h-9 min-w-10 rounded-lg bg-[#111111] px-3 text-center text-sm font-semibold leading-9 text-white">
 											{servicePage}
 										</div>
 										<button
@@ -3532,6 +4006,8 @@ const PointOfSalePage = () => {
 														onClick={unselectManualPackage}
 														title="Unselect package"
 														aria-label="Unselect package"
+														data-erp-icon-action="true"
+														data-semantic-color="danger"
 														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
 													>
 														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3559,6 +4035,8 @@ const PointOfSalePage = () => {
 																			onClick={() => removeItem(item.id)}
 																			title="Remove add-on"
 																			aria-label="Remove add-on"
+																			data-erp-icon-action="true"
+																			data-semantic-color="danger"
 																			className="rounded p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
 																		>
 																			<svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3585,6 +4063,8 @@ const PointOfSalePage = () => {
 														onClick={() => removeItem(item.id)}
 														title="Remove item"
 														aria-label="Remove item"
+														data-erp-icon-action="true"
+														data-semantic-color="danger"
 														className="rounded-md p-1 text-red-600 transition hover:bg-red-50 hover:text-red-500"
 													>
 														<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3606,10 +4086,10 @@ const PointOfSalePage = () => {
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
 							{isManualStandaloneCheckout && (
 								<p className="text-[11px] text-slate-500">
-									Manual policy from Shop Settings: {shopRepairPaymentPolicy === "deposit_50" ? "50/50 deposit" : "Full upfront"}
+									Manual policy from Shop Settings: Full Payment Upfront
 								</p>
 							)}
-							<select
+							<MonochromeSelect
 								title="Payment method"
 								value={paymentMethod}
 								onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
@@ -3618,7 +4098,7 @@ const PointOfSalePage = () => {
 								<option value="cash">Cash</option>
 								<option value="gcash">GCash</option>
 								<option value="card">Card</option>
-							</select>
+							</MonochromeSelect>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 							<input
@@ -3650,12 +4130,7 @@ const PointOfSalePage = () => {
 							<div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
 								<div className="space-y-2 text-sm">
 									<div className="flex items-center justify-between text-slate-600"><span>Service Subtotal</span><span>{formatPeso(subtotal)}</span></div>
-									{isManualStandaloneCheckout && dueTypeForManualCheckout === "deposit" && (
-										<div className="flex items-center justify-between text-slate-600"><span>Deposit Base (50%)</span><span>{formatPeso(chargeableSubtotal)}</span></div>
-									)}
-									{(!isManualStandaloneCheckout || dueTypeForManualCheckout !== "deposit") && (
-										<div className="flex items-center justify-between text-slate-600"><span>Chargeable Subtotal</span><span>{formatPeso(chargeableSubtotal)}</span></div>
-									)}
+									<div className="flex items-center justify-between text-slate-600"><span>Chargeable Subtotal</span><span>{formatPeso(chargeableSubtotal)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>Subtotal (Before VAT)</span><span>{formatPeso(dueBreakdown.netSubtotal)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>Discount</span><span>- {formatPeso(discount)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>VAT ({VAT_RATE}%)</span><span>{formatPeso(vatAmount)}</span></div>
@@ -3683,7 +4158,7 @@ const PointOfSalePage = () => {
 							)}
 
 							{!canPay && payDisableReason.length > 0 && (
-								<div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">
+								<div className="rounded-xl border border-gray-300 bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-700">
 									{payDisableReason}
 								</div>
 							)}
@@ -3712,7 +4187,7 @@ const PointOfSalePage = () => {
 				</div>
 
 				{isOrderModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Attach From Repair Orders</h3>
@@ -3741,10 +4216,12 @@ const PointOfSalePage = () => {
 										filteredRepairOrders.map((order) => (
 											<div key={order.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
 												<div>
+													<p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{order.requestNumber || `Repair #${order.id}`}</p>
 													<p className="font-semibold text-slate-900">{order.customer}</p>
 													<p className="text-sm text-slate-600">{order.service}</p>
 													<p className="text-xs text-slate-500">Services: {order.requestedServices.join(", ")}</p>
-													<p className="text-xs text-slate-500">Estimated amount {formatPeso(order.amount)}</p>
+													<p className="text-xs text-slate-500">Total {formatPeso(order.amount)} · Paid {formatPeso(order.totalPaidAmount)}</p>
+													<p className="text-xs font-semibold text-blue-700">Collect {getDueTypeLabel(order.dueTypeToCollect)} {formatPeso(order.collectibleAmount)} · Remaining {formatPeso(order.outstandingBalance)}</p>
 												</div>
 												<button
 													type="button"
@@ -3764,8 +4241,18 @@ const PointOfSalePage = () => {
 					</>
 				)}
 
+				{retailVariantModal && retailVariantModalProduct && (
+					<RetailVariantModal
+						isOpen={isRetailVariantModalOpen}
+						product={retailVariantModalProduct}
+						selection={{ size: retailVariantModal.size, color: retailVariantModal.color }}
+						onCancel={() => setRetailVariantModal(null)}
+						onApply={applyRetailVariantSelection}
+					/>
+				)}
+
 				{isHistoryModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt History</h3>
@@ -3812,14 +4299,14 @@ const PointOfSalePage = () => {
 														<p className="text-xs text-slate-600">Customer: {receipt.customerName}</p>
 														<p className="text-xs text-slate-600">Method: {receipt.paymentMethod.toUpperCase()} | Phase: {getDueTypeLabel(receipt.dueType)}</p>
 														{receipt.latestRefund?.status && (
-															<p className="text-[11px] text-slate-500">{getRefundStatusHint(receipt.latestRefund.status)}</p>
+															<p className="text-[11px] text-slate-500">{getReceiptLatestRefundPresentation(receipt)?.hint ?? getRefundStatusHint(receipt.latestRefund.status)}</p>
 														)}
 													</div>
 													<div className="flex items-center gap-2">
 														<p className="text-sm font-bold text-slate-900">{formatPeso(receipt.totalDue)}</p>
 														{receipt.latestRefund?.status && (
 															<span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-slate-700">
-																{receipt.latestRefund.status}
+																{getReceiptLatestRefundPresentation(receipt)?.label ?? receipt.latestRefund.status}
 															</span>
 														)}
 														{canRequestWarrantyClaimFromReceipt(receipt) && (
@@ -3839,8 +4326,8 @@ const PointOfSalePage = () => {
 															<button
 																type="button"
 																onClick={() => handleRequestRefund(receipt)}
-																title="Request Refund"
-																aria-label="Request Refund"
+																title={isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund"}
+																aria-label={isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund"}
 																className="inline-flex items-center justify-center bg-transparent p-1 text-amber-600 transition-colors hover:text-amber-700"
 															>
 																<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -3897,9 +4384,9 @@ const PointOfSalePage = () => {
 				)}
 
 				{isReceiptModalOpen && receiptSnapshot && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
-						<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
-							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+					<div className="receipt-print-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
+						<div className="receipt-print-card w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+							<div className="receipt-modal-header flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>
 								<div className="flex items-center gap-2">
 									<button
@@ -3927,7 +4414,7 @@ const PointOfSalePage = () => {
 								</div>
 							</div>
 
-							<div className="max-h-[75vh] overflow-y-auto p-5">
+							<div className="receipt-modal-content max-h-[75vh] overflow-y-auto p-5">
 								<div className="pos-print-area mx-auto w-full max-w-[320px] rounded-lg border border-slate-300 bg-white p-3 text-xs text-slate-800">
 									<div className="text-center">
 										<p className="text-sm font-bold">SoleSpace Repair POS</p>

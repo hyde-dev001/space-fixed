@@ -7,15 +7,22 @@ use App\Models\InventoryColorVariant;
 use App\Models\InventoryItem;
 use App\Models\InventorySize;
 use App\Models\Notification;
+use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\PosTransaction;
 use App\Models\ProductReview;
 use App\Models\Product;
 use App\Models\ProductVariant;
 use App\Models\StockMovement;
 use App\Enums\OrderStatus;
+use App\Models\DeliveryDispute;
 use App\Services\NotificationService;
+use App\Services\Orders\OrderFulfillmentService;
+use App\Services\OrderReceiptService;
 use App\Services\OrderRefundService;
+use App\Services\DeliveryDisputeService;
+use App\Services\DeliveryDisputeEvidenceService;
 use App\Services\PaymongoRefundService;
 use App\Services\PaymentSettlementService;
 use App\Services\RefundLineCalculatorService;
@@ -35,25 +42,37 @@ class OrderController extends Controller
 {
     protected NotificationService $notificationService;
     protected OrderRefundService $orderRefundService;
+    protected OrderFulfillmentService $orderFulfillmentService;
     protected PaymongoRefundService $paymongoRefundService;
     protected PaymentSettlementService $paymentSettlementService;
     protected RefundLineCalculatorService $refundLineCalculatorService;
+    protected OrderReceiptService $orderReceiptService;
+    protected DeliveryDisputeService $deliveryDisputeService;
+    protected DeliveryDisputeEvidenceService $deliveryDisputeEvidenceService;
     private ?array $orderRefundColumns = null;
     private bool $orderRefundColumnIntrospectionFailed = false;
 
     public function __construct(
         NotificationService $notificationService,
         OrderRefundService $orderRefundService,
+        OrderFulfillmentService $orderFulfillmentService,
         PaymongoRefundService $paymongoRefundService,
         PaymentSettlementService $paymentSettlementService,
         RefundLineCalculatorService $refundLineCalculatorService,
+        OrderReceiptService $orderReceiptService,
+        DeliveryDisputeService $deliveryDisputeService,
+        DeliveryDisputeEvidenceService $deliveryDisputeEvidenceService,
     )
     {
         $this->notificationService = $notificationService;
         $this->orderRefundService = $orderRefundService;
+        $this->orderFulfillmentService = $orderFulfillmentService;
         $this->paymongoRefundService = $paymongoRefundService;
         $this->paymentSettlementService = $paymentSettlementService;
         $this->refundLineCalculatorService = $refundLineCalculatorService;
+        $this->orderReceiptService = $orderReceiptService;
+        $this->deliveryDisputeService = $deliveryDisputeService;
+        $this->deliveryDisputeEvidenceService = $deliveryDisputeEvidenceService;
     }
     /**
      * Display user's orders
@@ -87,22 +106,95 @@ class OrderController extends Controller
                 'items',
                 'shopOwner',
                 'refunds' => fn ($query) => $query->orderByDesc('id'),
+                'deliveryDisputes' => fn ($query) => $query->latest('id'),
             ])
             ->orderBy('created_at', 'desc')
             ->get();
 
+        $orderIds = $orderCollection->pluck('id')->all();
+        $shopOwnerIds = $orderCollection->pluck('shop_owner_id')->filter()->unique()->values()->all();
+        $posOrderLookup = ($orderIds !== [] && $shopOwnerIds !== [])
+            ? PosTransaction::query()
+                ->where('module_type', 'retail')
+                ->whereIn('shop_owner_id', $shopOwnerIds)
+                ->whereIn('module_reference_id', $orderIds)
+                ->pluck('module_reference_id')
+                ->mapWithKeys(fn ($orderId) => [(int) $orderId => true])
+                ->all()
+            : [];
+
         $reviewedOrderLookup = ProductReview::query()
             ->where('user_id', $user->id)
-            ->whereIn('order_id', $orderCollection->pluck('id')->all())
+            ->whereIn('order_id', $orderIds)
             ->pluck('order_id')
             ->mapWithKeys(fn ($orderId) => [(int) $orderId => true])
             ->all();
 
+        $logisticsShipmentLookup = Shipment::query()
+            ->where('source_type', 'order')
+            ->where('purpose', 'retail_delivery')
+            ->whereIn('source_id', $orderCollection->pluck('id')->all())
+            ->orderByDesc('id')
+            ->with([
+                'legs' => fn ($query) => $query->orderBy('sequence')->orderBy('id'),
+                'legs.assignments.riderProfile',
+                'legs.attempts' => fn ($query) => $query
+                    ->where('attempt_type', 'delivery')
+                    ->where('status', 'failed')
+                    ->latest('attempted_at')
+                    ->latest('id'),
+            ])
+            ->get()
+            ->unique('source_id')
+            ->mapWithKeys(function (Shipment $shipment) {
+                $currentLeg = $shipment->legs->last();
+                $latestAttempt = $currentLeg?->attempts->first();
+                $assignment = $shipment->legs
+                    ->flatMap(fn ($leg) => $leg->assignments)
+                    ->first(fn ($assignment) => in_array($assignment->status, ['assigned', 'accepted', 'completed'], true));
+
+                return [(int) $shipment->source_id => [
+                    'id' => (int) $shipment->id,
+                    'status' => $currentLeg?->status?->value ?? $shipment->status->value,
+                    'tracking_number' => $currentLeg?->tracking_number,
+                    'delivery_has_failed_attempt' => (bool) ($latestAttempt
+                        && !in_array($currentLeg->status->value, ['awaiting_proof_approval', 'proof_correction_required', 'delivered'], true)),
+                    'delivery_scheduled_date' => optional($currentLeg?->scheduled_delivery_date)->toDateString(),
+                    'delivery_window' => $currentLeg?->delivery_window,
+                    'rider_name' => $assignment?->riderProfile?->name,
+                    'rider_phone' => $assignment?->riderProfile?->phone,
+                ]];
+            })
+            ->all();
+
+        $refundShipmentLookup = Shipment::query()
+            ->where('source_type', 'order_refund')
+            ->whereIn('shop_owner_id', $orderCollection->pluck('shop_owner_id')->filter()->all())
+            ->whereIn('source_id', $orderCollection->flatMap(fn (Order $order) => $order->refunds->pluck('id'))->all())
+            ->orderByDesc('id')
+            ->with('legs.assignments.riderProfile')
+            ->get()
+            ->unique('source_id')
+            ->mapWithKeys(function (Shipment $shipment) {
+                $assignment = $shipment->legs
+                    ->flatMap(fn ($leg) => $leg->assignments)
+                    ->first(fn ($assignment) => in_array($assignment->status, ['assigned', 'accepted'], true));
+
+                return [(int) $shipment->source_id => [
+                    'id' => (int) $shipment->id,
+                    'rider_name' => $assignment?->riderProfile?->name,
+                    'rider_phone' => $assignment?->riderProfile?->phone,
+                ]];
+            })
+            ->all();
+
         $orders = $orderCollection
-            ->map(function (Order $order) use ($reviewedOrderLookup) {
+            ->map(function (Order $order) use ($reviewedOrderLookup, $logisticsShipmentLookup, $refundShipmentLookup, $posOrderLookup) {
                 $this->reconcilePendingOrderPaymentWithGateway($order);
                 $order->refresh();
 
+                $shipment = $logisticsShipmentLookup[(int) $order->id] ?? null;
+                $isShopOwnedDelivery = strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics';
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $vatAmount = $order->vat_amount !== null ? max(0.0, (float) $order->vat_amount) : null;
@@ -130,6 +222,12 @@ class OrderController extends Controller
                     $order->loadMissing(['refunds' => fn ($query) => $query->orderByDesc('id')]);
                     $latestRefund = $order->refunds->first();
                 }
+
+                $returnDeliveryMethod = $latestRefund?->returnDeliveryMethod();
+                $refundShipment = $latestRefund && $returnDeliveryMethod !== 'third_party'
+                    ? ($refundShipmentLookup[(int) $latestRefund->id] ?? null)
+                    : null;
+                $isShopOwnedReturn = $returnDeliveryMethod === 'shop_owned';
 
                 $refundStatus = null;
                 $refundStatusNote = null;
@@ -179,6 +277,9 @@ class OrderController extends Controller
                 $cancellationRefundDeadlineAt = $order->cancellation_refund_deadline_at;
                 $cancellationRefundWindowMinutes = $order->resolveCancellationRefundWindowMinutes();
                 $cancellationRefundDeadlinePassed = !$order->isCancellationRefundWindowOpen();
+                $activeDispute = $order->deliveryDisputes
+                    ->first(fn ($dispute) => in_array((string) $dispute->status, ['open', 'investigating'], true));
+                $receiptStatus = (string) ($order->customer_receipt_status ?? 'pending');
 
                 return [
                     'id' => $order->id,
@@ -220,14 +321,46 @@ class OrderController extends Controller
                     'tracking_number' => $order->tracking_number,
                     'carrier_company' => $order->carrier_company,
                     'carrier_name' => $order->carrier_name,
-                    'tracking_link' => $order->tracking_link,
+                    'tracking_link' => $this->customerSafeExternalTrackingLink($order->tracking_link),
+                    'logistics_shipment_id' => $shipment['id'] ?? null,
+                    'is_shop_owned_delivery' => $isShopOwnedDelivery,
+                    'delivery_status' => $shipment['status'] ?? null,
+                    'delivery_tracking_number' => $shipment['tracking_number'] ?? null,
+                    'delivery_has_failed_attempt' => $shipment['delivery_has_failed_attempt'] ?? false,
+                    'delivery_scheduled_date' => $shipment['delivery_scheduled_date'] ?? null,
+                    'delivery_window' => $shipment['delivery_window'] ?? null,
+                    'delivery_rider_name' => $isShopOwnedDelivery ? ($shipment['rider_name'] ?? null) : null,
+                    'delivery_rider_phone' => $isShopOwnedDelivery ? ($shipment['rider_phone'] ?? null) : null,
+                    'delivery_reference' => $isShopOwnedDelivery && $shipment ? 'SHP-' . $shipment['id'] : null,
                     'eta' => $order->eta,
                     'pickup_enabled' => $order->pickup_enabled ?? false,
+                    'customer_receipt_status' => $receiptStatus,
+                    'customer_received_at' => optional($order->customer_received_at)->toISOString(),
+                    'customer_receipt_disputed_at' => optional($order->customer_receipt_disputed_at)->toISOString(),
+                    'can_confirm_receipt' => $this->orderReceiptService->canConfirm(
+                        $order,
+                        $shipment['status'] ?? null,
+                        isset($posOrderLookup[(int) $order->id]),
+                    ),
+                    'active_delivery_dispute' => $activeDispute ? [
+                        'id' => (int) $activeDispute->id,
+                        'status' => (string) $activeDispute->status,
+                        'reason' => (string) $activeDispute->reason,
+                        'notes' => $activeDispute->notes,
+                        'reported_at' => optional($activeDispute->reported_at)->toISOString(),
+                    ] : null,
+                    'can_report_delivery_issue' => $this->deliveryDisputeService->canReport($order),
                     'review_submitted' => isset($reviewedOrderLookup[(int) $order->id]),
                     'refund_status' => $refundStatus,
                     'refund_status_note' => $refundStatusNote,
                     'refund_stage' => $latestRefund ? [
                         'id' => $latestRefund->id,
+                        'logistics_shipment_id' => $returnDeliveryMethod === 'third_party' ? null : ($refundShipment['id'] ?? null),
+                        'is_shop_owned_return' => $isShopOwnedReturn,
+                        'return_delivery_method' => $returnDeliveryMethod,
+                        'delivery_rider_name' => $isShopOwnedReturn ? ($refundShipment['rider_name'] ?? null) : null,
+                        'delivery_rider_phone' => $isShopOwnedReturn ? ($refundShipment['rider_phone'] ?? null) : null,
+                        'delivery_reference' => $isShopOwnedReturn && $refundShipment ? 'RET-' . $refundShipment['id'] : null,
                         'status' => (string) ($latestRefund->status ?? ''),
                         'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
                         'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
@@ -237,18 +370,22 @@ class OrderController extends Controller
                         'customer_return_carrier' => $latestRefund->customer_return_carrier,
                         'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
                         'customer_return_rider_phone' => $latestRefund->customer_return_rider_phone,
-                        'customer_return_tracking_link' => $latestRefund->customer_return_tracking_link,
+                        'customer_return_tracking_link' => $this->customerSafeExternalTrackingLink($latestRefund->customer_return_tracking_link),
                         'customer_return_shipped_at' => optional($latestRefund->customer_return_shipped_at)->toDateTimeString(),
                         'staff_return_tracking_number' => $latestRefund->staff_return_tracking_number,
                         'staff_return_carrier' => $latestRefund->staff_return_carrier,
                         'staff_return_rider_name' => $latestRefund->staff_return_rider_name,
                         'staff_return_rider_phone' => $latestRefund->staff_return_rider_phone,
-                        'staff_return_tracking_link' => $latestRefund->staff_return_tracking_link,
+                        'staff_return_tracking_link' => $this->customerSafeExternalTrackingLink($latestRefund->staff_return_tracking_link),
                         'staff_return_shipped_at' => optional($latestRefund->staff_return_shipped_at)->toDateTimeString(),
                         'return_arranged_by_staff_at' => optional($latestRefund->return_arranged_by_staff_at)->toDateTimeString(),
                         'return_confirmed_at' => optional($latestRefund->return_confirmed_at)->toDateTimeString(),
                         'refund_executed_at' => optional($latestRefund->refund_executed_at)->toDateTimeString(),
                         'rejection_reason' => $latestRefund->rejection_reason,
+                        'can_mark_return_shipped' => strtolower((string) ($latestRefund->return_source ?? 'customer')) !== 'staff'
+                            && (string) ($latestRefund->return_status ?? 'awaiting_approval') === 'pending_customer_shipment'
+                            && (string) ($latestRefund->shop_owner_status ?? 'pending') === 'approved'
+                            && (string) ($latestRefund->finance_status ?? 'pending') === 'approved',
                         'is_refunded' => in_array(strtolower((string) ($latestRefund->status ?? '')), ['succeeded', 'refunded'], true),
                     ] : null,
                 ];
@@ -257,6 +394,33 @@ class OrderController extends Controller
         return Inertia::render('UserSide/Orders/MyOrders', [
             'orders' => $orders,
         ]);
+    }
+
+    private function customerSafeExternalTrackingLink(?string $value): ?string
+    {
+        $normalized = trim((string) $value);
+        if ($normalized === '' || filter_var($normalized, FILTER_VALIDATE_URL) === false) {
+            return null;
+        }
+
+        $parts = parse_url($normalized);
+        if (!is_array($parts)) {
+            return null;
+        }
+
+        $scheme = strtolower((string) ($parts['scheme'] ?? ''));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            return null;
+        }
+
+        $path = strtolower('/' . ltrim(rawurldecode((string) ($parts['path'] ?? '')), '/'));
+        foreach (['/erp', '/admin', '/shop-owner'] as $prefix) {
+            if ($path === $prefix || str_starts_with($path, $prefix . '/')) {
+                return null;
+            }
+        }
+
+        return $normalized;
     }
 
     private function reconcileRefundWithGateway(Order $order, ?OrderRefund $latestRefund): void
@@ -451,59 +615,189 @@ class OrderController extends Controller
             ->where('customer_id', $user->id)
             ->firstOrFail();
 
-        // Only allow confirmation if order is shipped
-        if (!in_array($order->status, [OrderStatus::SHIPPED])) {
+        $result = $this->orderReceiptService->confirm($order);
+        if (($result['result'] ?? null) !== 'confirmed') {
             return response()->json([
                 'success' => false,
-                'message' => 'Can only confirm orders that have been shipped',
+                'message' => $result['message'] ?? 'Order is not currently eligible for receipt confirmation.',
             ], 400);
         }
 
-        $order->status = OrderStatus::DELIVERED;
+        $order = $result['order'];
 
-        $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-        $isCodOrder = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
-
-        if ($isCodOrder && !in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
-            $order->payment_status = 'paid';
-            $order->paid_at = now();
-            $order->payment_failed_at = null;
-            $order->payment_failure_reason = null;
-            $order->payment_expired_at = null;
-        }
-
-        $order->save();
-
-        // Notify shop owner about successful delivery
-        try {
-            $this->notificationService->sendToShopOwner(
-                shopOwnerId: $order->shop_owner_id,
-                type: \App\Enums\NotificationType::ORDER_DELIVERED,
-                title: 'Order Delivered Successfully',
-                message: "Order #{$order->order_number} has been delivered to customer",
-                data: [
-                    'order_id' => $order->id,
+        if (($result['delivery_completed'] ?? false) === true) {
+            try {
+                $this->notificationService->sendToShopOwner(
+                    shopOwnerId: $order->shop_owner_id,
+                    type: \App\Enums\NotificationType::ORDER_DELIVERED,
+                    title: 'Order Delivered Successfully',
+                    message: "Order #{$order->order_number} has been delivered to customer",
+                    data: [
+                        'order_id' => $order->id,
+                        'order_number' => $order->order_number,
+                        'customer_name' => $order->customer_name,
+                        'total' => number_format($order->total_amount, 2),
+                    ],
+                    actionUrl: '/shop-owner/job-orders-retail'
+                );
+                Log::info('Shop owner notified of successful delivery', [
+                    'shop_owner_id' => $order->shop_owner_id,
                     'order_number' => $order->order_number,
-                    'customer_name' => $order->customer_name,
-                    'total' => number_format($order->total_amount, 2),
-                ],
-                actionUrl: '/shop-owner/job-orders-retail'
-            );
-            Log::info('Shop owner notified of successful delivery', [
-                'shop_owner_id' => $order->shop_owner_id,
-                'order_number' => $order->order_number,
-            ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to send delivery notification to shop owner', [
-                'shop_owner_id' => $order->shop_owner_id,
-                'order_id' => $order->id,
-                'error' => $e->getMessage(),
-            ]);
+                ]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send delivery notification to shop owner', [
+                    'shop_owner_id' => $order->shop_owner_id,
+                    'order_id' => $order->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
         }
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'],
+            'order_status' => $order->status instanceof OrderStatus ? $order->status->value : (string) $order->status,
+            'receipt_status' => (string) $order->customer_receipt_status,
+            'customer_received_at' => optional($order->customer_received_at)->toISOString(),
+        ]);
+    }
+
+    public function reportDeliveryIssue(Request $request, Order $order)
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'in:' . implode(',', DeliveryDisputeService::REASONS)],
+            'notes' => ['nullable', 'string', 'max:2000'],
+            'media' => ['nullable', 'array', 'size:6'],
+            'media.*' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,mp4,mov,avi,mkv,webm'],
+        ]);
+
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $mediaFiles = $request->file('media', []);
+        $requiresEvidence = $validated['reason'] !== 'item_not_received';
+        if ($requiresEvidence || ! empty($mediaFiles)) {
+            $this->deliveryDisputeEvidenceService->validateFiles($mediaFiles);
+        }
+        $storedEvidence = empty($mediaFiles)
+            ? []
+            : $this->deliveryDisputeEvidenceService->store($mediaFiles, (int) $order->id);
+
+        try {
+            $result = $this->deliveryDisputeService->report(
+                $order,
+                (int) $user->id,
+                (string) $validated['reason'],
+                $validated['notes'] ?? null,
+                $storedEvidence,
+            );
+        } catch (\Throwable $exception) {
+            $this->deliveryDisputeEvidenceService->delete($storedEvidence);
+
+            throw $exception;
+        }
+
+        if (($result['result'] ?? null) === 'existing') {
+            $this->deliveryDisputeEvidenceService->delete($storedEvidence);
+        }
+
+        /** @var DeliveryDispute $dispute */
+        $dispute = $result['dispute'];
 
         return response()->json([
             'success' => true,
-            'message' => 'Order confirmed as delivered',
+            'message' => ($result['result'] ?? null) === 'existing'
+                ? 'This order already has an active report.'
+                : 'Your order report was submitted for dispatcher investigation.',
+            'dispute' => [
+                'id' => $dispute->id,
+                'status' => $dispute->status,
+                'reason' => $dispute->reason,
+                'reported_at' => optional($dispute->reported_at)->toISOString(),
+                'evidence_count' => count($dispute->evidence_media ?? []),
+            ],
+        ]);
+    }
+
+    public function markRefundReturnShipped(Request $request, int $id)
+    {
+        $validated = $request->validate([
+            'delivery_method' => ['nullable', 'in:shop_owned,third_party'],
+            'tracking_number' => ['required_unless:delivery_method,shop_owned', 'string', 'max:255'],
+            'carrier' => ['required_unless:delivery_method,shop_owned', 'string', 'max:100'],
+            'rider_name' => ['nullable', 'string', 'max:100'],
+            'rider_phone' => ['nullable', 'string', 'max:50'],
+            'tracking_link' => ['nullable', 'url', 'max:2048'],
+            'note' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $refund = OrderRefund::query()
+            ->whereKey($id)
+            ->where('customer_id', $user->id)
+            ->firstOrFail();
+
+        $result = $this->orderRefundService->markCustomerReturnShipped($refund, $validated);
+        if (!in_array(($result['result'] ?? null), ['in_transit', 'pickup_arranged'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'] ?? 'Return shipment cannot be updated in the current state.',
+            ], 422);
+        }
+
+        $updatedRefund = $result['refund'] ?? $refund->fresh();
+        $returnDeliveryMethod = $updatedRefund->returnDeliveryMethod();
+        $refundShipment = $returnDeliveryMethod === 'third_party'
+            ? null
+            : Shipment::query()
+                ->where('shop_owner_id', $updatedRefund->shop_owner_id)
+                ->where('source_type', 'order_refund')
+                ->where('source_id', $updatedRefund->id)
+                ->where('purpose', 'refund_return')
+                ->where('status', '!=', 'cancelled')
+                ->with([
+                    'legs' => fn ($query) => $query->orderBy('sequence')->orderBy('id'),
+                    'legs.assignments.riderProfile',
+                ])
+                ->latest('id')
+                ->first();
+        $refundLeg = $refundShipment?->legs->last();
+        $activeAssignment = $refundLeg?->assignments->first(
+            fn ($assignment) => in_array($assignment->status, ['assigned', 'accepted'], true)
+        );
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'] ?? 'Return shipment details submitted successfully.',
+            'refund' => [
+                'id' => $updatedRefund->id,
+                'logistics_shipment_id' => $refundShipment?->id,
+                'is_shop_owned_return' => $returnDeliveryMethod === 'shop_owned',
+                'return_delivery_method' => $returnDeliveryMethod,
+                'return_status' => (string) $updatedRefund->return_status,
+                'return_source' => (string) ($updatedRefund->return_source ?? 'customer'),
+                'customer_return_tracking_number' => $updatedRefund->customer_return_tracking_number,
+                'customer_return_carrier' => $updatedRefund->customer_return_carrier,
+                'customer_return_rider_name' => $updatedRefund->customer_return_rider_name,
+                'customer_return_rider_phone' => $updatedRefund->customer_return_rider_phone,
+                'customer_return_tracking_link' => $this->customerSafeExternalTrackingLink($updatedRefund->customer_return_tracking_link),
+                'customer_return_shipped_at' => optional($updatedRefund->customer_return_shipped_at)->toDateTimeString(),
+                'staff_return_tracking_number' => $updatedRefund->staff_return_tracking_number,
+                'staff_return_carrier' => $updatedRefund->staff_return_carrier,
+                'staff_return_rider_name' => $updatedRefund->staff_return_rider_name,
+                'staff_return_rider_phone' => $updatedRefund->staff_return_rider_phone,
+                'staff_return_tracking_link' => $this->customerSafeExternalTrackingLink($updatedRefund->staff_return_tracking_link),
+                'staff_return_shipped_at' => optional($updatedRefund->staff_return_shipped_at)->toDateTimeString(),
+                'return_arranged_by_staff_at' => optional($updatedRefund->return_arranged_by_staff_at)->toDateTimeString(),
+                'delivery_rider_name' => $activeAssignment?->riderProfile?->name,
+                'delivery_rider_phone' => $activeAssignment?->riderProfile?->phone,
+                'delivery_reference' => $refundShipment ? 'RET-' . $refundShipment->id : null,
+            ],
         ]);
     }
 
@@ -560,6 +854,27 @@ class OrderController extends Controller
                     'success' => false,
                     'message' => 'Only delivered or completed orders can request a refund.',
                 ], 422);
+            }
+
+            if (strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Shop-owned logistics orders use Report Order for dispatcher investigation.',
+                ], 422);
+            }
+
+            if (!$order->isCancellationRefundWindowOpen()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Refund deadline has passed for this order.',
+                    'deadline_at' => $order->cancellation_refund_deadline_at?->toIso8601String(),
+                ], 422);
+            }
+
+            if (Str::slug((string) $validated['reason'], '_') === 'other' && trim((string) ($validated['other_reason_note'] ?? '')) === '') {
+                throw ValidationException::withMessages([
+                    'other_reason_note' => ['Please provide more details for the other refund reason.'],
+                ]);
             }
 
             $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
@@ -882,19 +1197,14 @@ class OrderController extends Controller
                 'requested_at' => now(),
             ];
 
-            $refundRequest = $this->createRefundRequestWithCompatibilityFallback($refundPayload, (int) $order->id);
-
-            if (!empty($normalizedRefundLines) && Schema::hasTable('order_refund_items')) {
-                try {
-                    $refundRequest->items()->createMany($normalizedRefundLines);
-                } catch (\Throwable $linePersistError) {
-                    Log::warning('Refund line payload accepted but line persistence failed', [
-                        'order_id' => (int) $order->id,
-                        'refund_id' => (int) ($refundRequest->id ?? 0),
-                        'error' => $linePersistError->getMessage(),
-                    ]);
-                }
+            $reservation = $this->orderRefundService->reserveOrderRefund($order, $refundPayload, $normalizedRefundLines);
+            if (($reservation['result'] ?? null) === 'collision') {
+                return response()->json([
+                    'success' => false,
+                    'message' => $reservation['message'],
+                ], 422);
             }
+            $refundRequest = $reservation['refund'];
 
             $this->dispatchRefundRequestNotification($refundRequest, $order, $user);
 
@@ -1280,6 +1590,7 @@ class OrderController extends Controller
             'order_item_id' => 'nullable|integer',
             'reason' => 'nullable|string|max:500',
             'note' => 'nullable|string|max:1000',
+            'other_reason_note' => 'nullable|string|max:1000',
         ]);
 
         $user = Auth::guard('user')->user();
@@ -1323,8 +1634,27 @@ class OrderController extends Controller
                 \Illuminate\Support\Facades\DB::rollBack();
                 return response()->json([
                     'success' => false,
-                    'message' => 'Only pending orders can be cancelled.',
+                    'message' => 'You cannot cancel order once it is processed.',
                 ], 400);
+            }
+
+            if (Str::slug((string) ($validated['reason'] ?? ''), '_') === 'other' && trim((string) ($validated['other_reason_note'] ?? '')) === '') {
+                \Illuminate\Support\Facades\DB::rollBack();
+                return response()->json([
+                    'message' => 'Please provide more details for the other cancellation reason.',
+                    'errors' => [
+                        'other_reason_note' => ['Please provide more details for the other cancellation reason.'],
+                    ],
+                ], 422);
+            }
+
+            if (!$order->isCancellationRefundWindowOpen()) {
+                \Illuminate\Support\Facades\DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cancellation deadline has passed for this order.',
+                    'deadline_at' => $order->cancellation_refund_deadline_at?->toIso8601String(),
+                ], 422);
             }
 
             $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
@@ -1418,6 +1748,7 @@ class OrderController extends Controller
             }
 
             $order->status = OrderStatus::CANCELLED;
+            $order->cancellation_other_reason_note = trim((string) ($validated['other_reason_note'] ?? '')) ?: null;
             $order->save();
 
             \Illuminate\Support\Facades\DB::commit();

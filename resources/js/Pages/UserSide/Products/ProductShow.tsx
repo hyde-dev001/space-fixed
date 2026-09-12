@@ -3,10 +3,13 @@ import { Head, Link, usePage, router } from '@inertiajs/react';
 import { route } from 'ziggy-js';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import Navigation from '../Shared/Navigation';
-import AddToCartButton from '../../../Components/CartActions';
+import AddToCartButton from '../../../components/CartActions';
 import Virtual3DShowroom from '../../../components/Virtual3DShowroom';
 import { CartGuestAddAttemptEvent, addCartGuestAddAttemptListener, removeCartGuestAddAttemptListener } from '../../../types/cart-events';
 import { useCart } from '../../../contexts/CartContext';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import ProductRail from './ProductRail';
+import { registerRecentlyViewed, type ProductRailItem } from './productHistory';
 
 type ColorVariantImage = {
   id: number;
@@ -30,19 +33,24 @@ type ColorVariant = {
   }>;
 };
 
-type ProductVoucherCampaign = {
-  id: string;
-  name: string;
-  code: string;
-  numericValue: number;
-  discountMode: 'percentage' | 'fixed';
-  value: string;
-  minSpend: string;
-  schedule: string;
-};
+type DesktopDisclosureId = 'details' | 'returns' | 'shipping';
 
 const ProductShow: React.FC = () => {
-  const { product, auth, cartIconCount: cartCountProp } = usePage().props as any;
+  const {
+    product,
+    auth,
+    cartIconCount: cartCountProp,
+    relatedProducts: relatedProductProps,
+    availableProductSlugs: availableProductSlugProps,
+  } = usePage().props as any;
+  const relatedProducts: ProductRailItem[] = Array.isArray(relatedProductProps) ? relatedProductProps : [];
+  const availableProductSlugs: string[] | undefined = React.useMemo(() => {
+    if (!Array.isArray(availableProductSlugProps)) {
+      return undefined;
+    }
+
+    return availableProductSlugProps.filter((slug: unknown): slug is string => typeof slug === 'string');
+  }, [availableProductSlugProps]);
   const { cartCount, isLoading: cartLoading } = useCart();
   const cartBadgeCount = Number(cartCountProp ?? (cartLoading ? 0 : cartCount) ?? 0);
   const [mobileSearchQuery, setMobileSearchQuery] = useState('');
@@ -53,14 +61,6 @@ const ProductShow: React.FC = () => {
   const [isMobileSearchingSuggestions, setIsMobileSearchingSuggestions] = useState(false);
   const mobileSearchContainerRef = React.useRef<HTMLDivElement | null>(null);
   const mobileSearchAbortRef = React.useRef<AbortController | null>(null);
-  const voucherStripRef = React.useRef<HTMLDivElement | null>(null);
-  const voucherStripDragRef = React.useRef({
-    isDragging: false,
-    pointerId: -1,
-    startX: 0,
-    startScrollLeft: 0,
-    hasMoved: false,
-  });
   
   // Check if user is authenticated and is a regular customer (not ERP staff)
   // A user is a customer if they DON'T have a shop_owner_id (staff have shop_owner_id set)
@@ -79,47 +79,6 @@ const ProductShow: React.FC = () => {
       .join(', ');
   };
 
-  const formatVoucherSchedule = (startAt?: string | null, endAt?: string | null): string => {
-    const start = startAt ? new Date(startAt) : null;
-    const end = endAt ? new Date(endAt) : null;
-
-    if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      return 'Limited-time offer';
-    }
-
-    const formatDate = (date: Date) =>
-      date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-    return `Valid ${formatDate(start)} - ${formatDate(end)}`;
-  };
-
-  const promoContext = product?.promo_context ?? { campaigns: [], claimed_campaign_ids: [] };
-
-  const voucherCampaigns = React.useMemo<ProductVoucherCampaign[]>(() => {
-    const campaigns = Array.isArray(promoContext?.campaigns) ? promoContext.campaigns : [];
-
-    return campaigns
-      .filter((campaign: any) => String(campaign?.kind || '').toLowerCase() === 'voucher')
-      .map((campaign: any) => {
-        const numericValue = Number(campaign?.value || 0);
-        const discountMode = campaign?.discount_mode === 'fixed' ? 'fixed' : 'percentage';
-        const code = String(campaign?.code || '').trim().toUpperCase();
-
-        return {
-          id: String(campaign?.id),
-          name: String(campaign?.name || 'Voucher Campaign'),
-          code: code || 'NO-CODE',
-          value: discountMode === 'percentage'
-            ? `${numericValue}% off`
-            : `PHP ${Math.max(0, Math.round(numericValue)).toLocaleString()} off`,
-          minSpend: `PHP ${Math.max(0, Number(campaign?.min_spend || 0)).toLocaleString()} min spend`,
-          schedule: formatVoucherSchedule(campaign?.start_at, campaign?.end_at),
-          numericValue,
-          discountMode,
-        };
-      });
-  }, [promoContext]);
-  
   // Check if product has color variants (new Adidas-style system)
   const hasColorVariants = product.colorVariants && Array.isArray(product.colorVariants) && product.colorVariants.length > 0;
 
@@ -399,19 +358,58 @@ const ProductShow: React.FC = () => {
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | 'all'>('all');
   const [currentReviewPage, setCurrentReviewPage] = useState(1);
   const reviewsPerPage = 10;
-  const [claimedPromoIds, setClaimedPromoIds] = useState<string[]>(() => {
-    const claimed = Array.isArray(promoContext?.claimed_campaign_ids) ? promoContext.claimed_campaign_ids : [];
-    return claimed.map((id: unknown) => String(id));
-  });
 
   const [show3DShowroom, setShow3DShowroom] = useState(false);
+  const [recentlyViewed, setRecentlyViewed] = useState<ProductRailItem[]>([]);
+  const [openDesktopDisclosure, setOpenDesktopDisclosure] = useState<DesktopDisclosureId | null>('details');
+
+  const desktopDisclosures: Array<{
+    id: DesktopDisclosureId;
+    label: string;
+    content: React.ReactNode;
+  }> = [
+    {
+      id: 'details',
+      label: 'Product Details',
+      content: (
+        <div className="space-y-3">
+          <p>{product.description || 'Product information is provided by the seller.'}</p>
+          {product.category && <p>Category: {formatCategoryText(product.category)}</p>}
+        </div>
+      ),
+    },
+    {
+      id: 'returns',
+      label: 'Returns Policy',
+      content: (
+        <p>Return eligibility depends on the order status and the seller's return terms. Review your order details before requesting a return.</p>
+      ),
+    },
+    {
+      id: 'shipping',
+      label: 'Shipping',
+      content: <p>Available delivery options, timing, and shipping costs are confirmed during checkout.</p>,
+    },
+  ];
 
   useEffect(() => {
-    const claimed = Array.isArray(product?.promo_context?.claimed_campaign_ids)
-      ? product.promo_context.claimed_campaign_ids
-      : [];
-    setClaimedPromoIds(claimed.map((id: unknown) => String(id)));
-  }, [product?.id, product?.promo_context?.claimed_campaign_ids]);
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const currentProduct: ProductRailItem = {
+      id: Number(product.id),
+      name: String(product.name || 'Product'),
+      url: window.location.pathname,
+      image: typeof product.primary === 'string' ? product.primary : null,
+      price: String(product.price || ''),
+      compare_at_price: typeof product.compare_at_price === 'string' ? product.compare_at_price : null,
+      brand: typeof product.brand === 'string' ? product.brand : null,
+      category: typeof product.category === 'string' ? product.category : null,
+    };
+
+    setRecentlyViewed(registerRecentlyViewed(window.localStorage, currentProduct, availableProductSlugs));
+  }, [product.id, availableProductSlugs]);
 
   const modalSizeOptions = React.useMemo<SizeOption[]>(() => {
     const colorScopedSizes = getRawSizesForColor(modalSelectedColor);
@@ -658,74 +656,6 @@ const ProductShow: React.FC = () => {
     }
   };
 
-  const handleClaimPromo = async (campaign: ProductVoucherCampaign) => {
-    if (!isAuthenticated) {
-      await Swal.fire({
-        icon: 'info',
-        title: 'Login required',
-        text: 'Please log in to claim vouchers and coupons.',
-        confirmButtonText: 'OK',
-      });
-      return;
-    }
-
-    if (claimedPromoIds.includes(campaign.id)) {
-      await Swal.fire({
-        icon: 'info',
-        title: 'Already claimed',
-        text: `${campaign.code} is already in your wallet.`,
-        confirmButtonText: 'OK',
-      });
-      return;
-    }
-
-    try {
-      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
-      const response = await fetch(`/api/products/${product.id}/vouchers/${campaign.id}/claim`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-          'X-CSRF-TOKEN': csrfToken,
-        },
-      });
-
-      const payload = await response.json().catch(() => ({}));
-
-      if (response.status === 409) {
-        setClaimedPromoIds((prev) => (prev.includes(campaign.id) ? prev : [...prev, campaign.id]));
-        await Swal.fire({
-          icon: 'info',
-          title: 'Already claimed',
-          text: `${campaign.code} is already in your wallet.`,
-          confirmButtonText: 'OK',
-        });
-        return;
-      }
-
-      if (!response.ok || !payload?.success) {
-        throw new Error(payload?.message || 'Failed to claim voucher');
-      }
-
-      setClaimedPromoIds((prev) => [...prev, campaign.id]);
-      await Swal.fire({
-        icon: 'success',
-        title: 'Voucher claimed',
-        text: `${campaign.code} has been added to your wallet.`,
-        showConfirmButton: false,
-        timer: 1500,
-        timerProgressBar: true,
-      });
-    } catch (error: any) {
-      await Swal.fire({
-        icon: 'error',
-        title: 'Claim failed',
-        text: error?.message || 'Unable to claim voucher right now.',
-        confirmButtonText: 'OK',
-      });
-    }
-  };
-
   const removeImageBox = (id: string) => {
     setImageUploadGroups((prev) => {
       const filtered = prev.filter((group) => group.id !== id);
@@ -934,102 +864,11 @@ const ProductShow: React.FC = () => {
     }, 320);
   };
 
-  const isVoucherStripInteractiveTarget = (target: EventTarget | null): boolean => {
-    if (!(target instanceof Element)) {
-      return false;
-    }
-
-    return Boolean(
-      target.closest('button, a, input, select, textarea, summary, [role="button"], [role="link"], [data-voucher-strip-interactive="true"]')
-    );
-  };
-
-  const handleVoucherStripPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
-    // Let touch devices use native scrolling physics for smoother swipe behavior.
-    if (event.pointerType !== 'mouse' || event.button !== 0) return;
-
-    // Preserve normal click behavior for controls inside each voucher card.
-    if (isVoucherStripInteractiveTarget(event.target)) return;
-
-    const strip = voucherStripRef.current;
-    if (!strip) return;
-
-    event.preventDefault();
-    voucherStripDragRef.current.isDragging = true;
-    voucherStripDragRef.current.pointerId = event.pointerId;
-    voucherStripDragRef.current.startX = event.clientX;
-    voucherStripDragRef.current.startScrollLeft = strip.scrollLeft;
-    voucherStripDragRef.current.hasMoved = false;
-
-    strip.classList.add('select-none');
-    strip.setPointerCapture(event.pointerId);
-  };
-
-  const handleVoucherStripPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    const strip = voucherStripRef.current;
-    const dragState = voucherStripDragRef.current;
-
-    if (!strip || !dragState.isDragging || dragState.pointerId !== event.pointerId) return;
-
-    const deltaX = event.clientX - dragState.startX;
-    if (!dragState.hasMoved && Math.abs(deltaX) > 4) {
-      dragState.hasMoved = true;
-    }
-
-    event.preventDefault();
-    strip.scrollLeft = dragState.startScrollLeft - deltaX;
-  };
-
-  const endVoucherStripDrag = (event: React.PointerEvent<HTMLDivElement>) => {
-    const strip = voucherStripRef.current;
-    const dragState = voucherStripDragRef.current;
-
-    if (!dragState.isDragging || dragState.pointerId !== event.pointerId) return;
-
-    dragState.isDragging = false;
-    dragState.pointerId = -1;
-
-    strip?.classList.remove('select-none');
-
-    if (strip?.hasPointerCapture(event.pointerId)) {
-      strip.releasePointerCapture(event.pointerId);
-    }
-  };
-
-  const handleVoucherStripWheel = (event: React.WheelEvent<HTMLDivElement>) => {
-    const strip = voucherStripRef.current;
-    if (!strip) return;
-
-    const maxScrollLeft = Math.max(0, strip.scrollWidth - strip.clientWidth);
-    if (maxScrollLeft === 0) return;
-
-    // Map vertical mouse wheel movement to horizontal scrolling for desktop users.
-    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || event.deltaY === 0) return;
-
-    const multiplier = event.deltaMode === 1 ? 18 : 1;
-    const nextDelta = event.deltaY * multiplier;
-    if (nextDelta === 0) return;
-
-    const isAtStart = strip.scrollLeft <= 0;
-    const isAtEnd = strip.scrollLeft >= maxScrollLeft;
-    if ((isAtStart && nextDelta < 0) || (isAtEnd && nextDelta > 0)) return;
-
-    event.preventDefault();
-    strip.scrollLeft += nextDelta;
-  };
-
-  const handleVoucherStripClickCapture = (event: React.MouseEvent<HTMLDivElement>) => {
-    if (!voucherStripDragRef.current.hasMoved) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    voucherStripDragRef.current.hasMoved = false;
-  };
-
   return (
     <>
       <Head title={product.name} />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <CustomerFooterReveal>
+      <div className="userside-product-show-page min-h-screen bg-white font-outfit antialiased">
         {/* Desktop Navigation */}
         <div className="hidden xl:block">
           <Navigation />
@@ -1215,27 +1054,6 @@ const ProductShow: React.FC = () => {
                   {isAuthenticated ? (
                     <>
                       <Link
-                        href="/my-orders"
-                        onClick={() => setMobileUserDropdownOpen(false)}
-                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
-                      >
-                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                        </svg>
-                        Orders
-                      </Link>
-                      <Link
-                        href="/my-repairs"
-                        onClick={() => setMobileUserDropdownOpen(false)}
-                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
-                      >
-                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        Repair
-                      </Link>
-                      <Link
                         href="/customer-profile"
                         onClick={() => setMobileUserDropdownOpen(false)}
                         className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
@@ -1245,6 +1063,16 @@ const ProductShow: React.FC = () => {
                         </svg>
                         Edit Profile
                       </Link>
+                      <Link
+                        href="/shop-owner-register"
+                        onClick={() => setMobileUserDropdownOpen(false)}
+                        className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50 border-b border-gray-100"
+                      >
+                        <svg className="h-4 w-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.9} d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m8-8a4 4 0 100-8 4 4 0 000 8zm6-3v6m3-3h-6" />
+                        </svg>
+                        Join Our Team
+                      </Link>
                       <button
                         type="button"
                         onClick={() => { setMobileUserDropdownOpen(false); handleLogout(); }}
@@ -1253,12 +1081,12 @@ const ProductShow: React.FC = () => {
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                         </svg>
-                        Log Out
+                        Log out
                       </button>
                     </>
                   ) : (
                     <Link
-                      href="/user/login"
+                      href="/login"
                       onClick={() => setMobileUserDropdownOpen(false)}
                       className="flex items-center gap-3 px-4 py-3 text-sm font-medium text-black hover:bg-gray-50"
                     >
@@ -1274,8 +1102,11 @@ const ProductShow: React.FC = () => {
           </div>
         </div>
 
-        <div className="max-w-[1280px] mx-auto px-0 xl:px-12 pt-14 xl:pt-24 pb-28 xl:pb-20">
-          <div className="flex flex-col xl:grid xl:grid-cols-[minmax(0,1fr)_420px] gap-0 xl:gap-10">
+        <div className="max-w-[1280px] mx-auto px-0 xl:max-w-[1440px] xl:px-10 pt-14 xl:pt-16 pb-28 xl:pb-24">
+          <div
+            data-testid="desktop-product-hero"
+            className="flex flex-col xl:grid xl:grid-cols-[minmax(0,1.55fr)_minmax(390px,0.85fr)] gap-0 xl:gap-16"
+          >
             <div className="flex-1">
               <div className="bg-white">
                 <div
@@ -1305,7 +1136,7 @@ const ProductShow: React.FC = () => {
                   )}
 
                   <div
-                    className={`relative bg-gray-100 aspect-square flex items-center justify-center group overflow-hidden xl:rounded-md ${
+                    className={`relative bg-gray-100 aspect-square flex items-center justify-center group overflow-hidden xl:min-h-[720px] xl:aspect-auto xl:rounded-none xl:bg-[#f5f5f5] ${
                       images.length === 1 ? 'xl:max-w-[720px] xl:mx-auto w-full' : ''
                     }`}
                   >
@@ -1427,8 +1258,8 @@ const ProductShow: React.FC = () => {
               </div>
             </div>
 
-            <div className="w-full xl:w-[420px] px-4 sm:px-6 xl:px-0 pt-4 xl:pt-0">
-              <h1 className="mt-0 mb-1 text-[1.85rem] font-medium leading-[1.15] text-black sm:text-[2rem] xl:text-[2.1rem]">{product.name}</h1>
+            <div className="w-full xl:w-full px-4 sm:px-6 xl:px-0 pt-4 xl:pt-0 xl:sticky xl:top-28 xl:self-start">
+              <h1 className="mt-0 mb-1 text-[1.85rem] font-medium leading-[1.15] text-black sm:text-[2rem] xl:text-xl xl:font-semibold xl:leading-tight">{product.name}</h1>
               
               {product.brand && product.brand.trim().toLowerCase() !== product.name.trim().toLowerCase() && (
                 <div className="mb-3 text-[1.05rem] text-gray-600">{product.brand}</div>
@@ -1437,10 +1268,11 @@ const ProductShow: React.FC = () => {
               <div className="mb-4">
                 <div className="flex items-center gap-2">
                   {product.compare_at_price && (
-                    <div className="text-base text-gray-400 line-through">{product.compare_at_price}</div>
+                    <div className="text-base text-gray-400 line-through xl:order-2">{product.compare_at_price}</div>
                   )}
-                  <div className="text-[2rem] font-medium leading-none text-black xl:text-[2.15rem]">{product.price}</div>
+                  <div className="text-[2rem] font-medium leading-none text-black xl:order-1 xl:text-2xl">{product.price}</div>
                 </div>
+                <p className="mt-1 hidden text-xs text-gray-500 xl:block">Taxes included. Shipping calculated at checkout.</p>
                 <div className="mt-1.5 text-sm text-gray-500">
                   {product.views_count || 0} views · {product.sales_count || 0} sold
                 </div>
@@ -1449,6 +1281,7 @@ const ProductShow: React.FC = () => {
               {/* Color Selection - Adidas Style */}
               {hasColorVariants ? (
                 <div className="mb-6">
+                  <div className="mb-3 hidden text-[15px] font-medium text-black xl:block">Color</div>
                   <div className="flex flex-wrap gap-2.5">
                     {product.colorVariants.map((colorVariant: ColorVariant) => {
                       const thumbnail = colorVariant.images.find(img => img.is_thumbnail) || colorVariant.images[0];
@@ -1493,6 +1326,7 @@ const ProductShow: React.FC = () => {
                 /* Legacy Color Selection */
                 ((product.colors_available && Array.isArray(product.colors_available) && product.colors_available.length > 0) || (product.colors && Array.isArray(product.colors) && product.colors.length > 0)) && (
                   <div className="mb-6">
+                    <div className="mb-3 hidden text-[15px] font-medium text-black xl:block">Color</div>
                     <div className="flex flex-wrap gap-2.5">
                       {(product.colors_available || product.colors).map((color: string) => {
                         const colorVariants = product.variants?.filter((v: any) => 
@@ -1537,10 +1371,11 @@ const ProductShow: React.FC = () => {
                     <button
                       key={option.key}
                       onClick={() => setSelectedSize(option.value)}
+                      aria-pressed={isSameSize(selectedSize, option.value)}
                       className={`rounded-md border bg-white px-3 py-2.5 text-[15px] font-medium text-black transition-colors ${
                         isSameSize(selectedSize, option.value)
-                          ? 'border-black shadow-[inset_0_0_0_1px_rgba(17,24,39,0.85)]'
-                          : 'border-gray-300 hover:border-gray-500'
+                          ? 'border-black shadow-[inset_0_0_0_1px_rgba(17,24,39,0.85)] dark:border-blue-300 dark:bg-blue-900/50 dark:text-white dark:shadow-[inset_0_0_0_1px_rgba(147,197,253,0.9)]'
+                          : 'border-gray-300 hover:border-gray-500 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-100 dark:hover:border-gray-400'
                       }`}
                     >
                       {option.label}
@@ -1550,7 +1385,7 @@ const ProductShow: React.FC = () => {
               </div>
 
               {showSizeChart && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4" onClick={() => setShowSizeChart(false)}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3 sm:p-4 erp-modal-backdrop" onClick={() => setShowSizeChart(false)}>
                   <div
                     className="w-[94vw] max-h-[86vh] overflow-hidden rounded-2xl bg-white text-black shadow-2xl sm:max-h-[90vh] sm:w-[90%] sm:max-w-2xl"
                     onClick={(e) => e.stopPropagation()}
@@ -1736,8 +1571,8 @@ const ProductShow: React.FC = () => {
                     qty: qty,
                     selectedImage: selectedImage
                   }}
-                  className={`${buttonBaseClass} ${buttonDarkClass}`}
-                  label="Add to Bag"
+                  className={`${buttonBaseClass} ${buttonDarkClass} xl:rounded-none xl:shadow-none`}
+                  label="Add to Cart"
                   stockQuantity={mainPageVariantQuantity}
                   disabled={!selectedSize || !selectedColor}
                 />
@@ -1750,7 +1585,7 @@ const ProductShow: React.FC = () => {
                     qty: qty,
                     selectedImage: selectedImage
                   }}
-                  className={`${buttonBaseClass} ${buttonLightClass}`}
+                  className={`${buttonBaseClass} ${buttonLightClass} xl:rounded-none xl:shadow-none`}
                   label="Buy Now"
                   buyNow={true}
                   stockQuantity={mainPageVariantQuantity}
@@ -1761,6 +1596,55 @@ const ProductShow: React.FC = () => {
               <p className="mt-5 hidden text-center text-sm leading-relaxed text-gray-500 xl:block">
                 This product is excluded from site promotions and discounts.
               </p>
+
+              <div data-testid="desktop-product-disclosures" className="hidden xl:block">
+                {product.shop?.id && product.shop?.name && (
+                  <div className="mt-10 border-t border-black/15 py-7">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-black/50">Sold by</div>
+                    <Link
+                      href={`/shop-profile/${product.shop.id}`}
+                      className="text-sm font-medium text-black underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
+                    >
+                      {product.shop.name}
+                    </Link>
+                  </div>
+                )}
+
+                <div className={product.shop?.id ? '' : 'mt-10'}>
+                  {desktopDisclosures.map((disclosure) => (
+                    <div key={disclosure.id} className="border-t border-black/15 last:border-b">
+                      <button
+                        type="button"
+                        onClick={() => setOpenDesktopDisclosure((current) => current === disclosure.id ? null : disclosure.id)}
+                        className="flex w-full items-center justify-between py-4 text-left text-[15px] font-semibold text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black"
+                        aria-expanded={openDesktopDisclosure === disclosure.id}
+                        aria-controls={`desktop-disclosure-${disclosure.id}`}
+                      >
+                        <span>{disclosure.label}</span>
+                        <svg
+                          className={`h-4 w-4 transition-transform motion-reduce:transition-none ${
+                            openDesktopDisclosure === disclosure.id ? 'rotate-180' : ''
+                          }`}
+                          viewBox="0 0 20 20"
+                          fill="none"
+                          stroke="currentColor"
+                          aria-hidden="true"
+                        >
+                          <path d="m5 7.5 5 5 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </button>
+                      {openDesktopDisclosure === disclosure.id && (
+                        <div
+                          id={`desktop-disclosure-${disclosure.id}`}
+                          className="pb-5 pr-8 text-sm leading-6 text-black/65"
+                        >
+                          {disclosure.content}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               {/* Mobile/Tablet sticky bottom CTA bar - Shopee style */}
               <div className="fixed bottom-0 left-0 right-0 z-40 flex items-stretch border-t border-gray-200 bg-white shadow-[0_-4px_20px_-4px_rgba(0,0,0,0.12)] xl:hidden">
@@ -1779,7 +1663,7 @@ const ProductShow: React.FC = () => {
 
                 {/* Chat icon */}
                 <Link
-                  href={isAuthenticated ? '/messages' : '/user/login'}
+                  href={isAuthenticated ? '/messages' : '/login'}
                   className="flex w-[3.75rem] shrink-0 flex-col items-center justify-center gap-0.5 border-l border-gray-200 py-2.5 text-gray-600 hover:text-[#16233b] transition-colors"
                   aria-label="Chat"
                 >
@@ -1825,7 +1709,7 @@ const ProductShow: React.FC = () => {
 
               {/* Add to Cart Modal - Shopee Style */}
               {showAddToCartModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" onClick={() => setShowAddToCartModal(false)}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 erp-modal-backdrop" onClick={() => setShowAddToCartModal(false)}>
                   <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl" onClick={(e) => e.stopPropagation()}>
                     {/* Close Button */}
                     <button
@@ -2058,7 +1942,7 @@ const ProductShow: React.FC = () => {
               )}
 
               {showAddedModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 px-3 py-4 sm:px-4" onClick={() => setShowAddedModal(false)}>
+                <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 px-3 py-4 sm:px-4 erp-modal-backdrop" onClick={() => setShowAddedModal(false)}>
                   <div
                     className="relative grid w-full max-w-5xl grid-cols-1 gap-4 rounded-2xl bg-white p-4 sm:gap-5 sm:p-5 md:grid-cols-2 md:gap-6 md:p-6 lg:p-7"
                     onClick={(e) => e.stopPropagation()}
@@ -2099,7 +1983,7 @@ const ProductShow: React.FC = () => {
                 </div>
               )}
 
-              <div className="mt-10 border-t border-gray-200 pt-7">
+              <div className="mt-10 border-t border-gray-200 pt-7 xl:hidden">
                 {product.shop?.id && product.shop?.name && (
                   <div className="mb-6">
                     <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Sold by</div>
@@ -2118,103 +2002,6 @@ const ProductShow: React.FC = () => {
                     {product.category && (
                       <p className="mt-5 text-[15px] leading-7 text-black/75">Category: {formatCategoryText(product.category)}</p>
                     )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Voucher claim strip (horizontal) */}
-          <div className="mt-12 xl:mt-16 px-4 sm:px-6 xl:px-0">
-            <div className="mx-auto max-w-260 overflow-hidden rounded-[26px] border border-gray-200 bg-white p-4 shadow-[0_16px_36px_-24px_rgba(15,23,42,0.35)] sm:p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 pb-3">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500">Vouchers</p>
-                  <h2 className="mt-1 text-sm font-bold text-slate-900 sm:text-base">Claim Available Vouchers</h2>
-                  <p className="mt-1 text-[11px] text-slate-500 lg:hidden">Swipe left to view more offers.</p>
-                </div>
-              </div>
-
-              <div
-                ref={voucherStripRef}
-                onPointerDown={handleVoucherStripPointerDown}
-                onPointerMove={handleVoucherStripPointerMove}
-                onPointerUp={endVoucherStripDrag}
-                onPointerCancel={endVoucherStripDrag}
-                onWheel={handleVoucherStripWheel}
-                onClickCapture={handleVoucherStripClickCapture}
-                className="mt-4 flex items-stretch gap-3 overflow-x-auto overscroll-x-contain scroll-smooth pl-1 pr-4 pb-2 touch-pan-x cursor-grab active:cursor-grabbing sm:pr-5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [-webkit-overflow-scrolling:touch]"
-              >
-                {voucherCampaigns.map((campaign) => {
-                  const isClaimed = claimedPromoIds.includes(campaign.id);
-
-                  return (
-                    <div
-                      key={campaign.id}
-                      className="flex h-[320px] w-[88vw] max-w-[360px] shrink-0 flex-col rounded-[24px] border border-slate-200 bg-slate-100 p-4 text-slate-900 shadow-[0_20px_50px_-30px_rgba(15,23,42,0.25)] sm:w-[360px] sm:max-w-[360px] sm:p-5"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-[10px] uppercase tracking-[0.24em] text-slate-500">Offer Summary</p>
-                          <h3 className="mt-2 line-clamp-1 text-xl font-semibold leading-tight text-slate-900">{campaign.name || 'Voucher offer'}</h3>
-                        </div>
-                        <span className="inline-flex rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600 ring-1 ring-inset ring-slate-200">
-                          Voucher
-                        </span>
-                      </div>
-
-                      <div className="mt-5 grid grid-cols-2 gap-3">
-                        <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                          <p className="text-[10px] uppercase tracking-wide text-slate-500">Discount</p>
-                          <p className="mt-2 text-lg font-semibold leading-tight text-slate-900">{campaign.value}</p>
-                        </div>
-                        <div className="rounded-2xl border border-slate-200 bg-white p-3.5">
-                          <p className="text-[10px] uppercase tracking-wide text-slate-500">Code</p>
-                          <p
-                            className="mt-2 max-w-full truncate text-lg font-semibold tracking-[0.14em] text-slate-900"
-                            title={campaign.code}
-                          >
-                            {campaign.code}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="mt-5 space-y-2.5 text-sm text-slate-600">
-                        <div className="flex items-center justify-between gap-3">
-                          <span>Product</span>
-                          <span className="max-w-[62%] truncate text-right font-medium text-slate-900">{product?.name || 'Selected product'}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span>Schedule</span>
-                          <span className="max-w-[62%] truncate text-right font-medium text-slate-900">{campaign.schedule.replace('Valid ', '')}</span>
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <span>Minimum spend</span>
-                          <span className="font-medium text-slate-900">{campaign.minSpend.replace(' min spend', '')}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => handleClaimPromo(campaign)}
-                        disabled={isClaimed}
-                        className={`mt-auto inline-flex w-full items-center justify-center rounded-xl px-3 py-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] transition-all ${
-                          isClaimed
-                            ? 'cursor-not-allowed bg-slate-200 text-slate-500'
-                            : 'bg-slate-900 text-white shadow-sm hover:-translate-y-0.5 hover:bg-slate-800'
-                        }`}
-                      >
-                        {isClaimed ? 'Claimed' : 'Claim Voucher'}
-                      </button>
-                    </div>
-                  );
-                })}
-
-                {voucherCampaigns.length > 0 && <div aria-hidden="true" className="w-1 shrink-0 sm:w-2" />}
-
-                {voucherCampaigns.length === 0 && (
-                  <div className="w-full rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
-                    No active vouchers for this product yet.
                   </div>
                 )}
               </div>
@@ -2418,7 +2205,7 @@ const ProductShow: React.FC = () => {
                     <div key={review.id} className="overflow-hidden rounded-2xl border border-gray-200 bg-white">
                       <div className="flex items-start gap-3 p-4">
                         {/* Avatar */}
-                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#16233b] text-sm font-bold text-white">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gray-950 dark:bg-[#16233b] text-sm font-bold text-white">
                           {review.user_name?.charAt(0).toUpperCase() || 'U'}
                         </div>
 
@@ -2498,17 +2285,23 @@ const ProductShow: React.FC = () => {
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
+                        aria-label="Previous page"
                         onClick={() => setCurrentReviewPage((page) => Math.max(1, page - 1))}
                         disabled={safeReviewPage === 1}
                         className="rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-[#16233b] hover:text-[#16233b] disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Previous
                       </button>
-                      <div className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-                        Page {safeReviewPage} of {totalReviewPages}
+                      <div
+                        aria-current="page"
+                        aria-label={`Page ${safeReviewPage} of ${totalReviewPages}`}
+                        className="min-h-11 min-w-11 rounded-full bg-[#111111] px-3 py-1.5 text-center text-sm font-semibold leading-8 text-white"
+                      >
+                        {safeReviewPage}
                       </div>
                       <button
                         type="button"
+                        aria-label="Next page"
                         onClick={() => setCurrentReviewPage((page) => Math.min(totalReviewPages, page + 1))}
                         disabled={safeReviewPage === totalReviewPages}
                         className="rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-[#16233b] hover:text-[#16233b] disabled:cursor-not-allowed disabled:opacity-40"
@@ -2522,8 +2315,17 @@ const ProductShow: React.FC = () => {
 
             </div>
           </div>
+
+          <div
+            data-testid="desktop-product-rails"
+            className="mt-20 hidden space-y-20 px-4 sm:px-6 xl:block xl:px-0"
+          >
+            <ProductRail title="You May Also Like" items={relatedProducts} />
+            <ProductRail title="Recently Viewed Items" items={recentlyViewed} />
+          </div>
         </div>
       </div>
+      </CustomerFooterReveal>
 
 
 
@@ -2539,7 +2341,7 @@ const ProductShow: React.FC = () => {
       {/* Image Lightbox Modal */}
       {enlargedImage && (
         <div
-          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4"
+          className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4 erp-modal-backdrop"
           onClick={() => setEnlargedImage(null)}
         >
           <div

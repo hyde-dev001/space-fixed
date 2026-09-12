@@ -10,6 +10,9 @@ use App\Models\Employee;
 use App\Models\HR\Payroll;
 use App\Models\HR\AttendanceRecord;
 use App\Models\HR\LeaveRequest;
+use App\Models\HR\PayrollComponent;
+use App\Models\HR\ThirteenthMonthAccrual;
+use App\Services\HR\PayrollService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Carbon\Carbon;
@@ -138,6 +141,18 @@ class PayrollControllerTest extends TestCase
             'payroll_period' => $period,
             'status' => 'pending',
         ]);
+    }
+
+    #[Test]
+    public function test_routine_payroll_rejects_inactive_employee_with_policy_error(): void
+    {
+        $this->employee->update(['status' => 'inactive']);
+
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll', $this->payrollPayload());
+
+        $response->assertStatus(422)
+            ->assertJsonPath('code', 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL');
     }
 
     #[Test]
@@ -511,6 +526,50 @@ class PayrollControllerTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    #[Test]
+    public function test_explicit_thirteenth_month_release_can_include_inactive_employee_with_owed_balance(): void
+    {
+        $year = 2025;
+        $this->employee->update(['status' => 'inactive']);
+        $otherApprover = User::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
+
+        $payroll = $this->createPayroll([
+            'payroll_period' => "{$year}-12",
+            'pay_period_start' => "{$year}-12-01",
+            'pay_period_end' => "{$year}-12-31",
+            'status' => 'approved',
+            'approval_status' => 'approved',
+            'approved_by' => $this->hrUser->id,
+            'final_approved_by' => $otherApprover->id,
+        ]);
+
+        ThirteenthMonthAccrual::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'employee_id' => $this->employee->id,
+            'payroll_id' => $payroll->id,
+            'accrual_year' => $year,
+            'accrual_month' => 11,
+            'accrual_amount' => 1000,
+            'release_amount' => 0,
+            'status' => 'accrued',
+        ]);
+
+        $result = app(PayrollService::class)->releaseThirteenthMonth(
+            $this->shopOwner->id,
+            $year,
+            $this->hrUser->id,
+            [$this->employee->id],
+            ['release_date' => "{$year}-12-31"],
+        );
+
+        $this->assertSame(1, $result['processed_count']);
+        $this->assertSame('released', $result['items'][0]['status']);
+        $this->assertDatabaseHas('hr_payroll_components', [
+            'payroll_id' => $payroll->id,
+            'component_code' => PayrollComponent::CODE_13TH_RELEASE,
+        ]);
     }
 
     #[Test]

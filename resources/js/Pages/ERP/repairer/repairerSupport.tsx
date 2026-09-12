@@ -789,7 +789,7 @@ export default function RepairerSupport() {
                   key={ticket.id}
                   onClick={() => setSelectedTicketId(ticket.id)}
                   className={`px-6 py-4 border-b border-gray-100 cursor-pointer transition-colors hover:bg-gray-50 ${
-                    selectedTicketId === ticket.id ? "bg-gray-50 border-l-4 border-l-blue-500" : ""
+                    selectedTicketId === ticket.id ? "bg-gray-50 border-l-4 border-l-black" : ""
                   }`}
                 >
                   <div className="flex items-start gap-3">
@@ -997,7 +997,7 @@ export default function RepairerSupport() {
                                       className="w-10 h-10 rounded-full object-cover"
                                     />
                                   ) : (
-                                    <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-700 text-xs font-semibold">
+                                    <div className="w-10 h-10 rounded-full bg-gray-950 dark:bg-blue-100 flex items-center justify-center shrink-0 text-white dark:text-blue-700 text-xs font-semibold">
                                       {getInitials(shopName)}
                                     </div>
                                   )}
@@ -1007,8 +1007,8 @@ export default function RepairerSupport() {
                                 </div>
                               </div>
 
-                              <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
-                                <p className="text-xs text-blue-900 leading-relaxed">
+                              <div className="bg-gray-100 rounded-lg px-3 py-2.5 mb-4 dark:bg-gray-800">
+                                <p className="text-xs text-gray-900 leading-relaxed dark:text-gray-100">
                                   💡 We'll keep you updated on the progress of your repair.
                                 </p>
                               </div>
@@ -1290,7 +1290,7 @@ export default function RepairerSupport() {
       {/* Fullscreen Image Modal */}
       {fullscreenImage && (
         <div 
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm erp-modal-backdrop"
           onClick={() => setFullscreenImage(null)}
         >
           <button
@@ -1316,7 +1316,7 @@ export default function RepairerSupport() {
       {/* Transfer Note Modal (View Only) */}
       {showTransferNoteModal && selectedTicket?.transferNote && (
         <div 
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50 erp-modal-backdrop"
           onClick={() => setShowTransferNoteModal(false)}
         >
           <div 

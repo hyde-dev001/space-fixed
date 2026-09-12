@@ -1,6 +1,7 @@
 import React from 'react';
 import { Head } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 const apkDownloadPath = '/apk/download';
 const apkScanDownloadPath = '/apk/scan-download';
@@ -27,15 +28,16 @@ const ApkPage: React.FC = () => {
 		<>
 			<Head title="Download App - SoleSpace" />
 
-			<div className="min-h-screen bg-white text-[#171717] font-outfit antialiased">
+			<CustomerFooterReveal>
+			<div className="download-app-page min-h-screen bg-white text-[#171717] font-outfit antialiased">
 				<Navigation />
 
 				<main className="grid w-full gap-8 px-6 pb-10 pt-24 md:px-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start lg:gap-5 lg:pt-30 lg:pl-16 lg:pr-0 xl:pl-24">
 					<section className="mx-auto w-full max-w-2xl translate-x-4 animate-[fadeUp_700ms_ease-out_120ms_forwards] pt-7 opacity-0 sm:translate-x-8 lg:translate-x-16 lg:justify-self-center lg:pt-14 xl:translate-x-24">
-						<h1 className="text-6xl font-black uppercase leading-[0.95] text-[#121212] sm:text-7xl lg:text-7xl">
+						<h1 className="download-app-title text-6xl font-black uppercase leading-[0.95] text-[#121212] dark:text-white sm:text-7xl lg:text-7xl">
 							Download SoleSpace App
 						</h1>
-						<p className="mt-4 max-w-xl text-xl leading-8 text-[#555] sm:text-2xl">
+						<p className="download-app-description mt-4 max-w-xl text-xl leading-8 text-[#555] dark:text-slate-300 sm:text-2xl">
 							Install SoleSpace on your Android device to browse drops faster, track repairs in real time, and manage orders in one place.
 						</p>
 
@@ -99,6 +101,7 @@ const ApkPage: React.FC = () => {
 					</section>
 				</main>
 			</div>
+			</CustomerFooterReveal>
 
 			<style>{`
 				@keyframes fadeUp {

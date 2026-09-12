@@ -3,29 +3,32 @@
 namespace App\Services;
 
 use App\Models\PurchaseRequest;
-use App\Models\ProcurementSettings;
+use App\Models\ShopOwner;
+use App\Models\User;
 use App\Enums\NotificationType;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class PurchaseRequestService
 {
-    private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService;
     private NotificationService $notificationService;
+    private ShopOwnerApprovalPolicyService $approvalPolicyService;
 
     public function __construct(
-        ?ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService = null,
-        ?NotificationService $notificationService = null
-    ) {
-        $this->shopOwnerApprovalPolicyService = $shopOwnerApprovalPolicyService ?? app(ShopOwnerApprovalPolicyService::class);
+        ?NotificationService $notificationService = null,
+        ?ShopOwnerApprovalPolicyService $approvalPolicyService = null
+    )
+    {
         $this->notificationService = $notificationService ?? app(NotificationService::class);
+        $this->approvalPolicyService = $approvalPolicyService ?? app(ShopOwnerApprovalPolicyService::class);
     }
 
     /**
      * Create a new purchase request.
      */
-    public function createPurchaseRequest(array $data): PurchaseRequest
+    public function createPurchaseRequest(array $data, bool $submitToFinance = false): PurchaseRequest
     {
         DB::beginTransaction();
         
@@ -35,13 +38,14 @@ class PurchaseRequestService
                 : $this->generatePRNumber();
 
             // Calculate total cost
-            $data['total_cost'] = $data['quantity'] * $data['unit_cost'];
+            $data['total_cost'] = $data['total_cost'] ?? $data['quantity'] * $data['unit_cost'];
 
             // Align with DB not-null constraint for service-driven PR creation.
             $data['requested_date'] = $data['requested_date'] ?? now();
 
             // Set default status
-            $data['status'] = $data['status'] ?? 'draft';
+            $data['status'] = 'draft';
+            unset($data['submit_to_finance']);
 
             $purchaseRequest = null;
             for ($attempt = 0; $attempt < 10; $attempt++) {
@@ -68,15 +72,24 @@ class PurchaseRequestService
                 throw new \RuntimeException('Unable to generate a unique purchase request number.');
             }
 
-            // Check if auto-approval is enabled for low-value PRs
-            $settings = ProcurementSettings::getForShopOwner($data['shop_owner_id']);
-            if ($settings && $this->shouldAutoApprove($purchaseRequest, $settings)) {
-                $this->autoApprovePurchaseRequest($purchaseRequest);
+            if ($submitToFinance) {
+                $this->snapshotOwnerApprovalPolicy($purchaseRequest);
+
+                if (!$purchaseRequest->submitToFinance()) {
+                    throw ValidationException::withMessages([
+                        'submit_to_finance' => 'Purchase request could not be submitted to Finance.',
+                    ]);
+                }
             }
 
             DB::commit();
             
-            return $purchaseRequest->fresh();
+            $freshPurchaseRequest = $purchaseRequest->fresh();
+            if ($submitToFinance) {
+                $this->notifyPurchaseRequestSubmitted($freshPurchaseRequest);
+            }
+
+            return $freshPurchaseRequest;
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -140,117 +153,114 @@ class PurchaseRequestService
      */
     public function submitToFinance(int $prId): PurchaseRequest
     {
-        $purchaseRequest = PurchaseRequest::findOrFail($prId);
+        $purchaseRequest = DB::transaction(function () use ($prId): PurchaseRequest {
+            $purchaseRequest = PurchaseRequest::query()->lockForUpdate()->findOrFail($prId);
 
-        if ($purchaseRequest->status !== 'draft') {
-            throw new \Exception('Only draft purchase requests can be submitted to finance.');
-        }
+            if ($purchaseRequest->status !== 'draft') {
+                throw new \Exception('Only draft purchase requests can be submitted to finance.');
+            }
 
-        $purchaseRequest->submitToFinance();
+            $this->snapshotOwnerApprovalPolicy($purchaseRequest);
+
+            if (!$purchaseRequest->submitToFinance()) {
+                throw ValidationException::withMessages([
+                    'submit_to_finance' => 'Purchase request could not be submitted to Finance.',
+                ]);
+            }
+
+            return $purchaseRequest->fresh();
+        });
 
         Log::info('Purchase request submitted to finance', [
             'pr_id' => $prId,
             'pr_number' => $purchaseRequest->pr_number
         ]);
 
-        $this->notifyPurchaseRequestSubmitted($purchaseRequest->fresh());
+        $this->notifyPurchaseRequestSubmitted($purchaseRequest);
 
-        return $purchaseRequest->fresh();
+        return $purchaseRequest;
     }
 
-    /**
-     * Approve a purchase request.
-     */
-    public function approvePurchaseRequest(int $prId, int $userId, ?string $notes = null): PurchaseRequest
+    public function reviewByFinance(int $prId, User $actor, ?string $notes = null): PurchaseRequest
     {
-        DB::beginTransaction();
-
-        try {
-            $purchaseRequest = PurchaseRequest::findOrFail($prId);
-            $previousStatus = (string) $purchaseRequest->status;
-
-            if (!$purchaseRequest->canBeApproved()) {
-                throw new \Exception('Purchase request cannot be approved in its current state.');
+        $purchaseRequest = DB::transaction(function () use ($prId, $actor, $notes) {
+            $purchaseRequest = PurchaseRequest::lockForUpdate()->findOrFail($prId);
+            if (!$purchaseRequest->reviewByFinance($actor, $notes)) {
+                throw ValidationException::withMessages(['status' => 'Only a pending Finance request may be reviewed.']);
             }
 
-            $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPurchaseRequest(
-                (int) $purchaseRequest->shop_owner_id,
-                (float) $purchaseRequest->total_cost
-            );
+            return $purchaseRequest->fresh();
+        });
 
-            $purchaseRequest->approve($userId, $notes, null, $requiresOwnerApproval);
+        $this->dispatchPurchaseRequestApprovalNotifications($purchaseRequest, 'pending_finance', $notes);
 
-            // Check if auto PO generation is enabled
-            $settings = ProcurementSettings::getForShopOwner($purchaseRequest->shop_owner_id);
-            if ($settings && $settings->canAutoGeneratePO()) {
-                // This will be handled by an event listener in Phase 4
-                Log::info('Purchase request approved - auto PO generation will be triggered', [
-                    'pr_id' => $prId
-                ]);
-            }
-
-            DB::commit();
-
-            Log::info('Purchase request approved', [
-                'pr_id' => $prId,
-                'pr_number' => $purchaseRequest->pr_number,
-                'approved_by' => $userId
-            ]);
-
-            $freshPurchaseRequest = $purchaseRequest->fresh();
-            $this->dispatchPurchaseRequestApprovalNotifications($freshPurchaseRequest, $previousStatus, $notes);
-
-            return $freshPurchaseRequest;
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Failed to approve purchase request', [
-                'pr_id' => $prId,
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
-        }
+        return $purchaseRequest;
     }
 
-    /**
-     * Reject a purchase request.
-     */
-    public function rejectPurchaseRequest(int $prId, int $userId, string $reason): PurchaseRequest
+    public function approveByShopOwner(int $prId, ShopOwner $actor, ?string $notes = null): PurchaseRequest
     {
-        DB::beginTransaction();
-
-        try {
-            $purchaseRequest = PurchaseRequest::findOrFail($prId);
-            $previousStatus = (string) $purchaseRequest->status;
-
-            if (!$purchaseRequest->canBeRejected()) {
-                throw new \Exception('Purchase request cannot be rejected in its current state.');
+        $purchaseRequest = DB::transaction(function () use ($prId, $actor, $notes) {
+            $purchaseRequest = PurchaseRequest::lockForUpdate()->findOrFail($prId);
+            if (!$purchaseRequest->approveByShopOwner($actor, $notes)) {
+                throw ValidationException::withMessages(['status' => 'Only a request pending Shop Owner approval may be approved.']);
             }
 
-            $purchaseRequest->reject($userId, $reason);
+            return $purchaseRequest->fresh();
+        });
 
-            DB::commit();
+        $this->dispatchPurchaseRequestApprovalNotifications($purchaseRequest, 'pending_shop_owner', $notes);
 
-            Log::info('Purchase request rejected', [
-                'pr_id' => $prId,
-                'pr_number' => $purchaseRequest->pr_number,
-                'rejected_by' => $userId,
-                'reason' => $reason
-            ]);
+        return $purchaseRequest;
+    }
 
-            $freshPurchaseRequest = $purchaseRequest->fresh();
-            $this->dispatchPurchaseRequestRejectionNotifications($freshPurchaseRequest, $previousStatus, $reason);
+    public function releaseByFinance(int $prId, User $actor, ?string $notes = null): PurchaseRequest
+    {
+        $purchaseRequest = DB::transaction(function () use ($prId, $actor, $notes) {
+            $purchaseRequest = PurchaseRequest::lockForUpdate()->findOrFail($prId);
+            if (!$purchaseRequest->releaseByFinance($actor, $notes)) {
+                throw ValidationException::withMessages(['status' => 'Only an owner-approved request may receive final Finance release.']);
+            }
 
-            return $freshPurchaseRequest;
+            return $purchaseRequest->fresh();
+        });
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Failed to reject purchase request', [
-                'pr_id' => $prId,
-                'error' => $e->getMessage()
-            ]);
-            throw $e;
-        }
+        $this->dispatchPurchaseRequestApprovalNotifications($purchaseRequest, 'pending_finance_final', $notes);
+
+        return $purchaseRequest;
+    }
+
+    public function rejectByFinance(int $prId, User $actor, string $reason): PurchaseRequest
+    {
+        $previousStatus = '';
+        $purchaseRequest = DB::transaction(function () use ($prId, $actor, $reason, &$previousStatus) {
+            $purchaseRequest = PurchaseRequest::lockForUpdate()->findOrFail($prId);
+            $previousStatus = (string) $purchaseRequest->status;
+            if (!$purchaseRequest->rejectByFinance($actor, $reason)) {
+                throw ValidationException::withMessages(['status' => 'This request is not awaiting Finance review.']);
+            }
+
+            return $purchaseRequest->fresh();
+        });
+
+        $this->dispatchPurchaseRequestRejectionNotifications($purchaseRequest, $previousStatus, $reason);
+
+        return $purchaseRequest;
+    }
+
+    public function rejectByShopOwner(int $prId, ShopOwner $actor, string $reason): PurchaseRequest
+    {
+        $purchaseRequest = DB::transaction(function () use ($prId, $actor, $reason) {
+            $purchaseRequest = PurchaseRequest::lockForUpdate()->findOrFail($prId);
+            if (!$purchaseRequest->rejectByShopOwner($actor, $reason)) {
+                throw ValidationException::withMessages(['status' => 'This request is not awaiting Shop Owner approval.']);
+            }
+
+            return $purchaseRequest->fresh();
+        });
+
+        $this->dispatchPurchaseRequestRejectionNotifications($purchaseRequest, 'pending_shop_owner', $reason);
+
+        return $purchaseRequest;
     }
 
     /**
@@ -282,8 +292,8 @@ class PurchaseRequestService
         return PurchaseRequest::with(['supplier', 'inventoryItem', 'requester'])
             ->where('shop_owner_id', $shopOwnerId)
             ->approved()
-            ->whereDoesntHave('purchaseOrders', function ($query) {
-                $query->whereNotIn('status', ['cancelled']);
+            ->whereDoesntHave('purchaseOrderItems.purchaseOrder', function ($query) {
+                $query->where('status', '!=', 'cancelled');
             })
             ->orderBy('approved_date', 'desc')
             ->get();
@@ -298,47 +308,12 @@ class PurchaseRequestService
         return $purchaseRequest->canBeApproved();
     }
 
-    /**
-     * Determine if PR should be auto-approved based on settings.
-     */
-    protected function shouldAutoApprove(PurchaseRequest $purchaseRequest, ProcurementSettings $settings): bool
-    {
-        if (!$settings->require_finance_approval) {
-            return false;
-        }
-
-        if ($settings->auto_pr_approval_threshold === null) {
-            return false;
-        }
-
-        return $purchaseRequest->total_cost <= $settings->auto_pr_approval_threshold;
-    }
-
-    /**
-     * Auto-approve a purchase request.
-     */
-    protected function autoApprovePurchaseRequest(PurchaseRequest $purchaseRequest): void
-    {
-        $purchaseRequest->status = 'approved';
-        $purchaseRequest->approved_by = $purchaseRequest->requested_by;
-        $purchaseRequest->approved_date = now();
-        $purchaseRequest->notes = 'Auto-approved based on procurement settings threshold.';
-        $purchaseRequest->save();
-
-        Log::info('Purchase request auto-approved', [
-            'pr_id' => $purchaseRequest->id,
-            'pr_number' => $purchaseRequest->pr_number,
-            'total_cost' => $purchaseRequest->total_cost
-        ]);
-
-        $this->dispatchPurchaseRequestApprovalNotifications($purchaseRequest->fresh(), 'pending_finance', 'Auto-approved by threshold rule');
-    }
-
     private function notifyPurchaseRequestSubmitted(PurchaseRequest $purchaseRequest): void
     {
         $payload = $this->buildPurchaseRequestNotificationData($purchaseRequest);
 
         $this->notificationService->notifyPurchaseRequestSubmitted((int) $purchaseRequest->shop_owner_id, [
+            'purchase_request_id' => $purchaseRequest->id,
             'reference' => $payload['reference'],
             'total_cost' => $payload['total_cost'],
             'product_name' => $payload['product_name'],
@@ -358,8 +333,9 @@ class PurchaseRequestService
                 title: 'Purchase Request Awaiting Approval',
                 message: "{$payload['reference']} ({$payload['product_name']}) now requires shop owner approval.",
                 data: $payload,
-                actionUrl: '/shop-owner/purchase-requests',
-                priority: 'medium'
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('purchase_request', $purchaseRequest->id),
+                priority: 'medium',
+                requiresAction: true,
             );
 
             return;
@@ -373,8 +349,25 @@ class PurchaseRequestService
                 title: 'Purchase Request Returned To Finance',
                 message: "{$payload['reference']} was approved by shop owner and requires final Finance review.",
                 data: $payload,
-                actionUrl: '/erp/procurement/purchase-requests',
-                priority: 'medium'
+                actionUrl: "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
+                priority: 'medium',
+                requiresAction: true,
+            );
+
+            return;
+        }
+
+        if ($purchaseRequest->status === 'pending_finance_final' && $previousStatus === 'pending_finance') {
+            $this->notificationService->sendToErpRole(
+                roleName: 'Finance',
+                shopId: $shopOwnerId,
+                type: NotificationType::PURCHASE_REQUEST_SUBMITTED,
+                title: 'Purchase Request Ready For Final Release',
+                message: "{$payload['reference']} was reviewed by Finance and requires final Finance release.",
+                data: $payload,
+                actionUrl: "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
+                priority: 'medium',
+                requiresAction: true,
             );
 
             return;
@@ -389,22 +382,11 @@ class PurchaseRequestService
                     title: 'Purchase Request Approved',
                     message: "{$payload['reference']} has been approved.",
                     data: $payload,
-                    actionUrl: '/erp/procurement/purchase-requests',
+                    actionUrl: "/erp/procurement/purchase-request?purchase_request={$purchaseRequest->id}",
                     shopId: $shopOwnerId
                 );
             }
 
-            if ($previousStatus === 'pending_finance') {
-                $this->notificationService->sendToShopOwner(
-                    shopOwnerId: $shopOwnerId,
-                    type: NotificationType::PURCHASE_REQUEST_SUBMITTED,
-                    title: 'Purchase Request Finalized by Finance',
-                    message: "{$payload['reference']} was approved directly by Finance (owner approval not required).",
-                    data: $payload,
-                    actionUrl: '/shop-owner/purchase-requests',
-                    priority: 'medium'
-                );
-            }
         }
     }
 
@@ -421,7 +403,7 @@ class PurchaseRequestService
                 title: 'Purchase Request Rejected',
                 message: "{$payload['reference']} was rejected. Reason: {$reason}",
                 data: $payload,
-                actionUrl: '/erp/procurement/purchase-requests',
+                actionUrl: "/erp/procurement/purchase-request?purchase_request={$purchaseRequest->id}",
                 shopId: $shopOwnerId
             );
         }
@@ -433,7 +415,7 @@ class PurchaseRequestService
                 title: 'Purchase Request Rejected by Finance',
                 message: "{$payload['reference']} was rejected by Finance. Reason: {$reason}",
                 data: $payload,
-                actionUrl: '/shop-owner/purchase-requests',
+                    actionUrl: $this->notificationService->ownerApprovalActionUrl('purchase_request', $purchaseRequest->id),
                 priority: 'medium'
             );
         }
@@ -453,6 +435,15 @@ class PurchaseRequestService
             'action_by' => $actorId,
             'rejection_reason' => $reason,
         ];
+    }
+
+    private function snapshotOwnerApprovalPolicy(PurchaseRequest $purchaseRequest): void
+    {
+        $purchaseRequest->requires_owner_approval = $this->approvalPolicyService
+            ->requiresOwnerApprovalForPurchaseRequest(
+                (int) $purchaseRequest->shop_owner_id,
+                (float) $purchaseRequest->total_cost
+            );
     }
 
     /**

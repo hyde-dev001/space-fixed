@@ -1,10 +1,13 @@
+import MonochromeSelect from "@/components/form/Select";
+import IconButton from "@/components/ui/icon-button/IconButton";
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
 import { Inertia } from "@inertiajs/inertia";
 import { router, usePage } from '@inertiajs/react';
+import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
-type EmployeeStatus = "active" | "on_leave" | "probation" | "inactive" | "suspended";
+type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";
 
 type Employee = {
   id: number;
@@ -15,13 +18,18 @@ type Employee = {
   department: string;
   position: string;
   status: EmployeeStatus;
+  onLeave?: boolean;
+  probation?: boolean;
   suspensionReason?: string;
   hiredAt: string;
   lastActiveAt?: string;
   location?: string;
   // optional metadata supplied by the backend
   createdBy?: string;
-  linkedUser?: string; // username or id of linked user account
+  linkedUser?: string | number; // username or id of linked user account
+  terminatedAt?: string;
+  rehirePending?: boolean;
+  employmentHistory?: EmploymentPeriod[];
 };
 
 type EmployeeSummaryStats = {
@@ -34,8 +42,6 @@ type EmployeeSummaryStats = {
 type MetricCardProps = {
   title: string;
   value: number;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -44,6 +50,29 @@ type MetricCardProps = {
 type FieldValidationState = {
   status: "idle" | "checking" | "valid" | "error";
   message: string;
+};
+
+type EmploymentPeriod = {
+  id: number;
+  startDate: string;
+  endDate?: string | null;
+  endReason?: string | null;
+  position?: string | null;
+  department?: string | null;
+  role?: string | null;
+  salary?: string | number | null;
+};
+
+type LifecycleRequestForm = {
+  reason: string;
+  evidence: string;
+};
+
+type RehireRequestForm = LifecycleRequestForm & {
+  rehirePosition: string;
+  rehireDepartment: string;
+  rehireSalary: string;
+  rehireRole: string;
 };
 
 // Portal wrapper to mirror the registration modal layering and avoid navbar stacking issues
@@ -76,6 +105,12 @@ const AlertIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const UserCheckIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19a6 6 0 00-12 0m6-8a4 4 0 100-8 4 4 0 000 8zm8-5v6m3-3h-6" />
+  </svg>
+);
+
 const LockIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
@@ -88,27 +123,9 @@ const InfoIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const TrashBinIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-  </svg>
-);
-
 const CalendarIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-  </svg>
-);
-
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
   </svg>
 );
 
@@ -119,7 +136,7 @@ const Button: React.FC<{
   className?: string;
   disabled?: boolean;
 }> = ({ children, variant = "primary", onClick, className = "", disabled = false }) => {
-  const baseClasses = "px-4 py-2 rounded-lg transition-colors duration-200 font-medium";
+  const baseClasses = "inline-flex min-h-11 items-center justify-center px-4 py-2 rounded-lg transition-colors duration-200 font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2";
   const variantClasses = {
     primary: "bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-400",
     secondary: "bg-gray-600 text-white hover:bg-gray-700 disabled:bg-gray-400",
@@ -141,8 +158,6 @@ const Button: React.FC<{
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color = "info",
   description,
@@ -166,27 +181,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-
-          {change !== undefined && changeType && (
-            <div
-              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-                changeType === "increase"
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              }`}
-            >
-              {changeType === "increase" ? (
-                <ArrowUpIcon className="size-3" />
-              ) : (
-                <ArrowDownIcon className="size-3" />
-              )}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -203,18 +201,15 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
 const statusLabel: Record<EmployeeStatus, string> = {
   active: "Active",
-  on_leave: "On Leave",
-  probation: "Probation",
-  inactive: "Under Investigation",
+  inactive: "Inactive",
   suspended: "Suspended",
+  terminated: "Terminated",
 };
 
 const statusBadge = (status: EmployeeStatus) => {
   if (status === "active") return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-  if (status === "on_leave") return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-  if (status === "probation") return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-  if (status === "inactive") return "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200";
-  if (status === "suspended") return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+  if (status === "inactive") return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200";
+  if (status === "suspended") return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200";
   return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
 };
 
@@ -240,7 +235,8 @@ const seedEmployees: Employee[] = [
     phone: "+63 928 112 0034",
     department: "Sales",
     position: "Sales Specialist",
-    status: "on_leave",
+    status: "active",
+    onLeave: true,
     hiredAt: "2023-07-01",
     lastActiveAt: "2026-01-12",
     location: "Cebu",
@@ -253,7 +249,8 @@ const seedEmployees: Employee[] = [
     phone: "+63 915 222 9182",
     department: "HR",
     position: "HR Generalist",
-    status: "probation",
+    status: "active",
+    probation: true,
     hiredAt: "2025-11-20",
     lastActiveAt: "2026-01-19",
     location: "Quezon City",
@@ -309,13 +306,45 @@ const formatDate = (value?: string) => {
 
 const buildName = (employee: Employee) => `${employee.firstName} ${employee.lastName}`;
 
-const parseLinkedUserId = (linkedUser?: string) => {
+const employeeActionButtonClass = "inline-flex size-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:focus-visible:ring-offset-gray-800";
+
+const canonicalEmployeeStatus = (value: unknown): EmployeeStatus => {
+  switch (String(value ?? '').trim().toLowerCase()) {
+    case 'active':
+      return 'active';
+    case 'inactive':
+      return 'inactive';
+    case 'suspended':
+      return 'suspended';
+    case 'terminated':
+      return 'terminated';
+    case 'on_leave':
+    case 'on-leave':
+    case 'probation':
+      return 'active';
+    default:
+      return 'inactive';
+  }
+};
+
+const parseLinkedUserId = (linkedUser?: string | number) => {
   const numericValue = Number(linkedUser ?? 0);
   return Number.isFinite(numericValue) && numericValue > 0 ? numericValue : null;
 };
 
 const isRepairerRole = (roleValue?: string) => (roleValue || '').trim().toLowerCase() === 'repairer';
 const isCashierRole = (roleValue?: string) => (roleValue || '').trim().toLowerCase() === 'cashier';
+
+const transformEmploymentPeriodFromApi = (period: any): EmploymentPeriod => ({
+  id: Number(period.id),
+  startDate: period.start_date || period.startDate,
+  endDate: period.end_date || period.endDate || null,
+  endReason: period.end_reason || period.endReason || null,
+  position: period.position || null,
+  department: period.department || null,
+  role: period.role || null,
+  salary: period.salary ?? null,
+});
 
 // Transform snake_case API response to camelCase for frontend
 const transformEmployeeFromApi = (apiEmployee: any): Employee => {
@@ -334,6 +363,11 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     }
   }
   
+  const projection = apiEmployee.owner_projection || apiEmployee.ownerProjection || {};
+  const rawStatus = String(apiEmployee.status ?? '').trim().toLowerCase();
+  const legacyOnLeave = rawStatus === 'on_leave' || rawStatus === 'on-leave';
+  const employmentPeriods = apiEmployee.employment_periods || apiEmployee.employmentPeriods;
+
   return {
     id: apiEmployee.id,
     firstName: firstName,
@@ -342,13 +376,20 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     phone: apiEmployee.phone,
     department: apiEmployee.department,
     position: apiEmployee.position,
-    status: apiEmployee.status as EmployeeStatus,
+    status: canonicalEmployeeStatus(apiEmployee.status),
+    onLeave: Boolean(projection.on_leave ?? projection.onLeave ?? apiEmployee.on_leave ?? apiEmployee.onLeave ?? legacyOnLeave),
+    probation: Boolean(projection.probation ?? apiEmployee.probation ?? rawStatus === 'probation'),
     suspensionReason: apiEmployee.suspension_reason || apiEmployee.suspensionReason,
     hiredAt: apiEmployee.hire_date || apiEmployee.hiredAt || apiEmployee.created_at,
     lastActiveAt: apiEmployee.last_active_at || apiEmployee.lastActiveAt || apiEmployee.updated_at,
     location: apiEmployee.location || apiEmployee.address,
     createdBy: apiEmployee.created_by || apiEmployee.createdBy,
     linkedUser: apiEmployee.linked_user || apiEmployee.linkedUser,
+    terminatedAt: apiEmployee.terminated_at || apiEmployee.terminatedAt,
+    rehirePending: Boolean(apiEmployee.has_pending_rehire_request ?? apiEmployee.rehire_pending),
+    employmentHistory: Array.isArray(employmentPeriods)
+      ? employmentPeriods.map(transformEmploymentPeriodFromApi)
+      : undefined,
   };
 };
 
@@ -366,7 +407,18 @@ export const EmployeeManagement: React.FC<{
   
   // Get shop owner data from auth for business type filtering
   const auth = pageProps.auth;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const ownerReadOnly = ownerMode;
+  const ownerCanCreate = ownerMode;
+  const employeeApiBase = ownerMode ? '/shop-owner/employees' : '/api/hr/employees';
+  const invitationApiBase = ownerMode ? '/api/shop-owner/employees' : '/api/hr/employees';
   const shopOwner = auth?.shop_owner || auth?.user?.shop_owner || pageProps?.shop_owner;
+  const isCompanyShop = String(
+    shopOwner?.registration_type
+    ?? auth?.registration_type
+    ?? auth?.user?.registration_type
+    ?? ''
+  ).toLowerCase().trim() === 'company';
   const rawBusinessType = String(
     shopOwner?.business_type
     ?? auth?.business_type
@@ -387,6 +439,20 @@ export const EmployeeManagement: React.FC<{
   const isCashierCapableBusiness = isRepairCapableBusiness || isRetailCapableBusiness;
   const currentUserId = Number(auth?.user?.id ?? 0);
   const currentUserEmail = String(auth?.user?.email ?? '').trim().toLowerCase();
+  const actorRole = String(auth?.user?.role ?? '').trim().toLowerCase();
+  const actorRoles = Array.isArray(auth?.user?.roles)
+    ? auth.user.roles.map((role: unknown) => String(role).trim().toLowerCase())
+    : [];
+  const actorPermissions = [
+    ...(Array.isArray(auth?.permissions) ? auth.permissions : []),
+    ...(Array.isArray(auth?.user?.permissions) ? auth.user.permissions : []),
+  ].map((permission: unknown) => String(permission).trim());
+  const canRequestEmployeeLifecycle = isCompanyShop && !ownerMode && (
+    actorRole === 'hr'
+    || actorRoles.includes('hr')
+    || actorPermissions.includes('request-employee-terminations')
+    || actorPermissions.includes('request-employee-rehires')
+  );
   
   // Check for flash data with employee credentials
   const success = pageProps.success || flash?.success;
@@ -454,6 +520,8 @@ export const EmployeeManagement: React.FC<{
 
   // Fetch employees from API when component mounts or filters change
   useEffect(() => {
+    if (ownerMode) return;
+
     const fetchEmployees = async () => {
       setIsLoadingData(true);
       try {
@@ -515,7 +583,7 @@ export const EmployeeManagement: React.FC<{
     if (!employees || (Array.isArray(employees) && employees.length === 0)) {
       fetchEmployees();
     }
-  }, [searchTerm, filterStatus, currentPage, itemsPerPage]);
+  }, [searchTerm, filterStatus, currentPage, itemsPerPage, ownerMode]);
 
   // keep component in sync when parent provides new employees (server or client)
   useEffect(() => {
@@ -585,6 +653,22 @@ export const EmployeeManagement: React.FC<{
   const [suspensionRequestForm, setSuspensionRequestForm] = useState({
     reason: "",
     evidence: "",
+  });
+  const [isTerminationRequestModalOpen, setIsTerminationRequestModalOpen] = useState(false);
+  const [employeeToTerminate, setEmployeeToTerminate] = useState<Employee | null>(null);
+  const [terminationRequestForm, setTerminationRequestForm] = useState<LifecycleRequestForm>({
+    reason: "",
+    evidence: "",
+  });
+  const [isRehireRequestModalOpen, setIsRehireRequestModalOpen] = useState(false);
+  const [employeeToRehire, setEmployeeToRehire] = useState<Employee | null>(null);
+  const [rehireRequestForm, setRehireRequestForm] = useState<RehireRequestForm>({
+    reason: "",
+    evidence: "",
+    rehirePosition: "",
+    rehireDepartment: "",
+    rehireSalary: "",
+    rehireRole: "",
   });
   
   // Position Templates State
@@ -710,7 +794,11 @@ export const EmployeeManagement: React.FC<{
   };
 
   const sendInvitationToPersonalEmail = async () => {
-    if (!invitationModal.employeeId && !invitationModal.employeeUserId) {
+    const invitationTargetId = ownerMode
+      ? invitationModal.employeeUserId
+      : invitationModal.employeeId;
+
+    if (!invitationTargetId) {
       Swal.fire({ icon: 'error', title: 'Missing Employee', text: 'Employee identifier is not available.' });
       return;
     }
@@ -745,21 +833,12 @@ export const EmployeeManagement: React.FC<{
         'X-CSRF-TOKEN': csrf || ''
       };
 
-      let emailResponse = await fetch(`/api/hr/employees/${invitationModal.employeeId}/send-invitation-email`, {
+      const emailResponse = await fetch(`${invitationApiBase}/${invitationTargetId}/send-invitation-email`, {
         method: 'POST',
         headers: requestHeaders,
         credentials: 'include',
         body: requestBody,
       });
-
-      if (!emailResponse.ok && [404, 405].includes(emailResponse.status) && invitationModal.employeeUserId) {
-        emailResponse = await fetch(`/api/shop-owner/employees/${invitationModal.employeeUserId}/send-invitation-email`, {
-          method: 'POST',
-          headers: requestHeaders,
-          credentials: 'include',
-          body: requestBody,
-        });
-      }
 
       if (!emailResponse.ok) {
         const errorData = await emailResponse.json().catch(() => ({}));
@@ -809,25 +888,16 @@ export const EmployeeManagement: React.FC<{
   useEffect(() => {
     const fetchPositionTemplates = async () => {
       try {
-        // Try API route first (accessible to managers)
-        let response = await fetch('/api/hr/position-templates', {
+        const response = await fetch(
+          ownerMode ? '/shop-owner/position-templates' : '/api/hr/position-templates',
+          {
           headers: {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
           },
           credentials: 'include'
-        });
-        
-        // Fallback to shop-owner route only when HR endpoint is unavailable
-        if (!response.ok && [404, 405].includes(response.status)) {
-          response = await fetch('/shop-owner/position-templates', {
-            headers: {
-              'Accept': 'application/json',
-              'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-            },
-            credentials: 'include'
-          });
-        }
+          },
+        );
         
         if (response.ok) {
           const data = await response.json();
@@ -840,25 +910,16 @@ export const EmployeeManagement: React.FC<{
     
     const fetchPermissions = async () => {
       try {
-        // Try API route first (accessible to managers)
-        let response = await fetch('/api/hr/permissions/available', {
+        const response = await fetch(
+          ownerMode ? '/shop-owner/permissions/available' : '/api/hr/permissions/available',
+          {
           headers: {
             'Accept': 'application/json',
             'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
           },
           credentials: 'include'
-        });
-        
-        // Fallback to shop-owner route only when HR endpoint is unavailable
-        if (!response.ok && [404, 405].includes(response.status)) {
-          response = await fetch('/shop-owner/permissions/available', {
-            headers: {
-              'Accept': 'application/json',
-              'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
-            },
-            credentials: 'include'
-          });
-        }
+          },
+        );
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
@@ -918,7 +979,7 @@ export const EmployeeManagement: React.FC<{
     
     fetchPositionTemplates();
     fetchPermissions();
-  }, []);
+  }, [ownerMode]);
 
   // Check for flash data with employee invitation after successful creation
   useEffect(() => {
@@ -948,8 +1009,8 @@ export const EmployeeManagement: React.FC<{
 
     const total = (isServerPaginated || meta) ? (meta?.total ?? rows.length) : rows.length;
     const active = rows.filter((r) => r.status === "active").length;
-    const onLeave = rows.filter((r) => r.status === "on_leave").length;
-    const probation = rows.filter((r) => r.status === "probation").length;
+    const onLeave = rows.filter((r) => r.onLeave).length;
+    const probation = rows.filter((r) => r.probation).length;
     return {
       total,
       active,
@@ -1003,7 +1064,7 @@ export const EmployeeManagement: React.FC<{
   };
 
   const handleActivate = (employeeId: number, name: string) => {
-    Swal.fire({
+    Swal.fire(withSweetAlertSemantic({
       title: "Reactivate Account?",
       text: `Activate ${name}?`,
       icon: "question",
@@ -1011,7 +1072,7 @@ export const EmployeeManagement: React.FC<{
       confirmButtonColor: "#16a34a",
       cancelButtonColor: "#6b7280",
       confirmButtonText: "Yes, activate",
-    }).then((result) => {
+    }, "success")).then((result) => {
         if (result.isConfirmed) {
           (async () => {
             try {
@@ -1019,7 +1080,7 @@ export const EmployeeManagement: React.FC<{
               setApiError(null);
               
               const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-              const response = await fetch(`/api/hr/employees/${employeeId}/activate`, {
+              const response = await fetch(`${employeeApiBase}/${employeeId}/activate`, {
                 method: 'POST',
                 headers: {
                   'Accept': 'application/json',
@@ -1037,114 +1098,19 @@ export const EmployeeManagement: React.FC<{
               }
               
               const apiResponse = await response.json();
-              const updatedEmployee = transformEmployeeFromApi(apiResponse.employee || apiResponse);
+              const updatedEmployee = transformEmployeeFromApi(apiResponse.employee || apiResponse.data || apiResponse);
               setRows((prev) => prev.map((row) => (row.id === employeeId ? updatedEmployee : row)));
-              Swal.fire({ title: "Reactivated", text: `${name} is now active.`, icon: "success", timer: 1400, showConfirmButton: false });
+              Swal.fire(withSweetAlertSemantic({ title: "Reactivated", text: `${name} is now active.`, icon: "success", timer: 1400, showConfirmButton: false }, "success"));
               setIsViewModalOpen(false);
               setSelectedEmployee(null);
             } catch (e: any) {
               setApiError(e?.message || "Failed to reactivate account.");
-              Swal.fire({ title: "Error", text: e?.message || "Failed to reactivate account.", icon: "error" });
+              Swal.fire(withSweetAlertSemantic({ title: "Error", text: e?.message || "Failed to reactivate account.", icon: "error" }, "danger"));
             } finally {
               setIsProcessingId(null);
             }
           })();
         }
-    });
-  };
-
-  const confirmAndUpdateStatus = (employee: Employee, nextStatus: EmployeeStatus, message: string) => {
-    Swal.fire({
-      title: message,
-      text: buildName(employee),
-      icon: "question",
-      showCancelButton: true,
-      confirmButtonColor: "#2563eb",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Yes, continue",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        (async () => {
-          try {
-            setIsProcessingId(employee.id);
-            setApiError(null);
-            
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            const response = await fetch(`/api/hr/employees/${employee.id}`, {
-              method: 'PATCH',
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
-              },
-              credentials: 'include',
-              body: JSON.stringify({ status: nextStatus }),
-            });
-            
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({ message: 'Failed to update status' }));
-              throw new Error(errorData.message || 'Failed to update status');
-            }
-            
-            const apiResponse = await response.json();
-            const updatedEmployee = transformEmployeeFromApi(apiResponse.employee || apiResponse);
-            setRows((prev) => prev.map((row) => (row.id === employee.id ? updatedEmployee : row)));
-            Swal.fire({ title: "Updated", text: `${buildName(employee)} is now ${statusLabel[nextStatus]}.`, icon: "success", timer: 1400, showConfirmButton: false });
-          } catch (e: any) {
-            setApiError(e?.message || "Failed to update status.");
-            Swal.fire({ title: "Error", text: e?.message || "Failed to update status.", icon: "error" });
-          } finally {
-            setIsProcessingId(null);
-          }
-        })();
-      }
-    });
-  };
-
-  const handleDeleteEmployee = (employee: Employee) => {
-    Swal.fire({
-      title: "Delete Employee?",
-      html: `Permanently remove <strong>${buildName(employee)}</strong>?<br/><span class="text-red-600">This action cannot be undone.</span>`,
-      icon: "warning",
-      showCancelButton: true,
-      confirmButtonColor: "#dc2626",
-      cancelButtonColor: "#6b7280",
-      confirmButtonText: "Delete",
-    }).then((result) => {
-      if (result.isConfirmed) {
-        (async () => {
-          try {
-            setIsProcessingId(employee.id);
-            setApiError(null);
-            
-            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            const response = await fetch(`/api/hr/employees/${employee.id}`, {
-              method: 'DELETE',
-              headers: {
-                'Accept': 'application/json',
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
-              },
-              credentials: 'include',
-            });
-            
-            if (!response.ok) {
-              const errorData = await response.json().catch(() => ({ message: 'Failed to delete employee' }));
-              throw new Error(errorData.message || 'Failed to delete employee');
-            }
-            
-            setRows((prev) => prev.filter((row) => row.id !== employee.id));
-            Swal.fire({ title: "Deleted", text: `${buildName(employee)} has been removed.`, icon: "success", timer: 1400, showConfirmButton: false });
-          } catch (e: any) {
-            setApiError(e?.message || "Failed to delete employee.");
-            Swal.fire({ title: "Error", text: e?.message || "Failed to delete employee.", icon: "error" });
-          } finally {
-            setIsProcessingId(null);
-          }
-        })();
-      }
     });
   };
 
@@ -1154,6 +1120,188 @@ export const EmployeeManagement: React.FC<{
     const linkedUserId = Number(employee.linkedUser ?? 0);
     return (linkedUserId > 0 && linkedUserId === currentUserId)
       || (employeeEmail !== '' && employeeEmail === currentUserEmail);
+  };
+
+  const submitLifecycleRequest = async ({
+    endpoint,
+    employeeId,
+    body,
+    successTitle,
+    successFallback,
+    errorTitle = 'Error',
+    onSubmitted,
+  }: {
+    endpoint: string;
+    employeeId: number;
+    body: Record<string, unknown>;
+    successTitle: string;
+    successFallback: string;
+    errorTitle?: string;
+    onSubmitted: () => void;
+  }) => {
+    if (isProcessingId === employeeId) return;
+
+    try {
+      setIsProcessingId(employeeId);
+      setApiError(null);
+
+      const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest',
+          ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
+        },
+        credentials: 'include',
+        body: JSON.stringify(body),
+      });
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        const validationMessage = data?.errors && typeof data.errors === 'object'
+          ? Object.values(data.errors as Record<string, unknown>)
+              .flatMap((value) => Array.isArray(value) ? value : [value])
+              .filter((value): value is string => typeof value === 'string')
+              .join(' ')
+          : '';
+        throw new Error(validationMessage || data?.message || 'Failed to submit employee lifecycle request.');
+      }
+
+      onSubmitted();
+      await Swal.fire(withSweetAlertSemantic({
+        icon: 'success',
+        title: successTitle,
+        text: data?.message || successFallback,
+        confirmButtonColor: '#10b981',
+      }, 'success'));
+    } catch (error: unknown) {
+      const message = error instanceof Error
+        ? error.message
+        : 'Failed to submit employee lifecycle request.';
+      setApiError(message);
+      await Swal.fire(withSweetAlertSemantic({
+        title: errorTitle,
+        text: message,
+        icon: 'error',
+        confirmButtonColor: '#ef4444',
+      }, 'danger'));
+    } finally {
+      setIsProcessingId(null);
+    }
+  };
+
+  const handleTerminateClick = (employee: Employee) => {
+    if (!canRequestEmployeeLifecycle || employee.status === 'terminated') return;
+
+    if (isSelfEmployeeAccount(employee)) {
+      void Swal.fire({
+        icon: 'info',
+        title: 'Action Blocked',
+        text: 'You cannot file a termination request for the account you are currently using.',
+      });
+      return;
+    }
+
+    setEmployeeToTerminate(employee);
+    setTerminationRequestForm({ reason: '', evidence: '' });
+    setIsViewModalOpen(false);
+    setIsTerminationRequestModalOpen(true);
+  };
+
+  const handleTerminationRequestSubmit = async () => {
+    const employee = employeeToTerminate;
+    const reason = terminationRequestForm.reason.trim();
+    if (!employee) return;
+
+    if (reason.length < 3) {
+      await Swal.fire({
+        title: 'Reason Required',
+        text: 'Please provide a termination reason with at least 3 characters.',
+        icon: 'warning',
+        confirmButtonColor: '#f59e0b',
+      });
+      return;
+    }
+
+    await submitLifecycleRequest({
+      endpoint: '/api/hr/termination-requests',
+      employeeId: employee.id,
+      body: {
+        employee_id: employee.id,
+        reason,
+        evidence: terminationRequestForm.evidence.trim() || null,
+      },
+      successTitle: 'Termination Request Submitted',
+      successFallback: 'The request will be reviewed by the Manager, then the Company Shop Owner.',
+      onSubmitted: () => {
+        setIsTerminationRequestModalOpen(false);
+        setEmployeeToTerminate(null);
+        setTerminationRequestForm({ reason: '', evidence: '' });
+      },
+    });
+  };
+
+  const handleRehireClick = (employee: Employee) => {
+    if (!canRequestEmployeeLifecycle || employee.status !== 'terminated' || employee.rehirePending) return;
+
+    setEmployeeToRehire(employee);
+    setRehireRequestForm({
+      reason: '',
+      evidence: '',
+      rehirePosition: employee.position || '',
+      rehireDepartment: employee.department || '',
+      rehireSalary: '',
+      rehireRole: '',
+    });
+    setIsViewModalOpen(false);
+    setIsRehireRequestModalOpen(true);
+  };
+
+  const handleRehireRequestSubmit = async () => {
+    const employee = employeeToRehire;
+    const reason = rehireRequestForm.reason.trim();
+    if (!employee) return;
+
+    if (reason.length < 3 || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()) {
+      await Swal.fire({
+        title: 'Complete Rehire Details',
+        text: 'Provide a reason, position, and role before submitting.',
+        icon: 'warning',
+        confirmButtonColor: '#f59e0b',
+      });
+      return;
+    }
+
+    await submitLifecycleRequest({
+      endpoint: '/api/hr/rehire-requests',
+      employeeId: employee.id,
+      body: {
+        employee_id: employee.id,
+        reason,
+        evidence: rehireRequestForm.evidence.trim() || null,
+        rehire_position: rehireRequestForm.rehirePosition.trim(),
+        rehire_department: rehireRequestForm.rehireDepartment.trim() || null,
+        rehire_salary: rehireRequestForm.rehireSalary.trim() || null,
+        rehire_role: rehireRequestForm.rehireRole.trim(),
+      },
+      successTitle: 'Rehire Request Submitted',
+      successFallback: 'The request will be reviewed by the Manager, then the Company Shop Owner.',
+      errorTitle: 'Rehire Request Failed',
+      onSubmitted: () => {
+        setIsRehireRequestModalOpen(false);
+        setEmployeeToRehire(null);
+        setRehireRequestForm({
+          reason: '',
+          evidence: '',
+          rehirePosition: '',
+          rehireDepartment: '',
+          rehireSalary: '',
+          rehireRole: '',
+        });
+      },
+    });
   };
 
   const handleSuspendClick = (employee: Employee) => {
@@ -1194,7 +1342,9 @@ export const EmployeeManagement: React.FC<{
       setApiError(null);
 
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const response = await fetch('/api/hr/suspension-requests', {
+      const response = await fetch(
+        ownerMode ? `${employeeApiBase}/${employeeToSuspend.id}/suspend` : '/api/hr/suspension-requests',
+        {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
@@ -1203,12 +1353,15 @@ export const EmployeeManagement: React.FC<{
           ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
         },
         credentials: 'include',
-        body: JSON.stringify({
-          employee_id: employeeToSuspend.id,
-          reason: suspensionRequestForm.reason.trim(),
-          evidence: suspensionRequestForm.evidence.trim() || null,
-        }),
-      });
+        body: JSON.stringify(ownerMode
+          ? { suspension_reason: suspensionRequestForm.reason.trim() }
+          : {
+              employee_id: employeeToSuspend.id,
+              reason: suspensionRequestForm.reason.trim(),
+              evidence: suspensionRequestForm.evidence.trim() || null,
+            }),
+        },
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Failed to submit suspension request' }));
@@ -1216,33 +1369,6 @@ export const EmployeeManagement: React.FC<{
       }
 
       const data = await response.json();
-      const targetEmployeeId = employeeToSuspend.id;
-      const investigationReason = suspensionRequestForm.reason.trim();
-
-      // Reflect status change immediately in the table without requiring a manual refresh.
-      setRows((prev) =>
-        prev.map((row) =>
-          row.id === targetEmployeeId
-            ? {
-                ...row,
-                status: "inactive",
-                suspensionReason: investigationReason,
-              }
-            : row
-        )
-      );
-
-      if (selectedEmployee && selectedEmployee.id === targetEmployeeId) {
-        setSelectedEmployee((prev) =>
-          prev
-            ? {
-                ...prev,
-                status: "inactive",
-                suspensionReason: investigationReason,
-              }
-            : prev
-        );
-      }
 
       setIsSuspensionRequestModalOpen(false);
       setEmployeeToSuspend(null);
@@ -1250,8 +1376,10 @@ export const EmployeeManagement: React.FC<{
 
       Swal.fire({
         icon: 'success',
-        title: 'Suspension Request Submitted',
-        html: `<p>${data.message || 'Request submitted successfully.'}</p><p class="text-sm text-gray-600 mt-2">The request will be reviewed by the manager, then forwarded to the shop owner for final approval.</p>`,
+        title: ownerMode ? 'Employee Suspended' : 'Suspension Request Submitted',
+        html: ownerMode
+          ? `<p>${data.message || 'Employee suspended successfully.'}</p>`
+          : `<p>${data.message || 'Request submitted successfully.'}</p><p class="text-sm text-gray-600 mt-2">The request will be reviewed by the manager, then forwarded to the shop owner for final approval.</p>`,
         confirmButtonColor: '#10b981',
       });
     } catch (e: any) {
@@ -1394,15 +1522,29 @@ export const EmployeeManagement: React.FC<{
 
   // Permission Management Functions
   const openPermissionModal = async (employee: Employee) => {
-    // Fetch employee user ID from backend
+    const linkedUserId = parseLinkedUserId(employee.linkedUser);
+    if (ownerMode && !linkedUserId) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'No User Account',
+        text: 'This employee does not have a linked user account yet.',
+      });
+      return;
+    }
+
     try {
-      const response = await fetch(`/api/hr/employees/${employee.id}`, {
+      const response = await fetch(
+        ownerMode
+          ? `${employeeApiBase}/${linkedUserId}/permissions`
+          : `${employeeApiBase}/${employee.id}`,
+        {
         headers: {
           'Accept': 'application/json',
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
         },
         credentials: 'include'
-      });
+        },
+      );
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -1420,13 +1562,14 @@ export const EmployeeManagement: React.FC<{
       }
 
       const data = await response.json();
+      const userId = ownerMode ? data.userId : data.user_id;
       
       const employeeWithUser = {
         ...employee,
-        userId: data.user_id,
-        permissions: data.permissions || [],
-        directPermissions: data.direct_permissions || [],
-        rolePermissions: data.role_permissions || []
+        userId,
+        permissions: data.permissions || data.allPermissions || [],
+        directPermissions: data.direct_permissions || data.directPermissions || [],
+        rolePermissions: data.role_permissions || data.rolePermissions || [],
       };
 
       if (!employeeWithUser.userId) {
@@ -1440,8 +1583,8 @@ export const EmployeeManagement: React.FC<{
       }
 
       setSelectedEmployeeForPermissions(employeeWithUser);
-      setSelectedPermissions(data.direct_permissions || []);
-      setSelectedAdditionalRoles(data.additional_roles || []);
+      setSelectedPermissions(data.direct_permissions || data.directPermissions || []);
+      setSelectedAdditionalRoles(data.additional_roles || data.additionalRoles || []);
       setIsPermissionModalOpen(true);
     } catch (error: any) {
       console.error('Failed to open permission modal:', error);
@@ -1536,7 +1679,7 @@ export const EmployeeManagement: React.FC<{
       return;
     }
 
-    const result = await Swal.fire({
+    const result = await Swal.fire(withSweetAlertSemantic({
       title: 'Reset employee password?',
       html: `This will invalidate the current password for <strong>${buildName(employee)}</strong> and generate a new account setup link.`,
       icon: 'warning',
@@ -1545,15 +1688,21 @@ export const EmployeeManagement: React.FC<{
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#dc2626',
       cancelButtonColor: '#6b7280',
-    });
+    }, 'warning'));
 
     if (!result.isConfirmed) return;
 
     try {
       setIsProcessingId(employee.id);
+      const invitationTargetId = ownerMode ? linkedUserId : employee.id;
+      if (!invitationTargetId) {
+        throw new Error('This employee does not have a linked user account.');
+      }
 
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const response = await fetch(`/api/hr/employees/${employee.id}/reset-password`, {
+      const response = await fetch(
+        `${invitationApiBase}/${invitationTargetId}/${ownerMode ? 'regenerate-invite' : 'reset-password'}`,
+        {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1561,45 +1710,22 @@ export const EmployeeManagement: React.FC<{
           'X-CSRF-TOKEN': csrf || ''
         },
         credentials: 'include'
-      });
+        },
+      );
 
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(data?.error || data?.message || 'Failed to reset employee password');
       }
 
-      const inviteUrl = data.invite_url;
-      const expiresAt = data.invite_expires_at ? new Date(data.invite_expires_at).toLocaleString() : 'N/A';
-
-      await Swal.fire({
-        icon: 'success',
-        title: 'Password Reset Ready',
-        html: `
-          <div style="text-align:left;">
-            <p style="margin-bottom:8px;">A new setup link was generated for <strong>${buildName(employee)}</strong>.</p>
-            <p style="margin-bottom:8px;"><strong>Work email:</strong> ${employee.email}</p>
-            <p style="margin-bottom:8px;"><strong>Expires:</strong> ${expiresAt}</p>
-            <div style="background:#f9fafb;padding:10px;border-radius:6px;border:1px solid #e5e7eb;word-break:break-all;font-family:monospace;font-size:12px;">
-              ${inviteUrl}
-            </div>
-          </div>
-        `,
-        showCancelButton: true,
-        confirmButtonText: 'Copy Link',
-        cancelButtonText: 'Done',
-        confirmButtonColor: '#16a34a',
-        cancelButtonColor: '#6b7280',
-      }).then((copyResult) => {
-        if (copyResult.isConfirmed && inviteUrl) {
-          navigator.clipboard.writeText(inviteUrl).catch(() => {});
-          Swal.fire({
-            icon: 'success',
-            title: 'Copied',
-            text: 'Setup link copied to clipboard.',
-            timer: 1500,
-            showConfirmButton: false,
-          });
-        }
+      openInvitationModal({
+        employeeId: employee.id,
+        employeeUserId: linkedUserId,
+        employeeName: buildName(employee),
+        workEmail: employee.email,
+        inviteUrl: data.invite_url,
+        inviteExpiresAt: data.invite_expires_at,
+        showRegeneratedNote: false,
       });
     } catch (error: any) {
       Swal.fire({
@@ -1628,8 +1754,13 @@ export const EmployeeManagement: React.FC<{
     }
 
     try {
+      const invitationTargetId = ownerMode ? linkedUserId : employee.id;
+      if (!invitationTargetId) {
+        throw new Error('This employee does not have a linked user account.');
+      }
+
       const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-      const response = await fetch(`/api/hr/employees/${employee.id}/regenerate-invite`, {
+      const response = await fetch(`${invitationApiBase}/${invitationTargetId}/regenerate-invite`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1658,7 +1789,7 @@ export const EmployeeManagement: React.FC<{
       Swal.fire({
         icon: 'error',
         title: 'Error',
-        text: 'Failed to get invitation link. Please try again.',
+        text: error instanceof Error ? error.message : 'Failed to get invitation link. Please try again.',
       });
     }
   };
@@ -1714,8 +1845,8 @@ export const EmployeeManagement: React.FC<{
       let permissionsToSync = normalizePermissions(selectedPermissions);
       
       const postSyncPermissions = async (permissionsPayload: string[]) => {
-        // Try API route first (accessible to managers)
-        let response = await fetch(`/api/hr/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
+        const syncUrl = `${employeeApiBase}/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`;
+        return fetch(syncUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -1727,24 +1858,6 @@ export const EmployeeManagement: React.FC<{
             permissions: permissionsPayload
           })
         });
-
-        // Fallback to shop-owner route only when HR endpoint is unavailable
-        if (!response.ok && [404, 405].includes(response.status)) {
-          response = await fetch(`/shop-owner/employees/${(selectedEmployeeForPermissions as any).userId}/permissions/sync`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'X-CSRF-TOKEN': csrf || ''
-            },
-            credentials: 'include',
-            body: JSON.stringify({
-              permissions: permissionsPayload
-            })
-          });
-        }
-
-        return response;
       };
 
       let response = await postSyncPermissions(permissionsToSync);
@@ -2011,10 +2124,9 @@ export const EmployeeManagement: React.FC<{
       if (result.isConfirmed) {
         setIsAdding(true);
         
-        // Use HR API endpoint with user guard authentication
         try {
           const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-          const response = await fetch('/api/hr/employees', {
+          const response = await fetch(employeeApiBase, {
             method: 'POST',
             headers: {
               'Accept': 'application/json',
@@ -2023,18 +2135,31 @@ export const EmployeeManagement: React.FC<{
               ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
             },
             credentials: 'include',
-            body: JSON.stringify({
-              firstName: addEmployeeForm.firstName,
-              lastName: addEmployeeForm.lastName,
-              email: trimmedEmail,
-              phone: normalizedPhone,
-              position: addEmployeeForm.position || 'General Staff',
-              department: addEmployeeForm.department || 'General',
-              role: addEmployeeForm.department || 'Staff',
-              salary: parseFloat(addEmployeeForm.salary) || 0,
-              hireDate: addEmployeeForm.hiredAt || new Date().toISOString().split('T')[0],
-              location: addEmployeeForm.location,
-            }),
+            body: JSON.stringify(ownerMode
+              ? {
+                  name: `${addEmployeeForm.firstName} ${addEmployeeForm.lastName}`.trim(),
+                  email: trimmedEmail,
+                  phone: normalizedPhone,
+                  address: addEmployeeForm.location,
+                  position: addEmployeeForm.position || 'General Staff',
+                  department: addEmployeeForm.department || 'General',
+                  role: addEmployeeForm.department || 'Staff',
+                  salary: parseFloat(addEmployeeForm.salary) || 0,
+                  hire_date: addEmployeeForm.hiredAt || new Date().toISOString().split('T')[0],
+                  status: 'active',
+                }
+              : {
+                  firstName: addEmployeeForm.firstName,
+                  lastName: addEmployeeForm.lastName,
+                  email: trimmedEmail,
+                  phone: normalizedPhone,
+                  position: addEmployeeForm.position || 'General Staff',
+                  department: addEmployeeForm.department || 'General',
+                  role: addEmployeeForm.department || 'Staff',
+                  salary: parseFloat(addEmployeeForm.salary) || 0,
+                  hireDate: addEmployeeForm.hiredAt || new Date().toISOString().split('T')[0],
+                  location: addEmployeeForm.location,
+                }),
           });
 
           if (!response.ok) {
@@ -2209,13 +2334,11 @@ export const EmployeeManagement: React.FC<{
   ] as const;
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 lg:p-6">
-      <div className="max-w-[1600px] mx-auto">
-        <div className="flex justify-between items-start mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Employee Management</h1>
-            <p className="text-gray-600 dark:text-gray-400">Manage employee accounts, access, and lifecycle</p>
-          </div>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+      <div className="w-full">
+        <div className="flex justify-end mb-8">
+          <h1 className="sr-only">Employee Management</h1>
+          {(!ownerReadOnly || ownerCanCreate) && (
           <div className="flex gap-3">
             <button
               onClick={handleAddEmployee}
@@ -2228,14 +2351,13 @@ export const EmployeeManagement: React.FC<{
               Add Employee
             </button>
           </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <MetricCard
             title="Total Employees"
             value={stats.total}
-            change={8}
-            changeType="increase"
             icon={UserCircleIcon}
             color="info"
             description="All employee records"
@@ -2243,8 +2365,6 @@ export const EmployeeManagement: React.FC<{
           <MetricCard
             title="Active"
             value={stats.active}
-            change={3}
-            changeType="increase"
             icon={CheckCircleIcon}
             color="success"
             description="Currently available to work"
@@ -2252,8 +2372,6 @@ export const EmployeeManagement: React.FC<{
           <MetricCard
             title="On Leave"
             value={stats.onLeave}
-            change={2}
-            changeType="decrease"
             icon={CalendarIcon}
             color="warning"
             description="Temporarily unavailable"
@@ -2261,8 +2379,6 @@ export const EmployeeManagement: React.FC<{
           <MetricCard
             title="Probation"
             value={stats.probation}
-            change={1}
-            changeType="increase"
             icon={BriefcaseIcon}
             color="error"
             description="New hires under review"
@@ -2303,26 +2419,6 @@ export const EmployeeManagement: React.FC<{
                   Active
                 </button>
                 <button
-                  onClick={() => setFilterStatus("on_leave")}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === "on_leave"
-                      ? "bg-yellow-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  On Leave
-                </button>
-                <button
-                  onClick={() => setFilterStatus("probation")}
-                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                    filterStatus === "probation"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
-                  }`}
-                >
-                  Probation
-                </button>
-                <button
                   onClick={() => setFilterStatus("inactive")}
                   className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
                     filterStatus === "inactive"
@@ -2330,7 +2426,7 @@ export const EmployeeManagement: React.FC<{
                       : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
                   }`}
                 >
-                  Under Investigation
+                  Inactive
                 </button>
                 <button
                   onClick={() => setFilterStatus("suspended")}
@@ -2341,6 +2437,16 @@ export const EmployeeManagement: React.FC<{
                   }`}
                 >
                   Suspended
+                </button>
+                <button
+                  onClick={() => setFilterStatus("terminated")}
+                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                    filterStatus === "terminated"
+                      ? "bg-red-800 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600"
+                  }`}
+                >
+                  Terminated
                 </button>
               </div>
             </div>
@@ -2358,7 +2464,7 @@ export const EmployeeManagement: React.FC<{
                   <th className="w-[7%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Last Active</th>
                   <th className="w-[10%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created By</th>
                   <th className="w-[8%] px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Account</th>
-                  <th className="w-[220px] px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                  <th className="w-[340px] px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
@@ -2387,8 +2493,8 @@ export const EmployeeManagement: React.FC<{
                       <td className="px-3 py-3 align-top">
                         <div className="flex items-center">
                           <div className="flex-shrink-0 h-8 w-8">
-                            <div className="h-8 w-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                              <span className="text-blue-600 dark:text-blue-300 font-medium text-xs">
+                            <div className="h-8 w-8 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+                              <span className="text-white dark:text-blue-300 font-medium text-xs">
                                 {buildName(employee)
                                   .split(" ")
                                   .map((n) => n[0])
@@ -2399,13 +2505,13 @@ export const EmployeeManagement: React.FC<{
                           </div>
                           <div className="ml-2 min-w-0">
                             <div className="text-sm font-medium text-gray-900 dark:text-white truncate" title={buildName(employee)}>{buildName(employee)}</div>
-                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={employee.location || "-"}>{employee.location || "-"}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={ownerReadOnly ? 'Restricted' : (employee.location || "-")}>{ownerReadOnly ? 'Restricted' : (employee.location || "-")}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-3 py-3 align-top">
-                        <div className="text-sm text-gray-900 dark:text-white truncate" title={employee.email}>{employee.email}</div>
-                        {employee.phone && <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={employee.phone}>{employee.phone}</div>}
+                        <div className="text-sm text-gray-900 dark:text-white truncate" title={ownerReadOnly ? 'Restricted' : employee.email}>{ownerReadOnly ? 'Restricted' : employee.email}</div>
+                        {!ownerReadOnly && employee.phone && <div className="text-xs text-gray-500 dark:text-gray-400 truncate" title={employee.phone}>{employee.phone}</div>}
                       </td>
                       <td className="px-3 py-3 align-top">
                         <div className="text-sm text-gray-900 dark:text-white truncate" title={employee.department}>{employee.department}</div>
@@ -2415,9 +2521,21 @@ export const EmployeeManagement: React.FC<{
                         <div className="text-xs text-gray-500 dark:text-gray-400">Hired {formatDate(employee.hiredAt)}</div>
                       </td>
                       <td className="px-3 py-3 align-top">
-                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusBadge(employee.status)}`}>
-                          {statusLabel[employee.status]}
-                        </span>
+                        <div className="flex flex-wrap gap-1">
+                          <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${statusBadge(employee.status)}`}>
+                            {statusLabel[employee.status]}
+                          </span>
+                          {employee.onLeave && (
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
+                              On Leave
+                            </span>
+                          )}
+                          {employee.probation && (
+                            <span className="px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                              Probation
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-3 align-top text-sm text-gray-500 dark:text-gray-400">
                         {formatDate(employee.lastActiveAt)}
@@ -2432,57 +2550,121 @@ export const EmployeeManagement: React.FC<{
                           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-300">No Link</span>
                         )}
                       </td>
-                      <td className="px-3 py-3 whitespace-nowrap text-right text-sm font-medium">
-                        <div className="flex flex-wrap justify-end gap-2">
-                          <button
+                      <td className="px-3 py-3 align-top text-right text-sm font-medium">
+                        <div className="ml-auto flex w-full max-w-[340px] flex-wrap items-center justify-end gap-2">
+                          {!ownerReadOnly && (
+                            <>
+                          <IconButton
+                            variant="warning"
                             onClick={() => handleResetEmployeePassword(employee)}
-                            className={`text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 ${(isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={employeeActionButtonClass}
                             title={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : "Reset Employee Password"}
+                            aria-label={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : `Reset password for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail}
                           >
-                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m6-10h-1V6a5 5 0 00-10 0v1H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2zM9 7V6a3 3 0 016 0v1H9z" />
                             </svg>
-                          </button>
-                          <button
+                          </IconButton>
+                          <IconButton
+                            variant="primary"
                             onClick={() => viewInvitationLink(employee)}
-                            className={`text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 ${(isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={employeeActionButtonClass}
                             title={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : "View/Resend Invitation Link"}
+                            aria-label={String(employee.email ?? '').trim().toLowerCase() === currentUserEmail ? "You cannot reset your own account password" : `View or resend invitation for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id || String(employee.email ?? '').trim().toLowerCase() === currentUserEmail}
                           >
-                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                             </svg>
-                          </button>
-                          <button
+                          </IconButton>
+                            </>
+                          )}
+                          <IconButton
+                            variant="neutral"
                             onClick={() => openViewModal(employee)}
-                            className={`text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={employeeActionButtonClass}
                             title="View Details"
+                            aria-label={`View details for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id}
                           >
                             <InfoIcon className="h-5 w-5" />
-                          </button>
-                          <button
+                          </IconButton>
+                          {['inactive', 'suspended'].includes(employee.status) && (
+                            <Button
+                              variant="success"
+                              onClick={() => handleActivate(employee.id, buildName(employee))}
+                              className="whitespace-nowrap px-3 py-2 text-xs"
+                              disabled={isProcessingId === employee.id}
+                            >
+                              {isProcessingId === employee.id ? 'Processing...' : 'Activate Account'}
+                            </Button>
+                          )}
+                          {canRequestEmployeeLifecycle && employee.status === 'terminated' && (
+                            employee.rehirePending ? (
+                              <Button variant="secondary" className="whitespace-nowrap px-3 py-2 text-xs" disabled>
+                                Rehire Pending
+                              </Button>
+                            ) : (
+                              <IconButton
+                                variant="success"
+                                onClick={() => handleRehireClick(employee)}
+                                className={employeeActionButtonClass}
+                                title="Request Rehire"
+                                aria-label={`Request rehire for ${buildName(employee)}`}
+                                disabled={isProcessingId === employee.id}
+                              >
+                                <UserCheckIcon className="h-5 w-5" />
+                              </IconButton>
+                            )
+                          )}
+                          {canRequestEmployeeLifecycle && employee.status !== 'terminated' && (
+                            <IconButton
+                              variant="danger"
+                              onClick={() => handleTerminateClick(employee)}
+                              className={employeeActionButtonClass}
+                              title="Request Termination"
+                              aria-label={`Request termination for ${buildName(employee)}`}
+                              disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
+                            >
+                              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19a6 6 0 00-12 0m6-8a4 4 0 100-8 4 4 0 000 8zm5-5h6" />
+                              </svg>
+                            </IconButton>
+                          )}
+                          {!ownerReadOnly && (
+                            <>
+                          <IconButton
+                            variant="neutral"
                             onClick={() => openPermissionModal(employee)}
-                            className={`text-purple-600 hover:text-purple-900 dark:text-purple-400 dark:hover:text-purple-300 ${isProcessingId === employee.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={employeeActionButtonClass}
                             title="Manage Permissions"
+                            aria-label={`Manage permissions for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id}
                           >
                             <LockIcon className="h-5 w-5" />
-                          </button>
-                          {employee.status !== "suspended" && (
+                          </IconButton>
+                          {!['inactive', 'suspended', 'terminated'].includes(employee.status) && (
                             <>
-                              <button
+                              <IconButton
+                                variant="warning"
                                 onClick={() => handleSuspendClick(employee)}
-                                className={`inline-flex items-center justify-center w-8 h-8 rounded-md text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 transition-colors ${(isProcessingId === employee.id || isSelfEmployeeAccount(employee)) ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                title={isSelfEmployeeAccount(employee) ? 'You cannot file a suspension request for your own account' : 'File Suspension Request'}
+                                className={employeeActionButtonClass}
+                                title={isSelfEmployeeAccount(employee)
+                                  ? 'You cannot suspend your own account'
+                                  : ownerMode ? 'Suspend Employee' : 'File Suspension Request'}
+                                aria-label={isSelfEmployeeAccount(employee)
+                                  ? 'You cannot suspend your own account'
+                                  : ownerMode ? `Suspend ${buildName(employee)}` : `File suspension request for ${buildName(employee)}`}
                                 disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
                               >
                                 <AlertIcon className="h-5 w-5" />
-                              </button>
+                              </IconButton>
                             </>
                           )}
                           {/* Delete button removed per request */}
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -2560,7 +2742,7 @@ export const EmployeeManagement: React.FC<{
 
         {isViewModalOpen && selectedEmployee && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-auto">
                 <div className="p-8">
                   <h3 className="text-3xl font-semibold text-gray-900 dark:text-white mb-6">Employee Details</h3>
@@ -2572,11 +2754,11 @@ export const EmployeeManagement: React.FC<{
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Email</p>
-                      <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.email}</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : selectedEmployee.email}</p>
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Phone</p>
-                      <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.phone || "N/A"}</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.phone || "N/A")}</p>
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Role</p>
@@ -2588,7 +2770,7 @@ export const EmployeeManagement: React.FC<{
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Location</p>
-                      <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.location || "N/A"}</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.location || "N/A")}</p>
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Status</p>
@@ -2606,16 +2788,74 @@ export const EmployeeManagement: React.FC<{
                       <p className="text-base text-gray-500 dark:text-gray-400">Hired</p>
                       <p className="text-base font-medium text-gray-900 dark:text-white">{formatDate(selectedEmployee.hiredAt)}</p>
                     </div>
+                    {selectedEmployee.status === "terminated" && (
+                      <div>
+                        <p className="text-base text-gray-500 dark:text-gray-400">Employment Terminated</p>
+                        <p className="text-base font-medium text-gray-900 dark:text-white">{formatDate(selectedEmployee.terminatedAt)}</p>
+                      </div>
+                    )}
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Last Active</p>
                       <p className="text-base font-medium text-gray-900 dark:text-white">{formatDate(selectedEmployee.lastActiveAt)}</p>
                     </div>
+                    {selectedEmployee.employmentHistory && selectedEmployee.employmentHistory.length > 0 && (
+                      <div className="md:col-span-2 border-t border-gray-200 dark:border-gray-700 pt-5">
+                        <p className="text-base font-semibold text-gray-900 dark:text-white mb-3">Employment History</p>
+                        <div className="space-y-3">
+                          {selectedEmployee.employmentHistory.map((period) => (
+                            <div key={period.id} className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/40 p-4">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                                  {formatDate(period.startDate)} — {period.endDate ? formatDate(period.endDate) : 'Present'}
+                                </p>
+                                <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                                  {period.role || 'Role not recorded'}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                                {period.position || 'Position not recorded'}
+                                {period.department ? ' · ' + period.department : ''}
+                              </p>
+                              {period.endReason && (
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                                  Closed: {period.endReason}
+                                </p>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                     <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
                       <div className="flex justify-end gap-2">
-                        {selectedEmployee.status === "suspended" && (
+                        {['inactive', 'suspended'].includes(selectedEmployee.status) && (
                           <Button variant="success" onClick={() => handleActivate(selectedEmployee.id, buildName(selectedEmployee))} className="mr-2" disabled={isProcessingId === selectedEmployee.id}>
-                            {isProcessingId === selectedEmployee.id ? 'Processing...' : 'Activate'}
+                            {isProcessingId === selectedEmployee.id ? 'Processing...' : 'Activate Account'}
+                          </Button>
+                        )}
+                        {canRequestEmployeeLifecycle && selectedEmployee.status === 'terminated' && (
+                          selectedEmployee.rehirePending ? (
+                            <Button variant="secondary" disabled>
+                              Rehire Pending
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="primary"
+                              onClick={() => handleRehireClick(selectedEmployee)}
+                              disabled={isProcessingId === selectedEmployee.id}
+                            >
+                              Request Rehire
+                            </Button>
+                          )
+                        )}
+                        {canRequestEmployeeLifecycle && selectedEmployee.status !== 'terminated' && (
+                          <Button
+                            variant="danger"
+                            onClick={() => handleTerminateClick(selectedEmployee)}
+                            disabled={isProcessingId === selectedEmployee.id || isSelfEmployeeAccount(selectedEmployee)}
+                          >
+                            Request Termination
                           </Button>
                         )}
                         <Button variant="secondary" onClick={() => setIsViewModalOpen(false)}>
@@ -2633,11 +2873,11 @@ export const EmployeeManagement: React.FC<{
         {/* Suspension Request Modal */}
         {isSuspensionRequestModalOpen && employeeToSuspend && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full">
                 <div className="p-6">
                   <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                    File Suspension Request
+                    {ownerMode ? 'Suspend Employee' : 'File Suspension Request'}
                   </h3>
 
                   <div className="mb-4">
@@ -2653,7 +2893,7 @@ export const EmployeeManagement: React.FC<{
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Reason for Suspension <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={suspensionRequestForm.reason}
                       onChange={(e) => setSuspensionRequestForm({ ...suspensionRequestForm, reason: e.target.value })}
                       className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -2668,7 +2908,7 @@ export const EmployeeManagement: React.FC<{
                       <option value="Theft or Fraud">Theft or Fraud</option>
                       <option value="Safety Violations">Safety Violations</option>
                       <option value="Other">Other</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div className="mb-4">
@@ -2684,20 +2924,19 @@ export const EmployeeManagement: React.FC<{
                     />
                   </div>
 
-                  {/* Info Box */}
-                  <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  {!ownerMode && <div className="mb-6 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                     <div className="flex items-start gap-2">
-                      <InfoIcon className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                      <InfoIcon className="h-5 w-5 text-gray-500 dark:text-gray-400 flex-shrink-0 mt-0.5" />
                       <div>
-                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-1">Approval Process</p>
-                        <p className="text-sm text-blue-700 dark:text-blue-400">
+                        <p className="text-sm font-semibold text-gray-900 dark:text-white mb-1">Approval Process</p>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">
                           This request will be sent to the Manager for initial review. If approved by the Manager, 
                           it will then be forwarded to the Shop Owner for final approval. The employee's account 
                           will only be suspended after receiving both approvals.
                         </p>
                       </div>
                     </div>
-                  </div>
+                  </div>}
 
                   <div className="flex justify-end gap-3">
                     <button
@@ -2719,7 +2958,9 @@ export const EmployeeManagement: React.FC<{
                           : ''
                       }`}
                     >
-                      {isProcessingId === employeeToSuspend?.id ? 'Submitting...' : 'Submit Request'}
+                      {isProcessingId === employeeToSuspend?.id
+                        ? ownerMode ? 'Suspending...' : 'Submitting...'
+                        : ownerMode ? 'Suspend Employee' : 'Submit Request'}
                     </button>
                   </div>
               </div>
@@ -2728,10 +2969,299 @@ export const EmployeeManagement: React.FC<{
           </ModalPortal>
         )}
 
+        {isTerminationRequestModalOpen && employeeToTerminate && (
+          <ModalPortal>
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
+              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-xl w-full">
+                <div className="p-6">
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+                    Request Employee Termination
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-5">
+                    This starts the HR lifecycle approval process. The employee remains active until the Manager and Company Shop Owner approve the request.
+                  </p>
+
+                  <div className="mb-4 rounded-lg bg-gray-50 dark:bg-gray-700/50 p-4">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">Employee:</span> {buildName(employeeToTerminate)}
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                      <span className="font-medium">Position:</span> {employeeToTerminate.position || 'N/A'}
+                    </p>
+                  </div>
+
+                  <div className="mb-4">
+                    <label htmlFor="termination-reason" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Reason for Termination <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      id="termination-reason"
+                      value={terminationRequestForm.reason}
+                      onChange={(event) => setTerminationRequestForm({ ...terminationRequestForm, reason: event.target.value })}
+                      rows={4}
+                      maxLength={2000}
+                      placeholder="Document the employment decision and relevant facts..."
+                      className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                    />
+                  </div>
+
+                  <div className="mb-5">
+                    <label htmlFor="termination-evidence" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Evidence / Notes (Optional)
+                    </label>
+                    <textarea
+                      id="termination-evidence"
+                      value={terminationRequestForm.evidence}
+                      onChange={(event) => setTerminationRequestForm({ ...terminationRequestForm, evidence: event.target.value })}
+                      rows={3}
+                      maxLength={5000}
+                      placeholder="Add supporting records or context for the reviewers..."
+                      className="w-full px-4 py-2 border-2 border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-red-500 focus:border-transparent dark:bg-gray-700 dark:text-white resize-none"
+                    />
+                  </div>
+
+                  <div className="mb-6 rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">What happens after approval</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                      The employment period is closed, the account is disabled, and the termination remains in employment history. Reopening later requires Request Rehire.
+                    </p>
+                  </div>
+
+                  <div className="flex justify-end gap-3">
+                    <button
+                      onClick={() => {
+                        setIsTerminationRequestModalOpen(false);
+                        setEmployeeToTerminate(null);
+                        setTerminationRequestForm({ reason: '', evidence: '' });
+                      }}
+                      className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleTerminationRequestSubmit}
+                      disabled={isProcessingId === employeeToTerminate.id || terminationRequestForm.reason.trim().length < 3}
+                      className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isProcessingId === employeeToTerminate.id ? 'Submitting...' : 'Submit Termination Request'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </ModalPortal>
+        )}
+
+        {isRehireRequestModalOpen && employeeToRehire && (
+          <ModalPortal>
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
+              <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
+                <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6">
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                    Request Rehire / Reinstate Employee
+                  </h2>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
+                    The system generates the effective hired date when the request is finally approved.
+                  </p>
+                </div>
+
+                <div className="p-8 max-h-[calc(90vh-140px)] overflow-y-auto">
+                  <div className="space-y-6">
+                    <div>
+                      <div className="mb-5 rounded-lg bg-gray-50 dark:bg-gray-800/50 p-4">
+                    <p className="text-sm text-gray-700 dark:text-gray-300">
+                      <span className="font-medium">Employee:</span> {buildName(employeeToRehire)}
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                      <span className="font-medium">Previous termination:</span> {formatDate(employeeToRehire.terminatedAt)}
+                    </p>
+                  </div>
+
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+                        Personal Information
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="col-span-2">
+                          <label htmlFor="rehire-email" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Email <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            id="rehire-email"
+                            type="email"
+                            value={employeeToRehire.email}
+                            readOnly
+                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                          />
+                        </div>
+                        <div>
+                          <label htmlFor="rehire-phone" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Phone
+                          </label>
+                          <input
+                            id="rehire-phone"
+                            type="tel"
+                            value={employeeToRehire.phone || ""}
+                            readOnly
+                            placeholder="09XXXXXXXXX"
+                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
+                        Job Information
+                      </h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label htmlFor="rehire-role" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Department / Role <span className="text-red-500">*</span>
+                          </label>
+                          {availableRoles.length > 0 ? (
+                            <MonochromeSelect
+                              id="rehire-role"
+                              value={rehireRequestForm.rehireRole}
+                              onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireRole: event.target.value, rehireDepartment: event.target.value })}
+                              className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                            >
+                              <option value="">Select department/role</option>
+                              {availableRoles
+                                .filter((role) => !['shop owner', 'super admin'].includes(role.name.trim().toLowerCase()))
+                                .map((role) => (
+                                  <option key={role.name} value={role.name}>{role.name}</option>
+                                ))}
+                            </MonochromeSelect>
+                          ) : (
+                            <input
+                              id="rehire-role"
+                              type="text"
+                              value={rehireRequestForm.rehireRole}
+                              onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireRole: event.target.value, rehireDepartment: event.target.value })}
+                              placeholder="Select department/role"
+                              className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                            />
+                          )}
+                        </div>
+
+                        <div>
+                          <label htmlFor="rehire-position" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Position / Job Title <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            id="rehire-position"
+                            type="text"
+                            value={rehireRequestForm.rehirePosition}
+                            onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehirePosition: event.target.value })}
+                            maxLength={100}
+                            placeholder="e.g., Sales Associate, Cashier, Stock Clerk"
+                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                          />
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            Required for the new employment period
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                          <label htmlFor="rehire-salary" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                            Daily Rate
+                          </label>
+                          <div className="relative">
+                            <span className="absolute left-3 top-2.5 text-gray-500 dark:text-gray-400">&#8369;</span>
+                            <input
+                              id="rehire-salary"
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={rehireRequestForm.rehireSalary}
+                              onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireSalary: event.target.value })}
+                              placeholder="0.00"
+                              className="w-full pl-8 pr-4 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                            />
+                          </div>
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Daily base rate for payroll calculation</p>
+                        </div>
+                      </div>
+                    </div>
+
+                  <div>
+                    <label htmlFor="rehire-reason" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Reason for Rehire <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      id="rehire-reason"
+                      value={rehireRequestForm.reason}
+                      onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, reason: event.target.value })}
+                      rows={3}
+                      maxLength={2000}
+                      placeholder="Explain the rehire or reinstatement decision..."
+                      className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all resize-none"
+                    />
+                  </div>
+
+                  <div>
+                    <label htmlFor="rehire-evidence" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                      Evidence / Notes (Optional)
+                    </label>
+                    <textarea
+                      id="rehire-evidence"
+                      value={rehireRequestForm.evidence}
+                      onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, evidence: event.target.value })}
+                      rows={3}
+                      maxLength={5000}
+                      placeholder="Add the approved terms or supporting context..."
+                      className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all resize-none"
+                    />
+                  </div>
+
+                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/50">
+                    <p className="text-sm font-semibold text-gray-900 dark:text-white">Approval Process</p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                      The Manager reviews this request first. The Company Shop Owner gives final approval, then the account is enabled with only the newly approved role and permissions.
+                    </p>
+                  </div>
+
+                  <div className="bg-gray-50 dark:bg-gray-800/50 border-t border-gray-200 dark:border-gray-700 px-8 py-4 flex gap-3 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsRehireRequestModalOpen(false);
+                        setEmployeeToRehire(null);
+                        setRehireRequestForm({
+                          reason: '',
+                          evidence: '',
+                          rehirePosition: '',
+                          rehireDepartment: '',
+                          rehireSalary: '',
+                          rehireRole: '',
+                        });
+                      }}
+                      className="px-5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-all duration-200 hover:shadow-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRehireRequestSubmit}
+                      disabled={isProcessingId === employeeToRehire.id || rehireRequestForm.reason.trim().length < 3 || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()}
+                      className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isProcessingId === employeeToRehire.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    >
+                      {isProcessingId === employeeToRehire.id ? 'Submitting...' : 'Submit Rehire Request'}
+                    </button>
+                  </div>
+                 </div>
+               </div>
+             </div>
+            </div>
+           </ModalPortal>
+        )}
+
         {/* Add Employee Modal */}
         {isAddEmployeeOpen && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
                 {/* Header */}
                 <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6">
@@ -2868,7 +3398,7 @@ export const EmployeeManagement: React.FC<{
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Department / Role <span className="text-red-500">*</span>
                           </label>
-                          <select
+                          <MonochromeSelect
                             value={addEmployeeForm.department}
                             onChange={(e) =>
                               setAddEmployeeForm({
@@ -2892,8 +3422,10 @@ export const EmployeeManagement: React.FC<{
                             {isRepairCapableBusiness && <option value="Repairer">Repairer</option>}
                             <option value="Inventory">Inventory</option>
                             <option value="Procurement">Procurement</option>
+                            <option value="Logistics Dispatcher">Logistics Dispatcher</option>
+                            <option value="Logistics Rider">Logistics Rider</option>
                             {isRetailCapableBusiness && <option value="Staff">Staff</option>}
-                          </select>
+                          </MonochromeSelect>
                         </div>
 
                         <div>
@@ -2976,7 +3508,7 @@ export const EmployeeManagement: React.FC<{
                   <button
                     onClick={handleSaveNewEmployee}
                     disabled={isAdding}
-                    className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isAdding ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    className={`px-5 py-2.5 text-sm font-semibold text-white bg-black hover:bg-gray-800 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isAdding ? 'opacity-50 cursor-not-allowed' : ''}`}
                   >
                     {isAdding ? 'Processing...' : 'Add Employee'}
                   </button>
@@ -2989,7 +3521,7 @@ export const EmployeeManagement: React.FC<{
         {/* Permission Management Modal */}
         {isPermissionModalOpen && selectedEmployeeForPermissions && availablePermissions && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
               <div className="w-full max-w-5xl rounded-2xl bg-white dark:bg-gray-900 shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
                 <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                   <div>
@@ -3193,7 +3725,7 @@ export const EmployeeManagement: React.FC<{
                   <button
                     onClick={savePermissions}
                     disabled={isSavingPermissions}
-                    className="px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
+                    className="px-5 py-2.5 text-sm font-semibold text-white bg-black hover:bg-gray-800 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
                   >
                     {isSavingPermissions && (
                       <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
@@ -3211,7 +3743,7 @@ export const EmployeeManagement: React.FC<{
 
         {invitationModal.isOpen && (
           <ModalPortal>
-            <div className="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="fixed inset-0 z-[999999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-6 erp-modal-backdrop">
               <div className="w-full max-w-5xl rounded-2xl bg-white dark:bg-gray-900 shadow-2xl overflow-hidden border border-gray-200 dark:border-gray-700">
                 <div className="px-8 py-6 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                   <div className="flex items-start gap-3">
@@ -3310,7 +3842,7 @@ export const EmployeeManagement: React.FC<{
                   <button
                     onClick={sendInvitationToPersonalEmail}
                     disabled={invitationModal.isSendingEmail || (!invitationModal.employeeId && !invitationModal.employeeUserId)}
-                    className={`px-5 py-2.5 rounded-md text-base font-medium text-white ${invitationModal.isSendingEmail ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                    className={`px-5 py-2.5 rounded-md text-base font-medium text-white ${invitationModal.isSendingEmail ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-950 hover:bg-gray-800'}`}
                   >
                     {invitationModal.isSendingEmail ? 'Sending...' : 'Email to Personal Address'}
                   </button>

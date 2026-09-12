@@ -52,7 +52,7 @@ class PurchaseRequestSubmittedMail extends Mailable
                 'requester' => $this->purchaseRequest->requester?->name ?? 'Unknown',
                 'requestedDate' => $this->purchaseRequest->requested_date,
                 'supplier' => $this->purchaseRequest->supplier?->name ?? 'TBD',
-                'viewUrl' => url('/erp/procurement/purchase-requests/' . $this->purchaseRequest->id),
+                'viewUrl' => url('/erp/procurement/purchase-request?purchase_request=' . $this->purchaseRequest->id),
             ],
         );
     }

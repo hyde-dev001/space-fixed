@@ -579,7 +579,7 @@ export default function CustomerSupport() {
                   <div className="flex items-start gap-3">
                     {/* Avatar */}
                     <div className="relative shrink-0">
-                      <div className="w-12 h-12 rounded-full bg-gray-200 overflow-hidden flex items-center justify-center text-gray-700 font-semibold text-sm">
+                      <div className="w-12 h-12 rounded-full bg-gray-950 dark:bg-gray-200 overflow-hidden flex items-center justify-center text-white dark:text-gray-700 font-semibold text-sm">
                         {ticket.customerAvatar}
                       </div>
                       <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${getStatusColor(ticket.status)}`} />
@@ -615,7 +615,7 @@ export default function CustomerSupport() {
               <div className="border-b border-gray-200 px-6 py-4 flex items-center justify-between bg-white">
                 <div className="flex items-center gap-4">
                   <div className="relative">
-                    <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-gray-700 font-semibold text-sm">
+                    <div className="w-12 h-12 rounded-full bg-gray-950 dark:bg-gray-200 flex items-center justify-center text-white dark:text-gray-700 font-semibold text-sm">
                       {selectedTicket.customerAvatar}
                     </div>
                     <div className={`absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full border-2 border-white ${getStatusColor(selectedTicket.status)}`} />
@@ -732,8 +732,8 @@ export default function CustomerSupport() {
                                 <p className="text-sm font-semibold text-gray-900">SoleSpace Shop</p>
                               </div>
 
-                              <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
-                                <p className="text-xs text-blue-900 leading-relaxed">💡 We'll keep you updated on the progress of your repair.</p>
+                              <div className="bg-gray-100 rounded-lg px-3 py-2.5 mb-4 dark:bg-gray-800">
+                                <p className="text-xs text-gray-900 leading-relaxed dark:text-gray-100">💡 We'll keep you updated on the progress of your repair.</p>
                               </div>
 
                               <button
@@ -1006,7 +1006,7 @@ export default function CustomerSupport() {
       {/* Fullscreen Image Modal */}
       {fullscreenImage && (
         <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 erp-modal-backdrop"
           onClick={() => setFullscreenImage(null)}
         >
           <button
@@ -1032,7 +1032,7 @@ export default function CustomerSupport() {
       {/* Transfer Modal */}
       {showTransferModal && selectedTicket && (
         <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 erp-modal-backdrop"
           onClick={() => setShowTransferModal(false)}
         >
           <div 

@@ -10,6 +10,22 @@ enum EmployeeStatus: string
     case TERMINATED = 'terminated';
 
     /**
+     * Return the canonical account-state values accepted by the application.
+     *
+     * Legacy values such as on_leave remain a database-reconciliation concern
+     * and are intentionally not part of this enum.
+     *
+     * @return list<string>
+     */
+    public static function values(): array
+    {
+        return array_map(
+            static fn (self $status): string => $status->value,
+            self::cases(),
+        );
+    }
+
+    /**
      * Check if employee is active
      */
     public function isActive(): bool

@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
+use App\Support\Erp\ErpActorContext;
 use Inertia\Inertia;
 
 class CRMReviewController extends Controller
@@ -22,6 +23,11 @@ class CRMReviewController extends Controller
 
     private function shopOwnerIds(): array
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return [(int) $context->tenantOwner()->getKey()];
+        }
+
         $user = Auth::guard('user')->user() ?? Auth::user();
         if (! $user) {
             return [];
@@ -156,8 +162,9 @@ class CRMReviewController extends Controller
     public function indexPage()
     {
         $user = Auth::guard('user')->user();
+        $context = request()->attributes->get('erp.actor_context');
 
-        if ($user?->force_password_change) {
+        if (! $context instanceof ErpActorContext && $user?->force_password_change) {
             return redirect()->route('erp.profile');
         }
 
@@ -386,7 +393,7 @@ class CRMReviewController extends Controller
             type: NotificationType::REVIEW_REPORTED,
             title: 'Malicious Review Reported',
             message: "{$shopName} reported a customer review for: {$reasonLabel}",
-            actionUrl: '/superAdmin/flagged-accounts',
+            actionUrl: '/admin/flagged-accounts',
             data: ['review_report_id' => $report->id],
         );
 

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
@@ -27,19 +28,6 @@ const retailPricing = [
 ];
 
 type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
-
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
 
 const GridIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -87,14 +75,12 @@ const ChevronRightIcon = ({ className }: { className?: string }) => (
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change: number;
-  changeType: ChangeType;
   icon: ComponentType<{ className?: string }>;
   color: MetricColor;
   description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
   const getColorClasses = () => {
     switch (color) {
       case "success":
@@ -112,19 +98,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
         <div className="space-y-2">
@@ -485,20 +461,13 @@ export default function ERPPricingAndServices() {
       <Head title="Repair Pricing - Solespace" />
       <div className="p-6 space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Repair Pricing</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Manage repair service pricing and submit for approval.
-            </p>
-          </div>
+          <h1 className="sr-only">Repair Pricing</h1>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <MetricCard
             title="Active Services"
             value={activeServices}
-            change={6}
-            changeType="increase"
             icon={GridIcon}
             color="success"
             description={`${uniqueCategories} ${uniqueCategories === 1 ? 'category' : 'categories'}`}
@@ -506,8 +475,6 @@ export default function ERPPricingAndServices() {
           <MetricCard
             title="Under Review"
             value={underReviewServices}
-            change={3}
-            changeType="increase"
             icon={WrenchIcon}
             color="warning"
             description="Pending approval"
@@ -515,8 +482,6 @@ export default function ERPPricingAndServices() {
           <MetricCard
             title="Rejected"
             value={rejectedServices}
-            change={2}
-            changeType="decrease"
             icon={TagIcon}
             color="info"
             description="Requires revision"
@@ -540,7 +505,7 @@ export default function ERPPricingAndServices() {
               }}
               className={`px-4 py-2 font-medium border-b-2 transition-colors ${
                 itemType === "services"
-                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  ? "border-gray-900 text-gray-900 dark:border-white dark:text-white"
                   : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300"
               }`}
             >
@@ -555,7 +520,7 @@ export default function ERPPricingAndServices() {
               }}
               className={`px-4 py-2 font-medium border-b-2 transition-colors ${
                 itemType === "packages"
-                  ? "border-blue-600 text-blue-600 dark:text-blue-400"
+                  ? "border-gray-900 text-gray-900 dark:border-white dark:text-white"
                   : "border-transparent text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-300"
               }`}
             >
@@ -578,7 +543,7 @@ export default function ERPPricingAndServices() {
               />
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
@@ -591,7 +556,7 @@ export default function ERPPricingAndServices() {
                 <option value="Active">Active</option>
                 <option value="Under Review">Under Review</option>
                 <option value="Rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -722,7 +687,7 @@ export default function ERPPricingAndServices() {
 
           {/* Add Service Modal */}
           {addModalOpen && (
-            <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.45)] max-w-lg w-full border border-gray-200/90 dark:border-gray-700/70 overflow-hidden">
                 <div className="flex items-center justify-between p-6 sm:p-7 bg-gray-50/80 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700">
                   <div>
@@ -750,7 +715,7 @@ export default function ERPPricingAndServices() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Category</p>
-                    <select
+                    <MonochromeSelect
                       value={addFormData.category}
                       onChange={(e) => setAddFormData({ ...addFormData, category: e.target.value })}
                       title="Select service category"
@@ -759,7 +724,7 @@ export default function ERPPricingAndServices() {
                       <option value="Care">Care</option>
                       <option value="Restoration">Restoration</option>
                       <option value="Repair">Repair</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Price</p>
@@ -810,7 +775,7 @@ export default function ERPPricingAndServices() {
 
         {/* View Modal */}
         {viewModalOpen && selectedService && (
-          <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.45)] max-w-lg w-full border border-gray-200/90 dark:border-gray-700/70 overflow-hidden">
               <div className="flex items-center justify-between p-6 sm:p-7 bg-gray-50/80 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700">
                 <div>
@@ -883,7 +848,7 @@ export default function ERPPricingAndServices() {
 
         {/* Edit Modal */}
         {editModalOpen && selectedService && (
-          <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[999999] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-[0_20px_60px_-20px_rgba(15,23,42,0.45)] max-w-lg w-full border border-gray-200/90 dark:border-gray-700/70 overflow-hidden">
               <div className="flex items-center justify-between p-6 sm:p-7 bg-gray-50/80 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700">
                 <div>

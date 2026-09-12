@@ -1,18 +1,24 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
-import { computeCanPay, getPhoneDisplayForReceipt } from "../../Repairs/posPaymentValidation";
+import {
+	computeCanPay,
+	getPhoneDisplayForReceipt,
+	normalizeOptionalCustomerId,
+} from "../../Repairs/posPaymentValidation";
 import { repairPosHistoryApi } from "../../../services/repairPosHistoryApi";
 import { buildRepairBreakdown } from "../../../utils/repairPricing";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
-type ManualPaymentPolicy = "deposit_50" | "full_upfront";
+type ManualPaymentPolicy = "full_upfront";
 
 type RepairOrderOption = {
 	id: string;
+	requestNumber?: string;
 	customer: string;
 	customerId?: number | null;
 	paymentPolicy?: "deposit_50" | "full_upfront";
@@ -20,6 +26,11 @@ type RepairOrderOption = {
 	status?: string;
 	returnDeliveryMethod?: "walk_in" | "customer_pickup" | "shop_delivery" | string;
 	dueTypeToCollect?: PosDueType | null;
+	paymentPhase?: string | null;
+	collectible?: boolean;
+	collectibleAmount: number;
+	outstandingBalance: number;
+	totalPaidAmount: number;
 	service: string;
 	amount: number;
 	requestedServices: string[];
@@ -110,6 +121,7 @@ type ManualQueueRow = {
 	id: number;
 	request_id: string;
 	customer_name: string;
+	customer_id?: number | null;
 	phone: string;
 	status: ManualQueueStatus;
 	payment_policy: "deposit_50" | "full_upfront";
@@ -183,73 +195,7 @@ const normalizeDueType = (value: string | null): PosDueType => {
 };
 
 const normalizePaymentPolicy = (value: unknown): "deposit_50" | "full_upfront" => {
-	return value === "full_upfront" ? "full_upfront" : "deposit_50";
-};
-
-const POS_ATTACHABLE_WORKFLOW_STATUSES = new Set([
-	"repairer_accepted",
-	"waiting_customer_confirmation",
-	"owner_approval_pending",
-	"owner_approved",
-	"confirmed",
-	"pending",
-	"received",
-	"in_progress",
-	"in-progress",
-	"awaiting_parts",
-	"ready_for_pickup",
-	"ready-for-pickup",
-]);
-
-const isPosAttachEligibleStatus = (status: string): boolean => {
-	return POS_ATTACHABLE_WORKFLOW_STATUSES.has(status);
-};
-
-const resolveDueTypeForPolicy = (policy: "deposit_50" | "full_upfront", requestedDueType: PosDueType): PosDueType => {
-	if (policy === "full_upfront") return "full";
-	if (requestedDueType === "deposit" || requestedDueType === "balance") return requestedDueType;
-	return "deposit";
-};
-
-const resolveOutstandingDueType = (order: Pick<RepairOrderOption, "paymentPolicy" | "paymentStatus" | "status" | "returnDeliveryMethod">): PosDueType | null => {
-	const policy = order.paymentPolicy ?? "deposit_50";
-	const paymentStatus = String(order.paymentStatus ?? "").toLowerCase();
-	const workflowStatus = String(order.status ?? "").toLowerCase();
-	const returnMethod = String(order.returnDeliveryMethod ?? "").toLowerCase();
-	const isDepositSettled = paymentStatus === "paid" || paymentStatus === "partially_paid";
-
-	if (!isPosAttachEligibleStatus(workflowStatus)) {
-		return null;
-	}
-
-	if (paymentStatus === "refunded" || paymentStatus === "partially_refunded") {
-		return null;
-	}
-
-	if (policy === "full_upfront") {
-		return paymentStatus === "paid" || paymentStatus === "completed" || paymentStatus === "partially_paid" ? null : "full";
-	}
-
-	if (paymentStatus === "completed") return null;
-	if (isDepositSettled) {
-		if (returnMethod === "shop_delivery") return null;
-
-		if (workflowStatus === "ready-for-pickup" || workflowStatus === "ready_for_pickup") {
-			return "balance";
-		}
-
-		return null;
-	}
-
-	return "deposit";
-};
-
-const computeDueAmountForOrder = (order: RepairOrderOption, dueType: PosDueType): number => {
-	if (dueType === "full") {
-		return Number(order.amount || 0);
-	}
-
-	return Math.round((Number(order.amount || 0) / 2) * 100) / 100;
+	return value === "deposit_50" ? "deposit_50" : "full_upfront";
 };
 
 const mapTenderType = (method: PaymentMethod): "cash" | "paymongo_card" | "paymongo_wallet" => {
@@ -343,14 +289,7 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 const PointOfSalePage = () => {
 	const { props } = usePage();
 	const cashierName = String((props as any)?.auth?.user?.name || "Repairer Cashier");
-	const shopRepairPaymentPolicy: ManualPaymentPolicy =
-		String(
-			(props as any)?.auth?.shop_owner?.repair_payment_policy
-			?? (props as any)?.auth?.user?.shop_owner?.repair_payment_policy
-			?? (props as any)?.shop_settings?.repair_payment_policy
-		) === "full_upfront"
-			? "full_upfront"
-			: "deposit_50";
+	const shopRepairPaymentPolicy: ManualPaymentPolicy = "full_upfront";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
 	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
@@ -400,7 +339,7 @@ const PointOfSalePage = () => {
 			try {
 				const [servicesResult, ordersResult, packagesResult] = await Promise.allSettled([
 					axios.get("/api/repair-services"),
-					axios.get("/api/repairer/repairs"),
+					axios.get("/api/repairer/repairs", { params: { scope: "pos_checkout" } }),
 					axios.get("/api/repair-packages"),
 				]);
 
@@ -439,7 +378,8 @@ const PointOfSalePage = () => {
 					const mappedOrders: RepairOrderOption[] = rawOrders
 						.map((entry: any, index: number) => {
 							const amount = Number(
-								entry?.final_total
+								entry?.collection_summary?.grand_total
+								?? entry?.final_total
 								?? entry?.pricing_breakdown?.final_total
 								?? entry?.total
 								?? entry?.finalPrice
@@ -478,24 +418,42 @@ const PointOfSalePage = () => {
 								?? requestedServices[0]
 								?? "Repair Service"
 							);
+							const collectibleAmount = Number(
+								entry?.collectible_amount
+								?? entry?.collection_summary?.collectible_amount
+								?? 0,
+							);
+							const outstandingBalance = Number(
+								entry?.outstanding_balance
+								?? entry?.collection_summary?.outstanding_balance
+								?? 0,
+							);
+							const totalPaidAmount = Number(
+								entry?.collection_summary?.total_paid_amount
+								?? entry?.total_paid_amount
+								?? 0,
+							);
 							return {
 								id: String(entry?.id ?? `R-${index}`),
+								requestNumber: String(entry?.request_id ?? "").trim() || undefined,
 								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
-								customerId: Number.isFinite(Number(entry?.customer_id)) ? Number(entry.customer_id) : null,
+								customerId: normalizeOptionalCustomerId(entry?.customer_id ?? entry?.user_id),
 								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
 								paymentStatus: String(entry?.payment_status ?? "pending"),
 								status: String(entry?.status ?? ""),
 								returnDeliveryMethod: String(entry?.return_delivery_method ?? (entry?.delivery_method === "walk_in" ? "walk_in" : "customer_pickup")),
+								dueTypeToCollect: parseDueType(entry?.due_type ?? entry?.collection_summary?.due_type),
+								paymentPhase: entry?.phase ?? entry?.collection_summary?.phase ?? null,
+								collectible: Boolean(entry?.collectible ?? entry?.collection_summary?.collectible),
+								collectibleAmount: Number.isFinite(collectibleAmount) ? collectibleAmount : 0,
+								outstandingBalance: Number.isFinite(outstandingBalance) ? outstandingBalance : 0,
+								totalPaidAmount: Number.isFinite(totalPaidAmount) ? totalPaidAmount : 0,
 								service: primaryService,
 								amount: Number.isFinite(amount) ? amount : 0,
 								requestedServices: requestedServices.length > 0 ? requestedServices : [primaryService],
 							};
 						})
-						.filter((entry: RepairOrderOption) => entry.amount > 0)
-						.map((entry: RepairOrderOption) => ({
-							...entry,
-							dueTypeToCollect: resolveOutstandingDueType(entry),
-						}));
+						.filter((entry: RepairOrderOption) => entry.amount > 0 && entry.collectibleAmount > 0 && entry.collectible === true && entry.dueTypeToCollect !== null);
 
 					if (mappedOrders.length > 0) {
 						setRepairOrders(mappedOrders);
@@ -851,10 +809,10 @@ const PointOfSalePage = () => {
 		if (!requestedRepairRequestId || selectedRepairOrder) return;
 
 		const targetOrder = repairOrders.find((entry) => entry.id === requestedRepairRequestId);
-		if (!targetOrder) return;
+		if (!targetOrder || !targetOrder.collectible || !targetOrder.dueTypeToCollect || targetOrder.collectibleAmount <= 0) return;
 
-		const resolvedDueType = resolveDueTypeForPolicy(targetOrder.paymentPolicy ?? "deposit_50", requestedDueType);
-		const dueAmount = computeDueAmountForOrder(targetOrder, resolvedDueType);
+		const resolvedDueType = targetOrder.dueTypeToCollect;
+		const dueAmount = targetOrder.collectibleAmount;
 		setSelectedRepairOrder(targetOrder);
 		setCustomerName(targetOrder.customer);
 		setCustomerEmail("");
@@ -877,7 +835,7 @@ const PointOfSalePage = () => {
 		return !selectedRepairOrder && !requestedRepairRequestId;
 	}, [requestedRepairRequestId, selectedRepairOrder]);
 
-	const dueTypeForManualCheckout: PosDueType = shopRepairPaymentPolicy === "deposit_50" ? "deposit" : "full";
+	const dueTypeForManualCheckout: PosDueType = "full";
 
 	const chargeableSubtotal = useMemo(() => {
 		if (!isManualStandaloneCheckout) {
@@ -935,9 +893,12 @@ const PointOfSalePage = () => {
 		return "";
 	}, [customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, shortValue]);
 	const effectiveDueType = useMemo(() => {
-		const policy = selectedRepairOrder?.paymentPolicy ?? "deposit_50";
-		return resolveDueTypeForPolicy(policy, requestedDueType);
-	}, [requestedDueType, selectedRepairOrder]);
+		if (selectedRepairOrder) {
+			return selectedRepairOrder.dueTypeToCollect ?? "full";
+		}
+
+		return dueTypeForManualCheckout;
+	}, [dueTypeForManualCheckout, selectedRepairOrder]);
 	const hasRepairOrderItem = useMemo(() => items.some((item) => item.source === "repair-order"), [items]);
 
 	useEffect(() => {
@@ -1014,8 +975,9 @@ const PointOfSalePage = () => {
 	};
 
 	const addFromRepairOrder = (order: RepairOrderOption) => {
-		const resolvedDueType = order.dueTypeToCollect ?? resolveDueTypeForPolicy(order.paymentPolicy ?? "deposit_50", requestedDueType);
-		const dueAmount = computeDueAmountForOrder(order, resolvedDueType);
+		const resolvedDueType = order.dueTypeToCollect;
+		const dueAmount = order.collectibleAmount;
+		if (!order.collectible || !resolvedDueType || dueAmount <= 0) return;
 		setItems([
 			{
 				id: `order-${order.id}-${resolvedDueType}`,
@@ -1122,7 +1084,7 @@ const PointOfSalePage = () => {
 	const filteredRepairOrders = useMemo(() => {
 		const query = orderSearch.trim().toLowerCase();
 		const attachableOrders = repairOrders
-			.filter((order) => order.dueTypeToCollect !== null)
+			.filter((order) => order.collectible === true && order.collectibleAmount > 0 && order.dueTypeToCollect !== null)
 			.filter((order) => !hasRequestedDueType || order.dueTypeToCollect === requestedDueType);
 
 		if (!query) return attachableOrders;
@@ -1342,6 +1304,7 @@ const PointOfSalePage = () => {
 					manual_payment_policy: hasRepairReference ? null : shopRepairPaymentPolicy,
 					manual_repair_package_id: hasRepairReference ? null : manualRepairPackageId,
 					manual_service_ids: hasRepairReference ? [] : manualServiceIds,
+					cash_received: paymentMethod === 'cash' ? Number(tenderedAmount.toFixed(2)) : null,
 					payment_lines: [
 						{
 							tender_type: mapTenderType(paymentMethod),
@@ -1496,7 +1459,7 @@ const PointOfSalePage = () => {
 		setSelectedRepairOrder({
 			id: String(row.id),
 			customer: row.customer_name,
-			customerId: null,
+			customerId: normalizeOptionalCustomerId(row.customer_id),
 			paymentPolicy: row.payment_policy,
 			paymentStatus: row.remaining_balance <= 0 ? "completed" : (row.paid > 0 ? "paid" : "unpaid"),
 			status: row.status,
@@ -1568,10 +1531,7 @@ const PointOfSalePage = () => {
 			<div className="space-y-6 p-4 md:p-6">
 				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && (
 				<div className="flex items-center justify-between">
-					<div>
-						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
-						<p className="mt-1 text-sm text-slate-500">Manage repair cashier transactions and payment processing.</p>
-					</div>
+					<h1 className="sr-only">Point of Sale</h1>
 					<div className="flex items-center gap-2">
 						<button
 							type="button"
@@ -1599,7 +1559,7 @@ const PointOfSalePage = () => {
 				)}
 
 				{isRefundQueueOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Repair Refund Queue</h3>
@@ -1805,12 +1765,13 @@ const PointOfSalePage = () => {
 														key={`package-${pkg.id}`}
 														onClick={() => addPackageToOrder(pkg)}
 														disabled={!!selectedRepairOrder}
-														className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+														data-catalog-card="true"
+														className="h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition enabled:hover:border-black enabled:hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold uppercase text-black">Package</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -1818,13 +1779,13 @@ const PointOfSalePage = () => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{pkg.name}</p>
-															<p className="mt-1 text-xs text-slate-600">{pkg.description}</p>
-															<p className="mt-2 text-xs text-slate-700">Includes {pkg.includedServices.length} services</p>
-															<p className="text-xs text-slate-700">{pkg.saveText}</p>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(pkg.price)}</p>
-																<p className="text-xs text-slate-500">Bundle offer</p>
+															<p className="mt-3 text-xl font-semibold text-black">{pkg.name}</p>
+															<p className="mt-1 text-xs text-black">{pkg.description}</p>
+															<p className="mt-2 text-xs text-black">Includes {pkg.includedServices.length} services</p>
+															<p className="text-xs text-black">{pkg.saveText}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(pkg.price)}</p>
+																<p className="text-xs text-black">Bundle offer</p>
 															</div>
 														</div>
 													</button>
@@ -1867,16 +1828,17 @@ const PointOfSalePage = () => {
 														key={`service-${service.id}`}
 														onClick={() => addFromServiceCatalog(service)}
 														disabled={!canSelectService}
-														className={`h-56 rounded-xl border p-4 text-left transition ${
+														data-catalog-card="true"
+														className={`h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition ${
 															canSelectService
-																? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
-																: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
+																? "enabled:hover:border-black enabled:hover:bg-white"
+																: "opacity-50 grayscale cursor-not-allowed"
 														}`}
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{service.category}</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold text-black">{service.category}</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -1884,18 +1846,18 @@ const PointOfSalePage = () => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{service.name}</p>
-															<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
+															<p className="mt-3 text-xl font-semibold text-black">{service.name}</p>
+															<ul className="mt-2 list-disc pl-5 text-xs text-black">
 																<li>{service.category} service for customer request.</li>
 																<li>Estimated turnaround: {service.duration}.</li>
 															</ul>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(service.price)}</p>
-																<p className="text-xs text-slate-500">{service.duration}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(service.price)}</p>
+																<p className="text-xs text-black">{service.duration}</p>
 															</div>
-															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Included in package</span>}
-															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Add-on</span>}
-															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
+															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Included in package</span>}
+															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Add-on</span>}
+															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Requested</span>}
 														</div>
 													</button>
 												);
@@ -2047,10 +2009,10 @@ const PointOfSalePage = () => {
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
 							{isManualStandaloneCheckout && (
 								<p className="text-[11px] text-slate-500">
-									Manual policy from Shop Settings: {shopRepairPaymentPolicy === "deposit_50" ? "50/50 deposit" : "Full upfront"}
+									Manual policy from Shop Settings: Full Payment Upfront
 								</p>
 							)}
-							<select
+							<MonochromeSelect
 								title="Payment method"
 								value={paymentMethod}
 								onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
@@ -2059,7 +2021,7 @@ const PointOfSalePage = () => {
 								<option value="cash">Cash</option>
 								<option value="gcash">GCash</option>
 								<option value="card">Card</option>
-							</select>
+							</MonochromeSelect>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 							<input
@@ -2091,12 +2053,7 @@ const PointOfSalePage = () => {
 							<div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
 								<div className="space-y-2 text-sm">
 									<div className="flex items-center justify-between text-slate-600"><span>Service Subtotal</span><span>{formatPeso(subtotal)}</span></div>
-									{isManualStandaloneCheckout && dueTypeForManualCheckout === "deposit" && (
-										<div className="flex items-center justify-between text-slate-600"><span>Deposit Base (50%)</span><span>{formatPeso(chargeableSubtotal)}</span></div>
-									)}
-									{(!isManualStandaloneCheckout || dueTypeForManualCheckout !== "deposit") && (
-										<div className="flex items-center justify-between text-slate-600"><span>Chargeable Subtotal</span><span>{formatPeso(chargeableSubtotal)}</span></div>
-									)}
+									<div className="flex items-center justify-between text-slate-600"><span>Chargeable Subtotal</span><span>{formatPeso(chargeableSubtotal)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>Subtotal (Before VAT)</span><span>{formatPeso(dueBreakdown.netSubtotal)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>Discount</span><span>- {formatPeso(discount)}</span></div>
 									<div className="flex items-center justify-between text-slate-600"><span>VAT ({VAT_RATE}%)</span><span>{formatPeso(vatAmount)}</span></div>
@@ -2153,7 +2110,7 @@ const PointOfSalePage = () => {
 				</div>
 
 				{isOrderModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Attach From Repair Orders</h3>
@@ -2180,12 +2137,14 @@ const PointOfSalePage = () => {
 										<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-5 text-center text-sm text-slate-500">No matching repair orders.</div>
 									) : (
 										filteredRepairOrders.map((order) => (
-											<div key={order.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
-												<div>
-													<p className="font-semibold text-slate-900">{order.customer}</p>
-													<p className="text-sm text-slate-600">{order.service}</p>
-													<p className="text-xs text-slate-500">Services: {order.requestedServices.join(", ")}</p>
-													<p className="text-xs text-slate-500">Estimated amount {formatPeso(order.amount)}</p>
+										<div key={order.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+											<div>
+												<p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{order.requestNumber || `Repair #${order.id}`}</p>
+												<p className="font-semibold text-slate-900">{order.customer}</p>
+												<p className="text-sm text-slate-600">{order.service}</p>
+												<p className="text-xs text-slate-500">Services: {order.requestedServices.join(", ")}</p>
+												<p className="text-xs text-slate-500">Total {formatPeso(order.amount)} · Paid {formatPeso(order.totalPaidAmount)}</p>
+												<p className="text-xs font-semibold text-blue-700">Collect {getDueTypeLabel(order.dueTypeToCollect)} {formatPeso(order.collectibleAmount)} · Remaining {formatPeso(order.outstandingBalance)}</p>
 												</div>
 												<button
 													type="button"
@@ -2204,7 +2163,7 @@ const PointOfSalePage = () => {
 				)}
 
 				{isHistoryModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt History</h3>
@@ -2302,7 +2261,7 @@ const PointOfSalePage = () => {
 				)}
 
 				{isReceiptModalOpen && receiptSnapshot && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>

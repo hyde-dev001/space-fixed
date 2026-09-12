@@ -8,6 +8,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -75,7 +76,8 @@ class ProductOrderCancellationRefundDeadlineTest extends TestCase
     }
 
     #[Test]
-    public function refund_request_is_blocked_when_deadline_has_passed(): void
+    #[DataProvider('refundEligibleTerminalStatuses')]
+    public function refund_request_uses_the_same_deadline_rule_for_each_terminal_outcome(string $status): void
     {
         $shopOwner = $this->createShopOwner([
             'paymongo_secret_key' => 'sk_test_refund_deadline',
@@ -84,7 +86,7 @@ class ProductOrderCancellationRefundDeadlineTest extends TestCase
         /** @var \App\Models\User $customer */
 
         $order = $this->createOrder($shopOwner, $customer, [
-            'status' => 'delivered',
+            'status' => $status,
             'payment_method' => 'paymongo',
             'payment_status' => 'paid',
             'paymongo_payment_id' => 'pay_deadline_123',
@@ -112,6 +114,12 @@ class ProductOrderCancellationRefundDeadlineTest extends TestCase
             ->assertJsonPath('message', 'Refund deadline has passed for this order.');
 
         $this->assertNotNull($response->json('deadline_at'));
+    }
+
+    public static function refundEligibleTerminalStatuses(): iterable
+    {
+        yield 'delivered' => ['delivered'];
+        yield 'completed' => ['completed'];
     }
 
     #[Test]

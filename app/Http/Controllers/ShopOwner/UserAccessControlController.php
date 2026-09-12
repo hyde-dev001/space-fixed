@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\ShopOwner;
 
 use App\Http\Controllers\Controller;
+use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -22,6 +23,10 @@ use Spatie\Permission\Models\Role;
 use App\Models\PositionTemplate;
 use App\Models\PositionTemplatePermission;
 use App\Services\BusinessAccessControlService;
+use App\Services\EmployeeAccountLinkService;
+use App\Services\HR\EmployeeLinkedUserSynchronizer;
+use App\Services\HR\EmployeeOperationalPolicy;
+use App\Services\Logistics\RiderProfileSyncService;
 use Carbon\Carbon;
 
 class UserAccessControlController extends Controller
@@ -31,7 +36,12 @@ class UserAccessControlController extends Controller
      */
     protected BusinessAccessControlService $accessControl;
 
-    public function __construct(BusinessAccessControlService $accessControl)
+    public function __construct(
+        BusinessAccessControlService $accessControl,
+        private readonly EmployeeAccountLinkService $accountLinks,
+        private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
+        private readonly EmployeeOperationalPolicy $employeePolicy,
+    )
     {
         $this->accessControl = $accessControl;
     }
@@ -66,6 +76,8 @@ class UserAccessControlController extends Controller
         }
 
         $financePermissions = [
+            'manage-finance-tax',
+            'disburse-payroll',
             'access-purchase-request-approval',
             'access-approval-workflow',
             'access-payslip-approval',
@@ -244,8 +256,16 @@ class UserAccessControlController extends Controller
                     'createdAt' => $employee->created_at,
                     'salary' => $employee->salary ?? 0,
                     'hire_date' => $employee->hire_date?->format('Y-m-d'),
+                    'position' => $employee->position,
                     'position_template_id' => $employee->position_template_id,
                     'department' => $employee->department,
+                    'personalEmail' => null,
+                    'accountStatus' => $user?->status,
+                    'lastActive' => $user?->last_login_at,
+                    'createdBy' => $user?->invited_by,
+                    'linkedAccountState' => $user
+                        ? ($user->password !== null ? 'active' : ($user->invite_token ? 'setup_pending' : 'inactive'))
+                        : 'not_linked',
                     // Include Spatie permissions
                     'userId' => $user?->id,
                     'roleName' => $roleName,
@@ -260,6 +280,7 @@ class UserAccessControlController extends Controller
         
         return Inertia::render('ShopOwner/TeamManagement/UserAccessControl', [
             'employees' => $employees,
+            'erpMode' => str_starts_with((string) request()->route()?->getName(), 'shop-owner.erp.'),
         ]);
     }
 
@@ -273,11 +294,21 @@ class UserAccessControlController extends Controller
             $shopOwner = Auth::guard('shop_owner')->user();
             
             if (!$shopOwner) {
+                if ($request->wantsJson()) {
+                    return response()->json(['message' => 'Not authenticated as shop owner'], 401);
+                }
+
                 return back()->withErrors(['error' => 'Not authenticated as shop owner']);
             }
 
             // SECURITY: Check if shop owner can manage staff (company only)
             if (!$this->accessControl->canManageStaff($shopOwner)) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'Staff management is only available for Business accounts.',
+                    ], 403);
+                }
+
                 return back()->withErrors([
                     'error' => 'Staff management is only available for Business accounts. Individual accounts cannot create employees.'
                 ])->with('upgrade_prompt', true);
@@ -286,8 +317,10 @@ class UserAccessControlController extends Controller
             $allowedPrimaryRoles = [
                 'MANAGER', 'FINANCE', 'HR', 'CRM', 'STAFF', 'REPAIRER', 'CASHIER',
                 'INVENTORY', 'INVENTORY_MANAGER', 'PROCUREMENT', 'PROCUREMENT_MANAGER',
+                'LOGISTICS_DISPATCHER', 'LOGISTICS_RIDER',
                 'Manager', 'Finance', 'HR', 'CRM', 'Staff', 'Repairer', 'Cashier',
                 'Inventory', 'Inventory Manager', 'Procurement', 'Procurement Manager',
+                'Logistics Dispatcher', 'Logistics Rider',
             ];
 
             $validated = $request->validate([
@@ -301,7 +334,7 @@ class UserAccessControlController extends Controller
                 'branch' => 'nullable|string|max:100',
                 'salary' => 'nullable|numeric|min:0',
                 'hire_date' => 'nullable|date',
-                'status' => 'nullable|in:active,inactive,on_leave',
+                'status' => ['nullable', Rule::enum(EmployeeStatus::class)],
                 'role' => ['required', Rule::in($allowedPrimaryRoles)],
             ], [
                 'name.required' => 'Employee name is required',
@@ -310,8 +343,22 @@ class UserAccessControlController extends Controller
                 'phone.regex' => 'Phone number must be exactly 11 digits',
                 'phone.unique' => 'This phone number is already registered',
                 'salary.numeric' => 'Salary must be a valid number',
-                'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, Repairer, Cashier, Inventory, or Procurement',
+                'role.in' => 'Role must be Manager, Finance, HR, CRM, Staff, Repairer, Cashier, Inventory, Procurement, or Logistics',
             ]);
+
+            if (($validated['status'] ?? null) === EmployeeStatus::TERMINATED->value) {
+                $message = 'Employment termination must go through the HR → Manager → Company Shop Owner workflow.';
+
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => $message,
+                        'error' => 'TERMINATION_WORKFLOW_REQUIRED',
+                        'code' => 'TERMINATION_WORKFLOW_REQUIRED',
+                    ], 403);
+                }
+
+                return back()->withErrors(['status' => $message])->withInput();
+            }
 
             // Normalize role to uppercase snake case to match legacy enum style.
             $validated['role'] = strtoupper(str_replace(' ', '_', (string) $validated['role']));
@@ -323,13 +370,20 @@ class UserAccessControlController extends Controller
                 'INVENTORY', 'INVENTORY_MANAGER' => 'INVENTORY',
                 // Procurement roles are represented via Spatie role/permissions.
                 // Legacy users.role stays enum-compatible across old schemas.
-                'PROCUREMENT', 'PROCUREMENT_MANAGER' => 'STAFF',
+                'PROCUREMENT', 'PROCUREMENT_MANAGER', 'LOGISTICS_DISPATCHER', 'LOGISTICS_RIDER' => 'STAFF',
                 default => $validated['role'],
             };
 
             // SECURITY: Validate role creation based on business type
             $roleValidation = $this->accessControl->validateRoleCreation($validated['role'], $shopOwner);
             if (!$roleValidation['allowed']) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => $roleValidation['reason'],
+                        'errors' => ['role' => [$roleValidation['reason']]],
+                    ], 422);
+                }
+
                 return back()->withErrors([
                     'role' => $roleValidation['reason']
                 ])->withInput();
@@ -350,11 +404,25 @@ class UserAccessControlController extends Controller
 
             // Ensure email is free across employees and users before creating anything
             if (Employee::where('email', $validated['email'])->exists()) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'This email is already registered as an employee',
+                        'errors' => ['email' => ['This email is already registered as an employee']],
+                    ], 422);
+                }
+
                 return back()->withErrors([
                     'email' => 'This email is already registered as an employee'
                 ]);
             }
             if (User::where('email', $validated['email'])->exists()) {
+                if ($request->wantsJson()) {
+                    return response()->json([
+                        'message' => 'User account already exists for this email',
+                        'errors' => ['email' => ['User account already exists for this email']],
+                    ], 422);
+                }
+
                 return back()->withErrors([
                     'email' => 'User account already exists for this email'
                 ]);
@@ -413,6 +481,8 @@ class UserAccessControlController extends Controller
                     'INVENTORY_MANAGER' => 'Inventory Manager',
                     'PROCUREMENT' => 'Procurement Manager',
                     'PROCUREMENT_MANAGER' => 'Procurement Manager',
+                    'LOGISTICS_DISPATCHER' => 'Logistics Dispatcher',
+                    'LOGISTICS_RIDER' => 'Logistics Rider',
                     'STAFF' => 'Staff',
                 ];
                 
@@ -425,6 +495,7 @@ class UserAccessControlController extends Controller
                 }
 
                 $user->assignRole($resolvedSpatieRole);
+                app(RiderProfileSyncService::class)->syncUser($user);
                 
                 // Permission Audit Log - COMPLIANCE CRITICAL
                 PermissionAuditLog::logRoleAssigned(
@@ -469,12 +540,26 @@ class UserAccessControlController extends Controller
                 return [$employee, $user];
             });
 
+            $this->linkedUserSynchronizer->sync($employee);
+
             // Generate invitation URL
             $inviteUrl = url("/invite/{$inviteToken}");
 
             // Return back with success data - Inertia will automatically reload with fresh props
             // Use redirect()->back() to ensure flash data is properly set in session
             // Add timestamp to ensure uniqueness and trigger useEffect on each creation
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Employee created successfully. Share the invitation link with the employee.',
+                    'employee' => $this->employeePayload($employee, $user),
+                    'user_id' => $user->id,
+                    'invite_url' => $inviteUrl,
+                    'invite_expires_at' => $inviteExpiresAt->toISOString(),
+                    'email_sent' => false,
+                    'work_email' => $employee->email,
+                ], 201);
+            }
+
             return redirect()->back()->with([
                 'success' => true,
                 'employee' => [
@@ -490,131 +575,40 @@ class UserAccessControlController extends Controller
                 'timestamp' => now()->timestamp, // Unique identifier for each creation
             ]);
         } catch (ValidationException $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Validation failed',
+                    'errors' => $e->errors(),
+                ], 422);
+            }
+
             return back()->withErrors($e->errors());
         } catch (\Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Error creating employee',
+                    'error' => $e->getMessage(),
+                ], 500);
+            }
+
             return back()->withErrors([
                 'error' => 'Error creating employee: ' . $e->getMessage()
             ]);
         }
     }
 
-    /**
-     * Update an existing employee for the authenticated shop owner.
-     */
-    public function updateEmployee(Request $request, Employee $employee)
+    public function rejectHrMasterDataUpdate(Request $request, Employee $employee)
     {
-        try {
-            /** @var ShopOwner|null $shopOwner */
-            $shopOwner = Auth::guard('shop_owner')->user();
+        $message = 'Employee HR master data must be changed through the HR employee-management workflow.';
 
-            if (!$shopOwner) {
-                return back()->withErrors(['error' => 'Not authenticated as shop owner']);
-            }
-
-            if (!$this->accessControl->canManageStaff($shopOwner)) {
-                return back()->withErrors([
-                    'error' => 'Staff management is only available for Business accounts.'
-                ]);
-            }
-
-            if ((int) $employee->shop_owner_id !== (int) $shopOwner->id) {
-                return back()->withErrors([
-                    'error' => 'You cannot edit employees from another shop.'
-                ]);
-            }
-
-            $validated = $request->validate([
-                'name' => 'required|string|max:255',
-                'email' => [
-                    'required',
-                    'email',
-                    Rule::unique('employees', 'email')->ignore($employee->id),
-                    Rule::unique('users', 'email')->ignore(optional($employee->user)->id),
-                ],
-                'phone' => ['nullable', 'regex:/^\d{11}$/'],
-                'address' => 'nullable|string|max:255',
-                'position' => 'nullable|string|max:100',
-                'department' => 'nullable|string|max:100',
-                'salary' => 'nullable|numeric|min:0',
-                'hire_date' => 'nullable|date',
-                'status' => 'nullable|in:active,inactive,on_leave',
-            ], [
-                'name.required' => 'Employee name is required',
-                'email.required' => 'Email is required',
-                'email.unique' => 'This email is already registered',
-                'phone.regex' => 'Phone number must be exactly 11 digits',
-                'salary.numeric' => 'Salary must be a valid number',
-            ]);
-
-            $updatedEmployee = DB::transaction(function () use ($employee, $validated) {
-                $employee->fill([
-                    'name' => $validated['name'],
-                    'email' => $validated['email'],
-                    'phone' => $validated['phone'] ?? '',
-                    'address' => $validated['address'] ?? '',
-                    'position' => $validated['position'] ?? '',
-                    'department' => $validated['department'] ?? $employee->department ?? 'General',
-                    'salary' => $validated['salary'] ?? 0,
-                    'hire_date' => $validated['hire_date'] ?? $employee->hire_date ?? now()->toDateString(),
-                    'status' => $validated['status'] ?? $employee->status,
-                ]);
-                $employee->save();
-
-                $user = $employee->user;
-                if ($user) {
-                    $nameParts = preg_split('/\s+/', trim((string) $validated['name']));
-                    $firstName = $nameParts[0] ?? '';
-                    $lastName = count($nameParts) > 1 ? implode(' ', array_slice($nameParts, 1)) : '';
-
-                    $user->fill([
-                        'name' => $validated['name'],
-                        'first_name' => $firstName,
-                        'last_name' => $lastName,
-                        'email' => $validated['email'],
-                        'phone' => $validated['phone'] ?? '',
-                        'address' => $validated['address'] ?? '',
-                        'position' => $validated['position'] ?? $user->position,
-                    ]);
-                    $user->save();
-                }
-
-                return $employee->fresh('user');
-            });
-
-            try {
-                AuditLog::create([
-                    'shop_owner_id' => $shopOwner->id,
-                    'actor_user_id' => $shopOwner->id,
-                    'action' => 'employee_updated',
-                    'target_type' => 'employee',
-                    'target_id' => $updatedEmployee->id,
-                    'metadata' => [
-                        'employee_email' => $updatedEmployee->email,
-                        'employee_name' => $updatedEmployee->name,
-                        'department' => $updatedEmployee->department,
-                        'position' => $updatedEmployee->position,
-                    ],
-                ]);
-            } catch (\Exception $e) {
-                // Audit log is optional - don't fail the update if it errors
-            }
-
-            return redirect()->back()->with([
-                'success' => true,
-                'employee' => [
-                    'id' => $updatedEmployee->id,
-                    'name' => $updatedEmployee->name,
-                    'email' => $updatedEmployee->email,
-                ],
-                'timestamp' => now()->timestamp,
-            ]);
-        } catch (ValidationException $e) {
-            return back()->withErrors($e->errors());
-        } catch (\Exception $e) {
-            return back()->withErrors([
-                'error' => 'Error updating employee: ' . $e->getMessage()
-            ]);
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => $message,
+                'code' => 'SHOP_OWNER_HR_EDIT_FORBIDDEN',
+            ], 403);
         }
+
+        return back()->withErrors(['error' => $message]);
     }
 
     /**
@@ -657,12 +651,14 @@ class UserAccessControlController extends Controller
             'inventory' => [],
             'procurement' => [],
             'staff' => [],
+            'logistics' => [],
             'common' => [],
         ];
 
         foreach ($allPermissions as $permission) {
             // Finance Module: access-finance-* permissions
             if (str_starts_with($permission, 'access-finance-') ||
+                in_array($permission, ['manage-finance-tax', 'disburse-payroll'], true) ||
                 str_contains($permission, 'payslip-approval') ||
                 str_contains($permission, 'refund-approval') ||
                 str_contains($permission, 'repair-price-approval') ||
@@ -729,6 +725,10 @@ class UserAccessControlController extends Controller
                     str_contains($permission, 'stock-movement') ||
                     str_contains($permission, 'upload-inventory')) {
                 $grouped['inventory'][] = $permission;
+            }
+            // Staff Module: access-staff-* permissions
+            elseif (str_contains($permission, 'logistics') || str_contains($permission, 'delivery') || str_contains($permission, 'rider') || str_contains($permission, 'courier') || str_contains($permission, 'shipping-method') || str_contains($permission, 'proof-of-delivery')) {
+                $grouped['logistics'][] = $permission;
             }
             // Staff Module: access-staff-* permissions
             elseif (str_starts_with($permission, 'access-staff-') ||
@@ -1248,6 +1248,7 @@ class UserAccessControlController extends Controller
                 array_unshift($rolesToSync, $primaryRole);
             }
             $user->syncRoles($rolesToSync);
+            app(RiderProfileSyncService::class)->syncShop((int) $user->shop_owner_id);
             
             // Re-enable automatic logging
             activity()->enableLogging();
@@ -1455,8 +1456,44 @@ class UserAccessControlController extends Controller
         }
     }
 
+    public function resetEmployeePassword($userId)
+    {
+        try {
+            $shopOwner = Auth::guard('shop_owner')->user();
+
+            if (!$shopOwner) {
+                return response()->json(['error' => 'Not authenticated'], 401);
+            }
+
+            if (!$this->accessControl->canManageStaff($shopOwner)) {
+                return response()->json([
+                    'error' => 'Staff management is only available for Business accounts.',
+                ], 403);
+            }
+
+            $link = $this->accountLinks->issueForUserId((int) $userId, $shopOwner, true);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Password reset initiated. Share the new setup link with the employee.',
+                ...$link,
+            ]);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Employee not found'], 404);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'details' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => 'Failed to reset employee password.',
+            ], 500);
+        }
+    }
+
     /**
-     * Regenerate invitation link for an employee
+     * Regenerate invitation link for an employee.
      */
     public function regenerateInvite($userId)
     {
@@ -1467,57 +1504,28 @@ class UserAccessControlController extends Controller
                 return response()->json(['error' => 'Not authenticated'], 401);
             }
 
-            // Find the user and verify they belong to this shop owner
-            $user = User::where('id', $userId)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->first();
-
-            if (!$user) {
-                return response()->json(['error' => 'Employee not found'], 404);
-            }
-
-            if (strcasecmp((string) ($user->email ?? ''), (string) ($shopOwner->email ?? '')) === 0) {
+            if (!$this->accessControl->canManageStaff($shopOwner)) {
                 return response()->json([
-                    'error' => 'You cannot reset the password of the account you are currently using.'
-                ], 422);
+                    'error' => 'Staff management is only available for Business accounts.',
+                ], 403);
             }
 
-            // Generate new invitation token
-            $inviteToken = Str::random(64);
-            $inviteExpiresAt = Carbon::now()->addDays(7);
-
-            // Update user with new invitation token
-            $user->update([
-                'invite_token' => $inviteToken,
-                'invite_expires_at' => $inviteExpiresAt,
-                'invited_at' => now(),
-                'invited_by' => $shopOwner->id,
-            ]);
-
-            // Generate invitation URL
-            $inviteUrl = url("/accept-invitation/{$inviteToken}");
-
-            // Log the regeneration
-            AuditLog::create([
-                'shop_owner_id' => $shopOwner->id,
-                'user_id' => $shopOwner->id,
-                'action' => 'regenerate_invitation',
-                'description' => "Regenerated invitation for employee: {$user->name} ({$user->email})",
-                'ip_address' => request()->ip(),
-                'user_agent' => request()->userAgent(),
-            ]);
+            $link = $this->accountLinks->issueForUserId((int) $userId, $shopOwner, false);
 
             return response()->json([
                 'success' => true,
-                'invite_url' => $inviteUrl,
-                'invite_expires_at' => $inviteExpiresAt->toIso8601String(),
-                'work_email' => $user->email,
-                'employee_name' => $user->name,
+                ...$link,
             ]);
-
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Employee not found'], 404);
+        } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
-                'error' => 'Failed to regenerate invitation: ' . $e->getMessage()
+                'error' => $e->getMessage(),
+                'details' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => 'Failed to regenerate invitation.',
             ], 500);
         }
     }
@@ -1527,113 +1535,42 @@ class UserAccessControlController extends Controller
      */
     public function sendInvitationEmail(Request $request, $userId)
     {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        if (!$shopOwner) {
+            return response()->json(['error' => 'Not authenticated'], 401);
+        }
+
+        if (!$this->accessControl->canManageStaff($shopOwner)) {
+            return response()->json([
+                'error' => 'Staff management is only available for Business accounts.',
+            ], 403);
+        }
+
         try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-            
-            if (!$shopOwner) {
-                return response()->json(['error' => 'Not authenticated'], 401);
-            }
-
             $validated = $request->validate([
-                'personal_email' => 'required|email',
+                'personal_email' => ['required', 'email', 'max:255'],
             ]);
-
-            // Find the user and verify they belong to this shop owner
-            $user = User::where('id', $userId)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->first();
-
-            if (!$user) {
-                return response()->json(['error' => 'Employee not found'], 404);
-            }
-
-            // Check if user has valid invitation token
-            if (!$user->invite_token || !$user->invite_expires_at) {
-                return response()->json(['error' => 'No active invitation found. Please regenerate the invitation first.'], 400);
-            }
-
-            // Check if invitation expired
-            if (Carbon::now()->greaterThan($user->invite_expires_at)) {
-                return response()->json(['error' => 'Invitation has expired. Please regenerate a new invitation.'], 400);
-            }
-
-            $inviteUrl = url("/accept-invitation/{$user->invite_token}");
-            $shopName = $shopOwner->business_name ?? 'SoleSpace';
-            $expiresAt = $user->invite_expires_at->format('M d, Y h:i A');
-            $personalEmail = $validated['personal_email'];
-
-            // Send email using Laravel Mail
-            \Mail::send([], [], function ($message) use ($user, $inviteUrl, $shopName, $expiresAt, $personalEmail) {
-                $message->to($personalEmail)
-                    ->subject("Your {$shopName} Account Invitation")
-                    ->html("
-                        <html>
-                        <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
-                            <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
-                                <h2 style='color: #4F46E5;'>Welcome to {$shopName}!</h2>
-                                
-                                <p>Hi <strong>{$user->name}</strong>,</p>
-                                
-                                <p>You've been invited to join our team at <strong>{$shopName}</strong>!</p>
-                                
-                                <div style='background: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;'>
-                                    <p style='margin: 0 0 10px 0;'><strong>Your work email:</strong> {$user->email}</p>
-                                    <p style='margin: 0;'><strong>Invitation expires:</strong> {$expiresAt}</p>
-                                </div>
-                                
-                                <p>Click the button below to set up your account and create your password:</p>
-                                
-                                <div style='text-align: center; margin: 30px 0;'>
-                                    <a href='{$inviteUrl}' 
-                                       style='display: inline-block; background: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;'>
-                                        Set Up My Account
-                                    </a>
-                                </div>
-                                
-                                <p style='font-size: 12px; color: #666;'>
-                                    Or copy and paste this link into your browser:<br>
-                                    <a href='{$inviteUrl}' style='color: #4F46E5; word-break: break-all;'>{$inviteUrl}</a>
-                                </p>
-                                
-                                <hr style='border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;'>
-                                
-                                <p style='font-size: 12px; color: #666;'>
-                                    <strong>Important:</strong> This invitation link will expire on {$expiresAt}. 
-                                    If you need a new invitation, please contact your administrator.
-                                </p>
-                                
-                                <p style='font-size: 12px; color: #666;'>
-                                    If you didn't expect this invitation, please ignore this email or contact us.
-                                </p>
-                            </div>
-                        </body>
-                        </html>
-                    ");
-            });
-
-            // Log the email send
-            AuditLog::create([
-                'shop_owner_id' => $shopOwner->id,
-                'user_id' => $shopOwner->id,
-                'action' => 'send_invitation_email',
-                'description' => "Sent invitation email to {$personalEmail} for employee: {$user->name} ({$user->email})",
-                'ip_address' => request()->ip(),
-                'user_agent' => request()->userAgent(),
-            ]);
+            $link = $this->accountLinks->sendToPersonalEmailForUserId(
+                (int) $userId,
+                $shopOwner,
+                (string) $validated['personal_email'],
+            );
 
             return response()->json([
                 'success' => true,
-                'message' => "Invitation email sent successfully to {$personalEmail}",
+                ...$link,
             ]);
-
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Employee not found'], 404);
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
-                'error' => 'Invalid email address',
-                'details' => $e->errors()
+                'error' => $e->getMessage(),
+                'details' => $e->errors(),
             ], 422);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             return response()->json([
-                'error' => 'Failed to send invitation email: ' . $e->getMessage()
+                'error' => 'Failed to send invitation email.',
             ], 500);
         }
     }
@@ -1675,5 +1612,42 @@ class UserAccessControlController extends Controller
         } catch (\Exception $e) {
             return response()->json(['error' => 'Failed to fetch allowed roles: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function employeePayload(Employee $employee, ?User $linkedUser = null): array
+    {
+        $firstName = trim((string) $employee->first_name);
+        $lastName = trim((string) $employee->last_name);
+
+        if ($firstName === '' && $lastName === '') {
+            $nameParts = preg_split('/\s+/', trim((string) $employee->name)) ?: [];
+            $firstName = (string) ($nameParts[0] ?? '');
+            $lastName = count($nameParts) > 1 ? implode(' ', array_slice($nameParts, 1)) : '';
+        }
+
+        $status = $employee->status instanceof \BackedEnum
+            ? $employee->status->value
+            : (string) $employee->status;
+        $linkedUser ??= $employee->relationLoaded('user') ? $employee->user : null;
+
+        return [
+            'id' => $employee->id,
+            'name' => $employee->name ?: trim("{$firstName} {$lastName}"),
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'email' => $employee->email,
+            'phone' => $employee->phone,
+            'address' => $employee->address,
+            'position' => $employee->position,
+            'department' => $employee->department,
+            'salary' => $employee->salary,
+            'hire_date' => optional($employee->hire_date)->toDateString(),
+            'status' => $status,
+            'linked_user' => $linkedUser?->id,
+            'updated_at' => optional($employee->updated_at)->toISOString(),
+        ];
     }
 }

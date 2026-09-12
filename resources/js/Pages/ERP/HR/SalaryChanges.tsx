@@ -1,7 +1,10 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
+import IconButton from "@/components/ui/icon-button/IconButton";
+import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -25,9 +28,13 @@ interface SalaryChange {
   proposed_by: number;
   proposer?: { id: number; name: string };
   approved_by?: number | null;
+  approved_by_shop_owner_id?: number | null;
   approver?: { id: number; name: string } | null;
+  shop_owner_approver?: { id: number; name?: string; business_name?: string } | null;
   rejected_by?: number | null;
+  rejected_by_shop_owner_id?: number | null;
   rejector?: { id: number; name: string } | null;
+  shop_owner_rejector?: { id: number; name?: string; business_name?: string } | null;
   retroactive_override_by?: number | null;
   retroactive_override_grantor?: { id: number; name: string } | null;
   previous_salary: number;
@@ -45,6 +52,8 @@ interface SalaryChange {
   retroactive_override_reason?: string | null;
   created_at: string;
   updated_at: string;
+  requires_owner_approval?: boolean | null;
+  owner_action_required?: boolean;
 }
 
 interface Summary {
@@ -222,6 +231,24 @@ const normalizeSalaryChange = (raw: any): SalaryChange => ({
         department: raw?.department,
         position: raw?.position,
       },
+  approver: raw?.approver ?? (raw?.shop_owner_approver
+    ? {
+        id: toNumber(raw.shop_owner_approver.id),
+        name:
+          toDisplayName(raw.shop_owner_approver.business_name)
+          || buildEmployeeName(raw.shop_owner_approver)
+          || "Shop Owner",
+      }
+    : null),
+  rejector: raw?.rejector ?? (raw?.shop_owner_rejector
+    ? {
+        id: toNumber(raw.shop_owner_rejector.id),
+        name:
+          toDisplayName(raw.shop_owner_rejector.business_name)
+          || buildEmployeeName(raw.shop_owner_rejector)
+          || "Shop Owner",
+      }
+    : null),
   previous_salary: toNumber(raw?.previous_salary),
   new_salary: toNumber(raw?.new_salary),
   change_percent:
@@ -241,11 +268,13 @@ const normalizeEmployee = (raw: any): Employee => ({
 
 const SalaryChanges: React.FC = () => {
   const { auth } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const salaryChangesEndpoint = ownerMode ? "/api/shop-owner/salary-changes" : "/api/hr/salary-changes";
   const permissions: string[] = auth?.permissions ?? [];
   const currentUserId: number = auth?.user?.id ?? 0;
 
-  const canManage = permissions.includes("manage-salary-changes");
-  const canApprove = permissions.includes("approve-salary-change");
+  const canManage = !ownerMode && permissions.includes("manage-salary-changes");
+  const canApprove = ownerMode || permissions.includes("approve-salary-change");
   const canOverrideRetroactive = permissions.includes("override-salary-retroactive");
 
   // ─── State ──────────────────────────────────────────────────────────────────
@@ -274,7 +303,7 @@ const SalaryChanges: React.FC = () => {
     try {
       const params = new URLSearchParams();
       if (statusFilter !== "All") params.set("status", statusFilter);
-      const res = await fetch(`/api/hr/salary-changes?${params.toString()}`, {
+      const res = await fetch(salaryChangesEndpoint + "?" + params.toString(), {
         headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
       });
@@ -291,6 +320,11 @@ const SalaryChanges: React.FC = () => {
   };
 
   const fetchEmployees = async () => {
+    if (ownerMode) {
+      setEmployees([]);
+      return;
+    }
+
     try {
       const res = await fetch("/api/hr/employees?per_page=200", {
         headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
@@ -307,11 +341,11 @@ const SalaryChanges: React.FC = () => {
 
   useEffect(() => {
     fetchChanges();
-  }, [statusFilter]);
+  }, [statusFilter, ownerMode]);
 
   useEffect(() => {
     fetchEmployees();
-  }, []);
+  }, [ownerMode]);
 
   // ─── Filtered Rows ───────────────────────────────────────────────────────────
 
@@ -324,6 +358,19 @@ const SalaryChanges: React.FC = () => {
       return name.includes(q) || dept.includes(q);
     });
   }, [changes, search]);
+
+  const canDecideChange = (change: SalaryChange): boolean => {
+    if (!canApprove || change.status !== "pending" || change.proposed_by === currentUserId) {
+      return false;
+    }
+
+    if (ownerMode) {
+      return change.owner_action_required
+        ?? (change.requires_owner_approval !== false);
+    }
+
+    return change.requires_owner_approval === false;
+  };
 
   // ─── Action Handlers ──────────────────────────────────────────────────────────
 
@@ -375,7 +422,7 @@ const SalaryChanges: React.FC = () => {
     setIsSubmittingNewChange(true);
 
     try {
-      const res = await fetch("/api/hr/salary-changes", {
+      const res = await fetch(salaryChangesEndpoint, {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -415,7 +462,7 @@ const SalaryChanges: React.FC = () => {
   };
 
   const handleApprove = async (change: SalaryChange) => {
-    const result = await Swal.fire({
+    const result = await Swal.fire(withSweetAlertSemantic({
       title: "Approve Salary Change?",
       html: `
         <p style="margin-bottom:12px;">Approve salary change for <strong>${change.employee?.name}</strong>?</p>
@@ -429,13 +476,13 @@ const SalaryChanges: React.FC = () => {
       confirmButtonText: "Approve",
       confirmButtonColor: "#10b981",
       preConfirm: () => ({ notes: (document.getElementById("approve-notes") as HTMLTextAreaElement).value.trim() }),
-    });
+    }, "success"));
 
     if (!result.isConfirmed) return;
 
     setIsActionProcessing(true);
     try {
-      const res = await fetch(`/api/hr/salary-changes/${change.id}/approve`, {
+      const res = await fetch(salaryChangesEndpoint + "/" + change.id + "/approve", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -454,7 +501,7 @@ const SalaryChanges: React.FC = () => {
   };
 
   const handleReject = async (change: SalaryChange) => {
-    const result = await Swal.fire({
+    const result = await Swal.fire(withSweetAlertSemantic({
       title: "Reject Salary Change",
       html: `
         <p style="margin-bottom:12px;">Reject salary change for <strong>${change.employee?.name}</strong>?</p>
@@ -469,13 +516,13 @@ const SalaryChanges: React.FC = () => {
         if (!notes) { Swal.showValidationMessage("Rejection reason is required."); return false; }
         return { notes };
       },
-    });
+    }, "danger"));
 
     if (!result.isConfirmed) return;
 
     setIsActionProcessing(true);
     try {
-      const res = await fetch(`/api/hr/salary-changes/${change.id}/reject`, {
+      const res = await fetch(salaryChangesEndpoint + "/" + change.id + "/reject", {
         method: "POST",
         headers: { Accept: "application/json", "Content-Type": "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -494,19 +541,21 @@ const SalaryChanges: React.FC = () => {
   };
 
   const handleApply = async (change: SalaryChange) => {
-    const confirm = await Swal.fire({
+    if (ownerMode) return;
+
+    const confirm = await Swal.fire(withSweetAlertSemantic({
       title: "Apply Salary Change?",
       text: `This will immediately update ${change.employee?.name}'s salary to ${fmtCurrency(change.new_salary)}.`,
       icon: "question",
       showCancelButton: true,
       confirmButtonText: "Apply Now",
       confirmButtonColor: "#3b82f6",
-    });
+    }, "info"));
     if (!confirm.isConfirmed) return;
 
     setIsActionProcessing(true);
     try {
-      const res = await fetch(`/api/hr/salary-changes/${change.id}/apply`, {
+      const res = await fetch(salaryChangesEndpoint + "/" + change.id + "/apply", {
         method: "POST",
         headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -525,19 +574,21 @@ const SalaryChanges: React.FC = () => {
   };
 
   const handleCancel = async (change: SalaryChange) => {
-    const confirm = await Swal.fire({
+    if (ownerMode) return;
+
+    const confirm = await Swal.fire(withSweetAlertSemantic({
       title: "Cancel Salary Change?",
       text: "This will cancel the pending proposal. This cannot be undone.",
       icon: "warning",
       showCancelButton: true,
       confirmButtonText: "Yes, Cancel It",
       confirmButtonColor: "#6b7280",
-    });
+    }, "warning"));
     if (!confirm.isConfirmed) return;
 
     setIsActionProcessing(true);
     try {
-      const res = await fetch(`/api/hr/salary-changes/${change.id}/cancel`, {
+      const res = await fetch(salaryChangesEndpoint + "/" + change.id + "/cancel", {
         method: "POST",
         headers: { Accept: "application/json", "X-CSRF-TOKEN": getCsrfToken() },
         credentials: "same-origin",
@@ -558,7 +609,7 @@ const SalaryChanges: React.FC = () => {
 
   const ViewModal: React.FC<{ change: SalaryChange }> = ({ change }) => (
     <ModalPortal>
-      <div className="fixed inset-0 z-999999 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <div className="fixed inset-0 z-999999 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm erp-modal-backdrop">
         <div className="relative w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900 rounded-2xl shadow-2xl">
           <div className="p-6 space-y-6">
             {/* Retroactive Warning */}
@@ -690,7 +741,7 @@ const SalaryChanges: React.FC = () => {
 
             {/* Action Buttons */}
             <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-gray-800">
-              {canApprove && change.status === "pending" && change.proposed_by !== currentUserId && (
+              {canDecideChange(change) && (
                 <>
                   <button
                     onClick={() => handleApprove(change)}
@@ -717,7 +768,7 @@ const SalaryChanges: React.FC = () => {
                   Apply Now
                 </button>
               )}
-              {change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
+              {!ownerMode && change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
                 <button
                   onClick={() => handleCancel(change)}
                   disabled={isActionProcessing}
@@ -760,11 +811,8 @@ const SalaryChanges: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Salary Change Requests</h1>
-          <p className="mt-2 text-gray-600 dark:text-gray-400">Propose, review, and track employee salary adjustments.</p>
-        </div>
+      <div className="flex justify-end">
+        <h1 className="sr-only">Salary Change Requests</h1>
         {canManage && (
           <button
             onClick={openNewChangeModal}
@@ -833,7 +881,7 @@ const SalaryChanges: React.FC = () => {
           </div>
           <div>
             <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
-            <select
+            <MonochromeSelect
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value as "All" | ChangeStatus)}
               title="Filter by status"
@@ -845,7 +893,7 @@ const SalaryChanges: React.FC = () => {
               <option value="applied">Applied</option>
               <option value="rejected">Rejected</option>
               <option value="cancelled">Cancelled</option>
-            </select>
+            </MonochromeSelect>
           </div>
         </div>
       </div>
@@ -883,8 +931,8 @@ const SalaryChanges: React.FC = () => {
                   <tr key={change.id} className="transition-colors hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-900/40">
-                          <span className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-950 dark:bg-blue-900/40">
+                          <span className="text-sm font-medium text-white dark:text-blue-300">
                             {getInitials(change.employee?.name)}
                           </span>
                         </div>
@@ -914,42 +962,46 @@ const SalaryChanges: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex items-center justify-center gap-2">
-                        <button
+                        <IconButton
+                          variant="neutral"
                           onClick={() => setViewChange(change)}
-                          className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"
                           title="View details"
+                          label="View salary change details"
                         >
-                          <svg className="size-5 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
-                        </button>
-                        {canApprove && change.status === "pending" && change.proposed_by !== currentUserId && (
-                          <button
+                        </IconButton>
+                        {canDecideChange(change) && (
+                          <IconButton
+                            variant="success"
                             onClick={() => handleApprove(change)}
-                            className="rounded-lg p-2 transition-colors hover:bg-green-50 dark:hover:bg-green-900/20"
                             title="Approve"
+                            label="Approve salary change"
                           >
-                            <CheckCircleIcon className="size-5 text-green-600 dark:text-green-400" />
-                          </button>
+                            <CheckCircleIcon className="size-5" />
+                          </IconButton>
                         )}
                         {canManage && change.status === "approved" && !change.applied_at && (
-                          <button
+                          <IconButton
+                            variant="primary"
                             onClick={() => handleApply(change)}
-                            className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"
                             title="Apply now"
+                            label="Apply salary change now"
                           >
-                            <SparklesIcon className="size-5 text-blue-600 dark:text-blue-400" />
-                          </button>
+                            <SparklesIcon className="size-5" />
+                          </IconButton>
                         )}
-                        {change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
-                          <button
+                        {!ownerMode && change.status === "pending" && (change.proposed_by === currentUserId || canManage || canApprove) && (
+                          <IconButton
+                            variant="warning"
                             onClick={() => handleCancel(change)}
-                            className="rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
                             title="Cancel"
+                            label="Cancel salary change"
                           >
-                            <BanIcon className="size-5 text-gray-500 dark:text-gray-400" />
-                          </button>
+                            <BanIcon className="size-5" />
+                          </IconButton>
                         )}
                       </div>
                     </td>
@@ -967,7 +1019,7 @@ const SalaryChanges: React.FC = () => {
       {/* New Salary Change Modal */}
       {isNewChangeOpen && (
         <ModalPortal>
-          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
               <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6 flex items-start justify-between gap-4">
                 <div>
@@ -989,7 +1041,7 @@ const SalaryChanges: React.FC = () => {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                       Employee <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={newChangeForm.employee_id}
                       onChange={(e) => setNewChangeForm((prev) => ({ ...prev, employee_id: e.target.value }))}
                       title="Select employee"
@@ -1001,12 +1053,12 @@ const SalaryChanges: React.FC = () => {
                           {employee.name || `#${employee.id}`}{employee.department ? ` - ${employee.department}` : ""}
                         </option>
                       ))}
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   {selectedEmployee && (
-                    <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 px-4 py-3">
-                      <p className="text-sm text-blue-900 dark:text-blue-300">
+                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/60 px-4 py-3">
+                      <p className="text-sm text-gray-800 dark:text-gray-200">
                         Current daily rate: <span className="font-semibold">{fmtCurrency(selectedEmployee.salary)}</span>
                       </p>
                     </div>
@@ -1074,7 +1126,7 @@ const SalaryChanges: React.FC = () => {
                 <button
                   onClick={handleSubmitNewChange}
                   disabled={isSubmittingNewChange}
-                  className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isSubmittingNewChange ? "opacity-50 cursor-not-allowed" : ""}`}
+                  className={`px-5 py-2.5 text-sm font-semibold text-white bg-black hover:bg-gray-800 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isSubmittingNewChange ? "opacity-50 cursor-not-allowed" : ""}`}
                 >
                   {isSubmittingNewChange ? "Submitting..." : "Submit Salary Change"}
                 </button>

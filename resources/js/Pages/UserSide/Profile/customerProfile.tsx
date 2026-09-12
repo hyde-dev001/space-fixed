@@ -3,6 +3,10 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import { useBadgeCounts } from '../../../hooks/useBadgeCounts';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import EmployeeTotpSecurity from '../../../components/UserProfile/EmployeeTotpSecurity';
+import PasswordRequirements from '../../../components/auth/PasswordRequirements';
+import IdentityVerificationPanel, { type CustomerIdentityVerification } from './IdentityVerificationPanel';
 
 type ProfileData = {
 	firstName: string;
@@ -30,6 +34,16 @@ type PageProps = {
 	errors?: Record<string, string>;
 	orderStatusCount?: number;
 	repairStatusCount?: number;
+	identity_verification: CustomerIdentityVerification | null;
+	security?: {
+		totp_enabled: boolean;
+		activity: Array<{
+			action: string;
+			label: string;
+			description: string;
+			created_at?: string | null;
+		}>;
+	};
 };
 
 const CustomerProfile: React.FC = () => {
@@ -40,6 +54,8 @@ const CustomerProfile: React.FC = () => {
 		errors,
 		orderStatusCount = 0,
 		repairStatusCount = 0,
+		identity_verification,
+		security = { totp_enabled: false, activity: [] },
 	} = page.props;
 	const [profileData, setProfileData] = useState<ProfileData>({
 		firstName: user.first_name || '',
@@ -56,6 +72,9 @@ const CustomerProfile: React.FC = () => {
 	const [newPassword, setNewPassword] = useState('');
 	const [confirmPassword, setConfirmPassword] = useState('');
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [isDesktopProfile, setIsDesktopProfile] = useState(() =>
+		typeof window !== 'undefined' && window.innerWidth >= 1280
+	);
 
 	useEffect(() => {
 		if (!isEditingPersonal) {
@@ -71,6 +90,13 @@ const CustomerProfile: React.FC = () => {
 		setPhotoPreview(previewUrl);
 		return () => URL.revokeObjectURL(previewUrl);
 	}, [photoFile]);
+
+	useEffect(() => {
+		const updateProfileLayout = () => setIsDesktopProfile(window.innerWidth >= 1280);
+		window.addEventListener('resize', updateProfileLayout);
+
+		return () => window.removeEventListener('resize', updateProfileLayout);
+	}, []);
 
 	const updateProfileField = (field: keyof ProfileData, value: string) => {
 		setProfileData((prev) => ({ ...prev, [field]: value }));
@@ -338,6 +364,20 @@ const CustomerProfile: React.FC = () => {
 		`h-5 w-5 transition-all duration-300 ${isActive ? 'scale-110' : 'scale-100'}`;
 	const mobileNavLabelClasses = (isActive: boolean) =>
 		`transition-all duration-300 ${isActive ? 'font-semibold' : 'font-normal'}`;
+	const customerSecurityPanel = (
+		<EmployeeTotpSecurity
+			enabled={security.totp_enabled}
+			activity={security.activity}
+			showSessions={false}
+			routes={{
+				setup: route('customer.security.totp.setup'),
+				verify: route('customer.security.totp.verify'),
+				recovery: route('customer.security.totp.recovery.regenerate'),
+				disable: route('customer.security.totp.disable'),
+				activity: route('customer.security.activity'),
+			}}
+		/>
+	);
 
 	// Show flash messages
 	useEffect(() => {
@@ -360,6 +400,7 @@ const CustomerProfile: React.FC = () => {
 	}, [flash]);
 
 	return (
+		<CustomerFooterReveal>
 		<div className="min-h-screen bg-gray-50">
 			<Head title="Edit Profile" />
 			<Navigation />
@@ -392,7 +433,7 @@ const CustomerProfile: React.FC = () => {
 						</div>
 						<div className="mt-4 flex items-center gap-3.5 md:gap-4">
 							<div className="relative">
-								<div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/35 bg-white/12 text-lg font-semibold uppercase text-white md:h-16 md:w-16 md:text-xl">
+                                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full border border-white/35 bg-gray-950 dark:bg-white/12 text-lg font-semibold uppercase text-white md:h-16 md:w-16 md:text-xl">
 									{photoPreview ? (
 										<img src={photoPreview} alt="Profile" className="h-full w-full rounded-full object-cover" />
 									) : (
@@ -442,7 +483,7 @@ const CustomerProfile: React.FC = () => {
 
 					<div className="rounded-[28px] border border-[#dfe4ea] bg-white px-4 py-4 shadow-[0_14px_28px_-24px_rgba(15,23,42,0.6)] md:px-6 md:py-6">
 						<div className="mb-4 flex items-center justify-between">
-							<h2 className="text-[1.02rem] font-semibold text-[#16233b] md:text-[1.3rem]">My Repairs</h2>
+							<h2 className="text-[1.02rem] font-semibold text-[#16233b] md:text-[1.3rem]">Repairs</h2>
 							<a href="/repair-services" className="text-xs font-medium text-[#2e3f5c] hover:text-[#16233b] md:text-base">View History</a>
 						</div>
 						<div className="grid grid-cols-4 gap-2.5 md:gap-3">
@@ -499,13 +540,21 @@ const CustomerProfile: React.FC = () => {
 								</div>
 							</div>
 						)}
+						{!isDesktopProfile && <div className="mt-8">{customerSecurityPanel}</div>}
 					</div>
+
+					<IdentityVerificationPanel
+						identityVerification={identity_verification}
+						firstName={profileData.firstName}
+						lastName={profileData.lastName}
+					/>
 
 					<div className="rounded-[28px] border border-gray-200 bg-white px-4 py-4 shadow-sm">
 					<h2 className="mb-4 text-[1.02rem] font-semibold text-gray-900">Change Password</h2>
 					<form onSubmit={handlePasswordSubmit} className="space-y-3">
 						<input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" title="Current password" className="w-full rounded-2xl border border-gray-200 px-3 py-3 text-sm text-gray-900 focus:border-black focus:outline-none" />
 						<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" title="New password" className="w-full rounded-2xl border border-gray-200 px-3 py-3 text-sm text-gray-900 focus:border-black focus:outline-none" />
+						<PasswordRequirements password={newPassword} />
 						<input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" title="Confirm new password" className="w-full rounded-2xl border border-gray-200 px-3 py-3 text-sm text-gray-900 focus:border-black focus:outline-none" />
 						<button type="submit" className="inline-flex w-full items-center justify-center rounded-full bg-[#16233b] px-4 py-3 text-sm font-medium text-white" disabled={isSubmitting}>
 							{isSubmitting ? 'Updating...' : 'Update password'}
@@ -593,6 +642,14 @@ const CustomerProfile: React.FC = () => {
 						</div>
 					</div>
 
+					<div className="mt-8">
+						<IdentityVerificationPanel
+							identityVerification={identity_verification}
+							firstName={profileData.firstName}
+							lastName={profileData.lastName}
+						/>
+					</div>
+
 					<div className="mt-8 rounded-2xl border border-gray-200 bg-white px-6 py-6 lg:px-8">
 					<h3 className="text-base font-semibold text-gray-900">Change Password</h3>
 					<form onSubmit={handlePasswordSubmit} className="mt-6 grid grid-cols-1 gap-6 text-sm md:grid-cols-2">
@@ -603,6 +660,7 @@ const CustomerProfile: React.FC = () => {
 						<div>
 							<label className="text-gray-400">New password</label>
 							<input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" title="New password" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 focus:border-black focus:outline-none" />
+							<PasswordRequirements password={newPassword} />
 						</div>
 						<div>
 							<label className="text-gray-400">Confirm new password</label>
@@ -613,6 +671,7 @@ const CustomerProfile: React.FC = () => {
 						</div>
 					</form>
 					</div>
+					{isDesktopProfile && <div className="mt-8">{customerSecurityPanel}</div>}
 				</div>
 			</div>
 
@@ -653,6 +712,7 @@ const CustomerProfile: React.FC = () => {
 				</div>
 			</div>
 		</div>
+		</CustomerFooterReveal>
 	);
 };
 

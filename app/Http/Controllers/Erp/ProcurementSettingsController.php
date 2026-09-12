@@ -18,7 +18,13 @@ class ProcurementSettingsController extends Controller
         
         $settings = ProcurementSettings::getForShopOwner($shopOwnerId);
 
-        return response()->json($settings);
+        return response()->json($settings?->only([
+            'id',
+            'shop_owner_id',
+            'default_payment_terms',
+            'notification_emails',
+            'settings_json',
+        ]));
     }
 
     /**
@@ -29,8 +35,8 @@ class ProcurementSettingsController extends Controller
         $shopOwnerId = Auth::user()->shop_owner_id;
 
         $validatedData = $request->validate([
-            'auto_pr_approval_threshold' => 'nullable|numeric|min:0',
-            'require_finance_approval' => 'boolean',
+            'auto_pr_approval_threshold' => 'prohibited',
+            'require_finance_approval' => 'prohibited',
             'default_payment_terms' => 'nullable|string|max:255',
             'notification_emails' => 'nullable|array',
             'notification_emails.*' => 'email',

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useEffect, useState } from "react";
@@ -15,7 +16,6 @@ type PendingPriceRequest = {
 };
 
 type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
 
 const ArrowUpIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -79,14 +79,12 @@ interface ShoeItem {
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: ChangeType;
   icon: ComponentType<{ className?: string }>;
   color: MetricColor;
   description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
   const getColorClasses = () => {
     switch (color) {
       case "success":
@@ -104,22 +102,10 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div
-              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-                changeType === "increase"
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              }`}
-            >
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change!)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -339,10 +325,7 @@ export default function ERPShoePricing() {
     <AppLayoutERP>
       <Head title="Shoe Pricing - Solespace" />
       <div className="p-6 space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold mb-1">Shoe Pricing</h1>
-          <p className="text-gray-600 dark:text-gray-400">Manager controls for shoe pricing and margins.</p>
-        </div>
+        <h1 className="sr-only">Shoe Pricing</h1>
 
         <div className="mb-12 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard title="Active Stocks" value={activeCount} icon={TagIcon} color="info" description="Live pricing" />
@@ -368,24 +351,24 @@ export default function ERPShoePricing() {
                   setSearchQuery(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-gray-950 dark:focus:border-gray-300"
               />
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-gray-950 dark:focus:border-gray-300"
               >
                 <option value="All">All Status</option>
                 <option value="Active">Active</option>
                 <option value="Under Review">Under Review</option>
                 <option value="Awaiting Owner">Awaiting Owner</option>
                 <option value="Rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -452,7 +435,7 @@ export default function ERPShoePricing() {
                       <div className="flex items-center gap-2">
                         <button 
                           onClick={() => handleViewClick(item)} 
-                          className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                          className="p-2 rounded-lg text-gray-700 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                           title="View details"
                         >
                           <EyeIcon className="w-5 h-5" />
@@ -462,7 +445,7 @@ export default function ERPShoePricing() {
                           className={`p-2 rounded-lg transition-colors ${
                             item.pendingRequest && item.status !== 'Rejected'
                               ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
-                              : 'text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                              : 'text-gray-700 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-gray-800'
                           }`}
                           title={item.pendingRequest && item.status !== 'Rejected' ? 'Pending request exists' : 'Edit price'}
                         >
@@ -492,7 +475,7 @@ export default function ERPShoePricing() {
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
                     if (page === 1 || page === totalPages || (page >= currentPage - 1 && page <= currentPage + 1)) {
                       return (
-                        <button key={page} onClick={() => setCurrentPage(page)} className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${currentPage === page ? "bg-blue-600 text-white" : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"}`}>{page}</button>
+                        <button key={page} onClick={() => setCurrentPage(page)} className={`min-w-[40px] h-10 px-3 rounded-lg font-medium transition-colors ${currentPage === page ? "bg-gray-950 text-white dark:bg-gray-950 dark:text-white" : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"}`}>{page}</button>
                       );
                     } else if (page === currentPage - 2 || page === currentPage + 2) {
                       return (<span key={page} className="px-2 text-gray-500 dark:text-gray-400">...</span>);
@@ -510,7 +493,7 @@ export default function ERPShoePricing() {
 
           {/* View Modal */}
           {viewModalOpen && selectedShoe && (
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
               <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden">
                 <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                   <div>
@@ -669,7 +652,7 @@ export default function ERPShoePricing() {
             const isIncrease = difference > 0;
             
             return (
-              <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+              <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
                 <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden">
                   <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                     <div>
@@ -705,7 +688,7 @@ export default function ERPShoePricing() {
                             const digitsOnly = e.target.value.replace(/\D/g, "");
                             setEditFormData({ ...editFormData, price: digitsOnly });
                           }} 
-                          className="w-full pl-10 pr-4 py-3 text-lg rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full pl-10 pr-4 py-3 text-lg rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white font-semibold focus:outline-none focus:ring-2 focus:ring-gray-950"
                           placeholder="0"
                         />
                       </div>
@@ -746,14 +729,14 @@ export default function ERPShoePricing() {
                         onChange={(e) => setEditFormData({ ...editFormData, reason: e.target.value })} 
                         rows={4} 
                         placeholder="Explain why this price change is needed (e.g., market adjustment, competitor pricing, seasonal discount)..." 
-                        className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                        className="w-full px-4 py-3 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-950 resize-none"
                       />
                       <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">This reason will be reviewed by the finance team</p>
                     </div>
                   </div>
                   <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
                     <button onClick={() => setEditModalOpen(false)} className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors">Cancel</button>
-                    <button onClick={handleSaveEdit} className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">Submit Request</button>
+                    <button onClick={handleSaveEdit} className="flex-1 px-4 py-2 bg-gray-950 hover:bg-black dark:bg-gray-950 dark:hover:bg-black text-white rounded-lg font-medium transition-colors">Submit Request</button>
                   </div>
                 </div>
               </div>
@@ -765,4 +748,3 @@ export default function ERPShoePricing() {
     </AppLayoutERP>
   );
 }
-

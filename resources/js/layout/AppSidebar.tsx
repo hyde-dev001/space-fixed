@@ -3,12 +3,8 @@ import { Link, usePage } from "@inertiajs/react";
 
 // Assume these icons are imported from an icon library
 import {
-  CalenderIcon,
   CheckLineIcon,
-  GridIcon,
   HorizontaLDots,
-  UserIcon,
-  UserCircleIcon,
   ShootingStarIcon,
 } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
@@ -16,32 +12,56 @@ import { useSidebar } from "../context/SidebarContext";
 type NavItem = {
   name: string;
   icon: React.ReactNode;
-  route?: string; // Changed from path to route
-  subItems?: { name: string; route: string; icon?: React.ReactNode; pro?: boolean; new?: boolean; superAdminOnly?: boolean }[];
-  superAdminOnly?: boolean; // Flag for super admin only items
+  route?: string;
+  capability?: string;
+  subItems?: {
+    name: string;
+    route: string;
+    icon?: React.ReactNode;
+    pro?: boolean;
+    new?: boolean;
+    capability?: string;
+  }[];
+};
+
+const routeFallbacks: Record<string, string> = {
+  'admin.system-monitoring': '/admin/system-monitoring',
+  'admin.audit': '/admin/audit',
+  'admin.administrators.index': '/admin/administrators',
+  'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
+  'admin.registrations.index': '/admin/registrations',
+  'admin.document-renewals.index': '/admin/document-renewals',
+  'admin.shop-reports': '/admin/shop-reports',
+  'admin.suspension-appeals': '/admin/appeals',
+  'admin.shops.index': '/admin/shops',
+  'admin.subscriptions.index': '/admin/subscriptions',
+  'admin.users.index': '/admin/users',
+  landing: '/',
 };
 
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu } = useSidebar();
   const { url, props } = usePage();
-  const auth = (props as any).auth;
-  // Check if user is super admin (from super_admin guard) or has super_admin role
-  const isSuperAdmin = auth?.superAdmin?.role === 'super_admin' || auth?.user?.role === 'super_admin';
+  const auth = (props as { auth?: { super_admin?: { capabilities?: unknown[] } } }).auth;
+  const capabilities = new Set(
+    Array.isArray(auth?.super_admin?.capabilities)
+      ? auth.super_admin.capabilities.filter((capability): capability is string => typeof capability === 'string')
+      : [],
+  );
 
-  const routeFallbacks: Record<string, string> = {
-    'admin.suspension-appeals': '/admin/appeals',
-    landing: '/',
-  };
+  const hasCapability = useCallback(
+    (capability?: string) => capability === undefined || capabilities.has(capability),
+    [capabilities],
+  );
 
-  const resolveRouteHref = useCallback((routeName: string) => {
+  const resolveRouteHref = useCallback((routeName: string): string | null => {
     try {
       return route(routeName);
     } catch {
-      return routeFallbacks[routeName] ?? '#';
+      return routeFallbacks[routeName] ?? null;
     }
   }, []);
 
-  // Filter nav items based on role
   const getNavItems = (): NavItem[] => {
     const items: NavItem[] = [
       {
@@ -59,7 +79,8 @@ const AppSidebar: React.FC = () => {
           </svg>
         ),
         name: "Dashboard",
-        route: "superAdmin.system-monitoring-dashboard",
+        route: "admin.system-monitoring",
+        capability: "view_monitoring",
       },
       {
         icon: (
@@ -72,12 +93,14 @@ const AppSidebar: React.FC = () => {
         ),
         name: "Account Management",
         subItems: [
-          // Always show Admin Management for super admin
-          { name: "Admin Management", route: "admin.admin-management", pro: false },
-          { name: "User Management", route: "superAdmin.super-admin-user-management", pro: false },
-          { name: "Shop Management", route: "superAdmin.shop-owner-registration-view", pro: false },
-          { name: "Shop Reports", route: "admin.shop-reports", pro: false },
-          { name: "Suspension Appeals", route: "admin.suspension-appeals", pro: false },
+          { name: "Admin Management", route: "admin.administrators.index", capability: "manage_administrators", pro: false },
+          { name: "User Management", route: "admin.users.index", capability: "intervene_accounts", pro: false },
+          { name: "Shop Management", route: "admin.registrations.index", capability: "review_registrations", pro: false },
+          { name: "Document Renewals", route: "admin.document-renewals.index", capability: "review_registrations", pro: false },
+          { name: "Business Upgrade Requests", route: "admin.business-upgrade-requests.index", capability: "review_registrations", pro: false },
+          { name: "Shop Reports", route: "admin.shop-reports", capability: "moderate_reports", pro: false },
+          { name: "Suspension Appeals", route: "admin.suspension-appeals", capability: "view_appeals", pro: false },
+          { name: "Audit History", route: "admin.audit", capability: "view_privileged_audit", pro: false },
         ],
       },
       {
@@ -90,7 +113,8 @@ const AppSidebar: React.FC = () => {
           </svg>
         ),
         name: "Registered Shops",
-        route: "admin.registered-shops",
+        route: "admin.shops.index",
+        capability: "intervene_accounts",
       },
       {
         icon: (
@@ -102,22 +126,29 @@ const AppSidebar: React.FC = () => {
           </svg>
         ),
         name: "Subscription Management",
-        route: "admin.subscription-management",
+        route: "admin.subscriptions.index",
+        capability: "manage_plans",
       },
-      {
-        icon: (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-        ),
-        name: "Notification & Communication Tools",
-        route: "superAdmin.notification-communication-tools",
-      },
-      
     ];
 
-    // Return all items - the backend middleware will protect restricted routes
-    return items;
+    return items.reduce<NavItem[]>((visibleItems, item) => {
+      if (!hasCapability(item.capability)) {
+        return visibleItems;
+      }
+
+      if (item.subItems) {
+        const subItems = item.subItems.filter((subItem) => hasCapability(subItem.capability));
+        if (subItems.length === 0) {
+          return visibleItems;
+        }
+
+        visibleItems.push({ ...item, subItems });
+        return visibleItems;
+      }
+
+      visibleItems.push(item);
+      return visibleItems;
+    }, []);
   };
 
   const navItems = getNavItems();
@@ -143,13 +174,14 @@ const AppSidebar: React.FC = () => {
           // ignore and fallback to URL comparison
         }
 
-        const routeUrl = route(routeName);
+        const routeUrl = resolveRouteHref(routeName);
+        if (!routeUrl) return false;
         return url === routeUrl || url.startsWith(routeUrl);
       } catch {
         return false;
       }
     },
-    [url]
+    [resolveRouteHref, url]
   );
 
   const isMenuActive = useCallback(
@@ -209,7 +241,7 @@ const AppSidebar: React.FC = () => {
     return (
       <ul className="flex flex-col gap-4">
         {items.map((nav, index) => {
-          const subItems = nav.subItems?.filter((s) => s.name !== "Create Admin") || nav.subItems;
+          const subItems = nav.subItems?.filter((s) => s.name !== "Create Admin" && hasCapability(s.capability));
           if (nav.subItems && (!subItems || subItems.length === 0)) {
             return null;
           }
@@ -261,9 +293,9 @@ const AppSidebar: React.FC = () => {
                   )}
                 </button>
               ) : (
-                nav.route && (
+                nav.route && resolveRouteHref(nav.route) && (
                   <Link
-                    href={resolveRouteHref(nav.route)}
+                    href={resolveRouteHref(nav.route) as string}
                     className={`menu-item group ${
                       isActive(nav.route) ? "menu-item-active" : "menu-item-inactive"
                     }`}
@@ -298,10 +330,14 @@ const AppSidebar: React.FC = () => {
                   }}
                 >
                   <ul className="mt-2 space-y-1 ml-9">
-                    {subItems.map((subItem) => (
+                    {subItems.map((subItem) => {
+                      const href = resolveRouteHref(subItem.route);
+                      if (!href) return null;
+
+                      return (
                       <li key={subItem.name}>
                         <Link
-                          href={resolveRouteHref(subItem.route)}
+                          href={href}
                           className={`menu-dropdown-item ${
                             isActive(subItem.route)
                               ? "menu-dropdown-item-active"
@@ -343,7 +379,8 @@ const AppSidebar: React.FC = () => {
                           </span>
                         </Link>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 </div>
               )}
@@ -356,7 +393,7 @@ const AppSidebar: React.FC = () => {
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
+      className={`erp-sidebar fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
         ${
           isExpanded || isMobileOpen
             ? "w-[290px]"
@@ -374,16 +411,16 @@ const AppSidebar: React.FC = () => {
           !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
         }`}
       >
-        <Link href={resolveRouteHref("landing")} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
+        <Link href={resolveRouteHref("landing") ?? "/"} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
           {isExpanded || isHovered || isMobileOpen ? (
             <>
-              <ShootingStarIcon className="w-6 h-6 text-yellow-500 animate-pulse" />
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              <ShootingStarIcon className="h-6 w-6 text-gray-900 dark:text-gray-100" />
+              <span className="text-xl font-bold text-gray-900 dark:text-gray-100">
                 SoleSpace
               </span>
             </>
           ) : (
-            <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <span className="text-lg font-bold text-gray-900 dark:text-gray-100">
               SS
             </span>
           )}

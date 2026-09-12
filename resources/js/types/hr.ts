@@ -9,7 +9,9 @@ export interface Employee {
   position: string;
   department: string;
   hireDate: string;
-  status: 'active' | 'inactive' | 'on-leave' | 'suspended';
+  status: 'active' | 'inactive' | 'suspended' | 'terminated';
+  onLeave?: boolean;
+  probation?: boolean;
   salary: number;
   profileImage?: string;
   address: string;

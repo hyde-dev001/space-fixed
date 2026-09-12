@@ -48,7 +48,9 @@ class ApprovalService
      */
     public function getPendingApprovalsForUser(User $user): \Illuminate\Database\Eloquent\Collection
     {
+        $shopOwnerId = (int) ($user->shop_owner_id ?? $user->id);
         $approvals = Approval::pending()
+            ->where('shop_owner_id', $shopOwnerId)
             ->where('status', ApprovalStatus::PENDING);
 
         // Filter by user's roles and permissions
@@ -60,7 +62,7 @@ class ApprovalService
     /**
      * Approve an approval at current level and move to next
      */
-    public function approve(Approval $approval, User $user, ?string $comments = null): array
+    public function approve(Approval $approval, object $user, ?string $comments = null): array
     {
         if (!$approval->canApprove($user)) {
             return [
@@ -113,7 +115,7 @@ class ApprovalService
     /**
      * Reject an approval at current level
      */
-    public function reject(Approval $approval, User $user, string $comments = ''): array
+    public function reject(Approval $approval, object $user, string $comments = ''): array
     {
         if (!$approval->canApprove($user)) {
             return [

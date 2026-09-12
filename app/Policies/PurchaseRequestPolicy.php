@@ -33,7 +33,7 @@ class PurchaseRequestPolicy
             'access-approval-workflow',
             'access-purchase-request-approval',
             'view-procurement',
-            'procurement.view_purchase_requests',
+            'procurement.view',
         ]);
     }
 
@@ -49,7 +49,7 @@ class PurchaseRequestPolicy
             'access-approval-workflow',
             'access-purchase-request-approval',
             'view-procurement',
-            'procurement.view_purchase_requests',
+            'procurement.view',
         ])
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id;
     }
@@ -59,11 +59,7 @@ class PurchaseRequestPolicy
      */
     public function create(User $user): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-requests',
-            'access-procurement-dashboard',
-            'procurement.create_purchase_requests',
-        ]);
+        return $user->can('procurement.create_purchase_requests');
     }
 
     /**
@@ -71,11 +67,7 @@ class PurchaseRequestPolicy
      */
     public function update(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-requests',
-            'access-procurement-dashboard',
-            'procurement.edit_purchase_requests',
-        ])
+        return $user->can('procurement.create_purchase_requests')
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id
             && $purchaseRequest->status === 'draft';
     }
@@ -85,11 +77,7 @@ class PurchaseRequestPolicy
      */
     public function delete(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-requests',
-            'access-procurement-dashboard',
-            'procurement.delete_purchase_requests',
-        ])
+        return $user->can('procurement.create_purchase_requests')
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id
             && $purchaseRequest->status === 'draft';
     }
@@ -99,11 +87,7 @@ class PurchaseRequestPolicy
      */
     public function submitToFinance(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-requests',
-            'access-procurement-dashboard',
-            'procurement.create_purchase_requests',
-        ])
+        return $user->can('procurement.submit_purchase_requests')
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id
             && $purchaseRequest->status === 'draft';
     }
@@ -113,16 +97,10 @@ class PurchaseRequestPolicy
      */
     public function approve(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-requests',
-            'access-procurement-dashboard',
-            'access-finance-dashboard',
-            'access-approval-workflow',
-            'access-purchase-request-approval',
-            'procurement.approve_purchase_requests',
-        ])
+        return $user->can('procurement.review_purchase_requests')
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id
-            && in_array($purchaseRequest->status, ['pending_finance', 'pending_finance_final']);
+            && $purchaseRequest->requested_by !== $user->id
+            && in_array($purchaseRequest->status, ['pending_finance', 'pending_finance_final'], true);
     }
 
     /**
@@ -130,16 +108,10 @@ class PurchaseRequestPolicy
      */
     public function reject(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-requests',
-            'access-procurement-dashboard',
-            'access-finance-dashboard',
-            'access-approval-workflow',
-            'access-purchase-request-approval',
-            'procurement.reject_purchase_requests',
-        ])
+        return $user->can('procurement.review_purchase_requests')
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id
-            && in_array($purchaseRequest->status, ['pending_finance', 'pending_shop_owner', 'pending_finance_final']);
+            && $purchaseRequest->requested_by !== $user->id
+            && in_array($purchaseRequest->status, ['pending_finance', 'pending_finance_final'], true);
     }
 
     /**
@@ -147,11 +119,7 @@ class PurchaseRequestPolicy
      */
     public function restore(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-requests',
-            'access-procurement-dashboard',
-            'procurement.delete_purchase_requests',
-        ])
+        return $user->can('procurement.create_purchase_requests')
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id;
     }
 
@@ -160,11 +128,7 @@ class PurchaseRequestPolicy
      */
     public function forceDelete(User $user, PurchaseRequest $purchaseRequest): bool
     {
-        return $this->canWithFallback($user, [
-            'access-purchase-requests',
-            'access-procurement-dashboard',
-            'procurement.delete_purchase_requests',
-        ])
+        return $user->can('procurement.create_purchase_requests')
             && $user->shop_owner_id === $purchaseRequest->shop_owner_id;
     }
 }

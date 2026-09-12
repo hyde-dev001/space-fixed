@@ -1,16 +1,20 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import IconButton from "../../../components/ui/icon-button/IconButton";
 import { productInventoryAPI } from "@/services/inventoryAPI";
 import type { InventoryItem as ApiInventoryItem } from "@/types/inventory";
+import { erpUrl } from "@/utils/erpCapabilities";
 
 type StockStatus = "In stock" | "Low" | "Out";
 type MetricColor = "success" | "warning" | "info";
 
 interface ProductInventoryItem {
 	id: number;
+	sourceKey: string;
 	productName: string;
 	skuCode: string;
 	category: string;
@@ -22,16 +26,20 @@ interface ProductInventoryItem {
 	lastUpdated: string;
 }
 
+const toStorageUrl = (path?: string | null) =>
+	path ? `/storage/${path.replace(/^\/?(?:storage|public)\//i, "")}` : "";
+
 const mapApiItem = (item: ApiInventoryItem): ProductInventoryItem => ({
 	id: item.id,
+	sourceKey: `${item.source_type ?? "inventory"}-${item.source_id ?? item.id}`,
 	productName: item.name,
 	skuCode: item.sku,
 	category: item.category,
 	brand: item.brand ?? "",
 	sizes: item.sizes?.map((s) => s.size) ?? [],
 	productImages: [
-		...(item.images?.map((i) => `/storage/${i.image_path}`).filter(Boolean) ?? []),
-		...(item.main_image && !item.images?.length ? [`/storage/${item.main_image}`] : []),
+		...(item.images?.map((i) => toStorageUrl(i.image_path)).filter(Boolean) ?? []),
+		...(item.main_image && !item.images?.length ? [toStorageUrl(item.main_image)] : []),
 	],
 	availableQuantity: item.available_quantity,
 	reservedQuantity: item.reserved_quantity,
@@ -110,7 +118,8 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 };
 
 export default function ProductInventory() {
-	const { initialData } = usePage().props as any;
+	const { initialData, auth, erpCapabilities } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const [inventory, setInventory] = useState<ProductInventoryItem[]>(
 		() => (initialData?.data ?? []).map(mapApiItem)
 	);
@@ -127,14 +136,17 @@ export default function ProductInventory() {
 	const fetchInventory = useCallback(async () => {
 		setLoading(true);
 		try {
-			const res = await productInventoryAPI.getAll({ per_page: 200 });
+			const productsUrl = erpUrl(erpCapabilities, "GET:inventory.products.index");
+			if (ownerMode && !productsUrl) return;
+
+			const res = await productInventoryAPI.getAll({ per_page: 200 }, productsUrl ?? undefined);
 			setInventory((res.data ?? []).map(mapApiItem));
 		} catch (err) {
 			console.error("Failed to load inventory", err);
 		} finally {
 			setLoading(false);
 		}
-	}, []);
+	}, [erpCapabilities, ownerMode]);
 
 	useEffect(() => {
 		void fetchInventory();
@@ -212,7 +224,7 @@ export default function ProductInventory() {
 	};
 
 	const saveQuantityChanges = async () => {
-		if (!selectedProduct) return;
+		if (ownerMode || !selectedProduct) return;
 		const product = selectedProduct;
 		const parsed = Number(editedQuantity);
 
@@ -272,15 +284,7 @@ export default function ProductInventory() {
 			<Head title="Product Inventory - Solespace" />
 
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1">Product Inventory</h1>
-						<p className="text-gray-600 dark:text-gray-400">Table view of all stocks across products and variants</p>
-					</div>
-					<div className="flex flex-wrap items-center justify-end gap-3">
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">Inventory Tracking</span>
-					</div>
-				</div>
+				<h1 className="sr-only">Product Inventory</h1>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 					<MetricCard title="Total Products" value={totalProducts} description="Products listed in inventory" icon={BoxIcon} color="info" />
@@ -306,7 +310,7 @@ export default function ProductInventory() {
 							className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 						/>
 
-						<select
+						<MonochromeSelect
 							value={categoryFilter}
 							title="Filter by category"
 							onChange={(event) => {
@@ -320,9 +324,9 @@ export default function ProductInventory() {
 									Category: {category}
 								</option>
 							))}
-						</select>
+						</MonochromeSelect>
 
-						<select
+						<MonochromeSelect
 							value={brandFilter}
 							title="Filter by brand"
 							onChange={(event) => {
@@ -336,9 +340,9 @@ export default function ProductInventory() {
 									Brand: {brand}
 								</option>
 							))}
-						</select>
+						</MonochromeSelect>
 
-						<select
+						<MonochromeSelect
 							value={stockSort}
 							title="Sort by stock level"
 							onChange={(event) => {
@@ -349,7 +353,7 @@ export default function ProductInventory() {
 						>
 							<option value="low-to-high">Sort stock: Low to High</option>
 							<option value="high-to-low">Sort stock: High to Low</option>
-						</select>
+						</MonochromeSelect>
 					</div>
 
 					<div className="overflow-x-auto">
@@ -380,7 +384,7 @@ export default function ProductInventory() {
 										const status = getStatus(item.availableQuantity);
 
 										return (
-											<tr key={item.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
+											<tr key={item.sourceKey} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
 												<td className="px-4 py-3 text-sm font-medium text-gray-900 dark:text-white">{item.productName}</td>
 												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{item.sizes.join(", ")}</td>
 												<td className="px-4 py-3 text-sm font-semibold text-gray-900 dark:text-white text-center">{item.availableQuantity}</td>
@@ -391,18 +395,17 @@ export default function ProductInventory() {
 												</td>
 												<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{item.lastUpdated}</td>
 												<td className="px-4 py-3 text-center">
-													<button
-														type="button"
+													<IconButton
+														variant="neutral"
 														onClick={() => openDetailsModal(item)}
-														className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
 														title="View details"
-														aria-label={`View details for ${item.productName}`}
+														label={`View details for ${item.productName}`}
 													>
-														<svg className="h-5 w-5 text-blue-600 dark:text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+														<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
 															<path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.27 2.943 9.542 7-1.272 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
 															<circle cx="12" cy="12" r="3" />
 														</svg>
-													</button>
+													</IconButton>
 												</td>
 											</tr>
 										);
@@ -453,7 +456,7 @@ export default function ProductInventory() {
 
 				{selectedProduct && (
 					<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-						<button type="button" aria-label="Close product details" className="absolute inset-0 bg-black/50" onClick={closeDetailsModal} />
+						<button type="button" aria-label="Close product details" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={closeDetailsModal} />
 						<div className="relative w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 							<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
 								<div>
@@ -513,7 +516,7 @@ export default function ProductInventory() {
 											<p className="text-sm text-gray-500">Last Updated</p>
 											<p className="text-sm font-medium text-gray-900 dark:text-white">{selectedProduct.lastUpdated}</p>
 										</div>
-										<div>
+										{!ownerMode && <div>
 											<label htmlFor="edit-available-quantity" className="block text-sm text-gray-500 mb-2">Edit Available Quantity</label>
 											<div className="flex items-center gap-2">
 												<button
@@ -539,7 +542,7 @@ export default function ProductInventory() {
 													+
 												</button>
 											</div>
-										</div>
+										</div>}
 									</div>
 
 									<div className="flex items-center justify-end gap-3">
@@ -550,13 +553,13 @@ export default function ProductInventory() {
 								>
 									Close
 								</button>
-										<button
+										{!ownerMode && <button
 											type="button"
 											onClick={saveQuantityChanges}
 											className="rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700"
 										>
 											Save Quantity
-										</button>
+										</button>}
 									</div>
 								</div>
 							</div>

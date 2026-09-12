@@ -3,18 +3,720 @@ layer(base);
 
 @import "tailwindcss";
 
+/* Super Admin light mode uses white page surfaces; keep this scoped away from the user side. */
+html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
+  background-color: #ffffff !important;
+}
+
 /* Flatpickr CSS */
 @import 'flatpickr/dist/flatpickr.min.css';
 
-/* Hide viewport scrollbar UI on UserSide pages while keeping scroll behavior */
-.userside-hide-scrollbar {
-  -ms-overflow-style: none;
+/* Shared user-side promo ticker. The duplicated message set loops cleanly at -50%. */
+.landing-marquee {
+  animation: landing-marquee 26s linear infinite;
+  will-change: transform;
 }
 
-.userside-hide-scrollbar::-webkit-scrollbar {
+.landing-marquee:hover,
+.landing-marquee:focus-within {
+  animation-play-state: paused;
+}
+
+@keyframes landing-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-marquee {
+    animation: none;
+  }
+}
+
+/* Shared customer-page entrance motion. Pages opt in with data-scroll-reveal. */
+.scroll-reveal {
+  opacity: 0;
+  transform: translate3d(0, 40px, 0);
+  transition: opacity 700ms ease, transform 800ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.scroll-reveal.is-visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0);
+}
+
+.scroll-reveal--side {
+  transform: translate3d(32px, 0, 0);
+}
+
+.scroll-reveal--scale {
+  transform: scale(1.04);
+}
+
+.scroll-reveal--scale.is-visible {
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal,
+  .scroll-reveal.is-visible {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+}
+
+/* Shared customer footer for non-landing pages. The landing page keeps its
+   fixed curtain footer because it needs a different stacking context. */
+.customer-footer {
+  overflow: hidden;
+  background: #fff;
+  color: #000;
+  opacity: 0;
+  transform: translateY(2rem);
+  transition: opacity 700ms ease, transform 900ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.customer-footer--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.customer-footer-page {
+  position: relative;
+  min-height: 100%;
+  overflow-x: hidden;
+  --customer-footer-height: min(30rem, 100svh);
+}
+
+.customer-footer-page__curtain {
+  position: relative;
+  z-index: 10;
+  background: #fff;
+}
+
+.customer-footer-page__spacer {
+  position: relative;
+  z-index: 0;
+  height: var(--customer-footer-height);
+  pointer-events: none;
+}
+
+.customer-footer--fixed {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  z-index: 0;
+  width: 100%;
+  max-height: 100svh;
+  min-height: min(30rem, 100svh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: auto;
+  pointer-events: none;
+}
+
+.customer-footer--fixed.customer-footer--interactive {
+  pointer-events: auto;
+}
+
+@media (min-width: 640px) {
+  .customer-footer-page {
+    --customer-footer-height: min(34rem, 100svh);
+  }
+
+  .customer-footer--fixed {
+    min-height: min(34rem, 100svh);
+  }
+}
+
+.customer-footer__content {
+  position: relative;
+  z-index: 1;
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 2rem 1rem 0;
+}
+
+.customer-footer__desktop-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2rem;
+}
+
+.customer-footer__brand,
+.customer-footer__desktop-grid h2,
+.customer-footer__desktop-grid ul,
+.customer-footer__meta,
+.customer-footer__mobile-links summary {
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+.customer-footer__brand {
+  display: inline-block;
+  font-size: .875rem;
+  font-weight: 700;
+}
+
+.customer-footer__desktop-grid h2 {
+  margin: 0 0 1rem;
+  font-size: .75rem;
+  font-weight: 600;
+}
+
+.customer-footer__desktop-grid ul {
+  display: grid;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: .75rem;
+  font-weight: 500;
+}
+
+.customer-footer__desktop-grid a,
+.customer-footer__mobile-links a {
+  display: inline-block;
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.customer-footer__desktop-grid a:hover,
+.customer-footer__desktop-grid a:focus-visible,
+.customer-footer__mobile-links a:hover,
+.customer-footer__mobile-links a:focus-visible {
+  opacity: .55;
+  transform: translateX(.2rem);
+}
+
+.customer-footer__meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 3rem;
+  padding: 1.25rem 0;
+  border-top: 1px solid rgb(0 0 0 / 15%);
+  font-size: .6875rem;
+  font-weight: 500;
+}
+
+.customer-footer__wordmark {
+  width: max-content;
+  min-width: 100%;
+  padding-top: 2.2rem;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: clamp(7rem, 25vw, 26rem);
+  font-weight: 700;
+  line-height: .68;
+  letter-spacing: -.105em;
+}
+
+.customer-footer__mobile-links {
+  display: none;
+}
+
+@media (max-width: 1023px) {
+  .customer-footer {
+    padding-bottom: 5rem;
+  }
+
+  .customer-footer__desktop-grid {
+    display: none;
+  }
+
+  .customer-footer__mobile-links {
+    display: block;
+  }
+
+  .customer-footer__mobile-links .customer-footer__brand {
+    margin-bottom: 1rem;
+  }
+
+  .customer-footer__mobile-links details {
+    border-top: 1px solid rgb(0 0 0 / 15%);
+  }
+
+  .customer-footer__mobile-links summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 0;
+    cursor: pointer;
+    font-size: .75rem;
+    font-weight: 600;
+    list-style: none;
+  }
+
+  .customer-footer__mobile-links summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .customer-footer__mobile-links details > div {
+    display: grid;
+    gap: .65rem;
+    padding: 0 0 1rem;
+    font-size: .75rem;
+  }
+
+  .customer-footer__meta {
+    grid-template-columns: 1fr;
+    gap: .65rem;
+    margin-top: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .customer-footer,
+  .customer-footer__desktop-grid a,
+  .customer-footer__mobile-links a {
+    transition: none;
+  }
+}
+
+/* Shared metrics-card treatment. EcommerceMetrics is the canonical source;
+   these selectors keep legacy, page-local metric cards visually consistent. */
+html:not(.dark) #app .metrics-card,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] {
+  border-color: #e2e8f0 !important;
+  border-radius: 1rem !important;
+  box-shadow: none !important;
+  transition: border-color 180ms ease, box-shadow 180ms ease !important;
+}
+
+html:not(.dark) #app .metrics-card:hover,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"]:hover,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]:hover {
+  border-color: #cbd5e1 !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06) !important;
+  transform: none !important;
+}
+
+html:not(.dark) #app .metrics-card > div:first-child,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > div:first-child,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > div:first-child {
+  background-image: none !important;
+}
+
+html:not(.dark) #app .metrics-card [class*="bg-gradient-to-br"],
+html:not(.dark) #app .metrics-card [class*="bg-linear-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-gradient-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] [class*="bg-linear-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-gradient-to-br"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] [class*="bg-linear-to-br"] {
+  background-image: none !important;
+  background-color: #f1f5f9 !important;
+  box-shadow: none !important;
+  color: #1e293b !important;
+  transform: none !important;
+}
+
+/* Legacy cards set text-white directly on the SVG, so the container color
+   alone cannot override it. Keep the icon itself dark on the light tile. */
+html:not(.dark) #app .metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
+  color: #1e293b !important;
+}
+
+/* Match legacy primary metric icon tiles to the dashboard dimensions. */
+html:not(.dark) #app .metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]),
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]),
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]) {
+  width: 3rem !important;
+  height: 3rem !important;
+  border-radius: 0.75rem !important;
+}
+
+/* Keep the main metric icon outlines as light as the dashboard icons. */
+html:not(.dark) #app .metrics-card > div:first-child > svg,
+html:not(.dark) #app .metrics-card :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg,
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]) > svg {
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  stroke-width: 1.5 !important;
+}
+
+html:not(.dark) #app .metrics-card > [class*="absolute"][class*="inset-0"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"] > [class*="absolute"][class*="inset-0"],
+html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"] > [class*="absolute"][class*="inset-0"] {
+  display: none !important;
+}
+
+.dark .metrics-card [class*="bg-gradient-to-br"],
+.dark .metrics-card [class*="bg-linear-to-br"],
+.dark [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"] [class*="bg-gradient-to-br"],
+.dark [class~="group"][class~="relative"][class~="overflow-hidden"][class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"] [class*="bg-linear-to-br"] {
+  background-color: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+/* All ERP role pages use the same dashboard metric surface, including older
+   page-local cards that do not yet carry the metrics-card marker. Keep this
+   selector inside .erp-theme so the customer/user side is unaffected. */
+.dark #app .erp-theme :is(
+  .metrics-card,
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]
+) {
+  background-color: #111827 !important;
+  border-color: #1f2937 !important;
+  box-shadow: none !important;
+}
+
+.dark #app .erp-theme :is(
+  .metrics-card,
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-5"],
+  [class~="rounded-2xl"][class~="border-gray-200"][class~="bg-white"][class~="p-6"]
+) :is([class*="bg-gradient-to-br"], [class*="bg-linear-to-br"]):not([class*="absolute"]) {
+  background-image: none !important;
+  background-color: #1f2937 !important;
+  color: #e5e7eb !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Cashier POS predates the shared ERP dark tokens and uses light-only slate
+   utilities throughout both modes. Keep the compatibility palette scoped to
+   this page so other ERP surfaces keep their existing design. */
+@media screen {
+  .dark #app .erp-theme .cashier-pos-page {
+    color: #f8fafc;
+    color-scheme: dark;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-white"] {
+    background-color: #111827 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-50"] {
+    background-color: #172033 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-100"] {
+    background-color: #1f2a3d !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-200"] {
+    background-color: #293852 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-300"],
+  .dark #app .erp-theme .cashier-pos-page [class~="disabled:bg-slate-300"]:disabled {
+    background-color: #475569 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-800"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-900"] {
+    background-color: #e2e8f0 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-800"][class~="text-white"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-slate-900"][class~="text-white"] {
+    color: #0f172a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-blue-50"],
+  .dark #app .erp-theme .cashier-pos-page [class*="bg-blue-50/"] {
+    background-color: #172c47 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-blue-100"] {
+    background-color: #1e3a5f !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-emerald-50"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-emerald-100"] {
+    background-color: #123b2b !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-red-50"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-red-100"] {
+    background-color: #451a1a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-amber-50"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-amber-100"] {
+    background-color: #3b2a12 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-indigo-50"] {
+    background-color: #25204a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-violet-50"],
+  .dark #app .erp-theme .cashier-pos-page [class~="bg-violet-100"] {
+    background-color: #2c1e48 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-950"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-900"] {
+    color: #f8fafc !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-800"] {
+    color: #e2e8f0 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-700"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-600"] {
+    color: #cbd5e1 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-slate-500"] {
+    color: #94a3b8 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-blue-600"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-blue-700"] {
+    color: #93c5fd !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-emerald-700"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-green-700"] {
+    color: #86efac !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-amber-600"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-amber-700"] {
+    color: #fcd34d !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-red-500"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-red-600"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-red-700"] {
+    color: #fca5a5 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="text-indigo-700"],
+  .dark #app .erp-theme .cashier-pos-page [class~="text-violet-700"] {
+    color: #c4b5fd !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-slate-200"] {
+    border-color: #334155 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-slate-300"] {
+    border-color: #475569 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-slate-400"],
+  .dark #app .erp-theme .cashier-pos-page [class~="border-slate-900"] {
+    border-color: #94a3b8 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-blue-200"] {
+    border-color: #385070 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-blue-500"] {
+    border-color: #60a5fa !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-red-200"] {
+    border-color: #7f1d1d !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-amber-200"] {
+    border-color: #92400e !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-emerald-300"] {
+    border-color: #047857 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="border-indigo-300"],
+  .dark #app .erp-theme .cashier-pos-page [class~="border-violet-300"] {
+    border-color: #7c3aed !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page :is(input, select, textarea) {
+    background-color: #0f172a !important;
+    border-color: #475569 !important;
+    color: #f8fafc !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page :is(input, select, textarea):disabled,
+  .dark #app .erp-theme .cashier-pos-page [class~="disabled:bg-slate-100"]:disabled {
+    background-color: #1f2937 !important;
+    color: #94a3b8 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page :is(input, textarea)::placeholder {
+    color: #94a3b8 !important;
+    opacity: 1;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-white"]:hover {
+    background-color: #1f2937 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-slate-50"]:hover {
+    background-color: #25344b !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-slate-100"]:hover {
+    background-color: #2b3b55 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-slate-700"]:hover {
+    background-color: #cbd5e1 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-slate-700"][class~="text-white"]:hover {
+    color: #0f172a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-red-50"]:hover {
+    background-color: #5b2020 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-indigo-50"]:hover,
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-violet-50"]:hover {
+    background-color: #342b5a !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:bg-emerald-50"]:hover {
+    background-color: #174936 !important;
+  }
+
+  .dark #app .erp-theme .cashier-pos-page [class~="hover:text-slate-900"]:hover {
+    color: #ffffff !important;
+  }
+}
+
+/* ApexCharts renders series colors as SVG attributes. Override those
+   attributes only in Light Mode so every account uses one monochrome chart
+   language while Dark Mode keeps each chart's original palette. */
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"] path:not(.apexcharts-radialbar-area) {
+  stroke: #111111 !important;
+  fill: #111111 !important;
+}
+
+/* Preserve ApexCharts' radial-bar geometry and only recolor the progress arc
+   in light mode. Changing its fill/stroke path creates a diagonal wedge. */
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="1"] .apexcharts-radialbar-area {
+  fill: none !important;
+  filter: grayscale(1) brightness(0);
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="2"] path {
+  stroke: #6b7280 !important;
+  fill: #6b7280 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-series[rel="3"] path {
+  stroke: #9ca3af !important;
+  fill: #9ca3af !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="1"] {
+  background: #111111 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="2"] {
+  background: #6b7280 !important;
+}
+
+html:not(.dark) #app .erp-theme .apexcharts-legend-marker[rel="3"] {
+  background: #9ca3af !important;
+}
+
+/* Keep dark-mode ERP charts in the same monochrome system. ApexCharts writes
+   colors as SVG attributes, so the scoped rules need !important. */
+html.dark #app .erp-theme .apexcharts-series[rel="1"] path:not(.apexcharts-radialbar-area) {
+  stroke: #f9fafb !important;
+  fill: #f9fafb !important;
+}
+
+html.dark #app .erp-theme .apexcharts-series[rel="1"] .apexcharts-radialbar-area {
+  fill: none !important;
+  filter: grayscale(1) brightness(3);
+}
+
+html.dark #app .erp-theme .apexcharts-series[rel="2"] path {
+  stroke: #d1d5db !important;
+  fill: #d1d5db !important;
+}
+
+html.dark #app .erp-theme .apexcharts-series[rel="3"] path {
+  stroke: #9ca3af !important;
+  fill: #9ca3af !important;
+}
+
+html.dark #app .erp-theme .apexcharts-legend-marker[rel="1"] {
+  background: #f9fafb !important;
+}
+
+html.dark #app .erp-theme .apexcharts-legend-marker[rel="2"] {
+  background: #d1d5db !important;
+}
+
+html.dark #app .erp-theme .apexcharts-legend-marker[rel="3"] {
+  background: #9ca3af !important;
+}
+
+html.dark #app .erp-theme :is(.apexcharts-gridline, .apexcharts-xaxis line, .apexcharts-yaxis line) {
+  stroke: #374151 !important;
+}
+
+html.dark #app .erp-theme :is(.apexcharts-xaxis-label, .apexcharts-yaxis-label, .apexcharts-text) {
+  fill: #d1d5db !important;
+  color: #d1d5db !important;
+}
+
+html.dark #app .erp-theme :is(.apexcharts-tooltip, .apexcharts-xaxistooltip, .apexcharts-yaxistooltip) {
+  background: #111111 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
+}
+
+/* Hide viewport scrollbar UI on UserSide pages while keeping scroll behavior */
+html.userside-hide-scrollbar,
+body.userside-hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html.userside-hide-scrollbar::-webkit-scrollbar,
+body.userside-hide-scrollbar::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;
+}
+
+/* Keep ERP and Shop Owner pages scrollable without showing browser scrollbar chrome. */
+html.backoffice-hide-scrollbar,
+body.backoffice-hide-scrollbar,
+html.backoffice-hide-scrollbar #app,
+body.backoffice-hide-scrollbar #app {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+html.backoffice-hide-scrollbar::-webkit-scrollbar,
+body.backoffice-hide-scrollbar::-webkit-scrollbar,
+html.backoffice-hide-scrollbar #app::-webkit-scrollbar,
+body.backoffice-hide-scrollbar #app::-webkit-scrollbar,
+html.backoffice-hide-scrollbar #app *::-webkit-scrollbar,
+body.backoffice-hide-scrollbar #app *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+html.backoffice-hide-scrollbar #app *,
+body.backoffice-hide-scrollbar #app * {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 /* Custom Flatpickr styling for dashboard consistency */
@@ -67,10 +769,19 @@ layer(base);
   padding: 0.25rem 0 !important;
 }
 
+.flatpickr-days,
+.flatpickr-days .dayContainer {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: none !important;
+}
+
 .flatpickr-day {
   border-radius: 0.375rem !important;
   height: 2.5rem !important;
-  width: 2.5rem !important;
+  width: calc(14.2857143% - 0.25rem) !important;
+  flex-basis: calc(14.2857143% - 0.25rem) !important;
+  max-width: none !important;
   line-height: 2.5rem !important;
   margin: 0.125rem !important;
   font-size: 0.875rem !important;
@@ -94,6 +805,10 @@ layer(base);
 .flatpickr-day.selected {
   background: #465fff !important;
   color: white !important;
+}
+
+html:not(.dark) .flatpickr-day.selected {
+  background: #111111 !important;
 }
 
 .flatpickr-day.today {
@@ -310,6 +1025,686 @@ body {
   color: inherit;
 }
 
+/* Customer-facing pages share one scoped dark surface. ERP and shop-owner pages
+   keep their existing theme rules because this class is only set for UserSide. */
+html.userside-dark {
+  color-scheme: dark;
+}
+
+html.userside-dark body,
+html.userside-dark #app,
+html.userside-dark #app > div {
+  background-color: #0b1220;
+  color: #f8fafc;
+}
+
+html.userside-dark #app [class~="bg-white"],
+html.userside-dark #app [class*="bg-white/"] {
+  background-color: #111827;
+}
+
+html.userside-dark #app [class~="bg-gray-50"],
+html.userside-dark #app [class*="bg-gray-50/"],
+html.userside-dark #app [class~="bg-[#f3f4f6]"] {
+  background-color: #0f172a;
+}
+
+html.userside-dark #app [class~="bg-gray-100"] {
+  background-color: #1f2937;
+}
+
+html.userside-dark #app [class~="text-black"],
+html.userside-dark #app [class~="text-gray-900"],
+html.userside-dark #app [class~="text-[#16233b]"] {
+  color: #f8fafc;
+}
+
+html.userside-dark #app [class~="text-gray-700"] {
+  color: #e5e7eb;
+}
+
+html.userside-dark #app [class~="text-gray-600"],
+html.userside-dark #app [class~="text-gray-500"],
+html.userside-dark #app [class~="text-black/55"],
+html.userside-dark #app [class~="text-black/60"],
+html.userside-dark #app [class~="text-black/70"] {
+  color: #cbd5e1;
+}
+
+html.userside-dark #app [class~="border-gray-200"],
+html.userside-dark #app [class*="border-gray-200/"],
+html.userside-dark #app [class~="border-gray-300"],
+html.userside-dark #app [class*="border-gray-300/"],
+html.userside-dark #app [class~="border-gray-100"],
+html.userside-dark #app [class~="border-white"],
+html.userside-dark #app [class*="border-white/"],
+html.userside-dark #app [class~="border-black"] {
+  border-color: #334155;
+}
+
+html.userside-dark #app [class~="divide-gray-100"] {
+  --tw-divide-color: #1e293b;
+}
+
+html.userside-dark #app [class~="hover:bg-gray-50"]:hover,
+html.userside-dark #app [class~="hover:bg-gray-100"]:hover,
+html.userside-dark #app [class~="hover:bg-white"]:hover {
+  background-color: #1f2937;
+}
+
+html.userside-dark #app [class~="hover:text-black"]:hover,
+html.userside-dark #app [class~="hover:text-gray-700"]:hover {
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-order-date-header {
+  border-color: #334155;
+  background: linear-gradient(90deg, #111827 0%, #111827 58%, #0f172a 100%);
+}
+
+html.userside-dark #app .userside-order-date-header [class~="text-black"] {
+  color: #f8fafc;
+}
+
+html.userside-dark #app input,
+html.userside-dark #app select,
+html.userside-dark #app textarea {
+  border-color: #334155;
+  background-color: #111827;
+  color: #f8fafc;
+}
+
+html.userside-dark #app input::placeholder,
+html.userside-dark #app textarea::placeholder {
+  color: #94a3b8;
+}
+
+/* Keep the saved-address and shipment-tracking surfaces aligned with the
+   customer dark theme. These overrides are scoped so ERP/shop-owner panels
+   and the existing light mode keep their original styling. */
+html.userside-dark #app .userside-address-card,
+html.userside-dark #app .userside-address-modal {
+  background-color: #111827 !important;
+  border-color: #2f405a !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-address-card--selected {
+  background-color: #1b2f50 !important;
+  border-color: #7da2ff !important;
+  box-shadow: 0 12px 28px -24px rgba(125, 162, 255, 0.85);
+}
+
+html.userside-dark #app .userside-address-modal__header {
+  border-color: #26364d !important;
+}
+
+html.userside-dark #app .userside-address-modal__content {
+  background-color: #111827;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-950"],
+html.userside-dark #app .userside-address-card [class~="text-gray-950"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-800"],
+html.userside-dark #app .userside-address-card [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-700"],
+html.userside-dark #app .userside-address-card [class~="text-gray-700"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-gray-600"],
+html.userside-dark #app .userside-address-modal [class~="text-gray-500"],
+html.userside-dark #app .userside-address-card [class~="text-gray-600"],
+html.userside-dark #app .userside-address-card [class~="text-gray-500"] {
+  color: #a8b6ca !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-blue-700"],
+html.userside-dark #app .userside-address-card [class~="text-blue-700"] {
+  color: #a9c1ff !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-blue-900"],
+html.userside-dark #app .userside-address-card [class~="text-blue-900"] {
+  color: #d5e0ff !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-green-700"],
+html.userside-dark #app .userside-address-card [class~="text-green-700"] {
+  color: #67d391 !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="text-amber-700"],
+html.userside-dark #app .userside-address-card [class~="text-amber-700"] {
+  color: #f5c66d !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="border-gray-200"],
+html.userside-dark #app .userside-address-modal [class~="border-gray-300"],
+html.userside-dark #app .userside-address-card [class~="border-gray-200"],
+html.userside-dark #app .userside-address-card [class~="border-gray-300"],
+html.userside-dark #app .userside-address-modal [class*="border-dashed"] {
+  border-color: #2f405a !important;
+}
+
+html.userside-dark #app .userside-address-modal [class~="bg-gray-50"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-address-icon-button {
+  background-color: #142238 !important;
+  box-shadow: none;
+}
+
+html.userside-dark #app .userside-address-icon-button--edit {
+  border-color: #496da4 !important;
+  color: #a9c1ff !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--default {
+  border-color: #385070 !important;
+  color: #b6c3d5 !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--delete {
+  border-color: #795163 !important;
+  color: #ff9bb0 !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--edit:hover,
+html.userside-dark #app .userside-address-icon-button--default:hover {
+  background-color: #20385e !important;
+  border-color: #7da2ff !important;
+  color: #e0e8ff !important;
+}
+
+html.userside-dark #app .userside-address-icon-button--delete:hover {
+  background-color: #3c1e2b !important;
+  border-color: #c97991 !important;
+  color: #ffc2cf !important;
+}
+
+html.userside-dark #app .userside-address-modal-close:hover {
+  background-color: #1f2d43 !important;
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-address-modal input,
+html.userside-dark #app .userside-address-modal select,
+html.userside-dark #app .userside-address-modal textarea {
+  background-color: #111827 !important;
+  border-color: #3a4b64 !important;
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-address-modal input:focus,
+html.userside-dark #app .userside-address-modal select:focus,
+html.userside-dark #app .userside-address-modal textarea:focus {
+  border-color: #111111 !important;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.18) !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface {
+  background-color: #0f172a !important;
+  border: 1px solid #2f405a;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface > header {
+  background-color: #111827 !important;
+  border-color: #26364d !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-[#16233b]"],
+html.userside-dark #app .userside-tracking-panel [class~="text-[#16233b]"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-950"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-900"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-800"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-700"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-700"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-600"],
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-gray-500"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-600"],
+html.userside-dark #app .userside-tracking-panel [class~="text-gray-500"] {
+  color: #a8b6ca !important;
+}
+
+html.userside-dark #app .userside-tracking-panel a[class~="text-[#16233b]"] {
+  color: #b8cdff !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="border-gray-200"],
+html.userside-dark #app .userside-tracking-panel [class~="border-gray-200"] {
+  border-color: #2b3a52 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="border-gray-300"],
+html.userside-dark #app .userside-tracking-panel [class~="border-gray-300"],
+html.userside-dark #app .userside-tracking-panel [class~="border-gray-900"] {
+  border-color: #3a4b64 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="bg-white"],
+html.userside-dark #app .userside-tracking-panel [class~="bg-white"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="bg-gray-50"],
+html.userside-dark #app .userside-tracking-panel [class~="bg-gray-50"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-tracking-panel .userside-tracking-section {
+  background-color: #111827 !important;
+  border-color: #2b3a52 !important;
+}
+
+html.userside-dark #app .userside-tracking-panel [class~="divide-gray-100"] {
+  --tw-divide-color: #26364d !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="border-red-200"] {
+  border-color: #704054 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="bg-red-50"] {
+  background-color: #2a1820 !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-red-950"],
+html.userside-dark #app .userside-tracking-modal__surface [class~="text-red-900"] {
+  color: #ffc2cf !important;
+}
+
+html.userside-dark #app .userside-tracking-modal__surface [class~="hover:bg-gray-50"]:hover,
+html.userside-dark #app .userside-tracking-panel [class~="hover:bg-gray-50"]:hover {
+  background-color: #1f2d43 !important;
+}
+
+/* User authentication pages use a dedicated dark surface so their light-mode
+   form utilities cannot leak a white canvas into customer dark mode. */
+.userside-auth-page {
+  color: #0f172a;
+}
+
+.userside-auth-card {
+  border: 1px solid #e2e8f0;
+}
+
+.userside-auth-input {
+  transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
+}
+
+html.userside-dark #app .userside-auth-page {
+  background: radial-gradient(circle at top, #18243a 0%, #0b1220 52%, #080e19 100%) !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-auth-title {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-auth-subtitle {
+  color: #a8b6ca !important;
+}
+
+html.userside-dark #app .userside-auth-card {
+  background: #111827 !important;
+  border-style: solid !important;
+  border-color: #334155 !important;
+  box-shadow: 0 22px 50px -28px rgba(0, 0, 0, 0.9) !important;
+}
+
+html.userside-dark #app .userside-auth-page label {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-auth-page input:not([type="checkbox"]),
+html.userside-dark #app .userside-auth-page select,
+html.userside-dark #app .userside-auth-page textarea,
+html.userside-dark #app .userside-auth-input {
+  background: #1b273d !important;
+  border-color: #41516a !important;
+  color: #f8fafc !important;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.025) !important;
+}
+
+html.userside-dark #app .userside-auth-page input:not([type="checkbox"])::placeholder,
+html.userside-dark #app .userside-auth-page textarea::placeholder,
+html.userside-dark #app .userside-auth-input::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-auth-page input:not([type="checkbox"]):focus,
+html.userside-dark #app .userside-auth-page select:focus,
+html.userside-dark #app .userside-auth-page textarea:focus,
+html.userside-dark #app .userside-auth-input:focus {
+  border-color: #111111 !important;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.2) !important;
+}
+
+html.userside-dark #app .userside-auth-page input[type="checkbox"] {
+  accent-color: #6d8dff;
+}
+
+html.userside-dark #app .userside-auth-link {
+  color: #a9c1ff !important;
+}
+
+html.userside-dark #app .userside-auth-link:hover {
+  color: #d5e0ff !important;
+}
+
+html.userside-dark #app .userside-auth-primary {
+  background: #f8fafc !important;
+  color: #0b1220 !important;
+  border-color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-auth-primary:hover {
+  background: #dbe5f5 !important;
+  color: #0b1220 !important;
+}
+
+html.userside-dark #app .userside-auth-secondary {
+  background: #1f2937 !important;
+  border-color: #475569 !important;
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-auth-secondary:hover {
+  background: #27364d !important;
+}
+
+html.userside-dark #app .userside-auth-ghost {
+  border-color: #8aa8ff !important;
+  color: #b8cdff !important;
+}
+
+html.userside-dark #app .userside-auth-ghost:hover {
+  background: #1e3a8a !important;
+  color: #ffffff !important;
+}
+
+/* Fast curtain for eligible customer-side Inertia navigation. */
+.customer-page-transition {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  background: #ffffff;
+  color: #000000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(100%);
+  transition: opacity 220ms ease, transform 220ms ease, visibility 0s linear 220ms;
+  will-change: opacity, transform;
+}
+
+.customer-page-transition[data-state="visible"] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateY(0);
+  transition-delay: 0s;
+}
+
+.customer-page-transition[data-state="leaving"] {
+  opacity: 0;
+  visibility: visible;
+  transform: translateY(-8%);
+  transition-delay: 0s;
+  transition-duration: 260ms;
+}
+
+.customer-page-transition__wordmark {
+  font-size: clamp(2.5rem, 10vw, 9rem);
+  font-weight: 800;
+  letter-spacing: -0.08em;
+  line-height: 0.8;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .customer-page-transition {
+    transition-duration: 1ms;
+    transition-delay: 0s;
+  }
+}
+
+/* Server-rendered first-open experience. React removes it after its first render. */
+.solespace-app-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  display: none;
+  place-items: center;
+  overflow: hidden;
+  isolation: isolate;
+  contain: layout paint;
+  background: #ffffff;
+  color: #667085;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 280ms ease, visibility 280ms ease;
+}
+
+.solespace-first-load .solespace-app-loader {
+  display: grid;
+}
+
+@media (min-width: 1280px) {
+  .solespace-first-load .solespace-app-loader {
+    display: none !important;
+  }
+}
+
+.solespace-app-loader::before {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at center, rgba(22, 35, 59, 0.08), transparent min(34rem, 68vw)),
+    radial-gradient(circle, rgba(22, 35, 59, 0.24) 0 1px, transparent 1.4px) 0 0 / 10rem 10rem;
+  content: "";
+  pointer-events: none;
+}
+
+.solespace-app-loader.is-leaving {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.solespace-app-loader__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: min(23rem, calc(100vw - 2rem));
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  contain: layout paint;
+}
+
+.solespace-app-loader__wordmark {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: clamp(0.08rem, 0.8vw, 0.2rem);
+  color: #667085;
+  font-family: inherit;
+  font-size: clamp(1.8rem, 7vw, 3.2rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: none;
+}
+
+.solespace-app-loader__wordmark span {
+  display: inline-block;
+  min-width: 0.5em;
+  --loader-origin-x: 0rem;
+  --loader-origin-y: 0rem;
+  animation: solespace-loader-letter 720ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  transform-origin: center;
+}
+
+.solespace-app-loader__wordmark span:nth-child(1) {
+  --loader-origin-x: -1.8rem;
+  --loader-origin-y: -1.2rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(2) {
+  --loader-origin-x: -0.8rem;
+  --loader-origin-y: 1.3rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(3) {
+  --loader-origin-x: -0.4rem;
+  --loader-origin-y: -1.5rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(4) {
+  --loader-origin-x: -1.9rem;
+  --loader-origin-y: 0.5rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(5) {
+  --loader-origin-x: 1.4rem;
+  --loader-origin-y: -1.5rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(6) {
+  --loader-origin-x: 1.9rem;
+  --loader-origin-y: 0.6rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(7) {
+  --loader-origin-x: 1rem;
+  --loader-origin-y: 1.3rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(8) {
+  --loader-origin-x: 0.4rem;
+  --loader-origin-y: -1.2rem;
+}
+
+.solespace-app-loader__wordmark span:nth-child(9) {
+  --loader-origin-x: 1.7rem;
+  --loader-origin-y: 1.1rem;
+}
+
+.solespace-app-loader__line {
+  position: relative;
+  width: 6rem;
+  height: 2px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.12);
+}
+
+.solespace-app-loader__line::after {
+  position: absolute;
+  inset: 0 auto 0 -45%;
+  width: 45%;
+  background: #9ca3af;
+  content: "";
+  animation: solespace-loader-line 1.4s ease-in-out infinite;
+}
+
+.solespace-app-loader__caption {
+  margin: 0;
+  color: #737373;
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+}
+
+.solespace-app-loader__sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@keyframes solespace-loader-letter {
+  0% {
+    transform: translate3d(var(--loader-origin-x), var(--loader-origin-y), 0);
+    will-change: transform;
+  }
+
+  100% {
+    transform: translate3d(0, 0, 0);
+    will-change: auto;
+  }
+}
+
+@keyframes solespace-loader-line {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(325%);
+  }
+}
+
+@keyframes solespace-loader-wordmark {
+  0% {
+    transform: translate3d(0, 0.6rem, 0);
+    will-change: transform;
+  }
+
+  100% {
+    transform: translate3d(0, 0, 0);
+    will-change: auto;
+  }
+}
+
+@media (max-width: 640px) and (pointer: coarse) {
+  .solespace-app-loader__wordmark {
+    animation: solespace-loader-wordmark 560ms cubic-bezier(0.22, 1, 0.36, 1) 1 both;
+  }
+
+  .solespace-app-loader__wordmark span {
+    animation: none;
+    transform: none;
+    will-change: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .solespace-app-loader,
+  .solespace-app-loader::before,
+  .solespace-app-loader__wordmark,
+  .solespace-app-loader__wordmark span,
+  .solespace-app-loader__line::after {
+    animation: none;
+    transition: none;
+  }
+}
+
 @layer base {
   *,
   ::after,
@@ -332,43 +1727,51 @@ body {
   z-index: 11000000 !important;
 }
 
+.swal2-container.swal2-backdrop-show,
 .swal2-container.user-swal2-backdrop-show,
 .swal2-backdrop-show.user-swal2-backdrop-show {
   animation: userSwalBackdropIn 0.2s ease-out;
 }
 
+.swal2-container.swal2-backdrop-hide,
 .swal2-container.user-swal2-backdrop-hide,
 .swal2-backdrop-hide.user-swal2-backdrop-hide {
   animation: userSwalBackdropOut 0.16s ease-in;
 }
 
-.swal2-popup.user-swal2-popup {
+.swal2-popup:not(.swal2-toast) {
+  --swal2-confirm-button-background-color: #001339;
+  --swal2-confirm-button-color: #ffffff;
+  --swal2-cancel-button-background-color: #dde1e6;
+  --swal2-cancel-button-color: #344054;
   width: min(32rem, calc(100vw - 2rem)) !important;
   border-radius: 1.4rem !important;
   border: 0 !important;
+  background: #f3f4f6 !important;
+  color: #101828 !important;
   box-shadow: 0 26px 80px -42px rgba(15, 23, 42, 0.5) !important;
   padding: 2rem 1.85rem 1.5rem !important;
   animation: userSwalPopupIn 0.24s ease-out;
 }
 
-.swal2-popup.user-swal2-popup.user-swal2-hide {
+.swal2-popup:not(.swal2-toast).swal2-hide {
   animation: userSwalPopupOut 0.18s ease-in;
 }
 
-.swal2-popup.user-swal2-popup .swal2-icon {
+.swal2-popup:not(.swal2-toast) .swal2-icon {
   margin: 0 auto 0.75rem !important;
 }
 
-.swal2-popup.user-swal2-popup .swal2-icon.swal2-warning {
+.swal2-popup:not(.swal2-toast) .swal2-icon.swal2-warning {
   border-color: #e5b07f !important;
   color: #e5b07f !important;
 }
 
-.swal2-popup.user-swal2-popup .swal2-icon.swal2-warning [class^='swal2-icon-content'] {
+.swal2-popup:not(.swal2-toast) .swal2-icon.swal2-warning [class^='swal2-icon-content'] {
   color: #e5b07f !important;
 }
 
-.swal2-title.user-swal2-title {
+.swal2-popup:not(.swal2-toast) .swal2-title {
   margin: 0.15rem 0 0 !important;
   font-size: clamp(1.75rem, 2.6vw, 2.2rem) !important;
   font-weight: 800 !important;
@@ -377,13 +1780,32 @@ body {
   color: #0f172a !important;
 }
 
-.swal2-html-container.user-swal2-text {
+.swal2-popup:not(.swal2-toast) .swal2-html-container {
   margin: 0.65rem 0 0 !important;
   padding: 0 !important;
   font-size: 1.12rem !important;
   font-weight: 400 !important;
   line-height: 1.45 !important;
   color: #111827 !important;
+}
+
+.swal2-popup:not(.swal2-toast) .swal2-input-label {
+  margin: 0.9rem 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #344054;
+}
+
+.swal2-popup:not(.swal2-toast) .swal2-input,
+.swal2-popup:not(.swal2-toast) .swal2-textarea {
+  width: 100%;
+  margin: 0.4rem 0 0;
+  border: 1px solid #d0d5dd;
+  border-radius: 0.75rem;
+  background: #ffffff;
+  color: #101828;
+  box-shadow: inset 0 1px 2px rgba(16, 24, 40, 0.04);
+  font: inherit;
 }
 
 .swal2-html-container.user-swal2-text .user-swal2-summary {
@@ -437,14 +1859,14 @@ body {
   letter-spacing: 0.01em;
 }
 
-.swal2-actions.user-swal2-actions {
+.swal2-popup:not(.swal2-toast) .swal2-actions {
   width: 100% !important;
   margin-top: 1.45rem !important;
   gap: 0.8rem !important;
   justify-content: stretch !important;
 }
 
-.swal2-actions.user-swal2-actions button {
+.swal2-popup:not(.swal2-toast) .swal2-actions button {
   flex: 1 1 0 !important;
   margin: 0 !important;
   border-radius: 0.85rem !important;
@@ -456,30 +1878,30 @@ body {
   transition: all 0.16s ease;
 }
 
-.swal2-confirm.user-swal2-confirm {
-  background-color: #001339 !important;
-  color: #ffffff !important;
-  border-color: #001339 !important;
+.swal2-popup:not(.swal2-toast) .swal2-confirm {
+  background-color: var(--swal2-confirm-button-background-color, #001339) !important;
+  color: var(--swal2-confirm-button-color, #ffffff) !important;
+  border-color: var(--swal2-confirm-button-background-color, #001339) !important;
 }
 
-.swal2-confirm.user-swal2-confirm:hover {
-  background-color: #031d56 !important;
-  border-color: #031d56 !important;
+.swal2-popup:not(.swal2-toast) .swal2-confirm:hover {
+  background-color: color-mix(in srgb, var(--swal2-confirm-button-background-color, #001339), #000000 8%) !important;
+  border-color: color-mix(in srgb, var(--swal2-confirm-button-background-color, #001339), #000000 8%) !important;
 }
 
-.swal2-cancel.user-swal2-cancel {
-  background-color: #dde1e6 !important;
-  color: #344054 !important;
-  border-color: #dde1e6 !important;
+.swal2-popup:not(.swal2-toast) .swal2-cancel {
+  background-color: var(--swal2-cancel-button-background-color, #dde1e6) !important;
+  color: var(--swal2-cancel-button-color, #344054) !important;
+  border-color: var(--swal2-cancel-button-background-color, #dde1e6) !important;
 }
 
-.swal2-cancel.user-swal2-cancel:hover {
-  background-color: #cfd4db !important;
-  border-color: #cfd4db !important;
+.swal2-popup:not(.swal2-toast) .swal2-cancel:hover {
+  background-color: color-mix(in srgb, var(--swal2-cancel-button-background-color, #dde1e6), #000000 6%) !important;
+  border-color: color-mix(in srgb, var(--swal2-cancel-button-background-color, #dde1e6), #000000 6%) !important;
 }
 
-.swal2-confirm.user-swal2-confirm:focus-visible,
-.swal2-cancel.user-swal2-cancel:focus-visible {
+.swal2-popup:not(.swal2-toast) .swal2-confirm:focus-visible,
+.swal2-popup:not(.swal2-toast) .swal2-cancel:focus-visible {
   outline: none !important;
   box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2) !important;
 }
@@ -633,7 +2055,7 @@ body {
 }
 
 @media (max-width: 640px) {
-  .swal2-popup.user-swal2-popup {
+  .swal2-popup:not(.swal2-toast) {
     padding: 1.6rem 1rem 1rem !important;
   }
 
@@ -657,11 +2079,11 @@ body {
     font-size: 0.72rem !important;
   }
 
-  .swal2-title.user-swal2-title {
+  .swal2-popup:not(.swal2-toast) .swal2-title {
     font-size: 1.9rem !important;
   }
 
-  .swal2-html-container.user-swal2-text {
+  .swal2-popup:not(.swal2-toast) .swal2-html-container {
     font-size: 1rem !important;
   }
 
@@ -674,11 +2096,11 @@ body {
     margin-bottom: 0.55rem;
   }
 
-  .swal2-actions.user-swal2-actions {
+  .swal2-popup:not(.swal2-toast) .swal2-actions {
     gap: 0.55rem !important;
   }
 
-  .swal2-actions.user-swal2-actions button {
+  .swal2-popup:not(.swal2-toast) .swal2-actions button {
     min-height: 2.7rem !important;
     font-size: 1rem !important;
   }
@@ -729,7 +2151,7 @@ body {
 }
 
 @utility menu-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
+  @apply bg-gray-950 text-white dark:bg-gray-950 dark:text-white;
 }
 
 @utility menu-item-inactive {
@@ -744,7 +2166,7 @@ body {
 }
 
 @utility menu-item-icon-active {
-  @apply text-brand-500 dark:text-brand-400;
+  @apply text-gray-950 dark:text-white;
 }
 
 @utility menu-item-icon-inactive {
@@ -756,7 +2178,7 @@ body {
 }
 
 @utility menu-dropdown-item-active {
-  @apply bg-brand-50 text-brand-500 dark:bg-brand-500/[0.12] dark:text-brand-400;
+  @apply bg-gray-950 text-white dark:bg-gray-950 dark:text-white;
 }
 
 @utility menu-dropdown-item-inactive {
@@ -768,11 +2190,834 @@ body {
 }
 
 @utility menu-dropdown-badge-active {
-  @apply bg-brand-100 text-brand-600 dark:bg-brand-500/[0.2] dark:text-brand-300;
+  @apply bg-gray-200 text-gray-900 dark:bg-gray-700 dark:text-gray-100;
 }
 
 @utility menu-dropdown-badge-inactive {
   @apply bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400;
+}
+
+/* Shared light navigation and controls use black as the primary accent. */
+html:not(.dark) {
+  --color-black: #111111;
+  --color-brand-25: #fafafa;
+  --color-brand-50: #f5f5f5;
+  --color-brand-100: #e5e5e5;
+  --color-brand-200: #d4d4d4;
+  --color-brand-300: #a3a3a3;
+  --color-brand-400: #737373;
+  --color-brand-500: #111111;
+  --color-brand-600: #000000;
+  --color-brand-700: #000000;
+  --color-brand-800: #171717;
+  --color-brand-900: #262626;
+  --color-brand-950: #0a0a0a;
+}
+
+html:not(.dark) .erp-sidebar {
+  background: #ffffff;
+  border-color: #e5e7eb;
+  color: #111827;
+}
+
+html:not(.dark) .erp-sidebar .menu-item-active,
+html:not(.dark) .erp-sidebar .menu-dropdown-item-active {
+  background: #111111;
+  color: #ffffff;
+}
+
+html:not(.dark) .erp-sidebar .menu-item-inactive,
+html:not(.dark) .erp-sidebar .menu-dropdown-item-inactive {
+  color: #111827;
+}
+
+html:not(.dark) .erp-sidebar .menu-item-inactive:hover,
+html:not(.dark) .erp-sidebar .menu-dropdown-item-inactive:hover,
+html:not(.dark) .erp-sidebar .menu-item-inactive.group:hover {
+  background: #f3f4f6;
+  color: #111111;
+}
+
+html:not(.dark) .erp-sidebar .menu-item-icon-active,
+html:not(.dark) .erp-sidebar .menu-item-icon-inactive,
+html:not(.dark) .erp-sidebar .menu-item-inactive.group:hover .menu-item-icon-inactive {
+  color: currentColor;
+}
+
+html:not(.dark) .erp-sidebar .menu-dropdown-badge-active {
+  background: #e5e7eb;
+  color: #111111;
+}
+
+html:not(.dark) .erp-sidebar .menu-dropdown-badge-inactive {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+html:not(.dark) .erp-sidebar [class*='text-brand-'] {
+  color: currentColor !important;
+}
+
+html:not(.dark) .erp-sidebar [class*='border-brand-'] {
+  border-color: #111111 !important;
+}
+
+/* Legacy primary controls are normalized without touching status badges or charts. */
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-blue-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-blue-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-indigo-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-indigo-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-purple-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-purple-600'] {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='bg-brand-500'] {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-brand-500'] {
+  background-color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-blue-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-indigo-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button']):is(:hover, :focus-visible)[class~='bg-purple-600'] {
+  background-color: #000000 !important;
+  border-color: #000000 !important;
+}
+
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-blue-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-blue-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-indigo-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-indigo-600'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-purple-500'],
+html:not(.dark) .erp-theme :is(button, a, [role='button'])[class~='border-purple-600'] {
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-blue-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-indigo-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-purple-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea)[class*='focus:ring-brand-']:focus {
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-blue-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-indigo-']:focus,
+html:not(.dark) .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='tab'])[class*='focus:ring-purple-']:focus {
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+  border-color: #111111 !important;
+}
+
+html:not(.dark) .erp-theme :is(input[type='checkbox'], input[type='radio']) {
+  accent-color: #111111;
+}
+
+html:not(.dark) .erp-theme :is(a, [role='tab']):is(
+  [class~='text-blue-50'], [class~='text-blue-100'], [class~='text-blue-200'],
+  [class~='text-blue-300'], [class~='text-blue-400'], [class~='text-blue-500'],
+  [class~='text-blue-600'], [class~='text-blue-700'], [class~='text-blue-800'],
+  [class~='text-blue-900'], [class~='text-blue-950'],
+  [class~='text-indigo-50'], [class~='text-indigo-100'], [class~='text-indigo-200'],
+  [class~='text-indigo-300'], [class~='text-indigo-400'], [class~='text-indigo-500'],
+  [class~='text-indigo-600'], [class~='text-indigo-700'], [class~='text-indigo-800'],
+  [class~='text-indigo-900'], [class~='text-indigo-950'],
+  [class~='text-purple-50'], [class~='text-purple-100'], [class~='text-purple-200'],
+  [class~='text-purple-300'], [class~='text-purple-400'], [class~='text-purple-500'],
+  [class~='text-purple-600'], [class~='text-purple-700'], [class~='text-purple-800'],
+  [class~='text-purple-900'], [class~='text-purple-950']
+) {
+  color: #111111 !important;
+}
+
+/* Keep native select fields neutral. Native option popovers remain
+   browser/OS-controlled and are intentionally not styled here. */
+html:not(.dark) #app .erp-theme select {
+  color-scheme: light;
+}
+
+html.dark #app .erp-theme select {
+  color-scheme: dark;
+}
+
+html:not(.dark) #app .erp-theme select:focus {
+  border-color: #111111 !important;
+  outline-color: #111111 !important;
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+}
+
+/* Apply the same selection language to accessible custom dropdowns across
+   ERP, Shop Owner, and User Side listboxes. */
+html:not(.dark) #app [role='combobox']:focus-within > div {
+  border-color: #6b7280 !important;
+  --tw-ring-color: rgb(107 114 128 / 0.2) !important;
+}
+
+html:not(.dark) #app :is([role='combobox'], [aria-haspopup='listbox']):is(:focus, :focus-within) {
+  border-color: #6b7280 !important;
+  outline-color: #6b7280 !important;
+  --tw-ring-color: rgb(107 114 128 / 0.2) !important;
+}
+
+html:not(.dark) #app :is([role='combobox'], [aria-haspopup='listbox']):hover {
+  background-color: #f3f4f6 !important;
+}
+
+html:not(.dark) #app [role='listbox'] [role='option'] {
+  background-color: #ffffff !important;
+  color: #111111 !important;
+}
+
+html:not(.dark) #app [role='listbox'] [role='option'][aria-selected='true'] {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+}
+
+html:not(.dark) #app [role='listbox'] [role='option']:not([aria-selected='true']):hover,
+html:not(.dark) #app [role='listbox'] [role='option'][data-highlighted='true']:not([aria-selected='true']) {
+  background-color: #e5e7eb !important;
+  color: #111111 !important;
+}
+
+html.dark #app [role='listbox'] [role='option'] {
+  background-color: #111827 !important;
+  color: #f8fafc !important;
+}
+
+html.dark #app [role='combobox']:focus-within > div {
+  border-color: #9ca3af !important;
+  --tw-ring-color: rgb(156 163 175 / 0.24) !important;
+}
+
+html.dark #app :is([role='combobox'], [aria-haspopup='listbox']):is(:focus, :focus-within) {
+  border-color: #9ca3af !important;
+  outline-color: #9ca3af !important;
+  --tw-ring-color: rgb(156 163 175 / 0.24) !important;
+}
+
+html.dark #app :is([role='combobox'], [aria-haspopup='listbox']):hover {
+  background-color: #374151 !important;
+}
+
+html.dark #app [role='listbox'] [role='option'][aria-selected='true'] {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+}
+
+html.dark #app [role='listbox'] [role='option']:not([aria-selected='true']):hover,
+html.dark #app [role='listbox'] [role='option'][data-highlighted='true']:not([aria-selected='true']) {
+  background-color: #475569 !important;
+  color: #ffffff !important;
+}
+
+/* Voucher cards have their own active treatment; generic listboxes stay monochrome. */
+html:not(.dark) #app [role='listbox'] [data-voucher-option][aria-selected='true'] {
+  background-color: #f3f4f6 !important;
+  color: #111111 !important;
+  border-color: #9ca3af !important;
+}
+
+html.dark #app [role='listbox'] [data-voucher-option][aria-selected='true'] {
+  background-color: #374151 !important;
+  color: #f8fafc !important;
+  border-color: #9ca3af !important;
+}
+
+/* Selected tabs, filter chips, and list rows may use state attributes instead
+   of a colored utility class. Keep their selected treatment consistent too. */
+html:not(.dark) #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html.dark #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+/* Keep non-filled interactive controls neutral by default. Status badges and
+   informational surfaces are outside this interactive-element selector. */
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class^='text-blue-'], [class*=' text-blue-'], [class^='text-indigo-'], [class*=' text-indigo-'],
+  [class^='text-purple-'], [class*=' text-purple-'], [class^='text-brand-'], [class*=' text-brand-']
+) {
+  color: #374151 !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class^='text-blue-'], [class*=' text-blue-'], [class^='text-indigo-'], [class*=' text-indigo-'],
+  [class^='text-purple-'], [class*=' text-purple-'], [class^='text-brand-'], [class*=' text-brand-']
+) {
+  color: #d1d5db !important;
+}
+
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class^='border-blue-'], [class*=' border-blue-'], [class^='border-indigo-'], [class*=' border-indigo-'],
+  [class^='border-purple-'], [class*=' border-purple-'], [class^='border-brand-'], [class*=' border-brand-']
+) {
+  border-color: #d1d5db !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class^='border-blue-'], [class*=' border-blue-'], [class^='border-indigo-'], [class*=' border-indigo-'],
+  [class^='border-purple-'], [class*=' border-purple-'], [class^='border-brand-'], [class*=' border-brand-']
+) {
+  border-color: #4b5563 !important;
+}
+
+/* Normalize legacy colored interaction utilities on ERP controls. */
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [aria-current='page'], [aria-pressed='true'], [class*='cursor-pointer']):not(:disabled):is(
+  [class^='bg-blue-'], [class*=' bg-blue-'], [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'], [class^='bg-brand-'], [class*=' bg-brand-']
+) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [aria-current='page'], [aria-pressed='true'], [class*='cursor-pointer']):not(:disabled):is(
+  [class^='bg-blue-'], [class*=' bg-blue-'], [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'], [class^='bg-brand-'], [class*=' bg-brand-'],
+  [class*='dark:bg-blue-'], [class*='dark:bg-indigo-'], [class*='dark:bg-purple-'], [class*='dark:bg-brand-']
+) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [aria-current='page'], [aria-pressed='true'], [class*='cursor-pointer']):not(:disabled):is(
+  [class~='dark:bg-white'], [class~='dark:bg-brand-500'], [class~='dark:bg-brand-600']
+) {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):not(:disabled):is(
+  [class*='dark:hover:bg-blue-'], [class*='dark:hover:bg-indigo-'], [class*='dark:hover:bg-purple-'],
+  [class*='dark:hover:bg-brand-'], [class*='dark:hover:bg-gray-200'], [class*='dark:hover:bg-gray-100']
+):hover {
+  background-color: #374151 !important;
+  color: #ffffff !important;
+  border-color: #4b5563 !important;
+}
+
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'], [class*='hover:bg-purple-'], [class*='hover:bg-brand-']
+):hover {
+  background-color: #e5e7eb !important;
+  color: #111111 !important;
+  border-color: #d1d5db !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'], [class*='hover:bg-purple-'], [class*='hover:bg-brand-']
+):hover {
+  background-color: #374151 !important;
+  color: #ffffff !important;
+  border-color: #4b5563 !important;
+}
+
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='focus:ring-blue-'], [class*='focus:ring-indigo-'], [class*='focus:ring-purple-'], [class*='focus:ring-brand-']
+):focus {
+  outline-color: #111111 !important;
+  border-color: #111111 !important;
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='focus:ring-blue-'], [class*='focus:ring-indigo-'], [class*='focus:ring-purple-'], [class*='focus:ring-brand-']
+):focus {
+  outline-color: #d1d5db !important;
+  border-color: #d1d5db !important;
+  --tw-ring-color: rgb(209 213 219 / 0.3) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem']):is(
+  [class*='focus:border-blue-'], [class*='focus:border-indigo-'], [class*='focus:border-purple-'],
+  [class*='focus:border-brand-'], [class*='focus-visible:ring-blue-'], [class*='focus-visible:ring-indigo-'], [class*='focus-visible:ring-purple-'], [class*='focus-visible:ring-brand-']
+):focus {
+  outline-color: #111111 !important;
+  border-color: #111111 !important;
+  --tw-ring-color: rgb(17 17 17 / 0.16) !important;
+}
+
+html.dark #app .erp-theme :is(input, select, textarea, button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem']):is(
+  [class*='focus:border-blue-'], [class*='focus:border-indigo-'], [class*='focus:border-purple-'],
+  [class*='focus:border-brand-'], [class*='focus-visible:ring-blue-'], [class*='focus-visible:ring-indigo-'], [class*='focus-visible:ring-purple-'], [class*='focus-visible:ring-brand-']
+):focus {
+  outline-color: #d1d5db !important;
+  border-color: #d1d5db !important;
+  --tw-ring-color: rgb(209 213 219 / 0.3) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='hover:text-blue-'], [class*='hover:text-indigo-'], [class*='hover:text-purple-'],
+  [class*='hover:text-brand-'], [class*='hover:border-blue-'], [class*='hover:border-indigo-'], [class*='hover:border-purple-'],
+  [class*='hover:border-brand-']
+):hover {
+  color: #111111 !important;
+  border-color: #d1d5db !important;
+}
+
+html.dark #app .erp-theme :is(button, a, [role='button'], [role='option'], [role='tab'], [role='menuitem'], [class*='cursor-pointer']):is(
+  [class*='hover:text-blue-'], [class*='hover:text-indigo-'], [class*='hover:text-purple-'],
+  [class*='hover:text-brand-'], [class*='hover:border-blue-'], [class*='hover:border-indigo-'], [class*='hover:border-purple-'],
+  [class*='hover:border-brand-']
+):hover {
+  color: #ffffff !important;
+  border-color: #4b5563 !important;
+}
+
+/* A selected control stays selected while it is hovered. */
+html:not(.dark) #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):hover,
+html.dark #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):hover {
+  background-color: #111111 !important;
+  color: #ffffff !important;
+  border-color: #111111 !important;
+}
+
+/* ERP and Shop Owner monochrome design tokens. Keep this boundary below the
+   app root so customer/storefront pages retain their own visual language. */
+#app .erp-theme {
+  --erp-ink: #111111;
+  --erp-on-ink: #ffffff;
+  --erp-surface: #ffffff;
+  --erp-surface-muted: #f3f4f6;
+  --erp-border: #d1d5db;
+  --erp-text: #111111;
+  --erp-text-muted: #6b7280;
+  color: var(--erp-text);
+}
+
+html.dark #app .erp-theme {
+  --erp-ink: #ffffff;
+  --erp-on-ink: #111111;
+  --erp-surface: #111111;
+  --erp-surface-muted: #1f2937;
+  --erp-border: #4b5563;
+  --erp-text: #f9fafb;
+  --erp-text-muted: #d1d5db;
+}
+
+/* Ordinary colored surfaces/statuses become neutral. Explicit icon-only and
+   critical descendants are excluded so their semantic meaning remains. */
+#app .erp-theme :is(
+  [class^='bg-blue-'], [class*=' bg-blue-'],
+  [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'],
+  [class^='bg-violet-'], [class*=' bg-violet-'],
+  [class^='bg-sky-'], [class*=' bg-sky-'],
+  [class^='bg-cyan-'], [class*=' bg-cyan-'],
+  [class^='bg-teal-'], [class*=' bg-teal-'],
+  [class^='bg-yellow-'], [class*=' bg-yellow-'],
+  [class^='bg-amber-'], [class*=' bg-amber-'],
+  [class^='bg-orange-'], [class*=' bg-orange-'],
+  [class^='bg-green-'], [class*=' bg-green-'],
+  [class^='bg-emerald-'], [class*=' bg-emerald-'],
+  [class^='bg-red-'], [class*=' bg-red-'],
+  [class^='bg-brand-'], [class*=' bg-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class^='text-blue-'], [class*=' text-blue-'],
+  [class^='text-indigo-'], [class*=' text-indigo-'],
+  [class^='text-purple-'], [class*=' text-purple-'],
+  [class^='text-violet-'], [class*=' text-violet-'],
+  [class^='text-sky-'], [class*=' text-sky-'],
+  [class^='text-cyan-'], [class*=' text-cyan-'],
+  [class^='text-teal-'], [class*=' text-teal-'],
+  [class^='text-yellow-'], [class*=' text-yellow-'],
+  [class^='text-amber-'], [class*=' text-amber-'],
+  [class^='text-orange-'], [class*=' text-orange-'],
+  [class^='text-green-'], [class*=' text-green-'],
+  [class^='text-emerald-'], [class*=' text-emerald-'],
+  [class^='text-red-'], [class*=' text-red-'],
+  [class^='text-brand-'], [class*=' text-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class^='border-blue-'], [class*=' border-blue-'],
+  [class^='border-indigo-'], [class*=' border-indigo-'],
+  [class^='border-purple-'], [class*=' border-purple-'],
+  [class^='border-violet-'], [class*=' border-violet-'],
+  [class^='border-sky-'], [class*=' border-sky-'],
+  [class^='border-cyan-'], [class*=' border-cyan-'],
+  [class^='border-teal-'], [class*=' border-teal-'],
+  [class^='border-yellow-'], [class*=' border-yellow-'],
+  [class^='border-amber-'], [class*=' border-amber-'],
+  [class^='border-orange-'], [class*=' border-orange-'],
+  [class^='border-green-'], [class*=' border-green-'],
+  [class^='border-emerald-'], [class*=' border-emerald-'],
+  [class^='border-red-'], [class*=' border-red-'],
+  [class^='border-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+/* Remove colored gradients from ordinary cards and banners without changing
+   layout, content, or the semantic marker exceptions. */
+#app .erp-theme :is(
+  [class*='bg-gradient-to-'], [class*='bg-linear-to-'],
+  [class^='from-blue-'], [class*=' from-blue-'],
+  [class^='from-indigo-'], [class*=' from-indigo-'],
+  [class^='from-purple-'], [class*=' from-purple-'],
+  [class^='from-violet-'], [class*=' from-violet-'],
+  [class^='from-sky-'], [class*=' from-sky-'],
+  [class^='from-cyan-'], [class*=' from-cyan-'],
+  [class^='from-teal-'], [class*=' from-teal-'],
+  [class^='from-yellow-'], [class*=' from-yellow-'],
+  [class^='from-amber-'], [class*=' from-amber-'],
+  [class^='from-orange-'], [class*=' from-orange-'],
+  [class^='from-green-'], [class*=' from-green-'],
+  [class^='from-emerald-'], [class*=' from-emerald-'],
+  [class^='from-red-'], [class*=' from-red-'],
+  [class^='from-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+/* Colored background utilities on text-bearing controls are primary actions;
+   keep them black/white in light mode and the requested white/black pairing in
+   dark mode. */
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):not(:disabled):is(
+  [class^='bg-blue-'], [class*=' bg-blue-'],
+  [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'],
+  [class^='bg-violet-'], [class*=' bg-violet-'],
+  [class^='bg-sky-'], [class*=' bg-sky-'],
+  [class^='bg-cyan-'], [class*=' bg-cyan-'],
+  [class^='bg-teal-'], [class*=' bg-teal-'],
+  [class^='bg-yellow-'], [class*=' bg-yellow-'],
+  [class^='bg-amber-'], [class*=' bg-amber-'],
+  [class^='bg-orange-'], [class*=' bg-orange-'],
+  [class^='bg-green-'], [class*=' bg-green-'],
+  [class^='bg-emerald-'], [class*=' bg-emerald-'],
+  [class^='bg-red-'], [class*=' bg-red-'],
+  [class^='bg-brand-']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):not(:disabled):is(
+  [class^='bg-blue-'], [class*=' bg-blue-'],
+  [class^='bg-indigo-'], [class*=' bg-indigo-'],
+  [class^='bg-purple-'], [class*=' bg-purple-'],
+  [class^='bg-violet-'], [class*=' bg-violet-'],
+  [class^='bg-sky-'], [class*=' bg-sky-'],
+  [class^='bg-cyan-'], [class*=' bg-cyan-'],
+  [class^='bg-teal-'], [class*=' bg-teal-'],
+  [class^='bg-yellow-'], [class*=' bg-yellow-'],
+  [class^='bg-amber-'], [class*=' bg-amber-'],
+  [class^='bg-orange-'], [class*=' bg-orange-'],
+  [class^='bg-green-'], [class*=' bg-green-'],
+  [class^='bg-emerald-'], [class*=' bg-emerald-'],
+  [class^='bg-red-'], [class*=' bg-red-'],
+  [class^='bg-brand-']
+):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+/* Colored hover-only utilities become the neutral hover treatment. */
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):not(:disabled):is(
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'], [class*='hover:bg-purple-'],
+  [class*='hover:bg-violet-'], [class*='hover:bg-sky-'], [class*='hover:bg-cyan-'],
+  [class*='hover:bg-teal-'], [class*='hover:bg-yellow-'], [class*='hover:bg-amber-'],
+  [class*='hover:bg-orange-'], [class*='hover:bg-green-'], [class*='hover:bg-emerald-'],
+  [class*='hover:bg-red-'], [class*='hover:bg-brand-'],
+  [class*='dark:hover:bg-blue-'], [class*='dark:hover:bg-indigo-'],
+  [class*='dark:hover:bg-purple-'], [class*='dark:hover:bg-violet-'],
+  [class*='dark:hover:bg-sky-'], [class*='dark:hover:bg-cyan-'],
+  [class*='dark:hover:bg-teal-'], [class*='dark:hover:bg-yellow-'],
+  [class*='dark:hover:bg-amber-'], [class*='dark:hover:bg-orange-'],
+  [class*='dark:hover:bg-green-'], [class*='dark:hover:bg-emerald-'],
+  [class*='dark:hover:bg-red-'], [class*='dark:hover:bg-brand-']
+):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+/* Shared active/selected controls use the same ink surface in both modes. */
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *),
+html.dark #app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+/* Cards, dialog surfaces, and forms inherit the same neutral surface tokens. */
+#app .erp-theme :is(
+  [role='dialog'], [data-modal], [data-card],
+  [class~='rounded-lg'][class~='shadow'],
+  [class~='rounded-xl'][class~='shadow'],
+  [class~='rounded-2xl'][class~='shadow']
+):not(.erp-modal-backdrop, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(input, select, textarea) {
+  background-color: var(--erp-surface) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(input, select, textarea)::placeholder {
+  color: var(--erp-text-muted) !important;
+}
+
+#app .erp-theme :is(input, select, textarea):focus {
+  border-color: var(--erp-ink) !important;
+  outline-color: var(--erp-ink) !important;
+  --tw-ring-color: rgb(17 17 17 / 0.18) !important;
+}
+
+html.dark #app .erp-theme :is(input, select, textarea):focus {
+  --tw-ring-color: rgb(255 255 255 / 0.28) !important;
+}
+
+#app .erp-theme :is(input, select, textarea):disabled {
+  background-color: var(--erp-surface-muted) !important;
+  color: var(--erp-text-muted) !important;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+#app .erp-theme :is(input[type='checkbox'], input[type='radio']) {
+  accent-color: var(--erp-ink);
+}
+
+/* Native select options remain browser/OS-controlled. Only the field is
+   themed, preserving the existing native-select regression contract. */
+html:not(.dark) #app .erp-theme select {
+  color-scheme: light;
+}
+
+html.dark #app .erp-theme select {
+  color-scheme: dark;
+}
+
+/* Accessible custom listboxes, dropdowns, and pagination stay neutral in both
+   modes without replacing native selects. */
+#app .erp-theme :is([role='combobox'], [aria-haspopup='listbox']):is(:focus, :focus-within) {
+  border-color: var(--erp-border) !important;
+  outline-color: var(--erp-border) !important;
+  --tw-ring-color: rgb(107 114 128 / 0.22) !important;
+}
+
+#app .erp-theme :is([role='combobox'], [aria-haspopup='listbox']):hover {
+  background-color: var(--erp-surface-muted) !important;
+}
+
+#app .erp-theme [role='listbox'] [role='option'] {
+  background-color: var(--erp-surface) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme [role='listbox'] [role='option'][aria-selected='true'] {
+  background-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme [role='listbox'] [role='option']:not([aria-selected='true']):is(:hover, [data-highlighted='true']) {
+  background-color: var(--erp-surface-muted) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(nav[aria-label*='pagination' i], [data-pagination]) :is(a, button) {
+  border-color: var(--erp-border) !important;
+  background-color: var(--erp-surface) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(nav[aria-label*='pagination' i], [data-pagination]) :is(a, button):not(:disabled):hover {
+  border-color: var(--erp-border) !important;
+  background-color: var(--erp-surface-muted) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(nav[aria-label*='pagination' i], [data-pagination]) :is(a, button)[aria-current='page'] {
+  border-color: var(--erp-ink) !important;
+  background-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(nav[aria-label*='pagination' i], [data-pagination]) :is(a, button)[aria-current='page']:hover {
+  border-color: var(--erp-ink) !important;
+  background-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+/* Deliberate semantic exceptions are explicit and limited to icon-only or
+   critical/safety treatments. */
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger'],
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger'] *,
+#app .erp-theme [data-critical][data-semantic-color='danger'],
+#app .erp-theme [data-critical][data-semantic-color='danger'] * {
+  color: #dc2626 !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success'],
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success'] *,
+#app .erp-theme [data-critical][data-semantic-color='success'],
+#app .erp-theme [data-critical][data-semantic-color='success'] * {
+  color: #16a34a !important;
+}
+
+#app .erp-theme [data-critical][data-semantic-color='danger'] {
+  background-color: #fef2f2 !important;
+  border-color: #fecaca !important;
+}
+
+#app .erp-theme [data-critical][data-semantic-color='success'] {
+  background-color: #f0fdf4 !important;
+  border-color: #bbf7d0 !important;
+}
+
+html.dark #app .erp-theme [data-critical][data-semantic-color='danger'] {
+  background-color: rgb(127 29 29 / 0.32) !important;
+  border-color: #7f1d1d !important;
+}
+
+html.dark #app .erp-theme [data-critical][data-semantic-color='success'] {
+  background-color: rgb(20 83 45 / 0.32) !important;
+  border-color: #166534 !important;
+}
+
+/* SweetAlert portals are mounted under body, so page-context scoping is used
+   instead of a global customer-facing override. */
+html:has(#app .erp-theme) .erp-swal2-popup,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) {
+  --swal2-confirm-button-background-color: #111111;
+  --swal2-confirm-button-color: #ffffff;
+  --swal2-cancel-button-background-color: #f3f4f6;
+  --swal2-cancel-button-color: #111111;
+  background: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .erp-swal2-popup,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) {
+  --swal2-confirm-button-background-color: #ffffff;
+  --swal2-confirm-button-color: #111111;
+  --swal2-cancel-button-background-color: #1f2937;
+  --swal2-cancel-button-color: #f9fafb;
+  background: #111111 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-title,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-title,
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-html-container,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-html-container {
+  color: inherit !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm {
+  background-color: var(--swal2-confirm-button-background-color, #111111) !important;
+  border-color: var(--swal2-confirm-button-background-color, #111111) !important;
+  color: var(--swal2-confirm-button-color, #ffffff) !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-cancel,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
+  background-color: var(--swal2-cancel-button-background-color, #f3f4f6) !important;
+  border-color: var(--swal2-cancel-button-background-color, #f3f4f6) !important;
+  color: var(--swal2-cancel-button-color, #111111) !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-confirm:hover,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm:hover {
+  background-color: color-mix(in srgb, var(--swal2-confirm-button-background-color, #111111), #000000 8%) !important;
+  border-color: color-mix(in srgb, var(--swal2-confirm-button-background-color, #111111), #000000 8%) !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup .swal2-cancel:hover,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel:hover {
+  background-color: color-mix(in srgb, var(--swal2-cancel-button-background-color, #f3f4f6), #000000 6%) !important;
+  border-color: color-mix(in srgb, var(--swal2-cancel-button-background-color, #f3f4f6), #000000 6%) !important;
+}
+
+html:has(#app .erp-theme) .erp-swal2-popup :is(.swal2-input, .swal2-textarea) {
+  background: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .erp-swal2-popup :is(.swal2-input, .swal2-textarea) {
+  background: #111111 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
 }
 
 @utility no-scrollbar {
@@ -858,4 +3103,1883 @@ body {
   to {
     opacity: 0;
   }
+}
+
+/* Dark-mode polish for customer review, product, repair, and registration
+   surfaces. These selectors intentionally stay inside the customer theme so
+   ERP and shop-owner dashboard colors remain independent. */
+html.userside-dark #app [class~="text-gray-800"] {
+  color: #e2e8f0;
+}
+
+html.userside-dark #app [class~="text-gray-400"] {
+  color: #94a3b8;
+}
+
+html.userside-dark #app [class~="text-black/35"] {
+  color: #64748b;
+}
+
+html.userside-dark #app [class~="text-black/75"],
+html.userside-dark #app [class~="text-black/80"] {
+  color: #e2e8f0;
+}
+
+html.userside-dark #app [class~="text-slate-900"] {
+  color: #f8fafc;
+}
+
+html.userside-dark #app [class~="text-slate-800"] {
+  color: #e2e8f0;
+}
+
+html.userside-dark #app [class~="text-slate-700"],
+html.userside-dark #app [class~="text-slate-600"] {
+  color: #cbd5e1;
+}
+
+html.userside-dark #app [class~="text-slate-500"],
+html.userside-dark #app [class~="text-slate-400"] {
+  color: #94a3b8;
+}
+
+html.userside-dark #app [class~="text-slate-300"] {
+  color: #cbd5e1;
+}
+
+html.userside-dark #app [class~="bg-slate-50"] {
+  background-color: #151f32;
+}
+
+html.userside-dark #app [class~="bg-slate-100"] {
+  background-color: #1b2a41;
+}
+
+html.userside-dark #app [class~="bg-slate-200"] {
+  background-color: #253550;
+}
+
+html.userside-dark #app [class~="bg-slate-950"] {
+  background-color: #050b17;
+}
+
+html.userside-dark #app [class~="border-slate-100"],
+html.userside-dark #app [class~="border-slate-200"],
+html.userside-dark #app [class~="border-slate-300"],
+html.userside-dark #app [class*="border-slate-200/"] {
+  border-color: #2f405a;
+}
+
+html.userside-dark #app [class~="divide-slate-100"],
+html.userside-dark #app [class~="divide-slate-200"] {
+  --tw-divide-color: #26364d;
+}
+
+html.userside-dark #app [class~="bg-blue-50"],
+html.userside-dark #app [class*="bg-blue-50/"] {
+  background-color: #172c47;
+}
+
+html.userside-dark #app [class~="bg-green-50"],
+html.userside-dark #app [class*="bg-green-50/"] {
+  background-color: #102b1f;
+}
+
+html.userside-dark #app [class~="bg-amber-50"],
+html.userside-dark #app [class*="bg-amber-50/"] {
+  background-color: #302613;
+}
+
+html.userside-dark #app [class~="bg-yellow-50"],
+html.userside-dark #app [class*="bg-yellow-50/"] {
+  background-color: #2a2514;
+}
+
+html.userside-dark #app [class~="text-blue-900"] {
+  color: #d5e0ff;
+}
+
+html.userside-dark #app [class~="text-blue-800"],
+html.userside-dark #app [class~="text-blue-700"] {
+  color: #a9c1ff;
+}
+
+html.userside-dark #app [class~="text-green-900"],
+html.userside-dark #app [class~="text-green-800"],
+html.userside-dark #app [class~="text-green-700"] {
+  color: #76d69b;
+}
+
+html.userside-dark #app [class~="text-amber-900"],
+html.userside-dark #app [class~="text-amber-800"],
+html.userside-dark #app [class~="text-amber-700"] {
+  color: #f5c66d;
+}
+
+html.userside-dark #app [class~="border-blue-100"],
+html.userside-dark #app [class~="border-blue-200"],
+html.userside-dark #app [class~="border-green-100"],
+html.userside-dark #app [class~="border-green-200"],
+html.userside-dark #app [class~="border-amber-100"],
+html.userside-dark #app [class~="border-amber-200"],
+html.userside-dark #app [class~="border-yellow-100"] {
+  border-color: #385070;
+}
+
+html.userside-dark #app [class~="hover:bg-slate-50"]:hover,
+html.userside-dark #app [class~="hover:bg-slate-100"]:hover {
+  background-color: #1f2d43;
+}
+
+html.userside-dark #app [class~="hover:text-slate-800"]:hover,
+html.userside-dark #app [class~="hover:text-black"]:hover,
+html.userside-dark #app [class~="hover:text-[#16233b]"]:hover {
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-repair-shop-page,
+html.userside-dark #app .userside-product-show-page,
+html.userside-dark #app .userside-products-page,
+html.userside-dark #app .userside-repair-list-page,
+html.userside-dark #app .userside-shop-owner-registration-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-linear-to-br"],
+html.userside-dark #app .userside-product-show-page [class~="bg-linear-to-br"] {
+  background-image: linear-gradient(135deg, #111827 0%, #0f172a 100%) !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class*="from-yellow-50"] {
+  background-image: linear-gradient(135deg, #2a2514 0%, #111827 100%) !important;
+  border-color: #4b4224 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class*="from-slate-50"],
+html.userside-dark #app .userside-product-show-page [class*="from-slate-50"] {
+  background-image: linear-gradient(90deg, #151f32 0%, #111827 50%, #151f32 100%) !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-white/80"],
+html.userside-dark #app .userside-repair-shop-page [class~="bg-blue-50/70"] {
+  background-color: #142238 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-gray-50/70"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="text-gray-600"],
+html.userside-dark #app .userside-product-show-page [class~="text-gray-600"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="text-gray-500"],
+html.userside-dark #app .userside-product-show-page [class~="text-gray-500"] {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="border-gray-100"],
+html.userside-dark #app .userside-product-show-page [class~="border-gray-100"] {
+  border-color: #2b3a52 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-gray-200"] {
+  background-color: #253550 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-green-100"] {
+  background-color: #163b2a !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="bg-gray-100"] {
+  background-color: #1b2a41 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [class~="text-gray-700"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-repair-shop-page [role="menu"] button > span > span:last-child,
+html.userside-dark #app .userside-products-page [role="menu"] button > span > span:last-child,
+html.userside-dark #app .userside-repair-list-page [role="menu"] button > span > span:last-child {
+  background-color: #b8cdff;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page {
+  background: radial-gradient(circle at top, #18243a 0%, #0b1220 54%, #080e19 100%) !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="bg-gradient-to-br"] {
+  background-image: none !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-900"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-700"],
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-shop-owner-registration-page [class~="text-gray-500"] {
+  color: #a8b6ca !important;
+}
+
+/* The shop-owner theme is driven by the shared .dark class rather than the
+   customer userside-dark marker. Keep its premium and voucher pages scoped. */
+.dark #app .shopowner-premium-page,
+.dark #app .shopowner-vouchers-page {
+  color: #f8fafc;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) {
+  background-color: #0f172a !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-white"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class*="bg-white/"] {
+  background-color: #111827 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-slate-50"] {
+  background-color: #151f32 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-slate-100"] {
+  background-color: #1b2a41 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-gray-50"] {
+  background-color: #151f32 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-gray-100"] {
+  background-color: #1b2a41 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-blue-50"] {
+  background-color: #172c47 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-amber-50"] {
+  background-color: #302613 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="bg-red-50"] {
+  background-color: #2a1820 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-900"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-900"] {
+  color: #f8fafc !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-800"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-800"] {
+  color: #e2e8f0 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-600"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-600"] {
+  color: #cbd5e1 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-500"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-slate-400"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/55"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/60"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/65"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/70"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/75"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/80"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/40"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-black/45"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-gray-400"] {
+  color: #94a3b8 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-blue-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-blue-600"] {
+  color: #a9c1ff !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-amber-700"] {
+  color: #f5c66d !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-red-700"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="text-red-600"] {
+  color: #ff9bb0 !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-gray-200"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-gray-300"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-slate-200"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-slate-300"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-gray-400"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="border-red-200"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class*="border-white/"] {
+  border-color: #2f405a !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="divide-slate-100"],
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="divide-slate-200"] {
+  --tw-divide-color: #26364d !important;
+}
+
+.dark #app .shopowner-vouchers-page > section:first-child {
+  background: radial-gradient(circle at top left, rgba(70, 116, 210, 0.2), transparent 34%), linear-gradient(135deg, #142238 0%, #111827 56%, #17203a 100%) !important;
+}
+
+.dark #app .shopowner-vouchers-page input,
+.dark #app .shopowner-vouchers-page select,
+.dark #app .shopowner-vouchers-page textarea,
+.dark #app .shopowner-premium-page input,
+.dark #app .shopowner-premium-page select,
+.dark #app .shopowner-premium-page textarea {
+  background-color: #111827 !important;
+  border-color: #3a4b64 !important;
+  color: #f8fafc !important;
+}
+
+.dark #app .shopowner-premium-page [class~="text-[#0f1b33]"],
+.dark #app .shopowner-premium-page [class~="text-[#16233b]"],
+.dark #app .shopowner-premium-page [class~="text-[#16233b]/75"] {
+  color: #d5e0ff !important;
+}
+
+.dark #app .shopowner-premium-page [class~="bg-linear-to-r"] {
+  background-image: linear-gradient(135deg, #172c47 0%, #111827 100%) !important;
+}
+
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="hover:bg-slate-50"]:hover,
+.dark #app :is(.shopowner-premium-page, .shopowner-vouchers-page) [class~="hover:bg-gray-50"]:hover {
+  background-color: #1f2d43 !important;
+}
+
+/* Services and article surfaces use the same restrained customer dark palette
+   without changing the light-mode layout or the ERP theme. */
+html.userside-dark #app .userside-services-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-services-page [class~="text-black/40"],
+html.userside-dark #app .userside-services-page [class~="text-black/45"],
+html.userside-dark #app .userside-services-page [class~="text-black/50"],
+html.userside-dark #app .userside-services-page [class~="text-black/65"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="text-[#16233b]"] {
+  color: #d5e0ff !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="bg-[#f4f5f8]"] {
+  background-color: #0b1220 !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="bg-gray-50/60"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-services-page [class~="border-gray-200"],
+html.userside-dark #app .userside-services-page [class~="border-gray-300"],
+html.userside-dark #app .userside-services-page [class~="border-gray-400"] {
+  border-color: #2f405a !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/45"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/60"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/65"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/75"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-black/80"] {
+  color: #e2e8f0 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="text-emerald-900"],
+html.userside-dark #app .userside-shoe-guide-page [class~="text-emerald-800"] {
+  color: #9ae6b4 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-emerald-50"],
+html.userside-dark #app .userside-shoe-guide-page [class*="bg-emerald-50/"] {
+  background-color: #102b1f !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class*="border-emerald-200"] {
+  border-color: #2f624a !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class*="bg-gray-50/"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-gray-300"] {
+  background-color: #334155 !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-linear-to-br"] {
+  background-image: linear-gradient(135deg, #102b1f 0%, #111827 100%) !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="bg-linear-to-b"] {
+  background-image: linear-gradient(180deg, #111827 0%, #151f32 100%) !important;
+}
+
+html.userside-dark #app .userside-shoe-guide-page [class~="border-gray-200"],
+html.userside-dark #app .userside-shoe-guide-page [class~="border-gray-300"] {
+  border-color: #2f405a !important;
+}
+
+/* The premium shop-owner page has a few brand/arbitrary utilities that are
+   intentionally outside the shared gray token mappings above. */
+.dark #app .shopowner-premium-page [class~="text-black/35"],
+.dark #app .shopowner-premium-page [class~="text-black/50"] {
+  color: #94a3b8 !important;
+}
+
+.dark #app .shopowner-premium-page [class*="bg-[#16233b]/"] {
+  background-color: #172c47 !important;
+}
+
+.dark #app .shopowner-premium-page [class*="border-[#16233b]/"] {
+  border-color: #385070 !important;
+}
+
+.dark #app .shopowner-premium-page [class~="text-emerald-700"],
+.dark #app .shopowner-premium-page [class~="text-emerald-800"],
+.dark #app .shopowner-premium-page [class~="text-emerald-900"] {
+  color: #72d8a0 !important;
+}
+
+/* Keep the Repair Dashboard's updated card/table UI in dark mode. */
+.dark #app .repair-dashboard [class~="bg-white"] {
+  background-color: #111827 !important;
+}
+
+.dark #app .repair-dashboard [class~="bg-gray-50"] {
+  background-color: #0f172a !important;
+}
+
+.dark #app .repair-dashboard [class~="border-gray-200"],
+.dark #app .repair-dashboard [class~="border-gray-100"],
+.dark #app .repair-dashboard [class~="divide-gray-100"] {
+  border-color: #1f2937 !important;
+}
+
+.dark #app .repair-dashboard [class~="text-gray-900"] {
+  color: #f9fafb !important;
+}
+
+.dark #app .repair-dashboard [class~="text-gray-700"],
+.dark #app .repair-dashboard [class~="text-gray-600"] {
+  color: #d1d5db !important;
+}
+
+.dark #app .repair-dashboard [class~="text-gray-500"] {
+  color: #9ca3af !important;
+}
+
+.dark #app .repair-dashboard [class~="bg-blue-50"] {
+  background-color: rgb(30 58 138 / 0.3) !important;
+}
+
+.dark #app .repair-dashboard [class~="bg-green-50"] {
+  background-color: rgb(6 78 59 / 0.3) !important;
+}
+
+.dark #app .repair-dashboard [class~="text-blue-600"] {
+  color: #93c5fd !important;
+}
+
+.dark #app .repair-dashboard [class~="text-green-600"] {
+  color: #86efac !important;
+}
+
+/* Keep customer-side drawers readable when their light-mode arbitrary utilities
+   are rendered inside the userside dark theme. */
+html.userside-dark #app .userside-customer-drawer {
+  background-color: rgb(15 23 42 / 0.96) !important;
+  border-color: #334155 !important;
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="text-[#555555]"],
+html.userside-dark #app .userside-customer-drawer [class~="text-[#777777]"],
+html.userside-dark #app .userside-customer-drawer [class~="text-[#707072]"],
+html.userside-dark #app .userside-customer-drawer [class~="text-[#999999]"] {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="border-[#dedede]"],
+html.userside-dark #app .userside-customer-drawer [class~="border-[#ededed]"],
+html.userside-dark #app .userside-customer-drawer [class~="border-[#e5e5e5]"],
+html.userside-dark #app .userside-customer-drawer [class~="border-[#cacacb]"] {
+  border-color: #334155 !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="bg-[#f3f3f3]"],
+html.userside-dark #app .userside-customer-drawer [class~="bg-[#f5f5f5]"] {
+  background-color: #1f2937 !important;
+}
+
+html.userside-dark #app .userside-customer-drawer [class~="bg-[#111111]"] {
+  background-color: #f8fafc !important;
+  color: #0b1220 !important;
+}
+
+/* Checkout contains a few light-only gradients and arbitrary text utilities
+   that are intentionally kept local to the customer checkout surface. */
+html.userside-dark #app .userside-checkout-page {
+  background-color: #0b1220 !important;
+  color: #f8fafc;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-white"] {
+  background-color: #111827 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-gray-50"],
+html.userside-dark #app .userside-checkout-page [class*="bg-gray-50/"] {
+  background-color: #151f32 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-linear-to-b"][class~="from-white"][class~="to-slate-50"] {
+  background-image: linear-gradient(180deg, #111827 0%, #0f172a 100%) !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="bg-linear-to-br"][class~="from-slate-100"][class~="to-slate-200"] {
+  background-image: linear-gradient(135deg, #1b2a41 0%, #253550 100%) !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="text-black"] {
+  color: #f8fafc !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="text-gray-600"] {
+  color: #cbd5e1 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="text-gray-500"] {
+  color: #94a3b8 !important;
+}
+
+html.userside-dark #app .userside-checkout-page [class~="border-gray-100"],
+html.userside-dark #app .userside-checkout-page [class~="border-gray-200"],
+html.userside-dark #app .userside-checkout-page [class~="border-gray-300"],
+html.userside-dark #app .userside-checkout-page [class~="border-slate-200"] {
+  border-color: #2f405a !important;
+}
+
+/* Preserve a clear selected state for repair packages after the shared
+   dark-mode mappings neutralize their light-mode black/white utilities. */
+html.userside-dark #app .userside-repair-shop-page .repair-package-card--selected {
+  background-color: #1b2f50 !important;
+  border-color: #7da2ff !important;
+  box-shadow: 0 12px 28px -24px rgba(125, 162, 255, 0.9);
+}
+
+html.userside-dark #app .userside-repair-shop-page .repair-package-selection-indicator--selected {
+  background-color: #b8cdff !important;
+  border-color: #b8cdff !important;
+}
+
+/* Shared pagination treatment: keep every account-facing list consistent. */
+html:not(.dark) #app [data-pagination] button,
+html:not(.dark) #app nav[aria-label*="pagination" i] a,
+html:not(.dark) #app nav[aria-label*="pagination" i] button,
+html:not(.dark) #app nav[aria-label*="pagination" i] [aria-current="page"],
+html:not(.dark) #app button[title="Previous page"],
+html:not(.dark) #app button[title="Next page"],
+html:not(.dark) #app button[aria-label="Previous page"],
+html:not(.dark) #app button[aria-label="Next page"] {
+  min-height: 2.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 9999px;
+  background-color: #ffffff;
+  color: #374151;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+html:not(.dark) #app [data-pagination] button,
+html:not(.dark) #app nav[aria-label*="pagination" i] a,
+html:not(.dark) #app nav[aria-label*="pagination" i] button,
+html:not(.dark) #app nav[aria-label*="pagination" i] [aria-current="page"],
+html:not(.dark) #app button[title="Previous page"],
+html:not(.dark) #app button[title="Next page"],
+html:not(.dark) #app button[aria-label="Previous page"],
+html:not(.dark) #app button[aria-label="Next page"] {
+  padding: 0.375rem 1rem;
+}
+
+html:not(.dark) #app :is(div, nav):has(> button[aria-label="Previous page"], > button[title="Previous page"], > a[aria-label="Previous page"]) button,
+html:not(.dark) #app :is(div, nav):has(> button[aria-label="Previous page"], > button[title="Previous page"], > a[aria-label="Previous page"]) a {
+  min-height: 2.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 9999px;
+  background-color: #ffffff;
+  color: #374151;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.25rem;
+  padding: 0.375rem 1rem;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+
+html:not(.dark) #app :is(div, nav):has(> button[aria-label="Previous page"], > button[title="Previous page"], > a[aria-label="Previous page"]) button:not(:disabled):hover,
+html:not(.dark) #app :is(div, nav):has(> button[aria-label="Previous page"], > button[title="Previous page"], > a[aria-label="Previous page"]) a:hover {
+  border-color: #9ca3af;
+  background-color: #f3f4f6;
+  color: #111111;
+}
+
+html:not(.dark) #app :is(div, nav):has(> button[aria-label="Previous page"], > button[title="Previous page"], > a[aria-label="Previous page"]) button:disabled {
+  cursor: not-allowed;
+  border-color: #e5e7eb;
+  background-color: #ffffff;
+  color: #9ca3af;
+  opacity: 1;
+}
+
+html:not(.dark) #app [data-pagination] button:not(:disabled):hover,
+html:not(.dark) #app nav[aria-label*="pagination" i] a:hover,
+html:not(.dark) #app nav[aria-label*="pagination" i] button:not(:disabled):hover,
+html:not(.dark) #app button[title="Previous page"]:not(:disabled):hover,
+html:not(.dark) #app button[title="Next page"]:not(:disabled):hover,
+html:not(.dark) #app button[aria-label="Previous page"]:not(:disabled):hover,
+html:not(.dark) #app button[aria-label="Next page"]:not(:disabled):hover {
+  border-color: #9ca3af;
+  background-color: #f3f4f6;
+  color: #111111;
+}
+
+html:not(.dark) #app [data-pagination] button:disabled,
+html:not(.dark) #app nav[aria-label*="pagination" i] button:disabled,
+html:not(.dark) #app button[title="Previous page"]:disabled,
+html:not(.dark) #app button[title="Next page"]:disabled,
+html:not(.dark) #app button[aria-label="Previous page"]:disabled,
+html:not(.dark) #app button[aria-label="Next page"]:disabled {
+  cursor: not-allowed;
+  border-color: #e5e7eb;
+  background-color: #ffffff;
+  color: #9ca3af;
+  opacity: 1;
+}
+
+/* Numbered current pages use the same black circle as the reference design. */
+html:not(.dark) #app [data-pagination] button[aria-current="page"],
+html:not(.dark) #app nav[aria-label*="pagination" i] [aria-current="page"] {
+  min-width: 2.75rem;
+  border-color: #111111;
+  background-color: #111111;
+  color: #ffffff;
+  padding-right: 0.75rem;
+  padding-left: 0.75rem;
+  text-align: center;
+}
+
+html:not(.dark) #app button[aria-current="page"],
+html:not(.dark) #app :is(div, nav):has(> button[aria-label="Previous page"], > button[title="Previous page"], > a[aria-label="Previous page"]) [aria-current="page"],
+html:not(.dark) #app :is(div, nav):has(> button[aria-label="Previous page"], > button[title="Previous page"], > a[aria-label="Previous page"]) [aria-label="Current page"],
+html:not(.dark) #app :is(div, nav):has(> button[aria-label="Previous page"], > button[title="Previous page"]) button[class*="bg-blue-600"] {
+  min-width: 2.75rem;
+  border-color: #111111;
+  border-radius: 9999px;
+  background-color: #111111;
+  color: #ffffff;
+  padding-right: 0.75rem;
+  padding-left: 0.75rem;
+  text-align: center;
+}
+
+html:not(.dark) #app [data-pagination] button[aria-current="page"]:hover,
+html:not(.dark) #app nav[aria-label*="pagination" i] [aria-current="page"]:hover {
+  border-color: #111111;
+  background-color: #111111;
+  color: #ffffff;
+}
+
+/* Final ERP/Owner compatibility pass for dark-prefixed and hover-only utility
+   classes used by older role pages. This remains after legacy page-local rules
+   so the requested monochrome system wins within the ERP boundary. */
+html.dark #app .erp-theme :is(
+  [class*='dark:bg-blue-'], [class*='dark:bg-indigo-'],
+  [class*='dark:bg-purple-'], [class*='dark:bg-violet-'],
+  [class*='dark:bg-sky-'], [class*='dark:bg-cyan-'],
+  [class*='dark:bg-teal-'], [class*='dark:bg-yellow-'],
+  [class*='dark:bg-amber-'], [class*='dark:bg-orange-'],
+  [class*='dark:bg-green-'], [class*='dark:bg-emerald-'],
+  [class*='dark:bg-red-'], [class*='dark:bg-brand-']
+):not(
+  [data-erp-icon-action], [data-erp-icon-action] *,
+  [data-critical], [data-critical] *,
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:text-blue-'], [class*='dark:text-indigo-'],
+  [class*='dark:text-purple-'], [class*='dark:text-violet-'],
+  [class*='dark:text-sky-'], [class*='dark:text-cyan-'],
+  [class*='dark:text-teal-'], [class*='dark:text-yellow-'],
+  [class*='dark:text-amber-'], [class*='dark:text-orange-'],
+  [class*='dark:text-green-'], [class*='dark:text-emerald-'],
+  [class*='dark:text-red-'], [class*='dark:text-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:border-blue-'], [class*='dark:border-indigo-'],
+  [class*='dark:border-purple-'], [class*='dark:border-violet-'],
+  [class*='dark:border-sky-'], [class*='dark:border-cyan-'],
+  [class*='dark:border-teal-'], [class*='dark:border-yellow-'],
+  [class*='dark:border-amber-'], [class*='dark:border-orange-'],
+  [class*='dark:border-green-'], [class*='dark:border-emerald-'],
+  [class*='dark:border-red-'], [class*='dark:border-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:from-blue-'], [class*='dark:from-indigo-'],
+  [class*='dark:from-purple-'], [class*='dark:from-violet-'],
+  [class*='dark:from-sky-'], [class*='dark:from-cyan-'],
+  [class*='dark:from-teal-'], [class*='dark:from-yellow-'],
+  [class*='dark:from-amber-'], [class*='dark:from-orange-'],
+  [class*='dark:from-green-'], [class*='dark:from-emerald-'],
+  [class*='dark:from-red-'], [class*='dark:from-brand-'],
+  [class*='dark:via-blue-'], [class*='dark:via-indigo-'],
+  [class*='dark:via-purple-'], [class*='dark:via-violet-'],
+  [class*='dark:via-sky-'], [class*='dark:via-cyan-'],
+  [class*='dark:via-teal-'], [class*='dark:via-yellow-'],
+  [class*='dark:via-amber-'], [class*='dark:via-orange-'],
+  [class*='dark:via-green-'], [class*='dark:via-emerald-'],
+  [class*='dark:via-red-'], [class*='dark:via-brand-'],
+  [class*='dark:to-blue-'], [class*='dark:to-indigo-'],
+  [class*='dark:to-purple-'], [class*='dark:to-violet-'],
+  [class*='dark:to-sky-'], [class*='dark:to-cyan-'],
+  [class*='dark:to-teal-'], [class*='dark:to-yellow-'],
+  [class*='dark:to-amber-'], [class*='dark:to-orange-'],
+  [class*='dark:to-green-'], [class*='dark:to-emerald-'],
+  [class*='dark:to-red-'], [class*='dark:to-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+html.dark #app .erp-theme :is(
+  button, a[href], [role='button'], [role='tab'], [role='menuitem']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(
+  [class*='dark:bg-blue-'], [class*='dark:bg-indigo-'],
+  [class*='dark:bg-purple-'], [class*='dark:bg-violet-'],
+  [class*='dark:bg-sky-'], [class*='dark:bg-cyan-'],
+  [class*='dark:bg-teal-'], [class*='dark:bg-yellow-'],
+  [class*='dark:bg-amber-'], [class*='dark:bg-orange-'],
+  [class*='dark:bg-green-'], [class*='dark:bg-emerald-'],
+  [class*='dark:bg-red-'], [class*='dark:bg-brand-']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  button, a[href], [role='button'], [role='tab'], [role='menuitem']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(
+  [class*='dark:bg-blue-'], [class*='dark:bg-indigo-'],
+  [class*='dark:bg-purple-'], [class*='dark:bg-violet-'],
+  [class*='dark:bg-sky-'], [class*='dark:bg-cyan-'],
+  [class*='dark:bg-teal-'], [class*='dark:bg-yellow-'],
+  [class*='dark:bg-amber-'], [class*='dark:bg-orange-'],
+  [class*='dark:bg-green-'], [class*='dark:bg-emerald-'],
+  [class*='dark:bg-red-'], [class*='dark:bg-brand-']
+):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:bg-blue-'], [class*='dark:hover:bg-indigo-'],
+  [class*='dark:hover:bg-purple-'], [class*='dark:hover:bg-violet-'],
+  [class*='dark:hover:bg-sky-'], [class*='dark:hover:bg-cyan-'],
+  [class*='dark:hover:bg-teal-'], [class*='dark:hover:bg-yellow-'],
+  [class*='dark:hover:bg-amber-'], [class*='dark:hover:bg-orange-'],
+  [class*='dark:hover:bg-green-'], [class*='dark:hover:bg-emerald-'],
+  [class*='dark:hover:bg-red-'], [class*='dark:hover:bg-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:text-blue-'], [class*='dark:hover:text-indigo-'],
+  [class*='dark:hover:text-purple-'], [class*='dark:hover:text-violet-'],
+  [class*='dark:hover:text-sky-'], [class*='dark:hover:text-cyan-'],
+  [class*='dark:hover:text-teal-'], [class*='dark:hover:text-yellow-'],
+  [class*='dark:hover:text-amber-'], [class*='dark:hover:text-orange-'],
+  [class*='dark:hover:text-green-'], [class*='dark:hover:text-emerald-'],
+  [class*='dark:hover:text-red-'], [class*='dark:hover:text-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:border-blue-'], [class*='dark:hover:border-indigo-'],
+  [class*='dark:hover:border-purple-'], [class*='dark:hover:border-violet-'],
+  [class*='dark:hover:border-sky-'], [class*='dark:hover:border-cyan-'],
+  [class*='dark:hover:border-teal-'], [class*='dark:hover:border-yellow-'],
+  [class*='dark:hover:border-amber-'], [class*='dark:hover:border-orange-'],
+  [class*='dark:hover:border-green-'], [class*='dark:hover:border-emerald-'],
+  [class*='dark:hover:border-red-'], [class*='dark:hover:border-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  border-color: var(--erp-border) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'],
+  [class*='hover:bg-purple-'], [class*='hover:bg-violet-'],
+  [class*='hover:bg-sky-'], [class*='hover:bg-cyan-'],
+  [class*='hover:bg-teal-'], [class*='hover:bg-yellow-'],
+  [class*='hover:bg-amber-'], [class*='hover:bg-orange-'],
+  [class*='hover:bg-green-'], [class*='hover:bg-emerald-'],
+  [class*='hover:bg-red-'], [class*='hover:bg-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(
+  [class*='hover:text-blue-'], [class*='hover:text-indigo-'],
+  [class*='hover:text-purple-'], [class*='hover:text-violet-'],
+  [class*='hover:text-sky-'], [class*='hover:text-cyan-'],
+  [class*='hover:text-teal-'], [class*='hover:text-yellow-'],
+  [class*='hover:text-amber-'], [class*='hover:text-orange-'],
+  [class*='hover:text-green-'], [class*='hover:text-emerald-'],
+  [class*='hover:text-red-'], [class*='hover:text-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  color: var(--erp-text) !important;
+}
+
+html:not(.dark) #app .erp-theme :is(
+  [class*='hover:border-blue-'], [class*='hover:border-indigo-'],
+  [class*='hover:border-purple-'], [class*='hover:border-violet-'],
+  [class*='hover:border-sky-'], [class*='hover:border-cyan-'],
+  [class*='hover:border-teal-'], [class*='hover:border-yellow-'],
+  [class*='hover:border-amber-'], [class*='hover:border-orange-'],
+  [class*='hover:border-green-'], [class*='hover:border-emerald-'],
+  [class*='hover:border-red-'], [class*='hover:border-brand-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  border-color: var(--erp-border) !important;
+}
+
+/* Final selected-state rule is last so dark utility fallbacks cannot flatten
+   active tabs, filter choices, or current pagination. */
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+/* Re-assert shared surfaces and fields after utility compatibility rules. */
+#app .erp-theme :is(
+  [role='dialog'], [data-modal], [data-card],
+  [class~='rounded-lg'][class~='shadow'],
+  [class~='rounded-xl'][class~='shadow'],
+  [class~='rounded-2xl'][class~='shadow']
+):not(.erp-modal-backdrop, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(input, select, textarea) {
+  background-color: var(--erp-surface) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(input, select, textarea):disabled {
+  background-color: var(--erp-surface-muted) !important;
+  color: var(--erp-text-muted) !important;
+}
+
+/* ERP SweetAlert toasts are portal siblings too; keep the surface neutral while
+   their success/error icons retain their meaning. */
+html:has(#app .erp-theme) .swal2-popup.swal2-toast {
+  background: #ffffff !important;
+  border: 1px solid #d1d5db !important;
+  color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup.swal2-toast {
+  background: #111111 !important;
+  border-color: #4b5563 !important;
+  color: #f9fafb !important;
+}
+
+/* SweetAlert2 stores confirm/cancel/deny colors as inline custom properties on
+   each button. Important scoped variables ensure legacy call-site colors do
+   not reintroduce blue, purple, amber, red, or green text buttons in ERP. */
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-deny {
+  --swal2-confirm-button-background-color: #111111 !important;
+  --swal2-confirm-button-color: #ffffff !important;
+  --swal2-deny-button-background-color: #111111 !important;
+  --swal2-deny-button-color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
+  --swal2-cancel-button-background-color: #f3f4f6 !important;
+  --swal2-cancel-button-color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-deny {
+  --swal2-confirm-button-background-color: #ffffff !important;
+  --swal2-confirm-button-color: #111111 !important;
+  --swal2-deny-button-background-color: #ffffff !important;
+  --swal2-deny-button-color: #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-cancel {
+  --swal2-cancel-button-background-color: #1f2937 !important;
+  --swal2-cancel-button-color: #f9fafb !important;
+}
+
+/* A few Owner premium controls use arbitrary navy/red utilities instead of
+   palette names. Normalize those source-level exceptions at the same scoped
+   boundary, including their hover/focus variants. */
+#app .erp-theme :is(
+  [class*='bg-[#16233b]'], [class*='bg-[#16284a]'],
+  [class*='bg-[#213257]'], [class*='bg-[#13213d]'],
+  [class*='bg-[#2a3f6a]'], [class*='bg-[#b91c1c]'],
+  [class*='bg-[#9f1616]'], [class*='bg-[#007d48]'],
+  [class*='bg-[#243758]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  button, a[href], [role='button'], [role='tab'], [role='menuitem']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled):is(
+  [class*='bg-[#16233b]'], [class*='bg-[#16284a]'],
+  [class*='bg-[#213257]'], [class*='bg-[#13213d]'],
+  [class*='bg-[#2a3f6a]'], [class*='bg-[#b91c1c]'],
+  [class*='bg-[#9f1616]'], [class*='bg-[#007d48]'],
+  [class*='bg-[#243758]']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [class*='text-[#16233b]'], [class*='text-[#0f1b33]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled) {
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class*='border-[#16233b]'], [class*='border-[#16284a]'],
+  [class*='border-[#213257]'], [class*='border-[#2a3f6a]'],
+  [class*='border-[#8f1212]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled) {
+  border-color: var(--erp-border) !important;
+}
+
+#app .erp-theme :is(
+  [class*='from-[#16233b]'], [class*='via-[#16233b]'],
+  [class*='to-[#16233b]'], [class*='from-[#16284a]'],
+  [class*='to-[#13213d]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+#app .erp-theme :is(
+  [class*='hover:bg-[#16233b]'], [class*='hover:bg-[#16284a]'],
+  [class*='hover:bg-[#213257]'], [class*='hover:bg-[#13213d]'],
+  [class*='hover:bg-[#2a3f6a]'], [class*='hover:bg-[#b91c1c]'],
+  [class*='hover:bg-[#9f1616]'], [class*='hover:bg-[#243758]']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):not(:disabled):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class*='focus:ring-[#16233b]'], [class*='focus-visible:ring-[#16233b]'],
+  [class*='focus:ring-[#16284a]'], [class*='focus-visible:ring-[#16284a]']
+):focus,
+#app .erp-theme :is(
+  [class*='focus:ring-[#16233b]'], [class*='focus-visible:ring-[#16233b]'],
+  [class*='focus:ring-[#16284a]'], [class*='focus-visible:ring-[#16284a]']
+):focus-visible {
+  border-color: var(--erp-ink) !important;
+  outline-color: var(--erp-ink) !important;
+  --tw-ring-color: rgb(17 17 17 / 0.18) !important;
+}
+
+/* Inertia mounts its progress indicator outside the ERP layout. Override its
+   injected color only while an ERP/Owner shell is present. */
+html:has(#app .erp-theme) #nprogress .bar {
+  background: #111111 !important;
+}
+
+html:has(#app .erp-theme) #nprogress .peg {
+  box-shadow: 0 0 10px #111111, 0 0 5px #111111 !important;
+}
+
+html.dark:has(#app .erp-theme) #nprogress .bar {
+  background: #ffffff !important;
+}
+
+html.dark:has(#app .erp-theme) #nprogress .peg {
+  box-shadow: 0 0 10px #ffffff, 0 0 5px #ffffff !important;
+}
+
+/* Warning/info/question icons communicate through their copy and icon shape;
+   keep ordinary ERP dialog chrome neutral while success/error icons remain
+   semantic for critical outcomes. */
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning, .swal2-info, .swal2-question) {
+  border-color: #9ca3af !important;
+  color: #6b7280 !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning, .swal2-info, .swal2-question) [class^='swal2-icon-content'] {
+  color: #6b7280 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning, .swal2-info, .swal2-question) {
+  border-color: #9ca3af !important;
+  color: #d1d5db !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) :is(.swal2-warning, .swal2-info, .swal2-question) [class^='swal2-icon-content'] {
+  color: #d1d5db !important;
+}
+
+/* Normalize the remaining palette utilities used by legacy ERP and Owner
+   pages. These include rose/pink accents, custom status tokens, and slate
+   variants that are outside the primary utility lists above. */
+#app .erp-theme :is(
+  [class^='bg-rose-'], [class*=' bg-rose-'], [class^='bg-pink-'], [class*=' bg-pink-'],
+  [class^='bg-fuchsia-'], [class*=' bg-fuchsia-'], [class^='bg-error-'], [class*=' bg-error-'],
+  [class^='bg-success-'], [class*=' bg-success-'], [class~='bg-success'],
+  [class^='bg-warning-'], [class*=' bg-warning-'], [class~='bg-warning'],
+  [class^='bg-meta-'], [class*=' bg-meta-'], [class^='bg-slate-'], [class*=' bg-slate-']
+):not(
+  .erp-modal-backdrop,
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):not(:disabled) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class^='text-rose-'], [class*=' text-rose-'], [class^='text-pink-'], [class*=' text-pink-'],
+  [class^='text-fuchsia-'], [class*=' text-fuchsia-'], [class^='text-error-'], [class*=' text-error-'],
+  [class^='text-success-'], [class*=' text-success-'], [class~='text-success'],
+  [class^='text-warning-'], [class*=' text-warning-'], [class~='text-warning'],
+  [class^='text-meta-'], [class*=' text-meta-'], [class^='text-slate-'], [class*=' text-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class^='border-rose-'], [class*=' border-rose-'], [class^='border-pink-'], [class*=' border-pink-'],
+  [class^='border-fuchsia-'], [class*=' border-fuchsia-'], [class^='border-error-'], [class*=' border-error-'],
+  [class^='border-success-'], [class*=' border-success-'], [class^='border-warning-'], [class*=' border-warning-'],
+  [class^='border-meta-'], [class*=' border-meta-'], [class^='border-slate-'], [class*=' border-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+#app .erp-theme :is(
+  [class^='from-rose-'], [class*=' from-rose-'], [class^='from-pink-'], [class*=' from-pink-'],
+  [class^='from-fuchsia-'], [class*=' from-fuchsia-'], [class^='from-error-'], [class*=' from-error-'],
+  [class^='from-success-'], [class*=' from-success-'], [class^='from-warning-'], [class*=' from-warning-'],
+  [class^='from-meta-'], [class*=' from-meta-'], [class^='from-slate-'], [class*=' from-slate-'],
+  [class^='via-rose-'], [class*=' via-rose-'], [class^='via-pink-'], [class*=' via-pink-'],
+  [class^='via-fuchsia-'], [class*=' via-fuchsia-'], [class^='via-error-'], [class*=' via-error-'],
+  [class^='via-success-'], [class*=' via-success-'], [class^='via-warning-'], [class*=' via-warning-'],
+  [class^='via-meta-'], [class*=' via-meta-'], [class^='via-slate-'], [class*=' via-slate-'],
+  [class^='to-rose-'], [class*=' to-rose-'], [class^='to-pink-'], [class*=' to-pink-'],
+  [class^='to-fuchsia-'], [class*=' to-fuchsia-'], [class^='to-error-'], [class*=' to-error-'],
+  [class^='to-success-'], [class*=' to-success-'], [class^='to-warning-'], [class*=' to-warning-'],
+  [class^='to-meta-'], [class*=' to-meta-'], [class^='to-slate-'], [class*=' to-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  .erp-modal-backdrop,
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):is(
+  [class^='bg-rose-'], [class*=' bg-rose-'], [class^='bg-pink-'], [class*=' bg-pink-'],
+  [class^='bg-fuchsia-'], [class*=' bg-fuchsia-'], [class^='bg-error-'], [class*=' bg-error-'],
+  [class^='bg-success-'], [class*=' bg-success-'], [class~='bg-success'],
+  [class^='bg-warning-'], [class*=' bg-warning-'], [class~='bg-warning'],
+  [class^='bg-meta-'], [class*=' bg-meta-'], [class^='bg-slate-'], [class*=' bg-slate-']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [class*='hover:bg-rose-'], [class*='hover:bg-pink-'], [class*='hover:bg-fuchsia-'],
+  [class*='hover:bg-error-'], [class*='hover:bg-success-'], [class*='hover:bg-warning-'],
+  [class*='hover:bg-meta-'], [class*='hover:bg-slate-']
+):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *,
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class*='hover:text-rose-'], [class*='hover:text-pink-'], [class*='hover:text-fuchsia-'],
+  [class*='hover:text-error-'], [class*='hover:text-success-'], [class*='hover:text-warning-'],
+  [class*='hover:text-meta-'], [class*='hover:text-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(
+  [class*='hover:border-rose-'], [class*='hover:border-pink-'], [class*='hover:border-fuchsia-'],
+  [class*='hover:border-error-'], [class*='hover:border-success-'], [class*='hover:border-warning-'],
+  [class*='hover:border-meta-'], [class*='hover:border-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  border-color: var(--erp-border) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:bg-rose-'], [class*='dark:bg-pink-'], [class*='dark:bg-fuchsia-'],
+  [class*='dark:bg-error-'], [class*='dark:bg-success-'], [class*='dark:bg-warning-'],
+  [class*='dark:bg-meta-'], [class*='dark:bg-slate-'], [class~='dark:bg-success'],
+  [class~='dark:bg-warning']
+):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *,
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:text-rose-'], [class*='dark:text-pink-'], [class*='dark:text-fuchsia-'],
+  [class*='dark:text-error-'], [class*='dark:text-success-'], [class*='dark:text-warning-'],
+  [class*='dark:text-meta-'], [class*='dark:text-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:border-rose-'], [class*='dark:border-pink-'], [class*='dark:border-fuchsia-'],
+  [class*='dark:border-error-'], [class*='dark:border-success-'], [class*='dark:border-warning-'],
+  [class*='dark:border-meta-'], [class*='dark:border-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:from-rose-'], [class*='dark:from-pink-'], [class*='dark:from-fuchsia-'],
+  [class*='dark:from-error-'], [class*='dark:from-success-'], [class*='dark:from-warning-'],
+  [class*='dark:from-meta-'], [class*='dark:from-slate-'],
+  [class*='dark:via-rose-'], [class*='dark:via-pink-'], [class*='dark:via-fuchsia-'],
+  [class*='dark:via-error-'], [class*='dark:via-success-'], [class*='dark:via-warning-'],
+  [class*='dark:via-meta-'], [class*='dark:via-slate-'],
+  [class*='dark:to-rose-'], [class*='dark:to-pink-'], [class*='dark:to-fuchsia-'],
+  [class*='dark:to-error-'], [class*='dark:to-success-'], [class*='dark:to-warning-'],
+  [class*='dark:to-meta-'], [class*='dark:to-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-image: none !important;
+}
+
+html.dark #app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):is(
+  [class*='dark:bg-rose-'], [class*='dark:bg-pink-'], [class*='dark:bg-fuchsia-'],
+  [class*='dark:bg-error-'], [class*='dark:bg-success-'], [class*='dark:bg-warning-'],
+  [class*='dark:bg-meta-'], [class*='dark:bg-slate-'], [class~='dark:bg-success'],
+  [class~='dark:bg-warning']
+) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:bg-rose-'], [class*='dark:hover:bg-pink-'], [class*='dark:hover:bg-fuchsia-'],
+  [class*='dark:hover:bg-error-'], [class*='dark:hover:bg-success-'], [class*='dark:hover:bg-warning-'],
+  [class*='dark:hover:bg-meta-'], [class*='dark:hover:bg-slate-']
+):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *,
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:text-rose-'], [class*='dark:hover:text-pink-'], [class*='dark:hover:text-fuchsia-'],
+  [class*='dark:hover:text-error-'], [class*='dark:hover:text-success-'], [class*='dark:hover:text-warning-'],
+  [class*='dark:hover:text-meta-'], [class*='dark:hover:text-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:hover:border-rose-'], [class*='dark:hover:border-pink-'], [class*='dark:hover:border-fuchsia-'],
+  [class*='dark:hover:border-error-'], [class*='dark:hover:border-success-'], [class*='dark:hover:border-warning-'],
+  [class*='dark:hover:border-meta-'], [class*='dark:hover:border-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  border-color: var(--erp-border) !important;
+}
+
+/* Keep focus rings, accents, and separators within the same neutral system. */
+#app .erp-theme :is(
+  [class*='ring-rose-'], [class*='ring-pink-'], [class*='ring-fuchsia-'],
+  [class*='ring-error-'], [class*='ring-success-'], [class*='ring-warning-'],
+  [class*='ring-meta-'], [class*='ring-slate-'],
+  [class*='focus:ring-rose-'], [class*='focus:ring-pink-'], [class*='focus:ring-fuchsia-'],
+  [class*='focus:ring-error-'], [class*='focus:ring-success-'], [class*='focus:ring-warning-'],
+  [class*='focus:ring-meta-'], [class*='focus:ring-slate-'],
+  [class*='focus-visible:ring-rose-'], [class*='focus-visible:ring-pink-'],
+  [class*='focus-visible:ring-fuchsia-'], [class*='focus-visible:ring-error-'],
+  [class*='focus-visible:ring-success-'], [class*='focus-visible:ring-warning-'],
+  [class*='focus-visible:ring-meta-'], [class*='focus-visible:ring-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(:focus, :focus-visible) {
+  --tw-ring-color: var(--erp-ink) !important;
+}
+
+html.dark #app .erp-theme :is(
+  [class*='dark:ring-rose-'], [class*='dark:ring-pink-'], [class*='dark:ring-fuchsia-'],
+  [class*='dark:ring-error-'], [class*='dark:ring-success-'], [class*='dark:ring-warning-'],
+  [class*='dark:ring-meta-'], [class*='dark:ring-slate-'],
+  [class*='dark:focus:ring-rose-'], [class*='dark:focus:ring-pink-'],
+  [class*='dark:focus:ring-fuchsia-'], [class*='dark:focus:ring-error-'],
+  [class*='dark:focus:ring-success-'], [class*='dark:focus:ring-warning-'],
+  [class*='dark:focus:ring-meta-'], [class*='dark:focus:ring-slate-'],
+  [class*='dark:focus-visible:ring-rose-'], [class*='dark:focus-visible:ring-pink-'],
+  [class*='dark:focus-visible:ring-fuchsia-'], [class*='dark:focus-visible:ring-error-'],
+  [class*='dark:focus-visible:ring-success-'], [class*='dark:focus-visible:ring-warning-'],
+  [class*='dark:focus-visible:ring-meta-'], [class*='dark:focus-visible:ring-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):is(:focus, :focus-visible) {
+  --tw-ring-color: var(--erp-ink) !important;
+}
+
+#app .erp-theme :is(
+  [class*='divide-rose-'], [class*='divide-pink-'], [class*='divide-fuchsia-'],
+  [class*='divide-error-'], [class*='divide-success-'], [class*='divide-warning-'],
+  [class*='divide-meta-'], [class*='divide-slate-']
+) > :not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  border-color: var(--erp-border) !important;
+}
+
+#app .erp-theme :is(
+  [class*='accent-rose-'], [class*='accent-pink-'], [class*='accent-fuchsia-'],
+  [class*='accent-error-'], [class*='accent-success-'], [class*='accent-warning-'],
+  [class*='accent-meta-'], [class*='accent-slate-']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  accent-color: var(--erp-ink) !important;
+}
+
+/* Normalize arbitrary multi-stop gradients used by one Owner management card. */
+#app .erp-theme :is(
+  [class*='bg-[radial-gradient'], [class*='bg-[linear-gradient']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface) !important;
+  background-image: none !important;
+}
+
+/* A small legacy repair dashboard still uses unregistered palette names.
+   Keep those source classes functional without reintroducing color. */
+#app .erp-theme :is(
+  [class~='bg-primary'], [class~='bg-danger'], [class~='bg-gray-2']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text) !important;
+}
+
+#app .erp-theme :is(button, a[href], [role='button'], [role='tab'], [role='menuitem']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+):is([class~='bg-primary'], [class~='bg-danger']) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [class~='text-primary'], [class~='text-danger'], [class~='border-primary'], [class~='border-danger'],
+  [class~='border-stroke']
+):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  color: var(--erp-text) !important;
+  border-color: var(--erp-border) !important;
+}
+
+#app .erp-theme :is([class~='focus:border-primary'], [class~='focus:border-danger']):focus {
+  border-color: var(--erp-ink) !important;
+}
+
+html.dark #app .erp-theme :is([class~='dark:bg-boxdark']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+) {
+  background-color: var(--erp-surface) !important;
+  color: var(--erp-text) !important;
+}
+
+html.dark #app .erp-theme :is([class~='dark:border-strokedark']):not(
+  [data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *
+) {
+  border-color: var(--erp-border) !important;
+}
+
+/* Reassert active controls after the compatibility selectors above. */
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *) {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+#app .erp-theme :is(
+  [aria-selected='true'], [aria-pressed='true'], [aria-current='page'],
+  [data-state='active'], [data-selected='true']
+):not(option):not(:disabled):not([data-erp-icon-action], [data-erp-icon-action] *, [data-critical], [data-critical] *):hover {
+  background-color: var(--erp-ink) !important;
+  border-color: var(--erp-ink) !important;
+  color: var(--erp-on-ink) !important;
+}
+
+/* Disabled controls are not interactive states. Keep them neutral and do not
+   let legacy hover utilities make them look clickable. Catalog cards retain
+   their white surface while their own disabled styling remains visible. */
+#app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled,
+#app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled:hover,
+html:not(.dark) #app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled,
+html:not(.dark) #app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled:hover,
+html.dark #app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled,
+html.dark #app .erp-theme :is(button, [role='button']):not([data-catalog-card]):disabled:hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text-muted) !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.55 !important;
+  transform: none !important;
+}
+
+/* Semantic icon-only actions are the single exception to ERP's monochrome
+   controls. Their meaning is carried by a restrained tint, not by layout or
+   shape changes. */
+#app .erp-theme {
+  --erp-icon-neutral-fg: #475569;
+  --erp-icon-neutral-bg: #f8fafc;
+  --erp-icon-neutral-hover: #e2e8f0;
+  --erp-icon-neutral-active: #cbd5e1;
+  --erp-icon-primary-fg: #2563eb;
+  --erp-icon-primary-bg: #eff6ff;
+  --erp-icon-primary-hover: #dbeafe;
+  --erp-icon-primary-active: #bfdbfe;
+  --erp-icon-success-fg: #16a34a;
+  --erp-icon-success-bg: #f0fdf4;
+  --erp-icon-success-hover: #dcfce7;
+  --erp-icon-success-active: #bbf7d0;
+  --erp-icon-warning-fg: #b45309;
+  --erp-icon-warning-bg: #fffbeb;
+  --erp-icon-warning-hover: #fef3c7;
+  --erp-icon-warning-active: #fde68a;
+  --erp-icon-danger-fg: #dc2626;
+  --erp-icon-danger-bg: #fef2f2;
+  --erp-icon-danger-hover: #fee2e2;
+  --erp-icon-danger-active: #fecaca;
+}
+
+html.dark #app .erp-theme {
+  --erp-icon-neutral-fg: #cbd5e1;
+  --erp-icon-neutral-bg: #1f2937;
+  --erp-icon-neutral-hover: #334155;
+  --erp-icon-neutral-active: #475569;
+  --erp-icon-primary-fg: #93c5fd;
+  --erp-icon-primary-bg: #172554;
+  --erp-icon-primary-hover: #1e3a8a;
+  --erp-icon-primary-active: #1d4ed8;
+  --erp-icon-success-fg: #86efac;
+  --erp-icon-success-bg: #14532d;
+  --erp-icon-success-hover: #166534;
+  --erp-icon-success-active: #15803d;
+  --erp-icon-warning-fg: #fcd34d;
+  --erp-icon-warning-bg: #451a03;
+  --erp-icon-warning-hover: #78350f;
+  --erp-icon-warning-active: #92400e;
+  --erp-icon-danger-fg: #fca5a5;
+  --erp-icon-danger-bg: #450a0a;
+  --erp-icon-danger-hover: #7f1d1d;
+  --erp-icon-danger-active: #991b1b;
+}
+
+#app .erp-theme [data-erp-icon-action] {
+  border-color: color-mix(in srgb, var(--erp-icon-neutral-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-neutral-bg) !important;
+  color: var(--erp-icon-neutral-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='neutral'] {
+  border-color: color-mix(in srgb, var(--erp-icon-neutral-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-neutral-bg) !important;
+  color: var(--erp-icon-neutral-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='primary'] {
+  border-color: color-mix(in srgb, var(--erp-icon-primary-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-primary-bg) !important;
+  color: var(--erp-icon-primary-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success'] {
+  border-color: color-mix(in srgb, var(--erp-icon-success-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-success-bg) !important;
+  color: var(--erp-icon-success-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='warning'] {
+  border-color: color-mix(in srgb, var(--erp-icon-warning-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-warning-bg) !important;
+  color: var(--erp-icon-warning-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger'] {
+  border-color: color-mix(in srgb, var(--erp-icon-danger-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-danger-bg) !important;
+  color: var(--erp-icon-danger-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='neutral']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-neutral-hover) !important;
+  border-color: var(--erp-icon-neutral-fg) !important;
+  color: var(--erp-icon-neutral-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='primary']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-primary-hover) !important;
+  border-color: var(--erp-icon-primary-fg) !important;
+  color: var(--erp-icon-primary-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-success-hover) !important;
+  border-color: var(--erp-icon-success-fg) !important;
+  color: var(--erp-icon-success-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='warning']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-warning-hover) !important;
+  border-color: var(--erp-icon-warning-fg) !important;
+  color: var(--erp-icon-warning-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger']:not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-danger-hover) !important;
+  border-color: var(--erp-icon-danger-fg) !important;
+  color: var(--erp-icon-danger-fg) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='neutral']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-neutral-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='primary']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-primary-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-success-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='warning']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-warning-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger']:not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-danger-active) !important;
+}
+
+#app .erp-theme [data-erp-icon-action]:is(:focus, :focus-visible):not(:disabled):not([aria-disabled='true']) {
+  outline: 2px solid color-mix(in srgb, currentColor, transparent 55%) !important;
+  outline-offset: 2px;
+  --tw-ring-color: transparent !important;
+}
+
+/* Disabled icon actions never enter a semantic hover/active treatment. Keep
+   the lower opacity distinct from enabled controls and make aria-disabled
+   actions visually identical when a native disabled attribute is unavailable. */
+#app .erp-theme [data-erp-icon-action]:is(:disabled, [aria-disabled='true']),
+#app .erp-theme [data-erp-icon-action]:is(:disabled, [aria-disabled='true']):hover,
+#app .erp-theme [data-erp-icon-action]:is(:disabled, [aria-disabled='true']):active,
+#app .erp-theme [data-erp-icon-action][aria-disabled='true']:hover {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text-muted) !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.38 !important;
+  outline: none !important;
+  pointer-events: none;
+  transform: none !important;
+}
+
+/* Package and individual-service cards are content selectors, not icon
+   actions. Keep their deliberate white surface, black border, and black copy
+   in both themes; disabled cards retain the same visual identity without a
+   hover state. */
+#app .erp-theme [data-catalog-card],
+#app .erp-theme [data-catalog-card]:not(:disabled):hover,
+#app .erp-theme [data-catalog-card]:disabled,
+#app .erp-theme [data-catalog-card]:disabled:hover {
+  background-color: #ffffff !important;
+  border-color: #111111 !important;
+  color: #111111 !important;
+}
+
+#app .erp-theme [data-catalog-card]:disabled,
+#app .erp-theme [data-catalog-card]:disabled:hover {
+  cursor: not-allowed !important;
+  opacity: 0.5 !important;
+  transform: none !important;
+}
+
+/* SweetAlert feedback keeps the popup monochrome while its icon communicates
+   the outcome. Confirmation buttons only become semantic when the caller opts
+   into a semantic popup class. */
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-success,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-success.swal2-icon {
+  border-color: #16a34a !important;
+  color: #16a34a !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-warning,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-warning.swal2-icon,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-signout.swal2-icon {
+  border-color: #b45309 !important;
+  color: #b45309 !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-error,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-danger.swal2-icon {
+  border-color: #dc2626 !important;
+  color: #dc2626 !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon:is(.swal2-info, .swal2-question),
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-info.swal2-icon {
+  border-color: #2563eb !important;
+  color: #2563eb !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-success .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-success {
+  background-color: #16a34a !important;
+  border-color: #16a34a !important;
+  color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-warning .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-warning {
+  background-color: #b45309 !important;
+  border-color: #b45309 !important;
+  color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-danger .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-danger {
+  background-color: #dc2626 !important;
+  border-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-info .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-info {
+  background-color: #2563eb !important;
+  border-color: #2563eb !important;
+  color: #ffffff !important;
+}
+
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast).erp-swal2-signout .swal2-confirm,
+html:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-confirm.erp-swal2-signout {
+  background-color: #111111 !important;
+  border-color: #111111 !important;
+  color: #ffffff !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-success,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-success.swal2-icon {
+  border-color: #4ade80 !important;
+  color: #4ade80 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-warning,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-warning.swal2-icon,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-signout.swal2-icon {
+  border-color: #fbbf24 !important;
+  color: #fbbf24 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon.swal2-error,
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-danger.swal2-icon {
+  border-color: #f87171 !important;
+  color: #f87171 !important;
+}
+
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .swal2-icon:is(.swal2-info, .swal2-question),
+html.dark:has(#app .erp-theme) .swal2-popup:not(.swal2-toast) .erp-swal2-info.swal2-icon {
+  border-color: #60a5fa !important;
+  color: #60a5fa !important;
+}
+
+/* Legacy icon-only actions can opt into the same contract from their existing
+   utility classes while they are gradually moved to IconButton. The selector
+   is deliberately limited to labelled buttons whose only direct content is an
+   SVG, so text buttons and decorative/status icons stay monochrome. */
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]) {
+  --erp-icon-action-fg: var(--erp-icon-neutral-fg);
+  --erp-icon-action-bg: var(--erp-icon-neutral-bg);
+  --erp-icon-action-hover: var(--erp-icon-neutral-hover);
+  --erp-icon-action-active: var(--erp-icon-neutral-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [class*='text-blue-'], [class*='text-indigo-'], [class*='text-sky-'],
+  [class*='text-cyan-'], [class*='text-brand-'], [class*='border-blue-'],
+  [class*='border-indigo-'], [class*='border-sky-'], [class*='border-cyan-'],
+  [class*='border-brand-'], [class*='hover:text-blue-'], [class*='hover:text-indigo-'],
+  [class*='hover:text-sky-'], [class*='hover:text-cyan-'], [class*='hover:text-brand-'],
+  [class*='hover:bg-blue-'], [class*='hover:bg-indigo-'], [class*='hover:bg-sky-'],
+  [class*='hover:bg-cyan-'], [class*='hover:bg-brand-'],
+  :has(> svg:is([class*='text-blue-'], [class*='text-indigo-'], [class*='text-sky-'], [class*='text-cyan-'], [class*='text-brand-'], [class*='border-blue-'], [class*='border-indigo-'], [class*='border-sky-'], [class*='border-cyan-'], [class*='border-brand-'], [class*='hover:text-blue-'], [class*='hover:text-indigo-'], [class*='hover:text-sky-'], [class*='hover:text-cyan-'], [class*='hover:text-brand-']))
+) {
+  --erp-icon-action-fg: var(--erp-icon-primary-fg);
+  --erp-icon-action-bg: var(--erp-icon-primary-bg);
+  --erp-icon-action-hover: var(--erp-icon-primary-hover);
+  --erp-icon-action-active: var(--erp-icon-primary-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [class*='text-green-'], [class*='text-emerald-'], [class*='text-teal-'],
+  [class*='text-lime-'], [class*='border-green-'], [class*='border-emerald-'],
+  [class*='border-teal-'], [class*='border-lime-'], [class*='hover:text-green-'],
+  [class*='hover:text-emerald-'], [class*='hover:text-teal-'], [class*='hover:text-lime-'],
+  [class*='hover:bg-green-'], [class*='hover:bg-emerald-'], [class*='hover:bg-teal-'],
+  [class*='hover:bg-lime-'],
+  :has(> svg:is([class*='text-green-'], [class*='text-emerald-'], [class*='text-teal-'], [class*='text-lime-'], [class*='border-green-'], [class*='border-emerald-'], [class*='border-teal-'], [class*='border-lime-'], [class*='hover:text-green-'], [class*='hover:text-emerald-'], [class*='hover:text-teal-'], [class*='hover:text-lime-']))
+) {
+  --erp-icon-action-fg: var(--erp-icon-success-fg);
+  --erp-icon-action-bg: var(--erp-icon-success-bg);
+  --erp-icon-action-hover: var(--erp-icon-success-hover);
+  --erp-icon-action-active: var(--erp-icon-success-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [class*='text-amber-'], [class*='text-orange-'], [class*='text-yellow-'],
+  [class*='border-amber-'], [class*='border-orange-'], [class*='border-yellow-'],
+  [class*='hover:text-amber-'], [class*='hover:text-orange-'], [class*='hover:text-yellow-'],
+  [class*='hover:bg-amber-'], [class*='hover:bg-orange-'], [class*='hover:bg-yellow-'],
+  :has(> svg:is([class*='text-amber-'], [class*='text-orange-'], [class*='text-yellow-'], [class*='border-amber-'], [class*='border-orange-'], [class*='border-yellow-'], [class*='hover:text-amber-'], [class*='hover:text-orange-'], [class*='hover:text-yellow-']))
+) {
+  --erp-icon-action-fg: var(--erp-icon-warning-fg);
+  --erp-icon-action-bg: var(--erp-icon-warning-bg);
+  --erp-icon-action-hover: var(--erp-icon-warning-hover);
+  --erp-icon-action-active: var(--erp-icon-warning-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [class*='text-red-'], [class*='text-rose-'], [class*='text-pink-'],
+  [class*='border-red-'], [class*='border-rose-'], [class*='border-pink-'],
+  [class*='hover:text-red-'], [class*='hover:text-rose-'], [class*='hover:text-pink-'],
+  [class*='hover:bg-red-'], [class*='hover:bg-rose-'], [class*='hover:bg-pink-'],
+  :has(> svg:is([class*='text-red-'], [class*='text-rose-'], [class*='text-pink-'], [class*='border-red-'], [class*='border-rose-'], [class*='border-pink-'], [class*='hover:text-red-'], [class*='hover:text-rose-'], [class*='hover:text-pink-']))
+) {
+  --erp-icon-action-fg: var(--erp-icon-danger-fg);
+  --erp-icon-action-bg: var(--erp-icon-danger-bg);
+  --erp-icon-action-hover: var(--erp-icon-danger-hover);
+  --erp-icon-action-active: var(--erp-icon-danger-active);
+}
+
+/* Action labels take precedence over legacy utility colors when the old
+   source class did not reflect the action's actual meaning (for example,
+   blue view icons). */
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='view' i], [title*='detail' i], [title*='preview' i], [title*='open' i],
+  [title*='more' i], [title*='history' i], [title*='setting' i], [title*='search' i],
+  [title*='profile' i], [title*='edit' i], [title*='print' i], [title*='filter' i],
+  [title*='previous' i], [title*='next' i], [title*='month' i], [title*='drag' i],
+  [title*='move ' i], [title*='close' i], [title*='clear' i],
+  [aria-label*='view' i], [aria-label*='detail' i], [aria-label*='preview' i], [aria-label*='open' i],
+  [aria-label*='more' i], [aria-label*='history' i], [aria-label*='setting' i], [aria-label*='search' i],
+  [aria-label*='profile' i], [aria-label*='edit' i], [aria-label*='print' i], [aria-label*='filter' i],
+  [aria-label*='previous' i], [aria-label*='next' i], [aria-label*='month' i], [aria-label*='drag' i],
+  [aria-label*='move ' i], [aria-label*='close' i], [aria-label*='clear' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-neutral-fg);
+  --erp-icon-action-bg: var(--erp-icon-neutral-bg);
+  --erp-icon-action-hover: var(--erp-icon-neutral-hover);
+  --erp-icon-action-active: var(--erp-icon-neutral-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='send' i], [title*='resend' i], [title*='invitation' i], [title*='invite' i],
+  [title*='message' i], [title*='reply' i], [title*='upload' i], [title*='assign' i], [title*='link' i],
+  [aria-label*='send' i], [aria-label*='resend' i], [aria-label*='invitation' i], [aria-label*='invite' i],
+  [aria-label*='message' i], [aria-label*='reply' i], [aria-label*='upload' i], [aria-label*='assign' i], [aria-label*='link' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-primary-fg);
+  --erp-icon-action-bg: var(--erp-icon-primary-bg);
+  --erp-icon-action-hover: var(--erp-icon-primary-hover);
+  --erp-icon-action-active: var(--erp-icon-primary-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='approve' i], [title*='activate' i], [title*='reactivate' i], [title*='restore' i], [title*='receive' i],
+  [title*='confirm' i], [title*='complete' i], [title*='verify' i], [title*='process' i], [title*='ship' i],
+  [aria-label*='approve' i], [aria-label*='activate' i], [aria-label*='reactivate' i], [aria-label*='restore' i], [aria-label*='receive' i],
+  [aria-label*='confirm' i], [aria-label*='complete' i], [aria-label*='verify' i], [aria-label*='process' i], [aria-label*='ship' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-success-fg);
+  --erp-icon-action-bg: var(--erp-icon-success-bg);
+  --erp-icon-action-hover: var(--erp-icon-success-hover);
+  --erp-icon-action-active: var(--erp-icon-success-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='reset' i], [title*='suspend' i], [title*='correct' i], [title*='flag' i], [title*='disable' i],
+  [title*='force' i], [title*='revoke' i], [title='cancel' i], [aria-label*='reset' i], [aria-label*='suspend' i],
+  [aria-label*='correct' i], [aria-label*='flag' i], [aria-label*='disable' i], [aria-label*='force' i], [aria-label*='revoke' i],
+  [aria-label='cancel' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-warning-fg);
+  --erp-icon-action-bg: var(--erp-icon-warning-bg);
+  --erp-icon-action-hover: var(--erp-icon-warning-hover);
+  --erp-icon-action-active: var(--erp-icon-warning-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):is(
+  [title*='delete' i], [title*='remove' i], [title*='archive' i], [title*='terminate' i], [title*='reject' i], [title*='void' i],
+  [title*='cancel delivery' i], [aria-label*='delete' i], [aria-label*='remove' i], [aria-label*='archive' i],
+  [aria-label*='terminate' i], [aria-label*='reject' i], [aria-label*='void' i], [aria-label*='cancel delivery' i]
+) {
+  --erp-icon-action-fg: var(--erp-icon-danger-fg);
+  --erp-icon-action-bg: var(--erp-icon-danger-bg);
+  --erp-icon-action-hover: var(--erp-icon-danger-hover);
+  --erp-icon-action-active: var(--erp-icon-danger-active);
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']) {
+  border-color: color-mix(in srgb, var(--erp-icon-action-fg), transparent 72%) !important;
+  background-color: var(--erp-icon-action-bg) !important;
+  color: var(--erp-icon-action-fg) !important;
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']) > svg {
+  color: var(--erp-icon-action-fg) !important;
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):not(:disabled):not([aria-disabled='true']):hover {
+  background-color: var(--erp-icon-action-hover) !important;
+  border-color: var(--erp-icon-action-fg) !important;
+  color: var(--erp-icon-action-fg) !important;
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):not(:disabled):not([aria-disabled='true']):active {
+  background-color: var(--erp-icon-action-active) !important;
+}
+
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):is(:disabled, [aria-disabled='true']),
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):is(:disabled, [aria-disabled='true']):hover,
+#app .erp-theme :is(button, [role='button']):has(> svg):not(:has(> :not(svg))):is([title], [aria-label]):not([data-erp-icon-action]):not([class*='gap-']):not([class*='px-']):is(:disabled, [aria-disabled='true']):active {
+  background-color: var(--erp-surface-muted) !important;
+  border-color: var(--erp-border) !important;
+  color: var(--erp-text-muted) !important;
+  box-shadow: none !important;
+  cursor: not-allowed !important;
+  opacity: 0.38 !important;
+  outline: none !important;
+  pointer-events: none;
+  transform: none !important;
+}
+
+/* Explicit semantic buttons keep their child SVGs on the same semantic
+   foreground even when the source component still carries a legacy utility. */
+#app .erp-theme [data-erp-icon-action][data-semantic-color='neutral'] *,
+#app .erp-theme [data-erp-icon-action][data-semantic-color='primary'] *,
+#app .erp-theme [data-erp-icon-action][data-semantic-color='success'] *,
+#app .erp-theme [data-erp-icon-action][data-semantic-color='warning'] *,
+#app .erp-theme [data-erp-icon-action][data-semantic-color='danger'] * {
+  color: inherit !important;
+}
+
+/* Canonical application-wide modal backdrop. Keep this after compatibility
+   rules so legacy palette utilities cannot turn a backdrop into a surface. */
+body .erp-modal-backdrop {
+  background: rgba(0, 0, 0, 0.25) !important;
+  background-color: rgba(0, 0, 0, 0.25) !important;
+  background-image: none !important;
+  -webkit-backdrop-filter: blur(2px) !important;
+  backdrop-filter: blur(2px) !important;
+}
+
+body .erp-modal-backdrop:not([class~='opacity-0']) {
+  opacity: 1 !important;
+}
+
+body.swal2-shown:not(.swal2-toast-shown) .swal2-container {
+  --swal2-backdrop: rgba(0, 0, 0, 0.25);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
 }

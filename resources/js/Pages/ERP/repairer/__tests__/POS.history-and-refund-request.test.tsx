@@ -55,6 +55,25 @@ describe("repairPosHistoryApi", () => {
     );
   });
 
+  it("posts the cashier-only manual refund action for a rejected no-account repair", async () => {
+    postMock.mockResolvedValue({ data: { success: true } });
+
+    const { repairPosHistoryApi } = await import("../../../../services/repairPosHistoryApi");
+    await repairPosHistoryApi.manualRefundRejectedNoAccount({
+      source_transaction_id: 88,
+      receipt_no: "RCPT-TEST-001",
+    });
+
+    expect(postMock).toHaveBeenCalledWith(
+      "/api/repair-pos/refunds/manual-rejected-no-account",
+      {
+        source_transaction_id: 88,
+        receipt_no: "RCPT-TEST-001",
+      },
+      { withCredentials: true },
+    );
+  });
+
   it("posts warranty claim payload as multipart form data", async () => {
     postMock.mockResolvedValue({ data: { success: true } });
 

@@ -39,15 +39,15 @@ const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
   const backLabel = fromShopOwnerPremium ? 'Back to Premium Benefits' : 'Back to Shop Profile';
 
   return (
-    <div className="h-screen overflow-hidden bg-white">
+    <div className="h-dvh overflow-hidden bg-white">
       <Head title={`${shop.name} - Virtual Showroom`} />
 
-      <main className="h-screen">
+      <main className="h-dvh">
         {!isFocusMode && (
-          <div className="fixed left-4 top-4 z-50">
+          <div className="fixed left-3 top-3 z-50 max-w-[calc(100vw-8.5rem)] sm:left-20 sm:top-4 sm:max-w-none">
             <Link
               href={backHref}
-              className="rounded-md border border-gray-300 bg-white/95 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-white"
+              className="inline-flex min-h-11 max-w-full items-center break-words rounded-md border border-gray-300 bg-white/95 px-4 py-2 text-center text-sm font-medium leading-tight text-gray-700 hover:bg-white"
             >
               {backLabel}
             </Link>

@@ -73,19 +73,7 @@ const resolveImagePreviewUrl = (pathOrUrl?: string | null): string => {
   return `/storage/${pathOrUrl.replace(/^\/+/, '')}`;
 };
 
-// Icon Components  
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
+// Icon Components
 const ShoppingCartIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -125,8 +113,6 @@ const BulbIcon: React.FC<{ className?: string }> = ({ className }) => (
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -135,8 +121,6 @@ type MetricCardProps = {
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
@@ -155,20 +139,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -1629,14 +1603,9 @@ export default function ProductManagement() {
 
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Product Management</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Manage your shoe inventory with variant-based stock control
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
+          <div className="flex w-full items-center justify-end">
+            <h1 className="sr-only">Product Management</h1>
+            <div className="flex items-center justify-end gap-3">
               <Link
                 href="/services/product-image-spin-tutorial?from=product-uploader"
                 onClick={() => { setTutorialVisited(true); sessionStorage.setItem('tutorial_visited', JSON.stringify({ v: true, c: getCsrfToken() })); }}
@@ -1847,7 +1816,7 @@ export default function ProductManagement() {
 
       {/* Add/Edit Product Modal with Variant Management */}
       {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-7xl w-full shadow-2xl relative flex flex-col" style={{ height: 'calc(100vh - 1rem)' }}>
             <div className="sticky top-0 p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl z-10">
               <div className="flex items-start justify-between gap-4">
@@ -2204,7 +2173,7 @@ export default function ProductManagement() {
             </form>
 
             {isCategoryModalOpen && (
-              <div className="fixed inset-0 z-[1000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="fixed inset-0 z-[1000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
                 <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700">
                   <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Categories</h3>
@@ -2237,7 +2206,7 @@ export default function ProductManagement() {
                         value={customCategoryInput}
                         onChange={(e) => setCustomCategoryInput(sanitizeCustomCategoryInput(e.target.value))}
                         placeholder="Enter custom category"
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111111] dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:placeholder-gray-500"
                       />
                     </div>
                   )}
@@ -2261,7 +2230,7 @@ export default function ProductManagement() {
 
       {/* Inventory Stock Picker — staff must choose an uploaded shoe stock item to create a product */}
       {isStockPickerOpen && createPortal(
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-4xl w-full shadow-2xl flex flex-col" style={{ maxHeight: 'calc(100vh - 2rem)' }}>
 
             {/* Header */}
@@ -2291,7 +2260,7 @@ export default function ProductManagement() {
                 value={stockSearch}
                 onChange={(e) => setStockSearch(e.target.value)}
                 placeholder="Search by name or SKU..."
-                className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#111111] dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:placeholder-gray-500"
                 autoFocus
               />
             </div>
@@ -2332,7 +2301,7 @@ export default function ProductManagement() {
                           key={stock.id}
                           type="button"
                           onClick={() => handleSelectStock(stock)}
-                          className="text-left rounded-xl border-2 border-gray-200 dark:border-gray-700 hover:border-blue-500 dark:hover:border-blue-400 bg-white dark:bg-gray-900 p-4 transition-all duration-200 hover:shadow-md group focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="group rounded-xl border-2 border-gray-200 bg-white p-4 text-left transition-all duration-200 hover:border-gray-900 hover:shadow-md focus:outline-none focus:ring-2 focus:ring-[#111111] dark:border-gray-700 dark:bg-gray-900 dark:hover:border-gray-300"
                         >
                           <div className="h-36 w-full rounded-lg overflow-hidden bg-gray-100 dark:bg-gray-800 mb-3 flex items-center justify-center">
                             {thumb ? (
@@ -2375,7 +2344,7 @@ export default function ProductManagement() {
 
       {/* Upload Loading Overlay */}
       {uploading && createPortal(
-        <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/80 backdrop-blur-sm erp-modal-backdrop">
           <div className="flex flex-col items-center gap-6">
             <div className="relative flex items-center justify-center">
               <span className="absolute inline-block h-36 w-36 rounded-full border-8 border-white/25" />

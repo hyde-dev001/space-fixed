@@ -2,12 +2,15 @@
 
 namespace Tests\Feature\Manager;
 
+use App\Enums\EmployeeStatus;
 use App\Enums\SuspensionStatus;
 use App\Models\Employee;
+use App\Models\HR\AuditLog;
 use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
@@ -38,8 +41,10 @@ class ManagerSuspensionApprovalTest extends TestCase
         $this->manager = User::factory()
             ->for($this->shop)
             ->create(['role' => 'Manager']);
+        Role::findOrCreate('Manager', 'user');
+        $this->manager->assignRole('Manager');
 
-        $this->employee = Employee::factory()
+        $this->employee = Employee::factory()->active()
             ->for($this->shop)
             ->create();
 
@@ -63,7 +68,7 @@ class ManagerSuspensionApprovalTest extends TestCase
             );
 
         $response->assertStatus(200);
-        $response->assertJson(['message' => 'Suspension request approved']);
+        $response->assertJson(['message' => 'Suspension request approved and forwarded to shop owner.']);
 
         // Verify status changed in database
         $this->suspension->refresh();
@@ -71,6 +76,15 @@ class ManagerSuspensionApprovalTest extends TestCase
         $this->assertNotNull($this->suspension->manager_id);
         $this->assertEquals($this->manager->id, $this->suspension->manager_id);
         $this->assertNotNull($this->suspension->manager_reviewed_at);
+        $this->assertSame(EmployeeStatus::ACTIVE, $this->employee->fresh()->status);
+
+        $this->assertDatabaseHas('hr_audit_logs', [
+            'shop_owner_id' => $this->shop->id,
+            'user_id' => $this->manager->id,
+            'employee_id' => $this->employee->id,
+            'action' => AuditLog::ACTION_APPROVED,
+            'entity_id' => $this->suspension->id,
+        ]);
     }
 
     /**
@@ -88,12 +102,32 @@ class ManagerSuspensionApprovalTest extends TestCase
             );
 
         $response->assertStatus(200);
-        $response->assertJson(['message' => 'Suspension request rejected']);
+        $response->assertJson(['message' => 'Suspension request rejected.']);
 
         $this->suspension->refresh();
         $this->assertEquals(SuspensionStatus::REJECTED_MANAGER, $this->suspension->status);
         $this->assertEquals('rejected', $this->suspension->manager_status);
         $this->assertNotNull($this->suspension->manager_note);
+    }
+
+    /**
+     * A Manager rejection must not reactivate an employee who was already inactive.
+     */
+    public function test_manager_rejection_preserves_the_employee_state_that_existed_before_review(): void
+    {
+        $this->employee->forceFill(['status' => EmployeeStatus::INACTIVE])->save();
+
+        $this->actingAs($this->manager, 'user')
+            ->postJson(
+                "/api/manager/suspension-requests/{$this->suspension->id}/review",
+                [
+                    'action' => 'reject',
+                    'note' => 'Rejected - insufficient evidence',
+                ]
+            )
+            ->assertStatus(200);
+
+        $this->assertSame(EmployeeStatus::INACTIVE, $this->employee->fresh()->status);
     }
 
     /**
@@ -133,8 +167,10 @@ class ManagerSuspensionApprovalTest extends TestCase
                 ['action' => 'reject', 'note' => 'Trying to reject already approved']
             );
 
-        $response->assertStatus(422);
-        $response->assertJson(['message' => 'This request is not pending manager review.']);
+        $response->assertStatus(409);
+        $response->assertJsonPath('code', 'SUSPENSION_REQUEST_ALREADY_DECIDED');
+        $response->assertJsonPath('message', 'This suspension request has already been decided.');
+        $response->assertJsonMissing(['message' => 'This request has already reached a decision.']);
     }
 
     /**
@@ -259,6 +295,11 @@ class ManagerSuspensionApprovalTest extends TestCase
      */
     public function test_manager_can_view_suspension_details(): void
     {
+        $this->suspension->forceFill([
+            'reason' => 'Repeated policy violations',
+            'evidence' => 'HR incident report #42',
+        ])->save();
+
         $response = $this->actingAs($this->manager, 'user')
             ->getJson("/api/manager/suspension-requests/{$this->suspension->id}");
 
@@ -271,6 +312,8 @@ class ManagerSuspensionApprovalTest extends TestCase
             'requestedAt',
             'status',
         ]);
+        $response->assertJsonPath('reason', 'Repeated policy violations');
+        $response->assertJsonPath('evidence', 'HR incident report #42');
     }
 
     /**

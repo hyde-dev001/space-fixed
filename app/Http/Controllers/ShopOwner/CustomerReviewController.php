@@ -232,7 +232,7 @@ class CustomerReviewController extends Controller
             type: NotificationType::REVIEW_REPORTED,
             title: 'Malicious Review Reported',
             message: "{$shopName} reported a customer review for: {$reasonLabel}",
-            actionUrl: '/superAdmin/flagged-accounts',
+            actionUrl: '/admin/flagged-accounts',
             data: ['review_report_id' => $report->id],
         );
 

@@ -15,9 +15,12 @@ import {
     CancelPurchaseOrderPayload,
     PaginatedResponse,
     ApiResponse,
+    PurchaseOrderReceipt,
+    CreatePurchaseOrderReceiptPayload,
 } from '@/types/procurement';
 
 const BASE_URL = '/api/erp/procurement/purchase-orders';
+const unwrap = <T>(payload: { data: T } | T): T => (payload as { data?: T }).data ?? payload as T;
 
 export const purchaseOrderApi = {
     /**
@@ -35,7 +38,7 @@ export const purchaseOrderApi = {
      */
     async getById(id: number): Promise<PurchaseOrder> {
         const response: AxiosResponse<PurchaseOrder> = await axios.get(`${BASE_URL}/${id}`);
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -43,7 +46,7 @@ export const purchaseOrderApi = {
      */
     async create(data: CreatePurchaseOrderPayload): Promise<PurchaseOrder> {
         const response: AxiosResponse<PurchaseOrder> = await axios.post(BASE_URL, data);
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -51,7 +54,7 @@ export const purchaseOrderApi = {
      */
     async update(id: number, data: UpdatePurchaseOrderPayload): Promise<PurchaseOrder> {
         const response: AxiosResponse<PurchaseOrder> = await axios.put(`${BASE_URL}/${id}`, data);
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -70,7 +73,7 @@ export const purchaseOrderApi = {
             `${BASE_URL}/${id}/update-status`,
             data
         );
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -80,23 +83,7 @@ export const purchaseOrderApi = {
         const response: AxiosResponse<PurchaseOrder> = await axios.post(
             `${BASE_URL}/${id}/send-to-supplier`
         );
-        return response.data;
-    },
-
-    /**
-     * Mark purchase order as delivered with goods receipt verification
-     */
-    async markAsDelivered(id: number, data: {
-        actual_delivery_date: string;
-        received_quantity: number;
-        defective_quantity: number;
-        notes?: string;
-    }): Promise<PurchaseOrder> {
-        const response: AxiosResponse<PurchaseOrder> = await axios.post(
-            `${BASE_URL}/${id}/mark-delivered`,
-            data
-        );
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -107,7 +94,22 @@ export const purchaseOrderApi = {
             `${BASE_URL}/${id}/cancel`,
             data
         );
-        return response.data;
+        return unwrap(response.data);
+    },
+
+    async getReceipts(id: number): Promise<PurchaseOrderReceipt[]> {
+        const response = await axios.get(`${BASE_URL}/${id}/receipts`);
+        return unwrap(response.data);
+    },
+
+    async receive(id: number, data: CreatePurchaseOrderReceiptPayload): Promise<PurchaseOrderReceipt> {
+        const response = await axios.post(`${BASE_URL}/${id}/receipts`, data);
+        return unwrap(response.data);
+    },
+
+    async voidReceipt(id: number, receiptId: number, reason: string): Promise<PurchaseOrderReceipt> {
+        const response = await axios.post(`${BASE_URL}/${id}/receipts/${receiptId}/void`, { reason });
+        return unwrap(response.data);
     },
 
     /**

@@ -1,5 +1,6 @@
 import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import { useState, useRef, useEffect } from "react";
 import axios from "axios";
 
@@ -49,6 +50,8 @@ interface Conversation {
 
 export default function RepairSupport() {
   const pageProps = usePage().props as any;
+  const erpMode = pageProps?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const currentShopOwner = pageProps.shop_owner || pageProps.auth?.shop_owner || null;
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -226,7 +229,7 @@ export default function RepairSupport() {
     }
 
     return (
-      <div className={`${sizeClass} rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-semibold text-sm`}>
+      <div className={`${sizeClass} rounded-full bg-gray-950 dark:bg-blue-100 flex items-center justify-center text-white dark:text-blue-700 font-semibold text-sm`}>
         {getInitials(shopName || "Shop")}
       </div>
     );
@@ -585,7 +588,7 @@ export default function RepairSupport() {
   );
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Technical Support - Solespace" />
       
       {/* Notification Toast */}
@@ -839,7 +842,7 @@ export default function RepairSupport() {
                                       {shopAvatarUrl ? (
                                         <img src={shopAvatarUrl} alt={shopName} className="w-10 h-10 rounded-full object-cover" />
                                       ) : (
-                                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center shrink-0 text-blue-700 text-xs font-semibold">
+                                        <div className="w-10 h-10 rounded-full bg-gray-950 dark:bg-blue-100 flex items-center justify-center shrink-0 text-white dark:text-blue-700 text-xs font-semibold">
                                           {getInitials(shopName)}
                                         </div>
                                       )}
@@ -847,8 +850,8 @@ export default function RepairSupport() {
                                     </div>
                                   </div>
 
-                                  <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
-                                    <p className="text-xs text-blue-900 leading-relaxed">
+                                  <div className="bg-gray-100 rounded-lg px-3 py-2.5 mb-4 dark:bg-gray-800">
+                                    <p className="text-xs text-gray-900 leading-relaxed dark:text-gray-100">
                                       💡 We'll keep you updated on the progress of your repair.
                                     </p>
                                   </div>
@@ -1130,7 +1133,7 @@ export default function RepairSupport() {
       {/* Fullscreen Image Modal */}
       {fullscreenImage && (
         <div 
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm erp-modal-backdrop"
           onClick={() => setFullscreenImage(null)}
         >
           <button
@@ -1152,6 +1155,6 @@ export default function RepairSupport() {
           />
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

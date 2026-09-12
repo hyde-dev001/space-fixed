@@ -1,8 +1,10 @@
-import { Head } from "@inertiajs/react";
+import MonochromeSelect from "@/components/form/Select";
+import { Head, usePage } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import RepairPackageManager from "../../../ERP/repairer/components/RepairPackageManager";
 
 type Service = {
@@ -32,8 +34,6 @@ type RepairMaterialOption = {
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -82,24 +82,10 @@ const ClockIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 // Professional Metric Card Component
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
@@ -118,20 +104,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -146,6 +122,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function UploadService() {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [services, setServices] = useState<Service[]>([]);
   const [repairMaterials, setRepairMaterials] = useState<RepairMaterialOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,7 +184,7 @@ export default function UploadService() {
 
   const fetchRepairMaterials = async () => {
     try {
-      const response = await axios.get('/api/shop-owner/inventory/items', {
+      const response = await axios.get('/api/shop-owner/repair-materials', {
         params: {
           category: 'repair_materials',
           per_page: 200,
@@ -716,20 +694,13 @@ export default function UploadService() {
   const categories = Array.from(new Set(services.map((s) => s.category)));
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Upload Services" />
 
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Upload Services</h1>
-            <p className="mt-2 text-gray-600 dark:text-gray-400">
-              {activeTab === "services"
-                ? "Manage and upload repair services for your shop"
-                : "Create and manage bundled repair packages for your shop"}
-            </p>
-          </div>
+          <h1 className="sr-only">Upload Services</h1>
           {activeTab === "services" && (
             <div className="flex items-center gap-3">
               <button
@@ -786,8 +757,6 @@ export default function UploadService() {
               <MetricCard
                 title="Total Services"
                 value={services.length}
-                change={8}
-                changeType="increase"
                 icon={TagIcon}
                 color="info"
                 description="All service offerings"
@@ -795,8 +764,6 @@ export default function UploadService() {
               <MetricCard
                 title="Active Services"
                 value={services.filter((s) => s.status === "Active").length}
-                change={12}
-                changeType="increase"
                 icon={CheckCircleIcon}
                 color="success"
                 description="Currently available"
@@ -829,7 +796,7 @@ export default function UploadService() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Category
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Filter by category"
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
@@ -841,14 +808,14 @@ export default function UploadService() {
                         {cat}
                       </option>
                     ))}
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Filter by status"
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value)}
@@ -858,7 +825,7 @@ export default function UploadService() {
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                     <option value="Pending">Pending</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
               </div>
             </div>
@@ -1006,7 +973,7 @@ export default function UploadService() {
 
       {/* Add Service Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 dark:border-gray-800">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add New Service</h2>
@@ -1031,7 +998,7 @@ export default function UploadService() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Category *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service category"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value, categoryCustom: e.target.value === "Others" ? formData.categoryCustom : "" })}
@@ -1044,14 +1011,14 @@ export default function UploadService() {
                       </option>
                     ))}
                     <option value="Others">Others</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service status"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as "Active" | "Inactive" | "Pending" })}
@@ -1060,7 +1027,7 @@ export default function UploadService() {
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                     <option value="Pending">Pending</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
               </div>
 
@@ -1122,7 +1089,7 @@ export default function UploadService() {
                       />
                     </div>
                     <div>
-                      <select
+                      <MonochromeSelect
                         title="Select duration unit"
                         value={formData.durationUnit}
                         onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "minutes" | "hours" | "days" })}
@@ -1131,7 +1098,7 @@ export default function UploadService() {
                         <option value="minutes">Minutes</option>
                         <option value="hours">Hours</option>
                         <option value="days">Days</option>
-                      </select>
+                      </MonochromeSelect>
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1184,7 +1151,7 @@ export default function UploadService() {
                       <div key={`add-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
-                          <select
+                          <MonochromeSelect
                             title="Select inventory material"
                             value={line.inventory_item_id || ""}
                             onChange={(e) => updateMaterialTemplateLine(index, 'inventory_item_id', Number(e.target.value || 0))}
@@ -1196,7 +1163,7 @@ export default function UploadService() {
                                 {material.name} (Available: {material.available_quantity})
                               </option>
                             ))}
-                          </select>
+                          </MonochromeSelect>
                         </div>
 
                         <div className="md:col-span-2">
@@ -1252,7 +1219,7 @@ export default function UploadService() {
 
       {/* Edit Service Modal */}
       {isEditModalOpen && selectedService && (
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 dark:border-gray-800">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Service</h2>
@@ -1277,7 +1244,7 @@ export default function UploadService() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Category *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service category"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
@@ -1287,14 +1254,14 @@ export default function UploadService() {
                     <option value="Care">Care</option>
                     <option value="Repair">Repair</option>
                     <option value="Restoration">Restoration</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service status"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as "Active" | "Inactive" | "Pending" })}
@@ -1303,7 +1270,7 @@ export default function UploadService() {
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                     <option value="Pending">Pending</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
               </div>
 
@@ -1350,7 +1317,7 @@ export default function UploadService() {
                       />
                     </div>
                     <div>
-                      <select
+                      <MonochromeSelect
                         title="Select duration unit"
                         value={formData.durationUnit}
                         onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "minutes" | "hours" | "days" })}
@@ -1359,7 +1326,7 @@ export default function UploadService() {
                         <option value="minutes">Minutes</option>
                         <option value="hours">Hours</option>
                         <option value="days">Days</option>
-                      </select>
+                      </MonochromeSelect>
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1412,7 +1379,7 @@ export default function UploadService() {
                       <div key={`edit-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
-                          <select
+                          <MonochromeSelect
                             title="Select inventory material"
                             value={line.inventory_item_id || ""}
                             onChange={(e) => updateMaterialTemplateLine(index, 'inventory_item_id', Number(e.target.value || 0))}
@@ -1424,7 +1391,7 @@ export default function UploadService() {
                                 {material.name} (Available: {material.available_quantity})
                               </option>
                             ))}
-                          </select>
+                          </MonochromeSelect>
                         </div>
 
                         <div className="md:col-span-2">
@@ -1478,6 +1445,6 @@ export default function UploadService() {
           </div>
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

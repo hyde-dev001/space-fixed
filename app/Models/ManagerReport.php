@@ -19,6 +19,9 @@ class ManagerReport extends Model
         'file_path',
         'generated_by',
         'generated_at',
+        'reviewed_by',
+        'reviewed_at',
+        'idempotency_key',
         'sent_by',
         'sent_at',
         'downloaded_at',
@@ -29,6 +32,7 @@ class ManagerReport extends Model
         'period_start' => 'datetime',
         'period_end' => 'datetime',
         'generated_at' => 'datetime',
+        'reviewed_at' => 'datetime',
         'sent_at' => 'datetime',
         'downloaded_at' => 'datetime',
         'created_at' => 'datetime',
@@ -48,5 +52,10 @@ class ManagerReport extends Model
     public function sender(): BelongsTo
     {
         return $this->belongsTo(User::class, 'sent_by');
+    }
+
+    public function reviewer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reviewed_by');
     }
 }

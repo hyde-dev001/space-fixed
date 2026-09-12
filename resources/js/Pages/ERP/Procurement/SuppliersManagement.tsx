@@ -3,7 +3,10 @@ import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import IconButton from "../../../components/ui/icon-button/IconButton";
 import { supplierApi, type Supplier } from "@/services/procurementApi";
+import { erpUrl } from "@/utils/erpCapabilities";
+import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
 
 
@@ -57,7 +60,8 @@ const initialFormState: FormState = {
 };
 
 export default function SuppliersManagement() {
-	const { initialData } = usePage().props as any;
+	const { initialData, auth, erpCapabilities } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const [suppliers, setSuppliers] = useState<Supplier[]>(initialData?.data ?? []);
 	const [loading, setLoading] = useState(false);
 	const [showArchived, setShowArchived] = useState(false);
@@ -86,7 +90,13 @@ export default function SuppliersManagement() {
 	const fetchSuppliers = async () => {
 		setLoading(true);
 		try {
-			const response = await supplierApi.getAll({ page: 1, per_page: 100, archived: showArchived });
+			const suppliersUrl = erpUrl(erpCapabilities, "GET:procurement.suppliers.index");
+			if (ownerMode && !suppliersUrl) return;
+
+			const response = await supplierApi.getAll(
+				{ page: 1, per_page: 100, archived: showArchived },
+				suppliersUrl ?? undefined,
+			);
 			setSuppliers(response.data || []);
 		} catch (error) {
 			console.error("Failed to fetch suppliers:", error);
@@ -124,6 +134,8 @@ export default function SuppliersManagement() {
 	};
 
 	const handleEdit = (supplier: Supplier) => {
+		if (ownerMode) return;
+
 		setEditingSupplier(supplier);
 		setFormData({
 			name: supplier.name,
@@ -136,7 +148,9 @@ export default function SuppliersManagement() {
 	};
 
 	const handleArchive = async (supplierId: number) => {
-		const result = await Swal.fire({
+		if (ownerMode) return;
+
+		const result = await Swal.fire(withSweetAlertSemantic({
 			title: "Archive Supplier?",
 			text: "Are you sure you want to archive this supplier? You can restore it later if needed.",
 			icon: "warning",
@@ -145,7 +159,7 @@ export default function SuppliersManagement() {
 			cancelButtonColor: "#6b7280",
 			confirmButtonText: "Archive",
 			cancelButtonText: "Cancel",
-		});
+		}, "danger"));
 
 		if (!result.isConfirmed) return;
 
@@ -165,7 +179,9 @@ export default function SuppliersManagement() {
 	};
 
 	const handleRestore = async (supplierId: number) => {
-		const result = await Swal.fire({
+		if (ownerMode) return;
+
+		const result = await Swal.fire(withSweetAlertSemantic({
 			title: "Restore Supplier?",
 			text: "Are you sure you want to restore this supplier to active records?",
 			icon: "question",
@@ -174,7 +190,7 @@ export default function SuppliersManagement() {
 			cancelButtonColor: "#6b7280",
 			confirmButtonText: "Restore",
 			cancelButtonText: "Cancel",
-		});
+		}, "success"));
 
 		if (!result.isConfirmed) return;
 
@@ -194,6 +210,8 @@ export default function SuppliersManagement() {
 	};
 
 	const handleSaveEdit = async () => {
+		if (ownerMode) return;
+
 		if (!formData.name.trim()) {
 			await Swal.fire("Warning", "Please fill required field (Supplier Name)", "warning");
 			return;
@@ -227,6 +245,8 @@ export default function SuppliersManagement() {
 	};
 
 	const handleOpenModal = () => {
+		if (ownerMode) return;
+
 		setFormData(initialFormState);
 		setIsModalOpen(true);
 	};
@@ -240,11 +260,13 @@ export default function SuppliersManagement() {
 		const { name, value } = e.target;
 		setFormData((prev) => ({
 			...prev,
-			[name]: value,
+			[name]: name === "phone" ? value.replace(/\D/g, "").slice(0, 11) : value,
 		}));
 	};
 
 	const handleAddSupplier = async () => {
+		if (ownerMode) return;
+
 		if (!formData.name.trim()) {
 			await Swal.fire("Warning", "Please fill required field (Supplier Name)", "warning");
 			return;
@@ -279,18 +301,9 @@ export default function SuppliersManagement() {
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
 			<Head title="Suppliers Management - Solespace" />
-			{isAnyModalOpen && <div className="fixed inset-0 z-40" />}
-
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1">Suppliers Management</h1>
-						<p className="text-gray-600 dark:text-gray-400">
-							{showArchived
-								? "View archived supplier records, contact info, and purchase history"
-								: "View and manage supplier records, contact info, and purchase history"}
-						</p>
-					</div>
+				<div className="flex flex-col items-end lg:flex-row lg:items-center lg:justify-end gap-4">
+					<h1 className="sr-only">Suppliers Management</h1>
 					<div className="flex items-center gap-2">
 						<button
 							type="button"
@@ -307,7 +320,7 @@ export default function SuppliersManagement() {
 							{showArchived ? "Show Active" : "Show Archived"}
 						</button>
 
-						{!showArchived && (
+						{!ownerMode && !showArchived && (
 							<button
 								onClick={handleOpenModal}
 								className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white rounded-lg font-medium transition-colors whitespace-nowrap"
@@ -373,40 +386,44 @@ export default function SuppliersManagement() {
 										</td>
 											<td className="px-4 py-3 text-center">
 												<div className="flex items-center justify-center gap-2">
-													<button
+													<IconButton
+														variant="neutral"
 														onClick={() => handleView(supplier)}
-														className="p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
 														title="View supplier details"
+														label={`View details for ${supplier.name}`}
 													>
-														<svg className="h-5 w-5 text-blue-600 dark:text-blue-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+														<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} aria-hidden="true">
 															<path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.27 2.943 9.542 7-1.272 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
 															<circle cx="12" cy="12" r="3" />
 														</svg>
-													</button>
-													{showArchived ? (
-														<button
+													</IconButton>
+														{ownerMode ? null : showArchived ? (
+														<IconButton
+															variant="success"
 															onClick={() => handleRestore(supplier.id)}
-															className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
 															title="Restore supplier"
+															label={`Restore ${supplier.name}`}
 														>
 															<RestoreIcon className="w-5 h-5" />
-														</button>
+														</IconButton>
 													) : (
 														<>
-															<button
+															<IconButton
+																variant="neutral"
 																onClick={() => handleEdit(supplier)}
-																className="p-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
 																title="Edit supplier"
+																label={`Edit ${supplier.name}`}
 															>
 																<PencilIcon className="w-5 h-5" />
-															</button>
-															<button
+															</IconButton>
+															<IconButton
+																variant="danger"
 																onClick={() => handleArchive(supplier.id)}
-																className="p-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
 																title="Archive supplier"
+																label={`Archive ${supplier.name}`}
 															>
 																<ArchiveBoxIcon className="w-5 h-5" />
-															</button>
+															</IconButton>
 														</>
 													)}
 												</div>
@@ -455,7 +472,7 @@ export default function SuppliersManagement() {
 			{/* Add Supplier Modal */}
 			{isModalOpen && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close add supplier modal" className="absolute inset-0 bg-black/50" onClick={handleCloseModal} />
+					<button type="button" aria-label="Close add supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={handleCloseModal} />
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add New Supplier</h2>
@@ -515,11 +532,14 @@ export default function SuppliersManagement() {
 									Phone
 								</label>
 								<input
-									type="text"
-									name="phone"
-									value={formData.phone}
-									onChange={handleFormChange}
-									placeholder="e.g., 0917-456-1188"
+									 type="tel"
+									 name="phone"
+									 value={formData.phone}
+									 onChange={handleFormChange}
+									 inputMode="numeric"
+									 maxLength={11}
+									 pattern="[0-9]{1,11}"
+									 placeholder="e.g., 09174561188"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 								/>
 							</div>
@@ -562,7 +582,7 @@ export default function SuppliersManagement() {
 			{/* View Supplier Modal */}
 			{viewingSupplier && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close view supplier modal" className="absolute inset-0 bg-black/50" onClick={() => setViewingSupplier(null)} />
+					<button type="button" aria-label="Close view supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={() => setViewingSupplier(null)} />
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-[90vh] overflow-y-auto">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Supplier Details</h2>
@@ -647,7 +667,7 @@ export default function SuppliersManagement() {
 			{/* Edit Supplier Modal */}
 			{editingSupplier && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-					<button type="button" aria-label="Close edit supplier modal" className="absolute inset-0 bg-black/50" onClick={() => { setEditingSupplier(null); setFormData(initialFormState); }} />
+					<button type="button" aria-label="Close edit supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={() => { setEditingSupplier(null); setFormData(initialFormState); }} />
 					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
 						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Supplier</h2>
@@ -707,11 +727,14 @@ export default function SuppliersManagement() {
 									Phone
 								</label>
 								<input
-									type="text"
-									name="phone"
-									value={formData.phone}
-									onChange={handleFormChange}
-									placeholder="e.g., 0917-456-1188"
+									 type="tel"
+									 name="phone"
+									 value={formData.phone}
+									 onChange={handleFormChange}
+									 inputMode="numeric"
+									 maxLength={11}
+									 pattern="[0-9]{1,11}"
+									 placeholder="e.g., 09174561188"
 									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
 								/>
 							</div>
@@ -753,4 +776,3 @@ export default function SuppliersManagement() {
 		</AppLayoutERP>
 	);
 }
-

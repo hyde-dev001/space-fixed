@@ -20,6 +20,7 @@ type PremiumPlan = {
 	price: string | number;
 	duration_days: number;
 	showroom_slot_limit: number;
+	benefits: string[] | null;
 };
 
 type PremiumSubscription = {
@@ -369,7 +370,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 	return (
 		<>
 			<Head title="Premium Benefits" />
-			<div className="min-h-screen bg-white font-outfit antialiased">
+			<div className="shopowner-premium-page min-h-screen bg-white font-outfit antialiased">
 				<div className="mx-auto max-w-480 px-6 pb-12 pt-24 lg:px-12 lg:pb-20 lg:pt-28">
 					<section className="w-full bg-white">
 						<div className="mb-8 text-[11px] uppercase tracking-[0.18em] text-black/55 sm:text-xs">Shop Owner / Premium Benefits</div>
@@ -381,17 +382,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 									Back
 								</Link>
 						</div>
-						<div className="mb-14">
-							<h1 className="mb-4 text-4xl font-bold uppercase tracking-tight text-black sm:text-5xl lg:text-6xl">
-								Premium Benefits
-							</h1>
-							<p className="mb-2 max-w-3xl text-base font-light leading-relaxed text-black/65">
-								Unlock exclusive advantages designed for retail-capable shops that want access to the virtual showroom.
-							</p>
-							<p className="text-xs font-semibold uppercase tracking-[0.16em] text-black/40">
-								Exclusive for Retail and Retail-Repair Shop Owners
-							</p>
-						</div>
+						<h1 className="sr-only">Premium Benefits</h1>
 
 						{subscription?.status === 'deactivated' ? (
 							<div className="mb-10 overflow-hidden rounded-3xl border border-[#16233b]/20 bg-linear-to-r from-[#16233b]/8 via-[#16233b]/4 to-transparent shadow-[0_22px_40px_-28px_rgba(15,23,42,0.6)]">
@@ -524,8 +515,9 @@ const PremiumBenefits: React.FC<Props> = () => {
 												<ul className="mb-8 grow space-y-3.5">
 													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">{getDurationLabel(plan.duration_days)} access to the virtual showroom</span></li>
 													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">Display capacity: up to {plan.showroom_slot_limit} shoe slots in your showroom</span></li>
-													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">View shoes in horizontal detail inside the showroom</span></li>
-													<li className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">Enable image-sequence uploads for showroom presentation</span></li>
+											{(plan.benefits ?? []).map((benefit) => (
+												<li key={benefit} className="flex items-start gap-3">{checkIcon}<span className="text-sm leading-snug text-black/65">{benefit}</span></li>
+											))}
 												</ul>
 												{shouldShowShowroomButton ? (
 													<Link href={virtualShowroomHref as string} className={`${actionBtnBase} ${actionBtnDark}`}>
@@ -631,7 +623,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 			</div>
 
 				{showUpgradeModal && upgradePreview ? (
-					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px] erp-modal-backdrop">
 						<div className="w-full max-w-2xl rounded-3xl border border-gray-200 bg-white p-6 shadow-[0_30px_65px_-30px_rgba(15,23,42,0.65)] sm:p-7" role="dialog" aria-modal="true" aria-labelledby="upgrade-modal-title">
 							<div className="mb-5 flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
 								<div>
@@ -690,7 +682,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 				) : null}
 
 				{showDowngradeModal && selectedDowngradePlan ? (
-					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px] erp-modal-backdrop">
 						<div className="w-full max-w-2xl rounded-3xl border border-gray-200 bg-white p-6 shadow-[0_30px_65px_-30px_rgba(15,23,42,0.65)] sm:p-7" role="dialog" aria-modal="true" aria-labelledby="downgrade-modal-title">
 							<div className="mb-5 flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
 								<div>
@@ -744,7 +736,7 @@ const PremiumBenefits: React.FC<Props> = () => {
 				) : null}
 
 				{showCancelModal ? (
-					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+					<div className="fixed inset-0 z-2000 flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px] erp-modal-backdrop">
 						<div className="w-full max-w-4xl rounded-3xl border border-gray-200 bg-white p-6 shadow-[0_30px_65px_-30px_rgba(15,23,42,0.65)] sm:p-7" role="dialog" aria-modal="true" aria-labelledby="cancel-premium-title">
 							<div className="mb-5 flex items-start justify-between gap-4 border-b border-gray-200 pb-5">
 								<div>

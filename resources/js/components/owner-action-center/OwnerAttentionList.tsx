@@ -1,0 +1,130 @@
+import type { OwnerAttentionItem, OwnerAttentionSourceType } from "../../types/ownerActionCenter";
+
+interface OwnerAttentionListProps {
+  items: OwnerAttentionItem[];
+  onReview?: (item: OwnerAttentionItem) => void;
+  selectedAttentionKey?: string | null;
+  ariaLabel?: string;
+}
+
+const sourceLabels: Record<OwnerAttentionSourceType, string> = {
+  order_refund: "Order Refund",
+  repair_refund: "Repair Refund",
+  product_price_change: "Product Price Change",
+  repair_price_change: "Repair Service Price Change",
+  repair_package_price_change: "Repair Package Price Change",
+  payslip: "Payslip",
+  salary_change: "Salary Adjustment",
+  expense: "Expense",
+  purchase_request: "Purchase Request",
+  suspension_request: "Employee Suspension",
+  termination_request: "Employee Termination",
+  rehire_request: "Employee Rehire",
+  repair_rejection: "Repair Rejection",
+  compliance_document: "Compliance Document",
+  logistics_failure: "Logistics Failure",
+};
+
+const waitingOnLabels: Partial<Record<OwnerAttentionItem["waiting_on"], string>> = {
+  super_admin: "Compliance Review",
+  finance: "Finance",
+  payment_recovery: "Payment Recovery",
+  rider: "Rider",
+  dispatcher: "Dispatcher",
+};
+
+const currencyFormatter = new Intl.NumberFormat("en-PH", {
+  style: "currency",
+  currency: "PHP",
+  minimumFractionDigits: 2,
+});
+
+const titleCase = (value: string): string => value.charAt(0).toUpperCase() + value.slice(1);
+
+const shortDate = (value: string): string => {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value.slice(0, 10)
+    : new Intl.DateTimeFormat("en-PH", { dateStyle: "medium" }).format(date);
+};
+
+const formatExposure = (value: number | null): string => {
+  if (value === null) {
+    return "Exposure not comparable";
+  }
+
+  return currencyFormatter.format(value);
+};
+
+export default function OwnerAttentionList({ items, onReview, selectedAttentionKey, ariaLabel = "Owner attention queue" }: OwnerAttentionListProps) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <ol aria-label={ariaLabel} className="divide-y divide-gray-200 dark:divide-gray-800">
+      {items.map((item) => {
+        const requiresDecision = item.primary_bucket === "needs_my_decision" && item.owner_action_required;
+        const statusLabel = item.primary_bucket === "needs_my_decision"
+          ? requiresDecision ? "Needs your decision" : "In review"
+          : item.primary_bucket === "waiting_on_others" ? "Waiting on others" : "Urgent exception";
+
+        return (
+        <li key={item.attention_key} className="py-4 first:pt-0 last:pb-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-gray-500 dark:text-gray-400">
+                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+                  {sourceLabels[item.source_type]}
+                </span>
+                <span>Status: {statusLabel}</span>
+                <span>Priority: {titleCase(item.priority_tier)}</span>
+                {item.comparable_monetary_exposure !== null && (
+                  <span>Exposure: {formatExposure(item.comparable_monetary_exposure)}</span>
+                )}
+              </div>
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-white/90">{item.title}</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-300">{item.concise_summary}</p>
+              {item.primary_bucket === "waiting_on_others" && waitingOnLabels[item.waiting_on] && (
+                <p className="text-xs font-medium text-gray-600 dark:text-gray-300">
+                  Waiting on: {waitingOnLabels[item.waiting_on]}
+                </p>
+              )}
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {item.urgency_at ? "Due" : "Actionable since"}{" "}
+                <time dateTime={item.urgency_at ?? item.actionable_since}>
+                  {shortDate(item.urgency_at ?? item.actionable_since)}
+                </time>
+              </p>
+            </div>
+            {requiresDecision && onReview ? (
+              <button
+                type="button"
+                aria-label={`View ${item.title} approval details`}
+                title="View approval details"
+                aria-haspopup="dialog"
+                data-attention-key={item.attention_key}
+                aria-current={selectedAttentionKey === item.attention_key ? "true" : undefined}
+                onClick={() => onReview(item)}
+                className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border p-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 ${selectedAttentionKey === item.attention_key ? "border-gray-950 bg-gray-950 text-white hover:border-black hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:text-white dark:hover:border-gray-950 dark:hover:bg-black" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800"}`}
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Z" />
+                  <circle cx="12" cy="12" r="2.75" />
+                </svg>
+              </button>
+            ) : (
+              <a
+                href={item.destination_url}
+                className="inline-flex min-h-11 shrink-0 items-center text-sm font-semibold text-gray-900 underline-offset-4 hover:text-black hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:text-gray-200 dark:hover:text-white dark:focus-visible:ring-offset-gray-900"
+              >
+                Open workflow
+              </a>
+            )}
+          </div>
+        </li>
+        );
+      })}
+    </ol>
+  );
+}

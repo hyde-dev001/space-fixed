@@ -6,18 +6,24 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Finance\TaxRate;
 use App\Models\AuditLog;
+use App\Support\Finance\FinanceShopContext;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class TaxRateController extends Controller
 {
+    public function __construct(private readonly FinanceShopContext $shopContext)
+    {
+    }
+
     /**
      * Get all tax rates
      */
     public function index(Request $request)
     {
-        $shopId = auth()->user()?->shop_owner_id ?? 1;
+        $shopId = $this->shopOwnerId();
         
         $query = TaxRate::forShop($shopId);
 
@@ -58,7 +64,7 @@ class TaxRateController extends Controller
      */
     public function show($id)
     {
-        $shopId = auth()->user()?->shop_owner_id ?? 1;
+        $shopId = $this->shopOwnerId();
         $taxRate = TaxRate::forShop($shopId)->findOrFail($id);
         
         return response()->json($taxRate);
@@ -69,7 +75,7 @@ class TaxRateController extends Controller
      */
     public function store(Request $request)
     {
-        $shopId = auth()->user()?->shop_owner_id ?? 1;
+        $shopId = $this->shopOwnerId();
 
         $data = $request->validate([
             'name' => 'required|string|max:191',
@@ -108,8 +114,7 @@ class TaxRateController extends Controller
             return response()->json($taxRate, 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Tax rate creation failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to create tax rate', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'tax_rate.create', 500, ['shop_id' => $shopId]);
         }
     }
 
@@ -118,7 +123,7 @@ class TaxRateController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $shopId = auth()->user()?->shop_owner_id ?? 1;
+        $shopId = $this->shopOwnerId();
         $taxRate = TaxRate::forShop($shopId)->findOrFail($id);
 
         $data = $request->validate([
@@ -156,8 +161,7 @@ class TaxRateController extends Controller
             return response()->json($taxRate);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Tax rate update failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to update tax rate', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'tax_rate.update', 500, ['record_id' => $id, 'shop_id' => $shopId]);
         }
     }
 
@@ -166,7 +170,7 @@ class TaxRateController extends Controller
      */
     public function destroy($id)
     {
-        $shopId = auth()->user()?->shop_owner_id ?? 1;
+        $shopId = $this->shopOwnerId();
         $taxRate = TaxRate::forShop($shopId)->findOrFail($id);
 
         try {
@@ -175,8 +179,7 @@ class TaxRateController extends Controller
 
             return response()->json(['message' => 'Tax rate deleted successfully']);
         } catch (\Exception $e) {
-            Log::error('Tax rate deletion failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to delete tax rate', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'tax_rate.delete', 500, ['record_id' => $id, 'shop_id' => $shopId]);
         }
     }
 
@@ -190,7 +193,7 @@ class TaxRateController extends Controller
             'subtotal' => 'required|numeric|min:0',
         ]);
 
-        $shopId = auth()->user()?->shop_owner_id ?? 1;
+        $shopId = $this->shopOwnerId();
         $taxRate = TaxRate::forShop($shopId)->findOrFail($data['tax_rate_id']);
 
         if (!$taxRate->isEffective()) {
@@ -215,7 +218,7 @@ class TaxRateController extends Controller
      */
     public function getDefault(Request $request)
     {
-        $shopId = auth()->user()?->shop_owner_id ?? 1;
+        $shopId = $this->shopOwnerId();
         $appliesTo = $request->get('applies_to', 'all');
 
         $taxRate = TaxRate::forShop($shopId)
@@ -240,7 +243,7 @@ class TaxRateController extends Controller
      */
     public function effective(Request $request)
     {
-        $shopId = auth()->user()?->shop_owner_id ?? 1;
+        $shopId = $this->shopOwnerId();
         $appliesTo = $request->get('applies_to', 'all');
 
         $taxRates = TaxRate::forShop($shopId)
@@ -258,8 +261,8 @@ class TaxRateController extends Controller
      */
     private function audit(string $action, int $targetId, array $metadata = []): void
     {
-        $actorUserId = Auth::guard('user')->id() ?? Auth::id();
-        $shopOwnerId = Auth::user()?->shop_owner_id ?? 1;
+        $actorUserId = Auth::guard('user')->id();
+        $shopOwnerId = $this->shopOwnerId();
         
         AuditLog::create([
             'shop_owner_id' => $shopOwnerId,
@@ -269,5 +272,10 @@ class TaxRateController extends Controller
             'target_id' => $targetId,
             'metadata' => $metadata,
         ]);
+    }
+
+    private function shopOwnerId(): int
+    {
+        return $this->shopContext->id(request());
     }
 }

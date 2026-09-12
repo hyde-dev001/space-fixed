@@ -3,6 +3,7 @@
 use App\Http\Controllers\Erp\PurchaseRequestController;
 use App\Http\Controllers\Erp\PurchaseOrderController;
 use App\Http\Controllers\Erp\StockRequestApprovalController;
+use App\Http\Controllers\Erp\PurchaseOrderReceiptController;
 use App\Http\Controllers\Erp\SupplierController;
 use App\Http\Controllers\Erp\ProcurementSettingsController;
 use Illuminate\Support\Facades\Route;
@@ -21,7 +22,7 @@ use Illuminate\Support\Facades\Route;
 Route::middleware([
     'web',
     'auth:user',
-    'permission:view-procurement|access-procurement-dashboard|access-purchase-requests|access-purchase-orders|access-stock-request-approval|access-suppliers-management|access-supplier-order-monitoring',
+    'permission:view-procurement|access-procurement-dashboard|access-purchase-requests|access-purchase-orders|access-stock-request-approval|access-suppliers-management|access-supplier-order-monitoring|procurement.view|procurement.create_purchase_requests|procurement.submit_purchase_requests|procurement.review_purchase_requests|procurement.create_purchase_orders|procurement.manage_purchase_orders|procurement.receive_purchase_orders|procurement.complete_purchase_orders|procurement.cancel_purchase_orders|procurement.void_purchase_order_receipts|procurement.manage_suppliers|procurement.review_stock_requests',
     'shop.isolation',
 ])->prefix('erp/procurement')->group(function () {
     
@@ -49,8 +50,10 @@ Route::middleware([
         Route::delete('/{id}', [PurchaseOrderController::class, 'destroy'])->name('procurement.purchase-orders.destroy');
         Route::post('/{id}/update-status', [PurchaseOrderController::class, 'updateStatus'])->name('procurement.purchase-orders.update-status');
         Route::post('/{id}/send-to-supplier', [PurchaseOrderController::class, 'sendToSupplier'])->name('procurement.purchase-orders.send-supplier');
-        Route::post('/{id}/mark-delivered', [PurchaseOrderController::class, 'markAsDelivered'])->name('procurement.purchase-orders.mark-delivered');
         Route::post('/{id}/cancel', [PurchaseOrderController::class, 'cancel'])->name('procurement.purchase-orders.cancel');
+        Route::get('/{id}/receipts', [PurchaseOrderReceiptController::class, 'index'])->name('procurement.purchase-orders.receipts.index');
+        Route::post('/{id}/receipts', [PurchaseOrderReceiptController::class, 'store'])->name('procurement.purchase-orders.receipts.store');
+        Route::post('/{id}/receipts/{receiptId}/void', [PurchaseOrderReceiptController::class, 'void'])->name('procurement.purchase-orders.receipts.void');
     });
     
     // Replenishment Requests Routes (deprecated alias -> stock requests)
@@ -89,9 +92,6 @@ Route::middleware([
         Route::put('/{id}', [SupplierController::class, 'update'])->name('procurement.suppliers.update');
         Route::delete('/{id}', [SupplierController::class, 'destroy'])->name('procurement.suppliers.destroy');
         Route::post('/{id}/restore', [SupplierController::class, 'restore'])->name('procurement.suppliers.restore');
-        Route::get('/{id}/purchase-history', [SupplierController::class, 'getPurchaseHistory'])->name('procurement.suppliers.purchase-history');
-        Route::get('/{id}/performance', [SupplierController::class, 'getPerformanceMetrics'])->name('procurement.suppliers.performance');
-        Route::post('/{id}/rating', [SupplierController::class, 'updatePerformanceRating'])->name('procurement.suppliers.rating');
     });
     
     // Procurement Settings Routes

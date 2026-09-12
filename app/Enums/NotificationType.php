@@ -23,6 +23,8 @@ enum NotificationType: string
     case PAYMENT_FAILED = 'payment_failed';
     case MESSAGE_RECEIVED = 'message_received';
     case REVIEW_REQUEST = 'review_request';
+    case IDENTITY_VERIFICATION_APPROVED = 'identity_verification_approved';
+    case IDENTITY_VERIFICATION_REJECTED = 'identity_verification_rejected';
     
     // ==================== SHOP OWNER NOTIFICATIONS ====================
     case NEW_ORDER = 'new_order';
@@ -33,6 +35,8 @@ enum NotificationType: string
     case REFUND_REQUEST = 'refund_request';
     case LOW_STOCK_ALERT = 'low_stock_alert';
     case EMPLOYEE_SUSPENSION_REQUEST = 'employee_suspension_request';
+    case EMPLOYEE_TERMINATION_REQUEST = 'employee_termination_request';
+    case EMPLOYEE_REHIRE_REQUEST = 'employee_rehire_request';
     case CUSTOMER_MESSAGE = 'customer_message';
     
     // ==================== ERP STAFF NOTIFICATIONS ====================
@@ -64,6 +68,8 @@ enum NotificationType: string
     case OVERTIME_REQUEST_PENDING = 'overtime_request_pending';
     case EXPENSE_REQUEST_PENDING = 'expense_request_pending';
     case SUSPENSION_REQUEST_PENDING = 'suspension_request_pending';
+    case TERMINATION_REQUEST_PENDING = 'termination_request_pending';
+    case REHIRE_REQUEST_PENDING = 'rehire_request_pending';
     case PERFORMANCE_REVIEW_DUE = 'performance_review_due';
 
     // ==================== HR NOTIFICATIONS ====================
@@ -79,14 +85,33 @@ enum NotificationType: string
     
     // ==================== SUPER ADMIN NOTIFICATIONS ====================
     case SHOP_REGISTRATION_PENDING = 'shop_registration_pending';
+    case SHOP_DOCUMENT_RENEWAL_PENDING = 'shop_document_renewal_pending';
+    case SHOP_DOCUMENT_RENEWAL_REVIEWED = 'shop_document_renewal_reviewed';
+    case SHOP_DOCUMENT_EXPIRING = 'shop_document_expiring';
+    case BUSINESS_UPGRADE_REQUEST_PENDING = 'business_upgrade_request_pending';
+    case BUSINESS_UPGRADE_REQUEST_APPROVED = 'business_upgrade_request_approved';
+    case BUSINESS_UPGRADE_REQUEST_REJECTED = 'business_upgrade_request_rejected';
     case SHOP_REPORT_FILED = 'shop_report_filed';
     case REVIEW_REPORTED = 'review_reported';
+    case SUSPENSION_APPEAL_SUBMITTED = 'suspension_appeal_submitted';
 
     // ==================== CRM NOTIFICATIONS ====================
     case NEW_LEAD = 'new_lead';
     case LEAD_UPDATED = 'lead_updated';
     case OPPORTUNITY_CREATED = 'opportunity_created';
     case CUSTOMER_SUPPORT_TICKET = 'customer_support_ticket';
+
+    // ==================== LOGISTICS NOTIFICATIONS ====================
+    case LOGISTICS_SHIPMENT_REQUESTED = 'logistics_shipment_requested';
+    case LOGISTICS_ASSIGNED = 'logistics_assigned';
+    case LOGISTICS_BATCH_OFFERED = 'logistics_batch_offered';
+    case LOGISTICS_BATCH_REJECTED = 'logistics_batch_rejected';
+    case LOGISTICS_PICKUP_SCHEDULED = 'logistics_pickup_scheduled';
+    case LOGISTICS_IN_TRANSIT = 'logistics_in_transit';
+    case LOGISTICS_DELIVERY_FAILED = 'logistics_delivery_failed';
+    case LOGISTICS_PROOF_REQUIRED = 'logistics_proof_required';
+    case LOGISTICS_DELIVERED = 'logistics_delivered';
+    case LOGISTICS_EXCEPTION = 'logistics_exception';
 
     /**
      * Get human-readable label for notification type
@@ -113,6 +138,8 @@ enum NotificationType: string
             self::PAYMENT_FAILED => 'Payment Failed',
             self::MESSAGE_RECEIVED => 'New Message',
             self::REVIEW_REQUEST => 'Review Request',
+            self::IDENTITY_VERIFICATION_APPROVED => 'Identity Verification Approved',
+            self::IDENTITY_VERIFICATION_REJECTED => 'Identity Verification Needs Resubmission',
             
             // Shop Owner notifications
             self::NEW_ORDER => 'New Order',
@@ -123,6 +150,8 @@ enum NotificationType: string
             self::REFUND_REQUEST => 'Refund Request',
             self::LOW_STOCK_ALERT => 'Low Stock Alert',
             self::EMPLOYEE_SUSPENSION_REQUEST => 'Employee Suspension Request',
+            self::EMPLOYEE_TERMINATION_REQUEST => 'Employee Termination Request',
+            self::EMPLOYEE_REHIRE_REQUEST => 'Employee Rehire Request',
             self::CUSTOMER_MESSAGE => 'Customer Message',
             
             // Staff notifications
@@ -144,6 +173,8 @@ enum NotificationType: string
             self::OVERTIME_REQUEST_PENDING => 'Overtime Request Pending',
             self::EXPENSE_REQUEST_PENDING => 'Expense Request Pending',
             self::SUSPENSION_REQUEST_PENDING => 'Suspension Request Pending',
+            self::TERMINATION_REQUEST_PENDING => 'Termination Request Pending',
+            self::REHIRE_REQUEST_PENDING => 'Rehire Request Pending',
             self::PERFORMANCE_REVIEW_DUE => 'Performance Review Due',
 
             // ERP Employee (self) notifications
@@ -169,14 +200,33 @@ enum NotificationType: string
             
             // Super admin notifications
             self::SHOP_REGISTRATION_PENDING => 'New Shop Registration',
+            self::SHOP_DOCUMENT_RENEWAL_PENDING => 'Document Renewal Pending',
+            self::SHOP_DOCUMENT_RENEWAL_REVIEWED => 'Document Renewal Reviewed',
+            self::SHOP_DOCUMENT_EXPIRING => 'Business Document Expiring',
+            self::BUSINESS_UPGRADE_REQUEST_PENDING => 'Business Upgrade Request',
+            self::BUSINESS_UPGRADE_REQUEST_APPROVED => 'Business Upgrade Request Approved',
+            self::BUSINESS_UPGRADE_REQUEST_REJECTED => 'Business Upgrade Request Rejected',
             self::SHOP_REPORT_FILED => 'Shop Report Filed',
             self::REVIEW_REPORTED => 'Review Reported',
+            self::SUSPENSION_APPEAL_SUBMITTED => 'Suspension Appeal Submitted',
 
             // CRM notifications
             self::NEW_LEAD => 'New Lead',
             self::LEAD_UPDATED => 'Lead Updated',
             self::OPPORTUNITY_CREATED => 'Opportunity Created',
             self::CUSTOMER_SUPPORT_TICKET => 'Customer Support Ticket',
+
+            // Logistics notifications
+            self::LOGISTICS_SHIPMENT_REQUESTED => 'Shipment Requested',
+            self::LOGISTICS_ASSIGNED => 'Delivery Assigned',
+            self::LOGISTICS_BATCH_OFFERED => 'Delivery Batch Offered',
+            self::LOGISTICS_BATCH_REJECTED => 'Batch Offer Rejected',
+            self::LOGISTICS_PICKUP_SCHEDULED => 'Pickup Scheduled',
+            self::LOGISTICS_IN_TRANSIT => 'Delivery In Transit',
+            self::LOGISTICS_DELIVERY_FAILED => 'Delivery Attempt Failed',
+            self::LOGISTICS_PROOF_REQUIRED => 'Delivery Proof Required',
+            self::LOGISTICS_DELIVERED => 'Delivered',
+            self::LOGISTICS_EXCEPTION => 'Delivery Exception',
         };
     }
 
@@ -198,6 +248,8 @@ enum NotificationType: string
             self::MESSAGE_RECEIVED, self::CUSTOMER_MESSAGE => 'messages',
             
             self::REVIEW_REQUEST => 'reviews',
+
+            self::IDENTITY_VERIFICATION_APPROVED, self::IDENTITY_VERIFICATION_REJECTED => 'general',
             
             self::EXPENSE_APPROVAL, self::EXPENSE_REQUEST_PENDING,
             self::INVOICE_CREATED, self::INVOICE_CREATED_FINANCE,
@@ -211,12 +263,21 @@ enum NotificationType: string
             self::SALARY_CHANGE_SUBMITTED, self::SALARY_CHANGE_APPROVED,
             self::OVERTIME_REQUEST_APPROVED, self::OVERTIME_REQUEST_REJECTED,
             self::ATTENDANCE_REMINDER, self::DOCUMENT_EXPIRING,
-            self::PAYROLL_GENERATED, self::PAYSLIP_READY, self::PAYSLIP_REJECTED, self::TRAINING_ASSIGNED => 'hr',
+            self::PAYROLL_GENERATED, self::PAYSLIP_READY, self::PAYSLIP_REJECTED, self::TRAINING_ASSIGNED,
+            self::EMPLOYEE_TERMINATION_REQUEST, self::EMPLOYEE_REHIRE_REQUEST,
+            self::TERMINATION_REQUEST_PENDING, self::REHIRE_REQUEST_PENDING => 'hr',
             
             self::NEW_LEAD, self::LEAD_UPDATED, self::OPPORTUNITY_CREATED,
             self::CUSTOMER_SUPPORT_TICKET => 'crm',
 
-            self::SHOP_REGISTRATION_PENDING, self::SHOP_REPORT_FILED, self::REVIEW_REPORTED => 'admin',
+            self::LOGISTICS_SHIPMENT_REQUESTED, self::LOGISTICS_ASSIGNED, self::LOGISTICS_BATCH_OFFERED,
+            self::LOGISTICS_BATCH_REJECTED,
+            self::LOGISTICS_PICKUP_SCHEDULED, self::LOGISTICS_IN_TRANSIT,
+            self::LOGISTICS_DELIVERY_FAILED, self::LOGISTICS_PROOF_REQUIRED,
+            self::LOGISTICS_DELIVERED, self::LOGISTICS_EXCEPTION => 'logistics',
+
+            self::SHOP_REGISTRATION_PENDING, self::SHOP_DOCUMENT_RENEWAL_PENDING, self::SHOP_DOCUMENT_RENEWAL_REVIEWED, self::SHOP_DOCUMENT_EXPIRING, self::BUSINESS_UPGRADE_REQUEST_PENDING,
+            self::SHOP_REPORT_FILED, self::REVIEW_REPORTED, self::SUSPENSION_APPEAL_SUBMITTED => 'admin',
             
             default => 'general',
         };
@@ -242,10 +303,16 @@ enum NotificationType: string
             self::REPAIR_COMPLETED,
             self::REPAIR_READY_PICKUP,
             self::REPAIR_STATUS_UPDATE,
+            self::LOGISTICS_IN_TRANSIT,
+            self::LOGISTICS_DELIVERY_FAILED,
+            self::LOGISTICS_DELIVERED,
+            self::LOGISTICS_EXCEPTION,
             self::PAYMENT_RECEIVED,
             self::PAYMENT_FAILED,
             self::MESSAGE_RECEIVED,
             self::REVIEW_REQUEST,
+            self::IDENTITY_VERIFICATION_APPROVED,
+            self::IDENTITY_VERIFICATION_REJECTED,
         ]);
     }
 
@@ -264,8 +331,14 @@ enum NotificationType: string
             self::REFUND_REQUEST,
             self::LOW_STOCK_ALERT,
             self::EMPLOYEE_SUSPENSION_REQUEST,
+            self::EMPLOYEE_TERMINATION_REQUEST,
+            self::EMPLOYEE_REHIRE_REQUEST,
             self::SALARY_CHANGE_SUBMITTED,
             self::CUSTOMER_MESSAGE,
+            self::SHOP_DOCUMENT_RENEWAL_REVIEWED,
+            self::SHOP_DOCUMENT_EXPIRING,
+            self::BUSINESS_UPGRADE_REQUEST_APPROVED,
+            self::BUSINESS_UPGRADE_REQUEST_REJECTED,
         ]);
     }
 
@@ -282,14 +355,22 @@ enum NotificationType: string
             self::HIGH_VALUE_APPROVAL,
             self::REFUND_REQUEST,
             self::EMPLOYEE_SUSPENSION_REQUEST,
+            self::EMPLOYEE_TERMINATION_REQUEST,
+            self::EMPLOYEE_REHIRE_REQUEST,
             self::REPAIR_REJECTION_REVIEW,
             self::LEAVE_REQUEST_PENDING,
             self::EXPENSE_REQUEST_PENDING,
             self::SUSPENSION_REQUEST_PENDING,
+            self::TERMINATION_REQUEST_PENDING,
+            self::REHIRE_REQUEST_PENDING,
             self::SALARY_CHANGE_SUBMITTED,
             self::SHOP_REGISTRATION_PENDING,
+            self::SHOP_DOCUMENT_RENEWAL_PENDING,
+            self::SHOP_DOCUMENT_EXPIRING,
+            self::BUSINESS_UPGRADE_REQUEST_PENDING,
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,
+            self::SUSPENSION_APPEAL_SUBMITTED,
         ]);
     }
 
@@ -300,8 +381,11 @@ enum NotificationType: string
     {
         return in_array($this, [
             self::SHOP_REGISTRATION_PENDING,
+            self::SHOP_DOCUMENT_RENEWAL_PENDING,
+            self::BUSINESS_UPGRADE_REQUEST_PENDING,
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,
+            self::SUSPENSION_APPEAL_SUBMITTED,
         ]);
     }
 }

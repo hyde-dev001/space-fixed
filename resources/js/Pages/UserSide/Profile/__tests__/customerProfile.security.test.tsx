@@ -40,6 +40,7 @@ describe("customer profile security card", () => {
   beforeEach(() => {
     usePageMock.mockReset();
     routerPostMock.mockReset();
+    (globalThis as { route?: (name: string) => string }).route = (name: string) => `/${name}`;
 
     usePageMock.mockReturnValue({
       url: "/customer-profile",
@@ -60,6 +61,10 @@ describe("customer profile security card", () => {
             shop_owner_id: null,
           },
         },
+        security: {
+          totp_enabled: false,
+          activity: [],
+        },
       },
     });
   });
@@ -68,5 +73,16 @@ describe("customer profile security card", () => {
     render(<CustomerProfile />);
 
     expect(screen.getAllByText(/change password/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("At least 8 characters").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("One special character").length).toBeGreaterThan(0);
+  });
+
+  it("shows customer security controls without Active Sessions", () => {
+    render(<CustomerProfile />);
+
+    expect(screen.getByText("Two-Factor Authentication")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Enable Two-Factor Authentication" })).toBeInTheDocument();
+    expect(screen.queryByText("Active Sessions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Log Out Other Sessions")).not.toBeInTheDocument();
   });
 });

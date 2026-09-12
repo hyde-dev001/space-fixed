@@ -1,9 +1,12 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
+import { DashboardMetricCard } from "../../../components/dashboard";
 
 // ==================== Type Definitions ====================
-type EmployeeStatus = "active" | "inactive" | "on_leave";
+type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";
 type AttendanceStatus = "finalized" | "pending" | "not_started";
 type PayrollWorkflowStatus = "pending" | "awaiting_checker" | "awaiting_final_approval" | "ready_for_disbursement" | "paid" | "rejected";
 
@@ -376,6 +379,9 @@ const normalizeBatchPreviewResponse = (payload: any): BatchPreviewResponse => ({
 });
 
 export default function GenerateSlip() {
+	const { auth, initialPayrollEmployees } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
+	const hrApiBase = ownerMode ? "/api/shop-owner/hr" : "/api/hr";
 	const [employeeData, setEmployeeData] = useState<Employee[]>([]);
 	const [isLoadingEmployees, setIsLoadingEmployees] = useState(true);
 	const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
@@ -463,7 +469,7 @@ export default function GenerateSlip() {
 			setIsLoadingPeriods(true);
 			try {
 				const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-				const response = await fetch('/api/hr/payroll/periods', {
+				const response = await fetch(hrApiBase + '/payroll/periods', {
 					method: 'GET',
 					headers: {
 						'Content-Type': 'application/json',
@@ -487,10 +493,19 @@ export default function GenerateSlip() {
 			}
 		};
 		fetchPeriods();
-	}, []);
+	}, [hrApiBase]);
 
 	// Fetch employees from API
 	useEffect(() => {
+		if (ownerMode) {
+			const ownerEmployees = Array.isArray(initialPayrollEmployees)
+				? initialPayrollEmployees.map(transformEmployeeFromApi)
+				: [];
+			setEmployeeData(ownerEmployees);
+			setIsLoadingEmployees(false);
+			return;
+		}
+
 		const fetchEmployees = async () => {
 			setIsLoadingEmployees(true);
 			try {
@@ -535,7 +550,7 @@ export default function GenerateSlip() {
 		};
 
 		fetchEmployees();
-	}, []);
+	}, [ownerMode, initialPayrollEmployees]);
 
 	useEffect(() => {
 		if (!isPeriodModalOpen) return;
@@ -572,7 +587,7 @@ export default function GenerateSlip() {
 				params.append('period', payrollPeriodKey);
 				params.append('per_page', '500');
 
-				const response = await fetch(`/api/hr/payroll?${params.toString()}`, {
+				const response = await fetch(hrApiBase + '/payroll?' + params.toString(), {
 					method: 'GET',
 					headers: {
 						'Content-Type': 'application/json',
@@ -709,7 +724,7 @@ export default function GenerateSlip() {
 		};
 
 		fetchGovernanceReadiness();
-	}, [payrollPeriodKey]);
+	}, [hrApiBase, payrollPeriodKey]);
 
 	const departments = useMemo(
 		() => Array.from(new Set(employeeData.map((e) => e.department))),
@@ -850,7 +865,7 @@ export default function GenerateSlip() {
 			params.append('start_date', selectedPeriod.startDate);
 			params.append('end_date', selectedPeriod.endDate);
 			
-			const response = await fetch(`/api/hr/attendance/employee/${employee.id}?${params.toString()}`, {
+			const response = await fetch(hrApiBase + '/attendance/employee/' + employee.id + '?' + params.toString(), {
 				method: 'GET',
 				headers: {
 					'Content-Type': 'application/json',
@@ -928,7 +943,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payroll/batch/preview', {
+			const response = await fetch(hrApiBase + '/payroll/batch/preview', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1033,14 +1048,14 @@ export default function GenerateSlip() {
 							<li><strong>Total Net:</strong> ${formatPHP(batchPreviewData.summary.total_net)}</li>
 						</ul>
 					</div>
-					
+
 					<div class="bg-green-50 border border-green-200 rounded-lg p-4">
 						<label class="flex items-center gap-2 text-sm cursor-pointer">
 							<input type="checkbox" id="sendNotifications" checked class="rounded text-green-600" />
 							<span class="text-green-800">📧 Send email notifications to employees</span>
 						</label>
 					</div>
-					
+
 					<p class="text-xs text-gray-600">
 						This will create payslips and lock the data. You can export to CSV after generation.
 					</p>
@@ -1071,7 +1086,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payroll/batch/generate', {
+			const response = await fetch(hrApiBase + '/payroll/batch/generate', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1132,7 +1147,7 @@ export default function GenerateSlip() {
 								✅ <strong>${batchResult.created}</strong> payslips generated successfully
 							</p>
 						</div>
-						
+
 						${hasErrors ? `
 							<div class="bg-red-50 border border-red-200 rounded-lg p-3">
 								<p class="text-sm text-red-800 mb-2">
@@ -1146,13 +1161,13 @@ export default function GenerateSlip() {
 								</ul>
 							</div>
 						` : ''}
-						
+
 						<div class="bg-blue-50 border border-blue-200 rounded-lg p-3">
 							<p class="text-sm text-blue-800">
 								<strong>Total Net Payout:</strong> ${formatPHP(batchResult.summary.total_net)}
 							</p>
 						</div>
-						
+
 						${result.value.sendNotifications ? `
 							<p class="text-xs text-gray-600">
 								📧 Email notifications sent to employees
@@ -1198,7 +1213,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payroll/batch/export', {
+			const response = await fetch(hrApiBase + '/payroll/batch/export', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1255,7 +1270,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 			
-			const response = await fetch('/api/hr/payroll/batch/retry', {
+			const response = await fetch(hrApiBase + '/payroll/batch/retry', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1326,7 +1341,7 @@ export default function GenerateSlip() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 
-			const response = await fetch('/api/hr/payroll/calculate-preview', {
+			const response = await fetch(hrApiBase + '/payroll/calculate-preview', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1441,7 +1456,7 @@ export default function GenerateSlip() {
 				notes: `Generated payslip for period ${selectedPeriod.month}. Regular: ${totalRegularHours}h, OT: ${totalOvertimeHours}h, Special Holiday: ${specialHolidayHours}h, Regular Holiday: ${regularHolidayHours}h, Undertime: ${totalUndertimeHours}h, Absent: ${absentDays} day(s)`,
 			};
 
-			const response = await fetch('/api/hr/payroll', {
+			const response = await fetch(hrApiBase + '/payroll', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1526,6 +1541,16 @@ export default function GenerateSlip() {
 	const thirteenthYearOptions = [currentYear - 1, currentYear, currentYear + 1];
 
 	const handleReleaseThirteenthMonth = async () => {
+		if (ownerMode) {
+			await Swal.fire({
+				icon: "info",
+				title: "Owner review only",
+				text: "13th-month release is completed through the Finance approval workflow.",
+				confirmButtonColor: "#3b82f6",
+			});
+			return;
+		}
+
 		const controlledReleaseDate = `${thirteenthYear}-12-31`;
 
 		const result = await Swal.fire({
@@ -1554,7 +1579,7 @@ export default function GenerateSlip() {
 		setIsProcessingThirteenth(true);
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-			const response = await fetch('/api/hr/payroll/13th-month/release', {
+			const response = await fetch(hrApiBase + '/payroll/13th-month/release', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -1602,9 +1627,36 @@ export default function GenerateSlip() {
 
 	return (
 		<div className="space-y-6">
-			<div className="flex flex-col gap-2">
-				<h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Generate Payslip</h1>
-				<p className="text-gray-600 dark:text-gray-400">Generate payroll records for SME tracking; payslips are released physically by the shop owner.</p>
+			<h1 className="sr-only">Generate Payslip</h1>
+
+			{/* Release Authorization Cards */}
+			<div className="space-y-3">
+				<div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+					<DashboardMetricCard
+						label="Checker Approved"
+						value={isLoadingGovernanceStatus
+							? 'Loading…'
+							: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
+						description={governanceStatus.requireChecker
+							? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
+							: 'Checker step is not required'}
+						context="Release"
+						icon={CheckCircleIcon}
+					/>
+					<DashboardMetricCard
+						label="Final Approver Required"
+						value={isLoadingGovernanceStatus
+							? 'Loading…'
+							: governanceStatus.requireFinalApprover
+							? `${governanceStatus.awaitingFinalApprover} awaiting final release`
+							: 'Not required'}
+						description={isLoadingGovernanceStatus
+							? 'Fetching governance checks...'
+							: `${governanceStatus.paidPayrolls} already paid`}
+						context="Release"
+						icon={LockIcon}
+					/>
+				</div>
 			</div>
 
 			{/* 13th-Month Controls */}
@@ -1617,7 +1669,7 @@ export default function GenerateSlip() {
 						</p>
 					</div>
 					<div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-						<select
+						<MonochromeSelect
 							value={thirteenthYear}
 							onChange={(e) => setThirteenthYear(Number(e.target.value))}
 							aria-label="Select 13th-month year"
@@ -1626,84 +1678,15 @@ export default function GenerateSlip() {
 							{thirteenthYearOptions.map((year) => (
 								<option key={year} value={year}>{year}</option>
 							))}
-						</select>
+						</MonochromeSelect>
 						<button
 							onClick={handleReleaseThirteenthMonth}
-							disabled={isProcessingThirteenth}
+							disabled={ownerMode || isProcessingThirteenth}
 							className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 						>
-							{isProcessingThirteenth ? 'Processing…' : 'Run 13th-Month Release'}
+							{ownerMode ? 'Finance workflow required' : isProcessingThirteenth ? 'Processing…' : 'Run 13th-Month Release'}
 						</button>
 					</div>
-				</div>
-			</div>
-
-			{/* Release Authorization Status */}
-			<div className="rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-sm p-6">
-				<div className="flex flex-col gap-3">
-					<div>
-						<h3 className="text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Release Authorization Status</h3>
-						<p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-							{selectedPeriod ? `${selectedPeriod.month} readiness for release controls` : 'Select a payroll period to view release readiness'}
-						</p>
-					</div>
-					<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-						<div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
-							<p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">Checker Approved</p>
-							<p className="text-lg font-semibold text-gray-900 dark:text-white mt-2">
-								{isLoadingGovernanceStatus
-									? 'Loading…'
-									: `${governanceStatus.checkerApproved}/${governanceStatus.totalPayrolls} payrolls`}
-							</p>
-							<p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
-								{governanceStatus.requireChecker
-									? `${governanceStatus.awaitingChecker} awaiting checker sign-off`
-									: 'Checker step is not required'}
-							</p>
-						</div>
-						<div className="rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 px-4 py-3">
-							<p className="text-xs font-medium text-gray-600 dark:text-gray-400 uppercase tracking-wide">Final Approver Required</p>
-							<p className="text-lg font-semibold text-gray-900 dark:text-white mt-2">
-								{isLoadingGovernanceStatus
-									? 'Loading…'
-									: governanceStatus.requireFinalApprover
-										? `${governanceStatus.awaitingFinalApprover} awaiting final release`
-										: 'Not required'}
-							</p>
-							<p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
-								{isLoadingGovernanceStatus
-									? 'Fetching governance checks...'
-									: `${governanceStatus.paidPayrolls} already paid`}
-							</p>
-						</div>
-					</div>
-				</div>
-			</div>
-
-			{/* Filters */}
-			<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-				<div className="md:col-span-2">
-					<label className="text-sm text-gray-600 dark:text-gray-300">Search</label>
-					<input
-						value={search}
-						onChange={(e) => handleSearch(e.target.value)}
-						placeholder="Search by name, ID, position, or department"
-						className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
-					/>
-				</div>
-				<div>
-					<label className="text-sm text-gray-600 dark:text-gray-300">Department</label>
-					<select
-						value={department}
-						onChange={(e) => handleDepartment(e.target.value)}
-						aria-label="Filter by department"
-						className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
-					>
-						<option value="">All</option>
-						{departments.map((d) => (
-							<option key={d} value={d}>{d}</option>
-						))}
-					</select>
 				</div>
 			</div>
 
@@ -1726,7 +1709,7 @@ export default function GenerateSlip() {
 									onClick={() => setIsPeriodModalOpen(true)}
 									disabled={isLoadingPeriods || payrollPeriods.length === 0}
 									aria-label="Open payroll period picker"
-									className="min-w-64 h-14 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 text-left disabled:opacity-50 disabled:cursor-not-allowed hover:border-blue-300 dark:hover:border-blue-600 hover:shadow-sm transition-all"
+									className="min-w-56 h-10 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 text-left disabled:opacity-50 disabled:cursor-not-allowed hover:border-gray-300 dark:hover:border-gray-600 transition-colors"
 								>
 									<div className="flex items-center justify-between gap-3">
 										<div className="min-w-0">
@@ -1748,7 +1731,7 @@ export default function GenerateSlip() {
 								<button
 									onClick={handleGenerateAll}
 									disabled={selectedPendingEmployees.length === 0 || isGenerating}
-									className="h-14 px-5 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+									className="h-10 px-4 rounded-lg bg-black text-white text-sm font-semibold hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
 									title={selectedPendingEmployees.length === 0 ? "Select employees first" : `Generate ${selectedPendingEmployees.length} payslips`}
 								>
 									<CalculatorIcon className="size-4" />
@@ -1757,11 +1740,37 @@ export default function GenerateSlip() {
 							</div>
 						</div>
 					</div>
+
+					<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5">
+						<div className="md:col-span-2">
+							<label className="text-sm text-gray-600 dark:text-gray-300">Search</label>
+							<input
+								value={search}
+								onChange={(e) => handleSearch(e.target.value)}
+								placeholder="Search by name, ID, position, or department"
+								className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+							/>
+						</div>
+						<div>
+							<label className="text-sm text-gray-600 dark:text-gray-300">Department</label>
+							<MonochromeSelect
+								value={department}
+								onChange={(e) => handleDepartment(e.target.value)}
+								aria-label="Filter by department"
+								className="mt-1 w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white"
+							>
+								<option value="">All</option>
+								{departments.map((d) => (
+									<option key={d} value={d}>{d}</option>
+								))}
+							</MonochromeSelect>
+						</div>
+					</div>
 				</div>
 
 				{selectedPendingEmployees.length > 0 && (
-					<div className="px-6 py-3 border-b border-blue-100 dark:border-blue-900/40 bg-blue-50/60 dark:bg-blue-900/10">
-						<p className="text-sm text-blue-800 dark:text-blue-300">
+					<div className="px-6 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/40">
+						<p className="text-sm text-gray-700 dark:text-gray-300">
 							{selectedPendingEmployees.length} employee{selectedPendingEmployees.length > 1 ? "s" : ""} selected for payroll generation.
 						</p>
 					</div>
@@ -1776,7 +1785,7 @@ export default function GenerateSlip() {
 										checked={isAllFilteredSelected}
 										onChange={toggleAllFilteredSelection}
 										disabled={filteredSelectableIds.length === 0}
-										className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50"
+										className="rounded border-gray-300 text-gray-900 focus:ring-gray-500 disabled:opacity-50"
 										aria-label="Select all filtered employees"
 									/>
 								</th>
@@ -1809,7 +1818,7 @@ export default function GenerateSlip() {
 									key={employee.id}
 									className={`transition-colors ${
 										selectedEmployeeIds.includes(employee.id)
-											? "bg-blue-50/70 dark:bg-blue-900/10"
+											? "bg-gray-100 dark:bg-gray-800/70"
 											: "hover:bg-gray-50 dark:hover:bg-gray-800/50"
 									}`}
 								>
@@ -1819,14 +1828,14 @@ export default function GenerateSlip() {
 											checked={selectedEmployeeIds.includes(employee.id)}
 											onChange={() => toggleEmployeeSelection(employee.id)}
 											disabled={employee.hasSlipForPeriod || employee.status !== "active"}
-											className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+											className="rounded border-gray-300 text-gray-900 focus:ring-gray-500 disabled:opacity-40"
 											aria-label={`Select ${employee.firstName} ${employee.lastName}`}
 										/>
 									</td>
 									<td className="px-6 py-4">
 										<div className="flex items-center gap-3">
-											<div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-												<span className="text-blue-600 dark:text-blue-300 font-medium text-sm">{getInitials(employee.firstName, employee.lastName)}</span>
+											<div className="h-10 w-10 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+												<span className="text-white dark:text-blue-300 font-medium text-sm">{getInitials(employee.firstName, employee.lastName)}</span>
 											</div>
 											<div className="flex flex-col">
 												<span className="font-semibold text-gray-900 dark:text-white">{employee.firstName} {employee.lastName}</span>
@@ -1873,12 +1882,12 @@ export default function GenerateSlip() {
 											className={`inline-flex items-center justify-center p-2 rounded-lg transition-colors ${
 												employee.hasSlipForPeriod
 													? "opacity-50 cursor-not-allowed bg-gray-100 dark:bg-gray-800"
-													: "hover:bg-blue-50 dark:hover:bg-blue-900/20"
+													: "hover:bg-gray-100 dark:hover:bg-gray-800"
 											}`}
 											title={employee.hasSlipForPeriod ? "Payslip already generated" : "Generate payslip for this employee"}
 											aria-label="Generate payslip"
 										>
-											<CalculatorIcon className={`size-5 ${employee.hasSlipForPeriod ? "text-gray-400" : "text-blue-600 dark:text-blue-400"}`} />
+											<CalculatorIcon className={`size-5 ${employee.hasSlipForPeriod ? "text-gray-400" : "text-gray-700 dark:text-gray-300"}`} />
 										</button>
 									</td>
 								</tr>
@@ -1914,8 +1923,8 @@ export default function GenerateSlip() {
 											onClick={() => setPage(p)}
 											className={`min-w-10 h-10 px-3 rounded-lg font-medium transition-colors ${
 												page === p
-													? "bg-blue-600 text-white"
-													: "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+												? "bg-black text-white"
+												: "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
 											}`}
 										>
 											{p}
@@ -1948,17 +1957,17 @@ export default function GenerateSlip() {
 
 			{isPeriodModalOpen && createPortal(
 				<div
-					className="fixed inset-0 z-999999 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4"
+					className="fixed inset-0 z-999999 bg-black/55 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop"
 					onClick={() => {
 						setIsPeriodModalOpen(false);
 						setPeriodSearch("");
 					}}
 				>
 					<div
-						className="w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl overflow-hidden"
+						className="w-full max-w-xl rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 shadow-2xl overflow-hidden"
 						onClick={(event) => event.stopPropagation()}
 					>
-						<div className="flex items-start justify-between gap-4 p-5 border-b border-gray-100 dark:border-gray-800 bg-linear-to-r from-slate-50 to-white dark:from-gray-900 dark:to-gray-900">
+						<div className="flex items-start justify-between gap-4 p-4 border-b border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
 							<div>
 								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Payroll Period</h3>
 								<p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Choose the period for calculation and payslip generation.</p>
@@ -1976,7 +1985,7 @@ export default function GenerateSlip() {
 							</button>
 						</div>
 
-						<div className="p-5 space-y-4">
+						<div className="p-4 space-y-3">
 							<div className="relative">
 								<svg className="size-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.85-5.15a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1986,11 +1995,11 @@ export default function GenerateSlip() {
 									value={periodSearch}
 									onChange={(event) => setPeriodSearch(event.target.value)}
 									placeholder="Search period (month or date)"
-									className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 pl-9 pr-3 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400"
+									className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 pl-9 pr-3 py-2.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-500/40 focus:border-gray-500"
 								/>
 							</div>
 
-							<div className="max-h-[60vh] overflow-y-auto rounded-xl border border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20 p-2 space-y-2">
+							<div className="max-h-[60vh] overflow-y-auto rounded-lg border border-gray-100 dark:border-gray-800 bg-gray-50/40 dark:bg-gray-900/20 p-1.5 space-y-1.5">
 								{filteredPayrollPeriods.length === 0 ? (
 									<div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-900 rounded-lg border border-dashed border-gray-200 dark:border-gray-700">
 										No payroll periods found.
@@ -2002,14 +2011,14 @@ export default function GenerateSlip() {
 
 										return (
 											<button
-												key={`${period.month}-${period.startDate}-${period.endDate}`}
-												type="button"
-												onClick={() => handlePeriodSelect(actualIndex)}
-												className={`w-full text-left px-4 py-3 rounded-xl border transition-all cursor-pointer ${
-													isSelected
-														? "bg-blue-50 border-blue-200 shadow-sm dark:bg-blue-900/20 dark:border-blue-800"
-														: "bg-white border-gray-200 hover:border-blue-300 hover:shadow-sm hover:-translate-y-px dark:bg-gray-900 dark:border-gray-800 dark:hover:border-blue-700"
-												}`}
+											key={`${period.month}-${period.startDate}-${period.endDate}`}
+											type="button"
+											onClick={() => handlePeriodSelect(actualIndex)}
+											className={`w-full text-left px-3 py-2.5 rounded-lg border transition-colors cursor-pointer ${
+												isSelected
+													? "bg-gray-100 border-gray-900 shadow-sm dark:bg-gray-800 dark:border-gray-500"
+													: "bg-white border-gray-200 hover:border-gray-400 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-800 dark:hover:border-gray-600"
+											}`}
 											>
 												<div className="flex items-start justify-between gap-3">
 													<div className="min-w-0">
@@ -2025,7 +2034,7 @@ export default function GenerateSlip() {
 															<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
 														</svg>
 														{isSelected && (
-															<CheckIcon className="size-4 text-blue-600 dark:text-blue-400" />
+															<CheckIcon className="size-4 text-gray-900 dark:text-white" />
 														)}
 													</div>
 												</div>
@@ -2036,7 +2045,7 @@ export default function GenerateSlip() {
 							</div>
 						</div>
 
-						<div className="flex justify-end p-5 border-t border-gray-100 dark:border-gray-800">
+						<div className="flex justify-end p-4 border-t border-gray-100 dark:border-gray-800">
 							<button
 								type="button"
 								onClick={() => {
@@ -2055,7 +2064,7 @@ export default function GenerateSlip() {
 
 			{/* Generation Modal - Continued in next part due to length */}
 			{selectedEmployee && createPortal(
-				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
 					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto p-8">
 						<div className="flex items-start justify-between mb-6">
 							<div>
@@ -2075,8 +2084,8 @@ export default function GenerateSlip() {
 							<div className="p-4 rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
 								<p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Employee Information</p>
 								<div className="flex items-center gap-3">
-									<div className="h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-										<span className="text-blue-600 dark:text-blue-300 font-medium">{getInitials(selectedEmployee.firstName, selectedEmployee.lastName)}</span>
+									<div className="h-12 w-12 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+										<span className="text-white dark:text-blue-300 font-medium">{getInitials(selectedEmployee.firstName, selectedEmployee.lastName)}</span>
 									</div>
 									<div>
 										<p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedEmployee.firstName} {selectedEmployee.lastName}</p>
@@ -2487,8 +2496,8 @@ export default function GenerateSlip() {
 			)}
 
 			{showBatchPreviewModal && batchPreviewData && createPortal(
-				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
-					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto p-8">
+				<div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
+					<div className="relative max-h-[90vh] w-full max-w-6xl overflow-y-auto no-scrollbar rounded-2xl bg-white p-8 shadow-2xl dark:bg-gray-900">
 						<div className="flex items-start justify-between mb-6">
 							<div>
 								<h3 className="text-2xl font-bold text-gray-900 dark:text-white">Batch Payroll Preview</h3>
@@ -2503,17 +2512,17 @@ export default function GenerateSlip() {
 						</div>
 
 						<div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-							<div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-4">
-								<p className="text-sm text-green-600 dark:text-green-400 mb-1">Total Gross</p>
-								<p className="text-2xl font-bold text-green-900 dark:text-green-300">{formatPHP(batchPreviewData.summary.total_gross)}</p>
+							<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-colors hover:border-gray-400 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-600">
+								<p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Total Gross</p>
+								<p className="mt-2 text-3xl font-bold tracking-tight text-gray-950 tabular-nums dark:text-white">{formatPHP(batchPreviewData.summary.total_gross)}</p>
 							</div>
-							<div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
-								<p className="text-sm text-red-600 dark:text-red-400 mb-1">Total Deductions</p>
-								<p className="text-2xl font-bold text-red-900 dark:text-red-300">{formatPHP(batchPreviewData.summary.total_gross - batchPreviewData.summary.total_net)}</p>
+							<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-colors hover:border-gray-400 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-600">
+								<p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Total Deductions</p>
+								<p className="mt-2 text-3xl font-bold tracking-tight text-gray-950 tabular-nums dark:text-white">{formatPHP(batchPreviewData.summary.total_gross - batchPreviewData.summary.total_net)}</p>
 							</div>
-							<div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
-								<p className="text-sm text-purple-600 dark:text-purple-400 mb-1">Total Net</p>
-								<p className="text-2xl font-bold text-purple-900 dark:text-purple-300">{formatPHP(batchPreviewData.summary.total_net)}</p>
+							<div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition-colors hover:border-gray-400 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-600">
+								<p className="text-sm font-semibold text-gray-700 dark:text-gray-200">Total Net</p>
+								<p className="mt-2 text-3xl font-bold tracking-tight text-gray-950 tabular-nums dark:text-white">{formatPHP(batchPreviewData.summary.total_net)}</p>
 							</div>
 						</div>
 
@@ -2580,7 +2589,7 @@ export default function GenerateSlip() {
 							</button>
 							<button
 								onClick={handleConfirmBatchGeneration}
-								className="px-5 py-2.5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg shadow-green-500/30"
+								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-5 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200"
 							>
 								<CheckIcon className="size-4" />
 								Confirm & Generate All
@@ -2593,7 +2602,7 @@ export default function GenerateSlip() {
 
 			{/* Generation Progress Overlay */}
 			{isGenerating && generationProgress.total > 0 && createPortal(
-				<div className="fixed inset-0 z-999999 bg-black/80 backdrop-blur-sm flex items-center justify-center">
+				<div className="fixed inset-0 z-999999 bg-black/80 backdrop-blur-sm flex items-center justify-center erp-modal-backdrop">
 					<div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl p-8 max-w-md w-full">
 						<div className="text-center">
 							<div className="mb-4">

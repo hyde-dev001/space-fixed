@@ -7,6 +7,7 @@ use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\PosRefund;
 use App\Models\User;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,15 @@ class CustomerController extends Controller
 {
     private function customerIdentityExpression(): string
     {
+        if (DB::connection()->getDriverName() === 'sqlite') {
+            return "CASE
+                WHEN orders.customer_id IS NOT NULL THEN 'user:' || CAST(orders.customer_id AS TEXT)
+                WHEN COALESCE(NULLIF(orders.customer_email, ''), NULLIF(orders.customer_phone, ''), NULLIF(orders.customer_name, '')) IS NOT NULL
+                    THEN 'guest:' || LOWER(COALESCE(NULLIF(orders.customer_email, ''), NULLIF(orders.customer_phone, ''), NULLIF(orders.customer_name, '')))
+                ELSE 'order:' || CAST(orders.id AS TEXT)
+            END";
+        }
+
         return "CASE
             WHEN orders.customer_id IS NOT NULL THEN CONCAT('user:', orders.customer_id)
             WHEN COALESCE(NULLIF(orders.customer_email, ''), NULLIF(orders.customer_phone, ''), NULLIF(orders.customer_name, '')) IS NOT NULL
@@ -224,15 +234,16 @@ class CustomerController extends Controller
      */
     public function index(Request $request)
     {
+        $context = $this->erpContext();
         $user = Auth::guard('user')->user();
         
         // Check password change requirement
-        if ($user->force_password_change) {
+        if (! $context instanceof ErpActorContext && $user?->force_password_change) {
             return redirect()->route('erp.profile');
         }
 
         // Check if user has a shop assigned
-        if (!$user || !$user->shop_owner_id) {
+        if (! $context instanceof ErpActorContext && (! $user || ! $user->shop_owner_id)) {
             return Inertia::render('ERP/STAFF/Customers', [
                 'initialCustomers' => [],
                 'initialStats' => [
@@ -248,7 +259,9 @@ class CustomerController extends Controller
             ]);
         }
 
-        $shopOwnerId = $user->shop_owner_id;
+        $shopOwnerId = $context instanceof ErpActorContext
+            ? (int) $context->tenantOwner()->getKey()
+            : (int) $user->shop_owner_id;
 
         // Build customer summaries from order data so POS walk-in customers are included.
         $customers = $this->buildCustomerAggregateQuery($shopOwnerId)
@@ -309,6 +322,13 @@ class CustomerController extends Controller
             'initialCustomers' => $customers,
             'initialStats' => $stats
         ]);
+    }
+
+    private function erpContext(): ?ErpActorContext
+    {
+        $context = request()->attributes->get('erp.actor_context');
+
+        return $context instanceof ErpActorContext ? $context : null;
     }
 
     /**

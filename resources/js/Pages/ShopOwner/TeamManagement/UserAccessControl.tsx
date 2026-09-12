@@ -1,8 +1,11 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayoutShopOwner from '../../../layout/AppLayout_shopOwner';
+import AppLayoutERP from '../../../layout/AppLayout_ERP';
 import Swal from 'sweetalert2';
 import Button from '../../../components/ui/button/Button';
+import IconButton from '../../../components/ui/icon-button/IconButton';
 import { Modal } from '../../../components/ui/modal';
 import {
   Table,
@@ -13,8 +16,6 @@ import {
 } from '../../../components/ui/table';
 import {
   PlusIcon,
-  ArrowUpIcon,
-  ArrowDownIcon,
 } from '../../../icons';
 
 // Icon Components
@@ -49,13 +50,19 @@ interface Employee {
   name: string;
   email: string;
   role: string;
-  status: 'active' | 'inactive';
+  status: EmployeeStatus;
   createdAt: Date;
   salary?: number | string;
   hire_date?: string;
   department?: string;
   phone?: string;
   address?: string;
+  position?: string;
+  personalEmail?: string | null;
+  accountStatus?: string | null;
+  lastActive?: string | null;
+  createdBy?: string | number | null;
+  linkedAccountState?: string | null;
   userId?: number;
   roleName?: string;
   permissions?: string[];
@@ -64,6 +71,27 @@ interface Employee {
   primaryRole?: string;
   additionalRoles?: string[];
 }
+
+type EmployeeStatus = 'active' | 'inactive' | 'suspended' | 'terminated';
+
+const canonicalEmployeeStatus = (value: unknown): EmployeeStatus => {
+  switch (String(value ?? '').trim().toLowerCase()) {
+    case 'active':
+      return 'active';
+    case 'inactive':
+      return 'inactive';
+    case 'suspended':
+      return 'suspended';
+    case 'terminated':
+      return 'terminated';
+    case 'on_leave':
+    case 'on-leave':
+    case 'probation':
+      return 'active';
+    default:
+      return 'inactive';
+  }
+};
 
 interface Role {
   id: number;
@@ -81,8 +109,6 @@ interface UserAccount {
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -106,8 +132,6 @@ type FieldValidationState = {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -130,17 +154,9 @@ const MetricCard: React.FC<MetricData> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -162,6 +178,8 @@ const MetricCard: React.FC<MetricData> = ({
 
 const UserAccessControl: React.FC = () => {
   const pageProps = usePage().props as any;
+  const erpMode = pageProps?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const flash = pageProps.flash || {};
   const initialEmployees = pageProps.employees;
   
@@ -196,7 +214,6 @@ const UserAccessControl: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'employees'>('employees');
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
-  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [selectedUser, setSelectedUser] = useState<UserAccount | null>(null);
   const [employeeFilter, setEmployeeFilter] = useState<string>('all');
   const [searchTerm, setSearchTerm] = useState('');
@@ -209,6 +226,7 @@ const UserAccessControl: React.FC = () => {
   const [isInviteLinkCopied, setIsInviteLinkCopied] = useState(false);
   const [isSendingInviteEmail, setIsSendingInviteEmail] = useState(false);
   const [inviteEmailStatus, setInviteEmailStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const lastInvitationKeyRef = useRef<string | null>(null);
 
   const openInvitationModal = (
@@ -336,6 +354,8 @@ const UserAccessControl: React.FC = () => {
     Repairer: 'Repairer',
     Inventory: 'Inventory',
     Procurement: 'Procurement',
+    'Logistics Dispatcher': 'Logistics Dispatcher',
+    'Logistics Rider': 'Logistics Rider',
     'Inventory Manager': 'Inventory',
     'Procurement Manager': 'Procurement',
     Staff: 'Staff',
@@ -343,6 +363,8 @@ const UserAccessControl: React.FC = () => {
     FINANCE: 'Finance',
     INVENTORY: 'Inventory',
     PROCUREMENT: 'Procurement',
+    LOGISTICS_DISPATCHER: 'Logistics Dispatcher',
+    LOGISTICS_RIDER: 'Logistics Rider',
     REPAIRER: 'Repairer',
     INVENTORY_MANAGER: 'Inventory',
     PROCUREMENT_MANAGER: 'Procurement',
@@ -365,9 +387,13 @@ const UserAccessControl: React.FC = () => {
       REPAIRER: 'Repairer',
       INVENTORY: 'Inventory',
       PROCUREMENT: 'Procurement',
+      LOGISTICS_DISPATCHER: 'Logistics Dispatcher',
+      LOGISTICS_RIDER: 'Logistics Rider',
       STAFF: 'Staff',
       'INVENTORY MANAGER': 'Inventory',
       'PROCUREMENT MANAGER': 'Procurement',
+      'LOGISTICS DISPATCHER': 'Logistics Dispatcher',
+      'LOGISTICS RIDER': 'Logistics Rider',
     };
 
     return aliases[normalizedKey] || role.trim();
@@ -379,11 +405,18 @@ const UserAccessControl: React.FC = () => {
     return {
       ...emp,
       role: normalizeRoleName(emp.role ?? emp.roleName ?? emp.primaryRole ?? emp.department ?? 'Staff'),
+      status: canonicalEmployeeStatus(emp.status),
       roleName: emp.roleName ? normalizeRoleName(emp.roleName) : emp.roleName,
       primaryRole: normalizeRoleName(emp.primaryRole ?? emp.roleName ?? emp.role ?? emp.department ?? 'Staff'),
       additionalRoles: Array.isArray(emp.additionalRoles)
         ? emp.additionalRoles.map((role: string) => normalizeRoleName(role))
         : emp.additionalRoles,
+      position: emp.position ?? '',
+      personalEmail: emp.personalEmail ?? emp.personal_email ?? null,
+      accountStatus: emp.accountStatus ?? emp.account_status ?? null,
+      lastActive: emp.lastActive ?? emp.last_active ?? null,
+      createdBy: emp.createdBy ?? emp.created_by ?? null,
+      linkedAccountState: emp.linkedAccountState ?? emp.linked_account_state ?? null,
       createdAt: new Date(emp.createdAt)
     };
   }
@@ -656,8 +689,6 @@ const UserAccessControl: React.FC = () => {
     {
       title: 'Total Employees',
       value: stats.totalUsers,
-      change: 12,
-      changeType: 'increase',
       icon: UserCircleIcon,
       color: 'info',
       description: 'from last month'
@@ -665,8 +696,6 @@ const UserAccessControl: React.FC = () => {
     {
       title: 'Active Employees',
       value: stats.activeEmployees,
-      change: 5,
-      changeType: 'increase',
       icon: GroupIcon,
       color: 'success',
       description: 'from last month'
@@ -674,8 +703,6 @@ const UserAccessControl: React.FC = () => {
     {
       title: 'Total Roles',
       value: stats.totalRoles,
-      change: 0,
-      changeType: 'increase',
       icon: GroupIcon,
       color: 'warning',
       description: 'from last month'
@@ -683,8 +710,6 @@ const UserAccessControl: React.FC = () => {
     {
       title: 'Suspended Employees',
       value: stats.suspendedUsers,
-      change: 8,
-      changeType: 'decrease',
       icon: AlertIcon,
       color: 'error',
       description: 'from last month'
@@ -702,6 +727,8 @@ const UserAccessControl: React.FC = () => {
       'Repairer': 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-800 dark:text-indigo-300',
       'Inventory': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
       'Procurement': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
+      'Logistics Dispatcher': 'bg-sky-50 dark:bg-sky-900/20 border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300',
+      'Logistics Rider': 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300',
       'Inventory Manager': 'bg-teal-50 dark:bg-teal-900/20 border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300',
       'Procurement Manager': 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300',
       'Staff': 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800 text-gray-800 dark:text-gray-300',
@@ -782,6 +809,8 @@ const UserAccessControl: React.FC = () => {
       { value: 'Repairer', label: 'Repairer' },
       { value: 'Inventory', label: 'Inventory' },
       { value: 'Procurement', label: 'Procurement' },
+      { value: 'Logistics Dispatcher', label: 'Logistics Dispatcher' },
+      { value: 'Logistics Rider', label: 'Logistics Rider' },
       { value: 'Staff', label: 'Staff' },
     ];
 
@@ -878,7 +907,7 @@ const UserAccessControl: React.FC = () => {
   };
 
   useEffect(() => {
-    if (!isEmployeeModalOpen || Boolean(editingEmployee)) {
+    if (!isEmployeeModalOpen) {
       setEmployeeEmailValidation({ status: 'idle', message: '' });
       return;
     }
@@ -912,10 +941,10 @@ const UserAccessControl: React.FC = () => {
     }, 350);
 
     return () => window.clearTimeout(timer);
-  }, [employeeForm.email, isEmployeeModalOpen, editingEmployee]);
+  }, [employeeForm.email, isEmployeeModalOpen]);
 
   useEffect(() => {
-    if (!isEmployeeModalOpen || Boolean(editingEmployee)) {
+    if (!isEmployeeModalOpen) {
       setEmployeePhoneValidation({ status: 'idle', message: '' });
       return;
     }
@@ -948,7 +977,7 @@ const UserAccessControl: React.FC = () => {
     }, 350);
 
     return () => window.clearTimeout(timer);
-  }, [employeeForm.phone, isEmployeeModalOpen, editingEmployee]);
+  }, [employeeForm.phone, isEmployeeModalOpen]);
 
   const handleAddEmployee = async () => {
     // Check required fields
@@ -1133,110 +1162,6 @@ const UserAccessControl: React.FC = () => {
       } else {
         setIsSubmittingEmployee(false);
       }
-    }, 100);
-  };
-
-  const handleEditEmployee = async () => {
-    if (!editingEmployee || !employeeForm.firstName || !employeeForm.lastName || !employeeForm.email) {
-      setIsEmployeeModalOpen(false);
-      setTimeout(() => {
-        Swal.fire({
-          icon: 'error',
-          title: 'Validation Error',
-          text: 'Please fill in all required fields',
-          timer: 3000,
-          showConfirmButton: false
-        });
-      }, 100);
-      return;
-    }
-
-    const trimmedEmail = employeeForm.email.trim();
-    const normalizedPhone = employeeForm.phone.replace(/\D/g, '').slice(0, 11);
-
-    setIsSubmittingEmployee(true);
-
-    setTimeout(() => {
-      router.put(`/shop-owner/employees/${editingEmployee.id}`, {
-        name: `${employeeForm.firstName} ${employeeForm.lastName}`,
-        email: trimmedEmail,
-        phone: normalizedPhone,
-        address: employeeForm.address,
-        department: employeeForm.department || 'General',
-        position: employeeForm.position || '',
-        salary: parseFloat(employeeForm.salary) || 0,
-        hire_date: employeeForm.hire_date || new Date().toISOString().split('T')[0],
-        status: editingEmployee.status,
-      }, {
-        preserveScroll: true,
-        preserveState: true,
-        onSuccess: () => {
-          setEmployees(employees.map((employee) =>
-            employee.id === editingEmployee.id
-              ? {
-                ...employee,
-                name: `${employeeForm.firstName} ${employeeForm.lastName}`,
-                email: trimmedEmail,
-                phone: normalizedPhone,
-                address: employeeForm.address,
-                department: employeeForm.department || 'General',
-                role: employeeForm.department || employeeForm.role,
-                position: employeeForm.position || employee.position,
-                salary: parseFloat(employeeForm.salary) || 0,
-                hire_date: employeeForm.hire_date,
-              }
-              : employee
-          ));
-
-          setIsEmployeeModalOpen(false);
-          setEditingEmployee(null);
-          setEmployeeForm({
-            firstName: '',
-            lastName: '',
-            email: '',
-            phone: '',
-            address: '',
-            department: '',
-            hire_date: new Date().toISOString().split('T')[0],
-            role: '',
-            salary: '',
-          });
-
-          Swal.fire({
-            icon: 'success',
-            title: 'Success!',
-            text: 'Employee updated successfully!',
-            timer: 2000,
-            showConfirmButton: false
-          });
-        },
-        onError: (errors) => {
-          let errorMessage = 'Failed to update employee. Please try again.';
-
-          if (typeof errors === 'object' && errors !== null) {
-            const validationErrors = Object.values(errors).flat();
-            if (validationErrors.length > 0) {
-              errorMessage = validationErrors.join('<br>');
-            } else if (errors.message) {
-              errorMessage = errors.message;
-            } else if (errors.error) {
-              errorMessage = errors.error;
-            }
-          } else if (typeof errors === 'string') {
-            errorMessage = errors;
-          }
-
-          Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            html: errorMessage,
-            showConfirmButton: true
-          });
-        },
-        onFinish: () => {
-          setIsSubmittingEmployee(false);
-        }
-      });
     }, 100);
   };
 
@@ -1645,7 +1570,6 @@ const UserAccessControl: React.FC = () => {
 
   // Modal open handlers
   const openAddEmployeeModal = () => {
-    setEditingEmployee(null);
     setEmployeeEmailValidation({ status: 'idle', message: '' });
     setEmployeePhoneValidation({ status: 'idle', message: '' });
     setEmployeeForm({
@@ -1663,24 +1587,72 @@ const UserAccessControl: React.FC = () => {
     setIsEmployeeModalOpen(true);
   };
 
-  const openEditEmployeeModal = (employee: Employee) => {
-    setEditingEmployee(employee);
-    setEmployeeEmailValidation({ status: 'idle', message: '' });
-    setEmployeePhoneValidation({ status: 'idle', message: '' });
-    setEmployeeForm({
-      firstName: (employee.name || '').split(' ')[0] || '',
-      lastName: ((employee.name || '').split(' ').slice(1).join(' ')) || '',
-      email: employee.email,
-      phone: employee.phone || '',
-      address: employee.address || '',
-      department: employee.department || employee.role || '',
-      hire_date: employee.hire_date || new Date().toISOString().split('T')[0],
-      role: employee.role || '',
-      position: (employee as any).position || '',
-      salary: employee.salary?.toString() || '',
+  const handleResetEmployeePassword = async (employee: Employee) => {
+    if (!employee.userId) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Reset Failed',
+        text: 'Employee user ID not found.',
+      });
+      return;
+    }
+
+    const employeeEmail = String(employee.email ?? '').trim().toLowerCase();
+    if ((currentUserId > 0 && Number(employee.userId) === currentUserId)
+      || (currentAccountEmail !== '' && employeeEmail === currentAccountEmail)) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Action Blocked',
+        text: 'You cannot reset the password of the account you are currently using.',
+      });
+      return;
+    }
+
+    const result = await Swal.fire({
+      title: 'Reset employee password?',
+      text: 'This invalidates the current password and generates a new setup link.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, reset password',
+      cancelButtonText: 'Cancel',
     });
 
-    setIsEmployeeModalOpen(true);
+    if (!result.isConfirmed) return;
+
+    try {
+      const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+      const response = await fetch('/api/shop-owner/employees/' + employee.userId + '/reset-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': csrf || '',
+        },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data.error || data.message || 'Failed to reset employee password.');
+      }
+
+      openInvitationModal({
+        invite_url: data.invite_url,
+        invite_expires_at: data.invite_expires_at,
+        work_email: data.work_email || employee.email,
+        employee: {
+          name: employee.name,
+          email: employee.email,
+          userId: employee.userId,
+        },
+        timestamp: data.timestamp || Date.now(),
+        wasRegenerated: false,
+      }, String(employee.userId) + '-' + String(data.timestamp || Date.now()));
+    } catch (error) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Reset Failed',
+        text: error instanceof Error ? error.message : 'Failed to reset employee password.',
+      });
+    }
   };
 
   // View/Resend Invitation Link
@@ -1765,7 +1737,7 @@ const UserAccessControl: React.FC = () => {
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white w-64"
                 />
                 <label htmlFor="admin-filter-select" className="sr-only">Filter admins</label>
-                <select
+                <MonochromeSelect
                   id="employee-filter-select"
                   value={employeeFilter}
                   onChange={(e) => setEmployeeFilter(e.target.value)}
@@ -1778,7 +1750,7 @@ const UserAccessControl: React.FC = () => {
                     <option key={role.value} value={role.value}>{role.value}</option>
                   ))}
                   <option value="recent">Recent (7 days)</option>
-                </select>
+                </MonochromeSelect>
               </div>
               <button
                 onClick={openAddEmployeeModal}
@@ -1808,7 +1780,7 @@ const UserAccessControl: React.FC = () => {
                       <TableRow key={employee.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-gray-950 dark:bg-gradient-to-br dark:from-blue-500 dark:to-purple-600 rounded-full flex items-center justify-center text-white font-semibold">
                               {employee.name.charAt(0).toUpperCase()}
                             </div>
                             <div>
@@ -1852,37 +1824,49 @@ const UserAccessControl: React.FC = () => {
                         </TableCell>
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-2">
-                            <button
-                              type="button"
+                            <IconButton
+                              variant="warning"
+                              onClick={() => handleResetEmployeePassword(employee)}
+                              title="Reset Password"
+                              aria-label="Reset employee password"
+                              disabled={String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail}
+                            >
+                              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m6-10h-1V6a5 5 0 00-10 0v1H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2V9a2 2 0 00-2-2zM9 7V6a3 3 0 016 0v1H9z" />
+                              </svg>
+                            </IconButton>
+                            <IconButton
+                              variant="primary"
                               onClick={() => viewInvitationLink(employee)}
-                              className={`p-2 rounded-lg transition-colors duration-200 ${(String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail) ? 'text-green-600/50 cursor-not-allowed' : 'text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20'}`}
                               title={(String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail) ? 'You cannot reset your own account password' : 'View/Resend Invitation Link'}
+                              aria-label={(String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail) ? 'You cannot reset your own account password' : `View or resend invitation for ${employee.name}`}
                               disabled={String(employee.email ?? '').trim().toLowerCase() === currentAccountEmail}
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                               </svg>
-                            </button>
-                            <button
-                              type="button"
+                            </IconButton>
+                            <IconButton
+                              variant="neutral"
                               onClick={() => openPermissionModal(employee)}
-                              className="p-2 text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors duration-200"
                               title="Manage Permissions"
+                              aria-label={`Manage permissions for ${employee.name}`}
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                               </svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => openEditEmployeeModal(employee)}
-                              className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors duration-200"
-                              title="Edit Employee"
+                            </IconButton>
+                            <IconButton
+                              variant="neutral"
+                              onClick={() => setViewingEmployee(employee)}
+                              title="View Details"
+                              aria-label={`View details for ${employee.name}`}
                             >
                               <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.477 0 8.268 2.943 9.542 7-1.274 4.057-5.065 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                <circle cx="12" cy="12" r="3" strokeWidth={2} />
                               </svg>
-                            </button>
+                            </IconButton>
                             {/* Delete button removed per request */}
                           </div>
                         </TableCell>
@@ -1985,7 +1969,7 @@ const UserAccessControl: React.FC = () => {
                       <TableRow key={user.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                         <TableCell className="px-6 py-4">
                           <div className="flex items-center space-x-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-600 rounded-full flex items-center justify-center text-white font-semibold">
+                            <div className="w-10 h-10 bg-gray-950 dark:bg-gradient-to-br dark:from-orange-500 dark:to-red-600 rounded-full flex items-center justify-center text-white font-semibold">
                               {user.name.charAt(0).toUpperCase()}
                             </div>
                             <span className="font-medium text-gray-900 dark:text-white">{user.name}</span>
@@ -2097,15 +2081,11 @@ const UserAccessControl: React.FC = () => {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="User Access Control" />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-        <div className="max-w-7xl mx-auto p-6">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">User Access Control</h1>
-            <p className="text-lg text-gray-600 dark:text-gray-400">Manage users, roles, and permissions with ease</p>
-          </div>
+        <div className="w-full">
+          <h1 className="sr-only">User Access Control</h1>
 
           {/* Stats Overview */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -2114,8 +2094,6 @@ const UserAccessControl: React.FC = () => {
                 key={index}
                 title={metric.title}
                 value={metric.value}
-                change={metric.change}
-                changeType={metric.changeType}
                 icon={metric.icon}
                 color={metric.color}
                 description={metric.description}
@@ -2154,11 +2132,11 @@ const UserAccessControl: React.FC = () => {
 
           {/* Modals */}
           <Modal isOpen={isEmployeeModalOpen} onClose={() => setIsEmployeeModalOpen(false)}>
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
               <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-2xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
                 {/* Header */}
                 <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6">
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{editingEmployee ? 'Edit Employee' : 'Add New Employee'}</h2>
+                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add New Employee</h2>
                   <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Fill in the employee details below</p>
                 </div>
 
@@ -2218,7 +2196,7 @@ const UserAccessControl: React.FC = () => {
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Department / Role <span className="text-red-500">*</span>
                           </label>
-                          <select 
+                          <MonochromeSelect
                             value={employeeForm.department} 
                             onChange={(e) => setEmployeeForm({ ...employeeForm, department: e.target.value })} 
                             title="Department or role"
@@ -2228,7 +2206,7 @@ const UserAccessControl: React.FC = () => {
                             {availableRoleOptions.map(role => (
                               <option key={role.value} value={role.value}>{role.label}</option>
                             ))}
-                          </select>
+                          </MonochromeSelect>
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Position / Job Title</label>
@@ -2281,17 +2259,63 @@ const UserAccessControl: React.FC = () => {
                         Cancel
                       </button>
                       <button
-                        onClick={editingEmployee ? handleEditEmployee : handleAddEmployee}
+                        onClick={handleAddEmployee}
                         disabled={isSubmittingEmployee}
                         className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-md transition-colors"
                       >
-                        {isSubmittingEmployee ? 'Processing...' : (editingEmployee ? 'Update Employee' : 'Add Employee')}
+                        {isSubmittingEmployee ? 'Processing...' : 'Add Employee'}
                       </button>
                     </div>
                   </div>
                 </div>
               </div>
             </div>
+          </Modal>
+
+          <Modal isOpen={Boolean(viewingEmployee)} onClose={() => setViewingEmployee(null)}>
+            {viewingEmployee && (
+              <div className="w-full max-w-3xl p-6">
+                <div className="border-b border-gray-200 pb-4 dark:border-gray-700">
+                  <h3 className="text-2xl font-semibold text-gray-900 dark:text-white">View Details</h3>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    Read-only employee and account information.
+                  </p>
+                </div>
+
+                <dl className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  {[
+                    ['Name', viewingEmployee.name],
+                    ['Work Email', viewingEmployee.email],
+                    ['Personal Email', viewingEmployee.personalEmail || 'Personal email unavailable'],
+                    ['Phone', viewingEmployee.phone || 'Not available'],
+                    ['Department / Role', viewingEmployee.department || viewingEmployee.role || 'Not assigned'],
+                    ['Position / Job Title', viewingEmployee.position || 'Not assigned'],
+                    ['Employment Status', viewingEmployee.status],
+                    ['Hired Date', viewingEmployee.hire_date
+                      ? new Date(viewingEmployee.hire_date).toLocaleDateString()
+                      : 'Not available'],
+                    ['Salary / Daily Rate', viewingEmployee.salary ?? 'Not available'],
+                    ['Account Status', viewingEmployee.accountStatus || 'Unknown'],
+                    ['Last Active', viewingEmployee.lastActive
+                      ? new Date(viewingEmployee.lastActive).toLocaleString()
+                      : 'Never'],
+                    ['Created By', viewingEmployee.createdBy ? String(viewingEmployee.createdBy) : 'Not available'],
+                    ['Linked Account State', viewingEmployee.linkedAccountState || (viewingEmployee.userId ? 'linked' : 'not_linked')],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</dt>
+                      <dd className="mt-1 break-words text-sm text-gray-900 dark:text-white">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                <div className="mt-6 flex justify-end">
+                  <Button variant="outline" onClick={() => setViewingEmployee(null)}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+            )}
           </Modal>
 
           <Modal isOpen={isAccountModalOpen} onClose={() => setIsAccountModalOpen(false)}>
@@ -3242,7 +3266,7 @@ const UserAccessControl: React.FC = () => {
           )}
         </div>
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 };
 

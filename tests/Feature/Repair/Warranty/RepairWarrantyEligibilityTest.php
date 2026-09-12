@@ -2,12 +2,15 @@
 
 namespace Tests\Feature\Repair\Warranty;
 
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\PosReceipt;
 use App\Models\PosTransaction;
 use App\Models\RepairRequest;
 use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\UserAddress;
+use App\Services\RepairDeliveryService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -26,9 +29,17 @@ class RepairWarrantyEligibilityTest extends TestCase
             'registration_type' => 'company',
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::query()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'coverage_radius_km' => 12,
         ]);
         /** @var User $customer */
         $customer = User::factory()->create();
+        $address = $this->addressFor($customer);
+        $delivery = app(RepairDeliveryService::class);
 
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shopOwner->id,
@@ -38,6 +49,7 @@ class RepairWarrantyEligibilityTest extends TestCase
             'received_at' => now()->subDays(3),
             'payment_status' => 'completed',
             'total_paid_amount' => 900,
+            'return_address' => $delivery->snapshot($address, 'customer_pickup'),
         ]);
 
         $response = $this->actingAs($customer, 'user')->post(
@@ -48,11 +60,6 @@ class RepairWarrantyEligibilityTest extends TestCase
                 'same_issue_confirmation' => '1',
                 'preferred_return_method' => 'walk_in',
                 'preferred_receive_method' => 'shop_delivery',
-                'receive_address_line' => 'Blk 10 Lot 4',
-                'receive_barangay' => 'San Juan',
-                'receive_city' => 'Bacoor',
-                'receive_region' => 'Cavite',
-                'receive_postal_code' => '4102',
                 'images' => [UploadedFile::fake()->create('proof-1.jpg', 64, 'image/jpeg')],
             ],
             ['Accept' => 'application/json']
@@ -70,7 +77,7 @@ class RepairWarrantyEligibilityTest extends TestCase
         ]);
     }
 
-    public function test_customer_shop_delivery_claim_requires_delivery_address(): void
+    public function test_customer_shop_delivery_claim_requires_a_pinned_saved_address_snapshot(): void
     {
         Storage::fake('public');
 
@@ -106,10 +113,10 @@ class RepairWarrantyEligibilityTest extends TestCase
         );
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['receive_address_line']);
+            ->assertJsonValidationErrors(['return_address']);
     }
 
-    public function test_customer_shop_delivery_claim_persists_delivery_address_on_original_repair(): void
+    public function test_customer_shop_delivery_claim_does_not_mutate_the_completed_original_repair(): void
     {
         Storage::fake('public');
 
@@ -118,9 +125,18 @@ class RepairWarrantyEligibilityTest extends TestCase
             'registration_type' => 'company',
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::query()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'coverage_radius_km' => 12,
         ]);
         /** @var User $customer */
         $customer = User::factory()->create();
+        $address = $this->addressFor($customer);
+        $delivery = app(RepairDeliveryService::class);
+        $originalSnapshot = $delivery->snapshot($address, 'customer_pickup');
 
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shopOwner->id,
@@ -129,7 +145,8 @@ class RepairWarrantyEligibilityTest extends TestCase
             'picked_up_at' => now()->subDays(2),
             'payment_status' => 'completed',
             'total_paid_amount' => 900,
-            'return_address' => null,
+            'return_delivery_method' => 'customer_pickup',
+            'return_address' => $originalSnapshot,
         ]);
 
         $response = $this->actingAs($customer, 'user')->post(
@@ -140,11 +157,6 @@ class RepairWarrantyEligibilityTest extends TestCase
                 'same_issue_confirmation' => '1',
                 'preferred_return_method' => 'walk_in',
                 'preferred_receive_method' => 'shop_delivery',
-                'receive_address_line' => 'Blk 1 Lot 2 Phase 3',
-                'receive_barangay' => 'San Isidro',
-                'receive_city' => 'Imus',
-                'receive_region' => 'Cavite',
-                'receive_postal_code' => '4103',
                 'images' => [UploadedFile::fake()->create('proof-1.jpg', 64, 'image/jpeg')],
             ],
             ['Accept' => 'application/json']
@@ -154,12 +166,8 @@ class RepairWarrantyEligibilityTest extends TestCase
             ->assertJsonPath('success', true);
 
         $repair->refresh();
-        $this->assertSame('shop_delivery', (string) ($repair->return_delivery_method ?? ''));
-        $this->assertSame('Blk 1 Lot 2 Phase 3', (string) ($repair->return_address['address_line'] ?? ''));
-        $this->assertSame('San Isidro', (string) ($repair->return_address['barangay'] ?? ''));
-        $this->assertSame('Imus', (string) ($repair->return_address['city'] ?? ''));
-        $this->assertSame('Cavite', (string) ($repair->return_address['region'] ?? ''));
-        $this->assertSame('4103', (string) ($repair->return_address['postal_code'] ?? ''));
+        $this->assertSame('customer_pickup', (string) $repair->return_delivery_method);
+        $this->assertSame($originalSnapshot, $repair->return_address);
     }
 
     public function test_customer_claim_fails_when_warranty_is_expired(): void
@@ -448,5 +456,23 @@ class RepairWarrantyEligibilityTest extends TestCase
 
         $mismatch->assertStatus(422)
             ->assertJsonPath('success', false);
+    }
+
+    private function addressFor(User $customer, array $overrides = []): UserAddress
+    {
+        return UserAddress::query()->create(array_merge([
+            'user_id' => $customer->id,
+            'name' => $customer->name,
+            'phone' => '09171234567',
+            'region' => 'CALABARZON',
+            'province' => 'Cavite',
+            'city' => 'General Trias City',
+            'barangay' => 'Buenavista II',
+            'postal_code' => '4107',
+            'address_line' => '126 Ilang-ilang Street',
+            'latitude' => 14.6000,
+            'longitude' => 120.9800,
+            'delivery_instructions' => 'Blue gate',
+        ], $overrides));
     }
 }

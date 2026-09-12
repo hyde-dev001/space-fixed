@@ -11,6 +11,7 @@ use App\Notifications\HR\PayslipGenerated;
 use App\Services\NotificationService;
 use App\Services\PayslipApprovalService;
 use App\Traits\HR\LogsHRActivity;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -55,7 +56,7 @@ class PayslipApprovalController extends Controller
 
         $mappedByPermissionRole = User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['Shop Owner', 'SHOP_OWNER', 'shop_owner']))
+            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['Shop Owner', 'SHOP_OWNER', 'shop_owner', 'shop-owner']))
             ->orderByDesc('id')
             ->value('id');
 
@@ -412,7 +413,7 @@ class PayslipApprovalController extends Controller
                 ])),
             ]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to approve payslip: ' . $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'payslip.approve', 500, ['record_id' => $id, 'shop_id' => $actor['shop_owner_id']]);
         }
     }
 
@@ -527,7 +528,7 @@ class PayslipApprovalController extends Controller
                 ])),
             ]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to reject payslip: ' . $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'payslip.reject', 500, ['record_id' => $id, 'shop_id' => $actor['shop_owner_id']]);
         }
     }
 
@@ -662,7 +663,7 @@ class PayslipApprovalController extends Controller
                 ])),
             ]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to final-approve payslip: ' . $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'payslip.final_approve', 500, ['record_id' => $id, 'shop_id' => $actor['shop_owner_id']]);
         }
     }
 
@@ -702,7 +703,7 @@ class PayslipApprovalController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to load preview: ' . $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'payslip.batch_preview', 500, ['shop_id' => $actor['shop_owner_id']]);
         }
     }
 
@@ -740,6 +741,33 @@ class PayslipApprovalController extends Controller
                     continue;
                 }
 
+                if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
+                    $result = $this->payslipApprovalService->approvePayslip(
+                        $payslip,
+                        User::find($actor['actor_user_id']),
+                        $request->input('notes')
+                    );
+
+                    if (! ($result['success'] ?? false)) {
+                        $errors[] = "Payslip #{$payslipId}: " . ($result['message'] ?? 'Approval failed');
+                        $failedCount++;
+                        continue;
+                    }
+
+                    $payslip->refresh();
+
+                    $this->logHRActivity(
+                        $actor['shop_owner_id'],
+                        'payslip_approved_level_' . $payslip->current_approval_level,
+                        'Payslip Batch Approved',
+                        "Payslip #{$payslip->id} approved at level {$payslip->current_approval_level} by {$actor['name']} (Finance, batch)",
+                        $payslip
+                    );
+
+                    $approvedCount++;
+                    continue;
+                }
+
                 if ($payslip->approval_status !== 'pending') {
                     $errors[] = "Payslip #{$payslipId} is not pending";
                     $failedCount++;
@@ -773,7 +801,12 @@ class PayslipApprovalController extends Controller
 
                 $approvedCount++;
             } catch (\Exception $e) {
-                $errors[]    = "Failed to approve payslip #{$payslipId}: " . $e->getMessage();
+                Log::error('Failed to approve payslip in batch', [
+                    'payslip_id' => $payslipId,
+                    'shop_id' => $actor['shop_owner_id'],
+                    'exception' => $e,
+                ]);
+                $errors[]    = "Failed to approve payslip #{$payslipId}.";
                 $failedCount++;
             }
         }
@@ -909,7 +942,12 @@ class PayslipApprovalController extends Controller
 
                 $approvedCount++;
             } catch (\Exception $e) {
-                $errors[] = "Failed to final-approve payslip #{$payslipId}: " . $e->getMessage();
+                Log::error('Failed to final-approve payslip in batch', [
+                    'payslip_id' => $payslipId,
+                    'shop_id' => $actor['shop_owner_id'],
+                    'exception' => $e,
+                ]);
+                $errors[] = "Failed to final-approve payslip #{$payslipId}.";
                 $failedCount++;
             }
         }

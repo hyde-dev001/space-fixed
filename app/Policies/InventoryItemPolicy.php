@@ -36,7 +36,7 @@ class InventoryItemPolicy
     {
         // User must have shop_owner_id and create permission
         return $user->shop_owner_id !== null &&
-               $user->hasPermissionTo('inventory.create');
+               $this->hasInventoryPermission($user, 'inventory.create');
     }
 
     /**
@@ -46,7 +46,7 @@ class InventoryItemPolicy
     {
         // User must belong to the same shop and have edit permission
         return $user->shop_owner_id === $inventoryItem->shop_owner_id &&
-               $user->hasPermissionTo('inventory.edit');
+               $this->hasInventoryPermission($user, 'inventory.edit');
     }
 
     /**
@@ -56,7 +56,7 @@ class InventoryItemPolicy
     {
         // User must belong to the same shop and have delete permission
         return $user->shop_owner_id === $inventoryItem->shop_owner_id &&
-               $user->hasPermissionTo('inventory.delete');
+               $this->hasInventoryPermission($user, 'inventory.delete');
     }
 
     /**
@@ -66,7 +66,7 @@ class InventoryItemPolicy
     {
         // User must belong to the same shop and have delete permission
         return $user->shop_owner_id === $inventoryItem->shop_owner_id &&
-               $user->hasPermissionTo('inventory.delete');
+               $this->hasInventoryPermission($user, 'inventory.delete');
     }
 
     /**
@@ -76,7 +76,7 @@ class InventoryItemPolicy
     {
         // User must belong to the same shop and have delete permission
         return $user->shop_owner_id === $inventoryItem->shop_owner_id &&
-               $user->hasPermissionTo('inventory.delete');
+               $this->hasInventoryPermission($user, 'inventory.delete');
     }
     
     /**
@@ -86,7 +86,15 @@ class InventoryItemPolicy
     {
         // User must belong to the same shop and have adjust_stock permission
         return $user->shop_owner_id === $inventoryItem->shop_owner_id &&
-               $user->hasPermissionTo('inventory.adjust_stock');
+               $this->hasInventoryPermission($user, 'inventory.adjust_stock');
+    }
+
+    private function hasInventoryPermission(User $user, string $permission): bool
+    {
+        return $user->getAllPermissions()->contains(
+            fn ($assignedPermission): bool => $assignedPermission->name === $permission
+                && $assignedPermission->guard_name === $user->getDefaultGuardName()
+        );
     }
     
     /**

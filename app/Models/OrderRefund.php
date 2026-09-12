@@ -3,11 +3,36 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class OrderRefund extends Model
 {
+    use HasFactory;
+
+    public const RECOVERY_STATUS_UNRESOLVED = 'unresolved';
+    public const RECOVERY_STATUS_IN_PROGRESS = 'in_progress';
+    public const RECOVERY_STATUS_RESOLVED = 'resolved';
+    public const RECOVERY_STATUS_SUPERSEDED = 'superseded';
+
+    public const RECOVERY_RESPONSIBLE_FINANCE = 'finance';
+    public const RECOVERY_RESPONSIBLE_PAYMENT_RECOVERY = 'payment_recovery';
+    public const RECOVERY_RESPONSIBLE_NONE = 'none';
+
+    public const RECOVERY_OUTCOME_MANUAL_REFUND = 'manual_refund';
+    public const RECOVERY_OUTCOME_REPLACEMENT_REFUND = 'replacement_refund';
+    public const RECOVERY_OUTCOME_NO_RECOVERY_REQUIRED = 'no_recovery_required';
+    public const RECOVERY_OUTCOME_AUTOMATIC_SUCCESS = 'automatic_success';
+
+    public const RECOVERY_RESOLVER_TYPES = ['user', 'shop_owner', 'super_admin'];
+    public const RECOVERY_OUTCOMES = [
+        self::RECOVERY_OUTCOME_MANUAL_REFUND,
+        self::RECOVERY_OUTCOME_REPLACEMENT_REFUND,
+        self::RECOVERY_OUTCOME_NO_RECOVERY_REQUIRED,
+        self::RECOVERY_OUTCOME_AUTOMATIC_SUCCESS,
+    ];
+
     protected $fillable = [
         'order_id',
         'customer_id',
@@ -15,6 +40,7 @@ class OrderRefund extends Model
         'flow_type',
         'status',
         'shop_owner_status',
+        'requires_owner_approval',
         'shop_owner_approved_at',
         'shop_owner_approved_by',
         'finance_status',
@@ -58,10 +84,22 @@ class OrderRefund extends Model
         'refunded_at',
         'failed_at',
         'processed_by',
+        'recovery_status',
+        'recovery_responsible_party',
+        'recovery_assigned_at',
+        'recovery_attempt_count',
+        'recovery_last_attempted_at',
+        'recovery_resolved_at',
+        'recovery_resolved_by_type',
+        'recovery_resolved_by_id',
+        'recovery_resolution_outcome',
+        'recovery_resolution_reason',
+        'replacement_refund_id',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'requires_owner_approval' => 'boolean',
         'evidence_media' => 'array',
         'requested_at' => 'datetime',
         'approved_at' => 'datetime',
@@ -74,6 +112,10 @@ class OrderRefund extends Model
         'refund_executed_at' => 'datetime',
         'refunded_at' => 'datetime',
         'failed_at' => 'datetime',
+        'recovery_attempt_count' => 'integer',
+        'recovery_assigned_at' => 'datetime',
+        'recovery_last_attempted_at' => 'datetime',
+        'recovery_resolved_at' => 'datetime',
     ];
 
     public function order(): BelongsTo
@@ -99,5 +141,73 @@ class OrderRefund extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderRefundItem::class);
+    }
+
+    public function replacementRefund(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'replacement_refund_id');
+    }
+
+    /**
+     * Resolve the single return transport mode represented by this refund.
+     *
+     * Null is reserved for older rows that do not contain enough return
+     * details to identify a mode. New customer-arranged returns always use
+     * the customer fields and therefore resolve to third_party.
+     */
+    public function returnDeliveryMethod(): ?string
+    {
+        $source = strtolower(trim((string) ($this->return_source ?? '')));
+        $staffCarrier = strtolower(trim((string) ($this->staff_return_carrier ?? '')));
+        $hasCustomerReturnDetails = filled($this->customer_return_tracking_number)
+            || filled($this->customer_return_carrier)
+            || filled($this->customer_return_tracking_link);
+        $hasStaffReturnDetails = filled($this->staff_return_tracking_number)
+            || filled($this->staff_return_carrier)
+            || filled($this->staff_return_tracking_link);
+
+        if ($source === 'customer') {
+            // New customer-arranged returns are explicit while they are
+            // awaiting shipment or already moving. Older rows used the
+            // database default of customer even when a Shop-owned shipment
+            // was created, so leave completed rows without customer details
+            // ambiguous for legacy shipment serialization.
+            if ($hasCustomerReturnDetails) {
+                return 'third_party';
+            }
+
+            if ($staffCarrier === 'shop-owned logistics') {
+                return 'shop_owned';
+            }
+
+            if (in_array((string) ($this->return_status ?? ''), ['pending_customer_shipment', 'in_transit'], true)) {
+                return 'third_party';
+            }
+
+            return null;
+        }
+
+        if ($source === 'staff') {
+            if ($staffCarrier === 'shop-owned logistics') {
+                return 'shop_owned';
+            }
+
+            return $hasStaffReturnDetails ? 'third_party' : null;
+        }
+
+        if ($staffCarrier === 'shop-owned logistics') {
+            return 'shop_owned';
+        }
+
+        if ($hasCustomerReturnDetails || $hasStaffReturnDetails) {
+            return 'third_party';
+        }
+
+        return null;
+    }
+
+    public function isShopOwnedReturn(): bool
+    {
+        return $this->returnDeliveryMethod() === 'shop_owned';
     }
 }

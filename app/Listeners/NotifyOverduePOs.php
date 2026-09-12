@@ -21,11 +21,16 @@ class NotifyOverduePOs
     /**
      * Handle the event - This is called manually from scheduled job
      */
-    public function handle(): void
+    public function handle(?int $shopOwnerId = null): void
     {
+        if (!$shopOwnerId) {
+            return;
+        }
+
         try {
             // Get all overdue purchase orders
             $overduePOs = PurchaseOrder::where('status', '!=', 'completed')
+                ->where('shop_owner_id', $shopOwnerId)
                 ->where('status', '!=', 'cancelled')
                 ->whereNotNull('expected_delivery_date')
                 ->where('expected_delivery_date', '<', now())
@@ -34,17 +39,13 @@ class NotifyOverduePOs
 
             if ($overduePOs->count() > 0) {
                 // Get procurement team users
-                $procurementUsers = User::whereHas('roles', function ($query) {
-                    $query->whereIn('name', ['procurement', 'admin']);
-                })->get();
-
-                // Group overdue POs by shop owner for better email organization
-                $groupedPOs = $overduePOs->groupBy('shop_owner_id');
+                $procurementUsers = User::where('shop_owner_id', $shopOwnerId)
+                    ->whereHas('roles', function ($query) {
+                        $query->whereIn('name', ['Procurement Manager', 'Admin']);
+                    })->get();
 
                 foreach ($procurementUsers as $user) {
-                    foreach ($groupedPOs as $shopOwnerId => $pos) {
-                        Mail::to($user->email)->send(new OverduePurchaseOrdersMail($pos));
-                    }
+                    Mail::to($user->email)->send(new OverduePurchaseOrdersMail($overduePOs));
                 }
 
                 Log::info('Overdue PO notifications sent', [

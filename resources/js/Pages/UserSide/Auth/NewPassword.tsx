@@ -28,7 +28,7 @@ export default function NewPassword() {
 	});
 	const [errors, setErrors] = useState<FormErrors>({});
 	const [isLoading, setIsLoading] = useState(false);
-	const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
+	const authInputClasses = 'userside-auth-input h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70';
 
 	useEffect(() => {
 		if (!email) {
@@ -116,21 +116,21 @@ export default function NewPassword() {
 		<>
 			<Head title="Create New Password" />
 
-			<div className="min-h-screen bg-white font-outfit antialiased">
+			<div className="userside-auth-page min-h-screen bg-white font-outfit antialiased">
 				<Navigation />
 
 				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
 					<div className="text-center mb-12">
-						<h1 className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
+						<h1 className="userside-auth-title text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
 							SET NEW PASSWORD
 						</h1>
-						<p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
+						<p className="userside-auth-subtitle text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
 							Set a new password for {email || 'your account'}.
 						</p>
 					</div>
 
 					<div className="max-w-lg mx-auto">
-						<div className="bg-white rounded-2xl shadow-xl p-8">
+						<div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8">
 							<Form onSubmit={handleSubmit} className="space-y-6">
 								<div className="relative">
 									<Label htmlFor="password">New Password</Label>
@@ -173,7 +173,7 @@ export default function NewPassword() {
 								<button
 									type="submit"
 									disabled={isLoading}
-									className="w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+									className="userside-auth-primary w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{isLoading ? 'Resetting password...' : 'Reset password'}
 								</button>
@@ -184,7 +184,7 @@ export default function NewPassword() {
 									Need to verify your code again?{' '}
 									<Link
 										href={route('password.otp', { email })}
-										className="text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
+										className="userside-auth-link text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
 									>
 										Back to verify code
 									</Link>

@@ -1,7 +1,9 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useMemo, useEffect } from "react";
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../layout/AppLayout_ERP";
 
 // Icons
 const CheckIcon = ({ className }: { className?: string }) => (
@@ -35,18 +37,6 @@ const ClockIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 interface SuspensionRequest {
   id: number;
   employee_id: number;
@@ -68,8 +58,6 @@ interface SuspensionRequest {
 interface MetricCardProps {
   title: string;
   value: number;
-  change: number;
-  changeType: "increase" | "decrease";
   icon: React.ComponentType<{ className?: string }>;
   color: "success" | "warning" | "info";
   description: string;
@@ -78,8 +66,6 @@ interface MetricCardProps {
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
@@ -101,23 +87,9 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? (
-              <ArrowUpIcon className="size-3" />
-            ) : (
-              <ArrowDownIcon className="size-3" />
-            )}
-            {Math.abs(change)}%
           </div>
         </div>
         <div className="space-y-2">
@@ -133,6 +105,8 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 const SuspendAccount: React.FC = () => {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [requests, setRequests] = useState<SuspensionRequest[]>([]);
   const [filteredRequests, setFilteredRequests] = useState<SuspensionRequest[]>([]);
   const [loading, setLoading] = useState(false);
@@ -219,9 +193,6 @@ const SuspendAccount: React.FC = () => {
       pending,
       approved,
       rejected,
-      pendingChange: pending > 0 ? 5 : -2,
-      approvedChange: approved > 0 ? 10 : 0,
-      rejectedChange: rejected > 0 ? 3 : 0,
     };
   }, [requests]);
 
@@ -352,27 +323,17 @@ const SuspendAccount: React.FC = () => {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Suspend Accounts" />
 
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 p-6">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-            Suspend Accounts
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Review and approve/reject account suspension requests
-          </p>
-        </div>
+        <h1 className="sr-only">Suspend Accounts</h1>
 
         {/* Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <MetricCard
             title="Pending Suspensions"
             value={metrics.pending}
-            change={metrics.pendingChange}
-            changeType={metrics.pendingChange > 0 ? "increase" : "decrease"}
             icon={ClockIcon}
             color="warning"
             description="Awaiting approval"
@@ -380,8 +341,6 @@ const SuspendAccount: React.FC = () => {
           <MetricCard
             title="Approved Suspensions"
             value={metrics.approved}
-            change={metrics.approvedChange}
-            changeType="increase"
             icon={CheckIcon}
             color="success"
             description="Active suspensions"
@@ -389,8 +348,6 @@ const SuspendAccount: React.FC = () => {
           <MetricCard
             title="Rejected Suspensions"
             value={metrics.rejected}
-            change={metrics.rejectedChange}
-            changeType="increase"
             icon={XIcon}
             color="info"
             description="Rejected requests"
@@ -419,7 +376,7 @@ const SuspendAccount: React.FC = () => {
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Status
               </label>
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
                 className="w-full px-4 py-2 border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500"
@@ -428,7 +385,7 @@ const SuspendAccount: React.FC = () => {
                 <option value="pending">Pending</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
         </div>
@@ -517,7 +474,7 @@ const SuspendAccount: React.FC = () => {
       {/* Details Modal */}
       {detailsModalOpen && selectedRequest && (
         <div className="fixed inset-0 flex items-center justify-center z-[100000] p-4">
-          <div className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]" onClick={() => { setDetailsModalOpen(false); setSelectedRequest(null); }}></div>
+          <div className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000] erp-modal-backdrop" onClick={() => { setDetailsModalOpen(false); setSelectedRequest(null); }}></div>
           <div className="bg-white dark:bg-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-xl relative z-[100001]">
             <div className="flex items-center justify-between mb-6">
               <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
@@ -702,7 +659,7 @@ const SuspendAccount: React.FC = () => {
       {rejectionModalOpen && selectedRequest && (
         <div className="fixed inset-0 flex items-center justify-center z-[100000] p-4">
           <div
-            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]"
+            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000] erp-modal-backdrop"
             onClick={() => {
               if (isRejecting) return;
               setRejectionModalOpen(false);
@@ -752,7 +709,7 @@ const SuspendAccount: React.FC = () => {
       {approvalModalOpen && selectedRequest && (
         <div className="fixed inset-0 flex items-center justify-center z-[100000] p-4">
           <div
-            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000]"
+            className="fixed inset-0 bg-black/10 backdrop-blur-sm z-[100000] erp-modal-backdrop"
             onClick={() => {
               if (isApproving) return;
               setApprovalModalOpen(false);
@@ -798,7 +755,7 @@ const SuspendAccount: React.FC = () => {
           </div>
         </div>
       )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 };
 

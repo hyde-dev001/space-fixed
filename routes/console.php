@@ -1,12 +1,10 @@
 <?php
 
-use App\Jobs\AutoApproveLowValuePRsJob;
-use App\Jobs\CheckOverduePurchaseOrdersJob;
-use App\Jobs\GenerateProcurementReportJob;
-use App\Jobs\UpdateSupplierMetricsJob;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+
+Schedule::command('logistics:monitor-overdue')->everyFiveMinutes()->withoutOverlapping();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -33,36 +31,6 @@ Schedule::command('inventory:check-alerts')
     ->withoutOverlapping()
     ->onOneServer();
 
-// Procurement: Check for overdue purchase orders
-// Runs daily at 8:00 AM
-Schedule::job(new CheckOverduePurchaseOrdersJob())
-    ->dailyAt('08:00')
-    ->withoutOverlapping()
-    ->onOneServer();
-
-// Procurement: Update supplier performance metrics
-// Runs nightly at 2:00 AM
-Schedule::job(new UpdateSupplierMetricsJob())
-    ->dailyAt('02:00')
-    ->withoutOverlapping()
-    ->onOneServer();
-
-// Procurement: Auto-approve low-value purchase requests
-// Runs every hour during business hours (8 AM - 6 PM)
-Schedule::job(new AutoApproveLowValuePRsJob())
-    ->hourly()
-    ->between('8:00', '18:00')
-    ->weekdays()
-    ->withoutOverlapping()
-    ->onOneServer();
-
-// Procurement: Generate monthly procurement report
-// Runs on the 1st day of each month at 6:00 AM
-Schedule::job(new GenerateProcurementReportJob())
-    ->monthlyOn(1, '06:00')
-    ->withoutOverlapping()
-    ->onOneServer();
-
 // Payment lifecycle: expire stale unpaid sessions and release reservations.
 Schedule::command('payments:expire-stale')
     ->everyTenMinutes()
@@ -81,3 +49,15 @@ Schedule::command('products:process-discount-schedules')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Suspension appeals own routine expiry detection; queue pages remain read-only.
+Schedule::command('suspension-appeals:expire')
+    ->everyFifteenMinutes()
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// Shop-owner business-document reminders use the local business date and do
+// not mutate document or shop status.
+Schedule::command('shop-documents:send-expiry-reminders')
+    ->dailyAt('01:00')
+    ->timezone(config('app.shop_timezone'))
+    ->withoutOverlapping();

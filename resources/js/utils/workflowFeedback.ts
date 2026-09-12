@@ -1,8 +1,16 @@
 import Swal, { type SweetAlertOptions, type SweetAlertResult } from "sweetalert2";
 
 const withDefaultConfirm = (options: SweetAlertOptions): SweetAlertOptions => ({
-	confirmButtonColor: "#2563eb",
+	confirmButtonColor: "#111111",
+	cancelButtonColor: "#f3f4f6",
+	reverseButtons: true,
 	...options,
+	customClass: {
+		popup: "erp-swal2-popup",
+		confirmButton: "erp-swal2-confirm",
+		cancelButton: "erp-swal2-cancel",
+		...options.customClass,
+	},
 });
 
 export const workflowFeedback = {
@@ -22,13 +30,16 @@ export const workflowFeedback = {
 		return Swal.fire(withDefaultConfirm({ icon: "success", ...options }));
 	},
 
+	toast(icon: "success" | "error" | "warning", title: string): Promise<SweetAlertResult> {
+		return Swal.fire({ toast: true, position: "top-end", timer: 2200, timerProgressBar: true, showConfirmButton: false, icon, title });
+	},
+
 	confirm(options: Omit<SweetAlertOptions, "icon">): Promise<SweetAlertResult> {
 		return Swal.fire(
 			withDefaultConfirm({
 				icon: "question",
 				showCancelButton: true,
 				cancelButtonText: "Cancel",
-				cancelButtonColor: "#6b7280",
 				...options,
 			}),
 		);
@@ -43,7 +54,6 @@ export const workflowFeedback = {
 				showCancelButton: true,
 				confirmButtonText: "Retry",
 				cancelButtonText: "Cancel",
-				cancelButtonColor: "#6b7280",
 			}),
 		);
 

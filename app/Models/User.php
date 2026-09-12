@@ -5,7 +5,10 @@ namespace App\Models;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Activitylog\Traits\LogsActivity;
@@ -14,8 +17,14 @@ use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
+    public const IDENTITY_PENDING_REVIEW = 'pending_review';
+
+    public const IDENTITY_APPROVED = 'approved';
+
+    public const IDENTITY_REJECTED = 'rejected';
+
     /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, HasApiTokens, Notifiable, LogsActivity, HasRoles;
+    use HasFactory, HasApiTokens, Notifiable, LogsActivity, HasRoles, SoftDeletes;
     
     /**
      * The guard name for this model (for Spatie Permission)
@@ -67,6 +76,19 @@ class User extends Authenticatable implements MustVerifyEmail
     protected $hidden = [
         'password',
         'remember_token',
+        'valid_id_path',
+        'valid_id_disk',
+        'invite_token',
+        'invite_token_hash',
+        'invited_by',
+        'employee_totp_secret',
+        'employee_totp_recovery_codes',
+        'security_version',
+    ];
+
+    protected $attributes = [
+        'identity_verification_status' => self::IDENTITY_PENDING_REVIEW,
+        'security_version' => 1,
     ];
 
     /**
@@ -81,6 +103,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'force_password_change' => 'boolean',
         'invite_expires_at' => 'datetime',
         'invited_at' => 'datetime',
+        'employee_totp_secret' => 'encrypted',
+        'employee_totp_enabled_at' => 'datetime',
+        'employee_totp_recovery_codes' => 'array',
+        'employee_totp_last_used_timestep' => 'integer',
+        'security_version' => 'integer',
     ];
 
     /**
@@ -89,6 +116,54 @@ class User extends Authenticatable implements MustVerifyEmail
     public function shopOwner(): BelongsTo
     {
         return $this->belongsTo(ShopOwner::class);
+    }
+
+    /**
+     * Determine whether this user record represents a customer account.
+     *
+     * A customer has no tenant link and no employee role. This explicit
+     * classification keeps the shared user guard from gating employees.
+     */
+    public function isCustomerAccount(): bool
+    {
+        $role = strtoupper(trim((string) $this->role));
+
+        return is_null($this->shop_owner_id) && in_array($role, ['', 'CUSTOMER'], true);
+    }
+
+    public function isEmployeeAccount(): bool
+    {
+        return ! is_null($this->shop_owner_id);
+    }
+
+    public function hasEmployeeTotpEnabled(): bool
+    {
+        return $this->isEmployeeAccount()
+            && $this->hasTotpEnabled();
+    }
+
+    public function hasCustomerTotpEnabled(): bool
+    {
+        return $this->isCustomerAccount()
+            && $this->hasTotpEnabled();
+    }
+
+    public function hasTotpEnabled(): bool
+    {
+        return $this->employee_totp_enabled_at !== null
+            && is_string($this->employee_totp_secret)
+            && $this->employee_totp_secret !== '';
+    }
+
+    public function currentSuspension(): BelongsTo
+    {
+        return $this->belongsTo(AccountSuspension::class, 'current_suspension_id');
+    }
+
+    public function suspensionHistory(): HasMany
+    {
+        return $this->hasMany(AccountSuspension::class, 'account_id')
+            ->where('account_type', AccountSuspension::ACCOUNT_TYPE_CUSTOMER);
     }
 
     /**
@@ -107,6 +182,21 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(UserAddress::class);
     }
 
+    public function identityVerifications(): HasMany
+    {
+        return $this->hasMany(IdentityVerification::class);
+    }
+
+    public function latestIdentityVerification(): HasOne
+    {
+        return $this->hasOne(IdentityVerification::class)->latestOfMany();
+    }
+
+    public function hasApprovedIdentity(): bool
+    {
+        return (string) $this->identity_verification_status === self::IDENTITY_APPROVED;
+    }
+
     /**
      * Get the default shipping address
      */
@@ -121,6 +211,16 @@ class User extends Authenticatable implements MustVerifyEmail
     public function assignedRepairs()
     {
         return $this->hasMany(RepairRequest::class, 'assigned_repairer_id');
+    }
+
+    public function assignedOrders(): HasMany
+    {
+        return $this->hasMany(Order::class, 'assigned_staff_id');
+    }
+
+    public function repairerUnavailability(): HasMany
+    {
+        return $this->hasMany(RepairerUnavailability::class, 'repairer_id');
     }
 
     /**

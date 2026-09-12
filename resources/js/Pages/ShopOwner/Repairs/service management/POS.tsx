@@ -1,9 +1,18 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
-import { computeCanPay, getPhoneDisplayForReceipt } from "../../../Repairs/posPaymentValidation";
+import {
+	computeCanPay,
+	getPhoneDisplayForReceipt,
+	isOptionalEmailValid,
+	normalizeCustomerField,
+	normalizeOptionalCustomerEmail,
+	normalizeOptionalCustomerId,
+} from "../../../Repairs/posPaymentValidation";
 import { PosMode, resolveAllowedModes } from "../../../ERP/cashier/posModeResolver";
 import { buildRepairBreakdown } from "../../../../utils/repairPricing";
 import { repairPosHistoryApi } from "../../../../services/repairPosHistoryApi";
@@ -15,6 +24,9 @@ type ManualPaymentPolicy = "deposit_50" | "full_upfront";
 type RepairOrderOption = {
 	id: string;
 	customer: string;
+	customerName: string;
+	customerPhone: string;
+	customerEmail: string;
 	customerId?: number | null;
 	paymentPolicy?: "deposit_50" | "full_upfront";
 	paymentStatus?: string;
@@ -153,7 +165,9 @@ type ManualQueueRow = {
 	id: number;
 	request_id: string;
 	customer_name: string;
+	customer_id?: number | null;
 	phone: string;
+	email?: string | null;
 	status: ManualQueueStatus;
 	latest_warranty_claim_status?: string | null;
 	warranty_claim_locked?: boolean;
@@ -484,15 +498,10 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 
 const PointOfSalePage = () => {
 	const { props } = usePage();
+	const erpMode = (props as any)?.erpMode === true;
+	const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
 	const cashierName = String((props as any)?.auth?.shop_owner?.name || (props as any)?.auth?.user?.name || "Shop Owner Cashier");
-	const shopRepairPaymentPolicy: ManualPaymentPolicy =
-		String(
-			(props as any)?.auth?.shop_owner?.repair_payment_policy
-			?? (props as any)?.auth?.user?.shop_owner?.repair_payment_policy
-			?? (props as any)?.shop_settings?.repair_payment_policy
-		) === "full_upfront"
-			? "full_upfront"
-			: "deposit_50";
+	const shopRepairPaymentPolicy: ManualPaymentPolicy = "full_upfront";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
 	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
@@ -656,6 +665,12 @@ useEffect(() => {
 								.map((serviceName: string) => serviceName.trim())
 								.filter((serviceName: string) => serviceName.length > 0);
 
+							const customerName = normalizeCustomerField(entry?.customer_name)
+								|| normalizeCustomerField(entry?.user?.name)
+								|| [entry?.user?.first_name, entry?.user?.last_name].map(normalizeCustomerField).filter(Boolean).join(' ');
+							const customerPhone = normalizeCustomerField(entry?.phone) || normalizeCustomerField(entry?.user?.phone);
+							const customerEmail = normalizeOptionalCustomerEmail(entry?.email)
+								|| normalizeOptionalCustomerEmail(entry?.user?.email);
 							const packageName = String(entry?.pricing_breakdown?.package_name ?? "").trim();
 							const primaryService = String(
 								entry?.service
@@ -667,8 +682,11 @@ useEffect(() => {
 							);
 							return {
 								id: String(entry?.id ?? `R-${index}`),
-								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
-								customerId: Number.isFinite(Number(entry?.customer_id)) ? Number(entry.customer_id) : null,
+								customer: customerName || "Walk-in Customer",
+								customerId: normalizeOptionalCustomerId(entry?.customer_id ?? entry?.user_id),
+								customerName,
+								customerPhone,
+								customerEmail,
 								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
 								paymentStatus: String(entry?.payment_status ?? "pending"),
 								status: String(entry?.status ?? ""),
@@ -993,7 +1011,7 @@ useEffect(() => {
 							minute: "2-digit",
 						}),
 						cashierName: String(row?.created_by ?? cashierName),
-						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? "Customer"),
+						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? (moduleType === 'retail' ? 'Walk-in Customer' : 'Customer')),
 						customerPhone: String(receiptPayload?.customer?.phone ?? row?.walk_in_phone ?? ""),
 						paymentReference: String(row?.payment_lines?.[0]?.provider_reference ?? "") || null,
 						paymentMethod,
@@ -1064,8 +1082,9 @@ useEffect(() => {
 		const resolvedDueType = resolveDueTypeForPolicy(targetOrder.paymentPolicy ?? "deposit_50", requestedDueType);
 		const dueAmount = computeDueAmountForOrder(targetOrder, resolvedDueType);
 		setSelectedRepairOrder(targetOrder);
-		setCustomerName(targetOrder.customer);
-		setCustomerEmail("");
+		setCustomerName(targetOrder.customerName);
+		setCustomerPhone(targetOrder.customerPhone);
+		setCustomerEmail(targetOrder.customerEmail);
 		setItems([
 			{
 				id: `order-${targetOrder.id}-${resolvedDueType}`,
@@ -1085,7 +1104,7 @@ useEffect(() => {
 		return !selectedRepairOrder && !requestedRepairRequestId;
 	}, [requestedRepairRequestId, selectedRepairOrder]);
 
-	const dueTypeForManualCheckout: PosDueType = shopRepairPaymentPolicy === "deposit_50" ? "deposit" : "full";
+	const dueTypeForManualCheckout: PosDueType = "full";
 
 	const chargeableSubtotal = useMemo(() => {
 		if (!isManualStandaloneCheckout) {
@@ -1126,6 +1145,7 @@ useEffect(() => {
 		itemsCount: items.length,
 		customerName,
 		customerPhone,
+		customerEmail,
 		paymentMethod,
 		cashReceivedInput,
 		hasInsufficientCash,
@@ -1135,13 +1155,15 @@ useEffect(() => {
 	const payDisableReason = useMemo(() => {
 		if (isProcessingPayment) return "Processing payment...";
 		if (items.length === 0) return "Add at least one service before checkout.";
-		if (customerName.trim().length === 0) return "Customer name is required.";
-		if (paymentMethod === "cash" && !isCustomerPhoneValid) return "Cash payments require an 11-digit phone number.";
+		if (selectedRepairOrder && (customerName.trim().length === 0 || !isCustomerPhoneValid)) return 'This repair order is missing canonical customer name or phone. Update the repair record before checkout.';
+		if (customerName.trim().length === 0) return 'Customer name is required.';
+		if (!isCustomerPhoneValid) return 'Repair checkout requires an 11-digit phone number.';
+		if (!isOptionalEmailValid(customerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (paymentMethod === "cash" && !hasCashInput) return "Enter cash received for cash payments.";
 		if (paymentMethod !== "cash" && !hasProofReference) return "Enter proof reference for GCash/Card payments.";
 		if (hasInsufficientCash) return `Insufficient cash by ${formatPeso(shortValue)}.`;
 		return "";
-	}, [customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, shortValue]);
+	}, [customerEmail, customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, selectedRepairOrder, shortValue]);
 	const effectiveDueType = useMemo(() => {
 		const policy = selectedRepairOrder?.paymentPolicy ?? "deposit_50";
 		return resolveDueTypeForPolicy(policy, requestedDueType);
@@ -1233,8 +1255,9 @@ useEffect(() => {
 			},
 		]);
 		setSelectedRepairOrder(order);
-		setCustomerName(order.customer);
-		setCustomerEmail("");
+		setCustomerName(order.customerName);
+		setCustomerPhone(order.customerPhone);
+		setCustomerEmail(order.customerEmail);
 		setOrderSearch("");
 		setIsOrderModalOpen(false);
 	};
@@ -1462,20 +1485,22 @@ useEffect(() => {
 		itemsCount: retailCart.length,
 		customerName: retailCustomerName,
 		customerPhone: retailCustomerPhone,
+		customerEmail: retailCustomerEmail,
 		paymentMethod: retailPaymentMethod,
 		cashReceivedInput: retailCashReceivedInput,
 		hasInsufficientCash: retailHasInsufficientCash,
 		proofReference: retailProofReference,
+		requireCustomerInfo: false,
 	});
 	const retailPayDisableReason = useMemo(() => {
 		if (retailProcessingPayment) return "Processing payment...";
 		if (retailCart.length === 0) return "Add at least one product before checkout.";
-		if (retailCustomerName.trim().length === 0) return "Customer name is required.";
+		if (!isOptionalEmailValid(retailCustomerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (retailPaymentMethod === "cash" && retailCashReceivedInput.trim().length === 0) return "Enter cash received for cash payments.";
 		if (retailPaymentMethod !== "cash" && retailProofReference.trim().length === 0) return "Enter proof reference for GCash/Card payments.";
 		if (retailHasInsufficientCash) return `Insufficient cash by ${formatPeso(retailShortValue)}.`;
 		return "";
-	}, [retailCart.length, retailCashReceivedInput, retailCustomerName, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
+	}, [retailCart.length, retailCashReceivedInput, retailCustomerEmail, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
 
 	useEffect(() => {
 		if (retailPaymentMethod === "cash" && retailProofReference.length > 0) {
@@ -1653,7 +1678,7 @@ useEffect(() => {
 					idempotency_key: idempotencyKey,
 					customer_type: "walk_in",
 					customer_id: null,
-					walk_in_name: retailCustomerName.trim(),
+					walk_in_name: retailCustomerName.trim() || null,
 					walk_in_phone: retailCustomerPhone.trim() || null,
 					walk_in_email: retailCustomerEmail.trim() || null,
 					items: retailCart.map((item) => ({
@@ -1727,7 +1752,7 @@ useEffect(() => {
 					minute: "2-digit",
 				}),
 				cashierName,
-				customerName: retailCustomerName.trim(),
+				customerName: retailCustomerName.trim() || 'Walk-in Customer',
 				customerPhone: getPhoneDisplayForReceipt(retailPaymentMethod, retailCustomerPhone),
 				paymentReference: retailPaymentMethod === "cash" ? null : retailProofReference.trim(),
 				paymentMethod: retailPaymentMethod,
@@ -2093,6 +2118,7 @@ useEffect(() => {
 					manual_payment_policy: hasRepairReference ? null : shopRepairPaymentPolicy,
 					manual_repair_package_id: hasRepairReference ? null : manualRepairPackageId,
 					manual_service_ids: hasRepairReference ? [] : manualServiceIds,
+					cash_received: paymentMethod === 'cash' ? Number(tenderedAmount.toFixed(2)) : null,
 					payment_lines: [
 						{
 							tender_type: mapTenderType(paymentMethod),
@@ -2752,8 +2778,11 @@ useEffect(() => {
 
 		setSelectedRepairOrder({
 			id: String(row.id),
-			customer: row.customer_name,
-			customerId: null,
+			customer: normalizeCustomerField(row.customer_name) || 'Walk-in Customer',
+			customerName: normalizeCustomerField(row.customer_name),
+			customerPhone: normalizeCustomerField(row.phone),
+			customerEmail: normalizeOptionalCustomerEmail(row.email),
+			customerId: normalizeOptionalCustomerId(row.customer_id),
 			paymentPolicy: row.payment_policy,
 			paymentStatus: row.remaining_balance <= 0 ? "completed" : (row.paid > 0 ? "paid" : "unpaid"),
 			status: row.status,
@@ -2779,7 +2808,7 @@ useEffect(() => {
 	};
 
 	return (
-		<AppLayoutShopOwner hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen || isRetailRefundModalOpen}>
+		<Layout hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen || isRetailRefundModalOpen}>
 			<Head title="Point of Sale" />
 
 			<style>{`
@@ -2825,15 +2854,7 @@ useEffect(() => {
 			<div className="space-y-6 p-4 md:p-6">
 				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && !isRetailRefundModalOpen && (
 				<div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-					<div>
-						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
-						<p className="mt-1 text-sm text-slate-500">
-						{mode === "repair"
-							? "Manage repair cashier transactions and payment processing."
-							: "Process retail walk-in sales with the same POS design system."
-						}
-					</p>
-					</div>
+					<h1 className="sr-only">Point of Sale</h1>
 					<div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
 						{allowedModes.includes("repair") && (
 							<button
@@ -2886,7 +2907,7 @@ useEffect(() => {
 					<section className="space-y-6 xl:col-span-8 xl:flex xl:h-full xl:flex-col xl:space-y-0 xl:gap-6">
 						<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 							<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-							<p className="mb-3 text-xs text-slate-500">Capture walk-in details before checkout.</p>
+							<p className="mb-3 text-xs text-slate-500">Optional for walk-in purchases. Add details if the customer wants them on the receipt.</p>
 							<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 								<input
 									title="Retail customer name"
@@ -3008,7 +3029,7 @@ useEffect(() => {
 													<p className="mt-3 line-clamp-2 text-xl font-semibold text-slate-900">{product.name}</p>
 													{product.variants.length > 0 && (
 														<div className="mt-2 grid grid-cols-2 gap-2">
-															<select
+															<MonochromeSelect
 																title={`Select size for ${product.name}`}
 																value={selectedSize}
 																onChange={(event) => {
@@ -3030,8 +3051,8 @@ useEffect(() => {
 																{sizeOptions.map((size) => (
 																		<option key={size} value={size}>{size}</option>
 																))}
-															</select>
-															<select
+															</MonochromeSelect>
+															<MonochromeSelect
 																title={`Select color for ${product.name}`}
 																value={selectedColor}
 																onChange={(event) => {
@@ -3053,7 +3074,7 @@ useEffect(() => {
 																{colorOptions.map((color) => (
 																		<option key={color} value={color}>{color}</option>
 																	))}
-															</select>
+															</MonochromeSelect>
 															</div>
 													)}
 													<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
@@ -3140,7 +3161,7 @@ useEffect(() => {
 
 													return (
 														<>
-															<select
+															<MonochromeSelect
 																title={`Cart size for ${item.name}`}
 																value={selectedSize}
 																onChange={(event) => {
@@ -3159,8 +3180,8 @@ useEffect(() => {
 																{sizeOptions.map((size) => (
 																		<option key={size} value={size}>{size}</option>
 																	))}
-															</select>
-															<select
+															</MonochromeSelect>
+															<MonochromeSelect
 																title={`Cart color for ${item.name}`}
 																value={selectedColor}
 																onChange={(event) => {
@@ -3179,7 +3200,7 @@ useEffect(() => {
 																{colorOptions.map((color) => (
 																		<option key={color} value={color}>{color}</option>
 																	))}
-																</select>
+																</MonochromeSelect>
 															</>
 													);
 												})()}
@@ -3215,7 +3236,7 @@ useEffect(() => {
 							</div>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
-							<select
+							<MonochromeSelect
 								title="Retail payment method"
 								value={retailPaymentMethod}
 								onChange={(event) => setRetailPaymentMethod(event.target.value as PaymentMethod)}
@@ -3224,7 +3245,7 @@ useEffect(() => {
 								<option value="cash">Cash</option>
 								<option value="gcash">GCash</option>
 								<option value="card">Card</option>
-							</select>
+							</MonochromeSelect>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 							<input
@@ -3304,10 +3325,12 @@ useEffect(() => {
 						<div className="grid grid-cols-1 gap-4">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Input customer name. Phone is required for cash and optional for GCash/Card. Email is optional.</p>
+								<p className="mb-3 text-xs text-slate-500">Customer Name * and Phone Number * are required for every repair checkout. Email is optional.</p>
 								<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 									<input
 										title="Customer name"
+										required
+										aria-required="true"
 										value={customerName}
 										onChange={(event) => setCustomerName(event.target.value)}
 										disabled={!!selectedRepairOrder}
@@ -3316,12 +3339,15 @@ useEffect(() => {
 									/>
 									<input
 										title="Customer phone number"
+										required
+										aria-required="true"
 										type="text"
 										inputMode="numeric"
 										pattern="[0-9]*"
 										maxLength={11}
 										value={customerPhone}
 										onChange={(event) => setCustomerPhone(toDigitsOnly(event.target.value).slice(0, 11))}
+										disabled={!!selectedRepairOrder}
 										placeholder="Phone number"
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
 									/>
@@ -3335,12 +3361,12 @@ useEffect(() => {
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
 									/>
 								</div>
-								{paymentMethod === "cash" && customerPhone.length > 0 && !isCustomerPhoneValid && (
+								{customerPhone.length > 0 && !isCustomerPhoneValid && (
 									<p className="mt-2 text-xs font-semibold text-red-600">Phone number must be exactly 11 digits.</p>
 								)}
 								<p className="mt-2 text-xs text-slate-500">These details will appear on the printed receipt.</p>
 								{selectedRepairOrder && (
-									<p className="mt-1 text-xs font-semibold text-blue-700">Customer name is locked because this order is attached from Job Order Repair.</p>
+									<p className="mt-1 text-xs font-semibold text-blue-700">Customer details are locked because this order is attached from Job Order Repair.</p>
 								)}
 							</div>
 
@@ -3466,12 +3492,13 @@ useEffect(() => {
 														key={`package-${pkg.id}`}
 														onClick={() => addPackageToOrder(pkg)}
 														disabled={!!selectedRepairOrder}
-														className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+														data-catalog-card="true"
+														className="h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition enabled:hover:border-black enabled:hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold uppercase text-black">Package</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -3479,13 +3506,13 @@ useEffect(() => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{pkg.name}</p>
-															<p className="mt-1 text-xs text-slate-600">{pkg.description}</p>
-															<p className="mt-2 text-xs text-slate-700">Includes {pkg.includedServices.length} services</p>
-															<p className="text-xs text-slate-700">{pkg.saveText}</p>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(pkg.price)}</p>
-																<p className="text-xs text-slate-500">Bundle offer</p>
+															<p className="mt-3 text-xl font-semibold text-black">{pkg.name}</p>
+															<p className="mt-1 text-xs text-black">{pkg.description}</p>
+															<p className="mt-2 text-xs text-black">Includes {pkg.includedServices.length} services</p>
+															<p className="text-xs text-black">{pkg.saveText}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(pkg.price)}</p>
+																<p className="text-xs text-black">Bundle offer</p>
 															</div>
 														</div>
 													</button>
@@ -3528,16 +3555,17 @@ useEffect(() => {
 														key={`service-${service.id}`}
 														onClick={() => addFromServiceCatalog(service)}
 														disabled={!canSelectService}
-														className={`h-56 rounded-xl border p-4 text-left transition ${
+														data-catalog-card="true"
+														className={`h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition ${
 															canSelectService
-																? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
-																: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
+																? "enabled:hover:border-black enabled:hover:bg-white"
+																: "opacity-50 grayscale cursor-not-allowed"
 														}`}
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{service.category}</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold text-black">{service.category}</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -3545,18 +3573,18 @@ useEffect(() => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{service.name}</p>
-															<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
+															<p className="mt-3 text-xl font-semibold text-black">{service.name}</p>
+															<ul className="mt-2 list-disc pl-5 text-xs text-black">
 																<li>{service.category} service for customer request.</li>
 																<li>Estimated turnaround: {service.duration}.</li>
 															</ul>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(service.price)}</p>
-																<p className="text-xs text-slate-500">{service.duration}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(service.price)}</p>
+																<p className="text-xs text-black">{service.duration}</p>
 															</div>
-															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Included in package</span>}
-															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Add-on</span>}
-															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
+															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Included in package</span>}
+															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Add-on</span>}
+															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Requested</span>}
 														</div>
 													</button>
 												);
@@ -3693,7 +3721,7 @@ useEffect(() => {
 							</div>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
-							<select
+							<MonochromeSelect
 								title="Payment method"
 								value={paymentMethod}
 								onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
@@ -3702,7 +3730,7 @@ useEffect(() => {
 								<option value="cash">Cash</option>
 								<option value="gcash">GCash</option>
 								<option value="card">Card</option>
-							</select>
+							</MonochromeSelect>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 							<input
@@ -3790,7 +3818,7 @@ useEffect(() => {
 			)}
 
 			{isRefundQueueOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Repair Refund Queue</h3>
@@ -3875,7 +3903,7 @@ useEffect(() => {
 				)}
 
 				{isOrderModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Attach From Repair Orders</h3>
@@ -3926,7 +3954,7 @@ useEffect(() => {
 				)}
 
 				{isHistoryModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt History</h3>
@@ -4038,7 +4066,7 @@ useEffect(() => {
 
 				{isRetailRefundModalOpen && retailRefundReceipt && (
 					<div
-						className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/60 px-3 py-4"
+						className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/60 px-3 py-4 erp-modal-backdrop"
 						onClick={(event) => {
 							if (event.target === event.currentTarget && !retailRefundSubmitting) {
 								resetRetailRefundModalState();
@@ -4147,7 +4175,7 @@ useEffect(() => {
 
 															<div>
 																<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Inspection</label>
-																<select
+																<MonochromeSelect
 																	title={`Inspection for ${item.label}`}
 																	value={draft.inspectionDisposition}
 																	onChange={(event) => updateRetailRefundDisposition(item.orderItemId, event.target.value === "damaged" ? "damaged" : "resellable")}
@@ -4156,7 +4184,7 @@ useEffect(() => {
 																>
 																	<option value="resellable">Resellable (restock)</option>
 																	<option value="damaged">Damaged (write-off)</option>
-																</select>
+																</MonochromeSelect>
 															</div>
 														</div>
 
@@ -4244,7 +4272,7 @@ useEffect(() => {
 				)}
 
 				{isReceiptModalOpen && receiptSnapshot && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>
@@ -4326,7 +4354,7 @@ useEffect(() => {
 				)}
 
 			</div>
-		</AppLayoutShopOwner>
+		</Layout>
 	);
 };
 

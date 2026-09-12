@@ -3,6 +3,8 @@
 namespace Tests\Unit;
 
 use App\Models\InventoryItem;
+use App\Models\InventoryColorVariant;
+use App\Models\InventorySize;
 use App\Models\ShopOwner;
 use App\Models\StockMovement;
 use App\Models\User;
@@ -167,6 +169,34 @@ class InventoryServiceTest extends TestCase
             'inventory_item_id' => $item->id,
             'alert_type' => 'low_stock',
             'is_resolved' => false,
+        ]);
+    }
+
+    /** @test */
+    public function it_does_not_create_generic_alerts_for_variant_inventory()
+    {
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'available_quantity' => 3,
+            'reorder_level' => 10,
+        ]);
+        $color = InventoryColorVariant::create([
+            'inventory_item_id' => $item->id,
+            'color_name' => 'Black',
+            'quantity' => 3,
+        ]);
+        InventorySize::create([
+            'inventory_item_id' => $item->id,
+            'inventory_color_variant_id' => $color->id,
+            'size' => '8',
+            'size_system' => 'US',
+            'quantity' => 3,
+        ]);
+
+        $this->service->checkAndCreateAlerts($item->id);
+
+        $this->assertDatabaseMissing('inventory_alerts', [
+            'inventory_item_id' => $item->id,
         ]);
     }
 

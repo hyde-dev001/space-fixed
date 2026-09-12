@@ -15,40 +15,51 @@ use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Conversation;
 use App\Models\ConversationMessage;
-use App\Models\Finance\Invoice;
-use App\Models\Finance\InvoiceItem;
 use App\Events\LowStockAlert;
 use App\Services\RepairMaterialPlanningService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
-use App\Services\ShopOwnerApprovalPolicyService;
+use App\Services\Logistics\SourceShipmentService;
+use App\Services\RepairDeliveryService;
+use App\Services\Repairs\RepairOwnerProjection;
+use App\Services\Manager\ManagerRepairService;
+use App\Services\Manager\ManagerAuthorizationService;
 
 class RepairWorkflowController extends Controller
 {
-    private function userHasManagerReviewAccess($user): bool
+    private function userHasManagerReviewAccess($user, string $capability = ManagerAuthorizationService::REPAIR_REVIEW): bool
     {
-        if (!$user) {
+        if (!$user instanceof User) {
             return false;
         }
 
-        return $user->hasRole('Manager')
-            || $user->can('access-repair-reject-review')
-            || $user->can('access-manager-dashboard');
+        return $this->managerAuthorization->allows(
+            $user,
+            $capability,
+            $this->managerAuthorization->shopOwnerId($user),
+        );
     }
 
     protected $notificationService;
 
+    private ManagerAuthorizationService $managerAuthorization;
+
     public function __construct(
         NotificationService $notificationService,
-        private ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
-        private PaymentSettlementService $paymentSettlementService
+        private PaymentSettlementService $paymentSettlementService,
+        private SourceShipmentService $sourceShipmentService,
+        private RepairDeliveryService $repairDeliveryService,
+        private RepairOwnerProjection $repairOwnerProjection,
+        ManagerAuthorizationService $managerAuthorization,
     )
     {
         $this->notificationService = $notificationService;
+        $this->managerAuthorization = $managerAuthorization;
     }
     /**
      * Auto-assign repair request to available repairer
@@ -105,7 +116,7 @@ class RepairWorkflowController extends Controller
     }
     
     /**
-     * Calculate if request is high value and requires owner approval
+     * Calculate the high-value classification for reporting.
      */
     public function calculateHighValue($requestId)
     {
@@ -121,25 +132,16 @@ class RepairWorkflowController extends Controller
             }
             
             $isHighValue = $repairRequest->total >= $shopOwner->high_value_threshold;
-            $requiresOwnerApprovalByPolicy = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForRepairReject(
-                (int) $shopOwner->id,
-                (float) $repairRequest->total
-            );
-            $requiresOwnerApproval = $shopOwner->require_two_way_approval && $requiresOwnerApprovalByPolicy;
-
-            if ($requiresOwnerApprovalByPolicy) {
-                $isHighValue = true;
-            }
             
             $repairRequest->update([
                 'is_high_value' => $isHighValue,
-                'requires_owner_approval' => $requiresOwnerApproval
+                'requires_owner_approval' => false,
             ]);
             
             return response()->json([
                 'success' => true,
                 'is_high_value' => $isHighValue,
-                'requires_owner_approval' => $requiresOwnerApproval,
+                'requires_owner_approval' => false,
                 'threshold' => $shopOwner->high_value_threshold
             ]);
             
@@ -202,6 +204,7 @@ class RepairWorkflowController extends Controller
                         'reviewed_by' => $repairRequest->ownerReviewedBy ? $repairRequest->ownerReviewedBy->business_name : null,
                     ] : null,
                     'conversation_id' => $repairRequest->conversation_id,
+                    'owner_projection' => $this->repairOwnerProjection->project($repairRequest),
                 ]
             ]);
             
@@ -265,6 +268,7 @@ class RepairWorkflowController extends Controller
             };
 
             $isShopOwnerContext = $this->isShopOwnerRouteContext($request);
+            $scope = trim((string) $request->query('scope', ''));
 
             if ($isShopOwnerContext) {
                 $shopOwner = Auth::guard('shop_owner')->user();
@@ -276,7 +280,14 @@ class RepairWorkflowController extends Controller
                 }
 
                 // Shop owner sees all repairs for their shop
-                $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
+                $repairs = RepairRequest::with([
+                    'user',
+                    'services',
+                    'shopOwner',
+                    'repairer',
+                    'logisticsShipments.legs.proofs',
+                    'logisticsShipments.events',
+                ])
                     ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
                         $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
                     }], 'paid_amount')
@@ -287,11 +298,29 @@ class RepairWorkflowController extends Controller
                     ->get();
 
                 $repairs->transform(function (RepairRequest $repair): RepairRequest {
-                    $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+                    $collectionSummary = $this->attachRepairCollectionSummary($repair);
                     $this->normalizeRepairTaxModeForPayload($repair);
+                    $customerId = (int) ($repair->user_id ?? 0);
+                    $repair->setAttribute('customer_id', $customerId > 0 ? $customerId : null);
+                    $repair->setAttribute('intake_handoff', $this->repairDeliveryService->intakeHandoff(
+                        $repair,
+                        $this->isPaymentSatisfiedForRepairProgress($repair),
+                    ));
+                    $repair->setAttribute('return_handoff', $this->repairDeliveryService->returnHandoff(
+                        $repair,
+                        (bool) $collectionSummary['fully_paid'],
+                    ));
 
                     return $repair;
                 });
+
+                if ($scope === 'pos_checkout') {
+                    $repairs = $repairs
+                        ->filter(fn (RepairRequest $repair): bool => $this->isOrdinaryPosCollection(
+                            (array) $repair->getAttribute('collection_summary'),
+                        ))
+                        ->values();
+                }
                 
                 return response()->json([
                     'success' => true,
@@ -308,7 +337,6 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
 
-            $scope = trim((string) $request->query('scope', ''));
             if ($scope === 'pos_checkout') {
                 $shopOwnerId = (int) ($user->shop_owner_id ?? 0);
 
@@ -319,7 +347,14 @@ class RepairWorkflowController extends Controller
                     ], 422);
                 }
 
-                $repairs = RepairRequest::with(['user', 'services', 'shopOwner', 'repairer'])
+                $repairs = RepairRequest::with([
+                    'user',
+                    'services',
+                    'shopOwner',
+                    'repairer',
+                    'logisticsShipments.legs.proofs',
+                    'logisticsShipments.events',
+                ])
                     ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
                         $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
                     }], 'paid_amount')
@@ -330,11 +365,27 @@ class RepairWorkflowController extends Controller
                     ->get();
 
                 $repairs->transform(function (RepairRequest $repair): RepairRequest {
-                    $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+                    $collectionSummary = $this->attachRepairCollectionSummary($repair);
                     $this->normalizeRepairTaxModeForPayload($repair);
+                    $customerId = (int) ($repair->user_id ?? 0);
+                    $repair->setAttribute('customer_id', $customerId > 0 ? $customerId : null);
+                    $repair->setAttribute('intake_handoff', $this->repairDeliveryService->intakeHandoff(
+                        $repair,
+                        $this->isPaymentSatisfiedForRepairProgress($repair),
+                    ));
+                    $repair->setAttribute('return_handoff', $this->repairDeliveryService->returnHandoff(
+                        $repair,
+                        (bool) $collectionSummary['fully_paid'],
+                    ));
 
                     return $repair;
                 });
+
+                $repairs = $repairs
+                    ->filter(fn (RepairRequest $repair): bool => $this->isOrdinaryPosCollection(
+                        (array) $repair->getAttribute('collection_summary'),
+                    ))
+                    ->values();
 
                 return response()->json([
                     'success' => true,
@@ -343,19 +394,35 @@ class RepairWorkflowController extends Controller
             }
             
             // Get repairs assigned to this repairer
-            $repairs = RepairRequest::with(['user', 'services', 'shopOwner'])
+            $repairs = RepairRequest::with([
+                'user',
+                'services',
+                'shopOwner',
+                'logisticsShipments.legs.proofs',
+                'logisticsShipments.events',
+            ])
                 ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
                     $query->whereIn('status', ['paid', 'partially_refunded', 'refunded']);
                 }], 'paid_amount')
                 ->forRepairer($user->id)
                 ->where($jobOrderVisibleRepairs)
-                ->whereIn('status', ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'repairer_rejected', 'manager_reviewing', 'manager_rejected', 'owner_rejected', 'rejected', 'cancelled', 'received'])
+                ->whereIn('status', ['new_request', 'assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'owner_approval_pending', 'owner_approved', 'confirmed', 'pending', 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup', 'shipped', 'picked_up', 'repairer_rejected', 'manager_reviewing', 'manager_rejected', 'owner_rejected', 'rejected', 'cancelled', 'received'])
                 ->orderBy('created_at', 'desc')
                 ->get();
 
             $repairs->transform(function (RepairRequest $repair): RepairRequest {
-                $repair->setAttribute('total_paid_amount', $this->resolveJobOrderTotalPaidAmount($repair));
+                $collectionSummary = $this->attachRepairCollectionSummary($repair);
                 $this->normalizeRepairTaxModeForPayload($repair);
+                $customerId = (int) ($repair->user_id ?? 0);
+                $repair->setAttribute('customer_id', $customerId > 0 ? $customerId : null);
+                $repair->setAttribute('intake_handoff', $this->repairDeliveryService->intakeHandoff(
+                    $repair,
+                    $this->isPaymentSatisfiedForRepairProgress($repair),
+                ));
+                $repair->setAttribute('return_handoff', $this->repairDeliveryService->returnHandoff(
+                    $repair,
+                    (bool) $collectionSummary['fully_paid'],
+                ));
 
                 return $repair;
             });
@@ -393,29 +460,26 @@ class RepairWorkflowController extends Controller
         }
     }
 
-    private function resolveJobOrderTotalPaidAmount(RepairRequest $repair): float
+    private function attachRepairCollectionSummary(RepairRequest $repair): array
     {
-        $grandTotal = round((float) ($repair->final_total ?? $repair->total ?? 0), 2);
-        $storedPaidAmount = round((float) ($repair->total_paid_amount ?? 0), 2);
-        $posLedgerPaidAmount = round((float) ($repair->pos_paid_amount ?? 0), 2);
-        $resolved = max(0.0, $storedPaidAmount, $posLedgerPaidAmount);
+        $summary = $this->paymentSettlementService->repairCollectionSummary($repair);
+        $repair->setAttribute('collection_summary', $summary);
+        $repair->setAttribute('collectible', (bool) $summary['collectible']);
+        $repair->setAttribute('collectible_amount', (float) $summary['collectible_amount']);
+        $repair->setAttribute('outstanding_balance', (float) $summary['outstanding_balance']);
+        $repair->setAttribute('due_type', $summary['due_type']);
+        $repair->setAttribute('phase', $summary['phase']);
+        $repair->setAttribute('fully_paid', (bool) $summary['fully_paid']);
+        $repair->setAttribute('total_paid_amount', (float) $summary['total_paid_amount']);
 
-        $paymentStatus = strtolower(trim((string) ($repair->payment_status ?? 'pending')));
-        $policy = $this->paymentSettlementService->normalizeRepairPaymentPolicy((string) ($repair->payment_policy ?? 'deposit_50'));
+        return $summary;
+    }
 
-        if ($paymentStatus === 'completed') {
-            return round(max($resolved, $grandTotal), 2);
-        }
-
-        if ($paymentStatus === 'paid' || $paymentStatus === 'partially_paid') {
-            $phaseAmount = $policy === 'full_upfront'
-                ? $grandTotal
-                : round($grandTotal * 0.5, 2);
-
-            return round(max($resolved, $phaseAmount), 2);
-        }
-
-        return round($resolved, 2);
+    private function isOrdinaryPosCollection(array $summary): bool
+    {
+        return (bool) ($summary['collectible'] ?? false)
+            && (float) ($summary['collectible_amount'] ?? 0) > 0
+            && in_array((string) ($summary['due_type'] ?? ''), ['deposit', 'full', 'balance'], true);
     }
 
     private function buildRepairNotificationPayload(RepairRequest $repairRequest, array $overrides = []): array
@@ -468,30 +532,6 @@ class RepairWorkflowController extends Controller
             \Log::warning('Failed to send repair lifecycle notification', [
                 'repair_id' => $repairRequest->id,
                 'status' => $normalizedStatus,
-                'customer_id' => $customerId,
-                'error' => $exception->getMessage(),
-            ]);
-        }
-    }
-
-    private function notifyCustomerReceiveConfirmationActivated(RepairRequest $repairRequest): void
-    {
-        $customerId = (int) ($repairRequest->user_id ?? 0);
-        if ($customerId <= 0) {
-            return;
-        }
-
-        $payload = $this->buildRepairNotificationPayload($repairRequest, [
-            'status' => (string) ($repairRequest->status ?? ''),
-            'pickup_enabled' => true,
-            'return_delivery_method' => (string) ($repairRequest->return_delivery_method ?? ''),
-        ]);
-
-        try {
-            $this->notificationService->notifyRepairReceiveConfirmationActivated($customerId, $payload);
-        } catch (\Throwable $exception) {
-            \Log::warning('Failed to send receive-confirmation activation notification', [
-                'repair_id' => $repairRequest->id,
                 'customer_id' => $customerId,
                 'error' => $exception->getMessage(),
             ]);
@@ -630,7 +670,8 @@ class RepairWorkflowController extends Controller
                 // Determine next status based on delivery method
                 // Walk-in: Customer needs to confirm/bring item → 'pending'
                 // Pickup: Awaiting pickup confirmation → 'repairer_accepted'
-                $nextStatus = $repairRequest->delivery_method === 'walk_in' 
+                $intakeDeliveryMethod = $this->resolveRepairIntakeMethod($repairRequest);
+                $nextStatus = $intakeDeliveryMethod === 'walk_in'
                     ? 'pending' 
                     : 'repairer_accepted';
                 
@@ -642,12 +683,12 @@ class RepairWorkflowController extends Controller
                 
                 // Send automatic system message about the repair
                 $repairType = $repairRequest->repair_type ?? 'Repair';
-                $deliveryMethod = $repairRequest->delivery_method === 'walk_in' ? 'Walk-in' : 'Pickup';
+                $deliveryMethod = $intakeDeliveryMethod === 'walk_in' ? 'Walk-in' : 'Pickup';
                 $systemMessage = "🔧 **New Repair Order Accepted**\n\n";
                 $systemMessage .= "**Type:** {$repairType}\n";
                 $systemMessage .= "**Delivery:** {$deliveryMethod}\n";
                 $systemMessage .= "**Status:** " . ($nextStatus === 'pending' ? 'Waiting for item drop-off' : 'Accepted') . "\n\n";
-                $systemMessage .= $repairRequest->delivery_method === 'walk_in' 
+                $systemMessage .= $intakeDeliveryMethod === 'walk_in'
                     ? "Please bring your item to our shop at your convenience." 
                     : "We'll pick up your item as scheduled.";
                 
@@ -664,6 +705,7 @@ class RepairWorkflowController extends Controller
                 }
                 
                 DB::commit();
+                $this->tryDispatchAcceptedIntake($repairRequest);
 
                 // Notify customer that their repair was accepted
                 if ($repairRequest->user_id) {
@@ -678,9 +720,7 @@ class RepairWorkflowController extends Controller
                     }
                 }
 
-                $message = $repairRequest->delivery_method === 'walk_in' 
-                    ? 'Repair accepted. Waiting for customer to bring the item in.'
-                    : 'Repair accepted. Chat conversation updated with customer.';
+                $message = $this->acceptedRepairMessage($repairRequest->fresh());
                 
                 return response()->json([
                     'success' => true,
@@ -701,7 +741,7 @@ class RepairWorkflowController extends Controller
             }
             
             // Verify status is correct
-            if ($repairRequest->status !== 'assigned_to_repairer') {
+            if (!in_array($repairRequest->status, ['new_request', 'assigned_to_repairer'])) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -756,7 +796,8 @@ class RepairWorkflowController extends Controller
             // Determine next status based on delivery method
             // Walk-in: Customer needs to confirm/bring item → 'pending'
             // Pickup: Awaiting pickup confirmation → 'repairer_accepted'
-            $nextStatus = $repairRequest->delivery_method === 'walk_in' 
+            $intakeDeliveryMethod = $this->resolveRepairIntakeMethod($repairRequest);
+            $nextStatus = $intakeDeliveryMethod === 'walk_in'
                 ? 'pending' 
                 : 'repairer_accepted';
             
@@ -768,13 +809,13 @@ class RepairWorkflowController extends Controller
             
             // Send automatic system message about the repair
             $repairType = $repairRequest->repair_type ?? 'Repair';
-            $deliveryMethod = $repairRequest->delivery_method === 'walk_in' ? 'Walk-in' : 'Pickup';
+            $deliveryMethod = $intakeDeliveryMethod === 'walk_in' ? 'Walk-in' : 'Pickup';
             $repairerName = $user->name ?? 'Repairer';
             $systemMessage = "🔧 **Repair Order Accepted by {$repairerName}**\n\n";
             $systemMessage .= "**Type:** {$repairType}\n";
             $systemMessage .= "**Delivery:** {$deliveryMethod}\n";
             $systemMessage .= "**Status:** " . ($nextStatus === 'pending' ? 'Waiting for item drop-off' : 'Accepted') . "\n\n";
-            $systemMessage .= $repairRequest->delivery_method === 'walk_in' 
+            $systemMessage .= $intakeDeliveryMethod === 'walk_in'
                 ? "Please bring your item to our shop at your convenience." 
                 : "We'll pick up your item as scheduled.";
             
@@ -791,6 +832,7 @@ class RepairWorkflowController extends Controller
             }
             
             DB::commit();
+            $this->tryDispatchAcceptedIntake($repairRequest);
 
             // Notify customer that their repair was accepted
             if ($repairRequest->user_id) {
@@ -805,9 +847,7 @@ class RepairWorkflowController extends Controller
                 }
             }
 
-            $message = $repairRequest->delivery_method === 'walk_in' 
-                ? 'Repair accepted. Waiting for customer to bring the item in.'
-                : 'Repair accepted. Chat conversation updated with customer.';
+            $message = $this->acceptedRepairMessage($repairRequest->fresh());
             
             return response()->json([
                 'success' => true,
@@ -823,6 +863,45 @@ class RepairWorkflowController extends Controller
                 'message' => 'Failed to accept repair: ' . $e->getMessage()
             ], 500);
         }
+    }
+
+    private function tryDispatchAcceptedIntake(RepairRequest $repair): void
+    {
+        try {
+            $this->repairDeliveryService->tryCreateIntakeShipment($repair->fresh());
+        } catch (\Throwable $exception) {
+            \Log::error('Accepted repair intake shipment could not be created.', [
+                'repair_id' => $repair->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    private function resolveRepairIntakeMethod(RepairRequest $repair): string
+    {
+        $explicitMethod = strtolower(trim((string) ($repair->intake_delivery_method ?? '')));
+        if (in_array($explicitMethod, ['walk_in', 'customer_delivery', 'shop_pickup'], true)) {
+            return $explicitMethod;
+        }
+
+        return (string) ($repair->delivery_method ?? '') === 'walk_in'
+            ? 'walk_in'
+            : 'customer_delivery';
+    }
+
+    private function acceptedRepairMessage(RepairRequest $repair): string
+    {
+        if ($this->resolveRepairIntakeMethod($repair) !== 'walk_in') {
+            return 'Repair accepted. Chat conversation updated with customer.';
+        }
+
+        $summary = $this->paymentSettlementService->repairCollectionSummary($repair);
+        if ((string) ($summary['phase'] ?? '') === 'initial'
+            && (float) ($summary['collectible_amount'] ?? 0) > 0) {
+            return 'Repair request accepted. Bring your shoes to the shop and complete the required payment so the shop can receive the item.';
+        }
+
+        return 'Repair request accepted. Bring your shoes to the shop so the shop can receive the item.';
     }
     
     /**
@@ -849,6 +928,52 @@ class RepairWorkflowController extends Controller
                 'success' => false,
                 'message' => 'A rejection reason is required.'
             ], 422);
+        }
+
+        // Repairer decisions use the shared Manager repair workflow so the
+        // tenant check, row lock, rejection history, and Manager notification
+        // cannot drift from the Manager review APIs.
+        if (!Auth::guard('shop_owner')->check()) {
+            $repairer = Auth::guard('user')->user();
+
+            if ($repairer) {
+                try {
+                    $repairRequest = app(ManagerRepairService::class)->recordRepairerRejection(
+                        repairer: $repairer,
+                        repairId: (int) $requestId,
+                        reason: $reasonText,
+                        category: $reasonCategory,
+                    );
+
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Repair rejected. Manager has been notified for review.',
+                        'repair' => $repairRequest,
+                        'rejection_reason' => [
+                            'category' => $reasonCategory,
+                            'text' => $reasonText,
+                        ],
+                    ]);
+                } catch (ModelNotFoundException) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair request not found.',
+                    ], 404);
+                } catch (ValidationException $exception) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair rejection was not completed.',
+                        'errors' => $exception->errors(),
+                    ], 422);
+                } catch (\Throwable $exception) {
+                    report($exception);
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Repair rejection could not be completed.',
+                    ], 500);
+                }
+            }
         }
         
         try {
@@ -953,6 +1078,7 @@ class RepairWorkflowController extends Controller
                 'repairer_rejected_at' => now(),
                 'repairer_rejected_by' => $user->id,
                 'assigned_manager_id' => $manager ? $manager->id : null,
+                'requires_owner_approval' => false,
                 // Start a fresh manager-review cycle for this new rejection.
                 'manager_decision' => null,
                 'manager_review_notes' => null,
@@ -1021,18 +1147,15 @@ class RepairWorkflowController extends Controller
                 ], 401);
             }
             
-            if (!$this->userHasManagerReviewAccess($user)) {
+            if (!$this->userHasManagerReviewAccess($user, ManagerAuthorizationService::REPAIR_JOBS_READ)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized. Manager role required.'
                 ], 403);
             }
             
-            // Manager inbox for rejection workflow:
-            // - Initial review: repairer_rejected
-            // - Forwarded to owner (for manager visibility): owner_approval_pending
-            // - Final review after owner approval: manager_reviewing
-            // Include resolved entries for reference/history in the same table.
+            // Manager inbox for rejection workflow. Resolved entries remain
+            // visible for reference/history in the same table.
             $repairs = RepairRequest::with([
                 'user', 
                 'services', 
@@ -1043,7 +1166,7 @@ class RepairWorkflowController extends Controller
             ])
                 ->where('shop_owner_id', $user->shop_owner_id)
                 ->whereNotNull('repairer_rejected_at')
-                ->whereIn('status', ['repairer_rejected', 'owner_approval_pending', 'manager_reviewing', 'rejected', 'assigned_to_repairer'])
+                ->whereIn('status', ['repairer_rejected', 'manager_reviewing', 'rejected', 'assigned_to_repairer'])
                 ->orderBy('repairer_rejected_at', 'desc')
                 ->get();
 
@@ -1069,13 +1192,48 @@ class RepairWorkflowController extends Controller
     }
     
     /**
-     * Manager first approval: forwards repairer rejection to shop owner.
+     * Compatibility endpoint: Manager approval is final.
      */
     public function approveRejection(Request $request, $requestId)
     {
         $request->validate([
             'notes' => 'nullable|string|max:500'
         ]);
+
+        $manager = Auth::guard('user')->user();
+        if ($manager) {
+            try {
+                $repairRequest = app(ManagerRepairService::class)->finalReject(
+                    manager: $manager,
+                    repairId: (int) $requestId,
+                    reason: (string) ($request->input('notes') ?? 'Manager reviewed the repairer rejection.'),
+                );
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Repair request was rejected by the Manager.',
+                    'repair' => $repairRequest,
+                ]);
+            } catch (ModelNotFoundException) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found.',
+                ], 404);
+            } catch (ValidationException $exception) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manager repair review was not completed.',
+                    'errors' => $exception->errors(),
+                ], 422);
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manager repair review could not be completed.',
+                ], 500);
+            }
+        }
         
         try {
             DB::beginTransaction();
@@ -1098,7 +1256,15 @@ class RepairWorkflowController extends Controller
                 ], 403);
             }
             
-            $repairRequest = RepairRequest::findOrFail($requestId);
+            $repairRequest = RepairRequest::find($requestId);
+
+            if (!$repairRequest) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found',
+                ], 404);
+            }
             
             // Verify this is from same shop
             if ($repairRequest->shop_owner_id != $user->shop_owner_id) {
@@ -1118,42 +1284,22 @@ class RepairWorkflowController extends Controller
                 ], 400);
             }
             
-                $repairRequest->update([
-                    'status' => 'owner_approval_pending',
-                    'manager_decision' => 'approve_rejection',
+            $nextStatus = 'rejected';
+
+            $repairRequest->update([
+                'status' => $nextStatus,
+                'requires_owner_approval' => false,
+                'manager_decision' => 'approve_rejection',
                 'manager_review_notes' => $request->notes,
                 'manager_reviewed_at' => now(),
                 'manager_reviewed_by' => $user->id,
             ]);
-            
-            DB::commit();
 
-            try {
-                $this->notificationService->notifyRepairRejectApprovalRequest(
-                    (int) $repairRequest->shop_owner_id,
-                    [
-                        'repair_id' => (int) $repairRequest->id,
-                        'request_id' => (string) ($repairRequest->request_id ?? $repairRequest->id),
-                        'order_number' => (string) ($repairRequest->request_id ?? $repairRequest->id),
-                        'customer_name' => (string) ($repairRequest->customer_name ?? 'Customer'),
-                        'reason' => (string) ($repairRequest->repairer_rejection_reason ?? ''),
-                        'manager_notes' => (string) ($request->notes ?? ''),
-                        'manager_id' => (int) $user->id,
-                        'manager_name' => (string) ($user->name ?? trim((string) (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')))),
-                        'status' => 'owner_approval_pending',
-                    ]
-                );
-            } catch (\Throwable $notificationError) {
-                \Log::warning('Could not notify shop owner for forwarded repair rejection', [
-                    'repair_request_id' => $repairRequest->id,
-                    'shop_owner_id' => $repairRequest->shop_owner_id,
-                    'error' => $notificationError->getMessage(),
-                ]);
-            }
+            DB::commit();
 
             return response()->json([
                 'success' => true,
-                'message' => 'Initial approval completed. Rejection forwarded to shop owner for review.',
+                'message' => 'Repair request was rejected by the Manager.',
                 'repair' => $repairRequest->fresh(['user', 'services', 'managerReviewedBy'])
             ]);
             
@@ -1174,6 +1320,41 @@ class RepairWorkflowController extends Controller
         $request->validate([
             'notes' => 'nullable|string|max:500'
         ]);
+
+        $manager = Auth::guard('user')->user();
+        if ($manager) {
+            try {
+                $repairRequest = app(ManagerRepairService::class)->finalReject(
+                    manager: $manager,
+                    repairId: (int) $requestId,
+                    reason: (string) ($request->input('notes') ?? 'Manager final review confirmed the rejection.'),
+                );
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Repair request was rejected by the Manager.',
+                    'repair' => $repairRequest,
+                ]);
+            } catch (ModelNotFoundException) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found.',
+                ], 404);
+            } catch (ValidationException $exception) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manager final rejection was not completed.',
+                    'errors' => $exception->errors(),
+                ], 400);
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Manager final rejection could not be completed.',
+                ], 500);
+            }
+        }
 
         try {
             DB::beginTransaction();
@@ -1270,6 +1451,42 @@ class RepairWorkflowController extends Controller
             'notes' => 'required|string|min:10|max:500',
             'repairer_id' => 'required|integer|exists:users,id'
         ]);
+
+        $manager = Auth::guard('user')->user();
+        if ($manager) {
+            try {
+                $repairRequest = app(ManagerRepairService::class)->reassign(
+                    manager: $manager,
+                    repairId: (int) $requestId,
+                    replacementRepairerId: (int) $request->input('repairer_id'),
+                    reason: (string) $request->input('notes'),
+                );
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Repair rejection was overridden and reassigned to the selected repairer.',
+                    'repair' => $repairRequest,
+                ]);
+            } catch (ModelNotFoundException) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found.',
+                ], 404);
+            } catch (ValidationException $exception) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair reassignment was not completed.',
+                    'errors' => $exception->errors(),
+                ], 422);
+            } catch (\Throwable $exception) {
+                report($exception);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair reassignment could not be completed.',
+                ], 500);
+            }
+        }
         
         try {
             DB::beginTransaction();
@@ -1413,164 +1630,6 @@ class RepairWorkflowController extends Controller
     }
 
     /**
-     * Get rejection requests waiting for shop-owner approval (rejection workflow only).
-     */
-    public function getOwnerRejectionPendingApprovals(Request $request)
-    {
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-
-            if (!$shopOwner) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            $repairs = RepairRequest::with([
-                'user:id,first_name,last_name,email,phone',
-                'services:id,name,price',
-                'repairer:id,first_name,last_name',
-                'repairerRejectedBy',
-                'managerReviewedBy',
-                'ownerReviewedBy',
-            ])
-                ->where('shop_owner_id', $shopOwner->id)
-                ->whereNotNull('repairer_rejected_at')
-                ->whereIn('status', ['owner_approval_pending', 'manager_reviewing', 'assigned_to_repairer', 'rejected'])
-                ->orderByDesc('repairer_rejected_at')
-                ->get();
-
-            return response()->json([
-                'success' => true,
-                'repairs' => $repairs,
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch owner rejection approvals: ' . $e->getMessage(),
-            ], 500);
-        }
-    }
-
-    /**
-     * Shop-owner approval step for rejection workflow.
-     */
-    public function approveOwnerRejection(Request $request, $id)
-    {
-        $request->validate([
-            'notes' => 'nullable|string|max:500'
-        ]);
-
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-
-            if (!$shopOwner) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            DB::beginTransaction();
-
-            $repairRequest = RepairRequest::where('id', $id)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
-
-            if ($repairRequest->status !== 'owner_approval_pending') {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair is not pending owner rejection approval'
-                ], 400);
-            }
-
-            $repairRequest->update([
-                'status' => 'manager_reviewing',
-                'owner_decision' => 'approved',
-                'owner_review_notes' => $request->notes,
-                'owner_reviewed_at' => now(),
-                'owner_reviewed_by' => $shopOwner->id,
-                'owner_reviewed_by_id' => $shopOwner->id,
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Owner approval completed. Request is now pending manager final approval.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'repairer', 'ownerReviewedBy'])
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to approve rejection: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Shop-owner rejects the rejection request and returns repair to assigned flow.
-     */
-    public function rejectOwnerRejection(Request $request, $id)
-    {
-        $request->validate([
-            'notes' => 'required|string|min:10|max:500'
-        ]);
-
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-
-            if (!$shopOwner) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            DB::beginTransaction();
-
-            $repairRequest = RepairRequest::where('id', $id)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
-
-            if ($repairRequest->status !== 'owner_approval_pending') {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair is not pending owner rejection approval'
-                ], 400);
-            }
-
-            $repairRequest->update([
-                'status' => 'assigned_to_repairer',
-                'owner_decision' => 'rejected',
-                'owner_review_notes' => $request->notes,
-                'owner_reviewed_at' => now(),
-                'owner_reviewed_by' => $shopOwner->id,
-                'owner_reviewed_by_id' => $shopOwner->id,
-                'manager_decision' => null,
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Owner rejected the rejection request. Repair returned to assigned workflow.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'repairer', 'ownerReviewedBy'])
-            ]);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to reject rejection request: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
      * Get available repairers for a repair (workload-based only)
      * Used by manager to select repairers for override
      */
@@ -1615,7 +1674,9 @@ class RepairWorkflowController extends Controller
                         $query->whereIn('status', $this->getActiveRepairStatuses());
                     }
                 ])
-                ->having('active_repairs_count', '<', $workloadLimit);
+                ->whereHas('assignedRepairs', function ($query) {
+                    $query->whereIn('status', $this->getActiveRepairStatuses());
+                }, '<', $workloadLimit);
 
             $repairers = $baseQuery->get()->map(function ($repairer) {
                 return [
@@ -1658,145 +1719,6 @@ class RepairWorkflowController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch available repairers: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get high-value repairs pending shop owner approval
-     * For shop owners only
-     */
-    public function getHighValuePendingApprovals()
-    {
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-            
-            $repairs = RepairRequest::where('shop_owner_id', $shopOwner->id)
-                ->where('is_high_value', true)
-                ->where('requires_owner_approval', true)
-                ->where('status', 'owner_approval_pending')
-                ->with([
-                    'user:id,first_name,last_name,email,phone',
-                    'services:id,name,price',
-                    'repairer:id,first_name,last_name',
-                    'conversation'
-                ])
-                ->orderBy('created_at', 'desc')
-                ->get();
-            
-            return response()->json([
-                'success' => true,
-                'repairs' => $repairs
-            ]);
-            
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to fetch high-value repairs: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Approve high-value repair request
-     * Allows repairer to start work
-     */
-    public function approveHighValueRepair(Request $request, $id)
-    {
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-            
-            DB::beginTransaction();
-            
-            $repairRequest = RepairRequest::where('id', $id)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
-            
-            if ($repairRequest->status !== 'owner_approval_pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair is not pending owner approval'
-                ], 400);
-            }
-            
-            $repairRequest->update([
-                'status' => 'owner_approved',
-                'owner_decision' => 'approve',
-                'owner_approval_notes' => $request->notes,
-                'owner_reviewed_at' => now(),
-                'owner_reviewed_by_id' => $shopOwner->id,
-            ]);
-            
-            DB::commit();
-            
-            // TODO: Send notification to repairer that they can start work
-            // TODO: Send notification to customer that repair is approved
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'High-value repair approved. Repairer can now start work.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'repairer', 'ownerReviewedBy'])
-            ]);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to approve repair: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Reject high-value repair request
-     * Cancels the repair and notifies customer
-     */
-    public function rejectHighValueRepair(Request $request, $id)
-    {
-        $request->validate([
-            'notes' => 'required|string|min:10'
-        ]);
-        
-        try {
-            $shopOwner = Auth::guard('shop_owner')->user();
-            
-            DB::beginTransaction();
-            
-            $repairRequest = RepairRequest::where('id', $id)
-                ->where('shop_owner_id', $shopOwner->id)
-                ->firstOrFail();
-            
-            if ($repairRequest->status !== 'owner_approval_pending') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair is not pending owner approval'
-                ], 400);
-            }
-            
-            $repairRequest->update([
-                'status' => 'owner_rejected',
-                'owner_decision' => 'reject',
-                'owner_approval_notes' => $request->notes,
-                'owner_reviewed_at' => now(),
-                'owner_reviewed_by_id' => $shopOwner->id,
-            ]);
-            
-            DB::commit();
-            
-            // TODO: Send notification to customer explaining rejection
-            // TODO: Potentially trigger refund if payment was made
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'High-value repair rejected. Customer will be notified.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'ownerReviewedBy'])
-            ]);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to reject repair: ' . $e->getMessage()
             ], 500);
         }
     }
@@ -2133,8 +2055,9 @@ class RepairWorkflowController extends Controller
                     'completed_at' => $repairRequest->completed_at ?? now(),
                     'pickup_instructions' => $request->pickup_instructions,
                 ]);
-                
+
                 DB::commit();
+                $this->tryDispatchReadyReturn($repairRequest);
 
                 $this->notifyCustomerRepairLifecycle($repairRequest, 'ready_for_pickup');
                 
@@ -2186,8 +2109,9 @@ class RepairWorkflowController extends Controller
                 'completed_at' => $repairRequest->completed_at ?? now(),
                 'pickup_instructions' => $request->pickup_instructions,
             ]);
-            
+
             DB::commit();
+            $this->tryDispatchReadyReturn($repairRequest);
 
             $this->notifyCustomerRepairLifecycle($repairRequest, 'ready_for_pickup');
             
@@ -2206,606 +2130,204 @@ class RepairWorkflowController extends Controller
         }
     }
 
+    private function tryDispatchReadyReturn(RepairRequest $repair): void
+    {
+        try {
+            $this->repairDeliveryService->tryCreateReturnShipment($repair->fresh());
+        } catch (\Throwable $exception) {
+            \Log::error('Ready repair return shipment could not be created.', [
+                'repair_id' => $repair->id,
+                'error' => $exception->getMessage(),
+            ]);
+        }
+    }
+
+    public function cancelDeliveryLeg(Request $request, $id)
+    {
+        $user = Auth::guard('user')->user();
+        abort_unless($user, 401);
+
+        $validated = $request->validate([
+            'leg' => ['required', 'in:intake,return'],
+            'reason' => ['required', 'string', 'max:500'],
+            'shipment_leg_id' => ['present', 'nullable', 'integer', 'min:1'],
+            'plan_token' => ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/'],
+        ]);
+        $repair = RepairRequest::query()->findOrFail($id);
+        abort_unless(
+            (int) $repair->shop_owner_id === (int) $user->shop_owner_id
+            && $this->userCanConfirmRepairIntake($user),
+            403,
+        );
+
+        $result = $this->repairDeliveryService->cancelPaidDeliveryLeg(
+            $repair,
+            (string) $validated['leg'],
+            (string) $validated['reason'],
+            (int) $user->id,
+            isset($validated['shipment_leg_id']) ? (int) $validated['shipment_leg_id'] : null,
+            (string) $validated['plan_token'],
+        );
+        $sponsoredWarranty = (bool) ($result['repair']->is_warranty_job ?? false)
+            || (string) ($result['repair']->billing_mode ?? '') === 'warranty_no_charge';
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['replayed']
+                ? 'This delivery cancellation was already processed.'
+                : ($sponsoredWarranty
+                    ? 'Delivery leg cancelled. The customer can update the sponsored delivery plan.'
+                    : 'Delivery leg cancelled. Finance compensation is required before the delivery plan can be changed.'),
+            'data' => [
+                'repair' => $result['repair'],
+                'reconciliation' => $result['reconciliation'],
+                'replayed' => $result['replayed'],
+            ],
+        ]);
+    }
+
     /**
      * Mark shoes as received at shop (after pickup from customer's address)
      */
     public function markAsReceived(Request $request, $id)
     {
-        try {
-            // Check if authenticated as shop owner first
-            $shopOwner = Auth::guard('shop_owner')->user();
-            
+        $shopOwnerContext = $this->isShopOwnerRouteContext($request);
+        $shopOwner = $shopOwnerContext ? Auth::guard('shop_owner')->user() : null;
+        $user = $shopOwnerContext ? null : Auth::guard('user')->user();
+
+        if (! $shopOwner && ! $user) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $repair = DB::transaction(function () use ($id, $shopOwner, $user): RepairRequest {
+            $repair = RepairRequest::query()->whereKey($id)->lockForUpdate()->firstOrFail();
+
             if ($shopOwner) {
-                // Shop owner can mark any repair for their shop as received
-                DB::beginTransaction();
-                
-                $debugRepair = RepairRequest::find($id);
-                
-                if (!$debugRepair) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Repair not found'
-                    ], 404);
-                }
-                
-                // Verify repair belongs to this shop owner
-                if ($debugRepair->shop_owner_id != $shopOwner->id) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'This repair does not belong to your shop'
-                    ], 403);
-                }
-                
-                // Check if status is valid (allowing most statuses for flexibility/error correction)
-                $invalidStatuses = ['cancelled', 'rejected', 'picked_up'];
-                if (in_array($debugRepair->status, $invalidStatuses)) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Repair cannot be marked as received in status: ' . $debugRepair->status
-                    ], 400);
-                }
+                abort_unless((int) $repair->shop_owner_id === (int) $shopOwner->id, 403);
+            } else {
+                abort_unless(
+                    (int) $repair->shop_owner_id === (int) $user->shop_owner_id
+                    && (int) $repair->assigned_repairer_id === (int) $user->id
+                    && $this->userCanConfirmRepairIntake($user),
+                    403,
+                );
+            }
 
-                if (!$this->isPaymentSatisfiedForRepairProgress($debugRepair)) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Payment must be paid before marking shoes as received.'
-                    ], 422);
-                }
-                
-                // Update status
-                $debugRepair->update([
-                    'status' => 'received',
-                    'received_at' => now(),
-                ]);
-                
-                DB::commit();
-
-                $this->notifyCustomerRepairLifecycle($debugRepair, 'received');
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Shoes marked as received. You can now begin the repair.',
-                    'repair' => $debugRepair->fresh(['user', 'services', 'shopOwner'])
+            if (! in_array((string) $repair->status, ['pending', 'repairer_accepted'], true)) {
+                throw ValidationException::withMessages([
+                    'status' => ['Only an accepted repair awaiting intake can be confirmed as physically received.'],
                 ]);
             }
-            
-            // Otherwise check for regular user (repairer)
-            $user = Auth::guard('user')->user();
-            
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            DB::beginTransaction();
-            
-            // Check what repair exists
-            $debugRepair = RepairRequest::find($id);
-            
-            if (!$debugRepair) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair not found'
-                ], 404);
-            }
-            
-            // Check if assigned to current user
-            if ($debugRepair->assigned_repairer_id != $user->id) {
-                DB::rollBack();
-                \Log::warning('Mark as received - Wrong repairer', [
-                    'repair_id' => $id,
-                    'current_user' => $user->id,
-                    'assigned_to' => $debugRepair->assigned_repairer_id
+            if (! $this->isPaymentSatisfiedForRepairProgress($repair)) {
+                throw ValidationException::withMessages([
+                    'payment' => ['Initial payment must be settled before physical receipt.'],
                 ]);
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This repair is not assigned to you'
-                ], 403);
             }
-            
-            // Check if status is valid
-            $validStatuses = ['assigned_to_repairer', 'repairer_accepted', 'waiting_customer_confirmation', 'confirmed', 'owner_approval_pending', 'owner_approved', 'pending'];
-            if (!in_array($debugRepair->status, $validStatuses)) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair cannot be marked as received in status: ' . $debugRepair->status
-                ], 400);
+            if ((string) $repair->intake_delivery_method === 'shop_pickup'
+                && ! $this->repairDeliveryService->hasApprovedProof($repair, 'repair_pickup')) {
+                throw ValidationException::withMessages([
+                    'proof' => ['Dispatcher approval of the rider delivery proof is required before physical receipt.'],
+                ]);
             }
 
-            if (!$this->isPaymentSatisfiedForRepairProgress($debugRepair)) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payment must be paid before marking shoes as received.'
-                ], 422);
-            }
-            
-            // Update status
-            $debugRepair->update([
+            $repair->update([
                 'status' => 'received',
                 'received_at' => now(),
+                'intake_logistics_locked_at' => $repair->intake_logistics_locked_at ?? now(),
             ]);
-            
-            DB::commit();
 
-            $this->notifyCustomerRepairLifecycle($debugRepair, 'received');
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Shoes marked as received. You can now begin the repair.',
-                'repair' => $debugRepair->fresh(['user', 'services', 'shopOwner'])
-            ]);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Mark as received failed - Full Error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'repair_id' => $id
-            ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to mark as received: ' . $e->getMessage()
-            ], 500);
-        }
+            return $repair->fresh(['user', 'services', 'shopOwner']);
+        }, 3);
+
+        $this->notifyCustomerRepairLifecycle($repair, 'received');
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Physical receipt confirmed. You can now begin the repair.',
+            'repair' => $repair,
+        ]);
+    }
+
+    private function userCanConfirmRepairIntake(User $user): bool
+    {
+        return in_array(strtoupper((string) $user->role), ['STAFF', 'REPAIRER'], true)
+            || $user->can('access-repair-job-orders')
+            || $user->can('access-repairer-dashboard');
     }
 
     /**
-     * Activate pickup confirmation for customer (Shop Owner or Repairer)
+     * Record the actual non-dispatcher return handover.
+     *
+     * Repairer mark-ready is the pre-dispatch release for shop-rider returns.
+     * This action is only for the later physical handover to a walk-in customer
+     * or a customer-arranged courier.
      */
     public function activatePickup(Request $request, $id)
     {
-        try {
-            $route = $request->route();
-            $routeMiddleware = $route ? $route->gatherMiddleware() : [];
-            $routeName = $route ? $route->getName() : null;
+        $shopOwnerContext = $this->isShopOwnerRouteContext($request);
+        $shopOwner = $shopOwnerContext ? Auth::guard('shop_owner')->user() : null;
+        $user = $shopOwnerContext ? null : Auth::guard('user')->user();
+        abort_unless($shopOwner || $user, 401);
 
-            $expectsShopOwnerGuard = in_array('auth:shop_owner', $routeMiddleware, true)
-                || (is_string($routeName) && str_starts_with($routeName, 'shop_owner.'));
-            $expectsUserGuard = in_array('auth:user', $routeMiddleware, true);
+        $repair = RepairRequest::query()
+            ->with('shopOwner')
+            ->whereKey($id)
+            ->firstOrFail();
 
-            // Prevent cross-session guard collisions (e.g., user logged in as both repairer and shop owner).
-            $shopOwner = ($expectsShopOwnerGuard && !$expectsUserGuard)
-                ? Auth::guard('shop_owner')->user()
-                : null;
-            
-            if ($shopOwner) {
-                // Shop owner can activate pickup for any repair for their shop
-                DB::beginTransaction();
-                
-                $repairRequest = RepairRequest::find($id);
-                
-                if (!$repairRequest) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Repair not found'
-                    ], 404);
-                }
-                
-                // Verify repair belongs to this shop owner
-                if ($repairRequest->shop_owner_id != $shopOwner->id) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'This repair does not belong to your shop'
-                    ], 403);
-                }
-                
-                $effectiveReturnMethod = $repairRequest->return_delivery_method
-                    ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
-                $isWalkInReturn = $effectiveReturnMethod === 'walk_in';
-                $allowedStatuses = $isWalkInReturn
-                    ? ['ready_for_pickup', 'ready-for-pickup']
-                    : ['shipped'];
-
-                // Walk-in: ready_for_pickup only. Delivery returns: shipped only.
-                if (!in_array((string) $repairRequest->status, $allowedStatuses, true)) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => $isWalkInReturn
-                            ? 'Receive can only be activated when repair is ready for pickup.'
-                            : 'Receive can only be activated after the repair is shipped.'
-                    ], 400);
-                }
-                
-                // Check if pickup is already enabled
-                if ($repairRequest->pickup_enabled) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => true,
-                        'message' => 'Pickup confirmation is already activated',
-                        'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
-                    ]);
-                }
-
-                if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => $this->getReleasePaymentRequiredMessage($repairRequest),
-                    ], 422);
-                }
-
-                if ($isWalkInReturn) {
-                    $repairRequest->update([
-                        'status' => 'picked_up',
-                        'picked_up_at' => now(),
-                    ]);
-
-                    try {
-                        $this->autoGenerateInvoiceForPickedUpRepair($repairRequest);
-                    } catch (\Throwable $invoiceError) {
-                        \Log::warning('Failed to auto-generate invoice for in-shop picked-up repair (shop owner flow)', [
-                            'repair_id' => $repairRequest->id,
-                            'request_id' => $repairRequest->request_id,
-                            'error' => $invoiceError->getMessage(),
-                        ]);
-                    }
-
-                    DB::commit();
-
-                    $this->notifyCustomerRepairLifecycle($repairRequest, 'picked_up');
-
-                    return response()->json([
-                        'success' => true,
-                        'message' => 'Repair marked as received in-shop and completed.',
-                        'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
-                    ]);
-                }
-                
-                // Enable pickup confirmation
-                $repairRequest->update([
-                    'pickup_enabled' => true,
-                    'pickup_enabled_at' => now(),
-                    'pickup_enabled_by' => $shopOwner->id,
-                ]);
-                
-                DB::commit();
-
-                $this->notifyCustomerReceiveConfirmationActivated($repairRequest);
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Pickup confirmation activated. Customer can now confirm they received their item.',
-                    'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
-                ]);
-            }
-            
-            // Otherwise check for regular user (repairer)
-            $user = Auth::guard('user')->user();
-            
-            if (!$user) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthenticated'
-                ], 401);
-            }
-
-            DB::beginTransaction();
-            
-            $repairRequest = RepairRequest::find($id);
-            
-            if (!$repairRequest) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Repair not found'
-                ], 404);
-            }
-            
-            // Verify repair is assigned to this repairer
-            if ($repairRequest->assigned_repairer_id != $user->id) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This repair is not assigned to you'
-                ], 403);
-            }
-            
-            $effectiveReturnMethod = $repairRequest->return_delivery_method
-                ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
-            $isWalkInReturn = $effectiveReturnMethod === 'walk_in';
-            $allowedStatuses = $isWalkInReturn
-                ? ['ready_for_pickup', 'ready-for-pickup']
-                : ['shipped'];
-
-            // Walk-in: ready_for_pickup only. Delivery returns: shipped only.
-            if (!in_array((string) $repairRequest->status, $allowedStatuses, true)) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => $isWalkInReturn
-                        ? 'Receive can only be activated when repair is ready for pickup.'
-                        : 'Receive can only be activated after the repair is shipped.'
-                ], 400);
-            }
-            
-            // Check if pickup is already enabled
-            if ($repairRequest->pickup_enabled) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Pickup confirmation is already activated',
-                    'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
-                ]);
-            }
-
-            if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => $this->getReleasePaymentRequiredMessage($repairRequest),
-                ], 422);
-            }
-
-            if ($isWalkInReturn) {
-                $repairRequest->update([
-                    'status' => 'picked_up',
-                    'picked_up_at' => now(),
-                ]);
-
-                try {
-                    $this->autoGenerateInvoiceForPickedUpRepair($repairRequest);
-                } catch (\Throwable $invoiceError) {
-                    \Log::warning('Failed to auto-generate invoice for in-shop picked-up repair', [
-                        'repair_id' => $repairRequest->id,
-                        'request_id' => $repairRequest->request_id,
-                        'error' => $invoiceError->getMessage(),
-                    ]);
-                }
-
-                DB::commit();
-
-                $this->notifyCustomerRepairLifecycle($repairRequest, 'picked_up');
-
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Repair marked as received in-shop and completed.',
-                    'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
-                ]);
-            }
-            
-            // Enable pickup confirmation
-            $repairRequest->update([
-                'pickup_enabled' => true,
-                'pickup_enabled_at' => now(),
-                'pickup_enabled_by' => $user->id,
-            ]);
-            
-            DB::commit();
-
-            $this->notifyCustomerReceiveConfirmationActivated($repairRequest);
-            
-            return response()->json([
-                'success' => true,
-                'message' => 'Pickup confirmation activated. Customer can now confirm they received their item.',
-                'repair' => $repairRequest->fresh(['user', 'services', 'shopOwner'])
-            ]);
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            \Log::error('Activate pickup failed', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'repair_id' => $id
-            ]);
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to activate pickup: ' . $e->getMessage()
-            ], 500);
-        }
-    }
-
-    private function isRepairFullyPaidForRelease(RepairRequest $repairRequest): bool
-    {
-        $paymentStatus = strtolower((string) ($repairRequest->payment_status ?? ''));
-        $paymentPolicy = $repairRequest->payment_policy ?? 'deposit_50';
-
-        return $paymentStatus === 'completed'
-            || ($paymentPolicy !== 'deposit_50' && $paymentStatus === 'paid');
-    }
-
-    private function getReleasePaymentRequiredMessage(RepairRequest $repairRequest): string
-    {
-        return match ($repairRequest->payment_policy ?? 'deposit_50') {
-            'deposit_50' => 'Customer must pay the remaining 50% balance before receive confirmation can be activated.',
-            'full_upfront' => 'Customer payment must be completed before receive confirmation can be activated.',
-            default => 'Customer payment must be completed before receive confirmation can be activated.',
-        };
-    }
-
-    private function generateRepairInvoiceReference(): string
-    {
-        do {
-            $reference = 'RINV-' . now()->format('Ymd') . '-' . strtoupper(substr(uniqid('', true), -4));
-        } while (Invoice::where('reference', $reference)->exists());
-
-        return $reference;
-    }
-
-    private function autoGenerateInvoiceForPickedUpRepair(RepairRequest $repair): ?Invoice
-    {
-        if (!$repair->shop_owner_id) {
-            return null;
-        }
-
-        $repair->loadMissing(['services:id,name']);
-
-        $existingInvoice = Invoice::where('shop_id', $repair->shop_owner_id)
-            ->where('job_reference', (string) $repair->request_id)
-            ->first();
-
-        if ($existingInvoice) {
-            return $existingInvoice;
-        }
-
-        $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
-        $finalTotal = (float) ($pricingSnapshot['final_total'] ?? 0);
-
-        if ($finalTotal <= 0) {
-            return null;
-        }
-
-        $paymentStatus = strtolower((string) ($repair->payment_status ?? 'pending'));
-        $isSettled = in_array($paymentStatus, ['paid', 'completed'], true);
-
-        $invoice = Invoice::create([
-            'shop_id' => $repair->shop_owner_id,
-            'reference' => $this->generateRepairInvoiceReference(),
-            'customer_id' => $repair->user_id,
-            'customer_name' => $repair->customer_name,
-            'customer_email' => $repair->email,
-            'date' => now(),
-            'due_date' => $isSettled ? null : now()->addDays(7),
-            'total' => $finalTotal,
-            'tax_amount' => 0,
-            'status' => $isSettled ? 'paid' : 'sent',
-            'payment_date' => $isSettled ? ($repair->payment_completed_at ?? now()) : null,
-            'payment_method' => 'repair_service',
-            'job_reference' => (string) $repair->request_id,
-            'notes' => 'Auto-generated from Repair Request #' . $repair->request_id,
-            'meta' => [
-                'source' => 'repair_request',
-                'repair_request_id' => $repair->id,
-                'repair_request_number' => $repair->request_id,
-                'payment_status' => $repair->payment_status,
-                'generated_on_status' => 'picked_up',
-            ],
-        ]);
-
-        $serviceSummary = $repair->services->pluck('name')->filter()->values()->implode(', ');
-        $description = 'Repair Service #' . $repair->request_id;
-        if ($serviceSummary !== '') {
-            $description .= ' - ' . $serviceSummary;
-        }
-
-        InvoiceItem::create([
-            'invoice_id' => $invoice->id,
-            'description' => $description,
-            'quantity' => 1,
-            'unit_price' => $finalTotal,
-            'tax_rate' => 0,
-            'amount' => $finalTotal,
-            'account_id' => null,
-        ]);
-
-        activity()
-            ->performedOn($repair)
-            ->withProperties([
-                'invoice_id' => $invoice->id,
-                'invoice_reference' => $invoice->reference,
-                'repair_request_id' => $repair->id,
-                'repair_request_number' => $repair->request_id,
-                'total' => $finalTotal,
-            ])
-            ->log('Auto-generated invoice for picked-up repair request');
-
-        return $invoice;
-    }
-
-    private function calculateRepairPricingSnapshot(RepairRequest $repair): array
-    {
-        $repair->loadMissing([
-            'materialUsages.inventoryItem:id,price',
-            'services:id,price',
-            'repairPackage.services:id',
-        ]);
-
-        $materialsTotal = round((float) $repair->materialUsages->sum(function ($usage) {
-            $unitPrice = (float) ($usage->inventoryItem->price ?? 0);
-            return ((int) $usage->quantity_used) * $unitPrice;
-        }), 2);
-
-        $pricingBreakdown = is_array($repair->pricing_breakdown)
-            ? $repair->pricing_breakdown
-            : [];
-        $pricingMode = strtolower((string) ($pricingBreakdown['mode'] ?? ''));
-
-        $packagePrice = round((float) ($repair->package_price ?? ($pricingBreakdown['package_price'] ?? 0)), 2);
-        $addOnsTotal = round((float) ($repair->add_ons_total ?? ($pricingBreakdown['add_ons_total'] ?? 0)), 2);
-
-        if (!is_null($repair->repair_package_id) && $addOnsTotal <= 0) {
-            $snapshotAddOns = round((float) collect((array) ($repair->add_on_services_snapshot ?? []))
-                ->sum(fn ($row) => (float) data_get($row, 'price', 0)), 2);
-            if ($snapshotAddOns > 0) {
-                $addOnsTotal = $snapshotAddOns;
-            }
-        }
-
-        if (!is_null($repair->repair_package_id) && $addOnsTotal <= 0) {
-            $packageServiceIds = collect($repair->repairPackage?->services?->pluck('id')->all() ?? [])
-                ->map(fn ($id) => (int) $id)
-                ->filter(fn ($id) => $id > 0)
-                ->values();
-
-            if ($packageServiceIds->isNotEmpty()) {
-                $derivedAddOns = round((float) $repair->services
-                    ->filter(fn ($service) => !$packageServiceIds->contains((int) $service->id))
-                    ->sum(fn ($service) => (float) ($service->price ?? 0)), 2);
-
-                if ($derivedAddOns > 0) {
-                    $addOnsTotal = $derivedAddOns;
-                }
-            }
-        }
-
-        $baseFromStoredTotal = round((float) ($repair->total ?? 0), 2);
-        $baseFromBreakdown = round((float) ($pricingBreakdown['base_total'] ?? 0), 2);
-        $baseFromPackage = !is_null($repair->repair_package_id)
-            ? round($packagePrice + $addOnsTotal, 2)
-            : 0;
-
-        if (!is_null($repair->repair_package_id)) {
-            $baseTotal = $pricingMode === 'manual_pos'
-                ? round(max($baseFromStoredTotal, $baseFromBreakdown, $baseFromPackage), 2)
-                : ($baseFromPackage > 0
-                    ? $baseFromPackage
-                    : round(max($baseFromStoredTotal, $baseFromBreakdown), 2));
+        if ($shopOwner) {
+            abort_unless((int) $repair->shop_owner_id === (int) $shopOwner->id, 403);
         } else {
-            $baseTotal = $baseFromStoredTotal > 0
-                ? $baseFromStoredTotal
-                : $baseFromBreakdown;
+            abort_unless(
+                (int) $repair->shop_owner_id === (int) $user->shop_owner_id
+                && (int) $repair->assigned_repairer_id === (int) $user->id
+                && $this->userCanConfirmRepairIntake($user),
+                403,
+            );
         }
 
-        if ($baseTotal <= 0) {
-            $baseTotal = round((float) ($repair->final_total ?? 0), 2);
+        $method = match ((string) ($repair->return_delivery_method
+            ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup'))) {
+            'pickup' => 'customer_pickup',
+            default => (string) ($repair->return_delivery_method
+                ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup')),
+        };
+
+        // Company repair accounts use the assigned Repairer for direct customer
+        // or courier handover. Shop-rider delivery is released for Dispatcher
+        // processing instead of being activated through this route.
+        if ($user
+            && $repair->shopOwner?->isCompany()
+            && $method === 'shop_delivery') {
+            abort(404);
         }
 
-        // Material usage is operational tracking and should not auto-inflate
-        // the customer-facing billable amount for the repair.
-        $finalTotal = $baseTotal;
+        $result = $this->repairDeliveryService->activateReturnHandoff(
+            $repair,
+            $shopOwner ?: $user,
+            $this->paymentSettlementService,
+            $method,
+        );
+        $isAnonymousWalkIn = $method === 'walk_in'
+            && (int) ($result['repair']->user_id ?? 0) <= 0;
 
-        $pricingBreakdown['base_total'] = $baseTotal;
-        $pricingBreakdown['package_price'] = $packagePrice;
-        $pricingBreakdown['add_ons_total'] = $addOnsTotal;
-        $pricingBreakdown['materials_total'] = $materialsTotal;
-        $pricingBreakdown['final_total'] = $finalTotal;
-
-        return [
-            'base_total' => $baseTotal,
-            'package_price' => $packagePrice,
-            'add_ons_total' => $addOnsTotal,
-            'materials_total' => $materialsTotal,
-            'final_total' => $finalTotal,
-            'pricing_breakdown' => $pricingBreakdown,
-        ];
+        return response()->json([
+            'success' => true,
+            'message' => $result['replayed']
+                ? 'Return handover was already recorded.'
+                : ($isAnonymousWalkIn
+                    ? 'No-account customer handoff recorded. Repair is completed.'
+                    : ($method === 'walk_in'
+                        ? 'Customer handover recorded. Customer can now confirm receipt.'
+                        : 'Courier handover recorded. Customer can now confirm receipt.')),
+            'repair' => $result['repair'],
+        ]);
     }
 
     /**
      * Customer confirms repair (Phase 4)
      * Changes status from repairer_accepted to waiting_customer_confirmation
-     * Note: For high-value repairs, owner_approval_pending is set AFTER payment (not here)
-     * This allows payment to be enabled first before owner approval
+     * Payment remains governed by the existing repair payment flow; high-value
+     * classification is informational and does not create an Owner approval stage.
      */
     public function confirmRepair(Request $request, $id)
     {
@@ -2826,9 +2348,7 @@ class RepairWorkflowController extends Controller
                 ->where('status', 'repairer_accepted')
                 ->firstOrFail();
             
-            // Always transition to waiting_customer_confirmation on confirmation
-            // For high-value repairs, transition to owner_approval_pending AFTER payment is completed
-            // This ensures payment can be enabled and processed before owner approval
+            // Always transition to waiting_customer_confirmation on confirmation.
             $newStatus = 'waiting_customer_confirmation';
             
             $repairRequest->update([
@@ -3170,6 +2690,23 @@ class RepairWorkflowController extends Controller
 
             $effectiveReturnMethod = $repairRequest->return_delivery_method
                 ?? (($repairRequest->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_pickup');
+            if ($effectiveReturnMethod === 'pickup') {
+                $effectiveReturnMethod = 'customer_pickup';
+            }
+
+            if ($effectiveReturnMethod === 'shop_delivery') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Shop delivery is dispatched automatically after readiness, final payment, and exact return-plan confirmation.',
+                ], 422);
+            }
+
+            if ($effectiveReturnMethod === 'customer_pickup') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Third-party return tracking is entered by the customer. Use the return handoff action when the courier collects the item.',
+                ], 422);
+            }
 
             if ($effectiveReturnMethod === 'walk_in') {
                 return response()->json([
@@ -3207,10 +2744,11 @@ class RepairWorkflowController extends Controller
                 }
             }
 
-            if (!$this->isRepairFullyPaidForRelease($repairRequest)) {
+            $collectionSummary = $this->paymentSettlementService->repairCollectionSummary($repairRequest);
+            if (! $collectionSummary['fully_paid']) {
                 return response()->json([
                     'success' => false,
-                    'message' => $this->getReleasePaymentRequiredMessage($repairRequest),
+                    'message' => 'Final payment must be settled before the repair can be shipped.',
                 ], 422);
             }
 
@@ -3243,8 +2781,9 @@ class RepairWorkflowController extends Controller
     public function changeDeliveryMethod(Request $request, $id)
     {
         try {
-            $user      = Auth::guard('user')->user();
-            $shopOwner = Auth::guard('shop_owner')->user();
+            $shopOwnerContext = $this->isShopOwnerRouteContext($request);
+            $user = $shopOwnerContext ? null : Auth::guard('user')->user();
+            $shopOwner = $shopOwnerContext ? Auth::guard('shop_owner')->user() : null;
 
             if (!$user && !$shopOwner) {
                 return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
@@ -3267,6 +2806,13 @@ class RepairWorkflowController extends Controller
                 'in_progress', 'awaiting_parts', 'completed', 'ready_for_pickup',
                 'ready-for-pickup', 'picked_up', 'cancelled', 'rejected',
             ])->firstOrFail();
+            if ($repairRequest->intake_logistics_locked_at !== null) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'The paid intake delivery plan is locked and can no longer be changed.',
+                    'errors' => ['intake_delivery_method' => ['The intake delivery plan is locked.']],
+                ], 422);
+            }
 
             $updatePayload = [
                 'delivery_method' => $validated['delivery_method'],
@@ -4377,7 +3923,9 @@ class RepairWorkflowController extends Controller
                     $query->whereIn('status', $this->getActiveRepairStatuses());
                 }
             ])
-            ->having('active_repairs_count', '<', $workloadLimit);
+            ->whereHas('assignedRepairs', function ($query) {
+                $query->whereIn('status', $this->getActiveRepairStatuses());
+            }, '<', $workloadLimit);
 
         $workloadFallback = (clone $baseRepairerQuery)
             ->orderBy('active_repairs_count')
@@ -4406,7 +3954,9 @@ class RepairWorkflowController extends Controller
                     $query->whereIn('status', $this->getActiveRepairStatuses());
                 }
             ])
-            ->having('active_repairs_count', '<', $workloadLimit)
+            ->whereHas('assignedRepairs', function ($query) {
+                $query->whereIn('status', $this->getActiveRepairStatuses());
+            }, '<', $workloadLimit)
             ->orderBy('active_repairs_count')
             ->orderBy('id')
             ->first();

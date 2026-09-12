@@ -6,6 +6,7 @@ use App\Models\ShopOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\URL;
+use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 
@@ -22,7 +23,7 @@ class ShopOwnerPendingApprovalSignedLinkTest extends TestCase
         ]);
 
         $signedUrl = URL::temporarySignedRoute(
-            'shop-owner.pending-approval.link',
+            'shop-owner.pending-approval.public',
             now()->addMinutes(30),
             ['shopOwner' => $shopOwner->id]
         );
@@ -30,7 +31,7 @@ class ShopOwnerPendingApprovalSignedLinkTest extends TestCase
         $response = $this->get($signedUrl);
 
         $response->assertOk();
-        $response->assertSee('Auth/PendingApproval', false);
+        $response->assertInertia(fn (Assert $page) => $page->component('Auth/PendingApproval'));
     }
 
     #[Test]
@@ -42,7 +43,7 @@ class ShopOwnerPendingApprovalSignedLinkTest extends TestCase
         ]);
 
         $signedUrl = URL::temporarySignedRoute(
-            'shop-owner.pending-approval.link',
+            'shop-owner.pending-approval.public',
             now()->addMinutes(30),
             ['shopOwner' => $shopOwner->id]
         );
@@ -61,7 +62,7 @@ class ShopOwnerPendingApprovalSignedLinkTest extends TestCase
         ]);
 
         $signedUrl = URL::temporarySignedRoute(
-            'shop-owner.pending-approval.link',
+            'shop-owner.pending-approval.public',
             now()->addMinutes(30),
             ['shopOwner' => $shopOwner->id]
         );

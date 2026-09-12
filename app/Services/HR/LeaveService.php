@@ -3,8 +3,9 @@
 namespace App\Services\HR;
 
 use App\Models\Employee;
-use App\Models\LeaveRequest;
-use App\Models\LeaveBalance;
+use App\Models\HR\LeaveRequest;
+use App\Models\HR\LeaveBalance;
+use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -161,9 +162,9 @@ class LeaveService
      */
     public function getLeaveBalance(Employee $employee, string $leaveType): float
     {
-        $balance = LeaveBalance::where('employee_id', $employee->id)
-            ->where('leave_type', $leaveType)
-            ->where('year', now()->year)
+        $balance = LeaveBalance::forEmployee($employee->id)
+            ->forShopOwner($employee->shop_owner_id)
+            ->forYear(now()->year)
             ->first();
         
         if (!$balance) {
@@ -183,24 +184,11 @@ class LeaveService
      */
     public function initializeLeaveBalance(Employee $employee, string $leaveType): LeaveBalance
     {
-        $config = self::LEAVE_TYPES[$leaveType] ?? ['max_days' => 0];
-        $totalDays = $config['max_days'] ?? 0;
-        
-        // Prorate for new joiners
-        if ($employee->hire_date && Carbon::parse($employee->hire_date)->year == now()->year) {
-            $totalDays = $this->prorateLeaveBalance($totalDays, Carbon::parse($employee->hire_date));
-        }
-        
-        return LeaveBalance::create([
-            'employee_id' => $employee->id,
-            'leave_type' => $leaveType,
-            'year' => now()->year,
-            'total_days' => $totalDays,
-            'used_days' => 0,
-            'remaining_days' => $totalDays,
-            'carried_forward' => 0,
-            'shop_owner_id' => $employee->shop_owner_id
-        ]);
+        return LeaveBalance::createForNewEmployee(
+            $employee->id,
+            (int) $employee->shop_owner_id,
+            (int) now()->year,
+        );
     }
 
     /**
@@ -247,10 +235,9 @@ class LeaveService
                 'leave_type' => $data['leave_type'],
                 'start_date' => $startDate,
                 'end_date' => $endDate,
-                'days' => $validation['requested_days'],
+                'no_of_days' => $validation['requested_days'],
                 'reason' => $data['reason'] ?? '',
                 'status' => self::requiresApproval($data['leave_type']) ? 'pending' : 'approved',
-                'applied_date' => now(),
                 'shop_owner_id' => $employee->shop_owner_id
             ]);
             
@@ -294,54 +281,10 @@ class LeaveService
      */
     public function approveLeaveRequest(LeaveRequest $leaveRequest, int $approverId): bool
     {
-        DB::beginTransaction();
-        
-        try {
-            // Validate approver has permission
-            if (!$this->canApproveLeave($approverId, $leaveRequest)) {
-                throw new \Exception('You do not have permission to approve this leave request');
-            }
-            
-            // Check if already approved/rejected
-            if ($leaveRequest->status !== 'pending') {
-                throw new \Exception('Leave request has already been ' . $leaveRequest->status);
-            }
-            
-            // Update leave request
-            $leaveRequest->update([
-                'status' => 'approved',
-                'approved_by' => $approverId,
-                'approved_date' => now()
-            ]);
-            
-            // Deduct from leave balance
-            $this->deductLeaveBalance(
-                $leaveRequest->employee,
-                $leaveRequest->leave_type,
-                $leaveRequest->days
-            );
-            
-            DB::commit();
-            
-            Log::info('Leave request approved', [
-                'leave_request_id' => $leaveRequest->id,
-                'approved_by' => $approverId
-            ]);
-            
-            // TODO: Send notification to employee
-            
-            return true;
-            
-        } catch (\Exception $e) {
-            DB::rollBack();
-            
-            Log::error('Failed to approve leave request', [
-                'leave_request_id' => $leaveRequest->id,
-                'error' => $e->getMessage()
-            ]);
-            
-            throw $e;
-        }
+        $approver = User::query()->findOrFail($approverId);
+        app(LeaveApprovalService::class)->approveLeaveRequest($leaveRequest, $approver);
+
+        return true;
     }
 
     /**
@@ -355,41 +298,10 @@ class LeaveService
      */
     public function rejectLeaveRequest(LeaveRequest $leaveRequest, int $approverId, string $reason = ''): bool
     {
-        try {
-            // Validate approver has permission
-            if (!$this->canApproveLeave($approverId, $leaveRequest)) {
-                throw new \Exception('You do not have permission to reject this leave request');
-            }
-            
-            // Check if already approved/rejected
-            if ($leaveRequest->status !== 'pending') {
-                throw new \Exception('Leave request has already been ' . $leaveRequest->status);
-            }
-            
-            $leaveRequest->update([
-                'status' => 'rejected',
-                'rejected_by' => $approverId,
-                'rejected_date' => now(),
-                'rejection_reason' => $reason
-            ]);
-            
-            Log::info('Leave request rejected', [
-                'leave_request_id' => $leaveRequest->id,
-                'rejected_by' => $approverId
-            ]);
-            
-            // TODO: Send notification to employee
-            
-            return true;
-            
-        } catch (\Exception $e) {
-            Log::error('Failed to reject leave request', [
-                'leave_request_id' => $leaveRequest->id,
-                'error' => $e->getMessage()
-            ]);
-            
-            throw $e;
-        }
+        $approver = User::query()->findOrFail($approverId);
+        app(LeaveApprovalService::class)->rejectLeaveRequest($leaveRequest, $approver, $reason);
+
+        return true;
     }
 
     /**
@@ -402,20 +314,16 @@ class LeaveService
      */
     protected function deductLeaveBalance(Employee $employee, string $leaveType, float $days): bool
     {
-        $balance = LeaveBalance::where('employee_id', $employee->id)
-            ->where('leave_type', $leaveType)
-            ->where('year', now()->year)
+        $balance = LeaveBalance::forEmployee($employee->id)
+            ->forShopOwner($employee->shop_owner_id)
+            ->forYear(now()->year)
             ->first();
         
         if (!$balance) {
             $balance = $this->initializeLeaveBalance($employee, $leaveType);
         }
         
-        $balance->used_days += $days;
-        $balance->remaining_days -= $days;
-        $balance->save();
-        
-        return true;
+        return $balance->deductForType($leaveType, $days);
     }
 
     /**
@@ -504,7 +412,7 @@ class LeaveService
             'balances' => $summary,
             'pending_requests' => $pendingRequests,
             'approved_requests_count' => $approvedRequests->count(),
-            'total_days_taken' => $approvedRequests->sum('days')
+            'total_days_taken' => $approvedRequests->sum('no_of_days')
         ];
     }
 }

@@ -35,10 +35,15 @@ class RepairServiceController extends Controller
     public function index(Request $request)
     {
         $query = RepairService::query();
+        $actingShopOwnerId = $this->resolveActingShopOwnerId();
 
         // Public/customer browsing path: explicit shop filter from query string.
         // This is used by the repair booking flow (/repair-process?shop=...).
-        if ($request->filled('shop_id')) {
+        if ($actingShopOwnerId !== null) {
+            // An authenticated backoffice actor always stays inside the server-resolved tenant.
+            // Never let a client-supplied shop_id change the owner scope.
+            $query->where('shop_owner_id', $actingShopOwnerId);
+        } elseif ($request->filled('shop_id')) {
             $query->where('shop_owner_id', (int) $request->shop_id)
                 ->whereIn('status', ['Active', 'active']);
         } else {
@@ -244,7 +249,14 @@ class RepairServiceController extends Controller
      */
     public function show($id)
     {
-        $service = RepairService::find($id);
+        $serviceQuery = RepairService::query();
+        $actingShopOwnerId = $this->resolveActingShopOwnerId();
+
+        if ($actingShopOwnerId !== null) {
+            $serviceQuery->where('shop_owner_id', $actingShopOwnerId);
+        }
+
+        $service = $serviceQuery->find($id);
 
         if (!$service) {
             return response()->json([
@@ -265,7 +277,17 @@ class RepairServiceController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $service = RepairService::find($id);
+        $actingShopOwnerId = $this->resolveActingShopOwnerId();
+        if ($actingShopOwnerId === null) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A shop owner context is required to update a repair service.',
+            ], 403);
+        }
+
+        $service = RepairService::query()
+            ->where('shop_owner_id', $actingShopOwnerId)
+            ->find($id);
 
         if (!$service) {
             return response()->json([
@@ -305,65 +327,9 @@ class RepairServiceController extends Controller
         // Determine baseline current price for workflow.
         // If a record is already in review and old_price exists, old_price is the authoritative current price.
         $baselineCurrentPrice = $this->resolveBaselineCurrentPrice($service);
-        $isIndividualShop = $this->isIndividualRegistrationShop((int) $service->shop_owner_id);
 
         // Check if price is being changed against baseline current price
         $isPriceChange = $request->filled('price') && (float)$request->price !== $baselineCurrentPrice;
-
-        if ($isPriceChange && $isIndividualShop) {
-            $updateData = $request->only(['name', 'category', 'price', 'duration', 'description']);
-
-            if ($request->filled('status')) {
-                $updateData['status'] = $normalizedInputStatus ?? $request->status;
-            } elseif (in_array($service->status, ['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval', 'Rejected'], true)) {
-                $updateData['status'] = 'Active';
-            }
-
-            if ($request->filled('reason')) {
-                $updateData['change_reason'] = $request->reason;
-            }
-
-            $updateData['updated_by'] = $this->resolveUpdaterUserId();
-
-            // Individual shops do not need price-approval workflow metadata.
-            $updateData['old_price'] = null;
-            $updateData['finance_notes'] = null;
-            $updateData['finance_reviewed_by'] = null;
-            $updateData['finance_reviewed_at'] = null;
-            $updateData['owner_reviewed_by'] = null;
-            $updateData['owner_reviewed_at'] = null;
-            $updateData['rejection_reason'] = null;
-
-            $service->update($updateData);
-
-            if ($request->has('material_templates')) {
-                try {
-                    $this->syncMaterialTemplates($service, (array) $request->input('material_templates', []));
-                } catch (ValidationException $e) {
-                    return response()->json([
-                        'success' => false,
-                        'errors' => $e->errors(),
-                    ], 422);
-                }
-            }
-
-            activity()
-                ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
-                ->performedOn($service)
-                ->withProperties([
-                    'service_name' => $service->name,
-                    'old_price' => $baselineCurrentPrice,
-                    'new_price' => (float) $service->price,
-                    'updated_fields' => array_keys($updateData),
-                ])
-                ->log('Repair service price updated immediately for individual shop owner');
-
-            return response()->json([
-                'success' => true,
-                'message' => 'Service updated successfully',
-                'data' => $service,
-            ]);
-        }
 
         if ($isPriceChange) {
             $proposedPrice = (float) $request->price;
@@ -390,6 +356,8 @@ class RepairServiceController extends Controller
                 'owner_reviewed_by' => null,
                 'owner_reviewed_at' => null,
                 'rejection_reason' => null,
+                'approval_workflow_version' => $requiresOwnerApproval ? 'repair_finance_owner_finance' : 'repair_finance_only',
+                'current_approval_level' => 1,
             ]);
             
             // Store the proposed price in finance_notes as temporary storage for approval workflow
@@ -421,6 +389,18 @@ class RepairServiceController extends Controller
                     'requested_by' => Auth::guard('user')->user()?->name ?? Auth::guard('shop_owner')->user()->name,
                 ])
                 ->log('Repair service price change requested - Awaiting Finance approval');
+
+            $this->notificationService->notifyRepairPriceChangeSubmittedToFinance(
+                (int) $service->shop_owner_id,
+                [
+                    'service_name' => $service->name,
+                    'old_price' => (float) $baselineCurrentPrice,
+                    'proposed_price' => $proposedPrice,
+                    'service_id' => $service->id,
+                    'approval_stage' => 'finance_initial',
+                    'requires_owner_approval' => $requiresOwnerApproval,
+                ],
+            );
 
             return response()->json([
                 'success' => true,
@@ -603,7 +583,7 @@ class RepairServiceController extends Controller
             $proposedPrice = ($service->status === 'Under Review' || $service->status === 'Pending Owner Approval' || $service->status === 'Pending Finance Final Approval' || ($service->status === 'Rejected' && $service->finance_reviewed_at))
                 ? $this->resolveProposedPrice($service)
                 : (float)$service->price;
-            $requiresOwnerApproval = $this->requiresOwnerApprovalForService($service, is_numeric($proposedPrice) ? (float) $proposedPrice : null);
+            $requiresOwnerApproval = $this->requiresOwnerApprovalForService($service);
 
             return [
                 'id' => $service->id,
@@ -737,9 +717,12 @@ class RepairServiceController extends Controller
     public function financeApprove(Request $request, $id)
     {
         $requestType = strtolower((string) $request->input('request_type', ''));
+        $financeShopOwnerId = (int) (Auth::guard('user')->user()?->shop_owner_id ?? 0);
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -751,9 +734,13 @@ class RepairServiceController extends Controller
         }
 
         // Try to find as a service first, then fallback to package for backward compatibility.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', $financeShopOwnerId)
+            ->find($id);
         if (!$service) {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -784,7 +771,7 @@ class RepairServiceController extends Controller
             ], 422);
         }
 
-        $requiresOwnerApproval = $this->requiresOwnerApprovalForService($service, (float) $proposedPrice);
+        $requiresOwnerApproval = $this->requiresOwnerApprovalForService($service);
 
         if ($requiresOwnerApproval) {
             $service->update([
@@ -921,9 +908,12 @@ class RepairServiceController extends Controller
     public function financeReject(Request $request, $id)
     {
         $requestType = strtolower((string) $request->input('request_type', ''));
+        $financeShopOwnerId = (int) (Auth::guard('user')->user()?->shop_owner_id ?? 0);
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -935,9 +925,13 @@ class RepairServiceController extends Controller
         }
 
         // Try to find as a service first, then fallback to package for backward compatibility.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', $financeShopOwnerId)
+            ->find($id);
         if (!$service) {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1131,6 +1125,48 @@ class RepairServiceController extends Controller
         ]);
     }
 
+    public function ownerShow(int $id)
+    {
+        $shopOwnerId = Auth::guard('shop_owner')->id();
+        if (!$shopOwnerId) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $service = RepairService::query()
+            ->where('shop_owner_id', (int) $shopOwnerId)
+            ->whereKey($id)
+            ->with(['creator', 'updater', 'financeReviewer', 'ownerReviewer'])
+            ->first();
+
+        if (!$service) {
+            return response()->json(['message' => 'Repair service price change not found'], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $service->id,
+                'name' => $service->name,
+                'category' => $service->category,
+                'old_price' => (float) ($service->old_price ?? $service->price),
+                'price' => (float) ($this->resolveProposedPrice($service) ?? $service->price),
+                'change_reason' => $this->resolveChangeReason($service),
+                'status' => $service->status,
+                'approval_workflow_version' => $service->approval_workflow_version,
+                'created_at' => $service->created_at,
+                'updated_at' => $service->updated_at,
+                'creator' => $service->creator,
+                'updater' => $service->updater,
+                'financeReviewer' => $service->financeReviewer,
+                'ownerReviewer' => $service->ownerReviewer,
+                'finance_notes' => $service->finance_notes,
+                'finance_reviewed_at' => $service->finance_reviewed_at,
+                'owner_reviewed_at' => $service->owner_reviewed_at,
+                'rejection_reason' => $service->rejection_reason,
+            ],
+        ]);
+    }
+
     /**
      * Get all services for owner review (pending + approved + rejected)
      */
@@ -1255,7 +1291,9 @@ class RepairServiceController extends Controller
         $requestType = strtolower((string) $request->input('request_type', ''));
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1267,13 +1305,22 @@ class RepairServiceController extends Controller
         }
 
         if ($requestType === 'service') {
-            $service = RepairService::find($id);
+            $service = RepairService::query()
+                ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+                ->find($id);
 
             if (!$service) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Service not found',
                 ], 404);
+            }
+
+            if (!$this->requiresOwnerApprovalForService($service)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Owner approval is not required for this request.',
+                ], 400);
             }
 
             $proposedPrice = $service->finance_notes;
@@ -1297,6 +1344,17 @@ class RepairServiceController extends Controller
                 ])
                 ->log('Repair service price change approved by Shop Owner - Forwarded to Finance for final approval');
 
+            $this->notificationService->notifyRepairPriceChangeFinalApprovalToFinance(
+                (int) $service->shop_owner_id,
+                [
+                    'service_name' => $service->name,
+                    'old_price' => (float) $service->old_price,
+                    'proposed_price' => (float) $proposedPrice,
+                    'service_id' => $service->id,
+                    'approval_stage' => 'finance_final',
+                ],
+            );
+
             return response()->json([
                 'success' => true,
                 'message' => 'Service approved by Shop Owner. Forwarding to Finance for final approval.',
@@ -1306,8 +1364,17 @@ class RepairServiceController extends Controller
 
         // Backward-compatible fallback when request_type is missing:
         // prefer service first to avoid ID collisions with packages.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+            ->find($id);
         if ($service) {
+            if (!$this->requiresOwnerApprovalForService($service)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Owner approval is not required for this request.',
+                ], 400);
+            }
+
             $proposedPrice = $service->finance_notes;
 
             $service->update([
@@ -1329,6 +1396,17 @@ class RepairServiceController extends Controller
                 ])
                 ->log('Repair service price change approved by Shop Owner - Forwarded to Finance for final approval');
 
+            $this->notificationService->notifyRepairPriceChangeFinalApprovalToFinance(
+                (int) $service->shop_owner_id,
+                [
+                    'service_name' => $service->name,
+                    'old_price' => (float) $service->old_price,
+                    'proposed_price' => (float) $proposedPrice,
+                    'service_id' => $service->id,
+                    'approval_stage' => 'finance_final',
+                ],
+            );
+
             return response()->json([
                 'success' => true,
                 'message' => 'Service approved by Shop Owner. Forwarding to Finance for final approval.',
@@ -1336,7 +1414,9 @@ class RepairServiceController extends Controller
             ]);
         }
 
-        $package = RepairPackage::find($id);
+        $package = RepairPackage::query()
+            ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+            ->find($id);
         if ($package) {
             return $this->ownerApprovePackage($package);
         }
@@ -1353,9 +1433,12 @@ class RepairServiceController extends Controller
     public function financeApproveFinal(Request $request, $id)
     {
         $requestType = strtolower((string) $request->input('request_type', ''));
+        $financeShopOwnerId = (int) (Auth::guard('user')->user()?->shop_owner_id ?? 0);
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1367,9 +1450,13 @@ class RepairServiceController extends Controller
         }
 
         // Try to find as a service first, then fallback to package for backward compatibility.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', $financeShopOwnerId)
+            ->find($id);
         if (!$service) {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', $financeShopOwnerId)
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1389,6 +1476,17 @@ class RepairServiceController extends Controller
                 'success' => false,
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        $expectedStatus = $this->requiresOwnerApprovalForService($service)
+            ? 'Pending Finance Final Approval'
+            : 'Under Review';
+
+        if ($service->status !== $expectedStatus) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Service price change is not awaiting final Finance approval.',
+            ], 409);
         }
 
         // Apply the proposed price from finance_notes
@@ -1453,6 +1551,17 @@ class RepairServiceController extends Controller
                 'success' => false,
                 'errors' => $validator->errors(),
             ], 422);
+        }
+
+        $expectedStatus = $this->requiresOwnerApprovalForPackage($package)
+            ? 'owner_approved'
+            : 'pending_finance';
+
+        if ($package->approval_status !== $expectedStatus) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Package price change is not awaiting final Finance approval.',
+            ], 409);
         }
 
         $package->update([
@@ -1552,15 +1661,6 @@ class RepairServiceController extends Controller
         return null;
     }
 
-    private function isIndividualRegistrationShop(int $shopOwnerId): bool
-    {
-        $shopOwner = ShopOwner::query()
-            ->select('id', 'registration_type')
-            ->find($shopOwnerId);
-
-        return (bool) ($shopOwner && $shopOwner->isIndividual());
-    }
-
     private function resolveUpdaterUserId(): ?int
     {
         // repair_services.updated_by is a foreign key to users.id
@@ -1644,28 +1744,14 @@ class RepairServiceController extends Controller
         return (string) ($service->description ?? 'Price update request');
     }
 
-    private function requiresOwnerApprovalForService(RepairService $service, ?float $proposedPrice = null): bool
+    private function requiresOwnerApprovalForService(RepairService $service): bool
     {
-        $currentPrice = (float) ($service->old_price ?? $service->price);
-        $targetPrice = $proposedPrice ?? $this->resolveProposedPrice($service) ?? (float) $service->price;
-
-        return $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
-            (int) $service->shop_owner_id,
-            $currentPrice,
-            (float) $targetPrice
-        );
+        return $service->approval_workflow_version !== 'repair_finance_only';
     }
 
     private function requiresOwnerApprovalForPackage(RepairPackage $package): bool
     {
-        $currentPrice = (float) ($package->old_package_price ?? $package->package_price);
-        $proposedPrice = (float) $package->package_price;
-
-        return $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
-            (int) $package->shop_owner_id,
-            $currentPrice,
-            $proposedPrice
-        );
+        return $package->approval_workflow_version !== 'repair_finance_only';
     }
 
     /**
@@ -1676,7 +1762,9 @@ class RepairServiceController extends Controller
         $requestType = strtolower((string) $request->input('request_type', ''));
 
         if ($requestType === 'package') {
-            $package = RepairPackage::find($id);
+            $package = RepairPackage::query()
+                ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+                ->find($id);
             if (!$package) {
                 return response()->json([
                     'success' => false,
@@ -1688,13 +1776,22 @@ class RepairServiceController extends Controller
         }
 
         if ($requestType === 'service') {
-            $service = RepairService::find($id);
+            $service = RepairService::query()
+                ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+                ->find($id);
 
             if (!$service) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Service not found',
                 ], 404);
+            }
+
+            if (!$this->requiresOwnerApprovalForService($service)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Owner approval is not required for this request.',
+                ], 400);
             }
 
             $validator = Validator::make($request->all(), [
@@ -1755,8 +1852,17 @@ class RepairServiceController extends Controller
 
         // Backward-compatible fallback when request_type is missing:
         // prefer service first to avoid ID collisions with packages.
-        $service = RepairService::find($id);
+        $service = RepairService::query()
+            ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+            ->find($id);
         if ($service) {
+            if (!$this->requiresOwnerApprovalForService($service)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Owner approval is not required for this request.',
+                ], 400);
+            }
+
             $validator = Validator::make($request->all(), [
                 'reason' => 'required|string',
             ]);
@@ -1813,7 +1919,9 @@ class RepairServiceController extends Controller
             ]);
         }
 
-        $package = RepairPackage::find($id);
+        $package = RepairPackage::query()
+            ->where('shop_owner_id', Auth::guard('shop_owner')->id())
+            ->find($id);
         if ($package) {
             return $this->ownerRejectPackage($request, $package);
         }
@@ -1826,6 +1934,13 @@ class RepairServiceController extends Controller
 
     private function ownerApprovePackage(RepairPackage $package)
     {
+        if (!$this->requiresOwnerApprovalForPackage($package)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Owner approval is not required for this request.',
+            ], 400);
+        }
+
         if (!in_array($package->approval_status, ['finance_approved', 'pending_owner'], true)) {
             return response()->json([
                 'success' => false,
@@ -1851,6 +1966,17 @@ class RepairServiceController extends Controller
             ])
             ->log('Repair package price change approved by Shop Owner - Forwarded to Finance for final approval');
 
+        $this->notificationService->notifyRepairPriceChangeFinalApprovalToFinance(
+            (int) $package->shop_owner_id,
+            [
+                'service_name' => $package->name . ' (Package)',
+                'old_price' => (float) $package->old_package_price,
+                'proposed_price' => (float) $package->package_price,
+                'package_id' => $package->id,
+                'approval_stage' => 'finance_final',
+            ],
+        );
+
         return response()->json([
             'success' => true,
             'message' => 'Package approved by Shop Owner. Forwarding to Finance for final approval.',
@@ -1860,6 +1986,13 @@ class RepairServiceController extends Controller
 
     private function ownerRejectPackage(Request $request, RepairPackage $package)
     {
+        if (!$this->requiresOwnerApprovalForPackage($package)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Owner approval is not required for this request.',
+            ], 400);
+        }
+
         $validator = Validator::make($request->all(), [
             'reason' => 'required|string',
         ]);

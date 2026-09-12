@@ -19,6 +19,15 @@ export default defineConfig({
         host: '127.0.0.1',
         port: 5173,
         strictPort: false,
+        watch: {
+            ignored: [
+                '**/node_modules/**',
+                '**/.git/**',
+                '**/storage/**',
+                '**/bootstrap/cache/**',
+                '**/public/build/**',
+            ],
+        },
         cors: true,
         // proxy API and sanctum cookie requests to the backend so the browser stays same-origin
         proxy: {
