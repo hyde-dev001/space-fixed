@@ -21,6 +21,7 @@ import {
 } from './registrationDocumentScreening';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithFallback } from '@/utils/geolocation';
 import { getFreshCsrfToken } from '@/utils/csrf';
+import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '@/utils/carto';
 import { matchRegistrationName } from './registrationNameMatch';
 
 type FormErrors = Record<string, string>;
@@ -626,8 +627,8 @@ export default function Register() {
         ? [addressLocation.latitude, addressLocation.longitude]
         : PHILIPPINES_CENTER;
       const map = L.map(mapRef.current).setView(initial, addressLocation ? 16 : 5);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
+      L.tileLayer(getCartoRasterUrl(), {
+        attribution: CARTO_ATTRIBUTION,
       }).addTo(map);
       const marker = L.marker(initial, { draggable: true }).addTo(map);
 

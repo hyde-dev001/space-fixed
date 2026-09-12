@@ -16,6 +16,7 @@ import {
   type RegistrationDocumentMetadata,
 } from './registrationDocumentPayload';
 import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
+import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '@/utils/carto';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
 import { getRegistrationAddressFields } from './registrationAddress';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
@@ -523,8 +524,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       const initLng = parseFloat(geoLng) || parseFloat(CAVITE_CENTER.lng);
 
       const map = L.map(mapRef.current).setView([initLat, initLng], 16);
-      L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
+      L.tileLayer(getCartoRasterUrl(), {
+        attribution: CARTO_ATTRIBUTION,
       }).addTo(map);
 
       const marker = L.marker([initLat, initLng], { draggable: true }).addTo(map);

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '@/utils/carto';
 import LiveTrackingMap from '../LiveTrackingMap';
 
 const leaflet = vi.hoisted(() => {
@@ -112,8 +113,8 @@ describe('LiveTrackingMap', () => {
     expect(screen.getByLabelText('Live rider map')).toHaveClass('h-[30rem]', 'sm:h-[38rem]', 'lg:h-[44rem]', 'bg-white', '[&_.leaflet-tile]:!mix-blend-normal');
     await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
     expect(leaflet.tileLayer).toHaveBeenCalledWith(
-      'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-      expect.objectContaining({ attribution: expect.stringContaining('CARTO') }),
+      getCartoRasterUrl('voyager', true),
+      { attribution: CARTO_ATTRIBUTION },
     );
     expect(resizeObserver.observe).toHaveBeenCalled();
     expect(resizeCallback).toBeTypeOf('function');
