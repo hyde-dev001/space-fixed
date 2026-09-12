@@ -4,7 +4,13 @@ import { beforeEach, expect, it, vi } from 'vitest';
 import Swal from 'sweetalert2';
 import Shipments from '../Shipments';
 
-const mocks = vi.hoisted(() => ({ post: vi.fn(() => Promise.resolve()), get: vi.fn(), reload: vi.fn(), props: {} as any }));
+const mocks = vi.hoisted(() => ({
+  post: vi.fn(() => Promise.resolve()),
+  get: vi.fn(),
+  reload: vi.fn(),
+  props: {} as any,
+  dispatcherLocations: [] as Array<{ shipment_id: number | null }>,
+}));
 
 const defaultProps = () => ({
   shipments: { data: [{ id: 1, purpose: 'retail_delivery', delivery_type: 'retail_delivery', delivery_label: 'Retail Delivery', status: 'active', source_type: 'order', source_id: 10, order_summary: {
@@ -38,10 +44,40 @@ vi.mock('@inertiajs/react', () => ({
 vi.mock('axios', () => ({ default: { post: mocks.post } }));
 vi.mock('sweetalert2', () => ({ default: { fire: vi.fn(() => Promise.resolve({ isConfirmed: true })) } }));
 vi.mock('@/layout/AppLayout_ERP', () => ({ default: ({ children }: React.PropsWithChildren) => <>{children}</> }));
+vi.mock('@/components/logistics/DispatcherLiveTracking', () => ({
+  default: ({
+    onLocationsChange,
+  }: {
+    onLocationsChange?: (locations: Array<{ shipment_id: number | null }>) => void;
+  }) => {
+    React.useEffect(() => {
+      onLocationsChange?.(mocks.dispatcherLocations);
+    }, [onLocationsChange]);
+
+    return null;
+  },
+}));
+vi.mock('@/components/logistics/ShipmentTrackingModal', () => ({
+  default: ({
+    shipmentId,
+    isOpen,
+    onClose,
+  }: {
+    shipmentId: number | null;
+    isOpen: boolean;
+    onClose: () => void;
+  }) => isOpen ? (
+    <div role="dialog" aria-label="Shipment tracking">
+      <p>Tracking shipment {shipmentId}</p>
+      <button type="button" onClick={onClose}>Close shipment tracking</button>
+    </div>
+  ) : null,
+}));
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.props = defaultProps();
+  mocks.dispatcherLocations = [];
   mocks.post.mockResolvedValue(undefined);
   mocks.reload.mockImplementation((options) => options?.onFinish?.());
 });
@@ -66,6 +102,44 @@ it('renders responsive shipment cards without a wide table', () => {
   expect(screen.getByText('Retail Delivery')).toBeInTheDocument();
   expect(screen.queryByRole('table')).not.toBeInTheDocument();
   expect(screen.getByText('Dasmariñas, Cavite')).toBeInTheDocument();
+});
+
+it('shows live tracking only for the shipment in the live-location response', async () => {
+  const second = structuredClone(mocks.props.shipments.data[0]);
+  second.id = 2;
+  mocks.props.shipments.data.push(second);
+  mocks.props.riderMode = false;
+  mocks.props.liveTrackingEnabled = true;
+  mocks.props.canViewShipments = true;
+  mocks.dispatcherLocations = [{ shipment_id: 1 }];
+
+  render(<Shipments />);
+
+  expect(await screen.findByRole('button', { name: 'Open live tracking for Shipment 1' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Open live tracking for Shipment 2' })).not.toBeInTheDocument();
+});
+
+it('hides live tracking when no returned location matches the shipment', async () => {
+  mocks.props.riderMode = false;
+  mocks.props.liveTrackingEnabled = true;
+  mocks.props.canViewShipments = true;
+  mocks.dispatcherLocations = [{ shipment_id: 999 }];
+
+  render(<Shipments />);
+
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Open live tracking for Shipment 1' })).not.toBeInTheDocument());
+});
+
+it('opens the existing tracking modal for the clicked shipment', async () => {
+  mocks.props.riderMode = false;
+  mocks.props.liveTrackingEnabled = true;
+  mocks.props.canViewShipments = true;
+  mocks.dispatcherLocations = [{ shipment_id: 1 }];
+
+  render(<Shipments />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Open live tracking for Shipment 1' }));
+
+  expect(screen.getByRole('dialog', { name: 'Shipment tracking' })).toHaveTextContent('Tracking shipment 1');
 });
 
 it('opens shipment details in an accessible modal and restores trigger focus', () => {

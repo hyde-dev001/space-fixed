@@ -1,12 +1,14 @@
 import MonochromeSelect from "@/components/form/Select";
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
-import { CalendarDays, ExternalLink, MapPin, Search, UserRound, X } from 'lucide-react';
+import { Bike, CalendarDays, ExternalLink, MapPin, Search, UserRound, X } from 'lucide-react';
 import Swal from 'sweetalert2';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { Modal } from '@/components/ui/modal';
 import DispatcherLiveTracking from '@/components/logistics/DispatcherLiveTracking';
+import ShipmentTrackingModal from '@/components/logistics/ShipmentTrackingModal';
+import type { LiveRiderLocation } from '@/components/logistics/LiveTrackingMap';
 import ArrivalSummary from './components/ArrivalSummary';
 import RetailOrderSummary from './components/RetailOrderSummary';
 import DeliveryDatePicker from './components/DeliveryDatePicker';
@@ -151,8 +153,11 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const canResolveDisputes = !ownerMode && serverCanResolveDisputes === true;
   const canReportIssue = !ownerMode && serverCanReportIssue === true;
   const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
+  const [selectedTrackingShipmentId, setSelectedTrackingShipmentId] = useState<number | null>(null);
+  const [liveLocations, setLiveLocations] = useState<LiveRiderLocation[]>([]);
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
+  const trackingTriggerRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const proofTriggerRef = useRef<HTMLButtonElement | null>(null);
   const proofCloseButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -170,6 +175,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<number, 'proof' | 'issue'>>({});
   const [search, setSearch] = useState(filters.search ?? '');
 
+  const handleLiveLocationsChange = useCallback((locations: LiveRiderLocation[]) => {
+    setLiveLocations(locations);
+  }, []);
+
   const openShipment = (shipmentId: number, trigger: HTMLButtonElement) => {
     returnFocusRef.current = trigger;
     setSelectedProofUrl(null);
@@ -181,6 +190,15 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     setSelectedProofUrl(null);
     setSelectedShipmentId(null);
     trigger?.focus();
+  };
+
+  const openLiveTracking = (shipmentId: number, trigger: HTMLButtonElement) => {
+    trackingTriggerRef.current = trigger;
+    setSelectedTrackingShipmentId(shipmentId);
+  };
+
+  const closeLiveTracking = () => {
+    setSelectedTrackingShipmentId(null);
   };
 
   const openProof = (url: string, trigger: HTMLButtonElement) => {
@@ -532,7 +550,11 @@ export default function Shipments({ children }: React.PropsWithChildren) {
         {children}
 
         {!riderMode && canViewShipments && liveTrackingEnabled && (
-          <DispatcherLiveTracking enabled pollIntervalSeconds={liveTrackingIntervalSeconds} />
+          <DispatcherLiveTracking
+            enabled
+            pollIntervalSeconds={liveTrackingIntervalSeconds}
+            onLocationsChange={handleLiveLocationsChange}
+          />
         )}
 
         <div className="flex min-w-0 flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -631,6 +653,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
               && !['delivered', 'cancelled', 'proof_correction_required'].includes(leg.status));
             const selected = selectedShipmentId === shipment.id;
             const shipmentNumber = shipment.shipment_number ?? shipment.id;
+            const hasLiveTracking = !riderMode
+              && canViewShipments
+              && liveTrackingEnabled
+              && liveLocations.some((location) => location.shipment_id === shipment.id);
 
             return <article key={shipment.id} className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <div className="grid min-w-0 gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] xl:items-center xl:p-4">
@@ -679,16 +705,30 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     {proofCorrectionRequired && <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">Proof correction required</span>}
                   </div>
                 </div>
-                <button
-                  type="button"
-                  aria-label={shipments.data.length > 1 ? `Open delivery for Shipment ${shipmentNumber}` : undefined}
-                  aria-haspopup="dialog"
-                  onClick={(event) => openShipment(shipment.id, event.currentTarget)}
-                  className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700 dark:focus-visible:ring-gray-300 xl:w-auto xl:shrink-0 xl:rounded-lg"
-                >
-                  Open delivery
-                  <ExternalLink aria-hidden="true" size={16} />
-                </button>
+                <div className="flex w-full items-center justify-end gap-2 xl:w-auto">
+                  {hasLiveTracking && (
+                    <button
+                      type="button"
+                      aria-label={`Open live tracking for Shipment ${shipmentNumber}`}
+                      title="Open live tracking"
+                      aria-haspopup="dialog"
+                      onClick={(event) => openLiveTracking(shipment.id, event.currentTarget)}
+                      className="inline-flex min-h-11 min-w-11 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-gray-300 bg-gray-50 p-2 text-gray-800 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700 dark:focus-visible:ring-gray-300 xl:rounded-lg"
+                    >
+                      <Bike aria-hidden="true" size={18} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={shipments.data.length > 1 ? `Open delivery for Shipment ${shipmentNumber}` : undefined}
+                    aria-haspopup="dialog"
+                    onClick={(event) => openShipment(shipment.id, event.currentTarget)}
+                    className="inline-flex min-h-11 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700 dark:focus-visible:ring-gray-300 xl:w-auto xl:flex-none xl:shrink-0 xl:rounded-lg"
+                  >
+                    Open delivery
+                    <ExternalLink aria-hidden="true" size={16} />
+                  </button>
+                </div>
               </div>
               <Modal
                 isOpen={selected}
@@ -1138,6 +1178,13 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             </article>;
           })}
         </div>
+
+        <ShipmentTrackingModal
+          shipmentId={selectedTrackingShipmentId}
+          isOpen={selectedTrackingShipmentId !== null}
+          onClose={closeLiveTracking}
+          returnFocusRef={trackingTriggerRef}
+        />
 
         {shipments.total > 0 && (
             <div className="flex flex-col gap-3 rounded-xl border border-gray-200 bg-white px-4 py-4 dark:border-gray-700 dark:bg-gray-800 sm:flex-row sm:items-center sm:justify-between sm:px-6 xl:flex-row xl:items-center xl:justify-between xl:gap-0">

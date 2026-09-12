@@ -5,6 +5,7 @@ import DispatcherLiveTracking from '../DispatcherLiveTracking';
 
 const mocks = vi.hoisted(() => ({
   liveLocations: vi.fn(),
+  onLocationsChange: vi.fn(),
 }));
 
 vi.mock('@/services/logisticsApi', () => ({
@@ -52,9 +53,14 @@ it('loads scoped rider locations and shows stale status', async () => {
     },
   });
 
-  render(<DispatcherLiveTracking enabled />);
+  render(<DispatcherLiveTracking enabled onLocationsChange={mocks.onLocationsChange} />);
 
   await waitFor(() => expect(mocks.liveLocations).toHaveBeenCalledTimes(1));
+  expect(mocks.onLocationsChange).toHaveBeenCalledWith(
+    expect.arrayContaining([
+      expect.objectContaining({ shipment_id: 7 }),
+    ]),
+  );
   expect(await screen.findByText('Rider Three')).toBeInTheDocument();
   expect(screen.getByText('Repair Pickup')).toBeInTheDocument();
   expect(screen.getByText('Stale location')).toBeInTheDocument();
@@ -62,8 +68,11 @@ it('loads scoped rider locations and shows stale status', async () => {
 });
 
 it('does not poll while the feature is disabled', () => {
-  render(<DispatcherLiveTracking enabled={false} />);
+  const onLocationsChange = vi.fn();
+
+  render(<DispatcherLiveTracking enabled={false} onLocationsChange={onLocationsChange} />);
 
   expect(mocks.liveLocations).not.toHaveBeenCalled();
+  expect(onLocationsChange).not.toHaveBeenCalled();
   expect(screen.queryByText('Live rider tracking')).not.toBeInTheDocument();
 });

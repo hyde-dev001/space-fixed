@@ -6,6 +6,7 @@ import LiveTrackingMap, { type LiveRiderLocation } from './LiveTrackingMap';
 type Props = {
   enabled: boolean;
   pollIntervalSeconds?: number;
+  onLocationsChange?: (locations: LiveRiderLocation[]) => void;
 };
 
 const formatTime = (value: string | null) => value
@@ -20,7 +21,11 @@ const formatDistance = (meters: number) => meters >= 1000
   ? `${(meters / 1000).toFixed(1)} km`
   : `${Math.round(meters)} m`;
 
-export default function DispatcherLiveTracking({ enabled, pollIntervalSeconds = 5 }: Props) {
+export default function DispatcherLiveTracking({
+  enabled,
+  pollIntervalSeconds = 5,
+  onLocationsChange,
+}: Props) {
   const [locations, setLocations] = useState<LiveRiderLocation[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +42,9 @@ export default function DispatcherLiveTracking({ enabled, pollIntervalSeconds = 
       try {
         const response = await logisticsApi.liveLocations();
         if (disposed) return;
-        setLocations(Array.isArray(response.data.locations) ? response.data.locations : []);
+        const nextLocations = Array.isArray(response.data.locations) ? response.data.locations : [];
+        setLocations(nextLocations);
+        onLocationsChange?.(nextLocations);
         setLastUpdated(response.data.server_time ?? new Date().toISOString());
         setError(null);
       } catch {
@@ -54,7 +61,7 @@ export default function DispatcherLiveTracking({ enabled, pollIntervalSeconds = 
       disposed = true;
       window.clearInterval(interval);
     };
-  }, [enabled, pollIntervalSeconds]);
+  }, [enabled, onLocationsChange, pollIntervalSeconds]);
 
   if (!enabled) return null;
 
