@@ -2,9 +2,9 @@
 
 ## Status
 
-Approved design updated with the revisions accepted on 2026-09-12. This
-document is a design specification only. Production implementation is not part
-of this change.
+Revised design awaiting written-spec approval. This document incorporates the
+revisions accepted on 2026-09-12 and is a design specification only.
+Production implementation is not part of this change.
 
 ## Objective
 
@@ -68,6 +68,47 @@ remains disabled.
 - Spatie Media Library and the existing `media` table store evidence and proof.
 - Legacy `SupplierOrder` receives no new functionality.
 
+## Explicit Reuse and Addition Decisions
+
+The repository audit found no equivalent for the three proposed business
+records below. Existing inbound customer payments, repair payments,
+subscriptions, and refunds have different ownership and accounting meaning and
+must not be repurposed for outbound supplier obligations.
+
+| Proposed addition | Existing equivalent checked | Why it is necessary |
+| --- | --- | --- |
+| `supplier_payment_profiles` and `SupplierPaymentProfile` | Existing `Supplier` fields and payment/customer transaction models do not store a reusable supplier payout destination. | Stores one encrypted, verified, shop-owned destination without exposing or duplicating it per expense. |
+| `supplier_payment_attempts` and `SupplierPaymentAttempt` | `finance_expense_settlements` is the accounting ledger; existing PayMongo transaction records track inbound customer, repair, or subscription money. | Tracks the outbound provider lifecycle, retries, destination snapshot, and idempotency before settlement exists. |
+| `supplier_adjustments` and `SupplierAdjustment` | No current procurement defect, replacement, or supplier-refund case model exists. Spatie `media` stores files but not the business case. | Provides one auditable case for both receiving defects and post-payment issues, replacements, and refunds. |
+
+Only three columns are added to existing tables:
+
+- `purchase_order_receipt_items.replacement_for_adjustment_id`: no current
+  receipt-item field links a canonical replacement receipt to its adjustment;
+- `finance_expense_settlements.supplier_adjustment_id`: no current settlement
+  field links an incoming supplier refund confirmation to its case; and
+- `finance_expense_settlements.notes`: no equivalent settlement field stores
+  Finance's refund-confirmation note.
+
+No Supplier, Purchase Order, Finance Expense, attachment, notification, or
+refund table is duplicated.
+
+Three focused services are necessary:
+
+- `SupplierPaymentService` coordinates outbound payout eligibility, locking,
+  attempts, and the existing settlement service; no current service owns that
+  lifecycle.
+- `PaymongoSupplierPayoutGateway` is the concrete outbound HTTP boundary. The
+  existing PayMongo services are specific to inbound payments or refunds and
+  cannot safely represent a supplier payout, but their authentication, timeout,
+  idempotency, and safe-error conventions are reused.
+- `SupplierAdjustmentService` owns the single adjustment lifecycle. No current
+  service coordinates procurement defect, replacement, and supplier-refund
+  transitions.
+
+No interface, factory, generic workflow engine, or speculative abstraction is
+introduced.
+
 ## Payment Terms
 
 The only supported terms are:
@@ -93,7 +134,8 @@ Payment timing is derived from `due_date` and the shop's calendar date:
 
 - `Overdue`: due date is before today.
 - `Due Today`: due date is today.
-- `Due Soon`: due date is within the next three calendar days.
+- `Due Soon`: due date is tomorrow through three calendar days from today,
+  inclusive.
 - `Not Due`: due date is more than three calendar days away.
 
 Finance may release or pay a valid Net-term expense before its due date.
@@ -122,6 +164,33 @@ unchanged and continues to reject procurement expenses.
 The public manual settlement endpoint rejects procurement receipt expenses.
 Only a confirmed supplier-payment attempt may invoke the existing settlement
 service for these expenses.
+
+## Frontend Changes
+
+Extend the current pages and API helpers; do not add parallel dashboards:
+
+- `Finance/Expense.tsx` shows Supplier, PO and receipt numbers, ordered,
+  received, accepted, and defective quantities, unit cost, payable amount,
+  payment terms, receipt and due dates, expense status, payment status, and
+  payment timing. Submitted procurement expenses show `Review & Release`.
+  Posted eligible expenses show `READY FOR PAYMENT` and `Pay Supplier`.
+- The payment confirmation shows Supplier, PO, amount, bank, masked account,
+  and PayMongo method. It never permits destination editing.
+- `Procurement/SuppliersManagement.tsx` exposes existing payment-term, lead-
+  time, products-supplied, city, and country fields and manages the one payment
+  profile. Finance sees only masked profile details plus verify/disable actions.
+- `Procurement/components/PurchaseOrderReceiptPanel.tsx` adds per-line defect
+  category, notes, image evidence, and optional replacement-adjustment linkage
+  while continuing to submit through the current receipt API.
+- The existing Procurement purchase-order area gets one adjustment list/detail
+  surface for review, replacement, refund, proof, and resolution actions.
+  Post-receipt/post-payment reporting is launched from the relevant posted
+  receipt item and enters that same adjustment surface.
+- Existing `procurementApi`, `supplierApi`, shared procurement types, controls,
+  validation presentation, loading states, and error conventions are reused.
+
+Actions are hidden when ineligible for usability, but every backend endpoint
+independently enforces status, role, and shop ownership.
 
 ## Supplier Management and Payment Profile
 
@@ -473,6 +542,28 @@ Tests must cover:
 - sort allowlists; and
 - cross-shop denial for every supplier, profile, PO, receipt, expense,
   adjustment, attempt, settlement, refund confirmation, and media path.
+
+## Scope Priority
+
+### MUST HAVE FOR FINAL DEFENSE
+
+Everything in the finalized canonical workflow is mandatory: manual PR-to-PO,
+receipt-owned delivery, accepted-quantity payable creation, payment terms and
+snapshotting, Finance Review and Release, supplier payment profiles,
+shop-specific PayMongo payout attempts, confirmed settlement, receiving-time
+and post-payment adjustments, evidence, replacement receiving, supplier refund
+verification, PO completion guards, notifications, authorization, tenant
+isolation, audit history, sorting allowlists, and the required tests.
+
+The provider contract identified below is a blocker to the live PayMongo
+request/webhook portion; it is not permission to substitute a global key or to
+fake provider success.
+
+### NICE TO HAVE
+
+None. Additional dashboards, analytics, provider abstractions, automated
+reconciliation jobs, supplier self-service, or alternate workflows are outside
+this approved scope and should not be added for final defense.
 
 ## Implementation Order
 
