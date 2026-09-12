@@ -13,6 +13,7 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\ShopOwner;
 use App\Models\StockMovement;
 use App\Models\Supplier;
+use App\Models\SupplierAdjustment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -247,8 +248,10 @@ class PurchaseOrderReceivingTest extends TestCase
             ->assertCreated();
         $this->assertSame('partially_received', $po->fresh()->status);
 
+        $replacementPayload = $this->payload('replacement', $item->id, 2, 0);
+        $replacementPayload['items'][0]['replacement_for_adjustment_id'] = SupplierAdjustment::sole()->id;
         $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('replacement', $item->id, 2, 0))
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $replacementPayload)
             ->assertCreated();
 
         $this->assertSame('delivered', $po->fresh()->status);

@@ -90,6 +90,7 @@ export interface SupplierAdjustment {
     purchase_order?: { id: number | null; number: string | null; status: string | null };
     receipt?: { id: number | null; status: string | null };
     receipt_item_id?: number | null;
+    purchase_order_item_id?: number | null;
     evidence?: SupplierAdjustmentEvidence[];
 }
 
@@ -199,6 +200,7 @@ export interface PurchaseOrderItem {
 export interface PurchaseOrderReceiptItem {
     id: number;
     purchase_order_item_id: number;
+    replacement_for_adjustment_id?: number | null;
     received_quantity: number;
     defective_quantity: number;
     accepted_quantity: number;
@@ -530,6 +532,7 @@ export interface CreatePurchaseOrderReceiptPayload {
     notes?: string;
     items: Array<{
         purchase_order_item_id: number;
+        replacement_for_adjustment_id?: number | null;
         received_quantity: number;
         defective_quantity: number;
         reason_category?: SupplierAdjustmentReasonCategory;

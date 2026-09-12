@@ -29,6 +29,7 @@ class StorePurchaseOrderReceiptRequest extends FormRequest
             ],
             'items.*.received_quantity' => ['required', 'integer', 'min:0'],
             'items.*.defective_quantity' => ['required', 'integer', 'min:0'],
+            'items.*.replacement_for_adjustment_id' => ['nullable', 'integer'],
             'items.*.reason_category' => ['nullable', 'string', Rule::in(SupplierAdjustment::REASON_CATEGORIES)],
             'items.*.inventory_notes' => ['nullable', 'string', 'max:2000'],
             'items.*.defect_evidence' => ['nullable', 'array', 'max:5'],

@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\SupplierAdjustment;
@@ -201,6 +203,133 @@ final class SupplierAdjustmentService
         }
     }
 
+    public function validateReplacement(
+        int $adjustmentId,
+        PurchaseOrder $purchaseOrder,
+        PurchaseOrderItem $orderItem,
+        int $acceptedQuantity,
+    ): SupplierAdjustment {
+        $adjustment = SupplierAdjustment::query()
+            ->whereKey($adjustmentId)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $originalItem = PurchaseOrderReceiptItem::query()
+            ->whereKey($adjustment->purchase_order_receipt_item_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $originalReceipt = PurchaseOrderReceipt::query()
+            ->whereKey($originalItem->purchase_order_receipt_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if ((int) $adjustment->shop_owner_id !== (int) $purchaseOrder->shop_owner_id
+            || (int) $originalReceipt->shop_owner_id !== (int) $purchaseOrder->shop_owner_id
+            || (int) $originalReceipt->purchase_order_id !== (int) $purchaseOrder->id
+            || (int) $originalItem->purchase_order_item_id !== (int) $orderItem->id) {
+            throw ValidationException::withMessages(['items' => 'The replacement adjustment does not belong to this purchase-order item.']);
+        }
+        if ((string) $originalReceipt->status !== 'posted' || $originalReceipt->voided_at !== null) {
+            throw ValidationException::withMessages(['items' => 'A replacement must reference a posted, non-void original receipt.']);
+        }
+        if ($adjustment->status === SupplierAdjustment::STATUS_RESOLVED) {
+            throw ValidationException::withMessages(['items' => 'This supplier adjustment is already resolved.']);
+        }
+        if ($adjustment->resolution === SupplierAdjustment::RESOLUTION_REFUND) {
+            throw ValidationException::withMessages(['items' => 'A refund adjustment cannot receive a replacement.']);
+        }
+
+        $acceptedReplacement = (int) PurchaseOrderReceiptItem::query()
+            ->where('replacement_for_adjustment_id', $adjustment->id)
+            ->whereHas('receipt', fn ($query) => $query->where('status', 'posted'))
+            ->lockForUpdate()
+            ->sum('accepted_quantity');
+        if ($acceptedQuantity > max(0, (int) $adjustment->reported_quantity - $acceptedReplacement)) {
+            throw ValidationException::withMessages(['items' => 'The replacement quantity exceeds the remaining supplier adjustment quantity.']);
+        }
+
+        return $adjustment;
+    }
+
+    public function recordReplacementReceipt(
+        SupplierAdjustment $adjustment,
+        PurchaseOrderReceiptItem $receiptItem,
+        User $actor,
+        array $data,
+    ): void {
+        $media = [];
+
+        try {
+            $adjustment = SupplierAdjustment::query()
+                ->whereKey($adjustment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $receipt = $receiptItem->receipt()->lockForUpdate()->firstOrFail();
+            $purchaseOrder = $receipt->purchaseOrder()->lockForUpdate()->firstOrFail();
+            $this->assertActorAndReceipt($actor, $receipt, $purchaseOrder);
+
+            if ((int) $receiptItem->replacement_for_adjustment_id !== (int) $adjustment->id) {
+                throw ValidationException::withMessages(['items' => 'The replacement receipt is not linked to this adjustment.']);
+            }
+            if ($adjustment->status === SupplierAdjustment::STATUS_RESOLVED
+                || $adjustment->resolution === SupplierAdjustment::RESOLUTION_REFUND) {
+                throw ValidationException::withMessages(['items' => 'This supplier adjustment cannot receive another replacement.']);
+            }
+
+            $defective = (int) $receiptItem->defective_quantity;
+            if ($defective > 0) {
+                $category = trim((string) ($data['reason_category'] ?? ''));
+                $notes = trim((string) ($data['inventory_notes'] ?? ''));
+                $evidence = $this->validatedEvidence($data['defect_evidence'] ?? []);
+                $this->assertIssueDetails($category, $notes, $evidence);
+                $media = $this->attachEvidence($adjustment, $evidence, 'defect_evidence', [
+                    'replacement_receipt_item_id' => (int) $receiptItem->id,
+                    'replacement_for_adjustment_id' => (int) $adjustment->id,
+                ]);
+                $this->recordActivity($adjustment, $actor, 'replacement_defect_reported', [
+                    'replacement_receipt_item_id' => (int) $receiptItem->id,
+                    'reason_category' => $category,
+                    'notes' => $notes,
+                ]);
+            }
+
+            $acceptedReplacement = (int) PurchaseOrderReceiptItem::query()
+                ->where('replacement_for_adjustment_id', $adjustment->id)
+                ->whereHas('receipt', fn ($query) => $query->where('status', 'posted'))
+                ->sum('accepted_quantity');
+            $hasReplacementDefect = $adjustment->getMedia('defect_evidence')->contains(
+                fn ($mediaItem): bool => filled($mediaItem->getCustomProperty('replacement_receipt_item_id'))
+            );
+            $attributes = [
+                'resolution' => SupplierAdjustment::RESOLUTION_REPLACEMENT,
+                'status' => $acceptedReplacement >= (int) $adjustment->reported_quantity && ! $hasReplacementDefect
+                    ? SupplierAdjustment::STATUS_RESOLVED
+                    : SupplierAdjustment::STATUS_RESOLUTION_IN_PROGRESS,
+            ];
+            if ($attributes['status'] === SupplierAdjustment::STATUS_RESOLVED) {
+                $attributes += [
+                    'resolved_by' => $actor->id,
+                    'resolved_at' => now(),
+                ];
+            } else {
+                $attributes += [
+                    'resolved_by' => null,
+                    'resolved_at' => null,
+                ];
+            }
+            $adjustment->update($attributes);
+            $this->recordActivity($adjustment, $actor, 'replacement_received', [
+                'replacement_receipt_item_id' => (int) $receiptItem->id,
+                'accepted_replacement_quantity' => $acceptedReplacement,
+                'reported_quantity' => (int) $adjustment->reported_quantity,
+                'status' => $adjustment->status,
+            ]);
+        } catch (Throwable $exception) {
+            $this->deleteMedia($media);
+
+            throw $exception;
+        }
+    }
+
     /** @return array<string, mixed> */
     public function present(SupplierAdjustment $adjustment): array
     {
@@ -241,6 +370,7 @@ final class SupplierAdjustmentService
                 'status' => $receipt?->status,
             ],
             'receipt_item_id' => $receiptItem?->id,
+            'purchase_order_item_id' => $receiptItem?->purchase_order_item_id,
             'evidence' => $adjustment->getMedia('defect_evidence')->map(fn ($media): array => [
                 'id' => (int) $media->id,
                 'file_name' => $media->file_name,
@@ -310,11 +440,15 @@ final class SupplierAdjustmentService
     }
 
     /** @param array<int, UploadedFile> $evidence @return array<int, mixed> */
-    private function attachEvidence(SupplierAdjustment $adjustment, array $evidence, string $collection): array
+    private function attachEvidence(SupplierAdjustment $adjustment, array $evidence, string $collection, array $customProperties = []): array
     {
         $media = [];
         foreach ($evidence as $file) {
-            $media[] = $adjustment->addMedia($file)->toMediaCollection($collection);
+            $adder = $adjustment->addMedia($file);
+            if ($customProperties !== []) {
+                $adder->withCustomProperties($customProperties);
+            }
+            $media[] = $adder->toMediaCollection($collection);
         }
 
         return $media;

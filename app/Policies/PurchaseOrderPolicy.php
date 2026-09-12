@@ -112,6 +112,13 @@ class PurchaseOrderPolicy
             && $purchaseOrder->isReceiving();
     }
 
+    public function receiveReplacement(User $user, PurchaseOrder $purchaseOrder): bool
+    {
+        return $user->can('procurement.receive_purchase_orders')
+            && $user->can('view-inventory')
+            && $user->shop_owner_id === $purchaseOrder->shop_owner_id;
+    }
+
     public function reportSupplierIssue(User $user, PurchaseOrder $purchaseOrder): bool
     {
         return $user->can('procurement.receive_purchase_orders')

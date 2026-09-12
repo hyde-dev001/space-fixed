@@ -633,53 +633,58 @@ Omit `resources/js/services/supplierAdjustmentApi.ts` from the commit if the imp
 **Files:**
 
 - Modify: `app/Http/Requests/StorePurchaseOrderReceiptRequest.php`
+- Modify: `app/Http/Controllers/Erp/PurchaseOrderReceiptController.php`
+- Modify: `app/Policies/PurchaseOrderPolicy.php`
 - Modify: `app/Services/PurchaseOrderReceiptService.php`
 - Modify: `app/Services/SupplierAdjustmentService.php`
-- Modify: `app/Models/PurchaseOrderReceiptItem.php`
 - Modify: `resources/js/types/procurement.ts`
+- Modify: `resources/js/services/purchaseOrderApi.ts`
+- Modify: `resources/js/services/__tests__/procurementApis.test.ts`
 - Modify: `resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx`
 - Modify: `resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx`
 - Create: `tests/Feature/Procurement/SupplierReplacementTest.php`
 - Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx`
+- Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx`
+- Modify: `tests/Feature/Procurement/PurchaseOrderReceivingTest.php`
 
-- [ ] **Step 1: Write failing replacement tests.**
+- [x] **Step 1: Write failing replacement tests.**
 
-Cover same-shop/PO/item linkage, replacement-only resolution, remaining replacement quantity, duplicate receipt key, concurrent receives, partial replacement, full resolution, defective replacement evidence, and wrong adjustment/PO denial. Assert a receiving-defect replacement creates the normal accepted payable; a post-payment replacement adds inventory but no second expense.
+Added red coverage for same-shop/PO/item linkage, remaining-quantity protection, duplicate receipt keys, full resolution, defective replacement evidence, wrong adjustment/PO denial, and issue-stage-specific payable behavior. The shared receiving regression now links its replacement through the approved foreign key.
 
-- [ ] **Step 2: Add delivered/completed late-replacement coverage.**
+- [x] **Step 2: Add delivered/completed late-replacement coverage.**
 
-Assert a valid linked replacement may use `PurchaseOrderReceiptService` after receipt-driven delivery (and after a historically completed PO receives a later post-payment issue), while the PO status is not reopened or reassigned. An unlinked ordinary receipt remains prohibited outside existing receiving statuses.
+Covered a post-payment replacement on a historically completed PO. The same canonical receiver adds inventory without a second expense and preserves `completed`; the policy/controller path still rejects unlinked ordinary receiving outside receiving statuses.
 
-- [ ] **Step 3: Run replacement tests and confirm failure.**
+- [x] **Step 3: Run replacement tests and confirm failure.**
 
 ```bash
 php artisan test tests/Feature/Procurement/SupplierReplacementTest.php
 ```
 
-Expected: FAIL because replacement linkage is not yet consumed by the receipt service.
+Observed the expected pre-implementation failures: replacement linkage was ignored, completed-PO replacement was forbidden, and defective replacement evidence created a second adjustment.
 
-- [ ] **Step 4: Implement linked replacement eligibility.**
+- [x] **Step 4: Implement linked replacement eligibility.**
 
-Lock the PO, adjustment, original item, and replacement receipt totals. Require matching shop and PO item, active replacement resolution, and quantity no greater than remaining. Permit delivered/completed POs only for a valid linked replacement and preserve their current fulfillment status.
+The canonical service locks the PO/order item and delegates adjustment/original-receipt/replacement-total locking to `SupplierAdjustmentService`. It enforces same-shop/PO/item ownership, rejects resolved/refund cases and overclaims, allows delivered/completed linked replacements, and preserves closed PO status.
 
-- [ ] **Step 5: Keep payable behavior issue-stage-specific.**
+- [x] **Step 5: Keep payable behavior issue-stage-specific.**
 
-Call the existing inventory posting path for accepted quantities. Include accepted replacement value in the receipt expense only for `receiving_defect`; for `post_payment_issue`, persist the receipt/inventory/stock movement but skip that line's payable. Never create a synthetic negative expense.
+Accepted quantities continue through `postInventory`. Receiving-defect replacements create the normal receipt expense; post-payment replacements create inventory and stock movement only.
 
-- [ ] **Step 6: Keep defective replacements in the same case.**
+- [x] **Step 6: Keep defective replacements in the same case.**
 
-Require new category, notes, and images. Attach them to the original adjustment with media custom properties identifying the replacement receipt item; append activity rather than overwrite the original report. Resolve only when total accepted linked replacements reaches reported quantity.
+Defective replacements require the existing category/notes/image validation and append private evidence plus activity to the original adjustment. Media custom properties identify the replacement receipt item; accepted replacement totals resolve only when complete and no replacement defect remains.
 
-- [ ] **Step 7: Run replacement and existing receiving tests.**
+- [x] **Step 7: Run replacement and existing receiving tests.**
 
 ```bash
 php artisan test tests/Feature/Procurement/SupplierReplacementTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php
 pnpm exec vitest run resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx
 ```
 
-Expected: replacement distinctions pass and all existing size/color, partial-receipt, expense, and idempotency tests remain green.
+Result: 58 backend tests passed with 313 assertions across replacement, receiving, void, authorization, and schema contracts; 14 focused frontend tests passed. `pnpm` is unavailable in this worktree, so the installed Vitest binary was used.
 
-- [ ] **Step 8: Commit replacement linkage.**
+- [x] **Step 8: Commit replacement linkage.**
 
 ```bash
 git commit --only -m "feat: receive supplier replacements canonically" -- app/Http/Requests/StorePurchaseOrderReceiptRequest.php app/Services/PurchaseOrderReceiptService.php app/Services/SupplierAdjustmentService.php app/Models/PurchaseOrderReceiptItem.php resources/js/types/procurement.ts resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx tests/Feature/Procurement/SupplierReplacementTest.php resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx

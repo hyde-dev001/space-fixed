@@ -117,6 +117,9 @@ export const purchaseOrderApi = {
                 payload.append(`${prefix}[purchase_order_item_id]`, String(item.purchase_order_item_id));
                 payload.append(`${prefix}[received_quantity]`, String(item.received_quantity));
                 payload.append(`${prefix}[defective_quantity]`, String(item.defective_quantity));
+                if (item.replacement_for_adjustment_id) {
+                    payload.append(`${prefix}[replacement_for_adjustment_id]`, String(item.replacement_for_adjustment_id));
+                }
                 if (item.reason_category) payload.append(`${prefix}[reason_category]`, item.reason_category);
                 if (item.inventory_notes) payload.append(`${prefix}[inventory_notes]`, item.inventory_notes);
                 item.size_quantities?.forEach((size, sizeIndex) => {
