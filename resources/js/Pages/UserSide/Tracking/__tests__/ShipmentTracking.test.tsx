@@ -177,7 +177,7 @@ describe('ShipmentTracking', () => {
     expect(screen.getAllByText('Attempt photo unavailable').length).toBe(2);
   });
 
-  it('opens an accessible proof viewer with delivery details, zoom, download, and focus return', async () => {
+  it('opens an accessible proof viewer with a separate enlarged image lightbox', async () => {
     shipment.legs[0] = {
       ...shipment.legs[0],
       status: 'delivered',
@@ -217,11 +217,20 @@ describe('ShipmentTracking', () => {
     const image = screen.getByRole('img', { name: 'Proof of delivery for SHP-1' });
     expect(image).toHaveAttribute('src', '/tracking/shipments/1/proofs/17');
     expect(image).toHaveClass('h-full', 'w-full', 'object-contain');
-    expect(image).toHaveStyle({ transform: 'scale(1)' });
     const imageViewer = screen.getByRole('button', { name: 'View proof image' });
     expect(imageViewer).toHaveClass('h-12', 'w-12');
+    expect(screen.queryByRole('button', { name: /Zoom to/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('100%')).not.toBeInTheDocument();
+    expect(screen.queryByText('150%')).not.toBeInTheDocument();
+    expect(screen.queryByText('200%')).not.toBeInTheDocument();
+
     fireEvent.click(imageViewer);
-    expect(image).toHaveClass('max-h-[65vh]', 'max-w-full', 'object-contain');
+    const imageDialog = screen.getByRole('dialog', { name: 'Proof image' });
+    expect(imageDialog).toHaveAttribute('aria-modal', 'true');
+    const enlargedImage = screen.getByRole('img', { name: 'Enlarged proof of delivery for SHP-1' });
+    expect(enlargedImage).toHaveClass('max-h-[90vh]', 'max-w-[90vw]', 'object-contain');
+    const closeImage = screen.getByRole('button', { name: 'Close proof image' });
+    expect(closeImage).toHaveFocus();
     expect(screen.getByText(new Date('2026-07-15T11:13:54.000Z').toLocaleString())).toBeInTheDocument();
     expect(screen.getAllByText('Miguel Dela Rosa - Dasmariñas, Cavite').length).toBeGreaterThan(1);
     expect(screen.getAllByText('SHP-1').length).toBeGreaterThan(1);
@@ -230,12 +239,9 @@ describe('ShipmentTracking', () => {
     const download = screen.getByRole('link', { name: 'Download proof of delivery' });
     expect(download).toHaveAttribute('href', '/tracking/shipments/1/proofs/17?download=1');
     expect(download).toHaveClass('min-h-11');
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom to 150%' }));
-    expect(image).toHaveStyle({ transform: 'scale(1.5)' });
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom to 200%' }));
-    expect(image).toHaveStyle({ transform: 'scale(2)' });
-    fireEvent.click(screen.getByRole('button', { name: 'Zoom to 100%' }));
-    expect(image).toHaveStyle({ transform: 'scale(1)' });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Proof image' })).not.toBeInTheDocument();
+    await waitFor(() => expect(imageViewer).toHaveFocus());
 
     fireEvent.error(image);
     expect(screen.getByText('Proof unavailable')).toBeInTheDocument();
