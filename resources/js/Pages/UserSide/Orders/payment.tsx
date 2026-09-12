@@ -173,7 +173,7 @@ const voucherClaimStatusLabel = (status: VoucherClaimStatus): string => {
 const voucherClaimStatusClass = (status: VoucherClaimStatus): string => {
   if (status === 'claimed') return 'border-blue-200 bg-blue-50 text-blue-700';
   if (status === 'claimable') return 'border-gray-200 bg-gray-50 text-gray-700';
-  if (status === 'redeemed') return 'border-gray-200 bg-gray-100 text-gray-500';
+  if (status === 'redeemed') return 'border-gray-200 bg-[#fafafa] text-gray-500';
   return 'border-red-200 bg-red-50 text-red-700';
 };
 
@@ -245,12 +245,10 @@ const Payment: React.FC = () => {
   const [voucherCodeInput, setVoucherCodeInput] = useState('');
   const [appliedVoucherCode, setAppliedVoucherCode] = useState('');
   const [isVoucherSelectionEnabled, setIsVoucherSelectionEnabled] = useState(true);
-  const [isVoucherSuggestionOpen, setIsVoucherSuggestionOpen] = useState(false);
   const [claimingVoucherCampaignId, setClaimingVoucherCampaignId] = useState<number | null>(null);
   const [voucherClaimError, setVoucherClaimError] = useState<string | null>(null);
   const [voucherPreviewRefreshKey, setVoucherPreviewRefreshKey] = useState(0);
   const [hasVoucherInputInteraction, setHasVoucherInputInteraction] = useState(false);
-  const voucherInputContainerRef = useRef<HTMLDivElement | null>(null);
   const desktopCityDropdownRef = useRef<HTMLDivElement | null>(null);
   const sheetCityDropdownRef = useRef<HTMLDivElement | null>(null);
   const desktopProvinceDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -340,7 +338,6 @@ const Payment: React.FC = () => {
     const normalizedCode = normalizeVoucherCode(voucherCodeInput);
     if (!normalizedCode) {
       setAppliedVoucherCode('');
-      setIsVoucherSuggestionOpen(false);
       return;
     }
 
@@ -369,7 +366,6 @@ const Payment: React.FC = () => {
     setVoucherCodeInput(normalizedCode);
     setAppliedVoucherCode((current) => normalizeVoucherCode(current) === normalizedCode ? '' : current);
     setVoucherClaimError(null);
-    setIsVoucherSuggestionOpen(false);
   };
 
   const handleClaimVoucher = async (voucher: AvailableVoucherOption, applyAfterClaim: boolean) => {
@@ -400,14 +396,11 @@ const Payment: React.FC = () => {
 
       if (applyAfterClaim) {
         handleUseVoucher(voucher);
-      } else {
-        setIsVoucherSuggestionOpen(true);
       }
 
       setVoucherPreviewRefreshKey((current) => current + 1);
     } catch (error) {
       setVoucherClaimError(error instanceof Error ? error.message : 'Unable to claim this voucher right now.');
-      setIsVoucherSuggestionOpen(true);
     } finally {
       setClaimingVoucherCampaignId(null);
     }
@@ -420,7 +413,6 @@ const Payment: React.FC = () => {
     setAppliedVoucherCode('');
     setVoucherCodeInput('');
     setHasVoucherInputInteraction(true);
-    setIsVoucherSuggestionOpen(false);
   };
 
   const handleProvinceChange = (province: string) => {
@@ -1842,27 +1834,6 @@ const Payment: React.FC = () => {
   }, [promoPreview, selectedVoucherCampaignIds]);
 
   useEffect(() => {
-    const handleClickOutsideVoucherInput = (event: MouseEvent | TouchEvent) => {
-      const target = event.target as Node | null;
-      if (!target) {
-        return;
-      }
-
-      if (voucherInputContainerRef.current && !voucherInputContainerRef.current.contains(target)) {
-        setIsVoucherSuggestionOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutsideVoucherInput);
-    document.addEventListener('touchstart', handleClickOutsideVoucherInput);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutsideVoucherInput);
-      document.removeEventListener('touchstart', handleClickOutsideVoucherInput);
-    };
-  }, []);
-
-  useEffect(() => {
     const handleClickOutsideCityDropdown = (event: MouseEvent | TouchEvent) => {
       const target = event.target as Node | null;
       if (!target) {
@@ -2382,13 +2353,8 @@ const Payment: React.FC = () => {
     { key: 'product', label: 'Product Vouchers', vouchers: productVoucherSuggestions },
     { key: 'shipping', label: 'Shipping Vouchers', vouchers: shippingVoucherSuggestions },
   ].filter((group) => group.vouchers.length > 0);
-  const hasExactVoucherSuggestionMatch = voucherSuggestions.some((voucher) => {
-    const candidateCode = normalizeVoucherCode(String(voucher.code || voucher.name || ''));
-    return candidateCode !== '' && candidateCode === normalizeVoucherCode(voucherCodeInput);
-  });
   const voucherErrorMessage = promoPreview?.voucher_error || null;
   const shippingVoucherErrorMessage = promoPreview?.shipping_voucher_error || null;
-  const showVoucherSuggestionDropdown = isVoucherSuggestionOpen && !hasExactVoucherSuggestionMatch;
   const itemCount = checkoutData.items.reduce((sum, item) => sum + Math.max(1, Math.trunc(toFiniteNumber(item.qty, 1))), 0);
   const hasShippingEstimate = Boolean(shippingEstimate) && hasSelectedCity;
   const shippingSummaryValue = hasSelectedCity
@@ -3274,13 +3240,13 @@ const Payment: React.FC = () => {
                         )}
                       </div>
 
-                        <div ref={voucherInputContainerRef} className="relative">
+                        <div>
                           <div className="flex items-stretch">
                             <input
                               type="text"
                               id="desktop-voucher-code"
                               aria-label="Voucher code"
-                              aria-expanded={showVoucherSuggestionDropdown}
+                              aria-controls="desktop-voucher-table"
                               value={voucherCodeInput}
                               onFocus={() => {
                                 const normalizedInput = normalizeVoucherCode(voucherCodeInput);
@@ -3289,9 +3255,7 @@ const Payment: React.FC = () => {
                                 if (isSelectedVoucherCode) {
                                   setVoucherCodeInput('');
                                 }
-                                setIsVoucherSuggestionOpen(true);
                               }}
-                              onClick={() => setIsVoucherSuggestionOpen(true)}
                               onChange={(e) => {
                                 const nextVoucherCode = e.target.value.toUpperCase();
                                 const normalizedNextVoucherCode = normalizeVoucherCode(nextVoucherCode);
@@ -3306,16 +3270,11 @@ const Payment: React.FC = () => {
                                   }
                                 }
 
-                                setIsVoucherSuggestionOpen(true);
                               }}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
                                   e.preventDefault();
                                   handleApplyVoucherCode();
-                                }
-
-                                if (e.key === 'Escape') {
-                                  setIsVoucherSuggestionOpen(false);
                                 }
                               }}
                               placeholder="Enter voucher code"
@@ -3331,17 +3290,11 @@ const Payment: React.FC = () => {
                             </button>
                           </div>
 
-                          {showVoucherSuggestionDropdown && (
-                            <div
-                              data-testid="desktop-voucher-suggestions"
+                          <div
+                              id="desktop-voucher-table"
+                              data-testid="desktop-voucher-table"
                               role="listbox"
-                              aria-label="Voucher suggestions"
-                              onKeyDown={(event) => {
-                                if (event.key === 'Escape') {
-                                  event.preventDefault();
-                                  setIsVoucherSuggestionOpen(false);
-                                }
-                              }}
+                              aria-label="Available vouchers"
                               className="hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-[#cacacb] bg-white p-1 shadow-none"
                             >
                               {voucherSuggestionGroups.length > 0 ? (
@@ -3371,6 +3324,7 @@ const Payment: React.FC = () => {
                                       ? Math.min(100, (eligibleSubtotal / minimumSpend) * 100)
                                       : 100;
                                     const isVoucherSelected = selectedVoucherCampaignIds[voucher.target] === voucher.id;
+                                    const isRedeemed = voucher.claim_status === 'redeemed';
 
                                     return (
                                       <div
@@ -3386,7 +3340,7 @@ const Payment: React.FC = () => {
                                             handleUseVoucher(voucher);
                                           }
                                         }}
-                                        className={'group relative overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (isVoucherSelected ? 'border-gray-900 bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-gray-900')}
+                                        className={'group relative overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (isRedeemed ? 'border-[#d9d9dc] bg-[#fafafa]' : isVoucherSelected ? 'border-gray-900 bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-gray-900')}
                                       >
                                         <div className="grid min-h-[5.5rem] grid-cols-[3rem_minmax(0,1fr)_5.75rem] items-stretch">
                                           <div className="flex flex-col items-center justify-center border-r border-dashed border-[#cacacb] bg-[#f5f5f5] px-1 py-1.5 text-center">
@@ -3494,7 +3448,6 @@ const Payment: React.FC = () => {
                                 </div>
                               )}
                             </div>
-                          )}
                         </div>
 
                         {(selectedVoucherCampaignIdsForRequest.length > 0 || appliedVoucherCode) && (
