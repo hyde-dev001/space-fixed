@@ -51,10 +51,11 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).toContain('data-testid="desktop-voucher-table"');
     expect(paymentSource).not.toContain('isVoucherSuggestionOpen');
     expect(paymentSource).toContain("if (status === 'redeemed') return 'border-gray-200 bg-[#fafafa] text-gray-500'");
-    expect(desktopVoucherSection).toContain('hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))]');
-    expect(desktopVoucherSection).toContain('overflow-y-auto');
+    expect(desktopVoucherSection).toContain('className="mt-2 w-full min-w-0 rounded-xl border');
+    expect(desktopVoucherSection).not.toContain('max-h-[min(20rem,calc(100vh-12rem))]');
+    expect(desktopVoucherSection).not.toContain('overflow-y-auto');
+    expect(desktopVoucherSection).toContain('group relative w-full min-w-0 overflow-hidden');
     expect(desktopVoucherSection).not.toContain('absolute left-0 right-0 top-full');
-    expect(paymentSource).toContain('overflow-y-auto');
     expect(paymentSource).toContain('min-h-[5.5rem]');
     expect(paymentSource).toContain('grid-cols-[3rem_minmax(0,1fr)_5.75rem]');
     expect(paymentSource).toContain('flex flex-col gap-7');
@@ -75,5 +76,7 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).not.toContain('min-h-[8rem]');
     expect(paymentSource).toContain('/api/products/${voucher.claim_product_id}/vouchers/${voucher.id}/claim');
     expect(paymentSource).toContain("'X-CSRF-TOKEN'");
+    expect(paymentSource).not.toContain('setVoucherCodeInput(normalizedCode)');
+    expect(paymentSource).not.toContain('suggestedVoucher');
   });
 });

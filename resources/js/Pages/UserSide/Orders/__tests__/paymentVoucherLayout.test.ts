@@ -24,8 +24,10 @@ describe('payment desktop voucher layout', () => {
     expect(phoneFieldSource).toContain('className="w-full px-4 py-3');
     expect(desktopVoucherSection).toContain('className="mt-2 w-full rounded-xl');
     expect(desktopVoucherSection).toContain('data-testid="desktop-voucher-table"');
-    expect(desktopVoucherSection).toContain('hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))]');
-    expect(desktopVoucherSection).toContain('overflow-y-auto');
+    expect(desktopVoucherSection).toContain('className="mt-2 w-full min-w-0 rounded-xl border');
+    expect(desktopVoucherSection).not.toContain('max-h-[min(20rem,calc(100vh-12rem))]');
+    expect(desktopVoucherSection).not.toContain('overflow-y-auto');
+    expect(desktopVoucherSection).toContain('group relative w-full min-w-0 overflow-hidden');
     expect(desktopVoucherSection).not.toContain('absolute left-0 right-0 top-full');
     expect(desktopVoucherSection).toContain('handleApplyVoucherCode');
     expect(desktopVoucherSection).toContain('handleClearVoucherSelection');
@@ -46,6 +48,9 @@ describe('payment desktop voucher layout', () => {
     expect(desktopVoucherSection).not.toContain('isVoucherSuggestionOpen');
     expect(desktopVoucherSection).toContain('voucherClaimStatusClass');
     expect(desktopVoucherSection).toContain('bg-[#fafafa]');
+    expect(paymentSource).not.toContain('setVoucherCodeInput(normalizedCode)');
+    expect(paymentSource).not.toContain('suggestedVoucher');
+    expect(paymentSource).toContain('if (!voucherSearchTerm)');
     expect(desktopVoucherSection).not.toContain('min-h-[7rem]');
     expect(desktopVoucherSection).not.toContain('min-h-11 w-full whitespace-nowrap rounded-xl bg-gray-900 px-1 text-sm font-medium text-white');
     expect(desktopVoucherSection).not.toContain('grid-cols-[3.25rem_minmax(0,1fr)_6.5rem]');

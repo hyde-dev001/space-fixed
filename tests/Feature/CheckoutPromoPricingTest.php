@@ -277,6 +277,91 @@ class CheckoutPromoPricingTest extends TestCase
     }
 
     #[Test]
+    public function promo_preview_only_lists_vouchers_from_the_product_shop(): void
+    {
+        $kicksStore = $this->createRetailShopOwner();
+        $otherShop = $this->createRetailShopOwner();
+        /** @var User $customer */
+        $customer = User::factory()->createOne();
+
+        $kicksProduct = Product::create([
+            'shop_owner_id' => $kicksStore->id,
+            'name' => 'Kicks Store Product',
+            'slug' => 'kicks-store-product-' . random_int(1000, 9999),
+            'description' => 'Kicks Store voucher scope test product',
+            'price' => 1000,
+            'stock_quantity' => 10,
+            'is_active' => true,
+            'is_featured' => false,
+        ]);
+        $otherProduct = Product::create([
+            'shop_owner_id' => $otherShop->id,
+            'name' => 'Other Shop Product',
+            'slug' => 'other-shop-product-' . random_int(1000, 9999),
+            'description' => 'Other shop voucher scope test product',
+            'price' => 1000,
+            'stock_quantity' => 10,
+            'is_active' => true,
+            'is_featured' => false,
+        ]);
+
+        $kicksVoucher = PromoCampaign::create([
+            'shop_owner_id' => $kicksStore->id,
+            'kind' => 'voucher',
+            'scope' => 'shop_wide',
+            'name' => 'Kicks Store Voucher',
+            'code' => 'KICKS50',
+            'discount_mode' => 'fixed',
+            'value' => 50,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+        PromoCampaign::create([
+            'shop_owner_id' => $otherShop->id,
+            'kind' => 'voucher',
+            'scope' => 'shop_wide',
+            'name' => 'Other Shop Voucher',
+            'code' => 'OTHER50',
+            'discount_mode' => 'fixed',
+            'value' => 50,
+            'min_spend' => 0,
+            'usage_limit' => null,
+            'used_count' => 0,
+            'start_at' => now()->subHour(),
+            'end_at' => now()->addDay(),
+            'status' => 'active',
+            'stacking_mode' => 'combinable',
+        ]);
+
+        $kicksResponse = $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/promo-preview', [
+                'items' => [['pid' => $kicksProduct->id, 'qty' => 1, 'price' => 1000]],
+            ])
+            ->assertOk();
+
+        $kicksCodes = collect($kicksResponse->json('data.voucher_code_suggestions'))->pluck('code');
+        $this->assertTrue($kicksCodes->contains('KICKS50'));
+        $this->assertFalse($kicksCodes->contains('OTHER50'));
+
+        $otherResponse = $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/promo-preview', [
+                'items' => [['pid' => $otherProduct->id, 'qty' => 1, 'price' => 1000]],
+                'voucher_campaign_id' => $kicksVoucher->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.voucher_error', 'Voucher code is invalid, unavailable, or already redeemed.');
+
+        $otherCodes = collect($otherResponse->json('data.voucher_code_suggestions'))->pluck('code');
+        $this->assertTrue($otherCodes->contains('OTHER50'));
+        $this->assertFalse($otherCodes->contains('KICKS50'));
+    }
+
+    #[Test]
     public function create_order_auto_applies_claimed_voucher_and_redeems_it(): void
     {
         $shopOwner = $this->createRetailShopOwner();
