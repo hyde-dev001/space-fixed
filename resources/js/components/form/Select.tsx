@@ -386,7 +386,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props,
           aria-label={isOpen ? (ariaLabel ?? placeholder) : undefined}
           data-state={isOpen ? "open" : "closed"}
           className={isOpen
-            ? "absolute z-50 mt-1 max-h-60 w-full min-w-full overflow-auto rounded-lg border border-gray-300 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            ? "absolute z-50 mt-1 max-h-60 w-max min-w-full max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-gray-300 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
             : "absolute left-0 top-full z-50 h-0 w-full min-w-full overflow-hidden opacity-0 pointer-events-none"
           }
         >
@@ -403,7 +403,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props,
               data-highlighted={activeOptionIndex === index || undefined}
               onMouseEnter={() => setActiveIndex(index)}
               onClick={() => choose(option.value)}
-              className={`block w-full rounded-md px-3 py-2 text-left text-sm ${optionClass(option, index)}`}
+              className={`block w-full whitespace-nowrap rounded-md px-3 py-2 text-left text-sm ${optionClass(option, index)}`}
             >
               {option.label}
             </button>

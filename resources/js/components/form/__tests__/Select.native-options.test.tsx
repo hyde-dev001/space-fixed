@@ -56,4 +56,23 @@ describe('shared Select native-options adapter', () => {
     expect(screen.getByRole('combobox', { name: 'Status' })).toHaveAttribute('id', expect.stringContaining('select-trigger'));
     expect(document.querySelector('select')).toHaveValue('approved');
   });
+
+  it('keeps long option labels visible when the trigger uses intrinsic width', () => {
+    render(
+      <Select aria-label="Role">
+        <option value="all">All</option>
+        <option value="repairer">Logistics Dispatcher</option>
+        <option value="recent">Recent (7 days)</option>
+      </Select>,
+    );
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Role' }));
+
+    expect(screen.getByRole('listbox')).toHaveClass(
+      'w-max',
+      'min-w-full',
+      'max-w-[calc(100vw-2rem)]',
+    );
+    expect(screen.getByRole('option', { name: 'Logistics Dispatcher' })).toHaveClass('whitespace-nowrap');
+  });
 });
