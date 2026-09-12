@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:public/build/assets/ShopOwnerTwoFactor-WkcqxREV.js
-import{j as e,s as o}from"./app-Bb22cF37.js";import a from"./EmployeeMfaChallenge-Beik9cpm.js";import"./vendor-apexcharts-DPaa2SoU.js";/* empty css            */function c({email:r,verifyRoute:s,loginRoute:t}){const i=["userside-auth-page","userside-auth-card","userside-auth-primary"].join(" ");return e.jsx("div",{className:i,children:e.jsx(a,{companyAccount:r??"Shop Owner",verifyRoute:s??o("shop-owner.two-factor.verify"),loginRoute:t??o("login")})})}export{c as default};
-========
-import{j as e,s as o}from"./app-CxBJKCBC.js";import a from"./EmployeeMfaChallenge-n6wNgrKN.js";import"./vendor-apexcharts-DPaa2SoU.js";/* empty css            */function c({email:r,verifyRoute:s,loginRoute:t}){const i=["userside-auth-page","userside-auth-card","userside-auth-primary"].join(" ");return e.jsx("div",{className:i,children:e.jsx(a,{companyAccount:r??"Shop Owner",verifyRoute:s??o("shop-owner.two-factor.verify"),loginRoute:t??o("login")})})}export{c as default};
->>>>>>>> 4df998173 (feat: add shipment live tracking action):public/build/assets/ShopOwnerTwoFactor-DJctvT9Q.js
