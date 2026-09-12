@@ -1354,6 +1354,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
           </div>
         )}
         </div>
+      </nav>
         {landingSidebar && (
         <>
           {isSearchFocused && (
@@ -1564,7 +1565,6 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
           </aside>
         </>
         )}
-      </nav>
     </>
   );
 };
