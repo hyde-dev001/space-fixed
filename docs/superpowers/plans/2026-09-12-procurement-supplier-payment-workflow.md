@@ -1,0 +1,810 @@
+# Procurement Supplier Payment Workflow Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Complete SoleSpace's existing Inventory stock request -> manual PR -> manual PO -> canonical receipt -> Finance release -> shop-funded supplier payment -> settlement -> replacement/refund workflow without adding parallel business flows.
+
+**Architecture:** Keep `PurchaseOrderReceiptService` as the only inventory-entry path and `ExpenseSettlementService` as the only Finance money-history writer. Add one supplier destination record, one outbound payment-attempt record, and one supplier-adjustment record; expose them through thin controllers and existing pages while all state transitions, locking, idempotency, and tenant checks remain in focused services. Provider-specific PayMongo work is gated until the exact outbound shop-account contract is verified.
+
+**Tech Stack:** Laravel 12, PHP 8.2, Eloquent transactions and row locks, Spatie Media Library and Activitylog, PHPUnit, Inertia 2, React 18, TypeScript 5.7, Axios, Vitest, Testing Library, Vite 7, Tailwind CSS 4, pnpm.
+
+---
+
+## Approved source and boundaries
+
+- Source of truth: `docs/superpowers/specs/2026-09-12-procurement-supplier-payment-workflow-design.md`.
+- Preserve manual PR-to-PO creation. Do not activate `CreatePurchaseOrderFromPR` or event discovery.
+- Preserve receipt-driven `partially_received` and `delivered`; payment never sets either status.
+- Preserve the `ExpenseSettlementService` approval guard and append-only history.
+- Use `ShopOwner.paymongo_secret_key` for that expense's shop. Never silently fall back to the platform key.
+- `Due Soon` means tomorrow through today + 3 calendar days, inclusive.
+- Use only `manufacturing_defect`, `damaged`, `wrong_item`, `incorrect_size_or_variant`, and `other`; `other` requires notes.
+- Reuse `supplier_adjustments` for receiving-time and post-payment defects. Do not add a refund or second defect table.
+- Do not implement provider requests or webhook mappings until the provider gate in Task 6 passes.
+- Do not edit `.env`, generated `vendor/`, `node_modules/`, or `public/build` files.
+
+## File map
+
+### Database and models
+
+- Create: `database/migrations/2026_09_12_000001_create_supplier_payment_profiles_table.php` - one encrypted supplier destination per supplier.
+- Create: `database/migrations/2026_09_12_000002_create_supplier_payment_attempts_table.php` - outbound provider lifecycle and idempotency, not accounting.
+- Create: `database/migrations/2026_09_12_000003_create_supplier_adjustments_table.php` - receiving and post-payment quality cases.
+- Create: `database/migrations/2026_09_12_000004_add_supplier_workflow_links.php` - the three approved existing-table columns.
+- Create: `app/Models/SupplierPaymentProfile.php`.
+- Create: `app/Models/SupplierPaymentAttempt.php`.
+- Create: `app/Models/SupplierAdjustment.php`.
+- Modify: `app/Models/Supplier.php` - payment-profile relationship and supported field serialization.
+- Modify: `app/Models/PurchaseOrder.php` - payment-term constants, adjustment/payment relations, and completion guards.
+- Modify: `app/Models/PurchaseOrderReceiptItem.php` - adjustment and replacement relationships.
+- Modify: `app/Models/Finance/Expense.php` - payment-attempt relation.
+- Modify: `app/Models/Finance/ExpenseSettlement.php` - supplier-refund entry type, adjustment relation, and refund-safe totals.
+
+### Backend services and HTTP boundaries
+
+- Modify: `app/Services/PurchaseOrderService.php` - payment-term snapshot precedence, completion integration, and in-transit notification.
+- Modify: `app/Services/PurchaseOrderReceiptService.php` - defect creation, replacement linkage, payable distinction, and void guards.
+- Modify: `app/Services/ExpenseApprovalService.php` - due-date allowlist and procurement Review and Release.
+- Modify: `app/Services/Finance/ExpenseSettlementService.php` - procurement endpoint protection support and append-only supplier refunds.
+- Create: `app/Services/Finance/SupplierPaymentService.php` - payout attempt lifecycle and confirmed settlement orchestration.
+- Create after provider gate: `app/Services/Finance/PaymongoSupplierPayoutGateway.php` - concrete shop-key HTTP boundary.
+- Create: `app/Services/SupplierAdjustmentService.php` - reporting, transitions, evidence, replacement totals, and refund resolution.
+- Modify: `app/Http/Controllers/Erp/SupplierController.php` - supplier fields, payment-profile management, and archival guard.
+- Modify: `app/Http/Controllers/Erp/PurchaseOrderController.php` - sort allowlist and completion response.
+- Modify: `app/Http/Controllers/Erp/PurchaseRequestController.php` - sort allowlist.
+- Modify: `app/Http/Controllers/Erp/PurchaseOrderReceiptController.php` - multipart receipt payloads and linked replacements.
+- Create: `app/Http/Controllers/Erp/SupplierAdjustmentController.php` - adjustment list/report/review/refund-proof actions.
+- Create: `app/Http/Controllers/Api/Finance/ProcurementExpenseController.php` - Review and Release, payment preview/initiation, payment-profile verification, and refund confirmation.
+- Modify after provider gate: `app/Http/Controllers/PaymongoWebhookController.php` - delegate only verified supplier-payout events.
+- Modify: `app/Http/Controllers/Api/Finance/ExpenseController.php` - procurement projection and reject public manual settlement bypass.
+- Modify: `app/Http/Requests/StorePurchaseOrderRequest.php` - payment-term allowlist.
+- Modify: `app/Http/Requests/StorePurchaseOrderReceiptRequest.php` - defect evidence and replacement validation.
+- Create: `app/Http/Requests/StoreSupplierPaymentProfileRequest.php`.
+- Create: `app/Http/Requests/StorePostPaymentIssueRequest.php`.
+- Create: `app/Http/Requests/UpdateSupplierAdjustmentRequest.php`.
+- Create: `app/Http/Requests/Finance/ReviewReleaseProcurementExpenseRequest.php`.
+- Create: `app/Http/Requests/Finance/InitiateSupplierPaymentRequest.php`.
+- Create: `app/Http/Requests/Finance/ConfirmSupplierRefundRequest.php`.
+- Modify: `routes/procurement-api.php` - nested profile, adjustment, evidence, issue, and replacement-aware receipt routes.
+- Modify: `routes/finance-api.php` - release, payment, profile verification, and refund-confirmation routes.
+
+### Notifications and audit
+
+- Modify: `app/Enums/NotificationType.php` - only supplier-workflow-specific types that cannot safely use an existing meaning.
+- Modify: `app/Services/NotificationService.php` - existing recipient resolution and preference-aware sends.
+- Modify: `resources/js/utils/resolveNotificationActionUrl.ts` - route new notification types to the existing Finance/Procurement pages.
+- Modify: `resources/js/types/notifications.ts` only if its union is explicit rather than string-compatible.
+
+### Frontend
+
+- Modify: `resources/js/types/procurement.ts` - profile, attempt, adjustment, evidence, receipt, and payment-term contracts.
+- Modify: `resources/js/services/supplierApi.ts` - payment-profile operations.
+- Modify: `resources/js/services/purchaseOrderApi.ts` - multipart receiving and adjustment operations.
+- Create: `resources/js/services/supplierAdjustmentApi.ts` only if the methods cannot remain cohesive in `purchaseOrderApi`; do not create both representations.
+- Modify: `resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx` - existing supplier fields and profile management.
+- Modify: `resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx` - category, notes, images, and replacement linkage.
+- Modify: `resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx` - one adjustment list/detail surface and late-issue entry point.
+- Create: `resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx` - focused adjustment interaction extracted from the already-large PO page.
+- Modify: `resources/js/Pages/ERP/Finance/Expense.tsx` - render procurement details and host release/payment/refund actions.
+- Create: `resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx` - focused details/actions extracted from the already-large Expense page.
+- Create: `resources/js/Pages/ERP/Finance/components/SupplierPaymentDialog.tsx` - immutable masked-destination confirmation.
+
+### Tests
+
+- Modify: `tests/Feature/Procurement/PurchaseRequestWorkflowTest.php`.
+- Modify: `tests/Feature/Procurement/PurchaseOrderWorkflowTest.php`.
+- Modify: `tests/Feature/Procurement/PurchaseOrderReceivingTest.php`.
+- Modify: `tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php`.
+- Modify: `tests/Feature/Procurement/ProcurementApiContractTest.php`.
+- Modify: `tests/Feature/Procurement/ProcurementAuthorizationTest.php`.
+- Modify: `tests/Feature/Finance/ExpenseSettlementTest.php`.
+- Create: `tests/Feature/Finance/ProcurementExpenseReleaseTest.php`.
+- Create: `tests/Feature/Finance/SupplierPaymentProfileTest.php`.
+- Create after provider gate: `tests/Feature/Finance/SupplierPaymentTest.php`.
+- Create: `tests/Feature/Procurement/SupplierAdjustmentTest.php`.
+- Create: `tests/Feature/Procurement/SupplierReplacementTest.php`.
+- Create: `tests/Feature/Finance/SupplierRefundTest.php`.
+- Modify: `tests/Feature/Notifications/NotificationCriticalFlowsTest.php`.
+- Modify: `tests/Feature/PaymongoWebhookSignatureTest.php` after the provider gate.
+- Modify: `resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx`.
+- Modify: `resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx`.
+- Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx`.
+- Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx`.
+- Create: `resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx`.
+- Modify: `resources/js/services/__tests__/procurementApis.test.ts`.
+
+## Execution rules
+
+- Use `@superpowers:test-driven-development` for every behavior change. Use `@laravel-best-practices`, `@security-review`, `@vercel-react-best-practices`, `@karpathy-guidelines`, and `@ponytail` where applicable during implementation.
+- This repository defaults to sequential inline execution. Subagent-driven execution requires the user's explicit approval under `AGENTS.md`.
+- Run CodeGraph before editing each application area, then inspect every caller of a changed shared service.
+- Preserve unrelated work. Before each commit run `git status --short` and commit only the paths listed for that task.
+- Use decimal strings/integer centavos for money. Never use floating-point values at provider or settlement boundaries.
+- Use database row locks in a stable order: expense/PO, attempt or adjustment, then dependent rows.
+- API responses expose masked destinations and sanitized failures only. Never serialize encrypted account numbers, destination snapshots, shop secrets, or raw provider bodies.
+- Reuse `PurchaseOrderPolicy` for receive/manage/complete operations and
+  `SupplierPolicy` for destination management. Finance routes reuse the
+  existing approval/expense capabilities plus `FinanceShopContext`; no second
+  role or policy system is planned.
+
+### Task 1: Lock current specification conflicts with regression tests
+
+**Files:**
+
+- Modify: `tests/Feature/Procurement/PurchaseRequestWorkflowTest.php`
+- Modify: `tests/Feature/Procurement/PurchaseOrderWorkflowTest.php`
+- Modify: `tests/Feature/Procurement/PurchaseOrderReceivingTest.php`
+- Modify: `tests/Feature/Procurement/ProcurementApiContractTest.php`
+- Modify: `tests/Feature/Finance/ExpenseSettlementTest.php`
+
+- [ ] **Step 1: Record the worktree baseline.**
+
+Run:
+
+```bash
+git status --short
+git log -1 --oneline
+```
+
+Expected: only explicitly known work is present; the approved spec commit is `d60341963` or an intentional descendant.
+
+- [ ] **Step 2: Run the current focused baseline before adding tests.**
+
+```bash
+php artisan test tests/Feature/Procurement/PurchaseRequestWorkflowTest.php tests/Feature/Procurement/PurchaseOrderWorkflowTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php tests/Feature/Finance/ExpenseSettlementTest.php
+pnpm exec vitest run resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx
+```
+
+Expected: preserve the recorded audit baseline; investigate any new failure before editing tests.
+
+- [ ] **Step 3: Add failing conflict tests.**
+
+Add assertions that:
+
+1. final PR approval does not create a PO, while explicit manual PO creation succeeds;
+2. Procurement can only progress `draft -> sent -> confirmed -> in_transit`, and cannot manually set `delivered`;
+3. only the six approved payment terms validate;
+4. COD and unimplemented allowlisted Net terms currently expose the due-date gap;
+5. arbitrary `sort_by` and invalid `sort_order` never reach SQL;
+6. `POST /api/finance/expenses/{id}/settlements` rejects a procurement receipt expense even when it is posted; and
+7. the service-level submitted-expense settlement guard remains unchanged.
+
+- [ ] **Step 4: Run only the new tests and confirm they fail for those gaps.**
+
+```bash
+php artisan test tests/Feature/Procurement/PurchaseRequestWorkflowTest.php tests/Feature/Procurement/PurchaseOrderWorkflowTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/ProcurementApiContractTest.php tests/Feature/Finance/ExpenseSettlementTest.php --filter='manual|payment_terms|due_date|sort|procurement.*settlement'
+```
+
+Expected: existing manual workflow assertions pass; new term, due-date, sorting, and settlement-boundary assertions fail without unrelated exceptions.
+
+- [ ] **Step 5: Commit the red tests.**
+
+```bash
+git commit --only -m "test: define procurement supplier payment contract" -- tests/Feature/Procurement/PurchaseRequestWorkflowTest.php tests/Feature/Procurement/PurchaseOrderWorkflowTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/ProcurementApiContractTest.php tests/Feature/Finance/ExpenseSettlementTest.php
+```
+
+### Task 2: Add the three records and three approved link columns
+
+**Files:**
+
+- Create: `database/migrations/2026_09_12_000001_create_supplier_payment_profiles_table.php`
+- Create: `database/migrations/2026_09_12_000002_create_supplier_payment_attempts_table.php`
+- Create: `database/migrations/2026_09_12_000003_create_supplier_adjustments_table.php`
+- Create: `database/migrations/2026_09_12_000004_add_supplier_workflow_links.php`
+- Create: `app/Models/SupplierPaymentProfile.php`
+- Create: `app/Models/SupplierPaymentAttempt.php`
+- Create: `app/Models/SupplierAdjustment.php`
+- Modify: `app/Models/Supplier.php`
+- Modify: `app/Models/PurchaseOrderReceiptItem.php`
+- Modify: `app/Models/Finance/Expense.php`
+- Modify: `app/Models/Finance/ExpenseSettlement.php`
+- Test: `tests/Feature/Procurement/ProcurementApiContractTest.php`
+
+- [ ] **Step 1: Add failing schema/model contract assertions.**
+
+Assert the three tables, approved columns, indexes, foreign keys, encrypted casts, hidden sensitive fields, and relationships. Assert there is no `supplier_refunds`, second receipt, or attachment table.
+
+- [ ] **Step 2: Run the schema test to verify it fails.**
+
+```bash
+php artisan test tests/Feature/Procurement/ProcurementApiContractTest.php --filter='supplier.*schema|workflow.*schema'
+```
+
+Expected: FAIL because the tables/models do not exist.
+
+- [ ] **Step 3: Create the minimum schema.**
+
+Use these exact responsibilities:
+
+- `supplier_payment_profiles`: `shop_owner_id`, unique `supplier_id`, destination type, bank name/code, account name, encrypted account number in `text`, status, verifier, verification timestamp, timestamps.
+- `supplier_payment_attempts`: shop, expense, supplier, profile, decimal amount, currency, provider, unique internal reference, nullable provider reference, shop-scoped idempotency key, encrypted destination snapshot in `longText`, status, sanitized failure fields, actor/lifecycle timestamps, nullable unique settlement link, timestamps.
+- `supplier_adjustments`: shop, originating receipt item, shop-scoped idempotency key, issue stage, quantity, unit-cost snapshot, reason category, immutable Inventory notes, status, resolution, Procurement notes, expected/supplier-reported refund details, actor/timestamps, timestamps.
+- `purchase_order_receipt_items.replacement_for_adjustment_id`, `finance_expense_settlements.supplier_adjustment_id`, and `finance_expense_settlements.notes` are nullable. Use restrictive/nulling delete behavior that preserves financial and audit history.
+
+Do not add duplicate status columns to PO or Expense.
+
+- [ ] **Step 4: Add model constants, casts, hidden fields, and relationships.**
+
+`SupplierPaymentProfile` uses `'encrypted'` for `account_number`; `SupplierPaymentAttempt` uses `'encrypted:array'` for `destination_snapshot`. Both hide raw sensitive values and expose explicit masked serializers. `SupplierAdjustment` implements `HasMedia`, uses `InteractsWithMedia`, and registers private `local`-disk collections for defect, supplier-refund, and Finance-confirmation evidence.
+
+- [ ] **Step 5: Run migrations and the focused model/schema test.**
+
+```bash
+php artisan migrate
+php artisan test tests/Feature/Procurement/ProcurementApiContractTest.php --filter='supplier.*schema|workflow.*schema'
+```
+
+Expected: migrations succeed and the contract passes.
+
+- [ ] **Step 6: Commit schema and models.**
+
+```bash
+git commit --only -m "feat: add supplier payment and adjustment records" -- database/migrations/2026_09_12_000001_create_supplier_payment_profiles_table.php database/migrations/2026_09_12_000002_create_supplier_payment_attempts_table.php database/migrations/2026_09_12_000003_create_supplier_adjustments_table.php database/migrations/2026_09_12_000004_add_supplier_workflow_links.php app/Models/SupplierPaymentProfile.php app/Models/SupplierPaymentAttempt.php app/Models/SupplierAdjustment.php app/Models/Supplier.php app/Models/PurchaseOrderReceiptItem.php app/Models/Finance/Expense.php app/Models/Finance/ExpenseSettlement.php tests/Feature/Procurement/ProcurementApiContractTest.php
+```
+
+### Task 3: Enforce payment terms, supplier fields, and safe sorting
+
+**Files:**
+
+- Modify: `app/Models/PurchaseOrder.php`
+- Modify: `app/Services/PurchaseOrderService.php`
+- Modify: `app/Services/ExpenseApprovalService.php`
+- Modify: `app/Http/Requests/StorePurchaseOrderRequest.php`
+- Modify: `app/Http/Controllers/Erp/SupplierController.php`
+- Modify: `app/Http/Controllers/Erp/ProcurementSettingsController.php`
+- Modify: `app/Http/Controllers/Erp/PurchaseOrderController.php`
+- Modify: `app/Http/Controllers/Erp/PurchaseRequestController.php`
+- Modify: `resources/js/types/procurement.ts`
+- Modify: `resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx`
+- Create: `resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx`
+- Test: `tests/Feature/Procurement/PurchaseOrderReceivingTest.php`
+- Test: `tests/Feature/Procurement/ProcurementApiContractTest.php`
+
+- [ ] **Step 1: Expand failing tests for all terms and snapshot precedence.**
+
+Freeze time and assert COD = receipt date; Net 7/15/30/45/60 = receipt date plus the exact calendar-day offset. Assert precedence is explicit valid PO term, supplier default, valid Procurement setting, then Net 30, and editing the supplier later leaves the PO unchanged.
+
+- [ ] **Step 2: Define the allowlist once on the PO domain.**
+
+Use one constant map and one parser, for example:
+
+```php
+public const PAYMENT_TERM_DAYS = [
+    'COD' => 0,
+    'Net 7' => 7,
+    'Net 15' => 15,
+    'Net 30' => 30,
+    'Net 45' => 45,
+    'Net 60' => 60,
+];
+```
+
+Reference `array_keys(PurchaseOrder::PAYMENT_TERM_DAYS)` from supplier, settings, and PO validation. Replace the permissive Net regex in `ExpenseApprovalService` with exact-map lookup.
+
+- [ ] **Step 3: Snapshot the resolved term during locked PO creation.**
+
+Do not read the supplier again after creating the PO. Resolve and persist the term in the same transaction that locks approved PRs and validates their common active supplier.
+
+- [ ] **Step 4: Normalize list sorting.**
+
+Map PO `sort_by` to `ordered_date`, `expected_delivery_date`, `po_number`, `status`, or `total_cost`; map PR sorting to `requested_date`, `pr_number`, `status`, or `total_cost`. Normalize direction to `asc` or `desc`, defaulting to the current descending date behavior.
+
+- [ ] **Step 5: Expose existing supplier fields in the existing UI.**
+
+Add controls for payment terms, lead time, products supplied, city, and country to create/edit/view flows. Do not add Supplier columns. Keep the current modal and `supplierApi` contract.
+
+- [ ] **Step 6: Run backend and frontend tests.**
+
+```bash
+php artisan test tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/ProcurementApiContractTest.php tests/Unit/Services/PurchaseOrderServiceTest.php
+pnpm exec vitest run resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx resources/js/services/__tests__/procurementApis.test.ts
+```
+
+Expected: every term/due date, immutable snapshot, field round-trip, and sort allowlist passes.
+
+- [ ] **Step 7: Commit term, supplier, and sorting changes.**
+
+```bash
+git commit --only -m "feat: enforce procurement payment terms" -- app/Models/PurchaseOrder.php app/Services/PurchaseOrderService.php app/Services/ExpenseApprovalService.php app/Http/Requests/StorePurchaseOrderRequest.php app/Http/Controllers/Erp/SupplierController.php app/Http/Controllers/Erp/ProcurementSettingsController.php app/Http/Controllers/Erp/PurchaseOrderController.php app/Http/Controllers/Erp/PurchaseRequestController.php resources/js/types/procurement.ts resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/ProcurementApiContractTest.php tests/Unit/Services/PurchaseOrderServiceTest.php resources/js/services/__tests__/procurementApis.test.ts
+```
+
+### Task 4: Add Finance Review and Release
+
+**Files:**
+
+- Create: `app/Http/Controllers/Api/Finance/ProcurementExpenseController.php`
+- Create: `app/Http/Requests/Finance/ReviewReleaseProcurementExpenseRequest.php`
+- Modify: `app/Services/ExpenseApprovalService.php`
+- Modify: `app/Http/Controllers/Api/Finance/ExpenseController.php`
+- Modify: `routes/finance-api.php`
+- Create: `tests/Feature/Finance/ProcurementExpenseReleaseTest.php`
+- Modify: `tests/Feature/Finance/ExpenseSettlementTest.php`
+- Modify: `resources/js/Pages/ERP/Finance/Expense.tsx`
+- Create: `resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx`
+
+- [ ] **Step 1: Write failing release and bypass tests.**
+
+Cover success, replay, non-procurement misuse, wrong status, voided receipt, amount mismatch, missing Finance capability, and cross-shop expense/receipt/PO/supplier. Assert the public settlement endpoint rejects procurement expenses while a direct service call still preserves its current submitted/posted guard.
+
+- [ ] **Step 2: Run the new Finance tests and confirm failure.**
+
+```bash
+php artisan test tests/Feature/Finance/ProcurementExpenseReleaseTest.php tests/Feature/Finance/ExpenseSettlementTest.php --filter='procurement|release|manual.*settlement'
+```
+
+Expected: FAIL because the release endpoint is absent and the current public settlement endpoint permits posted procurement expenses.
+
+- [ ] **Step 3: Implement one locked release method.**
+
+`ExpenseApprovalService::reviewAndReleaseProcurementExpense()` must lock the expense, load the posted nonvoid receipt and same-shop PO/supplier, recompute `sum(accepted_quantity * purchase_order_items.unit_cost)` using decimal-safe arithmetic, and compare it to the stored expense amount. On success set only `status = posted`, `approved_by`, `approved_at`, and `approval_notes`; duplicate calls return a deterministic invalid-state/replay response rather than creating approval rows.
+
+- [ ] **Step 4: Add the route and thin controller.**
+
+Add `POST /api/finance/expenses/{id}/review-release` under the existing
+`permission:access-approval-workflow|approve-expenses` capability group.
+Resolve the Finance shop with existing `FinanceShopContext`, pass the actor to
+the service, and use `FinanceErrorResponse` for domain failures. Viewing the
+expense remains under `access-finance-expenses`.
+
+- [ ] **Step 5: Expand the procurement expense projection.**
+
+Return supplier, PO/receipt numbers, ordered/received/accepted/defective quantities, unit cost, payable, snapshotted term, receipt/due dates, expense status, derived payment status, and derived timing. Timing order is Overdue, Due Today, Due Soon for day offsets 1..3, then Not Due.
+
+- [ ] **Step 6: Add the existing-page UI state.**
+
+Render `Review & Release` only for submitted procurement expenses. Render `READY FOR PAYMENT` only for posted eligible expenses. Keep normal expense approval controls unchanged and do not show Pay Supplier while submitted.
+
+- [ ] **Step 7: Run focused release tests.**
+
+```bash
+php artisan test tests/Feature/Finance/ProcurementExpenseReleaseTest.php tests/Feature/Finance/ExpenseSettlementTest.php
+pnpm exec vitest run resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx
+```
+
+Expected: release and UI tests pass; existing manual expense approvals and settlement guards remain green.
+
+- [ ] **Step 8: Commit Review and Release.**
+
+```bash
+git commit --only -m "feat: release procurement expenses for payment" -- app/Http/Controllers/Api/Finance/ProcurementExpenseController.php app/Http/Requests/Finance/ReviewReleaseProcurementExpenseRequest.php app/Services/ExpenseApprovalService.php app/Http/Controllers/Api/Finance/ExpenseController.php routes/finance-api.php tests/Feature/Finance/ProcurementExpenseReleaseTest.php tests/Feature/Finance/ExpenseSettlementTest.php resources/js/Pages/ERP/Finance/Expense.tsx resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx
+```
+
+### Task 5: Add supplier payment-profile management and masking
+
+**Files:**
+
+- Create: `app/Http/Requests/StoreSupplierPaymentProfileRequest.php`
+- Modify: `app/Http/Controllers/Erp/SupplierController.php`
+- Modify: `app/Http/Controllers/Api/Finance/ProcurementExpenseController.php`
+- Modify: `routes/procurement-api.php`
+- Modify: `routes/finance-api.php`
+- Modify: `resources/js/types/procurement.ts`
+- Modify: `resources/js/services/supplierApi.ts`
+- Modify: `resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx`
+- Modify: `resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx`
+- Create: `tests/Feature/Finance/SupplierPaymentProfileTest.php`
+
+- [ ] **Step 1: Write failing profile security and lifecycle tests.**
+
+Test encrypted-at-rest account data, masked output, unique supplier profile, same-shop access, Procurement create/update, Finance verify/disable, unauthorized role denial, and bank/account edits resetting status and verifier fields to `unverified`.
+
+- [ ] **Step 2: Run the focused test and confirm failure.**
+
+```bash
+php artisan test tests/Feature/Finance/SupplierPaymentProfileTest.php
+```
+
+Expected: FAIL because profile endpoints are absent.
+
+- [ ] **Step 3: Implement Procurement profile management.**
+
+Nest show/upsert routes under `/api/erp/procurement/suppliers/{id}/payment-profile`, authorize through the existing `SupplierPolicy`/`procurement.manage_suppliers`, lock and re-check `shop_owner_id`, validate destination fields, encrypt the account number through the model cast, and return only masked data.
+
+- [ ] **Step 4: Implement Finance verification without editing.**
+
+Expose verify and disable actions under the Finance expense/profile route. Finance receives bank name, account name, masked suffix, and status only. It cannot submit replacement destination fields. Verification records the actor/time; disabling clears neither encrypted history nor payment-attempt snapshots.
+
+- [ ] **Step 5: Add the existing Supplier and Finance UI controls.**
+
+The supplier modal owns destination editing. The Finance procurement panel owns verify/disable actions and never renders the full account number. Do not cache raw details in React state, notifications, or errors.
+
+- [ ] **Step 6: Run profile tests.**
+
+```bash
+php artisan test tests/Feature/Finance/SupplierPaymentProfileTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php
+pnpm exec vitest run resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx
+```
+
+Expected: encryption, masking, transitions, role boundaries, and tenant denial pass.
+
+- [ ] **Step 7: Commit profile support.**
+
+```bash
+git commit --only -m "feat: manage verified supplier payment profiles" -- app/Http/Requests/StoreSupplierPaymentProfileRequest.php app/Http/Controllers/Erp/SupplierController.php app/Http/Controllers/Api/Finance/ProcurementExpenseController.php routes/procurement-api.php routes/finance-api.php resources/js/types/procurement.ts resources/js/services/supplierApi.ts resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx tests/Feature/Finance/SupplierPaymentProfileTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php
+```
+
+### Task 6: Add payment attempts and shop-specific PayMongo settlement
+
+**Blocking provider gate:** Before writing `PaymongoSupplierPayoutGateway`, its HTTP tests, or supplier-payout branches in `PaymongoWebhookController`, obtain and record the exact outbound product enabled for the shop account: endpoint, request schema, destination/bank-code contract, idempotency header behavior, immediate and terminal statuses, retrieval/reconciliation endpoint, test-mode behavior, webhook event names/payloads, and signature ownership. If separate shop webhook secrets or a platform-owned account are required, stop and amend the approved design before adding schema or fallback behavior.
+
+**Files:**
+
+- Create: `app/Services/Finance/SupplierPaymentService.php`
+- Create after gate: `app/Services/Finance/PaymongoSupplierPayoutGateway.php`
+- Create: `app/Http/Requests/Finance/InitiateSupplierPaymentRequest.php`
+- Modify: `app/Http/Controllers/Api/Finance/ProcurementExpenseController.php`
+- Modify after gate: `app/Http/Controllers/PaymongoWebhookController.php`
+- Modify: `routes/finance-api.php`
+- Create after gate: `tests/Feature/Finance/SupplierPaymentTest.php`
+- Modify after gate: `tests/Feature/PaymongoWebhookSignatureTest.php`
+- Modify: `resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx`
+- Create: `resources/js/Pages/ERP/Finance/components/SupplierPaymentDialog.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx`
+
+- [ ] **Step 1: Verify and document the provider contract.**
+
+Record the authoritative PayMongo documentation/account evidence in the implementation notes or PR. Do not infer transfer event names from inbound payment/refund APIs. Confirm whether the existing global webhook secret can authenticate events for shop-owned accounts; if not, return to design review.
+
+- [ ] **Step 2: Write failing attempt/idempotency tests from verified fixtures.**
+
+Use `Http::fake()` with captured, sanitized test-mode fixtures. Cover posted
+eligibility, positive full outstanding balance, early payment of a valid Net-
+term expense, nonvoid receipt, verified same-shop profile, missing/invalid shop
+key, double click, same-key replay, same-key/different-payload conflict,
+concurrent active attempt, provider pending, timeout/unknown, terminal
+failure/retry, confirmed success, duplicate/out-of-order webhook, binding
+mismatch, and overpayment prevention.
+
+- [ ] **Step 3: Run tests and verify domain/provider failures.**
+
+```bash
+php artisan test tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/PaymongoWebhookSignatureTest.php
+```
+
+Expected: FAIL because payment orchestration and the verified provider mapping are absent.
+
+- [ ] **Step 4: Implement attempt creation before external I/O.**
+
+In one transaction, lock the expense, its `ShopOwner` identified by
+`expense.shop_id`, and current attempts; verify all same-shop links and the
+profile, calculate outstanding centavos, create `initiating` with a unique
+internal reference, shop-scoped key, and encrypted destination snapshot, then
+commit. Read only that locked shop owner's decrypted `paymongo_secret_key`;
+missing/invalid credentials fail before dispatch. Call the provider outside
+the transaction.
+
+- [ ] **Step 5: Implement verified provider result mapping.**
+
+The concrete gateway accepts the shop key and immutable attempt snapshot, uses Basic authentication, explicit connect/response timeouts, integer centavos, and the verified idempotency header. Return only normalized outcome/reference/binding data; never return or log raw secret, account number, or provider body.
+
+- [ ] **Step 6: Persist outcomes and settle confirmed success once.**
+
+Pending/accepted/unknown becomes `processing`; terminal failure becomes `failed`; only verified terminal success becomes `succeeded` and calls `ExpenseSettlementService::record()` using source `procurement` and a stable provider source reference. Lock and verify amount, currency, provider reference, destination binding, shop, and status before settlement. Link the resulting settlement to the attempt. Late failure after success is inert and logged without sensitive data.
+
+- [ ] **Step 7: Add the immutable confirmation UI.**
+
+Show supplier, PO, amount, bank, masked account, and PayMongo. Disable submit while active, reuse one client request key for retries of the same click, display processing without claiming paid, and expose retry only after terminal failure.
+
+- [ ] **Step 8: Run payment tests.**
+
+```bash
+php artisan test tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/PaymongoWebhookSignatureTest.php
+pnpm exec vitest run resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx
+```
+
+Expected: all lifecycle, duplicate, tenant, secret, and settlement assertions pass using test-mode fakes.
+
+- [ ] **Step 9: Commit payment support only after the provider gate passed.**
+
+```bash
+git commit --only -m "feat: settle shop-funded supplier payouts" -- app/Services/Finance/SupplierPaymentService.php app/Services/Finance/PaymongoSupplierPayoutGateway.php app/Http/Requests/Finance/InitiateSupplierPaymentRequest.php app/Http/Controllers/Api/Finance/ProcurementExpenseController.php app/Http/Controllers/PaymongoWebhookController.php routes/finance-api.php tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/PaymongoWebhookSignatureTest.php resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx resources/js/Pages/ERP/Finance/components/SupplierPaymentDialog.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx
+```
+
+### Task 7: Add receiving-time and post-payment issue reporting with private evidence
+
+**Files:**
+
+- Create: `app/Services/SupplierAdjustmentService.php`
+- Create: `app/Http/Controllers/Erp/SupplierAdjustmentController.php`
+- Create: `app/Http/Requests/StorePostPaymentIssueRequest.php`
+- Create: `app/Http/Requests/UpdateSupplierAdjustmentRequest.php`
+- Modify: `app/Http/Requests/StorePurchaseOrderReceiptRequest.php`
+- Modify: `app/Services/PurchaseOrderReceiptService.php`
+- Modify: `app/Http/Controllers/Erp/PurchaseOrderReceiptController.php`
+- Modify: `routes/procurement-api.php`
+- Modify: `resources/js/types/procurement.ts`
+- Modify: `resources/js/services/purchaseOrderApi.ts`
+- Create conditionally: `resources/js/services/supplierAdjustmentApi.ts`
+- Modify: `resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx`
+- Create: `resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx`
+- Modify: `resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx`
+- Create: `tests/Feature/Procurement/SupplierAdjustmentTest.php`
+- Modify: `tests/Feature/Procurement/PurchaseOrderReceivingTest.php`
+- Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx`
+- Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx`
+
+- [ ] **Step 1: Write failing receiving-defect tests.**
+
+For `defective_quantity > 0`, require an allowlisted category, notes, and at least one valid image; explicitly test `other` without notes. Assert reported actor/server timestamp, unit-cost snapshot, immutable report fields, excluded payable amount, private media, tenant-protected download, idempotent replay, payload conflict, and rollback/file cleanup when evidence storage fails.
+
+- [ ] **Step 2: Write failing post-payment issue tests.**
+
+Require a posted nonvoid same-shop receipt, accepted units, posted expense, confirmed paid amount, quantity within remaining paid accepted units after open issues, category/notes/image, and Inventory authorization. Assert the original receipt, accepted quantity, stock movement, payment attempt, and settlement are unchanged. Include completed historical POs: the late adjustment is allowed but does not rewrite PO status.
+
+- [ ] **Step 3: Run issue tests and verify failure.**
+
+```bash
+php artisan test tests/Feature/Procurement/SupplierAdjustmentTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php --filter='defect|issue|evidence'
+```
+
+Expected: FAIL because adjustment creation and evidence validation are absent.
+
+- [ ] **Step 4: Implement constants and lifecycle centrally.**
+
+Put the five category constants, two issue stages, statuses, and two resolutions on `SupplierAdjustment`. `SupplierAdjustmentService` locks and rechecks shop ownership, validates transition pairs, records actor/timestamps, and writes Spatie Activitylog properties containing IDs, safe references, prior/new state, and notes but no full account details.
+
+- [ ] **Step 5: Extend canonical receipt posting atomically.**
+
+Include category, notes, replacement ID, and stable evidence hashes in the receipt payload hash. Create each receiving-defect adjustment from its newly created receipt item inside the existing receipt transaction. Attach evidence to private `local` collections; on any exception remove newly staged media and let the database transaction roll back. Do not change accepted-stock or expense arithmetic.
+
+- [ ] **Step 6: Implement the explicit late-issue endpoint.**
+
+Nest the action under the posted receipt item and PO so the controller can authorize `receive` on the canonical PO before calling the service. Use a shop-scoped idempotency key. Resolve supplier, PO, and expense through the receipt item; never trust submitted supplier/expense IDs.
+
+- [ ] **Step 7: Implement evidence access and immutable UI.**
+
+Allow only configured image MIME types and sizes. Download by adjustment + media ID, verify media model binding and shop ownership, and return private/no-store responses. The receipt UI submits multipart data; the PO adjustment panel shows immutable Inventory report/evidence and appends Procurement actions separately.
+
+- [ ] **Step 8: Run issue and UI tests.**
+
+```bash
+php artisan test tests/Feature/Procurement/SupplierAdjustmentTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php
+pnpm exec vitest run resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/services/__tests__/procurementApis.test.ts
+```
+
+Expected: validation, private evidence, immutability, rollback, idempotency, and tenant checks pass.
+
+- [ ] **Step 9: Commit issue reporting.**
+
+```bash
+git commit --only -m "feat: report supplier quality adjustments" -- app/Services/SupplierAdjustmentService.php app/Http/Controllers/Erp/SupplierAdjustmentController.php app/Http/Requests/StorePostPaymentIssueRequest.php app/Http/Requests/UpdateSupplierAdjustmentRequest.php app/Http/Requests/StorePurchaseOrderReceiptRequest.php app/Services/PurchaseOrderReceiptService.php app/Http/Controllers/Erp/PurchaseOrderReceiptController.php routes/procurement-api.php resources/js/types/procurement.ts resources/js/services/purchaseOrderApi.ts resources/js/services/supplierAdjustmentApi.ts resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx resources/js/Pages/ERP/Procurement/PurchaseOrders.tsx tests/Feature/Procurement/SupplierAdjustmentTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/services/__tests__/procurementApis.test.ts
+```
+
+Omit `resources/js/services/supplierAdjustmentApi.ts` from the commit if the implementation keeps those methods in `purchaseOrderApi`.
+
+### Task 8: Link replacement receipts through the canonical receiver
+
+**Files:**
+
+- Modify: `app/Http/Requests/StorePurchaseOrderReceiptRequest.php`
+- Modify: `app/Services/PurchaseOrderReceiptService.php`
+- Modify: `app/Services/SupplierAdjustmentService.php`
+- Modify: `app/Models/PurchaseOrderReceiptItem.php`
+- Modify: `resources/js/types/procurement.ts`
+- Modify: `resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx`
+- Modify: `resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx`
+- Create: `tests/Feature/Procurement/SupplierReplacementTest.php`
+- Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx`
+
+- [ ] **Step 1: Write failing replacement tests.**
+
+Cover same-shop/PO/item linkage, replacement-only resolution, remaining replacement quantity, duplicate receipt key, concurrent receives, partial replacement, full resolution, defective replacement evidence, and wrong adjustment/PO denial. Assert a receiving-defect replacement creates the normal accepted payable; a post-payment replacement adds inventory but no second expense.
+
+- [ ] **Step 2: Add delivered/completed late-replacement coverage.**
+
+Assert a valid linked replacement may use `PurchaseOrderReceiptService` after receipt-driven delivery (and after a historically completed PO receives a later post-payment issue), while the PO status is not reopened or reassigned. An unlinked ordinary receipt remains prohibited outside existing receiving statuses.
+
+- [ ] **Step 3: Run replacement tests and confirm failure.**
+
+```bash
+php artisan test tests/Feature/Procurement/SupplierReplacementTest.php
+```
+
+Expected: FAIL because replacement linkage is not yet consumed by the receipt service.
+
+- [ ] **Step 4: Implement linked replacement eligibility.**
+
+Lock the PO, adjustment, original item, and replacement receipt totals. Require matching shop and PO item, active replacement resolution, and quantity no greater than remaining. Permit delivered/completed POs only for a valid linked replacement and preserve their current fulfillment status.
+
+- [ ] **Step 5: Keep payable behavior issue-stage-specific.**
+
+Call the existing inventory posting path for accepted quantities. Include accepted replacement value in the receipt expense only for `receiving_defect`; for `post_payment_issue`, persist the receipt/inventory/stock movement but skip that line's payable. Never create a synthetic negative expense.
+
+- [ ] **Step 6: Keep defective replacements in the same case.**
+
+Require new category, notes, and images. Attach them to the original adjustment with media custom properties identifying the replacement receipt item; append activity rather than overwrite the original report. Resolve only when total accepted linked replacements reaches reported quantity.
+
+- [ ] **Step 7: Run replacement and existing receiving tests.**
+
+```bash
+php artisan test tests/Feature/Procurement/SupplierReplacementTest.php tests/Feature/Procurement/PurchaseOrderReceivingTest.php tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php
+pnpm exec vitest run resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx
+```
+
+Expected: replacement distinctions pass and all existing size/color, partial-receipt, expense, and idempotency tests remain green.
+
+- [ ] **Step 8: Commit replacement linkage.**
+
+```bash
+git commit --only -m "feat: receive supplier replacements canonically" -- app/Http/Requests/StorePurchaseOrderReceiptRequest.php app/Services/PurchaseOrderReceiptService.php app/Services/SupplierAdjustmentService.php app/Models/PurchaseOrderReceiptItem.php resources/js/types/procurement.ts resources/js/Pages/ERP/Procurement/components/PurchaseOrderReceiptPanel.tsx resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx tests/Feature/Procurement/SupplierReplacementTest.php resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx
+```
+
+### Task 9: Record supplier refunds through ExpenseSettlementService
+
+**Files:**
+
+- Create: `app/Http/Requests/Finance/ConfirmSupplierRefundRequest.php`
+- Modify: `app/Services/Finance/ExpenseSettlementService.php`
+- Modify: `app/Services/SupplierAdjustmentService.php`
+- Modify: `app/Models/Finance/ExpenseSettlement.php`
+- Modify: `app/Http/Controllers/Erp/SupplierAdjustmentController.php`
+- Modify: `app/Http/Controllers/Api/Finance/ProcurementExpenseController.php`
+- Modify: `routes/procurement-api.php`
+- Modify: `routes/finance-api.php`
+- Modify: `resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx`
+- Create: `tests/Feature/Finance/SupplierRefundTest.php`
+- Modify: `tests/Feature/Finance/ExpenseSettlementTest.php`
+
+- [ ] **Step 1: Write failing proof and refund-ledger tests.**
+
+Cover refund eligibility only after confirmed payment, supplier proof -> `awaiting_verification`, Finance-only confirmation, actual amount/reference/date/proof/notes, partial/full totals, duplicate key replay, changed-payload conflict, over-refund rejection, cross-shop denial, and expected-amount changes in the activity log. Assert initial unpaid receiving defects cannot use refund resolution.
+
+- [ ] **Step 2: Write settlement-state regression tests.**
+
+Assert the original supplier payment remains fully paid after one or more `supplier_refund` entries, `refunded_amount` is reported separately, reversal arithmetic remains unchanged, and refund entries cannot be reversed through the normal settlement reversal endpoint.
+
+- [ ] **Step 3: Run refund tests and confirm failure.**
+
+```bash
+php artisan test tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php --filter='supplier_refund|refunded_amount|refund proof'
+```
+
+Expected: FAIL because supplier-refund entry handling does not exist.
+
+- [ ] **Step 4: Add append-only supplier-refund recording.**
+
+Add `ExpenseSettlement::ENTRY_SUPPLIER_REFUND`. Update settled totals to add only settlement entries and subtract only linked reversal entries; never treat every unknown entry as a reversal. Add `ExpenseSettlementService::recordSupplierRefund()` to lock adjustment/expense, enforce same shop and paid capacity, reuse the existing shop-scoped idempotency/source-reference uniqueness, and append the approved link/notes fields.
+
+- [ ] **Step 5: Implement proof and Finance confirmation.**
+
+Expose role-scoped supplier-proof upload actions from both the Procurement
+adjustment route and the Finance procurement-expense route; both delegate to
+the same adjustment service. Either role may attach supplier proof and
+reported details without confirming cash. Finance confirmation requires its
+own private proof and calls only `recordSupplierRefund()`. Sum confirmed
+entries by adjustment; set `partially_refunded` below expected and `resolved`
+at the expected amount. Preserve all original settlement rows.
+
+- [ ] **Step 6: Add existing-page UI actions.**
+
+Procurement records expected amount, communication, and supplier proof in the adjustment panel. Finance sees original payment, expected/remaining refund, supplier proof, and confirmation fields in the procurement expense panel. Supplier proof alone never displays confirmed.
+
+- [ ] **Step 7: Run refund tests.**
+
+```bash
+php artisan test tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/Procurement/SupplierAdjustmentTest.php
+pnpm exec vitest run resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx
+```
+
+Expected: proof, partial/full confirmation, immutable payment history, and tenant assertions pass.
+
+- [ ] **Step 8: Commit refund support.**
+
+```bash
+git commit --only -m "feat: verify supplier refunds in finance ledger" -- app/Http/Requests/Finance/ConfirmSupplierRefundRequest.php app/Services/Finance/ExpenseSettlementService.php app/Services/SupplierAdjustmentService.php app/Models/Finance/ExpenseSettlement.php app/Http/Controllers/Erp/SupplierAdjustmentController.php app/Http/Controllers/Api/Finance/ProcurementExpenseController.php routes/procurement-api.php routes/finance-api.php resources/js/Pages/ERP/Procurement/components/SupplierAdjustmentsPanel.tsx resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php
+```
+
+### Task 10: Add void/completion guards, notifications, and final tenant coverage
+
+**Files:**
+
+- Modify: `app/Services/PurchaseOrderReceiptService.php`
+- Modify: `app/Models/PurchaseOrder.php`
+- Modify: `app/Services/PurchaseOrderService.php`
+- Modify: `app/Http/Controllers/Erp/SupplierController.php`
+- Modify: `app/Enums/NotificationType.php`
+- Modify: `app/Services/NotificationService.php`
+- Modify: `resources/js/utils/resolveNotificationActionUrl.ts`
+- Modify conditionally: `resources/js/types/notifications.ts`
+- Modify: `tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php`
+- Modify: `tests/Feature/Procurement/PurchaseOrderWorkflowTest.php`
+- Modify: `tests/Feature/Procurement/ProcurementAuthorizationTest.php`
+- Modify: `tests/Feature/Notifications/NotificationCriticalFlowsTest.php`
+
+- [ ] **Step 1: Write failing void and completion tests.**
+
+Assert an unpaid submitted or posted receipt may be voided and reversed only with no successful settlement and no initiating/processing payment attempt. Failed attempts remain. Processing/paid blocks void. Assert `delivered` remains receipt-owned, while manual `delivered -> completed` requires every receipt expense posted/fully settled, no active payment attempt, and no unresolved adjustment.
+
+- [ ] **Step 2: Add supplier archival and tenant matrix tests.**
+
+Block archival for unresolved adjustments, unpaid posted expenses, or active attempts. Test Shop A cannot list, read, update, verify, pay, receive replacement, confirm refund, or download evidence for Shop B records. Verify existing permissions are reused: Inventory receiving permissions, Procurement PO/supplier permissions, and Finance expense permissions; add no redundant role system.
+
+- [ ] **Step 3: Add notification tests first.**
+
+Cover payable creation -> Finance, release -> Procurement, in transit -> Inventory, issue -> Procurement, replacement request -> Inventory/Procurement, payment success -> Procurement, payment failure -> Finance, refund proof -> Finance, and refund confirmation -> Procurement. Assert recipients are same-shop and links resolve to existing pages.
+
+- [ ] **Step 4: Implement void and completion guards under locks.**
+
+Query settlement state and active attempts before inventory reversal. Add payable/attempt/adjustment guards to `markAsCompleted()` or the service immediately surrounding it without touching `markAsDeliveredFromReceipts()`. A late issue on an already completed PO remains auditable and resolvable; do not rewrite historical completion.
+
+- [ ] **Step 5: Add minimal notification types and methods.**
+
+Reuse `EXPENSE_SUBMITTED` for receipt-created payable if its wording remains accurate. Add supplier-specific enum values only where existing customer/repair meanings would mislead. Route all sends through `NotificationService` and existing recipient/preference logic; notification failures must not roll back financial or inventory transactions.
+
+- [ ] **Step 6: Run guard, authorization, and notification tests.**
+
+```bash
+php artisan test tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php tests/Feature/Procurement/PurchaseOrderWorkflowTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php
+```
+
+Expected: all state, archival, recipient, and cross-shop tests pass without changing receipt-owned delivery.
+
+- [ ] **Step 7: Commit guards and notifications.**
+
+```bash
+git commit --only -m "feat: guard procurement closure and notify owners" -- app/Services/PurchaseOrderReceiptService.php app/Models/PurchaseOrder.php app/Services/PurchaseOrderService.php app/Http/Controllers/Erp/SupplierController.php app/Enums/NotificationType.php app/Services/NotificationService.php resources/js/utils/resolveNotificationActionUrl.ts resources/js/types/notifications.ts tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php tests/Feature/Procurement/PurchaseOrderWorkflowTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php
+```
+
+Omit `resources/js/types/notifications.ts` if no explicit union change is required.
+
+### Task 11: Run the full review and verification gates
+
+**Files:**
+
+- Modify only if behavior changed: `docs/ai-learning-log.md`
+- Verify: all files changed by Tasks 1-10
+
+- [ ] **Step 1: Run focused backend workflow suites.**
+
+```bash
+php artisan test tests/Feature/Procurement tests/Feature/Finance/ProcurementExpenseReleaseTest.php tests/Feature/Finance/SupplierPaymentProfileTest.php tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/PaymongoWebhookSignatureTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php
+```
+
+Expected: PASS. If Task 6 remains blocked, do not create placeholder provider files or tests; report the exact omitted paths and blocker instead of claiming completion.
+
+- [ ] **Step 2: Run focused frontend suites.**
+
+```bash
+pnpm exec vitest run resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx resources/js/services/__tests__/procurementApis.test.ts
+```
+
+Expected: PASS.
+
+- [ ] **Step 3: Run repository quality gates.**
+
+```bash
+composer test
+pnpm run test:frontend
+pnpm run build
+git diff --check
+git status --short
+```
+
+Expected: all tests/build pass, diff check is silent, and only intentional changes remain. Do not report TypeScript lint/type-check as passed because the repository has no committed scripts for them.
+
+- [ ] **Step 4: Perform the required sequential reviews.**
+
+Record results for: simplification/YAGNI, repository standards, approved-spec compliance, TypeScript readability, React bundle impact, security of auth/uploads/payments/secrets, reuse, dead code, and evidence. Verify no global credential fallback, raw bank detail serialization, arbitrary sorting, duplicate settlement path, second receiving path, or excluded feature was introduced.
+
+- [ ] **Step 5: Browser-check the existing pages when the local app is runnable.**
+
+Use `@webapp-testing` to verify Supplier profile masking, receiving defect validation, adjustment evidence access, Finance release visibility, immutable payment confirmation, processing/failure/success states, replacement receiving, and partial/full refund confirmation at desktop and narrow widths.
+
+- [ ] **Step 6: Record only durable project learning.**
+
+Update `docs/ai-learning-log.md` only if implementation revealed reusable architecture guidance. Never record credentials, bank data, provider payload secrets, or personal information.
+
+- [ ] **Step 7: Create the final verification commit if documentation changed.**
+
+```bash
+git commit --only -m "docs: record procurement workflow verification" -- docs/ai-learning-log.md
+```
+
+Skip this commit when no durable learning was added.
+
+## Completion evidence required
+
+The implementation handoff must list exact migrations, models, services, controllers/routes, policies or reused permissions, frontend components, notification changes, tests executed, results, unrelated existing failures, and the verified PayMongo contract. It must explicitly confirm that `PurchaseOrderReceiptService`, `ExpenseSettlementService`, shop isolation, receipt-driven `delivered`, append-only payment/refund history, and every excluded feature remained intact.
