@@ -9,6 +9,7 @@ import { purchaseRequestApi } from "@/services/purchaseRequestApi";
 import type { PurchaseOrder as PurchaseOrderType, PurchaseRequest } from "@/types/procurement";
 import { hasPermission } from "@/utils/permissions";
 import PurchaseOrderReceiptPanel from "./components/PurchaseOrderReceiptPanel";
+import SupplierAdjustmentsPanel from "./components/SupplierAdjustmentsPanel";
 
 type PurchaseOrderStatus = "draft" | "sent" | "confirmed" | "in_transit" | "partially_received" | "delivered" | "completed" | "cancelled";
 type MetricColor = "success" | "warning" | "info" | "danger";
@@ -366,6 +367,9 @@ export default function PurchaseOrders() {
 	const canComplete = !ownerMode && hasPermission(auth, "procurement.complete_purchase_orders");
 	const canCancel = !ownerMode && hasPermission(auth, "procurement.cancel_purchase_orders");
 	const canVoid = !ownerMode && hasPermission(auth, "procurement.void_purchase_order_receipts");
+	const canReportSupplierIssues = !ownerMode
+		&& hasPermission(auth, "procurement.receive_purchase_orders")
+		&& hasPermission(auth, "view-inventory");
 	const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderType[]>(initialData?.data ?? []);
 	const [approvedPRs, setApprovedPRs] = useState<PurchaseRequest[]>(initialApprovedPRs ?? []);
 	const [loading, setLoading] = useState(false);
@@ -1191,6 +1195,14 @@ export default function PurchaseOrders() {
 									const refreshed = await purchaseOrderApi.getById(viewingOrder.id);
 									setViewingOrder(refreshed);
 									await Promise.all([fetchPurchaseOrders(), fetchMetrics()]);
+								}}
+							/>
+							<SupplierAdjustmentsPanel
+								order={viewingOrder}
+								canReport={canReportSupplierIssues}
+								onChanged={async () => {
+									const refreshed = await purchaseOrderApi.getById(viewingOrder.id);
+									setViewingOrder(refreshed);
 								}}
 							/>
 						</div>

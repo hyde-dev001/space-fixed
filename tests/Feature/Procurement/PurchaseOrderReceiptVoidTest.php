@@ -17,6 +17,8 @@ use App\Models\SupplierPaymentAttempt;
 use App\Models\SupplierPaymentProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -32,6 +34,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
     {
         parent::setUp();
         config(['auth.defaults.guard' => 'user']);
+        Storage::fake('local');
         $this->owner = ShopOwner::factory()->create();
         $this->receiver = User::factory()->for($this->owner)->create();
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->owner->id]);
@@ -262,16 +265,26 @@ class PurchaseOrderReceiptVoidTest extends TestCase
 
     private function postReceipt(PurchaseOrder $po, PurchaseOrderItem $item, int $received, int $defective): int
     {
-        return (int) $this->actingAs($this->receiver, 'user')->postJson(
+        $payload = [
+            'idempotency_key' => fake()->uuid(),
+            'items' => [[
+                'purchase_order_item_id' => $item->id,
+                'received_quantity' => $received,
+                'defective_quantity' => $defective,
+            ]],
+        ];
+        if ($defective > 0) {
+            $payload['items'][0]['reason_category'] = 'damaged';
+            $payload['items'][0]['inventory_notes'] = 'Test receiving defect.';
+            $payload['items'][0]['defect_evidence'] = [
+                UploadedFile::fake()->create('defect.jpg', 10, 'image/jpeg'),
+            ];
+        }
+
+        return (int) $this->actingAs($this->receiver, 'user')->post(
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts",
-            [
-                'idempotency_key' => fake()->uuid(),
-                'items' => [[
-                    'purchase_order_item_id' => $item->id,
-                    'received_quantity' => $received,
-                    'defective_quantity' => $defective,
-                ]],
-            ]
+            $payload,
+            ['Accept' => 'application/json'],
         )->assertCreated()->json('data.id');
     }
 

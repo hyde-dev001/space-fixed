@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { purchaseOrderApi } from "../purchaseOrderApi";
 import { supplierApi } from "../supplierApi";
 
-vi.mock("axios", () => ({ default: { get: vi.fn(), put: vi.fn() } }));
+vi.mock("axios", () => ({ default: { get: vi.fn(), put: vi.fn(), post: vi.fn() } }));
 
 describe("procurement list API contracts", () => {
 	beforeEach(() => vi.clearAllMocks());
@@ -37,5 +37,30 @@ describe("procurement list API contracts", () => {
 
 		expect(axios.get).toHaveBeenCalledWith("/api/erp/procurement/suppliers/7/payment-profile");
 		expect(axios.put).toHaveBeenCalledWith("/api/erp/procurement/suppliers/7/payment-profile", expect.any(Object));
+	});
+
+	it("uses multipart receipt payloads when defect evidence is attached", async () => {
+		const proof = new File(["proof"], "defect.jpg", { type: "image/jpeg" });
+		vi.mocked(axios.post).mockResolvedValue({ data: { data: { id: 12 } } });
+
+		await purchaseOrderApi.receive(7, {
+			idempotency_key: "receipt-1",
+			items: [{
+				purchase_order_item_id: 8,
+				received_quantity: 2,
+				defective_quantity: 1,
+				reason_category: "damaged",
+				inventory_notes: "Damaged in transit.",
+				defect_evidence: [proof],
+			}],
+		});
+
+		const formData = vi.mocked(axios.post).mock.calls[0][1] as FormData;
+		expect(formData).toBeInstanceOf(FormData);
+		expect(formData.get("items[0][reason_category]")).toBe("damaged");
+		expect(formData.get("items[0][inventory_notes]")).toBe("Damaged in transit.");
+		const evidence = formData.get("items[0][defect_evidence][]") as File;
+		expect(evidence.name).toBe(proof.name);
+		expect(evidence.type).toBe(proof.type);
 	});
 });

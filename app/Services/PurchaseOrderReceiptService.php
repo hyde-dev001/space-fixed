@@ -14,13 +14,17 @@ use App\Models\StockMovement;
 use App\Models\SupplierPaymentAttempt;
 use App\Models\User;
 use Illuminate\Support\Carbon;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class PurchaseOrderReceiptService
 {
-    public function __construct(private ExpenseApprovalService $expenseApprovalService) {}
+    public function __construct(
+        private ExpenseApprovalService $expenseApprovalService,
+        private SupplierAdjustmentService $supplierAdjustmentService,
+    ) {}
 
     public function post(PurchaseOrder $purchaseOrder, User $receiver, array $data): PurchaseOrderReceipt
     {
@@ -34,15 +38,24 @@ class PurchaseOrderReceiptService
                         'defective_quantity' => (int) $size['defective_quantity'],
                     ])->sortBy('inventory_size_id')->values();
 
+                    $evidence = array_values($item['defect_evidence'] ?? []);
+
                     return [
                         'purchase_order_item_id' => (int) $item['purchase_order_item_id'],
                         'received_quantity' => $sizes->isEmpty() ? (int) $item['received_quantity'] : $sizes->sum('received_quantity'),
                         'defective_quantity' => $sizes->isEmpty() ? (int) $item['defective_quantity'] : $sizes->sum('defective_quantity'),
                         'size_quantities' => $sizes->all(),
+                        'reason_category' => filled($item['reason_category'] ?? null) ? trim((string) $item['reason_category']) : null,
+                        'inventory_notes' => filled($item['inventory_notes'] ?? null) ? trim((string) $item['inventory_notes']) : null,
+                        'defect_evidence' => $evidence,
+                        'defect_evidence_hashes' => $this->evidenceHashes($evidence),
                     ];
                 })
                 ->sortBy('purchase_order_item_id')->values();
-            $payloadHash = hash('sha256', json_encode($normalizedItems->all(), JSON_THROW_ON_ERROR));
+            $payloadHash = hash('sha256', json_encode(
+                $normalizedItems->map(fn (array $item): array => collect($item)->except('defect_evidence')->all())->all(),
+                JSON_THROW_ON_ERROR,
+            ));
             $existing = PurchaseOrderReceipt::where('purchase_order_id', $purchaseOrder->id)
                 ->where('idempotency_key', $data['idempotency_key'])
                 ->lockForUpdate()
@@ -122,6 +135,14 @@ class PurchaseOrderReceiptService
                         'inventory_effects' => $this->postInventory($purchaseOrder, $orderItem, $receiptItem, $accepted, $input['size_quantities'], $receiver->id),
                     ]);
                     $expenseAmount += $accepted * (float) $orderItem->unit_cost;
+                }
+
+                if ($input['defective_quantity'] > 0) {
+                    $this->supplierAdjustmentService->reportReceivingDefect($receiptItem, $receiver, [
+                        'reason_category' => $input['reason_category'],
+                        'inventory_notes' => $input['inventory_notes'],
+                        'defect_evidence' => $input['defect_evidence'],
+                    ]);
                 }
             }
 
@@ -451,5 +472,15 @@ class PurchaseOrderReceiptService
         }
 
         $purchaseOrder->update($attributes);
+    }
+
+    /** @param array<int, mixed> $evidence @return array<int, string> */
+    private function evidenceHashes(array $evidence): array
+    {
+        return collect($evidence)
+            ->filter(fn ($file): bool => $file instanceof UploadedFile && $file->isValid() && $file->getRealPath())
+            ->map(fn (UploadedFile $file): string => (string) hash_file('sha256', $file->getRealPath()))
+            ->values()
+            ->all();
     }
 }
