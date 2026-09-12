@@ -93,10 +93,10 @@ describe('payment desktop voucher layout', () => {
     expect(paymentSource).toContain('data-voucher-option');
     expect(paymentSource).toContain('Active · use when eligible');
     expect(paymentSource).toContain('border-gray-300 bg-gray-100 text-gray-700');
-    expect(paymentSource).toContain('border-gray-500 bg-gray-100 ring-1 ring-gray-300');
+    expect(paymentSource).toContain('border-gray-600 bg-gray-200 ring-1 ring-gray-400');
     expect(appCss).toContain("[data-voucher-option][aria-selected='true']");
-    expect(appCss).toContain('background-color: #f3f4f6 !important;');
-    expect(appCss).toContain('background-color: #374151 !important;');
+    expect(appCss).toContain('background-color: #e5e7eb !important;');
+    expect(appCss).toContain('background-color: #4b5563 !important;');
   });
 
   it('keeps one selection per voucher target and submits both target selections', () => {

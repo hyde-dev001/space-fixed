@@ -2422,13 +2422,13 @@ html.dark #app [role='listbox'] [role='option'][data-highlighted='true']:not([ar
 
 /* Voucher cards have their own active treatment; generic listboxes stay monochrome. */
 html:not(.dark) #app [role='listbox'] [data-voucher-option][aria-selected='true'] {
-  background-color: #f3f4f6 !important;
+  background-color: #e5e7eb !important;
   color: #111111 !important;
-  border-color: #9ca3af !important;
+  border-color: #4b5563 !important;
 }
 
 html.dark #app [role='listbox'] [data-voucher-option][aria-selected='true'] {
-  background-color: #374151 !important;
+  background-color: #4b5563 !important;
   color: #f8fafc !important;
   border-color: #9ca3af !important;
 }

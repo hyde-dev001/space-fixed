@@ -254,7 +254,7 @@ function DeliveryProofDialog({
           role="dialog"
           aria-modal="true"
           aria-label="Proof image"
-          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-4 sm:p-8"
+          className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-4 sm:p-8 erp-modal-backdrop"
           onClick={(event) => {
             if (event.target === event.currentTarget) closeLightbox();
           }}
@@ -550,7 +550,7 @@ export default function ShipmentTrackingPanel({
                   <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">To</p>
                   <p className="mt-1 text-sm leading-6 text-gray-900">{snapshotText(leg.destination_snapshot)}</p>
                 </div>
-                <div>
+                <div className="flex flex-col items-start md:items-end md:text-right">
                   <p className="text-sm font-semibold text-gray-800">{customerStatus(leg.status)}</p>
                   {leg.delivery_proof?.available && leg.delivery_proof.url ? (
                     <button
