@@ -1,1 +1,5 @@
+<<<<<<<< HEAD:public/build/assets/index-DzDPAMrQ.js
 import{j as e}from"./app-Bb22cF37.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
+========
+import{j as e}from"./app-CxBJKCBC.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
+>>>>>>>> 4df998173 (feat: add shipment live tracking action):public/build/assets/index-CYI9uYPG.js
