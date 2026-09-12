@@ -3,6 +3,7 @@
 namespace App\Models\Finance;
 
 use App\Models\ShopOwner;
+use App\Models\SupplierAdjustment;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -11,10 +12,12 @@ class ExpenseSettlement extends Model
 {
     public const ENTRY_SETTLEMENT = 'settlement';
     public const ENTRY_REVERSAL = 'reversal';
+    public const ENTRY_SUPPLIER_REFUND = 'supplier_refund';
     public const SOURCE_MANUAL = 'manual';
     public const SOURCE_PROCUREMENT = 'procurement';
     public const SOURCE_PAYROLL = 'payroll';
     public const SOURCE_LEGACY_MIGRATION = 'legacy_migration';
+    public const SOURCE_SUPPLIER_REFUND = 'supplier_refund';
 
     protected $table = 'finance_expense_settlements';
 
@@ -32,6 +35,8 @@ class ExpenseSettlement extends Model
         'reversal_reason',
         'source',
         'source_reference',
+        'supplier_adjustment_id',
+        'notes',
     ];
 
     protected $casts = [
@@ -79,9 +84,30 @@ class ExpenseSettlement extends Model
         return $this->hasOne(self::class, 'reverses_settlement_id');
     }
 
+    public function supplierAdjustment()
+    {
+        return $this->belongsTo(SupplierAdjustment::class, 'supplier_adjustment_id');
+    }
+
     public function scopeSettlements(Builder $query): Builder
     {
         return $query->where('entry_type', self::ENTRY_SETTLEMENT);
+    }
+
+    public function scopeSupplierRefunds(Builder $query): Builder
+    {
+        return $query->where('entry_type', self::ENTRY_SUPPLIER_REFUND);
+    }
+
+    public static function validRefundedAmountForAdjustment(int $adjustmentId): string
+    {
+        $totalCents = static::query()
+            ->where('supplier_adjustment_id', $adjustmentId)
+            ->where('entry_type', self::ENTRY_SUPPLIER_REFUND)
+            ->get(['amount'])
+            ->sum(fn (self $row): int => self::toCents($row->amount));
+
+        return self::fromCents(max(0, $totalCents));
     }
 
     public static function validSettledAmountForExpense(int $expenseId): string
