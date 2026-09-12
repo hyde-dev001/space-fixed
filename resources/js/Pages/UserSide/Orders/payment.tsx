@@ -124,6 +124,7 @@ interface PromoPreviewData {
   discounted_shipping_fee: number;
   shipping_voucher_error?: string | null;
   applied_voucher?: AppliedVoucherSummary | null;
+  applied_vouchers?: AppliedVoucherSummary[];
   available_vouchers?: AvailableVoucherOption[];
   voucher_code_suggestions?: AvailableVoucherOption[];
   voucher_error?: string | null;
@@ -233,7 +234,14 @@ const Payment: React.FC = () => {
   const shippingEstimateRequestRef = useRef(0);
   const [promoPreview, setPromoPreview] = useState<PromoPreviewData | null>(null);
   const [isPromoPreviewLoading, setIsPromoPreviewLoading] = useState(false);
-  const [selectedVoucherCampaignId, setSelectedVoucherCampaignId] = useState<number | null>(null);
+  const [selectedVoucherCampaignIds, setSelectedVoucherCampaignIds] = useState<Record<'items' | 'shipping', number | null>>({
+    items: null,
+    shipping: null,
+  });
+  const [selectedVoucherCodes, setSelectedVoucherCodes] = useState<Record<'items' | 'shipping', string>>({
+    items: '',
+    shipping: '',
+  });
   const [voucherCodeInput, setVoucherCodeInput] = useState('');
   const [appliedVoucherCode, setAppliedVoucherCode] = useState('');
   const [isVoucherSelectionEnabled, setIsVoucherSelectionEnabled] = useState(true);
@@ -321,6 +329,13 @@ const Payment: React.FC = () => {
 
   const normalizeVoucherCode = (value: string) => value.trim().toUpperCase();
 
+  const selectedVoucherCampaignIdsForRequest = Object.values(selectedVoucherCampaignIds)
+    .filter((id): id is number => id !== null && id > 0);
+  const selectedVoucherCodesForRequest = Array.from(new Set([
+    ...Object.values(selectedVoucherCodes),
+    appliedVoucherCode,
+  ].map((code) => normalizeVoucherCode(code)).filter(Boolean)));
+
   const handleApplyVoucherCode = () => {
     const normalizedCode = normalizeVoucherCode(voucherCodeInput);
     if (!normalizedCode) {
@@ -330,7 +345,6 @@ const Payment: React.FC = () => {
     }
 
     setIsVoucherSelectionEnabled(true);
-    setSelectedVoucherCampaignId(null);
     setAppliedVoucherCode(normalizedCode);
     setHasVoucherInputInteraction(true);
     setIsVoucherSuggestionOpen(false);
@@ -343,10 +357,17 @@ const Payment: React.FC = () => {
     }
 
     setIsVoucherSelectionEnabled(true);
-    setSelectedVoucherCampaignId(voucher.id);
+    setSelectedVoucherCampaignIds((current) => ({
+      ...current,
+      [voucher.target]: voucher.id,
+    }));
+    setSelectedVoucherCodes((current) => ({
+      ...current,
+      [voucher.target]: normalizedCode,
+    }));
     setHasVoucherInputInteraction(true);
     setVoucherCodeInput(normalizedCode);
-    setAppliedVoucherCode(normalizedCode);
+    setAppliedVoucherCode((current) => normalizeVoucherCode(current) === normalizedCode ? '' : current);
     setVoucherClaimError(null);
     setIsVoucherSuggestionOpen(false);
   };
@@ -394,7 +415,8 @@ const Payment: React.FC = () => {
 
   const handleClearVoucherSelection = () => {
     setIsVoucherSelectionEnabled(false);
-    setSelectedVoucherCampaignId(null);
+    setSelectedVoucherCampaignIds({ items: null, shipping: null });
+    setSelectedVoucherCodes({ items: '', shipping: '' });
     setAppliedVoucherCode('');
     setVoucherCodeInput('');
     setHasVoucherInputInteraction(true);
@@ -1302,8 +1324,13 @@ const Payment: React.FC = () => {
           shipping_longitude: shippingLongitude,
         };
 
-        if (selectedVoucherCampaignId !== null && selectedVoucherCampaignId > 0) {
-          promoPayload.voucher_campaign_id = selectedVoucherCampaignId;
+        if (selectedVoucherCampaignIdsForRequest.length > 0) {
+          promoPayload.voucher_campaign_ids = selectedVoucherCampaignIdsForRequest;
+          promoPayload.voucher_campaign_id = selectedVoucherCampaignIdsForRequest[0];
+        }
+
+        if (selectedVoucherCodesForRequest.length > 0) {
+          promoPayload.voucher_codes = selectedVoucherCodesForRequest;
         }
 
         if (appliedVoucherCode.trim()) {
@@ -1350,7 +1377,8 @@ const Payment: React.FC = () => {
     checkoutData,
     isPremiumPayment,
     isRepairPayment,
-    selectedVoucherCampaignId,
+    selectedVoucherCampaignIds,
+    selectedVoucherCodes,
     appliedVoucherCode,
     isVoucherSelectionEnabled,
     shippingEstimate?.max_fee,
@@ -1783,18 +1811,35 @@ const Payment: React.FC = () => {
   };
 
   useEffect(() => {
-    if (selectedVoucherCampaignId === null) {
-      return;
-    }
-
     const availableVoucherIds = [
       ...(promoPreview?.available_vouchers || []),
       ...(promoPreview?.voucher_code_suggestions || []),
     ].map((voucher) => voucher.id);
-    if (!availableVoucherIds.includes(selectedVoucherCampaignId)) {
-      setSelectedVoucherCampaignId(null);
+
+    const invalidTargets = (['items', 'shipping'] as const).filter((target) => {
+      const selectedCampaignId = selectedVoucherCampaignIds[target];
+      return selectedCampaignId !== null && !availableVoucherIds.includes(selectedCampaignId);
+    });
+
+    if (invalidTargets.length === 0) {
+      return;
     }
-  }, [promoPreview, selectedVoucherCampaignId]);
+
+    setSelectedVoucherCampaignIds((current) => {
+      const next = { ...current };
+      invalidTargets.forEach((target) => {
+        next[target] = null;
+      });
+      return next;
+    });
+    setSelectedVoucherCodes((current) => {
+      const next = { ...current };
+      invalidTargets.forEach((target) => {
+        next[target] = '';
+      });
+      return next;
+    });
+  }, [promoPreview, selectedVoucherCampaignIds]);
 
   useEffect(() => {
     const handleClickOutsideVoucherInput = (event: MouseEvent | TouchEvent) => {
@@ -1859,12 +1904,14 @@ const Payment: React.FC = () => {
       return;
     }
 
-    const hasManualVoucherSelection = selectedVoucherCampaignId !== null || normalizeVoucherCode(appliedVoucherCode) !== '';
+    const hasManualVoucherSelection = Object.values(selectedVoucherCampaignIds).some((id) => id !== null)
+      || normalizeVoucherCode(appliedVoucherCode) !== '';
     if (hasManualVoucherSelection || hasVoucherInputInteraction) {
       return;
     }
 
-    const suggestedVoucher = promoPreview?.applied_voucher
+    const suggestedVoucher = promoPreview?.applied_vouchers?.[0]
+      || promoPreview?.applied_voucher
       || promoPreview?.available_vouchers?.[0]
       || null;
 
@@ -1883,7 +1930,7 @@ const Payment: React.FC = () => {
     isPremiumPayment,
     isRepairPayment,
     isVoucherSelectionEnabled,
-    selectedVoucherCampaignId,
+    selectedVoucherCampaignIds,
     appliedVoucherCode,
     hasVoucherInputInteraction,
     voucherCodeInput,
@@ -2166,8 +2213,10 @@ const Payment: React.FC = () => {
         shipping_address_line: shippingAddressLine,
         payment_method: selectedPaymentMethod,
         disable_voucher: !isVoucherSelectionEnabled,
-        voucher_campaign_id: selectedVoucherCampaignId,
+        voucher_campaign_id: selectedVoucherCampaignIdsForRequest[0] ?? null,
         voucher_code: appliedVoucherCode.trim() || null,
+        voucher_campaign_ids: selectedVoucherCampaignIdsForRequest,
+        voucher_codes: selectedVoucherCodesForRequest,
         accepted_shop_policy_version_id: isPolicyAcceptanceRequired ? activePolicyVersionId : null,
         policy_accepted: isPolicyAcceptanceRequired ? policyAccepted : null,
       };
@@ -2297,12 +2346,16 @@ const Payment: React.FC = () => {
   const voucherDiscountAmount = !isPremiumPayment && !isRepairPayment
     ? Math.max(0, toFiniteNumber(promoPreview?.voucher_discount, 0))
     : 0;
-  const appliedVoucherLabel = promoPreview?.applied_voucher?.name
-    || promoPreview?.applied_voucher?.code
+  const appliedVouchers = promoPreview?.applied_vouchers
+    || (promoPreview?.applied_voucher ? [promoPreview.applied_voucher] : []);
+  const appliedProductVoucher = appliedVouchers.find((voucher) => voucher.target === 'items');
+  const appliedShippingVoucher = appliedVouchers.find((voucher) => voucher.target === 'shipping');
+  const appliedVoucherLabel = appliedProductVoucher?.name
+    || appliedProductVoucher?.code
     || 'Voucher';
-  const shippingVoucherLabel = promoPreview?.applied_voucher?.target === 'shipping'
-    ? (promoPreview.applied_voucher.name || promoPreview.applied_voucher.code || 'Shipping voucher')
-    : 'Shipping voucher';
+  const shippingVoucherLabel = appliedShippingVoucher?.name
+    || appliedShippingVoucher?.code
+    || 'Shipping voucher';
   const availableVouchers = promoPreview?.available_vouchers || [];
   const voucherCodeSuggestions = promoPreview?.voucher_code_suggestions || [];
   const voucherSuggestionMap = new Map<number, AvailableVoucherOption>();
@@ -3229,19 +3282,28 @@ const Payment: React.FC = () => {
                               aria-label="Voucher code"
                               aria-expanded={showVoucherSuggestionDropdown}
                               value={voucherCodeInput}
-                              onFocus={() => setIsVoucherSuggestionOpen(true)}
+                              onFocus={() => {
+                                const normalizedInput = normalizeVoucherCode(voucherCodeInput);
+                                const isSelectedVoucherCode = Object.values(selectedVoucherCodes)
+                                  .some((code) => normalizeVoucherCode(code) === normalizedInput);
+                                if (isSelectedVoucherCode) {
+                                  setVoucherCodeInput('');
+                                }
+                                setIsVoucherSuggestionOpen(true);
+                              }}
                               onClick={() => setIsVoucherSuggestionOpen(true)}
                               onChange={(e) => {
                                 const nextVoucherCode = e.target.value.toUpperCase();
                                 const normalizedNextVoucherCode = normalizeVoucherCode(nextVoucherCode);
 
-                                setSelectedVoucherCampaignId(null);
                                 setHasVoucherInputInteraction(true);
                                 setVoucherCodeInput(nextVoucherCode);
 
                                 if (normalizedNextVoucherCode === '') {
                                   setAppliedVoucherCode('');
-                                  setIsVoucherSelectionEnabled(false);
+                                  if (!Object.values(selectedVoucherCampaignIds).some((id) => id !== null)) {
+                                    setIsVoucherSelectionEnabled(false);
+                                  }
                                 }
 
                                 setIsVoucherSuggestionOpen(true);
@@ -3283,7 +3345,7 @@ const Payment: React.FC = () => {
                               className="hide-scrollbar mt-1 max-h-[min(20rem,calc(100vh-12rem))] overflow-y-auto rounded-xl border border-[#cacacb] bg-white p-1 shadow-none"
                             >
                               {voucherSuggestionGroups.length > 0 ? (
-                                <div className="flex flex-col gap-5">
+                                <div className="flex flex-col gap-7">
                                   {voucherSuggestionGroups.map((group) => (
                                     <div
                                       key={group.key}
@@ -3308,6 +3370,7 @@ const Payment: React.FC = () => {
                                     const spendProgress = minimumSpend > 0
                                       ? Math.min(100, (eligibleSubtotal / minimumSpend) * 100)
                                       : 100;
+                                    const isVoucherSelected = selectedVoucherCampaignIds[voucher.target] === voucher.id;
 
                                     return (
                                       <div
@@ -3315,7 +3378,7 @@ const Payment: React.FC = () => {
                                         data-testid="voucher-suggestion-card"
                                         role="option"
                                         tabIndex={voucher.claim_status === 'redeemed' ? -1 : 0}
-                                        aria-selected={selectedVoucherCampaignId === voucher.id}
+                                        aria-selected={isVoucherSelected}
                                         aria-disabled={!canUseVoucher && !voucher.can_claim}
                                         onKeyDown={(event) => {
                                           if ((event.key === 'Enter' || event.key === ' ') && canUseVoucher) {
@@ -3323,7 +3386,7 @@ const Payment: React.FC = () => {
                                             handleUseVoucher(voucher);
                                           }
                                         }}
-                                        className={'group relative overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (selectedVoucherCampaignId === voucher.id ? 'border-gray-900 bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-gray-900')}
+                                        className={'group relative overflow-hidden rounded-xl border text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 ' + (isVoucherSelected ? 'border-gray-900 bg-[#f5f5f5]' : 'border-[#cacacb] bg-white hover:border-gray-900')}
                                       >
                                         <div className="grid min-h-[5.5rem] grid-cols-[3rem_minmax(0,1fr)_5.75rem] items-stretch">
                                           <div className="flex flex-col items-center justify-center border-r border-dashed border-[#cacacb] bg-[#f5f5f5] px-1 py-1.5 text-center">
@@ -3392,9 +3455,10 @@ const Payment: React.FC = () => {
                                               <button
                                                 type="button"
                                                 onClick={() => handleUseVoucher(voucher)}
+                                                aria-pressed={isVoucherSelected}
                                                 className="min-h-11 w-full whitespace-nowrap rounded-xl bg-gray-900 px-1.5 text-xs font-medium text-white transition-colors hover:bg-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
                                               >
-                                                Use voucher
+                                                {isVoucherSelected ? 'Selected' : 'Use voucher'}
                                               </button>
                                             ) : voucher.claim_status === 'claimable' && voucher.can_claim ? (
                                               <button
@@ -3433,7 +3497,7 @@ const Payment: React.FC = () => {
                           )}
                         </div>
 
-                        {(selectedVoucherCampaignId !== null || appliedVoucherCode) && (
+                        {(selectedVoucherCampaignIdsForRequest.length > 0 || appliedVoucherCode) && (
                           <button
                             type="button"
                             onClick={handleClearVoucherSelection}

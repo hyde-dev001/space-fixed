@@ -55,7 +55,7 @@ describe('payment shipping voucher integration', () => {
     expect(paymentSource).toContain('overflow-y-auto');
     expect(paymentSource).toContain('min-h-[5.5rem]');
     expect(paymentSource).toContain('grid-cols-[3rem_minmax(0,1fr)_5.75rem]');
-    expect(paymentSource).toContain('flex flex-col gap-5');
+    expect(paymentSource).toContain('flex flex-col gap-7');
     expect(paymentSource).toContain('w-24');
     expect(paymentSource).toContain('h-11');
     expect(paymentSource).toContain('border-r border-dashed');
