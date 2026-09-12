@@ -39,7 +39,7 @@
 - Consumes: existing logisticsApi.liveLocations() response and LiveRiderLocation[] type.
 - Produces: optional prop onLocationsChange?: (locations: LiveRiderLocation[]) => void.
 
-- [ ] **Step 1: Write the failing callback test**
+- [x] **Step 1: Write the failing callback test**
 
 In DispatcherLiveTracking.test.tsx, add the callback mock and pass it to the enabled render:
 
@@ -75,7 +75,7 @@ it('does not poll while the feature is disabled', () => {
 });
 ~~~
 
-- [ ] **Step 2: Run the focused test and verify the new assertion fails**
+- [x] **Step 2: Run the focused test and verify the new assertion fails**
 
 Run:
 
@@ -85,7 +85,7 @@ pnpm exec vitest run resources/js/components/logistics/__tests__/DispatcherLiveT
 
 Expected: the existing rendering assertions pass, but the new callback assertion fails because the current component does not invoke onLocationsChange.
 
-- [ ] **Step 3: Add the minimal optional callback**
+- [x] **Step 3: Add the minimal optional callback**
 
 Update the props, function parameters, successful response handling, and effect dependencies in DispatcherLiveTracking.tsx:
 
@@ -138,7 +138,7 @@ export default function DispatcherLiveTracking({
 
 Keep the existing section, map, list, loading, error, and interval rendering unchanged.
 
-- [ ] **Step 4: Run the callback test and verify it passes**
+- [x] **Step 4: Run the callback test and verify it passes**
 
 Run:
 
@@ -148,7 +148,7 @@ pnpm exec vitest run resources/js/components/logistics/__tests__/DispatcherLiveT
 
 Expected: both dispatcher tests pass, including callback delivery and the disabled no-poll assertion.
 
-- [ ] **Step 5: Commit the isolated component change**
+- [x] **Step 5: Commit the isolated component change**
 
 ~~~powershell
 git add resources/js/components/logistics/DispatcherLiveTracking.tsx resources/js/components/logistics/__tests__/DispatcherLiveTracking.test.tsx
@@ -166,7 +166,7 @@ git commit -m "feat: expose dispatcher live locations"
 - Consumes: DispatcherLiveTracking.onLocationsChange from Task 1, LiveRiderLocation from LiveTrackingMap, and ShipmentTrackingModalProps from the existing modal.
 - Produces: one icon action per matching shipment with an accessible label containing its shipment number, plus one page-level tracking modal selected by shipment ID.
 
-- [ ] **Step 1: Add a controlled page-test seam and write failing visibility/modal tests**
+- [x] **Step 1: Add a controlled page-test seam and write failing visibility/modal tests**
 
 In Shipments.test.tsx, extend the hoisted mocks with controlled dispatcher locations and mock only the page-level dispatcher/modal components:
 
@@ -259,7 +259,7 @@ it('opens the existing tracking modal for the clicked shipment', async () => {
 });
 ~~~
 
-- [ ] **Step 2: Run the focused Shipments tests and verify the new cases fail**
+- [x] **Step 2: Run the focused Shipments tests and verify the new cases fail**
 
 Run:
 
@@ -269,7 +269,7 @@ pnpm exec vitest run resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.t
 
 Expected: existing Shipments tests pass, while the new motor-action cases fail because the page has no live-location state, action, or tracking modal wiring.
 
-- [ ] **Step 3: Wire live-location state and the existing tracking modal**
+- [x] **Step 3: Wire live-location state and the existing tracking modal**
 
 In Shipments.tsx, add these imports:
 
@@ -367,7 +367,7 @@ Mount one existing modal after the shipment list and before pagination:
 
 Do not alter ShipmentTrackingModal.tsx; its existing fetch, error state, tracking panel, focus trap, escape handling, and return-focus cleanup remain authoritative.
 
-- [ ] **Step 4: Run the Shipments tests and verify they pass**
+- [x] **Step 4: Run the Shipments tests and verify they pass**
 
 Run:
 
@@ -377,7 +377,7 @@ pnpm exec vitest run resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.t
 
 Expected: all existing Shipments tests and the three new visibility/modal tests pass.
 
-- [ ] **Step 5: Commit the page integration**
+- [x] **Step 5: Commit the page integration**
 
 ~~~powershell
 git add resources/js/Pages/ERP/Logistics/Shipments.tsx resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx
@@ -395,7 +395,7 @@ git commit -m "feat: add shipment live tracking action"
 - Consumes: the committed component and page integration from Tasks 1 and 2.
 - Produces: passing focused/frontend tests, a successful production bundle, and a reviewed diff containing only this feature plus intentionally generated build assets.
 
-- [ ] **Step 1: Run the focused regression set**
+- [x] **Step 1: Run the focused regression set**
 
 Run:
 
@@ -405,7 +405,7 @@ pnpm exec vitest run resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.t
 
 Expected: all three test files pass, including the pre-existing shipment tracking modal tests.
 
-- [ ] **Step 2: Run the frontend test suite**
+- [x] **Step 2: Run the frontend test suite**
 
 Run:
 
@@ -415,7 +415,7 @@ pnpm run test:frontend
 
 Expected: the repository frontend test command exits successfully with no failed tests.
 
-- [ ] **Step 3: Build the fresh production assets**
+- [x] **Step 3: Build the fresh production assets**
 
 Run after source tests pass:
 
@@ -425,7 +425,7 @@ pnpm run build
 
 Expected: Vite exits successfully and updates only the repository's intended public/build/ output. Do not manually edit generated assets.
 
-- [ ] **Step 4: Review final scope and hygiene**
+- [x] **Step 4: Review final scope and hygiene**
 
 Run:
 
@@ -439,7 +439,7 @@ git diff --name-status
 
 Expected: only the planned source/tests/spec/plan files and intentional public/build/ output are changed; no backend, map, GPS, routing, or unrelated ERP files appear. The search shows the callback, strict shipment-ID comparison, icon label, and one existing modal mount.
 
-- [ ] **Step 5: Perform the final behavior review**
+- [x] **Step 5: Perform the final behavior review**
 
 Confirm from the code and focused tests that:
 
@@ -452,7 +452,7 @@ polling error -> existing dispatcher map/list state remains unchanged
 
 Also confirm the original Open delivery click path, ShipmentTrackingModal.tsx, LiveTrackingMap.tsx, and all backend logistics files are unchanged.
 
-- [ ] **Step 6: Commit generated assets with the final page revision**
+- [x] **Step 6: Commit generated assets with the final page revision**
 
 After reviewing git status, stage only the intended build output:
 
