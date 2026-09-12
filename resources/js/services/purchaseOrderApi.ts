@@ -164,6 +164,29 @@ export const purchaseOrderApi = {
         return unwrap(response.data);
     },
 
+    async submitSupplierRefundProof(
+        adjustmentId: number,
+        data: {
+            expected_refund_amount: string;
+            supplier_reported_refund_amount?: string;
+            supplier_reported_refund_reference?: string;
+            supplier_reported_refund_date?: string;
+            procurement_notes?: string;
+            supplier_refund_proof?: File;
+        },
+    ): Promise<SupplierAdjustment> {
+        const formData = new FormData();
+        formData.append('expected_refund_amount', data.expected_refund_amount);
+        if (data.supplier_reported_refund_amount) formData.append('supplier_reported_refund_amount', data.supplier_reported_refund_amount);
+        if (data.supplier_reported_refund_reference) formData.append('supplier_reported_refund_reference', data.supplier_reported_refund_reference);
+        if (data.supplier_reported_refund_date) formData.append('supplier_reported_refund_date', data.supplier_reported_refund_date);
+        if (data.procurement_notes) formData.append('procurement_notes', data.procurement_notes);
+        if (data.supplier_refund_proof) formData.append('supplier_refund_proof', data.supplier_refund_proof, data.supplier_refund_proof.name);
+
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/supplier-refund-proof`, formData);
+        return unwrap(response.data);
+    },
+
     /**
      * Get purchase order metrics
      */

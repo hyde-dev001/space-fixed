@@ -20,6 +20,15 @@ type IssueForm = {
 	defect_evidence: File[];
 };
 
+type RefundForm = {
+	expected_refund_amount: string;
+	supplier_reported_refund_amount: string;
+	supplier_reported_refund_reference: string;
+	supplier_reported_refund_date: string;
+	procurement_notes: string;
+	supplier_refund_proof: File | null;
+};
+
 const categories: Array<{ value: SupplierAdjustmentReasonCategory; label: string }> = [
 	{ value: "manufacturing_defect", label: "Manufacturing defect" },
 	{ value: "damaged", label: "Damaged" },
@@ -35,13 +44,24 @@ const emptyForm: IssueForm = {
 	defect_evidence: [],
 };
 
+const emptyRefundForm: RefundForm = {
+	expected_refund_amount: "",
+	supplier_reported_refund_amount: "",
+	supplier_reported_refund_reference: "",
+	supplier_reported_refund_date: "",
+	procurement_notes: "",
+	supplier_refund_proof: null,
+};
+
 const formatStage = (stage: string) => stage === "post_payment_issue" ? "Post-payment issue" : "Receiving defect";
 const formatCategory = (category: string) => category.split("_").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ");
 
 export default function SupplierAdjustmentsPanel({ order, canReport = false, onChanged }: Props) {
 	const [adjustments, setAdjustments] = useState<SupplierAdjustment[]>([]);
 	const [selectedItem, setSelectedItem] = useState<{ receiptId: number; item: PurchaseOrderReceiptItem } | null>(null);
+	const [selectedRefund, setSelectedRefund] = useState<number | null>(null);
 	const [form, setForm] = useState<IssueForm>(emptyForm);
+	const [refundForm, setRefundForm] = useState<RefundForm>(emptyRefundForm);
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -109,6 +129,34 @@ export default function SupplierAdjustmentsPanel({ order, canReport = false, onC
 		}
 	};
 
+	const submitRefundProof = async (adjustment: SupplierAdjustment) => {
+		if (!refundForm.expected_refund_amount.trim() || !refundForm.supplier_refund_proof) {
+			setError("Expected refund amount and supplier proof are required.");
+			return;
+		}
+
+		setSaving(true);
+		setError(null);
+		try {
+			await purchaseOrderApi.submitSupplierRefundProof(adjustment.id, {
+				expected_refund_amount: refundForm.expected_refund_amount.trim(),
+				supplier_reported_refund_amount: refundForm.supplier_reported_refund_amount.trim() || undefined,
+				supplier_reported_refund_reference: refundForm.supplier_reported_refund_reference.trim() || undefined,
+				supplier_reported_refund_date: refundForm.supplier_reported_refund_date || undefined,
+				procurement_notes: refundForm.procurement_notes.trim() || undefined,
+				supplier_refund_proof: refundForm.supplier_refund_proof,
+			});
+			setSelectedRefund(null);
+			setRefundForm(emptyRefundForm);
+			await loadAdjustments();
+			await onChanged?.();
+		} catch (requestError: any) {
+			setError(requestError?.response?.data?.message ?? "The supplier refund proof could not be submitted.");
+		} finally {
+			setSaving(false);
+		}
+	};
+
 	return (
 		<section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
 			<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -162,6 +210,21 @@ export default function SupplierAdjustmentsPanel({ order, canReport = false, onC
 					</div>
 					<p className="mt-1 text-xs text-gray-500">{formatCategory(adjustment.reason_category)} · {adjustment.inventory_notes}{adjustment.resolution ? ` · Resolution: ${adjustment.resolution}` : ""}</p>
 					{adjustment.evidence?.length ? <div className="mt-2 flex flex-wrap gap-2">{adjustment.evidence.map((media) => <a key={media.id} href={`/api/erp/procurement/supplier-adjustments/${adjustment.id}/evidence/${media.id}`} target="_blank" rel="noreferrer" className="text-xs font-medium text-blue-600 hover:underline">View {media.file_name}</a>)}</div> : null}
+					{adjustment.resolution === "refund" && <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">Expected refund: <strong>₱{Number(adjustment.expected_refund_amount || 0).toLocaleString()}</strong> · Confirmed: <strong>₱{Number(adjustment.refunded_amount || 0).toLocaleString()}</strong></p>}
+					{canReport && adjustment.issue_stage === "post_payment_issue" && adjustment.status !== "resolved" && adjustment.resolution !== "replacement" && (
+						<div className="mt-3">
+							{selectedRefund !== adjustment.id ? <button type="button" onClick={() => { setSelectedRefund(adjustment.id); setRefundForm({ ...emptyRefundForm, expected_refund_amount: String(adjustment.expected_refund_amount || "") }); setError(null); }} className="rounded-lg border border-blue-300 px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">Submit supplier refund proof</button> : (
+								<div className="space-y-3 rounded-lg border border-blue-200 bg-blue-50/60 p-3 dark:border-blue-900/60 dark:bg-blue-950/20">
+									<p className="text-xs font-semibold uppercase text-blue-800 dark:text-blue-300">Supplier refund evidence</p>
+									<label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Expected refund amount<input aria-label="Expected refund amount" value={refundForm.expected_refund_amount} onChange={(event) => setRefundForm((current) => ({ ...current, expected_refund_amount: event.target.value }))} className="mt-1 min-h-10 w-full rounded border border-gray-300 bg-white px-2 dark:border-gray-600 dark:bg-gray-800" /></label>
+									<label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Supplier reference<input aria-label="Supplier refund reference" value={refundForm.supplier_reported_refund_reference} onChange={(event) => setRefundForm((current) => ({ ...current, supplier_reported_refund_reference: event.target.value }))} className="mt-1 min-h-10 w-full rounded border border-gray-300 bg-white px-2 dark:border-gray-600 dark:bg-gray-800" /></label>
+									<label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Supplier proof<input aria-label="Supplier refund proof" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" onChange={(event) => setRefundForm((current) => ({ ...current, supplier_refund_proof: event.target.files?.[0] ?? null }))} className="mt-1 block w-full text-xs" /></label>
+									<label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Procurement notes<textarea aria-label="Refund procurement notes" rows={2} value={refundForm.procurement_notes} onChange={(event) => setRefundForm((current) => ({ ...current, procurement_notes: event.target.value }))} className="mt-1 w-full rounded border border-gray-300 bg-white px-2 py-2 dark:border-gray-600 dark:bg-gray-800" /></label>
+									<div className="flex gap-2"><button type="button" disabled={saving} onClick={() => void submitRefundProof(adjustment)} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">{saving ? "Submitting..." : "Save supplier proof"}</button><button type="button" onClick={() => setSelectedRefund(null)} className="rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700">Cancel</button></div>
+								</div>
+							)}
+						</div>
+					)}
 				</article>)}
 			</div>
 		</section>

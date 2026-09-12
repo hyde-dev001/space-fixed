@@ -63,6 +63,9 @@ Route::middleware([
     Route::prefix('supplier-adjustments')->group(function () {
         Route::get('/', [SupplierAdjustmentController::class, 'index'])->name('procurement.supplier-adjustments.index');
         Route::get('/{adjustmentId}', [SupplierAdjustmentController::class, 'show'])->whereNumber('adjustmentId')->name('procurement.supplier-adjustments.show');
+        Route::post('/{adjustmentId}/supplier-refund-proof', [SupplierAdjustmentController::class, 'supplierRefundProof'])
+            ->whereNumber('adjustmentId')
+            ->name('procurement.supplier-adjustments.supplier-refund-proof');
         Route::get('/{adjustmentId}/evidence/{mediaId}', [SupplierAdjustmentController::class, 'evidence'])
             ->whereNumber(['adjustmentId', 'mediaId'])
             ->name('procurement.supplier-adjustments.evidence');
