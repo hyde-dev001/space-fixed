@@ -127,6 +127,7 @@ function DeliveryProofDialog({
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const [zoom, setZoom] = useState(1);
+  const [expanded, setExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
 
@@ -161,39 +162,66 @@ function DeliveryProofDialog({
         <div className="grid min-h-0 flex-1 gap-4 overflow-auto px-4 pb-5 md:grid-cols-[minmax(0,1fr)_20rem] sm:px-6">
           <section className="min-w-0">
             <h2 id="delivery-proof-title" className="text-xl font-bold text-gray-950">Proof of delivery</h2>
-            <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Proof zoom">
-              {[1, 1.5, 2].map((level) => (
-                <button
-                  key={level}
-                  type="button"
-                  aria-label={`Zoom to ${level * 100}%`}
-                  aria-pressed={zoom === level}
-                  disabled={failed}
-                  onClick={() => setZoom(level)}
-                  className="min-h-11 rounded-lg border border-gray-300 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white disabled:opacity-50"
-                >
-                  {level * 100}%
-                </button>
-              ))}
-            </div>
+            {expanded && (
+              <div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Proof zoom">
+                {[1, 1.5, 2].map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    aria-label={`Zoom to ${level * 100}%`}
+                    aria-pressed={zoom === level}
+                    disabled={failed}
+                    onClick={() => setZoom(level)}
+                    className="min-h-11 rounded-lg border border-gray-300 px-4 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white disabled:opacity-50"
+                  >
+                    {level * 100}%
+                  </button>
+                ))}
+              </div>
+            )}
 
-            <div className="relative mt-3 grid min-h-72 place-items-center overflow-auto rounded-xl bg-gray-950 p-4" aria-live="polite">
+            <div className="relative mt-4 grid min-h-72 place-items-center overflow-auto rounded-xl bg-gray-950 p-4" aria-live="polite">
               {failed ? (
                 <p className="font-semibold text-white">Proof unavailable</p>
               ) : (
                 <>
-                  {loading && <p className="absolute font-semibold text-white">Loading proof...</p>}
-                  <img
-                    src={proof.url!}
-                    alt={`Proof of delivery for ${proof.tracking_number}`}
-                    onLoad={() => setLoading(false)}
-                    onError={() => {
-                      setLoading(false);
-                      setFailed(true);
-                    }}
-                    className="max-h-[65vh] max-w-full object-contain transition-transform motion-reduce:transition-none"
-                    style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}
-                  />
+                  <div className={expanded
+                    ? 'relative flex min-h-72 w-full items-center justify-center'
+                    : 'relative aspect-[4/3] w-full max-w-sm overflow-hidden rounded-xl bg-gray-900 ring-1 ring-white/10'}
+                  >
+                    {loading && (
+                      <p className="absolute left-1/2 top-3 z-10 -translate-x-1/2 text-sm font-semibold text-white">
+                        Loading proof...
+                      </p>
+                    )}
+                    <img
+                      src={proof.url!}
+                      alt={`Proof of delivery for ${proof.tracking_number}`}
+                      onLoad={() => setLoading(false)}
+                      onError={() => {
+                        setLoading(false);
+                        setFailed(true);
+                      }}
+                      className={expanded
+                        ? 'max-h-[65vh] max-w-full object-contain transition-transform motion-reduce:transition-none'
+                        : 'h-full w-full object-contain transition-transform motion-reduce:transition-none'}
+                      style={{ transform: `scale(${zoom})`, transformOrigin: 'center' }}
+                    />
+                    {!expanded && (
+                      <>
+                        <div className="absolute inset-0 bg-black/20" aria-hidden="true" />
+                        <button
+                          type="button"
+                          aria-label="View proof image"
+                          title="View full-size proof image"
+                          onClick={() => setExpanded(true)}
+                          className="absolute left-1/2 top-1/2 z-10 inline-flex h-12 w-12 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-white/80 bg-white/95 text-gray-950 shadow-lg transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white dark:border-gray-300"
+                        >
+                          <EyeIcon className="h-5 w-5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </>
               )}
             </div>
@@ -506,26 +534,18 @@ export default function ShipmentTrackingPanel({
                 <div>
                   <p className="text-sm font-semibold text-gray-800">{customerStatus(leg.status)}</p>
                   {leg.delivery_proof?.available && leg.delivery_proof.url ? (
-                    <div className="mt-2 flex items-center gap-2">
-                      <img
-                        src={leg.delivery_proof.url}
-                        alt={`Proof of delivery thumbnail for ${leg.delivery_proof.tracking_number}`}
-                        loading="lazy"
-                        className="h-16 w-24 shrink-0 rounded-lg border border-gray-200 object-cover"
-                      />
-                      <button
-                        type="button"
-                        aria-label="View proof of delivery"
-                        title="View proof of delivery"
-                        onClick={(event) => {
-                          proofOpener.current = event.currentTarget;
-                          setSelectedProof(leg.delivery_proof!);
-                        }}
-                        className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-gray-900 text-gray-950 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:border-gray-300 dark:text-white dark:hover:bg-gray-800 dark:focus-visible:ring-white"
-                      >
-                        <EyeIcon className="h-5 w-5" />
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      aria-label="View proof of delivery"
+                      title="View proof of delivery"
+                      onClick={(event) => {
+                        proofOpener.current = event.currentTarget;
+                        setSelectedProof(leg.delivery_proof!);
+                      }}
+                      className="mt-2 inline-flex h-11 w-11 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-gray-900 text-gray-950 transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:border-gray-300 dark:text-white dark:hover:bg-gray-800 dark:focus-visible:ring-white"
+                    >
+                      <EyeIcon className="h-5 w-5" />
+                    </button>
                   ) : leg.delivery_proof ? (
                     <span role="status" className="mt-2 block text-sm font-semibold text-gray-500">
                       Proof unavailable
