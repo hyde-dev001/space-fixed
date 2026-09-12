@@ -6,6 +6,10 @@ const paymentSource = readFileSync(
   join(process.cwd(), 'resources/js/Pages/UserSide/Orders/payment.tsx'),
   'utf8',
 );
+const appCss = readFileSync(
+  join(process.cwd(), 'resources/css/app.css'),
+  'utf8',
+);
 
 describe('payment desktop voucher layout', () => {
   it('places a compact voucher picker below Phone at the payment-form width', () => {
@@ -82,6 +86,15 @@ describe('payment desktop voucher layout', () => {
     expect(paymentSource).toContain('Product Vouchers');
     expect(paymentSource).toContain('Shipping Vouchers');
     expect(desktopVoucherSection).toContain('data-testid={`voucher-group-${group.key}`}');
+  });
+
+  it('keeps an active claimed voucher reusable without the global black selected state', () => {
+    expect(paymentSource).toContain("if (status === 'claimed') return 'Active';");
+    expect(paymentSource).toContain('data-voucher-option');
+    expect(paymentSource).toContain('Active · use when eligible');
+    expect(appCss).toContain("[data-voucher-option][aria-selected='true']");
+    expect(appCss).toContain('background-color: #eff6ff !important;');
+    expect(appCss).toContain('background-color: #172554 !important;');
   });
 
   it('keeps one selection per voucher target and submits both target selections', () => {
