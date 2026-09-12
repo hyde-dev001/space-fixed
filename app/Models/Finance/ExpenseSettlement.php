@@ -17,6 +17,7 @@ class ExpenseSettlement extends Model
     public const SOURCE_PROCUREMENT = 'procurement';
     public const SOURCE_PAYROLL = 'payroll';
     public const SOURCE_LEGACY_MIGRATION = 'legacy_migration';
+    public const SOURCE_SUPPLIER_MANUAL_PAYMENT = 'supplier_manual_payment';
     public const SOURCE_SUPPLIER_REFUND = 'supplier_refund';
 
     protected $table = 'finance_expense_settlements';
@@ -130,14 +131,23 @@ class ExpenseSettlement extends Model
 
     private static function toCents(mixed $amount): int
     {
-        $normalized = number_format((float) $amount, 2, '.', '');
-        [$whole, $fraction] = array_pad(explode('.', $normalized, 2), 2, '0');
+        $text = trim((string) $amount);
+        if (! preg_match('/^-?\d+(?:\.\d{1,2})?$/', $text)) {
+            return 0;
+        }
+        $negative = str_starts_with($text, '-');
+        $text = ltrim($text, '+-');
+        [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '0');
+        $cents = ((int) $whole * 100) + (int) str_pad(substr($fraction, 0, 2), 2, '0');
 
-        return ((int) $whole * 100) + (int) $fraction;
+        return $negative ? -$cents : $cents;
     }
 
     private static function fromCents(int $cents): string
     {
-        return number_format($cents / 100, 2, '.', '');
+        $sign = $cents < 0 ? '-' : '';
+        $absolute = abs($cents);
+
+        return $sign . intdiv($absolute, 100) . '.' . str_pad((string) ($absolute % 100), 2, '0', STR_PAD_LEFT);
     }
 }

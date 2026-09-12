@@ -6,8 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\Finance\Expense;
 use App\Models\Supplier;
 use App\Models\SupplierPaymentProfile;
+use App\Models\SupplierPaymentAttempt;
 use App\Models\User;
+use App\Http\Requests\Finance\CancelSupplierPaymentRequest;
+use App\Http\Requests\Finance\InitiateSupplierPaymentRequest;
+use App\Http\Requests\Finance\SubmitSupplierPaymentProofRequest;
 use App\Services\ExpenseApprovalService;
+use App\Services\Finance\SupplierPaymentService;
 use App\Support\Finance\FinanceDomainException;
 use App\Support\Finance\FinanceErrorResponse;
 use App\Support\Finance\FinanceShopContext;
@@ -20,6 +25,7 @@ final class ProcurementExpenseController extends Controller
     public function __construct(
         private readonly ExpenseApprovalService $expenseApprovalService,
         private readonly FinanceShopContext $shopContext,
+        private readonly SupplierPaymentService $supplierPaymentService,
     ) {}
 
     public function reviewAndRelease(Request $request, int $id)
@@ -70,6 +76,124 @@ final class ProcurementExpenseController extends Controller
     public function disablePaymentProfile(Request $request, int $supplierId)
     {
         return $this->changePaymentProfileStatus($request, $supplierId, SupplierPaymentProfile::STATUS_DISABLED);
+    }
+
+    public function initiateSupplierPayment(InitiateSupplierPaymentRequest $request, int $id)
+    {
+        $shopId = $this->shopContext->id($request);
+        $expense = Expense::query()->where('shop_id', $shopId)->findOrFail($id);
+        $actor = $request->user('user');
+        abort_unless($actor instanceof User, 401);
+
+        try {
+            $result = $this->supplierPaymentService->initiate(
+                $expense,
+                $actor,
+                (string) $request->validated('payment_method'),
+                (string) $request->validated('idempotency_key'),
+            );
+
+            return response()->json([
+                'data' => $this->supplierPaymentService->present($result['attempt']),
+                'replayed' => $result['replayed'],
+            ], $result['replayed'] ? 200 : 201);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'supplier_payment.initiate', 500, [
+                'shop_id' => $shopId,
+                'record_id' => $id,
+            ]);
+        }
+    }
+
+    public function submitSupplierPayment(
+        SubmitSupplierPaymentProofRequest $request,
+        int $attemptId,
+    ) {
+        $shopId = $this->shopContext->id($request);
+        $attempt = SupplierPaymentAttempt::query()
+            ->where('shop_owner_id', $shopId)
+            ->findOrFail($attemptId);
+        $actor = $request->user('user');
+        abort_unless($actor instanceof User, 401);
+
+        try {
+            $updated = $this->supplierPaymentService->submitForVerification(
+                $attempt,
+                $actor,
+                $request->validated(),
+                $request->file('payment_proof'),
+            );
+
+            return response()->json(['data' => $this->supplierPaymentService->present($updated)]);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'supplier_payment.submit', 500, [
+                'shop_id' => $shopId,
+                'record_id' => $attemptId,
+            ]);
+        }
+    }
+
+    public function cancelSupplierPayment(CancelSupplierPaymentRequest $request, int $attemptId)
+    {
+        $shopId = $this->shopContext->id($request);
+        $attempt = SupplierPaymentAttempt::query()
+            ->where('shop_owner_id', $shopId)
+            ->findOrFail($attemptId);
+        $actor = $request->user('user');
+        abort_unless($actor instanceof User, 401);
+
+        try {
+            $cancelled = $this->supplierPaymentService->cancel(
+                $attempt,
+                $actor,
+                (string) $request->validated('reason'),
+            );
+
+            return response()->json(['data' => $this->supplierPaymentService->present($cancelled)]);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'supplier_payment.cancel', 500, [
+                'shop_id' => $shopId,
+                'record_id' => $attemptId,
+            ]);
+        }
+    }
+
+    public function resendSupplierPaymentConfirmation(Request $request, int $attemptId)
+    {
+        $shopId = $this->shopContext->id($request);
+        $attempt = SupplierPaymentAttempt::query()
+            ->where('shop_owner_id', $shopId)
+            ->findOrFail($attemptId);
+        $actor = $request->user('user');
+        abort_unless($actor instanceof User, 401);
+
+        try {
+            $updated = $this->supplierPaymentService->resendConfirmation($attempt, $actor);
+
+            return response()->json(['data' => $this->supplierPaymentService->present($updated)]);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'supplier_payment.resend_confirmation', 500, [
+                'shop_id' => $shopId,
+                'record_id' => $attemptId,
+            ]);
+        }
+    }
+
+    public function supplierPaymentProof(Request $request, int $attemptId, int $mediaId)
+    {
+        $shopId = $this->shopContext->id($request);
+        $attempt = SupplierPaymentAttempt::query()
+            ->where('shop_owner_id', $shopId)
+            ->findOrFail($attemptId);
+        $media = $attempt->getMedia('payment_proof')->firstWhere('id', $mediaId);
+        abort_unless($media, 404);
+
+        $response = response()->download($media->getPath(), $media->file_name, [
+            'Content-Type' => $media->mime_type,
+        ]);
+        $response->headers->set('Cache-Control', 'private, no-store');
+
+        return $response;
     }
 
     private function changePaymentProfileStatus(Request $request, int $supplierId, string $status)

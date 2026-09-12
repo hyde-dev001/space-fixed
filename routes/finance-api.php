@@ -92,9 +92,17 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::get('/{id}/settlements', [ExpenseController::class, 'listSettlements'])->whereNumber('id')->name('finance.expenses.settlements.index');
         Route::post('/{id}/settlements', [ExpenseController::class, 'recordSettlement'])->whereNumber('id')->name('finance.expenses.settlements.store');
         Route::post('/{id}/settlements/{settlementId}/reverse', [ExpenseController::class, 'reverseSettlement'])->whereNumber(['id', 'settlementId'])->name('finance.expenses.settlements.reverse');
+        Route::post('/{id}/supplier-payment-attempts', [ProcurementExpenseController::class, 'initiateSupplierPayment'])->whereNumber('id')->name('finance.expenses.supplier-payment-attempts.store');
         Route::patch('/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');
         Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.expenses.destroy');
         Route::post('/{id}/restore', [ExpenseController::class, 'restore'])->name('finance.expenses.restore');
+    });
+
+    Route::prefix('supplier-payment-attempts')->middleware('permission:access-finance-expenses')->group(function () {
+        Route::get('/{attemptId}/proof/{mediaId}', [ProcurementExpenseController::class, 'supplierPaymentProof'])->whereNumber(['attemptId', 'mediaId'])->name('finance.supplier-payment-attempts.proof');
+        Route::post('/{attemptId}/submit', [ProcurementExpenseController::class, 'submitSupplierPayment'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.submit');
+        Route::post('/{attemptId}/cancel', [ProcurementExpenseController::class, 'cancelSupplierPayment'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.cancel');
+        Route::post('/{attemptId}/resend-confirmation', [ProcurementExpenseController::class, 'resendSupplierPaymentConfirmation'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.resend-confirmation');
     });
 
     // Approval is a separate capability from viewing/recording expenses. A

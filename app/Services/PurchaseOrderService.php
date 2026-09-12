@@ -2,11 +2,15 @@
 
 namespace App\Services;
 
+use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseRequest;
 use App\Models\ProcurementSettings;
 use App\Models\Supplier;
+use App\Models\SupplierPaymentAttempt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Database\QueryException;
@@ -214,6 +218,7 @@ class PurchaseOrderService
                     $purchaseOrder->markAsInTransit($userId);
                     break;
                 case 'completed':
+                    $this->assertFinancialClosure($purchaseOrder);
                     $purchaseOrder->markAsCompleted($userId);
                     $this->updateSupplierMetrics($purchaseOrder->supplier_id);
                     break;
@@ -246,6 +251,55 @@ class PurchaseOrderService
             ]);
             throw $e;
         }
+    }
+
+    private function assertFinancialClosure(PurchaseOrder $purchaseOrder): void
+    {
+        $receiptIds = PurchaseOrderReceipt::query()
+            ->where('purchase_order_id', $purchaseOrder->id)
+            ->pluck('id');
+
+        $expenses = Expense::query()
+            ->whereIn('procurement_receipt_id', $receiptIds)
+            ->lockForUpdate()
+            ->get();
+
+        foreach ($expenses as $expense) {
+            if ((string) $expense->status !== 'posted'
+                || $this->moneyCents($expense->amount) !== $this->moneyCents(
+                    ExpenseSettlement::validSettledAmountForExpense((int) $expense->id)
+                )) {
+                throw ValidationException::withMessages([
+                    'status' => 'All procurement receipt expenses must be posted and fully settled before completion.',
+                ]);
+            }
+        }
+
+        $hasActivePayment = SupplierPaymentAttempt::query()
+            ->whereIn('expense_id', $expenses->pluck('id'))
+            ->whereIn('status', [
+                SupplierPaymentAttempt::STATUS_INITIATING,
+                SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            ])
+            ->lockForUpdate()
+            ->exists();
+
+        if ($hasActivePayment) {
+            throw ValidationException::withMessages([
+                'status' => 'Supplier payments awaiting completion must be resolved before purchase-order completion.',
+            ]);
+        }
+    }
+
+    private function moneyCents(mixed $amount): int
+    {
+        $text = trim((string) $amount);
+        if (! preg_match('/^\d+(?:\.\d{1,2})?$/', $text)) {
+            return 0;
+        }
+        [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '0');
+
+        return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
     }
 
     /**

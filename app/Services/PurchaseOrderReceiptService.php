@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\InventoryColorVariant;
+use App\Models\Finance\ExpenseSettlement;
 use App\Models\InventoryItem;
 use App\Models\InventorySize;
 use App\Models\PurchaseOrder;
@@ -10,6 +11,7 @@ use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\StockMovement;
+use App\Models\SupplierPaymentAttempt;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -201,7 +203,27 @@ class PurchaseOrderReceiptService
             }
 
             $expense = $receipt->expense()->lockForUpdate()->first();
-            if ($expense && !in_array($expense->status, ['submitted', 'rejected'], true)) {
+            $blockingPayment = $expense?->supplierPaymentAttempts()
+                ->whereIn('status', [
+                    SupplierPaymentAttempt::STATUS_INITIATING,
+                    SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+                    SupplierPaymentAttempt::STATUS_SUCCEEDED,
+                ])
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->first();
+            if ($blockingPayment) {
+                throw ValidationException::withMessages([
+                    'receipt' => 'The receipt cannot be voided while supplier payment is active or succeeded.',
+                ]);
+            }
+            $settledAmount = $expense
+                ? ExpenseSettlement::validSettledAmountForExpense((int) $expense->id)
+                : '0.00';
+            $postedUnpaid = $expense
+                && (string) $expense->status === 'posted'
+                && $settledAmount === '0.00';
+            if ($expense && !in_array($expense->status, ['submitted', 'rejected'], true) && ! $postedUnpaid) {
                 throw ValidationException::withMessages(['receipt' => 'The linked expense status no longer permits receipt voiding.']);
             }
 

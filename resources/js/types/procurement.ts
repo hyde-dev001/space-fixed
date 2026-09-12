@@ -32,6 +32,34 @@ export interface UpsertSupplierPaymentProfilePayload {
     account_number?: string;
 }
 
+export type SupplierPaymentMethod = 'manual_bank_transfer' | 'manual_e_wallet';
+
+export interface SupplierPaymentAttemptSummary {
+    id: number;
+    status: 'initiating' | 'awaiting_verification' | 'succeeded' | 'rejected' | 'cancelled' | string;
+    payment_status?: string;
+    amount: number | string;
+    currency?: string;
+    payment_method: SupplierPaymentMethod | string;
+    internal_reference?: string;
+    external_transaction_reference?: string | null;
+    masked_destination?: Pick<SupplierPaymentProfile, 'bank_name' | 'bank_code' | 'account_name' | 'masked_account_number'> & {
+        destination_type?: string | null;
+    };
+    supplier_email_to?: string | null;
+    supplier_email_status?: 'pending' | 'sent' | 'failed' | string | null;
+    supplier_email_failure_message?: string | null;
+    finance_note?: string | null;
+    initiated_by?: { id: number; name: string } | null;
+    rejection_reason?: string | null;
+    cancellation_reason?: string | null;
+    initiated_at?: string | null;
+    externally_paid_at?: string | null;
+    submitted_for_verification_at?: string | null;
+    verified_at?: string | null;
+    proof_media?: Array<{ id: number; file_name: string; mime_type: string; size: number }>;
+}
+
 export interface InventoryItem {
     id: number;
     product_name: string;
@@ -183,6 +211,7 @@ export interface ProcurementExpenseDetails {
     payment_status?: 'unpaid' | 'partially_paid' | 'paid' | string | null;
     payment_timing?: 'Overdue' | 'Due Today' | 'Due Soon' | 'Not Due' | string | null;
     payment_profile?: SupplierPaymentProfile | null;
+    payment_attempt?: SupplierPaymentAttemptSummary | null;
     items?: Array<{
         purchase_order_item_id: number;
         product_name?: string | null;

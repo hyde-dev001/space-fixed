@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
 	reject: vi.fn(),
 	reviewRelease: vi.fn(),
 	status: "submitted" as "submitted" | "posted",
+	paymentStatus: "unpaid" as string,
+	paymentAttempt: null as Record<string, unknown> | null,
 	ownerMode: false,
 }));
 
@@ -43,7 +45,8 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 				receipt_date: "2026-08-09",
 				due_date: "2026-09-08",
 				expense_status: mocks.status,
-				payment_status: "unpaid",
+				payment_status: mocks.paymentStatus,
+				payment_attempt: mocks.paymentAttempt,
 				payment_timing: "Overdue",
 				supplier_id: 4,
 				payment_profile: {
@@ -69,6 +72,8 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.ownerMode = false;
 	mocks.status = "submitted";
+	mocks.paymentStatus = "unpaid";
+	mocks.paymentAttempt = null;
 	mocks.refetch.mockResolvedValue(undefined);
 });
 
@@ -121,6 +126,26 @@ describe("Finance procurement expenses", () => {
 		expect(screen.getByText("READY FOR PAYMENT")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Pay Supplier" })).toBeDisabled();
 		expect(screen.queryByRole("button", { name: "Review & Release" })).not.toBeInTheDocument();
+	});
+
+	it("shows the manual payment verification state instead of a duplicate pay action", () => {
+		mocks.status = "posted";
+		mocks.paymentStatus = "awaiting_verification";
+		mocks.paymentAttempt = {
+			id: 44,
+			status: "awaiting_verification",
+			amount: "200.00",
+			payment_method: "manual_bank_transfer",
+			external_transaction_reference: "BANK-001",
+			supplier_email_status: "pending",
+			masked_destination: { masked_account_number: "******7890" },
+		};
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByText("AWAITING SHOP OWNER VERIFICATION")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Pay Supplier" })).not.toBeInTheDocument();
 	});
 
 	it("hides expense creation from the shop owner while keeping the page readable", () => {
