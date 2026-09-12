@@ -203,8 +203,11 @@ describe('ShipmentTracking', () => {
     render(<ShipmentTracking />);
 
     expect(screen.getByText('Previous delivery attempt')).toBeInTheDocument();
+    const thumbnail = screen.getByRole('img', { name: 'Proof of delivery thumbnail for SHP-1' });
+    expect(thumbnail).toHaveClass('h-16', 'w-24', 'object-cover');
+    expect(thumbnail.parentElement).toHaveClass('flex', 'items-center', 'gap-2');
     const opener = screen.getByRole('button', { name: 'View proof of delivery' });
-    expect(opener).toHaveClass('min-h-11');
+    expect(opener).toHaveClass('h-11', 'w-11');
     opener.focus();
     fireEvent.click(opener);
 
