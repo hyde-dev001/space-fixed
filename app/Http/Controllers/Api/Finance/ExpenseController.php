@@ -103,6 +103,7 @@ class ExpenseController extends Controller
         $receiptIds = $expenses->pluck('procurement_receipt_id')->filter()->unique()->values();
         $receipts = PurchaseOrderReceipt::with([
             'purchaseOrder.supplier:id,name',
+            'purchaseOrder.supplier.paymentProfile',
             'purchaseOrder.items',
             'items.purchaseOrderItem',
         ])->where('shop_owner_id', $shopId)->whereIn('id', $receiptIds)->get()->keyBy('id');
@@ -129,7 +130,9 @@ class ExpenseController extends Controller
                     'purchase_order_id' => $purchaseOrder->id,
                     'po_number' => $purchaseOrder->po_number,
                     'receipt_number' => "RCV-{$receipt->id}",
+                    'supplier_id' => $purchaseOrder->supplier?->id,
                     'supplier_name' => $purchaseOrder->supplier?->name,
+                    'payment_profile' => $purchaseOrder->supplier?->paymentProfile?->toMaskedArray(),
                     'receipt_id' => $receipt->id,
                     'received_at' => $receipt->received_at,
                     'receipt_date' => optional($receipt->received_at)->toDateString(),
@@ -173,7 +176,7 @@ class ExpenseController extends Controller
         }
 
         $poQuery = PurchaseOrder::query()
-            ->with(['supplier:id,name'])
+            ->with(['supplier:id,name', 'supplier.paymentProfile'])
             ->where('shop_owner_id', $shopId)
             ->where(function ($query) use ($poIds, $poNumbers) {
                 if (!empty($poIds)) {
@@ -218,7 +221,9 @@ class ExpenseController extends Controller
             $expense->setAttribute('procurement_details', [
                 'purchase_order_id' => $purchaseOrder->id,
                 'po_number' => $purchaseOrder->po_number,
+                'supplier_id' => $purchaseOrder->supplier?->id,
                 'supplier_name' => $purchaseOrder->supplier?->name,
+                'payment_profile' => $purchaseOrder->supplier?->paymentProfile?->toMaskedArray(),
                 'product_name' => $purchaseOrder->product_name,
                 'quantity' => $purchaseOrder->quantity,
                 'requested_size' => $purchaseOrder->requested_size,

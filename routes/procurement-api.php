@@ -90,6 +90,8 @@ Route::middleware([
         Route::post('/', [SupplierController::class, 'store'])->name('procurement.suppliers.store');
         Route::get('/{id}', [SupplierController::class, 'show'])->name('procurement.suppliers.show');
         Route::put('/{id}', [SupplierController::class, 'update'])->name('procurement.suppliers.update');
+        Route::get('/{id}/payment-profile', [SupplierController::class, 'showPaymentProfile'])->whereNumber('id')->name('procurement.suppliers.payment-profile.show');
+        Route::put('/{id}/payment-profile', [SupplierController::class, 'upsertPaymentProfile'])->whereNumber('id')->name('procurement.suppliers.payment-profile.upsert');
         Route::delete('/{id}', [SupplierController::class, 'destroy'])->name('procurement.suppliers.destroy');
         Route::post('/{id}/restore', [SupplierController::class, 'restore'])->name('procurement.suppliers.restore');
     });

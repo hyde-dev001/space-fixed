@@ -4,8 +4,11 @@ namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
 use App\Models\Supplier;
+use App\Models\SupplierPaymentProfile;
+use App\Http\Requests\StoreSupplierPaymentProfileRequest;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use App\Support\Erp\ErpActorContext;
 use App\Models\PurchaseOrder;
@@ -198,6 +201,82 @@ class SupplierController extends Controller
         return response()->json([
             'message' => 'Supplier restored successfully',
             'data' => $supplier->fresh()
+        ]);
+    }
+
+    public function showPaymentProfile(Request $request, int $id)
+    {
+        $supplier = Supplier::query()
+            ->where('shop_owner_id', $request->user()->shop_owner_id)
+            ->findOrFail($id);
+
+        $this->authorize('view', $supplier);
+
+        return response()->json([
+            'data' => $supplier->paymentProfile?->toMaskedArray(),
+        ]);
+    }
+
+    public function upsertPaymentProfile(StoreSupplierPaymentProfileRequest $request, int $id)
+    {
+        $supplier = Supplier::query()
+            ->where('shop_owner_id', $request->user()->shop_owner_id)
+            ->findOrFail($id);
+
+        $this->authorize('update', $supplier);
+
+        $profile = DB::transaction(function () use ($request, $supplier): SupplierPaymentProfile {
+            $lockedSupplier = Supplier::query()
+                ->where('shop_owner_id', $supplier->shop_owner_id)
+                ->lockForUpdate()
+                ->findOrFail($supplier->id);
+
+            $profile = SupplierPaymentProfile::query()
+                ->where('shop_owner_id', $lockedSupplier->shop_owner_id)
+                ->where('supplier_id', $lockedSupplier->id)
+                ->lockForUpdate()
+                ->first();
+            $data = $request->validated();
+            $accountNumber = filled($data['account_number'] ?? null)
+                ? $data['account_number']
+                : $profile?->account_number;
+
+            if ($accountNumber === null) {
+                abort(422, 'An account number is required for a new payment profile.');
+            }
+
+            $destination = [
+                'destination_type' => $data['destination_type'],
+                'bank_name' => $data['bank_name'],
+                'bank_code' => $data['bank_code'],
+                'account_name' => $data['account_name'],
+                'account_number' => $accountNumber,
+            ];
+            $changed = ! $profile || collect($destination)->some(
+                fn ($value, $key): bool => (string) $profile->getAttribute($key) !== (string) $value
+            );
+
+            if (! $profile) {
+                $profile = new SupplierPaymentProfile([
+                    'shop_owner_id' => $lockedSupplier->shop_owner_id,
+                    'supplier_id' => $lockedSupplier->id,
+                ]);
+            }
+
+            $profile->fill($destination);
+            if ($changed) {
+                $profile->status = SupplierPaymentProfile::STATUS_UNVERIFIED;
+                $profile->verified_by = null;
+                $profile->verified_at = null;
+            }
+            $profile->save();
+
+            return $profile->fresh();
+        }, 3);
+
+        return response()->json([
+            'message' => 'Supplier payment profile saved successfully.',
+            'data' => $profile->toMaskedArray(),
         ]);
     }
 }
