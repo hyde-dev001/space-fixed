@@ -4,6 +4,8 @@ namespace App\Services\Finance;
 
 use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
+use App\Models\ShopOwner;
+use App\Models\SupplierPaymentAttempt;
 use App\Models\User;
 use App\Support\Finance\FinanceDomainException;
 use Carbon\CarbonImmutable;
@@ -26,9 +28,11 @@ final class ExpenseSettlementService
      *
      * @return array{settlement: ExpenseSettlement, expense: array, replayed: bool}
      */
-    public function record(Expense $expense, User $actor, array $data, bool $allowPending = false): array
+    public function record(Expense $expense, User|ShopOwner $actor, array $data, bool $allowPending = false): array
     {
-        $shopId = (int) ($actor->shop_owner_id ?? 0);
+        $shopId = $actor instanceof ShopOwner
+            ? (int) $actor->getKey()
+            : (int) ($actor->shop_owner_id ?? 0);
         if ($shopId <= 0) {
             throw new FinanceDomainException('A Finance shop context is required.', 'TENANT_CONTEXT_REQUIRED', 403);
         }
@@ -44,16 +48,20 @@ final class ExpenseSettlementService
             : null;
         $idempotencyKey = $this->resolveRequestKey($data['idempotency_key'] ?? null);
 
-        if (! in_array($paymentMethod, self::PAYMENT_METHODS, true)) {
-            throw new FinanceDomainException('Payment method is not supported.', 'INVALID_STATE', 422);
-        }
         if (! in_array($source, [
             ExpenseSettlement::SOURCE_MANUAL,
             ExpenseSettlement::SOURCE_PROCUREMENT,
             ExpenseSettlement::SOURCE_PAYROLL,
             ExpenseSettlement::SOURCE_LEGACY_MIGRATION,
+            ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
         ], true)) {
             throw new FinanceDomainException('Settlement source is not supported.', 'INVALID_STATE', 422);
+        }
+        $allowedPaymentMethods = $source === ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT
+            ? SupplierPaymentAttempt::PAYMENT_METHODS
+            : self::PAYMENT_METHODS;
+        if (! in_array($paymentMethod, $allowedPaymentMethods, true)) {
+            throw new FinanceDomainException('Payment method is not supported.', 'INVALID_STATE', 422);
         }
         if ($source !== ExpenseSettlement::SOURCE_MANUAL && $sourceReference === '') {
             throw new FinanceDomainException('An integration settlement requires a source reference.', 'INVALID_STATE', 422);
@@ -135,7 +143,7 @@ final class ExpenseSettlementService
                 'payment_method' => $paymentMethod,
                 'reference' => $reference !== '' ? $reference : null,
                 'paid_at' => $paidAt ?? now()->toDateTimeString(),
-                'recorded_by_user_id' => $actor->id,
+                'recorded_by_user_id' => $actor instanceof User ? $actor->id : null,
                 'idempotency_key' => $idempotencyKey,
                 'source' => $source,
                 'source_reference' => $sourceReference !== '' ? $sourceReference : null,
@@ -174,6 +182,13 @@ final class ExpenseSettlementService
 
             if ((string) $lockedSettlement->entry_type !== ExpenseSettlement::ENTRY_SETTLEMENT) {
                 throw new FinanceDomainException('Only an original settlement can be reversed.', 'INVALID_STATE', 422);
+            }
+            if ((string) $lockedSettlement->source === ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT) {
+                throw new FinanceDomainException(
+                    'Supplier payments must be handled through the supplier payment workflow.',
+                    'INVALID_STATE',
+                    422,
+                );
             }
 
             if (ExpenseSettlement::query()->where('reverses_settlement_id', $lockedSettlement->id)->exists()) {
@@ -299,6 +314,9 @@ final class ExpenseSettlementService
 
     private function fromCents(int $cents): string
     {
-        return number_format($cents / 100, 2, '.', '');
+        $sign = $cents < 0 ? '-' : '';
+        $absolute = abs($cents);
+
+        return $sign . intdiv($absolute, 100) . '.' . str_pad((string) ($absolute % 100), 2, '0', STR_PAD_LEFT);
     }
 }

@@ -11,6 +11,8 @@ interface ProcurementExpensePanelProps {
 	onDisablePaymentProfile?: () => void;
 	canPaySupplier?: boolean;
 	onPaySupplier?: () => void;
+	ownerMode?: boolean;
+	onReviewSupplierPayment?: () => void;
 }
 
 const formatCurrency = (value: number | string | null | undefined) => `₱${Number(value || 0).toLocaleString()}`;
@@ -42,9 +44,15 @@ export default function ProcurementExpensePanel({
 	onDisablePaymentProfile,
 	canPaySupplier = false,
 	onPaySupplier,
+	ownerMode = false,
+	onReviewSupplierPayment,
 }: ProcurementExpensePanelProps) {
 	const isSubmitted = expenseStatus === "submitted";
-	const isReadyForPayment = expenseStatus === "posted" && details.payment_status !== "paid";
+	const paymentStatus = details.payment_status || "unpaid";
+	const isAwaitingVerification = paymentStatus === "awaiting_verification";
+	const isReadyForPayment = expenseStatus === "posted"
+		&& paymentStatus !== "paid"
+		&& !["initiating", "awaiting_verification"].includes(paymentStatus);
 
 	return (
 		<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-2">
@@ -64,6 +72,16 @@ export default function ProcurementExpensePanel({
 			<DetailRow label="Expense Status" value={details.expense_status || expenseStatus} />
 			<DetailRow label="Payment Status" value={details.payment_status || "unpaid"} />
 			<DetailRow label="Payment Timing" value={details.payment_timing || "Not Due"} />
+			{paymentStatus === "initiating" && <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold uppercase text-blue-800">PAYMENT INITIATED</p>}
+			{isAwaitingVerification && (
+				<div className="rounded-lg bg-amber-50 p-3 text-sm font-semibold uppercase text-amber-800">
+					<p>AWAITING SHOP OWNER VERIFICATION</p>
+					{ownerMode && onReviewSupplierPayment && <button type="button" onClick={onReviewSupplierPayment} className="mt-3 min-h-11 w-full rounded-lg bg-amber-700 px-3 py-2 text-white hover:bg-amber-800">Review Supplier Payment</button>}
+				</div>
+			)}
+			{paymentStatus === "rejected" && <p className="rounded-lg bg-rose-50 p-3 text-sm font-semibold uppercase text-rose-800">PAYMENT REJECTED · NEW ATTEMPT AVAILABLE</p>}
+			{paymentStatus === "cancelled" && <p className="rounded-lg bg-gray-100 p-3 text-sm font-semibold uppercase text-gray-700">PAYMENT CANCELLED · NEW ATTEMPT AVAILABLE</p>}
+			{paymentStatus === "paid" && <p className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold uppercase text-emerald-800">PAID · PAYMENT VERIFIED</p>}
 
 			{details.payment_profile && (
 				<div className="pt-2 space-y-2 border-t border-gray-200 dark:border-gray-700">
@@ -105,7 +123,7 @@ export default function ProcurementExpensePanel({
 				</button>
 			)}
 
-			{isReadyForPayment && (
+			{isReadyForPayment && !ownerMode && (
 				<div className="pt-2 space-y-2 border-t border-gray-200 dark:border-gray-700">
 					<p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">READY FOR PAYMENT</p>
 					<button
@@ -117,6 +135,10 @@ export default function ProcurementExpensePanel({
 						Pay Supplier
 					</button>
 				</div>
+			)}
+
+			{!ownerMode && paymentStatus === "paid" && details.payment_attempt?.supplier_email_status === "failed" && onPaySupplier && (
+				<button type="button" onClick={onPaySupplier} className="min-h-11 w-full rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50">SUPPLIER EMAIL FAILED · Resend Email</button>
 			)}
 		</div>
 	);

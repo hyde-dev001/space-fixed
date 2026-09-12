@@ -8,7 +8,8 @@ import { useFinanceApi } from "../../../hooks/useFinanceApi";
 import { useApproveExpense, useExpenses, useRejectExpense, useTaxRates } from "../../../hooks/useFinanceQueries";
 import { getApprovalStatusBadge } from "./InlineApprovalUtils";
 import ProcurementExpensePanel from "./components/ProcurementExpensePanel";
-import type { ProcurementExpenseDetails } from "@/types/procurement";
+import SupplierPaymentDialog from "./components/SupplierPaymentDialog";
+import type { ProcurementExpenseDetails, SupplierPaymentAttemptSummary } from "@/types/procurement";
 
 // Loading Spinner Component
 const LoadingSpinner: React.FC<{ message?: string }> = ({ message = "Loading expenses..." }) => (
@@ -213,6 +214,7 @@ const Expense: React.FC = () => {
   const isApprovalActionPending = approveExpense.isPending || rejectExpense.isPending;
   const [isProcurementReleasePending, setIsProcurementReleasePending] = useState(false);
   const [isPaymentProfileActionPending, setIsPaymentProfileActionPending] = useState(false);
+  const [isSupplierPaymentOpen, setIsSupplierPaymentOpen] = useState(false);
   
   // Normalize expenses data
   const expenses = useMemo(() => 
@@ -514,6 +516,20 @@ const Expense: React.FC = () => {
     } finally {
       setIsPaymentProfileActionPending(false);
     }
+  };
+
+  const openSupplierPayment = () => setIsSupplierPaymentOpen(true);
+
+  const canStartSupplierPayment = (expense: Expense): boolean => {
+    const details = expense.procurement_details;
+    const paymentStatus = details?.payment_status || "unpaid";
+    const attemptStatus = details?.payment_attempt?.status;
+
+    return !ownerMode
+      && expense.status === "posted"
+      && details?.payment_profile?.status === "verified"
+      && paymentStatus !== "paid"
+      && !["initiating", "awaiting_verification"].includes(attemptStatus || paymentStatus);
   };
 
   const calculateTax = (amount: number, taxRateId: string) => {
@@ -1032,6 +1048,10 @@ const Expense: React.FC = () => {
                   isPaymentProfileActionPending={isPaymentProfileActionPending}
                   onVerifyPaymentProfile={() => handlePaymentProfileStatus(activeExpense, "verify")}
                   onDisablePaymentProfile={() => handlePaymentProfileStatus(activeExpense, "disable")}
+                  canPaySupplier={canStartSupplierPayment(activeExpense)}
+                  onPaySupplier={openSupplierPayment}
+                  ownerMode={ownerMode}
+                  onReviewSupplierPayment={ownerMode ? openSupplierPayment : undefined}
                 />
               )}
 
@@ -1109,6 +1129,19 @@ const Expense: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {isSupplierPaymentOpen && activeExpense?.procurement_details && (
+        <SupplierPaymentDialog
+          open={isSupplierPaymentOpen}
+          mode={ownerMode ? "owner" : "finance"}
+          expenseId={activeExpense.id}
+          details={activeExpense.procurement_details}
+          amount={activeExpense.amount}
+          initialAttempt={activeExpense.procurement_details.payment_attempt as SupplierPaymentAttemptSummary | null | undefined}
+          onClose={() => setIsSupplierPaymentOpen(false)}
+          onChanged={async () => { await refetchExpenses(); }}
+        />
       )}
 
       {canCreateExpense && isAddOpen && (

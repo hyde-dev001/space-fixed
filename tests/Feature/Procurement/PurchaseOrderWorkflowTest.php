@@ -11,6 +11,9 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
+use App\Models\Finance\Expense;
+use App\Models\SupplierPaymentAttempt;
+use App\Models\SupplierPaymentProfile;
 use App\Models\InventoryItem;
 use App\Events\PurchaseOrderSent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -363,6 +366,75 @@ class PurchaseOrderWorkflowTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame('in_transit', $inTransit->fresh()->status);
+    }
+
+    public function test_completion_is_blocked_while_a_supplier_payment_attempt_is_active(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+        $item = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $po->id,
+            'ordered_quantity' => 1,
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => 'posted',
+        ]);
+        PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+        $expense = Expense::create([
+            'reference' => 'EXP-ACTIVE-PAYMENT',
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $this->shopOwner->id,
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        $profile = SupplierPaymentProfile::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'destination_type' => 'bank_account',
+            'bank_name' => 'Test Bank',
+            'bank_code' => 'TBK',
+            'account_name' => 'Supplier Trading',
+            'account_number' => '1234567890',
+            'status' => SupplierPaymentProfile::STATUS_VERIFIED,
+        ]);
+        SupplierPaymentAttempt::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'expense_id' => $expense->id,
+            'supplier_id' => $this->supplier->id,
+            'supplier_payment_profile_id' => $profile->id,
+            'amount' => '100.00',
+            'currency' => 'PHP',
+            'provider' => 'manual',
+            'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
+            'internal_reference' => 'SPM-COMPLETE-001',
+            'idempotency_key' => 'completion-active-1',
+            'destination_snapshot' => ['account_number' => '1234567890'],
+            'status' => SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            'initiated_by_user_id' => $this->user->id,
+            'initiated_at' => now(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
+                'status' => 'completed',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertSame('delivered', $po->fresh()->status);
     }
 
     /** @test */

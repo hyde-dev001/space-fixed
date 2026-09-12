@@ -607,12 +607,14 @@ $routeBuckets = [
         'finance.expenses.approve',
         'finance.expenses.destroy',
         'finance.expenses.index',
+        'finance.expenses.review_release',
         'finance.expenses.receipt.upload',
         'finance.expenses.receipt.download',
         'finance.expenses.receipt.delete',
         'finance.expenses.settlements.index',
         'finance.expenses.settlements.store',
         'finance.expenses.settlements.reverse',
+        'finance.expenses.supplier-payment-attempts.store',
         'finance.expenses.reject',
         'finance.expenses.restore',
         'finance.expenses.show',
@@ -649,6 +651,13 @@ $routeBuckets = [
         'finance.refunds.execute',
         'finance.refunds.index',
         'finance.refunds.reject',
+        'finance.supplier-payment-attempts.cancel',
+        'finance.supplier-payment-attempts.proof',
+        'finance.supplier-payment-attempts.resend-confirmation',
+        'finance.supplier-payment-attempts.submit',
+        'finance.suppliers.payment-profile.disable',
+        'finance.suppliers.payment-profile.show',
+        'finance.suppliers.payment-profile.verify',
         'finance.tax-rates.index',
         'finance.tax-rates.store',
         'finance.tax-rates.effective',
@@ -703,6 +712,11 @@ $routeBuckets = [
         'shop_owner.finance.expenses.receipt.delete',
         'shop_owner.finance.dashboard.summary',
         'shop_owner.finance.tax-rates.index',
+        'shop_owner.finance.supplier-payment-attempts.confirm',
+        'shop_owner.finance.supplier-payment-attempts.index',
+        'shop_owner.finance.supplier-payment-attempts.proof',
+        'shop_owner.finance.supplier-payment-attempts.reject',
+        'shop_owner.finance.supplier-payment-attempts.show',
         'shop_owner.payslip_approval.batch_final_approve',
         'shop_owner.payslip_approval.final_approve',
         'shop_owner.payslip_approval.index',
@@ -876,6 +890,8 @@ $routeBuckets = [
         'procurement.replenishment-requests.update',
         'procurement.suppliers.destroy',
         'procurement.suppliers.index',
+        'procurement.suppliers.payment-profile.show',
+        'procurement.suppliers.payment-profile.upsert',
         'procurement.suppliers.restore',
         'procurement.suppliers.show',
         'procurement.suppliers.store',
@@ -932,7 +948,17 @@ $routeMethods = static function (string $routeName): array {
     $overrides = [
         'inventory.suppliers.update' => ['PATCH', 'PUT'],
         'finance.expenses.update' => ['PATCH'],
+        'finance.expenses.review_release' => ['POST'],
+        'finance.expenses.supplier-payment-attempts.store' => ['POST'],
         'finance.expenses.settlements.reverse' => ['POST'],
+        'finance.supplier-payment-attempts.cancel' => ['POST'],
+        'finance.supplier-payment-attempts.resend-confirmation' => ['POST'],
+        'finance.supplier-payment-attempts.submit' => ['POST'],
+        'finance.suppliers.payment-profile.disable' => ['POST'],
+        'finance.suppliers.payment-profile.verify' => ['POST'],
+        'procurement.suppliers.payment-profile.upsert' => ['PUT'],
+        'shop_owner.finance.supplier-payment-attempts.confirm' => ['POST'],
+        'shop_owner.finance.supplier-payment-attempts.reject' => ['POST'],
         'finance.tax-rates.calculate' => ['POST'],
         'finance.invoices.update' => ['PATCH'],
         'finance.invoices.mark_sent' => ['POST'],
@@ -2164,6 +2190,29 @@ foreach ($ownerOperationalApiRouteGroups as $group) {
         $routes[$routeName]['risk_tier'] = $group['risk_tier'];
         $routes[$routeName]['domain_rule'] = $group['domain_rule'];
     }
+}
+
+$ownerSupplierPaymentRoutes = [
+    'shop_owner.finance.supplier-payment-attempts.confirm',
+    'shop_owner.finance.supplier-payment-attempts.index',
+    'shop_owner.finance.supplier-payment-attempts.proof',
+    'shop_owner.finance.supplier-payment-attempts.reject',
+    'shop_owner.finance.supplier-payment-attempts.show',
+];
+
+foreach ($ownerSupplierPaymentRoutes as $routeName) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['audience'] = 'shop_owner';
+    $routes[$routeName]['actor_guard'] = 'shop_owner';
+    $routes[$routeName]['owner_access'] = 'allowed';
+    $routes[$routeName]['owner_denial_reason'] = null;
+    $routes[$routeName]['risk_tier'] = 'financial';
+    $routes[$routeName]['domain_rule'] = 'Shop Owner supplier-payment review remains scoped to the authenticated company and maker-checker payment policy.';
+    $routes[$routeName]['supporting_routes'] = ['shop-owner.erp.finance.dashboard'];
+    $routes[$routeName]['actor_persistence'] = 'existing_owner_ref';
 }
 
 $canonicalShellModuleRoutes = [

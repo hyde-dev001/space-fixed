@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Approval;
 use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
 use App\Models\User;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrder;
@@ -229,7 +230,8 @@ class ExpenseApprovalService
 
     public function rejectForVoidedReceipt(Expense $expense, PurchaseOrderReceipt $receipt): void
     {
-        if ($expense->status === 'submitted') {
+        $unpaid = ExpenseSettlement::validSettledAmountForExpense((int) $expense->id) === '0.00';
+        if ($unpaid && in_array($expense->status, ['submitted', 'posted'], true)) {
             $expense->update([
                 'status' => 'rejected',
                 'approval_notes' => "System rejected after procurement receipt #{$receipt->id} was voided.",

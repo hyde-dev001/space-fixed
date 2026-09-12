@@ -4,7 +4,7 @@
 
 **Goal:** Complete SoleSpace's existing Inventory stock request -> manual PR -> manual PO -> canonical receipt -> Finance release -> shop-funded supplier payment -> settlement -> replacement/refund workflow without adding parallel business flows.
 
-**Architecture:** Keep `PurchaseOrderReceiptService` as the only inventory-entry path and `ExpenseSettlementService` as the only Finance money-history writer. Add one supplier destination record, one outbound payment-attempt record, and one supplier-adjustment record; expose them through thin controllers and existing pages while all state transitions, locking, idempotency, and tenant checks remain in focused services. Provider-specific PayMongo work is gated until the exact outbound shop-account contract is verified.
+**Architecture:** Keep `PurchaseOrderReceiptService` as the only inventory-entry path and `ExpenseSettlementService` as the only Finance money-history writer. Add one supplier destination record, one manual payment-attempt record, and one supplier-adjustment record; expose them through thin controllers and existing pages while all state transitions, locking, idempotency, and tenant checks remain in focused services. Automated PayMongo supplier disbursement is externally blocked and remains future integration work.
 
 **Tech Stack:** Laravel 12, PHP 8.2, Eloquent transactions and row locks, Spatie Media Library and Activitylog, PHPUnit, Inertia 2, React 18, TypeScript 5.7, Axios, Vitest, Testing Library, Vite 7, Tailwind CSS 4, pnpm.
 
@@ -16,11 +16,11 @@
 - Preserve manual PR-to-PO creation. Do not activate `CreatePurchaseOrderFromPR` or event discovery.
 - Preserve receipt-driven `partially_received` and `delivered`; payment never sets either status.
 - Preserve the `ExpenseSettlementService` approval guard and append-only history.
-- Use `ShopOwner.paymongo_secret_key` for that expense's shop. Never silently fall back to the platform key.
+- Supplier payment uses a real external manual bank/e-wallet transfer. No PayMongo supplier disbursement fallback or simulation is allowed.
 - `Due Soon` means tomorrow through today + 3 calendar days, inclusive.
 - Use only `manufacturing_defect`, `damaged`, `wrong_item`, `incorrect_size_or_variant`, and `other`; `other` requires notes.
 - Reuse `supplier_adjustments` for receiving-time and post-payment defects. Do not add a refund or second defect table.
-- Do not implement provider requests or webhook mappings until the provider gate in Task 6 passes.
+- Do not implement or simulate PayMongo supplier disbursement, transfer IDs, or payout webhooks. Existing customer PayMongo payment/refund behavior remains untouched.
 - Do not edit `.env`, generated `vendor/`, `node_modules/`, or `public/build` files.
 
 ## File map
@@ -28,9 +28,10 @@
 ### Database and models
 
 - Create: `database/migrations/2026_09_12_000001_create_supplier_payment_profiles_table.php` - one encrypted supplier destination per supplier.
-- Create: `database/migrations/2026_09_12_000002_create_supplier_payment_attempts_table.php` - outbound provider lifecycle and idempotency, not accounting.
+- Create: `database/migrations/2026_09_12_000002_create_supplier_payment_attempts_table.php` - manual supplier-payment lifecycle and idempotency, not accounting.
 - Create: `database/migrations/2026_09_12_000003_create_supplier_adjustments_table.php` - receiving and post-payment quality cases.
 - Create: `database/migrations/2026_09_12_000004_add_supplier_workflow_links.php` - the three approved existing-table columns.
+- Create: `database/migrations/2026_09_12_000005_add_manual_supplier_payment_fields.php` - additive manual-payment state, proof, checker, cancellation, and email fields.
 - Create: `app/Models/SupplierPaymentProfile.php`.
 - Create: `app/Models/SupplierPaymentAttempt.php`.
 - Create: `app/Models/SupplierAdjustment.php`.
@@ -46,8 +47,7 @@
 - Modify: `app/Services/PurchaseOrderReceiptService.php` - defect creation, replacement linkage, payable distinction, and void guards.
 - Modify: `app/Services/ExpenseApprovalService.php` - due-date allowlist and procurement Review and Release.
 - Modify: `app/Services/Finance/ExpenseSettlementService.php` - procurement endpoint protection support and append-only supplier refunds.
-- Create: `app/Services/Finance/SupplierPaymentService.php` - payout attempt lifecycle and confirmed settlement orchestration.
-- Create after provider gate: `app/Services/Finance/PaymongoSupplierPayoutGateway.php` - concrete shop-key HTTP boundary.
+- Create: `app/Services/Finance/SupplierPaymentService.php` - real manual bank/e-wallet attempt, proof, Shop Owner verification, settlement, and email orchestration.
 - Create: `app/Services/SupplierAdjustmentService.php` - reporting, transitions, evidence, replacement totals, and refund resolution.
 - Modify: `app/Http/Controllers/Erp/SupplierController.php` - supplier fields, payment-profile management, and archival guard.
 - Modify: `app/Http/Controllers/Erp/PurchaseOrderController.php` - sort allowlist and completion response.
@@ -55,7 +55,7 @@
 - Modify: `app/Http/Controllers/Erp/PurchaseOrderReceiptController.php` - multipart receipt payloads and linked replacements.
 - Create: `app/Http/Controllers/Erp/SupplierAdjustmentController.php` - adjustment list/report/review/refund-proof actions.
 - Create: `app/Http/Controllers/Api/Finance/ProcurementExpenseController.php` - Review and Release, payment preview/initiation, payment-profile verification, and refund confirmation.
-- Modify after provider gate: `app/Http/Controllers/PaymongoWebhookController.php` - delegate only verified supplier-payout events.
+- Create: `app/Http/Controllers/ShopOwner/SupplierPaymentController.php` - Shop Owner review, confirmation, rejection, and proof access.
 - Modify: `app/Http/Controllers/Api/Finance/ExpenseController.php` - procurement projection and reject public manual settlement bypass.
 - Modify: `app/Http/Requests/StorePurchaseOrderRequest.php` - payment-term allowlist.
 - Modify: `app/Http/Requests/StorePurchaseOrderReceiptRequest.php` - defect evidence and replacement validation.
@@ -100,12 +100,12 @@
 - Modify: `tests/Feature/Finance/ExpenseSettlementTest.php`.
 - Create: `tests/Feature/Finance/ProcurementExpenseReleaseTest.php`.
 - Create: `tests/Feature/Finance/SupplierPaymentProfileTest.php`.
-- Create after provider gate: `tests/Feature/Finance/SupplierPaymentTest.php`.
+- Create: `tests/Feature/Finance/SupplierManualPaymentTest.php`.
 - Create: `tests/Feature/Procurement/SupplierAdjustmentTest.php`.
 - Create: `tests/Feature/Procurement/SupplierReplacementTest.php`.
 - Create: `tests/Feature/Finance/SupplierRefundTest.php`.
 - Modify: `tests/Feature/Notifications/NotificationCriticalFlowsTest.php`.
-- Modify: `tests/Feature/PaymongoWebhookSignatureTest.php` after the provider gate.
+- Create: `app/Mail/SupplierPaymentConfirmationMail.php` and `resources/views/emails/supplier-payment-confirmation.blade.php`.
 - Modify: `resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx`.
 - Modify: `resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx`.
 - Modify: `resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrderReceiptPanel.test.tsx`.
@@ -424,82 +424,133 @@ Expected: encryption, masking, transitions, role boundaries, and tenant denial p
 git commit --only -m "feat: manage verified supplier payment profiles" -- app/Http/Requests/StoreSupplierPaymentProfileRequest.php app/Http/Controllers/Erp/SupplierController.php app/Http/Controllers/Api/Finance/ProcurementExpenseController.php routes/procurement-api.php routes/finance-api.php resources/js/types/procurement.ts resources/js/services/supplierApi.ts resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx tests/Feature/Finance/SupplierPaymentProfileTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php
 ```
 
-### Task 6: Add payment attempts and shop-specific PayMongo settlement
+### Task 6: Implement real manual supplier payment with Shop Owner verification
 
-**Blocking provider gate:** Before writing `PaymongoSupplierPayoutGateway`, its HTTP tests, or supplier-payout branches in `PaymongoWebhookController`, obtain and record the exact outbound product enabled for the shop account: endpoint, request schema, destination/bank-code contract, idempotency header behavior, immediate and terminal statuses, retrieval/reconciliation endpoint, test-mode behavior, webhook event names/payloads, and signature ownership. If separate shop webhook secrets or a platform-owned account are required, stop and amend the approved design before adding schema or fallback behavior.
+Automated PayMongo supplier disbursement is **externally blocked** for this
+account because Wallet/Disbursements onboarding and a usable supplier-payout
+sandbox are unavailable. Do not add a fake transfer adapter, transfer ID,
+webhook, or dashboard state. Existing customer PayMongo payment/refund code is
+outside this task and remains untouched.
 
 **Files:**
 
+- Create: `database/migrations/2026_09_12_000005_add_manual_supplier_payment_fields.php`
+- Modify: `app/Models/SupplierPaymentAttempt.php`
+- Modify: `app/Models/Finance/ExpenseSettlement.php`
+- Modify: `app/Services/Finance/ExpenseSettlementService.php`
 - Create: `app/Services/Finance/SupplierPaymentService.php`
-- Create after gate: `app/Services/Finance/PaymongoSupplierPayoutGateway.php`
+- Create: `app/Http/Controllers/ShopOwner/SupplierPaymentController.php`
 - Create: `app/Http/Requests/Finance/InitiateSupplierPaymentRequest.php`
+- Create: `app/Http/Requests/Finance/SubmitSupplierPaymentProofRequest.php`
+- Create: `app/Http/Requests/Finance/CancelSupplierPaymentRequest.php`
+- Create: `app/Http/Requests/ShopOwner/RejectSupplierPaymentRequest.php`
 - Modify: `app/Http/Controllers/Api/Finance/ProcurementExpenseController.php`
-- Modify after gate: `app/Http/Controllers/PaymongoWebhookController.php`
 - Modify: `routes/finance-api.php`
-- Create after gate: `tests/Feature/Finance/SupplierPaymentTest.php`
-- Modify after gate: `tests/Feature/PaymongoWebhookSignatureTest.php`
+- Modify: `routes/shop-owner-api.php`
+- Create: `app/Mail/SupplierPaymentConfirmationMail.php`
+- Create: `resources/views/emails/supplier-payment-confirmation.blade.php`
+- Modify: `app/Services/ExpenseApprovalService.php` - reject unpaid posted procurement expenses when their receipt is voided.
+- Modify: `app/Services/PurchaseOrderReceiptService.php`
+- Modify: `app/Services/PurchaseOrderService.php`
+- Modify: `app/Http/Controllers/Api/Finance/ExpenseController.php`
+- Modify: `tests/Feature/Finance/ExpenseSettlementTest.php`
+- Create: `tests/Feature/Finance/SupplierManualPaymentTest.php`
+- Modify: `tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php`
+- Modify: `tests/Feature/Procurement/PurchaseOrderWorkflowTest.php`
+- Modify: `resources/js/types/procurement.ts`
+- Modify: `resources/js/Pages/ERP/Finance/Expense.tsx`
 - Modify: `resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx`
 - Create: `resources/js/Pages/ERP/Finance/components/SupplierPaymentDialog.tsx`
-- Modify: `resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx`
+- Create: `resources/js/Pages/ERP/Finance/__tests__/SupplierPaymentDialog.test.tsx`
 
-- [ ] **Step 1: Verify and document the provider contract.**
+- [x] **Step 1: Record the provider blocker and approved payment rail.**
 
-Record the authoritative PayMongo documentation/account evidence in the implementation notes or PR. Do not infer transfer event names from inbound payment/refund APIs. Confirm whether the existing global webhook secret can authenticate events for shop-owned accounts; if not, return to design review.
+Document that the final-defense rail is a real external manual bank/e-wallet
+transfer. PayMongo supplier disbursement remains future integration work; do
+not require or create provider-specific request/webhook tests.
 
-- [ ] **Step 2: Write failing attempt/idempotency tests from verified fixtures.**
+- [x] **Step 2: Add only the additive manual-payment schema.**
 
-Use `Http::fake()` with captured, sanitized test-mode fixtures. Cover posted
-eligibility, positive full outstanding balance, early payment of a valid Net-
-term expense, nonvoid receipt, verified same-shop profile, missing/invalid shop
-key, double click, same-key replay, same-key/different-payload conflict,
-concurrent active attempt, provider pending, timeout/unknown, terminal
-failure/retry, confirmed success, duplicate/out-of-order webhook, binding
-mismatch, and overpayment prevention.
+Use `000005_add_manual_supplier_payment_fields.php`; do not rewrite the
+already-applied attempt migration. Add the manual method, verification,
+rejection, cancellation, proof, and supplier-email audit fields. Checker IDs
+reference `shop_owners`; the Finance initiator remains a `users` reference.
 
-- [ ] **Step 3: Run tests and verify domain/provider failures.**
+- [x] **Step 3: Implement the manual attempt lifecycle.**
 
-```bash
-php artisan test tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/PaymongoWebhookSignatureTest.php
+Finance may initiate only for a posted procurement expense with a positive
+full outstanding balance, posted nonvoid receipt, verified same-shop payment
+profile, and valid supplier email. The attempt stores an encrypted destination
+snapshot and immutable `supplier_email_to` snapshot. Supported methods are
+`manual_bank_transfer` and `manual_e_wallet`.
+
+The state machine is:
+
+```text
+initiating -> awaiting_verification -> succeeded
+initiating -> cancelled
+awaiting_verification -> rejected
 ```
 
-Expected: FAIL because payment orchestration and the verified provider mapping are absent.
+`cancelled`, `rejected`, and `succeeded` are terminal. Cancellation requires a
+reason and is allowed only before proof, external reference,
+`externally_paid_at`, or settlement exists. A rejected attempt is never reused;
+Finance starts a new attempt.
 
-- [ ] **Step 4: Implement attempt creation before external I/O.**
+- [x] **Step 4: Require proof and external reference before checker review.**
 
-In one transaction, lock the expense, its `ShopOwner` identified by
-`expense.shop_id`, and current attempts; verify all same-shop links and the
-profile, calculate outstanding centavos, create `initiating` with a unique
-internal reference, shop-scoped key, and encrypted destination snapshot, then
-commit. Read only that locked shop owner's decrypted `paymongo_secret_key`;
-missing/invalid credentials fail before dispatch. Call the provider outside
-the transaction.
+Finance performs the real transfer outside SoleSpace, then submits the exact
+full outstanding amount, method, external reference, paid timestamp, note, and
+at least one private JPG/PNG/PDF proof through Spatie Media Library. Proof
+access is tenant- and role-protected and uses no public storage URL.
 
-- [ ] **Step 5: Implement verified provider result mapping.**
+- [x] **Step 5: Enforce the maker/checker boundary server-side.**
 
-The concrete gateway accepts the shop key and immutable attempt snapshot, uses Basic authentication, explicit connect/response timeouts, integer centavos, and the verified idempotency header. Return only normalized outcome/reference/binding data; never return or log raw secret, account number, or provider body.
+Finance uses the existing `access-finance-expenses` capability for initiation,
+submission, cancellation, and resend. Shop Owner review uses the existing
+`auth:shop_owner` plus `shop.isolation` route boundary. The service accepts a
+`ShopOwner` checker and never compares its numeric ID to the Finance User ID.
+Only the Shop Owner guard can confirm or reject; rejection requires a reason.
 
-- [ ] **Step 6: Persist outcomes and settle confirmed success once.**
+- [x] **Step 6: Settle only after Shop Owner confirmation.**
 
-Pending/accepted/unknown becomes `processing`; terminal failure becomes `failed`; only verified terminal success becomes `succeeded` and calls `ExpenseSettlementService::record()` using source `procurement` and a stable provider source reference. Lock and verify amount, currency, provider reference, destination binding, shop, and status before settlement. Link the resulting settlement to the attempt. Late failure after success is inert and logged without sensitive data.
+Confirmation locks the expense, receipt/PO/supplier, and attempt, rechecks the
+full current outstanding balance and proof/reference, then calls only
+`ExpenseSettlementService::record()` with source
+`supplier_manual_payment`. It links the settlement and marks the attempt
+`succeeded`; it never directly updates Expense to paid. Generic settlement and
+generic reversal routes cannot bypass this flow.
 
-- [ ] **Step 7: Add the immutable confirmation UI.**
+- [x] **Step 7: Deliver supplier email after the financial transaction.**
 
-Show supplier, PO, amount, bank, masked account, and PayMongo. Disable submit while active, reuse one client request key for retries of the same click, display processing without claiming paid, and expose retry only after terminal failure.
+The successful attempt and settlement commit before synchronous email delivery
+is attempted. The existing Laravel mail infrastructure is reused with
+`SupplierPaymentConfirmationMail`; the email contains PO, amount, method,
+external reference, paid date, and masked destination, never raw account data
+or proof. Email status is independent: `pending -> sent|failed`, and Finance
+may resend a failed notification without creating another settlement.
 
-- [ ] **Step 8: Run payment tests.**
+- [x] **Step 8: Preserve receipt void and PO completion guards.**
+
+Initiating, awaiting-verification, and succeeded attempts block receipt void.
+An unpaid posted expense may still be voided when it has no valid settlement;
+the existing void-rejection path marks that invalid payable rejected. Rejected
+and cancelled attempts do not add a payment block. PO completion blocks
+initiating and awaiting-verification attempts while requiring all receipt
+expenses to be posted and fully settled; receipt-driven `delivered` semantics
+remain unchanged.
+
+- [x] **Step 9: Run focused manual-payment tests and commit only green code.**
 
 ```bash
-php artisan test tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/PaymongoWebhookSignatureTest.php
-pnpm exec vitest run resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx
+php artisan test tests/Feature/Finance/SupplierManualPaymentTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/Procurement/PurchaseOrderReceiptVoidTest.php tests/Feature/Procurement/PurchaseOrderWorkflowTest.php
+node_modules/.bin/vitest.cmd run resources/js/Pages/ERP/Finance/__tests__/SupplierPaymentDialog.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx
 ```
 
-Expected: all lifecycle, duplicate, tenant, secret, and settlement assertions pass using test-mode fakes.
-
-- [ ] **Step 9: Commit payment support only after the provider gate passed.**
-
-```bash
-git commit --only -m "feat: settle shop-funded supplier payouts" -- app/Services/Finance/SupplierPaymentService.php app/Services/Finance/PaymongoSupplierPayoutGateway.php app/Http/Requests/Finance/InitiateSupplierPaymentRequest.php app/Http/Controllers/Api/Finance/ProcurementExpenseController.php app/Http/Controllers/PaymongoWebhookController.php routes/finance-api.php tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/PaymongoWebhookSignatureTest.php resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx resources/js/Pages/ERP/Finance/components/SupplierPaymentDialog.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx
-```
+Commit only after these suites and PHP syntax checks pass. No
+`SupplierPaymentTest.php`, `PaymongoSupplierPayoutGateway.php`, or
+supplier-payout webhook branch is created.
 
 ### Task 7: Add receiving-time and post-payment issue reporting with private evidence
 
@@ -774,16 +825,10 @@ Omit `resources/js/types/notifications.ts` if no explicit union change is requir
 php artisan test tests/Feature/Procurement tests/Feature/Finance/ProcurementExpenseReleaseTest.php tests/Feature/Finance/SupplierPaymentProfileTest.php tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php
 ```
 
-Expected: PASS for all non-provider workflow tests. Only if Task 6 passed the
-provider gate and the files exist, run:
-
-```bash
-php artisan test tests/Feature/Finance/SupplierPaymentTest.php tests/Feature/PaymongoWebhookSignatureTest.php
-```
-
-If Task 6 remains blocked, do not reference or create those provider test files;
-report the exact omitted paths and provider blocker instead of claiming
-completion.
+Expected: PASS for all implemented non-provider workflow tests, including
+`SupplierManualPaymentTest.php`. Automated PayMongo supplier disbursement is
+externally blocked, so there is no provider payout test file or webhook branch
+to run.
 
 - [ ] **Step 2: Run focused frontend suites.**
 
@@ -807,11 +852,19 @@ Expected: all non-provider tests/build pass, diff check is silent, and only
 intentional changes remain. Do not report TypeScript lint/type-check as passed
 because the repository has no committed scripts for them.
 
-If Task 6 is blocked by the provider gate, omit
-`tests/Feature/Finance/SupplierPaymentTest.php` and
-`tests/Feature/PaymongoWebhookSignatureTest.php` from all commands until those
-files actually exist. Run the non-provider suites separately and report the
-provider blocker explicitly; never create placeholder provider tests.
+The final report must explicitly state:
+
+```text
+Automated PayMongo supplier disbursement: EXTERNALLY BLOCKED.
+Implemented supplier payment: REAL MANUAL BANK/E-WALLET TRANSFER
+-> external reference and private proof
+-> Shop Owner verification
+-> ExpenseSettlementService settlement
+-> supplier payment-confirmation email.
+```
+
+Do not create placeholder PayMongo supplier-payout tests or claim automated
+PayMongo supplier payout was tested.
 
 - [ ] **Step 4: Perform the required sequential reviews.**
 
@@ -835,4 +888,4 @@ Skip this commit when no durable learning was added.
 
 ## Completion evidence required
 
-The implementation handoff must list exact migrations, models, services, controllers/routes, policies or reused permissions, frontend components, notification changes, tests executed, results, unrelated existing failures, and the verified PayMongo contract. It must explicitly confirm that `PurchaseOrderReceiptService`, `ExpenseSettlementService`, shop isolation, receipt-driven `delivered`, append-only payment/refund history, and every excluded feature remained intact.
+The implementation handoff must list exact migrations, models, services, controllers/routes, policies or reused permissions, frontend components, notification changes, tests executed, results, unrelated existing failures, and the PayMongo blocker. It must explicitly confirm that `PurchaseOrderReceiptService`, `ExpenseSettlementService`, shop isolation, receipt-driven `delivered`, append-only payment/refund history, and every excluded feature remained intact.

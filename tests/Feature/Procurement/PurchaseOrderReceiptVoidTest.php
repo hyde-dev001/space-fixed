@@ -13,6 +13,8 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\ShopOwner;
 use App\Models\StockMovement;
 use App\Models\Supplier;
+use App\Models\SupplierPaymentAttempt;
+use App\Models\SupplierPaymentProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -62,6 +64,23 @@ class PurchaseOrderReceiptVoidTest extends TestCase
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
             ['reason' => 'Retrying the same void request.']
         )->assertOk();
+        $this->assertSame(2, StockMovement::count());
+    }
+
+    public function test_void_reverses_an_unpaid_posted_expense_without_a_payment_attempt(): void
+    {
+        [$po, $item, $inventory] = $this->poItem(2, 100);
+        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        Expense::sole()->update(['status' => 'posted']);
+
+        $this->actingAs($this->receiver, 'user')->postJson(
+            "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
+            ['reason' => 'Correcting an unpaid posted receipt.']
+        )->assertOk();
+
+        $this->assertSame('voided', PurchaseOrderReceipt::findOrFail($receiptId)->status);
+        $this->assertSame('rejected', Expense::sole()->fresh()->status);
+        $this->assertSame(10, $inventory->fresh()->available_quantity);
         $this->assertSame(2, StockMovement::count());
     }
 
@@ -198,6 +217,47 @@ class PurchaseOrderReceiptVoidTest extends TestCase
 
         $this->assertSame(ApprovalStatus::CANCELLED, $approval->fresh()->status);
         $this->assertSame('rejected', $expense->fresh()->status);
+    }
+
+    public function test_void_is_blocked_while_supplier_payment_awaits_shop_owner_verification(): void
+    {
+        [$po, $item] = $this->poItem(2, 100);
+        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        $expense = Expense::sole();
+        $profile = SupplierPaymentProfile::create([
+            'shop_owner_id' => $this->owner->id,
+            'supplier_id' => $this->supplier->id,
+            'destination_type' => 'bank_account',
+            'bank_name' => 'Test Bank',
+            'bank_code' => 'TBK',
+            'account_name' => 'Supplier Trading',
+            'account_number' => '1234567890',
+            'status' => SupplierPaymentProfile::STATUS_VERIFIED,
+        ]);
+        SupplierPaymentAttempt::create([
+            'shop_owner_id' => $this->owner->id,
+            'expense_id' => $expense->id,
+            'supplier_id' => $this->supplier->id,
+            'supplier_payment_profile_id' => $profile->id,
+            'amount' => '100.00',
+            'currency' => 'PHP',
+            'provider' => 'manual',
+            'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
+            'internal_reference' => 'SPM-VOID-001',
+            'idempotency_key' => 'void-awaiting-1',
+            'destination_snapshot' => ['account_number' => '1234567890'],
+            'status' => SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            'initiated_by_user_id' => $this->receiver->id,
+            'initiated_at' => now(),
+        ]);
+
+        $this->actingAs($this->receiver, 'user')->postJson(
+            "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
+            ['reason' => 'Trying to void after external transfer.']
+        )->assertUnprocessable();
+
+        $this->assertSame('posted', PurchaseOrderReceipt::findOrFail($receiptId)->status);
+        $this->assertSame('submitted', $expense->fresh()->status);
     }
 
     private function postReceipt(PurchaseOrder $po, PurchaseOrderItem $item, int $received, int $defective): int

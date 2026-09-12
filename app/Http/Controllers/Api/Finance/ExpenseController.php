@@ -8,6 +8,7 @@ use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderReceipt;
+use App\Models\SupplierPaymentAttempt;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -107,6 +108,13 @@ class ExpenseController extends Controller
             'purchaseOrder.items',
             'items.purchaseOrderItem',
         ])->where('shop_owner_id', $shopId)->whereIn('id', $receiptIds)->get()->keyBy('id');
+        $paymentAttempts = SupplierPaymentAttempt::query()
+            ->with(['media', 'initiatedBy:id,name'])
+            ->where('shop_owner_id', $shopId)
+            ->whereIn('expense_id', $expenses->pluck('id'))
+            ->latest('id')
+            ->get()
+            ->groupBy('expense_id');
         $poIds = [];
         $poNumbers = [];
 
@@ -126,6 +134,7 @@ class ExpenseController extends Controller
                 ])->values();
                 $unitCosts = $detailItems->pluck('unit_cost')->filter(fn ($cost) => $cost !== null)->unique()->values();
                 $settlementState = (array) $expense->getAttribute('settlement_state');
+                $paymentAttempt = $paymentAttempts->get($expense->id)?->first();
                 $expense->setAttribute('procurement_details', [
                     'purchase_order_id' => $purchaseOrder->id,
                     'po_number' => $purchaseOrder->po_number,
@@ -139,7 +148,8 @@ class ExpenseController extends Controller
                     'payment_terms' => $purchaseOrder->payment_terms,
                     'due_date' => optional($expense->due_date)->toDateString(),
                     'expense_status' => $expense->status,
-                    'payment_status' => $settlementState['status'] ?? 'unpaid',
+                    'payment_status' => $this->procurementPaymentStatus($paymentAttempt, $settlementState),
+                    'payment_attempt' => $this->paymentAttemptDetails($paymentAttempt),
                     'payment_timing' => $this->paymentTiming($expense->due_date),
                     'ordered_quantity' => (int) $receiptItems->sum(fn ($item) => (int) ($item->purchaseOrderItem?->ordered_quantity ?? 0)),
                     'received_quantity' => (int) $receiptItems->sum('received_quantity'),
@@ -235,10 +245,66 @@ class ExpenseController extends Controller
                 'payment_terms' => $purchaseOrder->payment_terms,
                 'due_date' => optional($expense->due_date)->toDateString(),
                 'expense_status' => $expense->status,
-                'payment_status' => ((array) $expense->getAttribute('settlement_state'))['status'] ?? 'unpaid',
+                'payment_status' => $this->procurementPaymentStatus(
+                    $paymentAttempts->get($expense->id)?->first(),
+                    (array) $expense->getAttribute('settlement_state'),
+                ),
+                'payment_attempt' => $this->paymentAttemptDetails($paymentAttempts->get($expense->id)?->first()),
                 'payment_timing' => $this->paymentTiming($expense->due_date),
             ]);
         }
+    }
+
+    private function procurementPaymentStatus(?SupplierPaymentAttempt $attempt, array $settlementState): string
+    {
+        if ($attempt) {
+            if ($attempt->status === SupplierPaymentAttempt::STATUS_SUCCEEDED) {
+                return (string) ($settlementState['status'] ?? 'paid');
+            }
+
+            return (string) $attempt->status;
+        }
+
+        return (string) ($settlementState['status'] ?? 'unpaid');
+    }
+
+    /** @return array<string, mixed>|null */
+    private function paymentAttemptDetails(?SupplierPaymentAttempt $attempt): ?array
+    {
+        if (! $attempt) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $attempt->id,
+            'status' => (string) $attempt->status,
+            'amount' => (string) $attempt->amount,
+            'currency' => (string) $attempt->currency,
+            'payment_method' => $attempt->payment_method,
+            'internal_reference' => $attempt->internal_reference,
+            'external_transaction_reference' => $attempt->externalTransactionReference(),
+            'masked_destination' => $attempt->maskedDestination(),
+            'supplier_email_to' => $attempt->supplier_email_to,
+            'supplier_email_status' => $attempt->supplier_email_status,
+            'supplier_email_failure_message' => $attempt->supplier_email_failure_message,
+            'finance_note' => $attempt->finance_note,
+            'initiated_by' => $attempt->initiatedBy ? [
+                'id' => (int) $attempt->initiatedBy->id,
+                'name' => (string) $attempt->initiatedBy->name,
+            ] : null,
+            'rejection_reason' => $attempt->rejection_reason,
+            'cancellation_reason' => $attempt->cancellation_reason,
+            'initiated_at' => $attempt->initiated_at?->toISOString(),
+            'externally_paid_at' => $attempt->externally_paid_at?->toISOString(),
+            'submitted_for_verification_at' => $attempt->submitted_for_verification_at?->toISOString(),
+            'verified_at' => $attempt->verified_at?->toISOString(),
+            'proof_media' => $attempt->getMedia('payment_proof')->map(fn ($media): array => [
+                'id' => (int) $media->id,
+                'file_name' => $media->file_name,
+                'mime_type' => $media->mime_type,
+                'size' => (int) $media->size,
+            ])->values()->all(),
+        ];
     }
 
     private function paymentTiming($dueDate): string

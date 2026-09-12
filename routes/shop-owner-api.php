@@ -31,6 +31,7 @@ use App\Http\Controllers\Api\Finance\ExpenseController as FinanceExpenseControll
 use App\Http\Controllers\Api\Finance\InvoiceController as FinanceInvoiceController;
 use App\Http\Controllers\Api\Finance\FinanceSummaryController;
 use App\Http\Controllers\Api\Finance\TaxRateController as FinanceTaxRateController;
+use App\Http\Controllers\ShopOwner\SupplierPaymentController;
 use App\Http\Controllers\Erp\HR\AttendanceController as HrAttendanceController;
 use App\Http\Controllers\Erp\HR\PayrollBatchController as HrPayrollBatchController;
 use App\Http\Controllers\Erp\HR\PayrollController as HrPayrollController;
@@ -106,6 +107,14 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         });
 
         Route::get('/tax-rates', [FinanceTaxRateController::class, 'index'])->name('shop_owner.finance.tax-rates.index');
+
+        Route::prefix('supplier-payment-attempts')->group(function () {
+            Route::get('/', [SupplierPaymentController::class, 'index'])->name('shop_owner.finance.supplier-payment-attempts.index');
+            Route::get('/{attemptId}', [SupplierPaymentController::class, 'show'])->whereNumber('attemptId')->name('shop_owner.finance.supplier-payment-attempts.show');
+            Route::get('/{attemptId}/proof/{mediaId}', [SupplierPaymentController::class, 'proof'])->whereNumber(['attemptId', 'mediaId'])->name('shop_owner.finance.supplier-payment-attempts.proof');
+            Route::post('/{attemptId}/confirm', [SupplierPaymentController::class, 'confirm'])->whereNumber('attemptId')->name('shop_owner.finance.supplier-payment-attempts.confirm');
+            Route::post('/{attemptId}/reject', [SupplierPaymentController::class, 'reject'])->whereNumber('attemptId')->name('shop_owner.finance.supplier-payment-attempts.reject');
+        });
     });
 
     // ============================================
