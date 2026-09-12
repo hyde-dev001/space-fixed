@@ -39,6 +39,31 @@ class ProcurementApiContractTest extends TestCase
         $this->assertSame(['message', 'data'], array_keys($restored->json()));
     }
 
+    public function test_supplier_procurement_fields_round_trip_without_new_columns(): void
+    {
+        config(['auth.defaults.guard' => 'user']);
+        $owner = ShopOwner::factory()->create();
+        $user = User::factory()->for($owner)->create();
+        Permission::findOrCreate('procurement.manage_suppliers', 'user');
+        $user->givePermissionTo('procurement.manage_suppliers');
+
+        $response = $this->actingAs($user)->postJson('/api/erp/procurement/suppliers', [
+            'name' => 'Regional Supplier',
+            'city' => 'Manila',
+            'country' => 'Philippines',
+            'payment_terms' => 'Net 15',
+            'lead_time_days' => 7,
+            'products_supplied' => 'Running shoes, laces',
+        ])->assertCreated();
+
+        $supplier = Supplier::findOrFail($response->json('data.id'));
+        $this->assertSame('Manila', $supplier->city);
+        $this->assertSame('Philippines', $supplier->country);
+        $this->assertSame('Net 15', $supplier->payment_terms);
+        $this->assertSame(7, $supplier->lead_time_days);
+        $this->assertSame('Running shoes, laces', $supplier->products_supplied);
+    }
+
     public function test_supplier_workflow_schema_has_only_the_approved_records_and_links(): void
     {
         foreach ([

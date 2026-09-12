@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseRequest;
+use App\Models\ProcurementSettings;
 use App\Models\Supplier;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -105,7 +106,7 @@ class PurchaseOrderService
                 'unit_cost' => $single ? $first->unit_cost : 0,
                 'total_cost' => $snapshots->sum(fn ($item) => (float) $item['line_total']),
                 'expected_delivery_date' => $data['expected_delivery_date'] ?? null,
-                'payment_terms' => $data['payment_terms'] ?? 'Net 30',
+                'payment_terms' => $this->resolvePaymentTerms($data, $supplier, $shopOwnerId),
                 'notes' => $data['notes'] ?? null,
                 'status' => 'draft',
                 'ordered_by' => $data['ordered_by'],
@@ -144,6 +145,34 @@ class PurchaseOrderService
         }
 
         throw new \RuntimeException('Unable to generate a purchase order number.');
+    }
+
+    private function resolvePaymentTerms(array $data, Supplier $supplier, int $shopOwnerId): string
+    {
+        if (array_key_exists('payment_terms', $data) && filled($data['payment_terms'])) {
+            $explicitTerms = trim((string) $data['payment_terms']);
+            if (PurchaseOrder::paymentTermDays($explicitTerms) === null) {
+                throw ValidationException::withMessages([
+                    'payment_terms' => 'The selected payment terms are not supported.',
+                ]);
+            }
+
+            return $explicitTerms;
+        }
+
+        foreach ([
+            $supplier->payment_terms,
+            ProcurementSettings::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->value('default_payment_terms'),
+        ] as $candidate) {
+            $candidate = trim((string) $candidate);
+            if (PurchaseOrder::paymentTermDays($candidate) !== null) {
+                return $candidate;
+            }
+        }
+
+        return 'Net 30';
     }
 
     /**

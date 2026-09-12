@@ -6,6 +6,7 @@ use App\Models\Approval;
 use App\Models\Finance\Expense;
 use App\Models\User;
 use App\Models\PurchaseOrderReceipt;
+use App\Models\PurchaseOrder;
 use App\Enums\ApprovalStatus;
 use App\Enums\NotificationType;
 use Illuminate\Support\Facades\DB;
@@ -69,13 +70,13 @@ class ExpenseApprovalService
 
     private function deriveSupplierDueDate(?string $paymentTerms, $receivedAt): ?string
     {
-        $terms = trim((string) $paymentTerms);
-        if ($terms === '' || ! preg_match('/^Net\s+([1-9]\d{0,2})$/i', $terms, $matches)) {
+        $days = PurchaseOrder::paymentTermDays($paymentTerms);
+        if ($days === null) {
             return null;
         }
 
         return \Illuminate\Support\Carbon::parse($receivedAt)
-            ->addDays((int) $matches[1])
+            ->addDays($days)
             ->toDateString();
     }
 

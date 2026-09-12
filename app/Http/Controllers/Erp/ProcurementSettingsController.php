@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
 use App\Models\ProcurementSettings;
+use App\Models\PurchaseOrder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class ProcurementSettingsController extends Controller
 {
@@ -37,7 +39,7 @@ class ProcurementSettingsController extends Controller
         $validatedData = $request->validate([
             'auto_pr_approval_threshold' => 'prohibited',
             'require_finance_approval' => 'prohibited',
-            'default_payment_terms' => 'nullable|string|max:255',
+            'default_payment_terms' => ['nullable', 'string', Rule::in(PurchaseOrder::supportedPaymentTerms())],
             'notification_emails' => 'nullable|array',
             'notification_emails.*' => 'email',
             'settings_json' => 'nullable|array',

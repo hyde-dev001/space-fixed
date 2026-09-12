@@ -14,6 +14,15 @@ class PurchaseOrder extends Model
 {
     use HasFactory, SoftDeletes;
 
+    public const PAYMENT_TERM_DAYS = [
+        'COD' => 0,
+        'Net 7' => 7,
+        'Net 15' => 15,
+        'Net 30' => 30,
+        'Net 45' => 45,
+        'Net 60' => 60,
+    ];
+
     private const ACTIVE_RECEIVING_STATUSES = ['sent', 'confirmed', 'in_transit', 'partially_received'];
     private const RECEIVING_STATUSES = ['in_transit', 'partially_received'];
     private const CANCELLABLE_STATUSES = ['draft', 'sent', 'confirmed'];
@@ -188,6 +197,16 @@ class PurchaseOrder extends Model
     public function scopeByShopOwner(Builder $query, int $shopOwnerId): Builder
     {
         return $query->where('shop_owner_id', $shopOwnerId);
+    }
+
+    public static function supportedPaymentTerms(): array
+    {
+        return array_keys(self::PAYMENT_TERM_DAYS);
+    }
+
+    public static function paymentTermDays(?string $paymentTerms): ?int
+    {
+        return self::PAYMENT_TERM_DAYS[trim((string) $paymentTerms)] ?? null;
     }
 
     // Accessors

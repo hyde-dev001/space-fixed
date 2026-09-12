@@ -10,6 +10,8 @@ export interface User {
     email: string;
 }
 
+export type PaymentTerms = 'COD' | 'Net 7' | 'Net 15' | 'Net 30' | 'Net 45' | 'Net 60';
+
 export interface InventoryItem {
     id: number;
     product_name: string;
@@ -72,7 +74,7 @@ export interface PurchaseOrder {
     total_cost: number;
     expected_delivery_date?: string;
     actual_delivery_date?: string;
-    payment_terms: string;
+    payment_terms: PaymentTerms;
     status: 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'partially_received' | 'delivered' | 'completed' | 'cancelled';
     is_historical?: boolean;
     items?: PurchaseOrderItem[];
@@ -181,6 +183,11 @@ export interface Supplier {
     email?: string;
     phone?: string;
     address?: string;
+    city?: string;
+    country?: string;
+    payment_terms?: PaymentTerms;
+    lead_time_days?: number;
+    products_supplied?: string;
     purchase_order_count: number;
     last_order_date?: string;
     total_order_value: number;
@@ -196,7 +203,7 @@ export interface ProcurementSettings {
     shop_owner_id: number;
     auto_pr_approval_threshold: number;
     require_finance_approval: boolean;
-    default_payment_terms: string;
+    default_payment_terms: PaymentTerms;
     auto_generate_po: boolean;
     notification_emails?: string[];
     settings_json?: Record<string, any>;
@@ -381,13 +388,13 @@ export interface RejectPurchaseRequestPayload {
 export interface CreatePurchaseOrderPayload {
     purchase_request_ids: number[];
     expected_delivery_date?: string;
-    payment_terms: string;
+    payment_terms: PaymentTerms;
     notes?: string;
 }
 
 export interface UpdatePurchaseOrderPayload {
     expected_delivery_date?: string;
-    payment_terms?: string;
+    payment_terms?: PaymentTerms;
     notes?: string;
 }
 
@@ -431,6 +438,10 @@ export interface CreateSupplierPayload {
     email?: string;
     phone?: string;
     address?: string;
+    city?: string;
+    country?: string;
+    payment_terms?: PaymentTerms;
+    lead_time_days?: number;
     products_supplied?: string;
     notes?: string;
 }
@@ -441,6 +452,10 @@ export interface UpdateSupplierPayload {
     email?: string;
     phone?: string;
     address?: string;
+    city?: string;
+    country?: string;
+    payment_terms?: PaymentTerms;
+    lead_time_days?: number;
     products_supplied?: string;
     is_active?: boolean;
     notes?: string;
@@ -453,7 +468,7 @@ export interface UpdateSupplierRatingPayload {
 export interface UpdateProcurementSettingsPayload {
     auto_pr_approval_threshold?: number;
     require_finance_approval?: boolean;
-    default_payment_terms?: string;
+    default_payment_terms?: PaymentTerms;
     auto_generate_po?: boolean;
     notification_emails?: string[];
     settings_json?: Record<string, any>;

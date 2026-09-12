@@ -12,6 +12,7 @@ use App\Events\PurchaseOrderSent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Validation\ValidationException;
 use App\Services\PurchaseOrderService;
 
 class PurchaseOrderController extends Controller
@@ -70,8 +71,21 @@ class PurchaseOrderController extends Controller
         }
 
         // Sorting
-        $sortBy = $request->get('sort_by', 'ordered_date');
-        $sortOrder = $request->get('sort_order', 'desc');
+        $sortBy = (string) $request->get('sort_by', 'ordered_date');
+        $sortOrder = strtolower((string) $request->get('sort_order', 'desc'));
+        $allowedSortColumns = [
+            'ordered_date',
+            'expected_delivery_date',
+            'po_number',
+            'status',
+            'total_cost',
+        ];
+        if (! in_array($sortBy, $allowedSortColumns, true)) {
+            throw ValidationException::withMessages(['sort_by' => 'The selected sort column is not supported.']);
+        }
+        if (! in_array($sortOrder, ['asc', 'desc'], true)) {
+            throw ValidationException::withMessages(['sort_order' => 'The sort direction must be asc or desc.']);
+        }
         $query->orderBy($sortBy, $sortOrder);
 
         $purchaseOrders = $query->paginate($request->get('per_page', 15));
