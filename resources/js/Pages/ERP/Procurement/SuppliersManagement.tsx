@@ -706,20 +706,22 @@ export default function SuppliersManagement() {
 
 			{/* Add Supplier Modal */}
 			{isModalOpen && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:py-8">
+				<div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto px-4 py-6 sm:py-8">
 					<button type="button" aria-label="Close add supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={handleCloseModal} />
-					<div className="relative flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
-						<div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
+					<div className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100dvh-3rem)]">
+						<div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800 sm:px-6">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add New Supplier</h2>
 							<button
+								type="button"
+								aria-label="Close add supplier modal"
 								onClick={handleCloseModal}
-								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
+								className="flex size-11 items-center justify-center rounded-lg text-2xl leading-none text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200"
 							>
 								×
 							</button>
 						</div>
 
-						<div className="px-5 py-3">
+						<div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-5 sm:p-6">
 							<SupplierFormFields formData={formData} onChange={handleFormChange} idPrefix="add" />
 
 							<div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2 dark:border-blue-900/60 dark:bg-blue-950/20 sm:col-span-2">
@@ -770,16 +772,18 @@ export default function SuppliersManagement() {
 
 						</div>
 
-						<div className="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800/50">
+						<div className="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50 px-5 py-4 dark:border-gray-800 dark:bg-gray-800/50 sm:px-6">
 							<button
+								type="button"
 								onClick={handleCloseModal}
-								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+								className="min-h-11 flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2 font-medium text-gray-700 transition-colors hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
 							>
 								Cancel
 							</button>
 							<button
+								type="button"
 								onClick={handleAddSupplier}
-								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700 text-white font-medium transition-colors"
+								className="min-h-11 flex-1 rounded-lg bg-blue-600 px-4 py-2 font-medium text-white transition-colors hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
 							>
 								Add Supplier
 							</button>

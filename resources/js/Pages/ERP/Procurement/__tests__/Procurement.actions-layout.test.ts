@@ -33,4 +33,10 @@ describe("Procurement page actions layout", () => {
 		expect(suppliersManagement).toContain(rightAlignedActions);
 		expect(suppliersManagement).not.toContain("lg:justify-between");
 	});
+
+	it("keeps the add supplier modal inside the viewport with a scrollable body", () => {
+		expect(suppliersManagement).toContain('overflow-y-auto px-4 py-6 sm:py-8');
+		expect(suppliersManagement).toContain('max-h-[calc(100dvh-2rem)] w-full max-w-5xl');
+		expect(suppliersManagement).toContain('min-h-0 flex-1 overflow-y-auto p-5 space-y-5 sm:p-6');
+	});
 });
