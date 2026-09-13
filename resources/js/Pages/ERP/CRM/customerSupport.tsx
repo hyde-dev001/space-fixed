@@ -33,6 +33,12 @@ interface Ticket {
   conversationStatus?: string;
 }
 
+interface OrderProductPreview {
+  name: string;
+  quantity: string;
+  unitPrice?: string;
+}
+
 export default function CustomerSupport() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicketId, setSelectedTicketId] = useState<number | null>(null);
@@ -125,6 +131,48 @@ export default function CustomerSupport() {
       .join("")
       .toUpperCase()
       .substring(0, 2);
+  };
+
+  const parseOrderProducts = (content: string, itemsSummary: string): OrderProductPreview[] => {
+    const productsBlockMatch = content.match(/\*\*Products:\*\*\s*([\s\S]*?)(?=\n\*\*|$)/i);
+
+    if (productsBlockMatch?.[1]) {
+      return productsBlockMatch[1]
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.startsWith('-'))
+        .map((line) => {
+          const cleanedLine = line.replace(/^-\s*/, '').trim();
+          const productMatch = cleanedLine.match(/^(.*?)\s+x(\d+)(?:\s+\([^0-9]*([\d,]+(?:\.\d{1,2})?)\))?$/);
+
+          if (!productMatch) {
+            return { name: cleanedLine, quantity: '1' };
+          }
+
+          return {
+            name: productMatch[1].trim(),
+            quantity: productMatch[2].trim(),
+            unitPrice: productMatch[3]?.trim(),
+          };
+        });
+    }
+
+    return itemsSummary
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .map((item) => {
+        const summaryMatch = item.match(/^(.*?)\s+x(\d+)$/);
+        return summaryMatch
+          ? { name: summaryMatch[1].trim(), quantity: summaryMatch[2].trim() }
+          : { name: item, quantity: '1' };
+      });
+  };
+
+  const resolveAttachmentUrl = (path: string) => {
+    if (!path) return path;
+    if (/^(https?:|data:|blob:)/i.test(path) || path.startsWith('/')) return path;
+    return path.startsWith('storage/') ? `/${path}` : `/storage/${path}`;
   };
 
   const formatTime = (dateString: string | null) => {
@@ -653,7 +701,107 @@ export default function CustomerSupport() {
                         .replace(/\\n/g, '\n')
                         .replace(/\\\*/g, '*')
                         .replace(/\\"/g, '"');
+                      const isNewOrderPlaced = /new order placed/i.test(normalizedContent) && /\*\*order number:\*\*/i.test(normalizedContent);
                       const isRepairOrderAccepted = /repair order accepted/i.test(normalizedContent) && /\*\*type:\*\*/i.test(normalizedContent);
+
+                      if (isNewOrderPlaced) {
+                        const titleMatch = normalizedContent.match(/\*\*(New Order Placed[^*]*)\*\*/i);
+                        const itemsMatch = normalizedContent.match(/\*\*Items:\*\*\s*(.+?)(?=\n|$)/i);
+                        const totalMatch = normalizedContent.match(/\*\*Total:\*\*\s*[^0-9]*([\d,]+(?:\.\d{1,2})?)(?=\n|$)/i);
+                        const statusMatch = normalizedContent.match(/\*\*Status:\*\*\s*(.+?)(?=\n|$)/i);
+                        const title = titleMatch ? titleMatch[1].trim() : 'New Order Placed';
+                        const items = itemsMatch ? itemsMatch[1].trim() : '';
+                        const total = totalMatch ? totalMatch[1].trim() : '';
+                        const status = statusMatch ? statusMatch[1].trim() : '';
+                        const orderProducts = parseOrderProducts(normalizedContent, items);
+                        const orderProductImages = (message.images || []).filter(Boolean);
+
+                        return (
+                          <div key={message.id} className="flex items-start gap-3 my-6">
+                            <div className="w-7 h-7 rounded-full bg-gray-950 text-white flex items-center justify-center text-[11px] font-semibold shrink-0">
+                              {getInitials('SoleSpace Shop')}
+                            </div>
+                            <div className="bg-white border border-gray-200 rounded-xl p-5 max-w-lg w-full shadow-sm hover:shadow-md transition-shadow">
+                              <div className="flex items-start justify-between mb-4">
+                                <div className="flex-1">
+                                  <h3 className="text-base font-semibold text-gray-900 mb-1">{title}</h3>
+                                  <p className="text-xs text-gray-500">{message.timestamp}</p>
+                                </div>
+                                {status && (
+                                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full whitespace-nowrap ${
+                                    status.toLowerCase().includes('pending') ? 'bg-yellow-100 text-yellow-800' :
+                                    status.toLowerCase().includes('delivered') ? 'bg-blue-100 text-blue-800' :
+                                    status.toLowerCase().includes('processing') ? 'bg-blue-100 text-blue-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {status}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                                {orderProducts.length > 0 && (
+                                  <div className="space-y-2">
+                                    <span className="text-gray-500 text-xs font-medium">Products:</span>
+                                    <div className="space-y-2">
+                                      {orderProducts.map((product, productIndex) => {
+                                        const productImage = orderProductImages[productIndex];
+
+                                        return (
+                                          <div key={`${product.name}-${productIndex}`} className="flex items-center gap-3 bg-white rounded-lg p-2 border border-gray-100">
+                                            {productImage ? (
+                                              <img src={resolveAttachmentUrl(productImage)} alt={product.name} className="w-12 h-12 rounded-md object-cover" />
+                                            ) : (
+                                              <div className="w-12 h-12 rounded-md bg-gray-100" />
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                              <p className="text-sm font-medium text-gray-900 truncate">{product.name}</p>
+                                              <p className="text-xs text-gray-500">
+                                                Qty: {product.quantity}
+                                                {product.unitPrice ? ` • ₱${product.unitPrice}` : ''}
+                                              </p>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+
+                                {items && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Items:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{items}</span>
+                                  </div>
+                                )}
+                                {total && (
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Total:</span>
+                                    <span className="text-sm text-gray-900 font-semibold">₱{total}</span>
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="border-t border-gray-100 pt-3 mb-3">
+                                <p className="text-sm font-semibold text-gray-900">SoleSpace Shop</p>
+                              </div>
+
+                              <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
+                                <p className="text-xs text-blue-900 leading-relaxed">
+                                  💡 Thank you for your order! We'll notify you once your items are ready for shipment.
+                                </p>
+                              </div>
+
+                              <button
+                                type="button"
+                                className="w-full bg-white hover:bg-gray-50 text-black border border-gray-300 font-semibold py-2.5 px-4 rounded-lg transition-all duration-200 text-sm shadow-sm hover:shadow-md"
+                              >
+                                View Full Details
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      }
 
                       if (isRepairOrderAccepted) {
                         const titleMatch = normalizedContent.match(/\*\*(Repair Order Accepted[^*]*)\*\*/i);

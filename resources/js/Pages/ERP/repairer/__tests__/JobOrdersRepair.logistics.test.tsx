@@ -218,6 +218,19 @@ describe('JobOrdersRepair intake logistics', () => {
     });
   });
 
+  it('uses a short label for the physical receipt confirmation dialog', async () => {
+    mocks.repair = repair('shop_pickup', true);
+
+    render(<JobOrdersRepair />);
+    await openDetails();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm physical receipt' }));
+
+    await waitFor(() => expect(mocks.swal).toHaveBeenCalledWith(
+      expect.objectContaining({ confirmButtonText: 'Confirm' }),
+    ));
+  });
+
   it('offers physical receipt for an already-paid accepted repair with an approved handoff', async () => {
     mocks.repair = {
       ...repair('shop_pickup', true),
