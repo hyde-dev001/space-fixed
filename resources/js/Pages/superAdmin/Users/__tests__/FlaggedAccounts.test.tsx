@@ -149,4 +149,36 @@ describe('Flagged account state UI', () => {
       expect.any(Object),
     );
   });
+
+  it('keeps the fixed table readable and shows disabled pagination on one page', () => {
+    usePageMock.mockReturnValue({
+      props: {
+        flaggedAccounts: {
+          data: [account('pending_review')],
+          current_page: 1,
+          last_page: 1,
+          per_page: 25,
+          total: 1,
+          from: 1,
+          to: 1,
+        },
+        stats: {
+          total: 1,
+          pending_review: 1,
+          under_investigation: 0,
+          dismissed: 0,
+          account_suspended: 0,
+        },
+        filters: { search: '', status: 'all' },
+      },
+    });
+
+    render(<FlaggedAccounts />);
+
+    expect(screen.getByRole('table')).toHaveClass('min-w-[1280px]', 'table-fixed');
+    expect(screen.getByRole('table').parentElement).toHaveClass('min-h-[420px]');
+    expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+    expect(screen.getByText(/Showing 1.1 of 1 reports/)).toBeInTheDocument();
+  });
 });

@@ -349,7 +349,7 @@ const NotificationDropdown: React.FC<NotificationDropdownProps> = ({ basePath, o
             <span className="text-gray-300 dark:text-gray-600">|</span>
             <Link
               href={notificationsListHref}
-              className="flex-1 text-center text-sm font-medium text-gray-900 transition-colors hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950"
+              className="flex-1 text-center text-sm font-medium text-gray-900 transition-colors hover:text-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-100 dark:hover:text-white"
               onClick={onClose}
             >
               View All

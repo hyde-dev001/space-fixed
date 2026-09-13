@@ -219,8 +219,11 @@ describe("canonical settings sections", () => {
     const shell = screen.getByTestId("settings-desktop-shell");
     const navigation = screen.getByRole("navigation", { name: "Settings sections" });
     const content = screen.getByTestId("settings-content");
+    const backRow = screen.getByRole("button", { name: "Back" }).parentElement;
 
     expect(shell).toHaveClass("contents", "xl:grid", "xl:grid-cols-[220px_minmax(0,1fr)]", "xl:gap-10");
+    expect(backRow).toHaveClass("sticky", "top-0", "pb-6", "bg-slate-50", "dark:bg-gray-950");
+    expect(backRow).not.toHaveClass("mb-6");
     expect(navigation).toHaveClass("mb-6", "rounded-2xl", "border", "bg-white", "p-2", "shadow-sm");
     expect(navigation).toHaveClass("xl:sticky", "xl:top-6", "xl:mb-0", "xl:shadow-none");
     expect(content).toHaveClass("grid", "grid-cols-1", "gap-6", "lg:grid-cols-12");
@@ -257,6 +260,20 @@ describe("canonical settings sections", () => {
     expect(screen.getByRole("navigation", { name: "Settings sections" })).toHaveClass("dark:border-gray-700", "dark:bg-gray-900");
     expect(document.getElementById("settings-section-profile")).toHaveClass("dark:border-gray-700", "dark:bg-gray-900");
     expect(document.getElementById("settings-section-subscription")).toHaveClass("dark:border-gray-700", "dark:bg-gray-900");
+  });
+
+  it("keeps the Back control visible while scrolling", () => {
+    renderSettings("profile");
+
+    const backButton = screen.getByRole("button", { name: "Back" });
+
+    expect(backButton.parentElement).toHaveClass(
+      "sticky",
+      "top-0",
+      "z-30",
+      "bg-slate-50",
+      "dark:bg-gray-950",
+    );
   });
 
   it("renders shared, retail, and repair policy editors as separate direct sections", async () => {

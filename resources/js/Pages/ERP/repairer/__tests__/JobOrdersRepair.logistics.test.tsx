@@ -166,7 +166,7 @@ describe('JobOrdersRepair intake logistics', () => {
     expect(screen.getByText('Rider assigned')).toBeInTheDocument();
     expect(screen.getByText('Shoes picked up')).toBeInTheDocument();
     expect(screen.getByText('Delivery proof must be approved before receipt can be confirmed.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Confirm physical receipt' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeDisabled();
     expect(
       screen.queryByText(/contact (?:a )?(?:delivery service|carrier|rider)|manually (?:enter|add) (?:carrier|rider)/i),
     ).not.toBeInTheDocument();
@@ -205,7 +205,7 @@ describe('JobOrdersRepair intake logistics', () => {
     render(<JobOrdersRepair />);
     await openDetails();
 
-    const confirmReceipt = screen.getByRole('button', { name: 'Confirm physical receipt' });
+    const confirmReceipt = screen.getByRole('button', { name: 'Confirm' });
     expect(confirmReceipt).toBeEnabled();
     fireEvent.click(confirmReceipt);
 
@@ -218,6 +218,19 @@ describe('JobOrdersRepair intake logistics', () => {
     });
   });
 
+  it('uses a short label for the physical receipt confirmation dialog', async () => {
+    mocks.repair = repair('shop_pickup', true);
+
+    render(<JobOrdersRepair />);
+    await openDetails();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    await waitFor(() => expect(mocks.swal).toHaveBeenCalledWith(
+      expect.objectContaining({ confirmButtonText: 'Confirm' }),
+    ));
+  });
+
   it('offers physical receipt for an already-paid accepted repair with an approved handoff', async () => {
     mocks.repair = {
       ...repair('shop_pickup', true),
@@ -227,7 +240,7 @@ describe('JobOrdersRepair intake logistics', () => {
     render(<JobOrdersRepair />);
     await openDetails();
 
-    expect(screen.getByRole('button', { name: 'Confirm physical receipt' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeEnabled();
   });
 
   it('does not offer manual shipping for automatic shop rider returns', async () => {

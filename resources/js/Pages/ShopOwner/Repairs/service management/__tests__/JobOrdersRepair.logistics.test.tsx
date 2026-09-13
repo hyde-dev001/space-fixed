@@ -162,7 +162,7 @@ describe("ShopOwner JobOrdersRepair intake logistics", () => {
     expect(screen.getByText("Rider assigned")).toBeInTheDocument();
     expect(screen.getByText("Shoes picked up")).toBeInTheDocument();
     expect(screen.getByText("Delivery proof must be approved before receipt can be confirmed.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm physical receipt" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Edit intake delivery method" })).not.toBeInTheDocument();
     expect(
       screen.queryByText(/contact (?:a )?(?:delivery service|carrier|rider)|manually (?:enter|add) (?:carrier|rider)/i),
@@ -204,7 +204,7 @@ describe("ShopOwner JobOrdersRepair intake logistics", () => {
     render(<JobOrdersRepair />);
     await openDetails();
 
-    const confirmReceipt = screen.getByRole("button", { name: "Confirm physical receipt" });
+    const confirmReceipt = screen.getByRole("button", { name: "Confirm" });
     expect(confirmReceipt).toBeEnabled();
     fireEvent.click(confirmReceipt);
 

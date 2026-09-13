@@ -57,6 +57,25 @@ describe("HR UI consistency presentation", () => {
     expect(overtimeHeader).not.toContain("shadow-md");
   });
 
+  it("keeps the overtime request details modal monochrome", () => {
+    const detailsModal = sectionBetween(
+      overtimeApprovals,
+      "{/* View Details Modal */}",
+      "{/* Reject Overtime Request Modal */}",
+    );
+
+    expect(detailsModal).toContain("bg-gray-950");
+    expect(detailsModal).toContain("hover:bg-black");
+    expect(detailsModal).toContain("bg-gray-100");
+    expect(detailsModal).toContain("text-gray-800");
+    expect(detailsModal).toContain('aria-label="Close overtime request details"');
+    expect(detailsModal).not.toContain("text-purple-600");
+    expect(detailsModal).not.toContain("text-red-600");
+    expect(detailsModal).not.toContain("text-green-600");
+    expect(detailsModal).not.toContain("bg-green-600");
+    expect(detailsModal).not.toContain("bg-orange-500");
+  });
+
   it("reuses the shared statistic card for payroll release authorization", () => {
     expect(generateSlip).toContain('import { DashboardMetricCard } from "../../../components/dashboard";');
     expect(generateSlip.match(/<DashboardMetricCard/g) ?? []).toHaveLength(2);

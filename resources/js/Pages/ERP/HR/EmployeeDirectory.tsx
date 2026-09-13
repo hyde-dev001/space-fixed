@@ -2452,7 +2452,7 @@ export const EmployeeManagement: React.FC<{
             </div>
           </div>
 
-          <div className="overflow-x-hidden">
+          <div className="overflow-x-auto">
             <table className="w-full table-fixed text-sm">
               <thead className="bg-gray-50 dark:bg-gray-700">
                 <tr>
@@ -2551,7 +2551,7 @@ export const EmployeeManagement: React.FC<{
                         )}
                       </td>
                       <td className="px-3 py-3 align-top text-right text-sm font-medium">
-                        <div className="ml-auto flex w-full max-w-[340px] flex-wrap items-center justify-end gap-2">
+                        <div className="ml-auto flex w-full max-w-[340px] flex-nowrap items-center justify-end gap-2">
                           {!ownerReadOnly && (
                             <>
                           <IconButton
@@ -2591,14 +2591,16 @@ export const EmployeeManagement: React.FC<{
                             <InfoIcon className="h-5 w-5" />
                           </IconButton>
                           {['inactive', 'suspended'].includes(employee.status) && (
-                            <Button
+                            <IconButton
                               variant="success"
                               onClick={() => handleActivate(employee.id, buildName(employee))}
-                              className="whitespace-nowrap px-3 py-2 text-xs"
+                              className={employeeActionButtonClass}
+                              title="Activate Account"
+                              aria-label={`Activate account for ${buildName(employee)}`}
                               disabled={isProcessingId === employee.id}
                             >
-                              {isProcessingId === employee.id ? 'Processing...' : 'Activate Account'}
-                            </Button>
+                              <UserCheckIcon className="h-5 w-5" />
+                            </IconButton>
                           )}
                           {canRequestEmployeeLifecycle && employee.status === 'terminated' && (
                             employee.rehirePending ? (
