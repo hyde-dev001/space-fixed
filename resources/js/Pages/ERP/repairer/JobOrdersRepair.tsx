@@ -2791,7 +2791,7 @@ export default function JobOrdersRepair() {
                 <col className="w-[8%]" />
                 <col className="w-[9%]" />
                 <col className="w-[9%]" />
-                <col className="w-[5%]" />
+                <col className="w-36" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50">
                 <tr>
@@ -2950,8 +2950,8 @@ export default function JobOrdersRepair() {
                           ? <span className="font-medium text-blue-700 dark:text-blue-400">{order.preferredDate}</span>
                           : <span className="text-gray-400 dark:text-gray-500">—</span>}
                       </td>
-                      <td className="px-5 py-5 align-top text-sm font-medium whitespace-nowrap">
-                        <div className="flex items-center gap-2 whitespace-nowrap [&>button]:inline-flex [&>button]:size-10 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-lg [&>button>svg]:size-5">
+                      <td className="box-border w-36 px-5 py-5 align-top text-sm font-medium">
+                        <div className="flex flex-wrap items-center justify-start gap-2 [&>button]:inline-flex [&>button]:size-10 [&>button]:items-center [&>button]:justify-center [&>button]:rounded-lg [&>button>svg]:size-5">
                           <button
                             onClick={() => handleViewOrder(order)}
                             className="inline-flex items-center justify-center p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 dark:text-blue-400 dark:hover:text-blue-300 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
