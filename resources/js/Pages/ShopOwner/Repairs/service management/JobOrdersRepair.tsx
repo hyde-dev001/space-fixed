@@ -1218,7 +1218,7 @@ export default function JobOrdersRepair() {
       `,
       icon: "question",
       showCancelButton: true,
-      confirmButtonText: "Confirm physical receipt",
+      confirmButtonText: "Confirm",
       cancelButtonText: "Cancel",
       confirmButtonColor: "#2563eb",
     });
@@ -3423,9 +3423,9 @@ export default function JobOrdersRepair() {
                           ? 'bg-cyan-600 text-white hover:bg-cyan-700'
                           : 'cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
                       }`}
-                      aria-label="Confirm physical receipt"
+                      aria-label="Confirm"
                     >
-                      Confirm physical receipt
+                      Confirm
                     </button>
                     {!canMarkReceived(viewOrder) && (
                       <p className="mt-2 text-sm text-amber-700 dark:text-amber-300" role="status">

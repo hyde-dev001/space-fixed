@@ -219,6 +219,21 @@ class LeaveControllerTest extends TestCase
             ->assertJsonCount(5, 'data');
     }
 
+    #[Test]
+    public function test_lists_leave_requests_newest_first(): void
+    {
+        $older = $this->createLeaveRequest($this->employee);
+        $older->forceFill(['created_at' => now()->subDay()])->saveQuietly();
+        $newer = $this->createLeaveRequest($this->employee);
+        $newer->forceFill(['created_at' => now()])->saveQuietly();
+
+        $this->actingAs($this->hrUser, 'user')
+            ->getJson('/api/hr/leave-requests?per_page=10')
+            ->assertStatus(200)
+            ->assertJsonPath('data.0.id', $newer->id)
+            ->assertJsonPath('data.1.id', $older->id);
+    }
+
     private function createLeaveRequest(Employee $employee, array $overrides = []): LeaveRequest
     {
         $startDate = now()->next('Monday');

@@ -54,7 +54,7 @@ describe('employee termination and rehire directory workflow', () => {
     expect(source).toContain('inline-flex size-11 shrink-0 items-center justify-center');
     expect(source).toContain('w-[340px]');
     expect(source).toContain('w-full max-w-[340px]');
-    expect(source).toContain('flex flex-wrap items-center justify-end gap-2');
+    expect(source).toContain('flex w-full max-w-[340px] flex-nowrap items-center justify-end gap-2');
     expect(actionColumn).toContain('<Button');
     expect(actionColumn).toContain('<IconButton');
     expect(actionColumn).toContain('variant="neutral"');
@@ -62,7 +62,17 @@ describe('employee termination and rehire directory workflow', () => {
     expect(actionColumn).toContain('variant="warning"');
     expect(actionColumn).toContain('variant="danger"');
     expect(actionColumn).toContain('variant="success"');
-    expect(actionColumn).toContain('Activate Account');
+    const activationActionStart = source.indexOf("{['inactive', 'suspended'].includes(employee.status)");
+    const activationAction = source.slice(
+      activationActionStart,
+      source.indexOf("{canRequestEmployeeLifecycle && employee.status === 'terminated'", activationActionStart),
+    );
+
+    expect(activationAction).toContain('<IconButton');
+    expect(activationAction).toContain('title="Activate Account"');
+    expect(activationAction).toContain('aria-label={`Activate account for ${buildName(employee)}`}');
+    expect(activationAction).toContain('<UserCheckIcon');
+    expect(activationAction).not.toContain('<Button');
     expect(actionColumn).toContain('title="Request Rehire"');
     expect(actionColumn).toContain('aria-label={`Request rehire for ${buildName(employee)}`}');
     expect(actionColumn).toContain('<UserCheckIcon');

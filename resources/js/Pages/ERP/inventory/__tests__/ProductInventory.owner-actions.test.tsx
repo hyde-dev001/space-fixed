@@ -128,6 +128,28 @@ describe('owner product inventory action boundary', () => {
     expect(screen.queryByLabelText('Edit Available Quantity')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save Quantity' })).not.toBeInTheDocument();
   });
+
+  it('formats category keys for display while keeping the filter value intact', async () => {
+    const repairMaterialProduct = { ...product, category: 'repair_materials' };
+    mocks.page.props.initialData = { data: [repairMaterialProduct] };
+    mocks.getProducts.mockResolvedValue({ data: [repairMaterialProduct] });
+
+    render(<ProductInventory />);
+
+    await waitFor(() => expect(mocks.getProducts).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('combobox', { name: 'Filter by category' }));
+
+    const categoryOption = screen.getByRole('option', { name: 'Category: repair materials' });
+    expect(categoryOption).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Category: repair_materials' })).not.toBeInTheDocument();
+
+    fireEvent.click(categoryOption);
+    fireEvent.click(screen.getByRole('button', { name: 'View details for Runner' }));
+
+    expect(await screen.findByText('repair materials')).toBeInTheDocument();
+    expect(screen.queryByText('repair_materials')).not.toBeInTheDocument();
+  });
 });
 
 describe('owner upload inventory action boundary', () => {

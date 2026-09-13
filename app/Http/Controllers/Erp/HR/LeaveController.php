@@ -206,7 +206,7 @@ class LeaveController extends Controller
             $query->whereDate('start_date', '<=', $dateTo);
         }
 
-        $leaves = $query->orderBy('created_at', 'asc')
+        $leaves = $query->orderBy('created_at', 'desc')
             ->paginate((int) ($validated['per_page'] ?? 20))
             ->withQueryString();
         $leaves->setCollection($leaves->getCollection()->map(function (LeaveRequest $leaveRequest): array {

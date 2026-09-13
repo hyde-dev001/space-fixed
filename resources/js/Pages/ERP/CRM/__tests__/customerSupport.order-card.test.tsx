@@ -73,6 +73,7 @@ describe('CRM order notifications', () => {
 
     await waitFor(() => expect(screen.getByText('New Order Placed')).toBeInTheDocument());
 
+    expect(screen.getByText('New Order Placed').closest('.my-6')).toHaveClass('justify-end');
     expect(screen.getByText('Products:')).toBeInTheDocument();
     expect(screen.getByText('Nike Air Force 1')).toBeInTheDocument();
     expect(screen.getByText('Items:')).toBeInTheDocument();
