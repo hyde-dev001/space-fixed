@@ -174,6 +174,11 @@ describe('shared monochrome Light and Dark Mode theme', () => {
     expect(appCss).not.toContain("html.dark #app .erp-theme select option");
   });
 
+  it('scopes the legacy shop settings palette from the page root', () => {
+    expect(appCss).toContain('html.dark #app .shop-settings-page');
+    expect(appCss).not.toContain('.dark #app .erp-theme .shop-settings-page');
+  });
+
   it('uses black selected treatments and neutral hover treatments in shared controls', () => {
     expect(customSelect).toContain('selectedValue === "" ? "bg-gray-950 text-white dark:bg-gray-950 dark:text-white"');
     expect(customSelect).toContain('selectedValue === option.value ? "bg-gray-950 text-white dark:bg-gray-950 dark:text-white"');
