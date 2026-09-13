@@ -36,6 +36,7 @@ type SharedSelectProps = Omit<
   label?: ReactNode;
   defaultValue?: SelectValue;
   value?: SelectValue;
+  placement?: "auto" | "top" | "bottom";
 };
 
 type OptionsSelectProps = SharedSelectProps & {
@@ -142,6 +143,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props,
     label,
     defaultValue,
     value,
+    placement = "auto",
     onChange,
     disabled = false,
     id,
@@ -229,10 +231,16 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props,
         ancestor = ancestor.parentElement;
       }
 
-      const menuHeight = Math.min(240, menuOptions.length * 36 + 8);
-      const availableAbove = triggerRect.top - topBoundary;
-      const availableBelow = bottomBoundary - triggerRect.bottom;
-      setMenuPlacement(availableBelow < menuHeight && availableAbove > availableBelow ? "top" : "bottom");
+      if (placement === "auto") {
+        const menuHeight = Math.min(240, menuOptions.length * 36 + 8);
+        const availableAbove = triggerRect.top - topBoundary;
+        const availableBelow = bottomBoundary - triggerRect.bottom;
+        setMenuPlacement(availableBelow < menuHeight && availableAbove > availableBelow ? "top" : "bottom");
+      } else {
+        setMenuPlacement(placement);
+      }
+    } else {
+      setMenuPlacement(placement === "top" ? "top" : "bottom");
     }
 
     setIsOpen(true);

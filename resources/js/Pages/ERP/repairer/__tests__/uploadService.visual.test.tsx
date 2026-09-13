@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import UploadService from '../uploadService';
 
@@ -41,7 +41,7 @@ beforeEach(() => {
             category: 'Care',
             price: '150',
             duration: '1 to 1 hours',
-            description: 'Basic care service',
+            description: null,
             status: 'Active',
           }],
         },
@@ -78,5 +78,14 @@ describe('Repair services visual controls', () => {
     const category = within(table).getByText('Care');
     expect(category).toHaveClass('font-medium', 'text-gray-900');
     expect(category).not.toHaveClass('bg-blue-100');
+  });
+
+  it('opens the edit modal when a service has no description', async () => {
+    render(<UploadService />);
+
+    await screen.findByRole('table');
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+
+    expect(screen.getByText('Edit Service')).toBeInTheDocument();
   });
 });

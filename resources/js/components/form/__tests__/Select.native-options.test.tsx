@@ -117,4 +117,33 @@ describe('shared Select native-options adapter', () => {
 
     expect(screen.getByRole('listbox')).toHaveClass('bottom-full', 'mb-1');
   });
+
+  it('keeps an explicitly bottom-placed menu below its trigger', () => {
+    render(
+      <div style={{ height: 100, overflow: 'hidden' }}>
+        <Select aria-label="Status" placement="bottom">
+          <option value="">All statuses</option>
+          <option value="pending">Pending</option>
+        </Select>
+      </div>,
+    );
+
+    const trigger = screen.getByRole('combobox', { name: 'Status' });
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      top: 70,
+      bottom: 100,
+      left: 0,
+      right: 180,
+      width: 180,
+      height: 30,
+      x: 0,
+      y: 70,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.click(trigger);
+
+    expect(screen.getByRole('listbox')).toHaveClass('top-full', 'mt-1');
+    expect(screen.getByRole('listbox')).not.toHaveClass('bottom-full');
+  });
 });
