@@ -1536,7 +1536,7 @@ const ShopSetting: React.FC = () => {
 
 			<div data-testid="shop-settings-page" className="shop-settings-page min-h-screen bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
 				<div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 xl:max-w-[1440px] xl:px-10 2xl:px-16">
-					<div className="mb-6 flex items-center justify-between gap-3">
+					<div className="sticky top-0 z-30 mb-6 flex items-center justify-between gap-3 bg-slate-50 dark:bg-gray-950">
 						<button
 							type="button"
 							onClick={handleBackFromSettings}

@@ -259,6 +259,20 @@ describe("canonical settings sections", () => {
     expect(document.getElementById("settings-section-subscription")).toHaveClass("dark:border-gray-700", "dark:bg-gray-900");
   });
 
+  it("keeps the Back control visible while scrolling", () => {
+    renderSettings("profile");
+
+    const backButton = screen.getByRole("button", { name: "Back" });
+
+    expect(backButton.parentElement).toHaveClass(
+      "sticky",
+      "top-0",
+      "z-30",
+      "bg-slate-50",
+      "dark:bg-gray-950",
+    );
+  });
+
   it("renders shared, retail, and repair policy editors as separate direct sections", async () => {
     mocks.axiosGet.mockResolvedValueOnce({
       data: {
