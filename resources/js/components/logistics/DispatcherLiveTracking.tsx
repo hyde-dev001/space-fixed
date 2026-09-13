@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { logisticsApi } from '@/services/logisticsApi';
 import { logisticsDeliveryLabel } from '@/types/logistics';
-import LiveTrackingMap, { type LiveRiderLocation } from './LiveTrackingMap';
+import type { LiveRiderLocation } from './LiveTrackingMap';
 
 type Props = {
   enabled: boolean;
@@ -78,7 +78,6 @@ export default function DispatcherLiveTracking({
       </div>
 
       {error && <p role="alert" className="rounded-lg bg-slate-200 px-3 py-2 text-sm text-slate-950 dark:bg-slate-800 dark:text-white">{error}</p>}
-      {locations.length > 0 && <LiveTrackingMap locations={locations} />}
 
       {locations.length === 0 ? (
         <p className="rounded-lg bg-white/80 px-3 py-4 text-sm text-gray-600 dark:bg-gray-900/50 dark:text-gray-300">

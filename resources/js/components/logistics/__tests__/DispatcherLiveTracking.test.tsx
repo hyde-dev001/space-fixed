@@ -14,12 +14,6 @@ vi.mock('@/services/logisticsApi', () => ({
   },
 }));
 
-vi.mock('../LiveTrackingMap', () => ({
-  default: ({ locations }: { locations: Array<{ leg_id: number }> }) => (
-    <div data-testid="live-tracking-map">{locations.length} markers</div>
-  ),
-}));
-
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -64,7 +58,7 @@ it('loads scoped rider locations and shows stale status', async () => {
   expect(await screen.findByText('Rider Three')).toBeInTheDocument();
   expect(screen.getByText('Repair Pickup')).toBeInTheDocument();
   expect(screen.getByText('Stale location')).toBeInTheDocument();
-  expect(screen.getByTestId('live-tracking-map')).toHaveTextContent('1 markers');
+  expect(screen.queryByTestId('live-tracking-map')).not.toBeInTheDocument();
 });
 
 it('does not poll while the feature is disabled', () => {
