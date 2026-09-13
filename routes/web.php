@@ -47,6 +47,7 @@ use App\Http\Controllers\UserSide\CustomerProfileController;
 use App\Http\Controllers\UserSide\LandingPageController;
 use App\Http\Controllers\UserSide\OrderController;
 use App\Http\Middleware\AttachPrivilegedCorrelationId;
+use App\Http\Middleware\RedirectAuthenticatedPortal;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -137,7 +138,9 @@ Route::post('/email/verification-notification', function (Request $request) {
 })->middleware(['throttle:6,1'])->name('verification.send');
 
 // Public Routes (User Side)
-Route::get('/', [LandingPageController::class, 'index'])->name('landing');
+Route::get('/', [LandingPageController::class, 'index'])
+    ->middleware(RedirectAuthenticatedPortal::class)
+    ->name('landing');
 Route::get('/products', [LandingPageController::class, 'products'])->name('products');
 Route::get('/products/{slug}', [LandingPageController::class, 'productShow'])->name('products.show');
 Route::get('/api/search/suggestions', [LandingPageController::class, 'searchSuggestions'])->name('search.suggestions');
@@ -460,7 +463,7 @@ Route::get('/services/product-image-spin-tutorial', [LandingPageController::clas
 Route::get('/register', [LandingPageController::class, 'register'])->name('register');
 Route::get('/login', function () {
     return Inertia::render('UserSide/Auth/UserLogin');
-})->name('login');
+})->middleware(RedirectAuthenticatedPortal::class)->name('login');
 Route::get('/forgot-password', function () {
     return Inertia::render('UserSide/Auth/Forgot');
 })->name('password.request');
@@ -683,12 +686,12 @@ Route::get('/api/my-orders', [CheckoutController::class, 'myOrders'])->middlewar
 // User Login Page
 Route::get('/user/login', function () {
     return redirect()->route('login');
-})->name('user.login.form');
+})->middleware(RedirectAuthenticatedPortal::class)->name('user.login.form');
 
 // Shop Owner Login Page
 Route::get('/shop-owner/login', function () {
     return redirect()->route('login');
-})->name('shop-owner.login.form');
+})->middleware(RedirectAuthenticatedPortal::class)->name('shop-owner.login.form');
 
 // User Authentication Routes
 Route::get('/auth/check-email-availability', [UserController::class, 'checkEmailAvailability'])

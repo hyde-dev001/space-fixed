@@ -139,9 +139,12 @@ class RepairAddressSnapshotTest extends TestCase
 
     private function fixtures(): array
     {
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
         $shop = ShopOwner::factory()->approved()->create([
             'business_type' => 'repair',
+            'registration_type' => 'individual',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);

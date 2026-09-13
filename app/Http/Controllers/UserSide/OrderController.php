@@ -331,7 +331,9 @@ class OrderController extends Controller
                     'delivery_window' => $shipment['delivery_window'] ?? null,
                     'delivery_rider_name' => $isShopOwnedDelivery ? ($shipment['rider_name'] ?? null) : null,
                     'delivery_rider_phone' => $isShopOwnedDelivery ? ($shipment['rider_phone'] ?? null) : null,
-                    'delivery_reference' => $isShopOwnedDelivery && $shipment ? 'SHP-' . $shipment['id'] : null,
+                    'delivery_reference' => $isShopOwnedDelivery && $shipment
+                        ? 'SHP-' . ($shipment['shipment_number'] ?? $shipment['id'])
+                        : null,
                     'eta' => $order->eta,
                     'pickup_enabled' => $order->pickup_enabled ?? false,
                     'customer_receipt_status' => $receiptStatus,
@@ -360,7 +362,9 @@ class OrderController extends Controller
                         'return_delivery_method' => $returnDeliveryMethod,
                         'delivery_rider_name' => $isShopOwnedReturn ? ($refundShipment['rider_name'] ?? null) : null,
                         'delivery_rider_phone' => $isShopOwnedReturn ? ($refundShipment['rider_phone'] ?? null) : null,
-                        'delivery_reference' => $isShopOwnedReturn && $refundShipment ? 'RET-' . $refundShipment['id'] : null,
+                        'delivery_reference' => $isShopOwnedReturn && $refundShipment
+                            ? 'RET-' . ($refundShipment['shipment_number'] ?? $refundShipment['id'])
+                            : null,
                         'status' => (string) ($latestRefund->status ?? ''),
                         'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
                         'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),

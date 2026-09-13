@@ -8,6 +8,7 @@ use App\Models\RepairPackage;
 use App\Models\RepairRequest;
 use App\Services\NotificationService;
 use App\Services\ShopOwnerApprovalPolicyService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
@@ -341,6 +342,10 @@ class RepairPackageController extends Controller
 
     public function store(Request $request)
     {
+        if ($response = $this->shopOwnerReadOnlyResponse()) {
+            return $response;
+        }
+
         $shopOwnerId = $this->resolveShopOwnerId();
         if (!$shopOwnerId) {
             return response()->json([
@@ -438,6 +443,10 @@ class RepairPackageController extends Controller
 
     public function update(Request $request, int $id)
     {
+        if ($response = $this->shopOwnerReadOnlyResponse()) {
+            return $response;
+        }
+
         $package = RepairPackage::find($id);
 
         if (!$package) {
@@ -605,6 +614,10 @@ class RepairPackageController extends Controller
 
     public function destroy(int $id)
     {
+        if ($response = $this->shopOwnerReadOnlyResponse()) {
+            return $response;
+        }
+
         $package = RepairPackage::find($id);
 
         if (!$package) {
@@ -631,6 +644,10 @@ class RepairPackageController extends Controller
 
     public function restore(int $id)
     {
+        if ($response = $this->shopOwnerReadOnlyResponse()) {
+            return $response;
+        }
+
         $package = RepairPackage::withTrashed()->onlyTrashed()->find($id);
 
         if (!$package) {
@@ -672,6 +689,18 @@ class RepairPackageController extends Controller
         }
 
         return null;
+    }
+
+    private function shopOwnerReadOnlyResponse(): ?JsonResponse
+    {
+        if (! Auth::guard('shop_owner')->check()) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Shop Owner repair package management is read-only.',
+        ], 403);
     }
 
     private function canAccessPackage(RepairPackage $package): bool

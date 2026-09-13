@@ -978,7 +978,9 @@ class RepairLogisticsPaymentTest extends TestCase
 
     private function coveredRepair(string $policy, float $serviceTotal): array
     {
-        $customer = User::factory()->create();
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
         $shop = ShopOwner::factory()->approved()->create([
             'business_type' => 'repair',
             'shop_latitude' => 14.5995,

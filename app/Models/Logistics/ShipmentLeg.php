@@ -4,6 +4,7 @@ namespace App\Models\Logistics;
 
 use App\Enums\Logistics\RiderProgressState;
 use App\Enums\Logistics\ShipmentLegStatus;
+use App\Models\ShopOwner;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -16,6 +17,8 @@ class ShipmentLeg extends Model
 
     protected $fillable = [
         'shipment_id',
+        'shop_owner_id',
+        'delivery_number',
         'shipping_method_id',
         'sequence',
         'leg_type',
@@ -42,6 +45,7 @@ class ShipmentLeg extends Model
     ];
 
     protected $casts = [
+        'delivery_number' => 'integer',
         'status' => ShipmentLegStatus::class,
         'rider_progress_state' => RiderProgressState::class,
         'origin_snapshot' => 'array',
@@ -75,6 +79,18 @@ class ShipmentLeg extends Model
     public function shipment(): BelongsTo
     {
         return $this->belongsTo(Shipment::class);
+    }
+
+    public function shopOwner(): BelongsTo
+    {
+        return $this->belongsTo(ShopOwner::class);
+    }
+
+    public static function nextDeliveryNumber(int $shopOwnerId): int
+    {
+        return (int) static::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->max('delivery_number') + 1;
     }
 
     public function shippingMethod(): BelongsTo

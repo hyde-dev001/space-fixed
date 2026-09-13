@@ -152,11 +152,13 @@ const ArchiveRestoreIcon = ({ className }: { className?: string }) => (
 type RepairPackageManagerProps = {
   serviceEndpoint?: string;
   materialsEndpoint?: string;
+  readOnly?: boolean;
 };
 
 export default function RepairPackageManager({
   serviceEndpoint = "/api/repair-services",
   materialsEndpoint = "/api/repairer/materials",
+  readOnly = false,
 }: RepairPackageManagerProps) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -877,7 +879,11 @@ export default function RepairPackageManager({
         <div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Repair Packages</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            {showArchived ? "Archived package list" : "Create bundled service packages (repairer-managed)."}
+            {showArchived
+              ? "Archived package list"
+              : readOnly
+                ? "View bundled service packages."
+                : "Create bundled service packages (repairer-managed)."}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -894,7 +900,7 @@ export default function RepairPackageManager({
             {showArchived ? "Show Active" : "Show Archived"}
           </button>
 
-          {!showArchived && (
+          {!readOnly && !showArchived && (
             <button
               onClick={openAddModal}
               className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800"
@@ -934,13 +940,13 @@ export default function RepairPackageManager({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Savings</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              {!readOnly && <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
             {loading && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={readOnly ? 5 : 6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
                   Loading repair packages...
                 </td>
               </tr>
@@ -948,7 +954,7 @@ export default function RepairPackageManager({
 
             {!loading && filteredPackages.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={readOnly ? 5 : 6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
                   {showArchived ? "No archived repair packages found." : "No repair packages found."}
                 </td>
               </tr>
@@ -970,7 +976,7 @@ export default function RepairPackageManager({
                     {pkg.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 align-top">
+                {!readOnly && <td className="px-6 py-4 align-top">
                   <div className="flex items-center gap-2">
                     {!showArchived ? (
                       <>
@@ -1002,15 +1008,15 @@ export default function RepairPackageManager({
                       </button>
                     )}
                   </div>
-                </td>
+                </td>}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {renderModal("add")}
-      {renderModal("edit")}
+      {!readOnly && renderModal("add")}
+      {!readOnly && renderModal("edit")}
     </div>
   );
 }

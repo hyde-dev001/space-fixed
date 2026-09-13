@@ -270,6 +270,7 @@ class SalaryChangeController extends Controller
                 $shopOwnerId,
                 $viaShopOwnerGuard
             ): SalaryChange {
+                $this->addApprovalProjection($change);
                 $change->setAttribute(
                     'owner_action_required',
                     $viaShopOwnerGuard
@@ -502,8 +503,31 @@ class SalaryChangeController extends Controller
                 && $change->requires_owner_approval !== false
                 && ! $this->isOwnerSelfProposed($change, $user, $shopOwner, $shopOwnerId, true)
         );
+        $this->addApprovalProjection($change);
 
         return response()->json(['data' => $change]);
+    }
+
+    private function addApprovalProjection(SalaryChange $change): void
+    {
+        $status = (string) $change->status;
+        $pending = $status === SalaryChange::STATUS_PENDING;
+        $approvalStage = $pending
+            ? ($change->requires_owner_approval !== false ? 'shop_owner' : 'manager')
+            : null;
+
+        $change->setAttribute('approval_stage', $approvalStage);
+        $change->setAttribute('next_approver_type', $approvalStage);
+        $change->setAttribute('status_label', match ($status) {
+            SalaryChange::STATUS_PENDING => $approvalStage === 'shop_owner'
+                ? 'Pending Shop Owner Approval'
+                : 'Pending Manager Approval',
+            SalaryChange::STATUS_APPROVED => 'Approved',
+            SalaryChange::STATUS_APPLIED => 'Applied',
+            SalaryChange::STATUS_REJECTED => 'Rejected',
+            SalaryChange::STATUS_CANCELLED => 'Cancelled',
+            default => ucfirst(str_replace('_', ' ', $status)),
+        });
     }
 
     // ─── Approve ──────────────────────────────────────────────

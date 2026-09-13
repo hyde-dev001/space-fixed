@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\InventoryItem;
 use App\Models\ShopOwner;
+use App\Models\StockMovement;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -77,5 +78,36 @@ class InventoryItemWriteAuthorizationTest extends TestCase
             'id' => $itemId,
             'auto_stock_request_enabled' => false,
         ]);
+    }
+
+    /** @test */
+    public function inventory_access_permission_can_archive_and_restore_without_deleting_history(): void
+    {
+        $item = InventoryItem::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'category' => 'repair_materials',
+            'is_active' => true,
+        ]);
+        $movement = StockMovement::factory()->create([
+            'inventory_item_id' => $item->id,
+        ]);
+
+        $this->deleteJson('/api/erp/inventory/items/' . $item->id)
+            ->assertOk()
+            ->assertJsonPath('message', 'Inventory item archived successfully');
+
+        $this->assertSoftDeleted('inventory_items', ['id' => $item->id]);
+        $this->assertDatabaseHas('stock_movements', ['id' => $movement->id, 'inventory_item_id' => $item->id]);
+        $this->getJson('/api/erp/inventory/items')
+            ->assertOk()
+            ->assertJsonMissing(['id' => $item->id]);
+        $this->getJson('/api/erp/inventory/items?archived=1')
+            ->assertOk()
+            ->assertJsonFragment(['id' => $item->id]);
+
+        $this->postJson('/api/erp/inventory/items/' . $item->id . '/restore')
+            ->assertOk();
+
+        $this->assertDatabaseHas('inventory_items', ['id' => $item->id, 'deleted_at' => null]);
     }
 }

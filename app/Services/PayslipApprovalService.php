@@ -7,6 +7,7 @@ use App\Models\HR\Payroll;
 use App\Models\User;
 use App\Enums\ApprovalStatus;
 use App\Enums\NotificationType;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class PayslipApprovalService
@@ -22,48 +23,105 @@ class PayslipApprovalService
      */
     public function createPayslipApproval(Payroll $payslip, User $shopOwner, User $generatedBy): Approval
     {
-        $approvalRoles = $this->approvalPolicyService->requiresOwnerApprovalForPayslip((int) $payslip->shop_owner_id)
-            ? [
-                '1' => 'finance',
-                '2' => 'shop_owner',
-                '3' => 'finance',
-                '4' => 'finance_final',
-            ]
-            : [
-                '1' => 'finance',
-                '2' => 'finance',
-                '3' => 'finance_final',
+        $result = DB::transaction(function () use ($payslip, $generatedBy, $shopOwner): array {
+            $lockedPayslip = Payroll::query()
+                ->lockForUpdate()
+                ->findOrFail($payslip->getKey());
+
+            if ($lockedPayslip->approval_id && $lockedPayslip->approval_workflow_version === 'v4_multi_level') {
+                return [
+                    'approval' => Approval::query()->findOrFail($lockedPayslip->approval_id),
+                    'created' => false,
+                ];
+            }
+
+            $approvalRoles = $this->approvalPolicyService->requiresOwnerApprovalForPayslip((int) $lockedPayslip->shop_owner_id)
+                ? [
+                    '1' => 'finance',
+                    '2' => 'shop_owner',
+                    '3' => 'finance',
+                    '4' => 'finance_final',
+                ]
+                : [
+                    '1' => 'finance',
+                    '2' => 'finance',
+                    '3' => 'finance_final',
+                ];
+
+            $approval = $this->approvalService->createApproval(
+                approvable: $lockedPayslip,
+                approvalRoles: $approvalRoles,
+                requestedBy: $generatedBy,
+                shopOwner: $shopOwner,
+                reference: "PAYROLL-{$lockedPayslip->id}",
+                description: "Payroll: {$lockedPayslip->employee->first_name} {$lockedPayslip->employee->last_name} ({$lockedPayslip->payroll_period})",
+                amount: (float) $lockedPayslip->gross_salary,
+                metadata: [
+                    'payroll_id' => $lockedPayslip->id,
+                    'employee_id' => $lockedPayslip->employee_id,
+                    'pay_period' => $lockedPayslip->payroll_period,
+                    'gross_salary' => (float) $lockedPayslip->gross_salary,
+                    'net_salary' => (float) $lockedPayslip->net_salary,
+                    'generated_by' => $generatedBy->id,
+                ]
+            );
+
+            $lockedPayslip->update([
+                'approval_id' => $approval->id,
+                'current_approval_level' => 1,
+                'approval_workflow_version' => 'v4_multi_level'
+            ]);
+
+            return [
+                'approval' => $approval,
+                'created' => true,
             ];
+        });
 
-        // Create polymorphic approval record
-        $approval = $this->approvalService->createApproval(
-            approvable: $payslip,
-            approvalRoles: $approvalRoles,
-            requestedBy: $generatedBy,
-            shopOwner: $shopOwner,
-            reference: "PAYROLL-{$payslip->id}",
-            description: "Payroll: {$payslip->employee->first_name} {$payslip->employee->last_name} ({$payslip->payroll_period})",
-            amount: (float)$payslip->gross_salary,
-            metadata: [
-                'payroll_id' => $payslip->id,
-                'employee_id' => $payslip->employee_id,
-                'pay_period' => $payslip->payroll_period,
-                'gross_salary' => (float)$payslip->gross_salary,
-                'net_salary' => (float)$payslip->net_salary,
-                'generated_by' => $generatedBy->id
-            ]
-        );
+        // Payroll generation commits before this service is called. Keeping the
+        // notification after the approval transaction prevents a failed
+        // approval write from leaving an orphaned owner alert. Only the
+        // transaction that created the approval sends the initial alert, so a
+        // retry or concurrent callback cannot duplicate it.
+        if ($result['created']) {
+            try {
+                $this->notifyPayslipApprovalRequested($payslip->fresh(), $generatedBy);
+            } catch (\Throwable $exception) {
+                Log::error('Payslip approval notification failed.', [
+                    'payroll_id' => $payslip->id,
+                    'error' => $exception->getMessage(),
+                ]);
+            }
+        }
 
-        // Link the payslip to this approval
-        $payslip->update([
-            'approval_id' => $approval->id,
-            'current_approval_level' => 1,
-            'approval_workflow_version' => 'v4_multi_level'
-        ]);
+        return $result['approval'];
+    }
 
-        $this->notifyPayslipApprovalRequested($payslip->fresh(), $generatedBy);
+    /**
+     * Attach the canonical approval workflow after an HR payroll is generated.
+     */
+    public function createGeneratedPayrollApproval(Payroll $payslip, User $generatedBy): ?Approval
+    {
+        $shopOwner = User::query()
+            ->where('shop_owner_id', (int) $payslip->shop_owner_id)
+            ->where(function ($query): void {
+                $query
+                    ->whereIn('role', ['Shop Owner', 'SHOP_OWNER', 'shop_owner', 'shop-owner'])
+                    ->orWhereHas('roles', fn ($roles) => $roles->whereIn('name', [
+                        'Shop Owner', 'SHOP_OWNER', 'shop_owner', 'shop-owner',
+                    ]));
+            })
+            ->orderByDesc('id')
+            ->first();
 
-        return $approval;
+        // Some legacy tenants have a ShopOwner record but no matching user
+        // identity yet. Keep payroll generation compatible for those tenants;
+        // configured owner identities still receive the canonical workflow.
+        if (! $shopOwner) {
+            return null;
+        }
+
+        return $this->createPayslipApproval($payslip, $shopOwner, $generatedBy);
     }
 
     /**
@@ -199,6 +257,7 @@ class PayslipApprovalService
             data: $payload,
             actionUrl: $this->financePayslipActionUrl($payslip->id),
             priority: 'medium',
+            groupKey: "payslip-approval-{$payslip->id}",
             requiresAction: true,
         );
     }

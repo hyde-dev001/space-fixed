@@ -86,8 +86,16 @@ const validationMessage = (payload: unknown): string => {
   return "The decision could not be saved. Check the submitted values and try again.";
 };
 
-const mutationMessage = (status: number): string => {
-  if (status === 409) return "This approval changed before the decision was saved. The selected record is still open; refresh to load its current state.";
+const mutationMessage = (status: number, payload: unknown): string => {
+  if (status === 409) {
+    const code = isRecord(payload) && typeof payload.code === "string" ? payload.code : "";
+    if (code === "" || code.endsWith("_REQUEST_ALREADY_DECIDED")) {
+      return "This approval changed before the decision was saved. The selected record is still open; refresh to load its current state.";
+    }
+
+    return validationMessage(payload);
+  }
+
   return "The decision could not be saved. The selected record is still open; refresh and try again.";
 };
 
@@ -239,7 +247,7 @@ export default function OwnerApprovalDetailPanel({
         ? validationMessage(payload)
         : status === null
           ? "The decision could not be saved. The selected record is still open; refresh and try again."
-          : mutationMessage(status);
+          : mutationMessage(status, payload);
       setError({ status, message });
       setAnnouncement("The decision could not be saved.");
       await workflowFeedback.error(

@@ -9,6 +9,7 @@ use App\Models\RepairPackage;
 use App\Models\ShopOwner;
 use App\Services\NotificationService;
 use App\Services\ShopOwnerApprovalPolicyService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
@@ -166,6 +167,10 @@ class RepairServiceController extends Controller
      */
     public function store(Request $request)
     {
+        if ($response = $this->shopOwnerReadOnlyResponse()) {
+            return $response;
+        }
+
         $normalizedInputStatus = $this->normalizeServiceStatus($request->input('status'));
         if ($normalizedInputStatus !== null) {
             $request->merge(['status' => $normalizedInputStatus]);
@@ -277,6 +282,10 @@ class RepairServiceController extends Controller
      */
     public function update(Request $request, $id)
     {
+        if ($response = $this->shopOwnerReadOnlyResponse()) {
+            return $response;
+        }
+
         $actingShopOwnerId = $this->resolveActingShopOwnerId();
         if ($actingShopOwnerId === null) {
             return response()->json([
@@ -451,6 +460,10 @@ class RepairServiceController extends Controller
      */
     public function destroy($id)
     {
+        if ($response = $this->shopOwnerReadOnlyResponse()) {
+            return $response;
+        }
+
         $shopOwnerId = $this->resolveActingShopOwnerId();
         if (!$shopOwnerId) {
             return response()->json([
@@ -499,6 +512,10 @@ class RepairServiceController extends Controller
      */
     public function restore($id)
     {
+        if ($response = $this->shopOwnerReadOnlyResponse()) {
+            return $response;
+        }
+
         $shopOwnerId = $this->resolveActingShopOwnerId();
         if (!$shopOwnerId) {
             return response()->json([
@@ -1659,6 +1676,18 @@ class RepairServiceController extends Controller
         }
 
         return null;
+    }
+
+    private function shopOwnerReadOnlyResponse(): ?JsonResponse
+    {
+        if (! Auth::guard('shop_owner')->check()) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'message' => 'Shop Owner repair service management is read-only.',
+        ], 403);
     }
 
     private function resolveUpdaterUserId(): ?int

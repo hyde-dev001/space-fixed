@@ -311,12 +311,19 @@ describe("MyRepairs loading performance", () => {
       },
       reload,
     });
+    const sessionValues: Record<string, string> = {
+      pendingRepairId: "77",
+    };
     Object.defineProperty(window, "sessionStorage", {
       configurable: true,
       value: {
-        getItem: vi.fn((key: string) => key === "pendingRepairId" ? "77" : null),
-        setItem: vi.fn(),
-        removeItem: vi.fn(),
+        getItem: vi.fn((key: string) => sessionValues[key] ?? null),
+        setItem: vi.fn((key: string, value: string) => {
+          sessionValues[key] = value;
+        }),
+        removeItem: vi.fn((key: string) => {
+          delete sessionValues[key];
+        }),
         clear: vi.fn(),
       },
     });
@@ -346,6 +353,19 @@ describe("MyRepairs loading performance", () => {
     );
     expect(window.location.search).toBe("");
     expect(reload).toHaveBeenCalledTimes(1);
+
+    // Replaying the same return URL must not verify or show the success Swal twice.
+    window.history.replaceState({}, "", "/my-repairs?paymongo_success=1&pending_repair_id=77&return_ts=123&return_sig=test-signature");
+    cleanup();
+    render(<MyRepairs />);
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(
+      "/api/customer/repairs",
+      { params: undefined },
+    ));
+    expect(mocks.swal.mock.calls.filter(([options]) => options?.title === "Payment Confirmed!")).toHaveLength(1);
+    expect(reload).toHaveBeenCalledTimes(1);
+    expect(window.location.search).toBe("");
   });
 });
 

@@ -1035,8 +1035,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     <div key={proof.id} className="space-y-2">
                                       <div className="space-y-1 text-xs text-gray-600 dark:text-gray-300">
                                         <p className="font-semibold text-gray-900 dark:text-white">
-                                          {label(proof.handoff_type)} proof #{proof.id} · {label(proof.review_status ?? 'pending')}
-                                          {proof.replaces_proof_id ? ` · replaces proof #${proof.replaces_proof_id}` : ''}
+                                          {label(proof.handoff_type)} proof #{proof.proof_number ?? proof.id} · {label(proof.review_status ?? 'pending')}
+                                          {proof.replaces_proof_id ? ` · replaces proof #${proof.replaces_proof_number ?? proof.replaces_proof_id}` : ''}
                                         </p>
                                         {proof.recorded_at && <p>Submitted {formatDateTime(proof.recorded_at)}</p>}
                                         {proof.reviewed_at && <p>Reviewed {formatDateTime(proof.reviewed_at)}{proof.reviewed_by_id ? ` by user #${proof.reviewed_by_id}` : ''}</p>}

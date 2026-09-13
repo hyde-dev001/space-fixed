@@ -1332,6 +1332,7 @@ class RepairRequestController extends Controller
                 paymentType: $paymentType,
                 requestedSourceTransactionId: $requestedSourceTransactionId,
                 resolvedPaidAmount: $resolvedPaidAmount,
+                servicePaidAmount: $refundService->computeRepairServicePaidAmount((int) $repair->id),
             );
         }
 
@@ -3611,6 +3612,7 @@ class RepairRequestController extends Controller
         string $paymentType,
         int $requestedSourceTransactionId,
         float $resolvedPaidAmount,
+        ?float $servicePaidAmount,
     ): ?PosTransaction {
         if ($requestedSourceTransactionId > 0) {
             return null;
@@ -3645,7 +3647,11 @@ class RepairRequestController extends Controller
         $taxBreakdown = VatInclusiveCalculator::extract($paidAmount, self::REPAIR_VAT_RATE_PERCENT);
         $isCardLikeReference = str_starts_with(strtolower($paymongoPaymentId), 'pmc_');
 
-        return DB::transaction(function () use ($repair, $actorUserId, $paidAmount, $taxBreakdown, $paymongoPaymentId, $isCardLikeReference) {
+        $serviceAmount = $servicePaidAmount !== null
+            ? min($paidAmount, max(0.0, round($servicePaidAmount, 2)))
+            : $paidAmount;
+
+        return DB::transaction(function () use ($repair, $actorUserId, $paidAmount, $serviceAmount, $taxBreakdown, $paymongoPaymentId, $isCardLikeReference) {
             $transaction = PosTransaction::create([
                 'transaction_no' => 'POS-BKF-'.now()->format('YmdHis').'-'.str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT),
                 'shop_owner_id' => (int) $repair->shop_owner_id,
@@ -3665,6 +3671,10 @@ class RepairRequestController extends Controller
                 'metadata' => [
                     'tax_mode' => 'vat_inclusive',
                     'source' => 'myrepair_refund_online_backfill',
+                    'phase' => 'initial',
+                    'leg' => 'intake',
+                    'service_amount' => round($serviceAmount, 2),
+                    'delivery_amount' => max(0.0, round($paidAmount - $serviceAmount, 2)),
                 ],
             ]);
 

@@ -75,7 +75,7 @@ class RepairPackageApiTest extends TestCase
         ], $overrides));
     }
 
-    public function test_shop_owner_can_create_repair_package_with_own_services(): void
+    public function test_shop_owner_repair_package_management_is_read_only(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create();
         $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
@@ -98,27 +98,16 @@ class RepairPackageApiTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(201)
-            ->assertJsonPath('success', true)
-            ->assertJsonPath('data.name', 'Starter Restore Bundle');
+        $response->assertForbidden()
+            ->assertJsonPath('message', 'Shop Owner repair package management is read-only.');
 
-        $this->assertDatabaseHas('repair_packages', [
+        $this->assertDatabaseMissing('repair_packages', [
             'shop_owner_id' => $shopOwner->id,
             'name' => 'Starter Restore Bundle',
         ]);
-
-        $packageId = $response->json('data.id');
-        $this->assertDatabaseHas('repair_package_service', [
-            'repair_package_id' => $packageId,
-            'repair_service_id' => $s1->id,
-        ]);
-        $this->assertDatabaseHas('repair_package_service', [
-            'repair_package_id' => $packageId,
-            'repair_service_id' => $s2->id,
-        ]);
     }
 
-    public function test_shop_owner_cannot_include_other_shop_services_in_package(): void
+    public function test_shop_owner_cannot_create_any_repair_package(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create();
         $otherShopOwner = ShopOwner::factory()->approved()->create();
@@ -141,17 +130,13 @@ class RepairPackageApiTest extends TestCase
             ],
         ]);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('success', false)
-            ->assertJsonStructure(['errors' => ['service_ids']]);
+        $response->assertForbidden()
+            ->assertJsonPath('message', 'Shop Owner repair package management is read-only.');
 
-        $failedPackage = RepairPackage::withTrashed()
-            ->where('shop_owner_id', $shopOwner->id)
-            ->where('name', 'Invalid Mixed Package')
-            ->first();
-
-        $this->assertNotNull($failedPackage);
-        $this->assertNotNull($failedPackage->deleted_at);
+        $this->assertDatabaseMissing('repair_packages', [
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Invalid Mixed Package',
+        ]);
     }
 
     public function test_shop_owner_cannot_access_other_shop_package(): void

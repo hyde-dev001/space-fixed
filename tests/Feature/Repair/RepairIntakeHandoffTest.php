@@ -116,6 +116,47 @@ class RepairIntakeHandoffTest extends TestCase
         }
     }
 
+    public function test_customer_arranged_warranty_intake_requires_customer_tracking_before_receipt(): void
+    {
+        [$repair, $repairer] = $this->repairFixture('customer_delivery');
+        $repair->update([
+            'is_warranty_job' => true,
+            'billing_mode' => 'warranty_no_charge',
+        ]);
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/mark-received")
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['tracking']);
+
+        $this->assertSame('pending', $repair->fresh()->status);
+        $this->assertNull($repair->fresh()->received_at);
+    }
+
+    public function test_customer_arranged_warranty_intake_can_be_received_after_tracking_is_saved(): void
+    {
+        [$repair, $repairer] = $this->repairFixture('customer_delivery');
+        $repair->update([
+            'is_warranty_job' => true,
+            'billing_mode' => 'warranty_no_charge',
+        ]);
+
+        $this->actingAs($repair->user, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'intake',
+                'carrier' => 'LBC',
+                'tracking_number' => 'LBC-INTAKE-001',
+            ])
+            ->assertOk();
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/mark-received")
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->assertSame('received', $repair->fresh()->status);
+    }
+
     public function test_non_dispatcher_intake_handoff_does_not_query_logistics(): void
     {
         [$repair] = $this->repairFixture('walk_in');

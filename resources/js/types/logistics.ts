@@ -64,13 +64,14 @@ export const logisticsSourceLabel = (shipment?: {
   source_type: string;
   source_id: number;
   source_summary?: LogisticsSourceSummary | null;
+  order_summary?: LogisticsOrderSummary | null;
 } | null) => {
   if (!shipment) return 'Delivery';
   if (shipment.source_type === 'repair_request') {
     return `Repair ${shipment.source_summary?.request_number || `#${shipment.source_id}`}`;
   }
   if (shipment.source_type === 'order_refund') return `Return #${shipment.source_id}`;
-  if (shipment.source_type === 'order') return `Order #${shipment.source_id}`;
+  if (shipment.source_type === 'order') return `Order #${shipment.order_summary?.order_number ?? shipment.source_id}`;
   return `Delivery #${shipment.source_id}`;
 };
 
@@ -99,6 +100,7 @@ export type DeliveryArrival = {
 
 export type CustomerDeliveryProof = {
   id: number;
+  proof_number?: number | null;
   available: boolean;
   url: string | null;
   delivered_at?: string | null;
@@ -123,6 +125,7 @@ export type ProofReviewSummary = {
 
 export type TrackingShipmentLeg = {
   id: number;
+  delivery_number?: number | null;
   delivery_type?: DeliveryType | string | null;
   delivery_label?: string | null;
   delivery_batch_id?: number | null;
@@ -181,12 +184,14 @@ export type TrackingShipmentLeg = {
   }>;
   proofs?: Array<{
     id: number;
+    proof_number?: number | null;
     handoff_type: string;
     proof_type: string;
     proof_url?: string | null;
     review_status?: string;
     rejection_reason?: string | null;
     replaces_proof_id?: number | null;
+    replaces_proof_number?: number | null;
     recorded_at?: string | null;
     reviewed_at?: string | null;
     reviewed_by_id?: number | null;
@@ -405,13 +410,16 @@ export type RiderDeliveryIssue = {
   key: string;
   id: number;
   delivery_id: number;
+  delivery_number?: number | null;
   parent_key: string;
   business_types: Array<Exclude<RiderDeliveryBusiness, 'all'>>;
   delivery_type?: DeliveryType | string | null;
   delivery_label?: string | null;
   reason?: string | null;
   proof_id?: number | null;
+  proof_number?: number | null;
   replaces_proof_id?: number | null;
+  replaces_proof_number?: number | null;
   replacement_allowed?: boolean;
   attempted_at?: string | null;
   delivery_date?: string | null;

@@ -22,6 +22,9 @@ const REFUND_ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'webp'];
 const REFUND_ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
 const REFUND_MEDIA_ACCEPT = '.jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.mkv,.webm';
 const MY_REPAIRS_POLL_INTERVAL_MS = 3000;
+const REPAIR_PAYMENT_RETURN_MARKER = 'repairPaymentReturnHandled:';
+
+const repairPaymentReturnMarker = (repairId: number): string => `${REPAIR_PAYMENT_RETURN_MARKER}${repairId}`;
 
 const getFileExtension = (fileName: string): string => {
   const pieces = fileName.toLowerCase().split('.');
@@ -2311,6 +2314,18 @@ const MyRepairs: React.FC = () => {
         ? pendingRepairIdFromSession
         : (Number.isFinite(pendingRepairIdFromQuery) && pendingRepairIdFromQuery > 0 ? pendingRepairIdFromQuery : null);
 
+      const paymentReturnKey = parsedPendingRepairId ? repairPaymentReturnMarker(parsedPendingRepairId) : null;
+      let paymentReturnAlreadyHandled = false;
+      if ((isPaymongoSuccess || isPaymongoFailed) && paymentReturnKey) {
+        if (sessionStorage.getItem(paymentReturnKey) === '1') {
+          sessionStorage.removeItem('pendingRepairId');
+          paymentReturnAlreadyHandled = true;
+        } else {
+          // Consume the return before awaiting verification so a remount/replay cannot open another Swal.
+          sessionStorage.setItem(paymentReturnKey, '1');
+        }
+      }
+
       // Always clean up URL params and session storage
       if (isPaymongoSuccess || isPaymongoFailed) {
         const cleanedParams = new URLSearchParams(urlParams);
@@ -2321,6 +2336,10 @@ const MyRepairs: React.FC = () => {
         cleanedParams.delete('return_sig');
         const cleanedQuery = cleanedParams.toString();
         window.history.replaceState({}, '', `/my-repairs${cleanedQuery ? `?${cleanedQuery}` : ''}`);
+      }
+
+      if (paymentReturnAlreadyHandled) {
+        return;
       }
 
       if (isPaymongoFailed) {
@@ -3194,6 +3213,7 @@ const MyRepairs: React.FC = () => {
 
       // Store repair info so we can verify on return
       sessionStorage.setItem('pendingRepairId', orderId.toString());
+      sessionStorage.removeItem(repairPaymentReturnMarker(orderId));
 
       // Redirect to PayMongo payment page
       window.location.href = checkoutUrl;

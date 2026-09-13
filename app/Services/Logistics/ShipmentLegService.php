@@ -546,8 +546,12 @@ class ShipmentLegService
             return $existing;
         }
 
+        ShopOwner::query()->whereKey($leg->shipment->shop_owner_id)->lockForUpdate()->firstOrFail();
+
         $return = $leg->shipment->legs()->create([
             'sequence' => $leg->shipment->legs()->max('sequence') + 1,
+            'shop_owner_id' => $leg->shipment->shop_owner_id,
+            'delivery_number' => ShipmentLeg::nextDeliveryNumber((int) $leg->shipment->shop_owner_id),
             'leg_type' => 'return_to_shop',
             'status' => 'picked_up',
             'return_for_leg_id' => $leg->id,
@@ -997,17 +1001,18 @@ class ShipmentLegService
         );
         $customerCaused = in_array($failureReason, self::CUSTOMER_CAUSED_PICKUP_REASONS, true);
         $operationsCaused = in_array($failureReason, self::OPERATIONS_CAUSED_PICKUP_REASONS, true);
-        $amount = $customerCaused ? max(0.0, round($fullBalance - $pickupFee, 2)) : $fullBalance;
+        $serviceRefundable = $this->repairRefunds->computeRepairRefundableAmount((int) $repair->id);
+        $amount = min($fullBalance, max(0.0, round($serviceRefundable, 2)));
         if ($amount <= 0) {
             return;
         }
 
         $feeLabel = number_format($pickupFee, 2, '.', ',');
-        $repairOnlyLabel = number_format(max(0.0, $fullBalance - $pickupFee), 2, '.', ',');
+        $repairOnlyLabel = number_format($amount, 2, '.', ',');
         $notes = match (true) {
-            $customerCaused => "Auto-created after maximum repair pickup attempts were reached. The failure was customer-caused ({$failureReason}); the paid pickup fee of PHP {$feeLabel} was retained.",
-            $operationsCaused => "Auto-created after maximum repair pickup attempts were reached. The failure was operations-caused ({$failureReason}); this refund includes the paid pickup fee of PHP {$feeLabel}.",
-            default => "Auto-created after maximum repair pickup attempts were reached. Finance must decide whether the paid pickup fee of PHP {$feeLabel} is refundable for {$failureReason}. The full remaining balance was requested; approve PHP {$repairOnlyLabel} to retain the fee.",
+            $customerCaused => "Auto-created after maximum repair pickup attempts were reached. The failure was customer-caused ({$failureReason}); the paid pickup fee of PHP {$feeLabel} is not refundable.",
+            $operationsCaused => "Auto-created after maximum repair pickup attempts were reached. The failure was operations-caused ({$failureReason}); the paid pickup fee of PHP {$feeLabel} is not refundable.",
+            default => "Auto-created after maximum repair pickup attempts were reached. The paid pickup fee of PHP {$feeLabel} is not refundable for {$failureReason}; the service refund of PHP {$repairOnlyLabel} was requested.",
         };
 
         $this->repairRefunds->requestRefund($source, [

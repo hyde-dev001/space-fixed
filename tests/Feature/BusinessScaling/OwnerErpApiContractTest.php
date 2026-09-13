@@ -655,7 +655,7 @@ final class OwnerErpApiContractTest extends TestCase
         ]);
     }
 
-    public function test_owner_can_create_a_repair_service_from_the_repair_services_contract(): void
+    public function test_shop_owner_repair_service_management_is_read_only(): void
     {
         config(['shop_modules.enforcement_enabled' => true]);
         $owner = ShopOwner::factory()->approved()->create([
@@ -687,14 +687,12 @@ final class OwnerErpApiContractTest extends TestCase
                     'tolerance_percent' => 20,
                 ]],
             ])
-            ->assertCreated()
-            ->assertJsonPath('data.shop_owner_id', $owner->id)
-            ->assertJsonPath('data.name', 'Owner Shoe Restoration');
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Shop Owner repair service management is read-only.');
 
-        $this->assertDatabaseHas('repair_services', [
+        $this->assertDatabaseMissing('repair_services', [
             'shop_owner_id' => $owner->id,
             'name' => 'Owner Shoe Restoration',
-            'price' => 1250,
         ]);
     }
 
@@ -740,7 +738,8 @@ final class OwnerErpApiContractTest extends TestCase
             ->putJson('/api/shop-owner/repair-services/'.$otherService->id, [
                 'name' => 'Cross-shop mutation attempt',
             ])
-            ->assertNotFound();
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Shop Owner repair service management is read-only.');
 
         $this->assertDatabaseHas('repair_services', [
             'id' => $otherService->id,
