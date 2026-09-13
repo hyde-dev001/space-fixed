@@ -277,8 +277,8 @@ const FlaggedAccounts: React.FC = () => {
   return (
     <AppLayout>
       <Head title="Flagged Accounts" />
-      <div className="min-h-screen bg-gray-50 p-6 dark:bg-gray-900">
-        <div className="mx-auto max-w-7xl">
+      <div className="min-h-screen bg-gray-50 p-6 lg:p-8 dark:bg-gray-900">
+        <div className="mx-auto max-w-[1600px]">
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <Link
@@ -300,7 +300,7 @@ const FlaggedAccounts: React.FC = () => {
             </div>
           </div>
 
-          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/5">
+          <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/5 lg:p-8">
             <div className="mb-6 flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30">
                 <UserIcon className="size-5 text-red-600 dark:text-red-400" />
@@ -317,7 +317,7 @@ const FlaggedAccounts: React.FC = () => {
                 placeholder="Search by username, email, reason, or shop…"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                className="min-h-11 w-full rounded-lg border border-gray-300 px-4 py-2 dark:border-gray-600 dark:bg-gray-800 dark:text-white"
               />
               <div className="flex flex-wrap gap-2" aria-label="Filter by status">
                 {filterOptions.map((option) => (
@@ -328,7 +328,7 @@ const FlaggedAccounts: React.FC = () => {
                       setFilterStatus(option.value);
                       if (serverPaginated) requestPage(1, option.value);
                     }}
-                    className={`rounded-lg px-4 py-2 text-sm font-medium ${filterStatus === option.value ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
+                    className={`min-h-11 rounded-lg px-4 py-2 text-sm font-medium ${filterStatus === option.value ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'}`}
                   >
                     {option.label} <span className="ml-1 rounded-full bg-black/10 px-2 py-0.5 text-xs">{option.count}</span>
                   </button>
@@ -336,17 +336,26 @@ const FlaggedAccounts: React.FC = () => {
               </div>
             </div>
 
-            <div className="max-w-full overflow-x-auto">
-              <Table>
-                <TableHeader>
+            <div className="min-h-[420px] max-w-full overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+              <Table className="min-w-[1280px] table-fixed">
+                <colgroup>
+                  <col style={{ width: '19%' }} />
+                  <col style={{ width: '22%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '13%' }} />
+                  <col style={{ width: '8%' }} />
+                </colgroup>
+                <TableHeader className="bg-gray-50 dark:bg-gray-800/50">
                   <TableRow>
-                    <TableCell isHeader>Customer</TableCell>
-                    <TableCell isHeader>Email</TableCell>
-                    <TableCell isHeader>Reason</TableCell>
-                    <TableCell isHeader>Reported by</TableCell>
-                    <TableCell isHeader>Date</TableCell>
-                    <TableCell isHeader>Status</TableCell>
-                    <TableCell isHeader>Actions</TableCell>
+                    <TableCell isHeader className="whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">Customer</TableCell>
+                    <TableCell isHeader className="whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">Email</TableCell>
+                    <TableCell isHeader className="whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">Reason</TableCell>
+                    <TableCell isHeader className="whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">Reported by</TableCell>
+                    <TableCell isHeader className="whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">Date</TableCell>
+                    <TableCell isHeader className="whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">Status</TableCell>
+                    <TableCell isHeader className="whitespace-nowrap px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">Actions</TableCell>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -356,29 +365,29 @@ const FlaggedAccounts: React.FC = () => {
                     </TableRow>
                   )}
                   {filteredAccounts.map((account) => (
-                    <TableRow key={account.id}>
-                      <TableCell>
-                        <div className="flex items-center gap-3">
-                          <div className="flex size-10 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30">
+                    <TableRow key={account.id} className="border-b border-gray-100 last:border-b-0 dark:border-gray-800">
+                      <TableCell className="px-5 py-6 align-middle">
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-100 dark:bg-red-900/30">
                             <UserIcon className="size-5 text-red-600 dark:text-red-400" />
                           </div>
-                          <span className="font-semibold text-gray-900 dark:text-white">{account.username}</span>
+                          <span className="min-w-0 truncate font-semibold text-gray-900 dark:text-white">{account.username}</span>
                         </div>
                       </TableCell>
-                      <TableCell>{account.email}</TableCell>
-                      <TableCell>{account.flaggedReason}</TableCell>
-                      <TableCell>{account.reportedBy ?? '—'}</TableCell>
-                      <TableCell>{new Date(account.flaggedDate).toLocaleDateString()}</TableCell>
-                      <TableCell>
-                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${statusColor(account.status)}`}>
+                      <TableCell className="break-words px-5 py-6 align-middle text-sm leading-6 text-gray-700 dark:text-gray-300">{account.email}</TableCell>
+                      <TableCell className="break-words px-5 py-6 align-middle text-sm leading-6 text-gray-700 dark:text-gray-300">{account.flaggedReason}</TableCell>
+                      <TableCell className="break-words px-5 py-6 align-middle text-sm leading-6 text-gray-700 dark:text-gray-300">{account.reportedBy ?? '—'}</TableCell>
+                      <TableCell className="whitespace-nowrap px-5 py-6 align-middle text-sm tabular-nums text-gray-700 dark:text-gray-300">{new Date(account.flaggedDate).toLocaleDateString()}</TableCell>
+                      <TableCell className="px-5 py-6 align-middle">
+                        <span className={`inline-flex min-h-8 max-w-full items-center justify-center rounded-full px-3 py-1 text-center text-xs font-semibold leading-5 ${statusColor(account.status)}`}>
                           {statusLabel(account.status)}
                         </span>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="px-5 py-6 text-center align-middle">
                         <button
                           type="button"
                           onClick={() => setDetailAccount(account)}
-                          className="rounded-lg bg-blue-100 px-3 py-1 text-sm text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                          className="inline-flex min-h-11 items-center justify-center whitespace-nowrap rounded-lg bg-blue-100 px-4 py-2 text-sm text-blue-700 transition-colors hover:bg-blue-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50 dark:focus-visible:ring-offset-gray-900"
                         >
                           Review
                         </button>
@@ -389,29 +398,34 @@ const FlaggedAccounts: React.FC = () => {
               </Table>
             </div>
 
-            {serverPage && serverPage.last_page > 1 && (
-              <div className="mt-4 flex items-center justify-between border-t border-gray-200 px-4 py-3 dark:border-gray-700">
-                <button
-                  type="button"
-                  title="Previous page"
-                  aria-label="Previous page"
-                  disabled={serverPage.current_page <= 1}
-                  onClick={() => requestPage(Math.max(1, serverPage.current_page - 1))}
-                  className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <span className="text-sm text-gray-500">Page {serverPage.current_page} of {serverPage.last_page}</span>
-                <button
-                  type="button"
-                  title="Next page"
-                  aria-label="Next page"
-                  disabled={serverPage.current_page >= serverPage.last_page}
-                  onClick={() => requestPage(Math.min(serverPage.last_page, serverPage.current_page + 1))}
-                  className="rounded-lg border px-3 py-2 text-sm disabled:opacity-50"
-                >
-                  Next page
-                </button>
+            {serverPage && (
+              <div className="mt-6 flex flex-col gap-4 border-t border-gray-200 px-1 pt-5 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+                <span className="text-sm text-gray-500 dark:text-gray-400">
+                  Showing {serverPage.from ?? 0}–{serverPage.to ?? 0} of {serverPage.total} reports
+                </span>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    title="Previous page"
+                    aria-label="Previous page"
+                    disabled={serverPage.current_page <= 1}
+                    onClick={() => requestPage(Math.max(1, serverPage.current_page - 1))}
+                    className="inline-flex min-h-11 items-center rounded-lg border border-gray-200 px-4 py-2 text-sm transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800 dark:focus-visible:ring-offset-gray-900"
+                  >
+                    Previous
+                  </button>
+                  <span className="min-w-28 text-center text-sm font-medium text-gray-700 dark:text-gray-300" aria-live="polite">Page {serverPage.current_page} of {serverPage.last_page}</span>
+                  <button
+                    type="button"
+                    title="Next page"
+                    aria-label="Next page"
+                    disabled={serverPage.current_page >= serverPage.last_page}
+                    onClick={() => requestPage(Math.min(serverPage.last_page, serverPage.current_page + 1))}
+                    className="inline-flex min-h-11 items-center rounded-lg border border-gray-200 px-4 py-2 text-sm transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800 dark:focus-visible:ring-offset-gray-900"
+                  >
+                    Next page
+                  </button>
+                </div>
               </div>
             )}
           </div>
