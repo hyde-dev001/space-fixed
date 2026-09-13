@@ -121,7 +121,7 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes = false, canReportIssue: serverCanReportIssue = false, canViewShipments = false, liveTrackingEnabled = false, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, logisticsSchedule, auth, erpCapabilities } = usePage<{
+  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes = false, canReportIssue: serverCanReportIssue = false, canViewShipments = false, liveTrackingEnabled = false, liveTrackingIntervalSeconds = 5, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, logisticsSchedule, auth, erpCapabilities } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -133,6 +133,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     canReportIssue?: boolean;
     canViewShipments?: boolean;
     liveTrackingEnabled?: boolean;
+    liveTrackingIntervalSeconds?: number;
     riderMode: boolean;
     maxDeliveryAttempts?: number;
     availableModules?: LogisticsModule[];
@@ -169,7 +170,43 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const [incidentResolutions, setIncidentResolutions] = useState<Record<number, string>>({});
   const [incidentEvidenceFiles, setIncidentEvidenceFiles] = useState<Record<number, File | null>>({});
   const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<number, 'proof' | 'issue'>>({});
+  const [liveTrackingShipmentIds, setLiveTrackingShipmentIds] = useState<number[]>([]);
   const [search, setSearch] = useState(filters.search ?? '');
+
+  useEffect(() => {
+    if (riderMode || !canViewShipments || !liveTrackingEnabled) {
+      setLiveTrackingShipmentIds([]);
+      return;
+    }
+
+    let disposed = false;
+    const loadLiveLocations = async () => {
+      try {
+        const response = await axios.get<{ locations?: Array<{ shipment_id?: number | null }> }>(
+          '/api/logistics/live-locations',
+        );
+        if (disposed) return;
+        setLiveTrackingShipmentIds(
+          (response.data.locations ?? [])
+            .map(({ shipment_id }) => shipment_id)
+            .filter((shipmentId): shipmentId is number => typeof shipmentId === 'number'),
+        );
+      } catch {
+        if (!disposed) setLiveTrackingShipmentIds([]);
+      }
+    };
+
+    void loadLiveLocations();
+    const interval = window.setInterval(
+      loadLiveLocations,
+      Math.max(5, liveTrackingIntervalSeconds) * 1000,
+    );
+
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+    };
+  }, [canViewShipments, liveTrackingEnabled, liveTrackingIntervalSeconds, riderMode]);
 
   const openShipment = (shipmentId: number, trigger: HTMLButtonElement) => {
     returnFocusRef.current = trigger;
@@ -645,8 +682,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             const hasLiveTracking = !riderMode
               && canViewShipments
               && liveTrackingEnabled
-              && shipment.status === 'active'
-              && activeAssignments.length > 0;
+              && liveTrackingShipmentIds.includes(shipment.id);
 
             return <article key={shipment.id} className="min-w-0 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
               <div className="grid min-w-0 gap-4 p-4 sm:p-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto] xl:items-center xl:p-4">

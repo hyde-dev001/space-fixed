@@ -381,7 +381,7 @@ export default function LiveTrackingMap({ locations, label = 'Live rider map', f
       : 'Current GPS location'
     : primaryDestination;
   return (
-    <div className="relative w-full bg-white dark:bg-slate-900">
+    <div className="live-tracking-map relative w-full bg-white dark:bg-slate-900">
       <div
         ref={containerRef}
         className="isolate h-[30rem] w-full overflow-hidden bg-white [&_.leaflet-control-zoom_a]:!h-11 [&_.leaflet-control-zoom_a]:!w-11 [&_.leaflet-tile]:!mix-blend-normal sm:h-[38rem] lg:h-[44rem] dark:bg-slate-900"

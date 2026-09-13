@@ -5076,6 +5076,13 @@ body .userside-tracking-modal.erp-modal-backdrop {
   background-color: rgba(0, 0, 0, 0.6) !important;
 }
 
+#app .erp-theme .live-tracking-map .leaflet-container img.leaflet-tile,
+#app .erp-theme .live-tracking-map .leaflet-tile {
+  filter: none !important;
+  opacity: 1 !important;
+  mix-blend-mode: normal !important;
+}
+
 body.swal2-shown:not(.swal2-toast-shown) .swal2-container {
   --swal2-backdrop: rgba(0, 0, 0, 0.25);
   -webkit-backdrop-filter: blur(2px);

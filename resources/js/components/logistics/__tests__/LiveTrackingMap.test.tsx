@@ -110,6 +110,7 @@ describe('LiveTrackingMap', () => {
   it('recalculates the map without clearing already loaded map tiles', async () => {
     render(<LiveTrackingMap locations={[]} />);
 
+    expect(screen.getByLabelText('Live rider map').parentElement).toHaveClass('live-tracking-map');
     expect(screen.getByLabelText('Live rider map')).toHaveClass('h-[30rem]', 'sm:h-[38rem]', 'lg:h-[44rem]', 'bg-white', '[&_.leaflet-tile]:!mix-blend-normal');
     await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
     expect(leaflet.tileLayer).toHaveBeenCalledWith(
