@@ -75,4 +75,46 @@ describe('shared Select native-options adapter', () => {
     );
     expect(screen.getByRole('option', { name: 'Logistics Dispatcher' })).toHaveClass('whitespace-nowrap');
   });
+
+  it('opens upward when a clipping boundary leaves no room below', () => {
+    render(
+      <div style={{ height: 100, overflow: 'hidden' }}>
+        <Select aria-label="Rider">
+          <option value="">Choose available rider</option>
+          <option value="one">Rider One</option>
+          <option value="two">Rider Two</option>
+        </Select>
+      </div>,
+    );
+
+    const trigger = screen.getByRole('combobox', { name: 'Rider' });
+    const boundary = trigger.parentElement?.parentElement;
+
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
+      top: 70,
+      bottom: 100,
+      left: 0,
+      right: 180,
+      width: 180,
+      height: 30,
+      x: 0,
+      y: 70,
+      toJSON: () => ({}),
+    });
+    vi.spyOn(boundary!, 'getBoundingClientRect').mockReturnValue({
+      top: 0,
+      bottom: 100,
+      left: 0,
+      right: 200,
+      width: 200,
+      height: 100,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+
+    fireEvent.click(trigger);
+
+    expect(screen.getByRole('listbox')).toHaveClass('bottom-full', 'mb-1');
+  });
 });

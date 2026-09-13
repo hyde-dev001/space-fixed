@@ -29,6 +29,17 @@ describe("Repair job orders visual presentation", () => {
     expect(statusCell).not.toContain("rounded-full");
   });
 
+  it("reserves space for wrapped repair actions", () => {
+    expect(source).toContain('<col className="w-36" />');
+
+    const actionCellStart = source.indexOf('<td className="box-border w-36');
+    const actionCellEnd = source.indexOf("</td>", actionCellStart);
+    const actionCell = source.slice(actionCellStart, actionCellEnd);
+
+    expect(actionCell).toContain("flex flex-wrap");
+    expect(actionCell).not.toContain("whitespace-nowrap");
+  });
+
   it("keeps repair detail logistics neutral without a refresh control", () => {
     const collectionAddress = source.slice(
       source.indexOf("Customer's Collection Address"),

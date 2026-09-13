@@ -179,6 +179,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props,
   const [internalValue, setInternalValue] = useState(initialValue);
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [menuPlacement, setMenuPlacement] = useState<"top" | "bottom">("bottom");
   const selectedValue = value !== undefined ? asSelectValue(value) : internalValue;
   const selectedOption = menuOptions.find((option) => option.value === selectedValue);
   const firstEnabledIndex = menuOptions.findIndex((option) => !option.disabled);
@@ -210,6 +211,30 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props,
   const openMenu = () => {
     if (disabled) return;
     setActiveIndex(activeOptionIndex >= 0 ? activeOptionIndex : firstEnabledIndex >= 0 ? firstEnabledIndex : null);
+
+    const trigger = triggerRef.current;
+    if (trigger && typeof window !== "undefined") {
+      const triggerRect = trigger.getBoundingClientRect();
+      let topBoundary = 0;
+      let bottomBoundary = window.innerHeight;
+      let ancestor = trigger.parentElement;
+
+      while (ancestor) {
+        const styles = window.getComputedStyle(ancestor);
+        if (/auto|scroll|hidden|clip/.test(`${styles.overflow} ${styles.overflowX} ${styles.overflowY}`)) {
+          const boundaryRect = ancestor.getBoundingClientRect();
+          topBoundary = Math.max(topBoundary, boundaryRect.top);
+          bottomBoundary = Math.min(bottomBoundary, boundaryRect.bottom);
+        }
+        ancestor = ancestor.parentElement;
+      }
+
+      const menuHeight = Math.min(240, menuOptions.length * 36 + 8);
+      const availableAbove = triggerRect.top - topBoundary;
+      const availableBelow = bottomBoundary - triggerRect.bottom;
+      setMenuPlacement(availableBelow < menuHeight && availableAbove > availableBelow ? "top" : "bottom");
+    }
+
     setIsOpen(true);
   };
 
@@ -386,7 +411,7 @@ const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(props,
           aria-label={isOpen ? (ariaLabel ?? placeholder) : undefined}
           data-state={isOpen ? "open" : "closed"}
           className={isOpen
-            ? "absolute z-50 mt-1 max-h-60 w-max min-w-full max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-gray-300 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900"
+            ? `${menuPlacement === "top" ? "absolute bottom-full left-0 mb-1" : "absolute left-0 top-full mt-1"} z-50 max-h-60 w-max min-w-full max-w-[calc(100vw-2rem)] overflow-auto rounded-lg border border-gray-300 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900`
             : "absolute left-0 top-full z-50 h-0 w-full min-w-full overflow-hidden opacity-0 pointer-events-none"
           }
         >
