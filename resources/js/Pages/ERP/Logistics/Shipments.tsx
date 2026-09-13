@@ -535,7 +535,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   return (
     <AppLayoutERP>
       <Head title={riderMode ? "My Deliveries" : ownerMode ? "Shipment Monitoring" : "ERP Logistics Shipments"} />
-      <div data-testid="shipments-page" className="min-w-0 space-y-6 overflow-x-hidden">
+      <div data-testid="shipments-page" className="min-w-0 space-y-6 overflow-x-clip">
         <div className="min-w-0">
           <h1 className="sr-only">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
         </div>
