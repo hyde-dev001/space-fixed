@@ -884,13 +884,14 @@ export function OvertimeRequests() {
                     Overtime Request Details
                   </h3>
                   <div className="flex items-center gap-2">
-                    <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(selectedRequest.status)}`}>
+                    <span className="inline-flex rounded-full bg-gray-100 px-3 py-1 text-sm font-semibold text-gray-800 dark:bg-gray-700 dark:text-gray-200">
                       <span>{selectedRequest.status.charAt(0).toUpperCase() + selectedRequest.status.slice(1)}</span>
                     </span>
                   </div>
                 </div>
                 <button
                   onClick={() => setIsViewModalOpen(false)}
+                  aria-label="Close overtime request details"
                   className="text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 text-2xl leading-none font-light transition-colors"
                 >
                   ×
@@ -932,7 +933,7 @@ export function OvertimeRequests() {
                   {/* Overtime Details Card */}
                   <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-5">
                     <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-                      <ClockIcon className="size-4 text-purple-600 dark:text-purple-400" />
+                      <ClockIcon className="size-4 text-gray-700 dark:text-gray-300" />
                       Overtime Details
                     </h4>
                     <div className="grid grid-cols-2 gap-4">
@@ -965,7 +966,7 @@ export function OvertimeRequests() {
                   {selectedRequest.status === "rejected" && selectedRequest.rejectionReason && (
                     <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-5">
                       <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                        <AlertIcon className="size-4 text-red-600 dark:text-red-400" />
+                        <AlertIcon className="size-4 text-gray-700 dark:text-gray-300" />
                         Rejection Reason
                       </h4>
                       <p className="text-base text-gray-700 dark:text-gray-300">{selectedRequest.rejectionReason}</p>
@@ -976,7 +977,7 @@ export function OvertimeRequests() {
                   {selectedRequest.status === "approved" && selectedRequest.approvalDate && (
                     <div className="border border-gray-200 dark:border-gray-700 rounded-xl p-5">
                       <h4 className="text-base font-semibold text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                        <CheckCircleIcon className="size-4 text-green-600 dark:text-green-400" />
+                        <CheckCircleIcon className="size-4 text-gray-700 dark:text-gray-300" />
                         Approval Information
                       </h4>
                       <div className="grid grid-cols-2 gap-3">
@@ -1000,7 +1001,7 @@ export function OvertimeRequests() {
                           <button
                             onClick={() => handleApprove(selectedRequest)}
                             disabled={processingAction !== null}
-                            className="px-4 py-2.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="rounded-lg bg-gray-950 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-gray-950 dark:hover:bg-black dark:focus-visible:ring-offset-gray-800"
                           >
                             {processingAction === "approve" && processingRequestId === selectedRequest.id ? "Approving..." : "Approve"}
                           </button>
@@ -1011,7 +1012,7 @@ export function OvertimeRequests() {
                               setIsRejectModalOpen(true);
                             }}
                             disabled={processingAction !== null}
-                            className="px-4 py-2.5 text-sm font-medium text-white bg-orange-500 hover:bg-orange-600 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 dark:focus-visible:ring-offset-gray-800"
                           >
                             {processingAction === "reject" && processingRequestId === selectedRequest.id ? "Rejecting..." : "Reject"}
                           </button>
