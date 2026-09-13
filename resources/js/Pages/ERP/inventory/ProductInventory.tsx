@@ -29,6 +29,8 @@ interface ProductInventoryItem {
 const toStorageUrl = (path?: string | null) =>
 	path ? `/storage/${path.replace(/^\/?(?:storage|public)\//i, "")}` : "";
 
+const formatCategoryLabel = (category: string) => category.replace(/_/g, " ");
+
 const mapApiItem = (item: ApiInventoryItem): ProductInventoryItem => ({
 	id: item.id,
 	sourceKey: `${item.source_type ?? "inventory"}-${item.source_id ?? item.id}`,
@@ -321,7 +323,7 @@ export default function ProductInventory() {
 						>
 							{categories.map((category) => (
 								<option key={category} value={category}>
-									Category: {category}
+									Category: {formatCategoryLabel(category)}
 								</option>
 							))}
 						</MonochromeSelect>
@@ -499,7 +501,7 @@ export default function ProductInventory() {
 									<div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
 										<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 											<p className="text-gray-500 mb-1">Category</p>
-											<p className="font-semibold text-gray-900 dark:text-white">{selectedProduct.category}</p>
+											<p className="font-semibold text-gray-900 dark:text-white">{formatCategoryLabel(selectedProduct.category)}</p>
 										</div>
 										<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
 											<p className="text-gray-500 mb-1">Brand</p>

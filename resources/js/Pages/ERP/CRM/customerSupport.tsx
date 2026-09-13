@@ -717,7 +717,10 @@ export default function CustomerSupport() {
                         const orderProductImages = (message.images || []).filter(Boolean);
 
                         return (
-                          <div key={message.id} className="flex items-start gap-3 my-6">
+                          <div
+                            key={message.id}
+                            className={`flex items-start gap-3 my-6 ${message.sender === 'staff' ? 'justify-end' : 'justify-start'}`}
+                          >
                             <div className="w-7 h-7 rounded-full bg-gray-950 text-white flex items-center justify-center text-[11px] font-semibold shrink-0">
                               {getInitials('SoleSpace Shop')}
                             </div>
