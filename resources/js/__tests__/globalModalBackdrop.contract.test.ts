@@ -28,6 +28,8 @@ describe('global modal backdrop adoption', () => {
     expect(css).toContain('background: rgba(0, 0, 0, 0.25) !important;');
     expect(css).toContain('backdrop-filter: blur(2px) !important;');
     expect(css).toContain("body .erp-modal-backdrop:not([class~='opacity-0'])");
+    expect(css).toContain('body .userside-tracking-modal.erp-modal-backdrop');
+    expect(css).toContain('background: rgba(0, 0, 0, 0.6) !important;');
     expect(css).toContain('body.swal2-shown:not(.swal2-toast-shown) .swal2-container');
   });
 

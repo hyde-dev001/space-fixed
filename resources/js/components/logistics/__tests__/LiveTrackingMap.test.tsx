@@ -156,10 +156,10 @@ describe('LiveTrackingMap', () => {
     await waitFor(() => expect(leaflet.markerFactory).toHaveBeenCalled());
     expect(leaflet.marker.bindTooltip).toHaveBeenCalledWith('Rider · Repair Pickup');
     expect(leaflet.divIconFactory).toHaveBeenCalledWith(expect.objectContaining({
-      html: expect.stringContaining('<svg'),
+      html: expect.stringContaining('/images/logistics/bikers.png'),
       iconSize: [40, 40],
     }));
-    expect(leaflet.divIconFactory.mock.calls[0][0].html).not.toContain('/images/logistics/');
+    expect(leaflet.divIconFactory.mock.calls[0][0].html).toContain('width="40" height="40"');
   });
 
   it('anchors a cached road route to the latest rider position', async () => {
