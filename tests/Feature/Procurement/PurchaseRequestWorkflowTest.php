@@ -36,10 +36,18 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         $this->requester = User::factory()->for($this->shopOwner)->create();
         $this->finance = User::factory()->for($this->shopOwner)->create();
+        $this->give($this->requester, 'procurement.view');
         $this->give($this->requester, 'procurement.create_purchase_requests');
         $this->give($this->requester, 'procurement.submit_purchase_requests');
         $this->give($this->finance, 'procurement.review_purchase_requests');
         $this->finance->assignRole(Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']));
+    }
+
+    public function test_purchase_request_sorting_rejects_unapproved_columns(): void
+    {
+        $this->actingAs($this->requester)
+            ->getJson('/api/erp/procurement/purchase-requests?sort_by=users.password&sort_order=asc')
+            ->assertUnprocessable();
     }
 
     public function test_pr_follows_finance_then_shop_owner_approval(): void
@@ -163,6 +171,21 @@ class PurchaseRequestWorkflowTest extends TestCase
         $this->actingAs($this->finance)
             ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve")
             ->assertForbidden();
+    }
+
+    public function test_shop_owner_purchase_request_queue_excludes_requests_without_owner_approval(): void
+    {
+        $nonRequired = $this->pendingRequest('pending_shop_owner');
+        $nonRequired->update(['requires_owner_approval' => false]);
+
+        $required = $this->pendingRequest('pending_shop_owner');
+        $required->update(['requires_owner_approval' => true]);
+
+        $this->actingAs($this->shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/purchase-requests?status=pending_shop_owner')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $required->id);
     }
 
     public function test_requester_cannot_review_own_purchase_request_even_with_review_permission(): void
@@ -588,6 +611,67 @@ class PurchaseRequestWorkflowTest extends TestCase
                 'justification' => 'Update cost while preserving approved demand.',
             ])
             ->assertOk();
+    }
+
+    public function test_draft_update_submission_uses_the_canonical_finance_submission_service(): void
+    {
+        $stockRequest = $this->acceptedStockRequest();
+        $purchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'stock_request_id' => $stockRequest->id,
+            'product_name' => $stockRequest->product_name,
+            'supplier_id' => $this->supplier->id,
+            'inventory_item_id' => $stockRequest->inventory_item_id,
+            'requested_size' => $stockRequest->requested_size,
+            'requested_color' => $stockRequest->requested_color,
+            'quantity' => $stockRequest->quantity_needed,
+            'priority' => $stockRequest->priority,
+            'requested_by' => $this->requester->id,
+            'status' => 'draft',
+        ]);
+
+        $this->actingAs($this->requester)
+            ->putJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}", [
+                'stock_request_id' => $stockRequest->id,
+                'product_name' => $stockRequest->product_name,
+                'supplier_id' => $this->supplier->id,
+                'inventory_item_id' => $stockRequest->inventory_item_id,
+                'requested_size' => $stockRequest->requested_size,
+                'requested_color' => $stockRequest->requested_color,
+                'quantity' => $stockRequest->quantity_needed,
+                'unit_cost' => 75,
+                'priority' => $stockRequest->priority,
+                'justification' => 'Submit the edited request through one workflow.',
+                'submit_to_finance' => true,
+            ])
+            ->assertOk();
+
+        $submitted = $purchaseRequest->fresh();
+        $this->assertSame('pending_finance', $submitted->status);
+        $this->assertTrue((bool) $submitted->requires_owner_approval);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->finance->id,
+            'action_url' => "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
+        ]);
+    }
+
+    public function test_purchase_request_service_rejects_a_foreign_shop_actor(): void
+    {
+        $foreignShop = ShopOwner::factory()->create();
+        $foreignSupplier = Supplier::factory()->create(['shop_owner_id' => $foreignShop->id]);
+        $foreignRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $foreignShop->id,
+            'supplier_id' => $foreignSupplier->id,
+            'status' => 'pending_finance',
+        ]);
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+
+        app(PurchaseRequestService::class)->reviewByFinance(
+            $foreignRequest->id,
+            $this->finance,
+            'This must not cross shops.',
+        );
     }
 
     private function pendingRequest(string $status): PurchaseRequest

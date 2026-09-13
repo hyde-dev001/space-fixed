@@ -14,6 +14,7 @@ use App\Models\PurchaseRequest;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class StockRequestApprovalService
 {
@@ -325,6 +326,7 @@ class StockRequestApprovalService
 
         try {
             $stockRequest = StockRequestApproval::findOrFail($requestId);
+            $this->assertActorShop($stockRequest, $userId);
 
             if (!$stockRequest->canBeApproved()) {
                 throw new \Exception('Stock request cannot be approved in its current state.');
@@ -364,6 +366,7 @@ class StockRequestApprovalService
 
         try {
             $stockRequest = StockRequestApproval::findOrFail($requestId);
+            $this->assertActorShop($stockRequest, $userId);
 
             if (!$stockRequest->canBeRejected()) {
                 throw new \Exception('Stock request cannot be rejected in its current state.');
@@ -404,6 +407,7 @@ class StockRequestApprovalService
 
         try {
             $stockRequest = StockRequestApproval::findOrFail($requestId);
+            $this->assertActorShop($stockRequest, $userId);
 
             $stockRequest->requestDetails($userId, $notes);
 
@@ -446,6 +450,17 @@ class StockRequestApprovalService
                 ->where('priority', 'high')
                 ->count(),
         ];
+    }
+
+    private function assertActorShop(StockRequestApproval $stockRequest, int $userId): void
+    {
+        $actorShopId = (int) User::query()->whereKey($userId)->value('shop_owner_id');
+
+        if ($actorShopId < 1 || $actorShopId !== (int) $stockRequest->shop_owner_id) {
+            throw ValidationException::withMessages([
+                'shop_id' => 'The stock request is not available in this shop.',
+            ]);
+        }
     }
 
     /**

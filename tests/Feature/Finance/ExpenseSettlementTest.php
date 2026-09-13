@@ -7,7 +7,11 @@ use App\Models\Finance\ExpenseSettlement;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\ProcurementSettings;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderReceipt;
+use App\Models\Supplier;
 use App\Services\ExpenseApprovalService;
+use App\Services\Finance\ExpenseSettlementService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
@@ -191,6 +195,141 @@ class ExpenseSettlementTest extends TestCase
             'reason' => 'Second attempt',
         ]);
         $duplicate->assertStatus(409)->assertJsonPath('code', 'ALREADY_REVERSED');
+    }
+
+    public function test_public_manual_settlement_rejects_procurement_receipt_expenses(): void
+    {
+        [$shop, $expense, $user] = $this->makeExpenseContext();
+        $supplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $purchaseOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $supplier->id,
+            'status' => 'delivered',
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'posted',
+        ]);
+        $expense->update([
+            'status' => 'posted',
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        $user->givePermissionTo('access-finance-expenses');
+
+        $this->actingAs($user, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/settlements", [
+                'amount' => '100.00',
+                'payment_method' => 'bank_transfer',
+                'idempotency_key' => 'manual-procurement-bypass',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'INVALID_STATE');
+
+        $this->assertDatabaseCount('finance_expense_settlements', 0);
+    }
+
+    public function test_supplier_manual_payment_can_be_recorded_by_the_shop_owner_without_a_user_id(): void
+    {
+        [$shop, $expense, $user] = $this->makeExpenseContext();
+        $expense->update(['status' => 'posted']);
+
+        $result = app(ExpenseSettlementService::class)->record($expense, $shop, [
+            'amount' => '20.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'BANK-OWNER-001',
+            'paid_at' => '2026-09-12 10:00:00',
+            'idempotency_key' => 'supplier-manual-owner-1',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:attempt-1',
+        ]);
+
+        $this->assertFalse($result['replayed']);
+        $this->assertSame(ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT, $result['settlement']->source);
+        $this->assertNull($result['settlement']->recorded_by_user_id);
+    }
+
+    public function test_generic_reversal_cannot_reverse_a_supplier_manual_payment(): void
+    {
+        [$shop, $expense, $user] = $this->makeExpenseContext();
+        $supplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $purchaseOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $supplier->id,
+            'status' => 'delivered',
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'posted',
+        ]);
+        $expense->update([
+            'status' => 'posted',
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        $settlement = ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '100.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'BANK-MANUAL-001',
+            'paid_at' => now(),
+            'idempotency_key' => 'supplier-manual-reversal-1',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:attempt-1',
+        ]);
+        $user->givePermissionTo('access-finance-expenses');
+
+        $this->actingAs($user, 'user')
+            ->postJson("/api/finance/expenses/{$expense->id}/settlements/{$settlement->id}/reverse", [
+                'reason' => 'Attempted generic reversal.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'INVALID_STATE');
+
+        $this->assertDatabaseCount('finance_expense_settlements', 1);
+    }
+
+    public function test_supplier_refund_is_append_only_and_does_not_reduce_supplier_payment_state(): void
+    {
+        [$shop, $expense, $user] = $this->makeExpenseContext();
+        $expense->update(['status' => 'posted']);
+
+        ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '100.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'SUPPLIER-PAYMENT-001',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $user->id,
+            'idempotency_key' => 'supplier-payment-state-1',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:state-1',
+        ]);
+
+        ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SUPPLIER_REFUND,
+            'amount' => '25.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'SUPPLIER-REFUND-001',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $user->id,
+            'idempotency_key' => 'supplier-refund-state-1',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_REFUND,
+            'source_reference' => 'supplier-refund:state-1',
+        ]);
+
+        $state = app(ExpenseSettlementService::class)->state($expense->fresh(), $shop->id);
+
+        $this->assertSame('100.00', $state['paid_amount']);
+        $this->assertSame('0.00', $state['outstanding_balance']);
+        $this->assertSame('25.00', $state['refunded_amount']);
+        $this->assertSame('paid', $state['status']);
     }
 
     public function test_manual_expense_with_pending_owner_stage_cannot_be_settled(): void

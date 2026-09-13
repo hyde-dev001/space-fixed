@@ -9,12 +9,15 @@ use App\Models\InventorySize;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
+use App\Models\PurchaseRequest;
 use App\Models\ShopOwner;
 use App\Models\StockMovement;
 use App\Models\StockRequestApproval;
 use App\Models\Supplier;
 use App\Models\User;
 use App\Services\PurchaseOrderReceiptService;
+use App\Services\PurchaseOrderService;
+use App\Services\PurchaseRequestService;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -126,15 +129,82 @@ class ProcurementConcurrencyTest extends TestCase
             ->count());
     }
 
+    public function test_mysql_serializes_purchase_request_numbers_per_shop(): void
+    {
+        if (DB::getDriverName() !== 'mysql') {
+            $this->markTestSkipped('MySQL row-lock verification is intentionally skipped on SQLite.');
+        }
+        if (! function_exists('pcntl_fork')) {
+            $this->markTestSkipped('MySQL concurrency verification requires the pcntl extension.');
+        }
+
+        $owner = ShopOwner::factory()->create();
+        $supplier = Supplier::factory()->create(['shop_owner_id' => $owner->id]);
+        $users = User::factory()->for($owner)->count(2)->create();
+
+        $this->runConcurrently(function (int $index) use ($owner, $supplier, $users): void {
+            $user = $users[$index];
+            app(PurchaseRequestService::class)->createPurchaseRequest([
+                'shop_owner_id' => $owner->id,
+                'supplier_id' => $supplier->id,
+                'product_name' => 'Concurrent Product',
+                'quantity' => 1,
+                'unit_cost' => '100.00',
+                'priority' => 'medium',
+                'justification' => 'Concurrent numbering test',
+                'requested_by' => $user->id,
+            ]);
+        });
+
+        $numbers = \App\Models\PurchaseRequest::query()->pluck('pr_number');
+        $this->assertCount(2, $numbers);
+        $this->assertSame(2, $numbers->unique()->count());
+    }
+
+    public function test_mysql_serializes_purchase_order_numbers_per_shop(): void
+    {
+        if (DB::getDriverName() !== 'mysql') {
+            $this->markTestSkipped('MySQL row-lock verification is intentionally skipped on SQLite.');
+        }
+        if (! function_exists('pcntl_fork')) {
+            $this->markTestSkipped('MySQL concurrency verification requires the pcntl extension.');
+        }
+
+        $owner = ShopOwner::factory()->create();
+        $supplier = Supplier::factory()->create(['shop_owner_id' => $owner->id]);
+        $users = User::factory()->for($owner)->count(2)->create();
+        $requests = PurchaseRequest::factory()->count(2)->create([
+            'shop_owner_id' => $owner->id,
+            'supplier_id' => $supplier->id,
+            'status' => 'approved',
+        ]);
+
+        $this->runConcurrently(function (int $index) use ($owner, $users, $requests): void {
+            $request = $requests[$index];
+            $user = $users[$index];
+            app(PurchaseOrderService::class)->createPurchaseOrder([
+                'purchase_request_ids' => [$request->id],
+                'shop_owner_id' => $owner->id,
+                'payment_terms' => 'Net 30',
+                'ordered_by' => $user->id,
+            ]);
+        });
+
+        $numbers = PurchaseOrder::query()->pluck('po_number');
+        $this->assertCount(2, $numbers);
+        $this->assertSame(2, $numbers->unique()->count());
+    }
+
     private function runConcurrently(callable $callback): void
     {
+        $acceptsIndex = (new \ReflectionFunction($callback))->getNumberOfParameters() > 0;
         $children = [];
         for ($i = 0; $i < 2; $i++) {
             $pid = pcntl_fork();
             if ($pid === 0) {
                 try {
                     DB::disconnect();
-                    $callback();
+                    $acceptsIndex ? $callback($i) : $callback();
                     exit(0);
                 } catch (\Throwable) {
                     exit(1);

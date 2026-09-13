@@ -13,8 +13,12 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\ShopOwner;
 use App\Models\StockMovement;
 use App\Models\Supplier;
+use App\Models\SupplierPaymentAttempt;
+use App\Models\SupplierPaymentProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -30,6 +34,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
     {
         parent::setUp();
         config(['auth.defaults.guard' => 'user']);
+        Storage::fake('local');
         $this->owner = ShopOwner::factory()->create();
         $this->receiver = User::factory()->for($this->owner)->create();
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->owner->id]);
@@ -62,6 +67,23 @@ class PurchaseOrderReceiptVoidTest extends TestCase
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
             ['reason' => 'Retrying the same void request.']
         )->assertOk();
+        $this->assertSame(2, StockMovement::count());
+    }
+
+    public function test_void_reverses_an_unpaid_posted_expense_without_a_payment_attempt(): void
+    {
+        [$po, $item, $inventory] = $this->poItem(2, 100);
+        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        Expense::sole()->update(['status' => 'posted']);
+
+        $this->actingAs($this->receiver, 'user')->postJson(
+            "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
+            ['reason' => 'Correcting an unpaid posted receipt.']
+        )->assertOk();
+
+        $this->assertSame('voided', PurchaseOrderReceipt::findOrFail($receiptId)->status);
+        $this->assertSame('rejected', Expense::sole()->fresh()->status);
+        $this->assertSame(10, $inventory->fresh()->available_quantity);
         $this->assertSame(2, StockMovement::count());
     }
 
@@ -200,18 +222,137 @@ class PurchaseOrderReceiptVoidTest extends TestCase
         $this->assertSame('rejected', $expense->fresh()->status);
     }
 
+    public function test_void_is_blocked_while_supplier_payment_awaits_shop_owner_verification(): void
+    {
+        [$po, $item] = $this->poItem(2, 100);
+        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        $expense = Expense::sole();
+        $profile = SupplierPaymentProfile::create([
+            'shop_owner_id' => $this->owner->id,
+            'supplier_id' => $this->supplier->id,
+            'destination_type' => 'bank_account',
+            'bank_name' => 'Test Bank',
+            'bank_code' => 'TBK',
+            'account_name' => 'Supplier Trading',
+            'account_number' => '1234567890',
+            'status' => SupplierPaymentProfile::STATUS_VERIFIED,
+        ]);
+        SupplierPaymentAttempt::create([
+            'shop_owner_id' => $this->owner->id,
+            'expense_id' => $expense->id,
+            'supplier_id' => $this->supplier->id,
+            'supplier_payment_profile_id' => $profile->id,
+            'amount' => '100.00',
+            'currency' => 'PHP',
+            'provider' => 'manual',
+            'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
+            'internal_reference' => 'SPM-VOID-001',
+            'idempotency_key' => 'void-awaiting-1',
+            'destination_snapshot' => ['account_number' => '1234567890'],
+            'status' => SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            'initiated_by_user_id' => $this->receiver->id,
+            'initiated_at' => now(),
+        ]);
+
+        $this->actingAs($this->receiver, 'user')->postJson(
+            "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
+            ['reason' => 'Trying to void after external transfer.']
+        )->assertUnprocessable();
+
+        $this->assertSame('posted', PurchaseOrderReceipt::findOrFail($receiptId)->status);
+        $this->assertSame('submitted', $expense->fresh()->status);
+    }
+
+    public function test_void_blocks_initiating_and_succeeded_attempts_but_allows_rejected_and_cancelled_attempts(): void
+    {
+        $profile = SupplierPaymentProfile::create([
+            'shop_owner_id' => $this->owner->id,
+            'supplier_id' => $this->supplier->id,
+            'destination_type' => 'bank_account',
+            'bank_name' => 'Test Bank',
+            'bank_code' => 'TBK',
+            'account_name' => 'Supplier Trading',
+            'account_number' => '1234567890',
+            'status' => SupplierPaymentProfile::STATUS_VERIFIED,
+        ]);
+
+        foreach ([SupplierPaymentAttempt::STATUS_INITIATING, SupplierPaymentAttempt::STATUS_SUCCEEDED] as $index => $status) {
+            [$po, $item] = $this->poItem(1, 100);
+            $receiptId = $this->postReceipt($po, $item, 1, 0);
+            $expense = Expense::query()->where('procurement_receipt_id', $receiptId)->firstOrFail();
+            SupplierPaymentAttempt::create([
+                'shop_owner_id' => $this->owner->id,
+                'expense_id' => $expense->id,
+                'supplier_id' => $this->supplier->id,
+                'supplier_payment_profile_id' => $profile->id,
+                'amount' => '100.00',
+                'currency' => 'PHP',
+                'provider' => 'manual',
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
+                'internal_reference' => 'SPM-BLOCK-' . $index,
+                'idempotency_key' => 'void-block-' . $index,
+                'destination_snapshot' => ['account_number' => '1234567890'],
+                'status' => $status,
+                'initiated_by_user_id' => $this->receiver->id,
+                'initiated_at' => now(),
+            ]);
+
+            $this->actingAs($this->receiver, 'user')->postJson(
+                "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
+                ['reason' => 'Trying to void while payment is protected.']
+            )->assertUnprocessable();
+        }
+
+        foreach ([SupplierPaymentAttempt::STATUS_REJECTED, SupplierPaymentAttempt::STATUS_CANCELLED] as $index => $status) {
+            [$po, $item] = $this->poItem(1, 100);
+            $receiptId = $this->postReceipt($po, $item, 1, 0);
+            $expense = Expense::query()->where('procurement_receipt_id', $receiptId)->firstOrFail();
+            SupplierPaymentAttempt::create([
+                'shop_owner_id' => $this->owner->id,
+                'expense_id' => $expense->id,
+                'supplier_id' => $this->supplier->id,
+                'supplier_payment_profile_id' => $profile->id,
+                'amount' => '100.00',
+                'currency' => 'PHP',
+                'provider' => 'manual',
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
+                'internal_reference' => 'SPM-ALLOW-' . $index,
+                'idempotency_key' => 'void-allow-' . $index,
+                'destination_snapshot' => ['account_number' => '1234567890'],
+                'status' => $status,
+                'initiated_by_user_id' => $this->receiver->id,
+                'initiated_at' => now(),
+            ]);
+
+            $this->actingAs($this->receiver, 'user')->postJson(
+                "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
+                ['reason' => 'Voiding after payment attempt rejection or cancellation.']
+            )->assertOk();
+        }
+    }
+
     private function postReceipt(PurchaseOrder $po, PurchaseOrderItem $item, int $received, int $defective): int
     {
-        return (int) $this->actingAs($this->receiver, 'user')->postJson(
+        $payload = [
+            'idempotency_key' => fake()->uuid(),
+            'items' => [[
+                'purchase_order_item_id' => $item->id,
+                'received_quantity' => $received,
+                'defective_quantity' => $defective,
+            ]],
+        ];
+        if ($defective > 0) {
+            $payload['items'][0]['reason_category'] = 'damaged';
+            $payload['items'][0]['inventory_notes'] = 'Test receiving defect.';
+            $payload['items'][0]['defect_evidence'] = [
+                UploadedFile::fake()->create('defect.jpg', 10, 'image/jpeg'),
+            ];
+        }
+
+        return (int) $this->actingAs($this->receiver, 'user')->post(
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts",
-            [
-                'idempotency_key' => fake()->uuid(),
-                'items' => [[
-                    'purchase_order_item_id' => $item->id,
-                    'received_quantity' => $received,
-                    'defective_quantity' => $defective,
-                ]],
-            ]
+            $payload,
+            ['Accept' => 'application/json'],
         )->assertCreated()->json('data.id');
     }
 

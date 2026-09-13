@@ -2,10 +2,18 @@
 
 namespace App\Services;
 
+use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseRequest;
+use App\Models\ProcurementSettings;
 use App\Models\Supplier;
+use App\Models\SupplierAdjustment;
+use App\Models\SupplierPaymentAttempt;
+use App\Models\ShopOwner;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Database\QueryException;
@@ -103,9 +111,11 @@ class PurchaseOrderService
                 'received_quantity' => 0,
                 'defective_quantity' => 0,
                 'unit_cost' => $single ? $first->unit_cost : 0,
-                'total_cost' => $snapshots->sum(fn ($item) => (float) $item['line_total']),
+                'total_cost' => $this->formatCents($snapshots->sum(
+                    fn ($item): int => $this->moneyCents($item['line_total'])
+                )),
                 'expected_delivery_date' => $data['expected_delivery_date'] ?? null,
-                'payment_terms' => $data['payment_terms'] ?? 'Net 30',
+                'payment_terms' => $this->resolvePaymentTerms($data, $supplier, $shopOwnerId),
                 'notes' => $data['notes'] ?? null,
                 'status' => 'draft',
                 'ordered_by' => $data['ordered_by'],
@@ -146,16 +156,47 @@ class PurchaseOrderService
         throw new \RuntimeException('Unable to generate a purchase order number.');
     }
 
+    private function resolvePaymentTerms(array $data, Supplier $supplier, int $shopOwnerId): string
+    {
+        if (array_key_exists('payment_terms', $data) && filled($data['payment_terms'])) {
+            $explicitTerms = trim((string) $data['payment_terms']);
+            if (PurchaseOrder::paymentTermDays($explicitTerms) === null) {
+                throw ValidationException::withMessages([
+                    'payment_terms' => 'The selected payment terms are not supported.',
+                ]);
+            }
+
+            return $explicitTerms;
+        }
+
+        foreach ([
+            $supplier->payment_terms,
+            ProcurementSettings::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->value('default_payment_terms'),
+        ] as $candidate) {
+            $candidate = trim((string) $candidate);
+            if (PurchaseOrder::paymentTermDays($candidate) !== null) {
+                return $candidate;
+            }
+        }
+
+        return 'Net 30';
+    }
+
     /**
      * Generate unique PO number for shop owner.
      */
     public function generatePONumber(int $shopOwnerId): string
     {
+        ShopOwner::query()->whereKey($shopOwnerId)->lockForUpdate()->firstOrFail();
         $year = date('Y');
 
         // ponytail: annual O(n) scan is portable and sufficient for SME volume; use a sequence table if throughput outgrows it.
         $maxSequence = 0;
-        foreach (PurchaseOrder::where('po_number', 'LIKE', "PO-{$year}-%")->pluck('po_number') as $poNumber) {
+        foreach (PurchaseOrder::where('shop_owner_id', $shopOwnerId)
+            ->where('po_number', 'LIKE', "PO-{$year}-%")
+            ->pluck('po_number') as $poNumber) {
             if (preg_match("/^PO-{$year}-(\\d+)$/", (string) $poNumber, $matches) === 1) {
                 $maxSequence = max($maxSequence, (int) $matches[1]);
             }
@@ -173,6 +214,7 @@ class PurchaseOrderService
 
         try {
             $purchaseOrder = PurchaseOrder::query()->lockForUpdate()->findOrFail($poId);
+            $this->assertActorShop($purchaseOrder, $userId);
 
             switch ($status) {
                 case 'sent':
@@ -185,6 +227,7 @@ class PurchaseOrderService
                     $purchaseOrder->markAsInTransit($userId);
                     break;
                 case 'completed':
+                    $this->assertFinancialClosure($purchaseOrder);
                     $purchaseOrder->markAsCompleted($userId);
                     $this->updateSupplierMetrics($purchaseOrder->supplier_id);
                     break;
@@ -198,6 +241,23 @@ class PurchaseOrderService
             }
 
             DB::commit();
+
+            if ($status === 'in_transit') {
+                try {
+                    $purchaseOrder->loadMissing('supplier');
+                    app(NotificationService::class)->notifyPurchaseOrderInTransit((int) $purchaseOrder->shop_owner_id, [
+                        'purchase_order_id' => $purchaseOrder->id,
+                        'po_number' => $purchaseOrder->po_number,
+                        'supplier_id' => $purchaseOrder->supplier_id,
+                        'supplier_name' => $purchaseOrder->supplier?->name,
+                        'expected_delivery' => $purchaseOrder->expected_delivery_date?->toDateString(),
+                        'status' => $purchaseOrder->status,
+                        'shop_id' => $purchaseOrder->shop_owner_id,
+                    ]);
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
 
             Log::info('Purchase order status updated', [
                 'po_id' => $poId,
@@ -219,15 +279,155 @@ class PurchaseOrderService
         }
     }
 
+    private function assertFinancialClosure(PurchaseOrder $purchaseOrder): void
+    {
+        $state = $this->evaluateCompletionState($purchaseOrder, true);
+
+        if (!$state['can_complete']) {
+            throw ValidationException::withMessages([
+                'status' => $state['completion_blockers'][0],
+            ]);
+        }
+    }
+
+    /**
+     * Return the same completion decision used by the status transition so the
+     * detail screen cannot offer an action the server will reject.
+     *
+     * @return array{can_complete: bool, completion_blockers: array<int, string>}
+     */
+    public function completionState(PurchaseOrder $purchaseOrder): array
+    {
+        return $this->evaluateCompletionState($purchaseOrder, false);
+    }
+
+    /**
+     * @return array{can_complete: bool, completion_blockers: array<int, string>}
+     */
+    private function evaluateCompletionState(PurchaseOrder $purchaseOrder, bool $lock): array
+    {
+        $blockers = [];
+
+        if ($purchaseOrder->status !== 'delivered') {
+            $blockers[] = 'Purchase order must be delivered before completion.';
+        }
+
+        $receiptQuery = PurchaseOrderReceipt::query()
+            ->where('purchase_order_id', $purchaseOrder->id)
+            ->where('status', 'posted')
+            ->orderBy('id');
+        if ($lock) {
+            $receiptQuery->lockForUpdate();
+        }
+        $postedReceipts = $receiptQuery->get(['id']);
+
+        if ($postedReceipts->isEmpty()) {
+            $blockers[] = 'A posted receipt is required before completion.';
+        }
+
+        $items = $purchaseOrder->items()->get();
+        if ($items->isEmpty() || $items->contains(fn (PurchaseOrderItem $item): bool => $item->remainingQuantity() > 0)) {
+            $blockers[] = 'All purchase-order items must be fully received before completion.';
+        }
+
+        $receiptIds = $postedReceipts->pluck('id');
+        $expenseQuery = Expense::query()->whereIn('procurement_receipt_id', $receiptIds);
+        if ($lock) {
+            $expenseQuery->lockForUpdate();
+        }
+        $expenses = $expenseQuery->get();
+
+        $expensesByReceipt = $expenses->groupBy(fn (Expense $expense): int => (int) $expense->procurement_receipt_id);
+        foreach ($postedReceipts as $receipt) {
+            if (!$expensesByReceipt->has((int) $receipt->id)) {
+                $blockers[] = 'A posted receipt expense is required before completion.';
+                break;
+            }
+        }
+
+        foreach ($expenses as $expense) {
+            if ((string) $expense->status !== 'posted'
+                || $this->moneyCents($expense->amount) !== $this->moneyCents(
+                    ExpenseSettlement::validSettledAmountForExpense((int) $expense->id)
+                )) {
+                $blockers[] = 'All procurement receipt expenses must be posted and fully settled before completion.';
+                break;
+            }
+        }
+
+        if ($expenses->isNotEmpty()) {
+            $activePaymentQuery = SupplierPaymentAttempt::query()
+                ->whereIn('expense_id', $expenses->pluck('id'))
+                ->whereIn('status', [
+                    SupplierPaymentAttempt::STATUS_INITIATING,
+                    SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+                ]);
+            if ($lock) {
+                $activePaymentQuery->lockForUpdate();
+            }
+
+            if ($activePaymentQuery->exists()) {
+                $blockers[] = 'Supplier payments awaiting completion must be resolved before purchase-order completion.';
+            }
+        }
+
+        $adjustmentQuery = SupplierAdjustment::query()
+            ->where('shop_owner_id', (int) $purchaseOrder->shop_owner_id)
+            ->where('status', '<>', SupplierAdjustment::STATUS_RESOLVED)
+            ->whereHas('receiptItem.receipt', fn ($query) => $query->where('purchase_order_id', $purchaseOrder->id));
+        if ($lock) {
+            $adjustmentQuery->lockForUpdate();
+        }
+
+        if ($adjustmentQuery->exists()) {
+            $blockers[] = 'Supplier adjustments must be resolved before purchase-order completion.';
+        }
+
+        return [
+            'can_complete' => $blockers === [],
+            'completion_blockers' => array_values(array_unique($blockers)),
+        ];
+    }
+
+    private function assertActorShop(PurchaseOrder $purchaseOrder, int $userId): void
+    {
+        $actorShopId = (int) User::query()->whereKey($userId)->value('shop_owner_id');
+
+        if ($actorShopId < 1 || $actorShopId !== (int) $purchaseOrder->shop_owner_id) {
+            throw ValidationException::withMessages([
+                'shop_id' => 'The purchase order is not available in this shop.',
+            ]);
+        }
+    }
+
+    private function moneyCents(mixed $amount): int
+    {
+        $text = trim((string) $amount);
+        if (! preg_match('/^\d+(?:\.\d{1,2})?$/', $text)) {
+            throw ValidationException::withMessages([
+                'amount' => 'The amount must be a non-negative decimal with at most two decimal places.',
+            ]);
+        }
+        [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '0');
+
+        return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
+    }
+
+    private function formatCents(int $cents): string
+    {
+        return intdiv($cents, 100) . '.' . str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
+    }
+
     /**
      * Send purchase order to supplier.
      */
-    public function sendToSupplier(int $poId): PurchaseOrder
+    public function sendToSupplier(int $poId, int $userId): PurchaseOrder
     {
         DB::beginTransaction();
 
         try {
             $purchaseOrder = PurchaseOrder::query()->lockForUpdate()->findOrFail($poId);
+            $this->assertActorShop($purchaseOrder, $userId);
 
             $purchaseOrder->sendToSupplier();
 
@@ -262,6 +462,7 @@ class PurchaseOrderService
 
         try {
             $purchaseOrder = PurchaseOrder::query()->lockForUpdate()->findOrFail($poId);
+            $this->assertActorShop($purchaseOrder, $userId);
 
             $purchaseOrder->cancel($userId, $reason);
 

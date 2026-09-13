@@ -11,6 +11,11 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
+use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
+use App\Models\SupplierAdjustment;
+use App\Models\SupplierPaymentAttempt;
+use App\Models\SupplierPaymentProfile;
 use App\Models\InventoryItem;
 use App\Events\PurchaseOrderSent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,10 +37,10 @@ class PurchaseOrderWorkflowTest extends TestCase
         config(['auth.defaults.guard' => 'user']);
         $this->shopOwner = ShopOwner::factory()->create();
         $this->user = User::factory()->for($this->shopOwner)->create();
-        foreach (['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory'] as $permission) {
+        foreach (['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.manage_suppliers', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory'] as $permission) {
             Permission::findOrCreate($permission, 'user');
         }
-        $this->user->givePermissionTo(['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory']);
+        $this->user->givePermissionTo(['procurement.view', 'procurement.create_purchase_orders', 'procurement.manage_purchase_orders', 'procurement.manage_suppliers', 'procurement.receive_purchase_orders', 'procurement.complete_purchase_orders', 'procurement.cancel_purchase_orders', 'view-inventory']);
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
         
         $this->pr = PurchaseRequest::factory()->create([
@@ -71,6 +76,64 @@ class PurchaseOrderWorkflowTest extends TestCase
             'pr_id' => $this->pr->id,
             'status' => 'draft',
         ]);
+    }
+
+    public function test_invalid_supplier_payment_terms_are_rejected(): void
+    {
+        $this->actingAs($this->user)
+            ->postJson('/api/erp/procurement/purchase-orders', [
+                'purchase_request_ids' => [$this->pr->id],
+                'expected_delivery_date' => now()->addDays(14)->format('Y-m-d'),
+                'payment_terms' => 'Net 90',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payment_terms');
+
+        $this->assertDatabaseCount('purchase_orders', 0);
+    }
+
+    public function test_supplier_and_procurement_setting_payment_terms_are_rejected_when_unsupported(): void
+    {
+        $this->actingAs($this->user)
+            ->putJson("/api/erp/procurement/suppliers/{$this->supplier->id}", [
+                'name' => $this->supplier->name,
+                'payment_terms' => 'Net 90',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payment_terms');
+
+        $this->actingAs($this->user)
+            ->putJson('/api/erp/procurement/settings', [
+                'default_payment_terms' => 'Net 90',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('default_payment_terms');
+    }
+
+    public function test_purchase_order_sorting_rejects_unapproved_columns(): void
+    {
+        $this->actingAs($this->user)
+            ->getJson('/api/erp/procurement/purchase-orders?sort_by=users.password&sort_order=drop')
+            ->assertUnprocessable();
+    }
+
+    public function test_draft_purchase_order_update_rejects_unsupported_payment_terms(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'draft',
+            'payment_terms' => 'Net 30',
+        ]);
+
+        $this->actingAs($this->user)
+            ->putJson("/api/erp/procurement/purchase-orders/{$po->id}", [
+                'payment_terms' => 'Net 90',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payment_terms');
+
+        $this->assertSame('Net 30', $po->fresh()->payment_terms);
     }
 
     /** @test */
@@ -300,6 +363,29 @@ class PurchaseOrderWorkflowTest extends TestCase
             'received_quantity' => 1,
             'accepted_quantity' => 1,
         ]);
+        $expense = Expense::create([
+            'reference' => 'EXP-COMPLETE',
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $this->shopOwner->id,
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        ExpenseSettlement::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '100.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'SUPPLIER-PAID-COMPLETE',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $this->user->id,
+            'idempotency_key' => 'completion-settlement',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:completion',
+        ]);
 
         $this->assertSame('delivered', $po->fresh()->status);
 
@@ -326,6 +412,185 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertSame('in_transit', $inTransit->fresh()->status);
     }
 
+    public function test_completion_is_blocked_until_a_posted_receipt_expense_is_fully_settled(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+        $item = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $po->id,
+            'ordered_quantity' => 1,
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => 'posted',
+        ]);
+        PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+
+        $this->actingAs($this->user)
+            ->getJson("/api/erp/procurement/purchase-orders/{$po->id}")
+            ->assertOk()
+            ->assertJsonPath('can_complete', false)
+            ->assertJsonPath('completion_blockers.0', 'A posted receipt expense is required before completion.');
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
+                'status' => 'completed',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('status');
+
+        $this->assertSame('delivered', $po->fresh()->status);
+    }
+
+    public function test_completion_is_blocked_while_a_supplier_payment_attempt_is_active(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+        $item = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $po->id,
+            'ordered_quantity' => 1,
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => 'posted',
+        ]);
+        PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+        $expense = Expense::create([
+            'reference' => 'EXP-ACTIVE-PAYMENT',
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $this->shopOwner->id,
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        $profile = SupplierPaymentProfile::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'destination_type' => 'bank_account',
+            'bank_name' => 'Test Bank',
+            'bank_code' => 'TBK',
+            'account_name' => 'Supplier Trading',
+            'account_number' => '1234567890',
+            'status' => SupplierPaymentProfile::STATUS_VERIFIED,
+        ]);
+        SupplierPaymentAttempt::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'expense_id' => $expense->id,
+            'supplier_id' => $this->supplier->id,
+            'supplier_payment_profile_id' => $profile->id,
+            'amount' => '100.00',
+            'currency' => 'PHP',
+            'provider' => 'manual',
+            'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
+            'internal_reference' => 'SPM-COMPLETE-001',
+            'idempotency_key' => 'completion-active-1',
+            'destination_snapshot' => ['account_number' => '1234567890'],
+            'status' => SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            'initiated_by_user_id' => $this->user->id,
+            'initiated_at' => now(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
+                'status' => 'completed',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertSame('delivered', $po->fresh()->status);
+    }
+
+    public function test_completion_is_blocked_by_an_unresolved_supplier_adjustment(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+        $item = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $po->id,
+            'ordered_quantity' => 1,
+            'unit_cost' => '100.00',
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => 'posted',
+        ]);
+        $receiptItem = PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+        $expense = Expense::create([
+            'reference' => 'EXP-UNRESOLVED-ADJUSTMENT',
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $this->shopOwner->id,
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        ExpenseSettlement::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '100.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'SUPPLIER-PAID-UNRESOLVED',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $this->user->id,
+            'idempotency_key' => 'completion-unresolved-settlement',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:completion-unresolved',
+        ]);
+        SupplierAdjustment::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'purchase_order_receipt_item_id' => $receiptItem->id,
+            'idempotency_key' => 'completion-unresolved-adjustment',
+            'issue_stage' => SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT,
+            'reported_quantity' => 1,
+            'unit_cost_snapshot' => '100.00',
+            'reason_category' => 'damaged',
+            'inventory_notes' => 'Awaiting supplier resolution.',
+            'status' => SupplierAdjustment::STATUS_UNDER_REVIEW,
+            'reported_by' => $this->user->id,
+            'reported_at' => now(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
+                'status' => 'completed',
+            ])
+            ->assertUnprocessable();
+
+        $this->assertSame('delivered', $po->fresh()->status);
+    }
+
     /** @test */
     public function complete_manual_po_workflow_stops_at_in_transit()
     {
@@ -339,7 +604,7 @@ class PurchaseOrderWorkflowTest extends TestCase
             ->postJson('/api/erp/procurement/purchase-orders', [
                 'purchase_request_ids' => [$this->pr->id],
                 'expected_delivery_date' => now()->addDays(10)->format('Y-m-d'),
-                'payment_terms' => 'COD',
+                'payment_terms' => 'Net 30',
             ]);
 
         $createResponse->assertStatus(201);

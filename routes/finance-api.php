@@ -17,12 +17,14 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Api\Finance\InvoiceController;
 use App\Http\Controllers\Api\Finance\ExpenseController;
+use App\Http\Controllers\Api\Finance\ProcurementExpenseController;
 use App\Http\Controllers\Api\Finance\TaxRateController;
 use App\Http\Controllers\Api\Finance\FinanceSummaryController;
 use App\Http\Controllers\Api\Finance\PayslipApprovalController as FinancePayslipApprovalController;
 use App\Http\Controllers\ERP\HR\AuditLogController;
 use App\Http\Controllers\Erp\HR\PayrollController;
 use App\Http\Controllers\Erp\PurchaseRequestController as ErpPurchaseRequestController;
+use App\Http\Controllers\Erp\SupplierAdjustmentController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\Api\RefundApprovalController;
@@ -91,16 +93,56 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::get('/{id}/settlements', [ExpenseController::class, 'listSettlements'])->whereNumber('id')->name('finance.expenses.settlements.index');
         Route::post('/{id}/settlements', [ExpenseController::class, 'recordSettlement'])->whereNumber('id')->name('finance.expenses.settlements.store');
         Route::post('/{id}/settlements/{settlementId}/reverse', [ExpenseController::class, 'reverseSettlement'])->whereNumber(['id', 'settlementId'])->name('finance.expenses.settlements.reverse');
+        Route::post('/{id}/supplier-payment-attempts', [ProcurementExpenseController::class, 'initiateSupplierPayment'])->whereNumber('id')->name('finance.expenses.supplier-payment-attempts.store');
+        Route::post('/{id}/supplier-adjustments/{adjustmentId}/supplier-refund-proof', [ProcurementExpenseController::class, 'submitSupplierRefundProof'])
+            ->whereNumber(['id', 'adjustmentId'])
+            ->name('finance.expenses.supplier-adjustments.supplier-refund-proof');
+        Route::post('/{id}/supplier-adjustments/{adjustmentId}/refund-confirmations', [ProcurementExpenseController::class, 'confirmSupplierRefund'])
+            ->whereNumber(['id', 'adjustmentId'])
+            ->name('finance.expenses.supplier-adjustments.refund-confirmations');
         Route::patch('/{id}', [ExpenseController::class, 'update'])->name('finance.expenses.update');
         Route::delete('/{id}', [ExpenseController::class, 'destroy'])->name('finance.expenses.destroy');
         Route::post('/{id}/restore', [ExpenseController::class, 'restore'])->name('finance.expenses.restore');
     });
 
+    Route::prefix('supplier-payment-attempts')->middleware('permission:access-finance-expenses')->group(function () {
+        Route::get('/{attemptId}/proof/{mediaId}', [ProcurementExpenseController::class, 'supplierPaymentProof'])->whereNumber(['attemptId', 'mediaId'])->name('finance.supplier-payment-attempts.proof');
+        Route::post('/{attemptId}/submit', [ProcurementExpenseController::class, 'submitSupplierPayment'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.submit');
+        Route::post('/{attemptId}/cancel', [ProcurementExpenseController::class, 'cancelSupplierPayment'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.cancel');
+        Route::post('/{attemptId}/send-receipt', [ProcurementExpenseController::class, 'sendSupplierPaymentReceipt'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.send-receipt');
+        Route::post('/{attemptId}/resend-confirmation', [ProcurementExpenseController::class, 'sendSupplierPaymentReceipt'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.resend-confirmation');
+    });
+
+    Route::prefix('supplier-adjustments')->middleware('permission:access-finance-expenses')->group(function () {
+        Route::get('/{adjustmentId}/refund-proof/{mediaId}', [SupplierAdjustmentController::class, 'refundProof'])
+            ->whereNumber(['adjustmentId', 'mediaId'])
+            ->name('finance.supplier-adjustments.refund-proof');
+    });
+
     // Approval is a separate capability from viewing/recording expenses. A
     // reviewer may approve or reject without gaining general expense access.
     Route::prefix('expenses')->middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
+        Route::post('/{id}/review-release', [ProcurementExpenseController::class, 'reviewAndRelease'])->whereNumber('id')->name('finance.expenses.review_release');
         Route::post('/{id}/approve', [ExpenseController::class, 'approve'])->name('finance.expenses.approve');
         Route::post('/{id}/reject', [ExpenseController::class, 'reject'])->name('finance.expenses.reject');
+    });
+
+    Route::prefix('suppliers')->middleware('permission:access-finance-expenses')->group(function () {
+        Route::get('/{supplierId}/payment-profile', [ProcurementExpenseController::class, 'showPaymentProfile'])
+            ->whereNumber('supplierId')
+            ->name('finance.suppliers.payment-profile.show');
+        Route::get('/{supplierId}/payment-profile/reveal', [ProcurementExpenseController::class, 'revealPaymentProfile'])
+            ->whereNumber('supplierId')
+            ->name('finance.suppliers.payment-profile.reveal');
+    });
+
+    Route::prefix('suppliers')->middleware('permission:access-approval-workflow|approve-expenses')->group(function () {
+        Route::post('/{supplierId}/payment-profile/verify', [ProcurementExpenseController::class, 'verifyPaymentProfile'])
+            ->whereNumber('supplierId')
+            ->name('finance.suppliers.payment-profile.verify');
+        Route::post('/{supplierId}/payment-profile/disable', [ProcurementExpenseController::class, 'disablePaymentProfile'])
+            ->whereNumber('supplierId')
+            ->name('finance.suppliers.payment-profile.disable');
     });
 
 

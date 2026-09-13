@@ -1,5 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { purchaseOrderApi } from "@/services/purchaseOrderApi";
 import PurchaseOrders from "../PurchaseOrders";
 
 const mocks = vi.hoisted(() => {
@@ -14,8 +16,10 @@ const mocks = vi.hoisted(() => {
 		total_cost: 20000,
 		requested_size: "",
 		inventory_item: { category: "shoes" },
-		payment_terms: "COD",
+		payment_terms: "Net 30",
 		status: "delivered",
+		can_complete: true,
+		completion_blockers: [] as string[],
 		ordered_by: 1,
 		ordered_date: "2026-08-02",
 		created_at: "2026-08-02",
@@ -43,6 +47,7 @@ vi.mock("@/services/purchaseOrderApi", () => ({
 		getAll: vi.fn().mockResolvedValue({ data: [mocks.order] }),
 		getMetrics: vi.fn().mockResolvedValue({ total_purchase_orders: 1, active_orders: 0, completed_orders: 0 }),
 		getById: vi.fn().mockResolvedValue(mocks.order),
+		getSupplierAdjustments: vi.fn().mockResolvedValue([]),
 		updateStatus: vi.fn(),
 		create: vi.fn(),
 		cancel: vi.fn(),
@@ -56,6 +61,8 @@ describe("Purchase Orders lifecycle actions", () => {
 	beforeEach(() => {
 		mocks.approvedPrs.length = 0;
 		mocks.order.status = "delivered";
+		mocks.order.can_complete = true;
+		mocks.order.completion_blockers = [];
 		mocks.permissions.splice(0, mocks.permissions.length, "procurement.complete_purchase_orders");
 	});
 
@@ -63,7 +70,17 @@ describe("Purchase Orders lifecycle actions", () => {
 		render(<PurchaseOrders />);
 		fireEvent.click(await screen.findByTitle("View details"));
 
-		expect(screen.getByRole("button", { name: "Mark as Completed" })).toBeInTheDocument();
+		expect(await screen.findByRole("button", { name: "Mark as Completed" })).toBeInTheDocument();
+	});
+
+	it("hides completion until the backend confirms the workflow is closed", async () => {
+		mocks.order.can_complete = false;
+		mocks.order.completion_blockers = ["A posted receipt expense is required before completion."];
+
+		render(<PurchaseOrders />);
+		fireEvent.click(await screen.findByTitle("View details"));
+
+		await waitFor(() => expect(screen.queryByRole("button", { name: "Mark as Completed" })).not.toBeInTheDocument());
 	});
 
 	it("shows delivered orders in the awaiting-closure category", () => {
@@ -106,7 +123,7 @@ describe("Purchase Orders lifecycle actions", () => {
 		render(<PurchaseOrders />);
 		fireEvent.click(await screen.findByTitle("View details"));
 
-		expect(screen.getByRole("button", { name: "Cancel PO" })).toBeInTheDocument();
+		expect(await screen.findByRole("button", { name: "Cancel PO" })).toBeInTheDocument();
 	});
 
 	it("describes an all-size PR quantity as one total in the PO selector", async () => {
@@ -126,13 +143,25 @@ describe("Purchase Orders lifecycle actions", () => {
 		fireEvent.click(await screen.findByRole("button", { name: "+ New PO" }));
 
 		expect(await screen.findByRole("option", { name: /Qty: 200 total units across All Sizes/ })).toBeInTheDocument();
+		expect(screen.queryByRole("option", { name: "COD" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("option", { name: "50% down, 50% on delivery" })).not.toBeInTheDocument();
 	});
 
 	it("labels the PO detail quantity as a total across all sizes", async () => {
 		render(<PurchaseOrders />);
 		fireEvent.click(await screen.findByTitle("View details"));
 
-		expect(screen.getByText("Total Quantity Ordered Across All Sizes:")).toBeInTheDocument();
-		expect(screen.getByText("200 units")).toBeInTheDocument();
+		expect(await screen.findByText("Total Quantity Ordered Across All Sizes:")).toBeInTheDocument();
+		expect(await screen.findByText("200 units")).toBeInTheDocument();
+	});
+
+	it("refreshes procurement data when the page regains focus", async () => {
+		render(<PurchaseOrders />);
+		const getAll = vi.mocked(purchaseOrderApi.getAll);
+		getAll.mockClear();
+
+		fireEvent(window, new Event("focus"));
+
+		await waitFor(() => expect(getAll).toHaveBeenCalled());
 	});
 });

@@ -3,14 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import PurchaseOrderReceiptPanel from "../components/PurchaseOrderReceiptPanel";
 import type { PurchaseOrder } from "@/types/procurement";
 
-vi.mock("@/services/purchaseOrderApi", () => ({ purchaseOrderApi: { receive: vi.fn(), voidReceipt: vi.fn() } }));
+vi.mock("@/services/purchaseOrderApi", () => ({ purchaseOrderApi: { receive: vi.fn(), voidReceipt: vi.fn(), getSupplierAdjustments: vi.fn().mockResolvedValue([]) } }));
 vi.mock("sweetalert2", () => ({ default: { fire: vi.fn() } }));
 
 describe("PurchaseOrderReceiptPanel size labels", () => {
 	it("visibly identifies every multi-size receiving input", () => {
 		const order = {
 			id: 10, po_number: "PO-10", shop_owner_id: 1, supplier_id: 1, product_name: "Runner", quantity: 5,
-			unit_cost: 100, total_cost: 500, payment_terms: "COD", status: "in_transit", ordered_by: 1,
+			unit_cost: 100, total_cost: 500, payment_terms: "Net 30", status: "in_transit", ordered_by: 1,
 			ordered_date: "2026-08-02", created_at: "2026-08-02", updated_at: "2026-08-02", receipts: [],
 			items: [{
 				id: 20, purchase_order_id: 10, product_name: "Runner", ordered_quantity: 5,

@@ -88,8 +88,20 @@ class PurchaseRequestController extends Controller
         }
 
         // Sorting
-        $sortBy = $request->get('sort_by', 'requested_date');
-        $sortOrder = $request->get('sort_order', 'desc');
+        $sortBy = (string) $request->get('sort_by', 'requested_date');
+        $sortOrder = strtolower((string) $request->get('sort_order', 'desc'));
+        $allowedSortColumns = [
+            'requested_date',
+            'pr_number',
+            'status',
+            'total_cost',
+        ];
+        if (! in_array($sortBy, $allowedSortColumns, true)) {
+            throw ValidationException::withMessages(['sort_by' => 'The selected sort column is not supported.']);
+        }
+        if (! in_array($sortOrder, ['asc', 'desc'], true)) {
+            throw ValidationException::withMessages(['sort_order' => 'The sort direction must be asc or desc.']);
+        }
         $query->orderBy($sortBy, $sortOrder);
 
         $purchaseRequests = $query->paginate($request->get('per_page', 15));
@@ -291,13 +303,16 @@ class PurchaseRequestController extends Controller
             $data = $this->sanitizePurchaseRequestPayloadForSchema($data);
             $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $purchaseRequest->shop_owner_id);
             
-            if ($request->submit_to_finance && $purchaseRequest->status === 'draft') {
-                $data['status'] = 'pending_finance';
-            }
-
             $purchaseRequest->update($data);
 
             DB::commit();
+
+            if ($request->boolean('submit_to_finance')) {
+                $purchaseRequest = $this->purchaseRequestService->submitToFinance(
+                    (int) $purchaseRequest->id,
+                    Auth::user(),
+                );
+            }
 
             return response()->json([
                 'message' => 'Purchase request updated successfully.',
@@ -359,7 +374,10 @@ class PurchaseRequestController extends Controller
             ], 403);
         }
 
-        $purchaseRequest = $this->purchaseRequestService->submitToFinance((int) $purchaseRequest->id);
+        $purchaseRequest = $this->purchaseRequestService->submitToFinance(
+            (int) $purchaseRequest->id,
+            Auth::user(),
+        );
 
         return response()->json([
             'message' => 'Purchase request submitted to finance successfully.',

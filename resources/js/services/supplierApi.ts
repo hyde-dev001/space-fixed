@@ -10,6 +10,8 @@ import {
     SupplierFilters,
     CreateSupplierPayload,
     UpdateSupplierPayload,
+    SupplierPaymentProfile,
+    UpsertSupplierPaymentProfilePayload,
     PaginatedResponse,
     ApiResponse,
 } from '@/types/procurement';
@@ -66,6 +68,16 @@ export const supplierApi = {
     async restore(id: number): Promise<ApiResponse> {
         const response: AxiosResponse<ApiResponse> = await axios.post(`${BASE_URL}/${id}/restore`);
         return response.data;
+    },
+
+    async getPaymentProfile(id: number): Promise<SupplierPaymentProfile | null> {
+        const response: AxiosResponse<ApiResponse<SupplierPaymentProfile | null>> = await axios.get(`${BASE_URL}/${id}/payment-profile`);
+        return response.data.data;
+    },
+
+    async upsertPaymentProfile(id: number, data: UpsertSupplierPaymentProfilePayload): Promise<SupplierPaymentProfile> {
+        const response: AxiosResponse<ApiResponse<SupplierPaymentProfile>> = await axios.put(`${BASE_URL}/${id}/payment-profile`, data);
+        return response.data.data;
     },
 
 };

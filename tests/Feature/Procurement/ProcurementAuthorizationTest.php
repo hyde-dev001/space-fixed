@@ -5,13 +5,24 @@ namespace Tests\Feature\Procurement;
 use App\Models\InventoryItem;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderReceipt;
+use App\Models\PurchaseOrderReceiptItem;
 use App\Models\PurchaseRequest;
+use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
 use App\Models\ShopOwner;
 use App\Models\Supplier;
+use App\Models\SupplierAdjustment;
+use App\Models\SupplierPaymentAttempt;
+use App\Models\SupplierPaymentProfile;
 use App\Models\StockRequestApproval;
 use App\Models\User;
+use App\Services\PurchaseOrderService;
+use App\Services\PurchaseRequestService;
+use App\Services\StockRequestApprovalService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -40,6 +51,47 @@ class ProcurementAuthorizationTest extends TestCase
         $this->actingAs($user)
             ->getJson("/api/erp/procurement/purchase-orders/{$purchaseOrder->id}")
             ->assertNotFound();
+    }
+
+    public function test_shared_procurement_services_reject_foreign_shop_mutations(): void
+    {
+        [$user, $shop] = $this->userForShop();
+        [, $otherShop] = $this->userForShop();
+        $otherSupplier = Supplier::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherInventory = InventoryItem::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherStockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'inventory_item_id' => $otherInventory->id,
+            'status' => 'pending',
+        ]);
+        $otherPurchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'supplier_id' => $otherSupplier->id,
+            'status' => 'pending_finance',
+        ]);
+        $otherPurchaseOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'supplier_id' => $otherSupplier->id,
+            'status' => 'draft',
+            'ordered_by' => $user->id,
+        ]);
+
+        try {
+            app(StockRequestApprovalService::class)->approveStockRequest($otherStockRequest->id, $user->id);
+            $this->fail('A stock request from another shop was mutated.');
+        } catch (ValidationException) {
+            $this->assertSame('pending', $otherStockRequest->fresh()->status);
+        }
+
+        try {
+            app(PurchaseRequestService::class)->reviewByFinance($otherPurchaseRequest->id, $user, 'Cross-shop review.');
+            $this->fail('A purchase request from another shop was mutated.');
+        } catch (ValidationException) {
+            $this->assertSame('pending_finance', $otherPurchaseRequest->fresh()->status);
+        }
+
+        $this->expectException(ValidationException::class);
+        app(PurchaseOrderService::class)->updateStatus($otherPurchaseOrder->id, 'sent', $user->id);
     }
 
     public function test_dashboard_access_does_not_authorize_purchase_request_review(): void
@@ -114,7 +166,7 @@ class ProcurementAuthorizationTest extends TestCase
         $this->actingAs($user)
             ->postJson('/api/erp/procurement/purchase-orders', [
                 'pr_id' => $purchaseRequest->id,
-                'payment_terms' => 'COD',
+                'payment_terms' => 'Net 30',
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('pr_id');
@@ -278,7 +330,44 @@ class ProcurementAuthorizationTest extends TestCase
         ]);
         PurchaseOrderItem::factory()->create([
             'purchase_order_id' => $purchaseOrder->id,
-            'ordered_quantity' => 0,
+            'ordered_quantity' => 1,
+            'unit_cost' => '100.00',
+        ]);
+        $item = $purchaseOrder->items()->firstOrFail();
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'shop_owner_id' => $shop->id,
+            'received_by' => $completer->id,
+            'status' => 'posted',
+        ]);
+        PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+        $expense = Expense::create([
+            'reference' => 'EXP-AUTH-COMPLETE',
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $shop->id,
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '100.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'AUTH-COMPLETE-PAID',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $completer->id,
+            'idempotency_key' => 'auth-complete-settlement',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:auth-complete',
         ]);
 
         $this->actingAs($completer)
@@ -546,6 +635,129 @@ class ProcurementAuthorizationTest extends TestCase
             ->assertUnprocessable();
 
         $this->assertNull($supplier->fresh()->deleted_at);
+    }
+
+    public function test_supplier_archiving_blocks_unresolved_adjustments_unpaid_released_expenses_and_active_payments(): void
+    {
+        [$manager, $shop] = $this->userForShop();
+        $this->give($manager, 'procurement.manage_suppliers');
+
+        $adjustmentSupplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $adjustmentOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $adjustmentSupplier->id,
+            'status' => 'delivered',
+        ]);
+        $adjustmentItem = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $adjustmentOrder->id,
+            'ordered_quantity' => 1,
+        ]);
+        $adjustmentReceipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $adjustmentOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'posted',
+        ]);
+        $adjustmentReceiptItem = PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $adjustmentReceipt->id,
+            'purchase_order_item_id' => $adjustmentItem->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+        SupplierAdjustment::create([
+            'shop_owner_id' => $shop->id,
+            'purchase_order_receipt_item_id' => $adjustmentReceiptItem->id,
+            'idempotency_key' => 'archive-unresolved-adjustment',
+            'issue_stage' => SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT,
+            'reported_quantity' => 1,
+            'unit_cost_snapshot' => '100.00',
+            'reason_category' => 'damaged',
+            'inventory_notes' => 'Still under review.',
+            'status' => SupplierAdjustment::STATUS_UNDER_REVIEW,
+            'reported_by' => $manager->id,
+            'reported_at' => now(),
+        ]);
+
+        $this->actingAs($manager)
+            ->deleteJson("/api/erp/procurement/suppliers/{$adjustmentSupplier->id}")
+            ->assertUnprocessable();
+
+        $unpaidSupplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $unpaidOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $unpaidSupplier->id,
+            'status' => 'delivered',
+        ]);
+        $unpaidReceipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $unpaidOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'posted',
+        ]);
+        $unpaidExpense = Expense::create([
+            'reference' => 'ARCHIVE-UNPAID',
+            'date' => now()->toDateString(),
+            'category' => 'Procurement',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $shop->id,
+            'procurement_receipt_id' => $unpaidReceipt->id,
+        ]);
+
+        $this->actingAs($manager)
+            ->deleteJson("/api/erp/procurement/suppliers/{$unpaidSupplier->id}")
+            ->assertUnprocessable();
+
+        $activeSupplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $activeOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $activeSupplier->id,
+            'status' => 'delivered',
+        ]);
+        $activeReceipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $activeOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'posted',
+        ]);
+        $activeExpense = Expense::create([
+            'reference' => 'ARCHIVE-ACTIVE-PAYMENT',
+            'date' => now()->toDateString(),
+            'category' => 'Procurement',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $shop->id,
+            'procurement_receipt_id' => $activeReceipt->id,
+        ]);
+        $profile = SupplierPaymentProfile::create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $activeSupplier->id,
+            'destination_type' => 'bank_account',
+            'bank_name' => 'Test Bank',
+            'bank_code' => 'TBK',
+            'account_name' => 'Supplier Trading',
+            'account_number' => '1234567890',
+            'status' => SupplierPaymentProfile::STATUS_VERIFIED,
+        ]);
+        SupplierPaymentAttempt::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $activeExpense->id,
+            'supplier_id' => $activeSupplier->id,
+            'supplier_payment_profile_id' => $profile->id,
+            'amount' => '100.00',
+            'currency' => 'PHP',
+            'provider' => 'manual',
+            'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
+            'internal_reference' => 'ARCHIVE-ACTIVE-001',
+            'idempotency_key' => 'archive-active-payment',
+            'destination_snapshot' => ['account_number' => '1234567890'],
+            'status' => SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            'initiated_by_user_id' => $manager->id,
+            'initiated_at' => now(),
+        ]);
+
+        $this->actingAs($manager)
+            ->deleteJson("/api/erp/procurement/suppliers/{$activeSupplier->id}")
+            ->assertUnprocessable();
     }
 
     public function test_unsupported_supplier_analysis_routes_are_absent(): void

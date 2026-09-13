@@ -5,6 +5,7 @@ use App\Http\Controllers\Erp\PurchaseOrderController;
 use App\Http\Controllers\Erp\StockRequestApprovalController;
 use App\Http\Controllers\Erp\PurchaseOrderReceiptController;
 use App\Http\Controllers\Erp\SupplierController;
+use App\Http\Controllers\Erp\SupplierAdjustmentController;
 use App\Http\Controllers\Erp\ProcurementSettingsController;
 use Illuminate\Support\Facades\Route;
 
@@ -54,6 +55,20 @@ Route::middleware([
         Route::get('/{id}/receipts', [PurchaseOrderReceiptController::class, 'index'])->name('procurement.purchase-orders.receipts.index');
         Route::post('/{id}/receipts', [PurchaseOrderReceiptController::class, 'store'])->name('procurement.purchase-orders.receipts.store');
         Route::post('/{id}/receipts/{receiptId}/void', [PurchaseOrderReceiptController::class, 'void'])->name('procurement.purchase-orders.receipts.void');
+        Route::post('/{id}/receipts/{receiptId}/items/{receiptItemId}/post-payment-issues', [SupplierAdjustmentController::class, 'postPaymentIssue'])
+            ->whereNumber(['id', 'receiptId', 'receiptItemId'])
+            ->name('procurement.purchase-orders.receipts.items.post-payment-issues');
+    });
+
+    Route::prefix('supplier-adjustments')->group(function () {
+        Route::get('/', [SupplierAdjustmentController::class, 'index'])->name('procurement.supplier-adjustments.index');
+        Route::get('/{adjustmentId}', [SupplierAdjustmentController::class, 'show'])->whereNumber('adjustmentId')->name('procurement.supplier-adjustments.show');
+        Route::post('/{adjustmentId}/supplier-refund-proof', [SupplierAdjustmentController::class, 'supplierRefundProof'])
+            ->whereNumber('adjustmentId')
+            ->name('procurement.supplier-adjustments.supplier-refund-proof');
+        Route::get('/{adjustmentId}/evidence/{mediaId}', [SupplierAdjustmentController::class, 'evidence'])
+            ->whereNumber(['adjustmentId', 'mediaId'])
+            ->name('procurement.supplier-adjustments.evidence');
     });
     
     // Replenishment Requests Routes (deprecated alias -> stock requests)
@@ -90,6 +105,8 @@ Route::middleware([
         Route::post('/', [SupplierController::class, 'store'])->name('procurement.suppliers.store');
         Route::get('/{id}', [SupplierController::class, 'show'])->name('procurement.suppliers.show');
         Route::put('/{id}', [SupplierController::class, 'update'])->name('procurement.suppliers.update');
+        Route::get('/{id}/payment-profile', [SupplierController::class, 'showPaymentProfile'])->whereNumber('id')->name('procurement.suppliers.payment-profile.show');
+        Route::put('/{id}/payment-profile', [SupplierController::class, 'upsertPaymentProfile'])->whereNumber('id')->name('procurement.suppliers.payment-profile.upsert');
         Route::delete('/{id}', [SupplierController::class, 'destroy'])->name('procurement.suppliers.destroy');
         Route::post('/{id}/restore', [SupplierController::class, 'restore'])->name('procurement.suppliers.restore');
     });

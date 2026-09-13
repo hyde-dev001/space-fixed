@@ -9,6 +9,7 @@ use App\Models\PurchaseRequest;
 use App\Models\User;
 use App\Models\Supplier;
 use App\Models\ShopOwner;
+use App\Models\ProcurementSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 
 class PurchaseOrderServiceTest extends TestCase
@@ -55,6 +56,77 @@ class PurchaseOrderServiceTest extends TestCase
         $this->assertTrue(str_starts_with($po->po_number, 'PO-'));
     }
 
+    public function test_payment_terms_use_explicit_supplier_setting_then_system_default_precedence(): void
+    {
+        $this->supplier->update(['payment_terms' => 'Net 15']);
+        ProcurementSettings::getForShopOwner($this->shopOwner->id)->update([
+            'default_payment_terms' => 'Net 45',
+        ]);
+
+        $explicit = $this->service->createPurchaseOrder([
+            'purchase_request_ids' => [$this->approvedPurchaseRequest()->id],
+            'shop_owner_id' => $this->shopOwner->id,
+            'payment_terms' => 'Net 7',
+            'ordered_by' => $this->user->id,
+        ]);
+        $this->assertSame('Net 7', $explicit->payment_terms);
+
+        $supplierDefault = $this->service->createPurchaseOrder([
+            'purchase_request_ids' => [$this->approvedPurchaseRequest()->id],
+            'shop_owner_id' => $this->shopOwner->id,
+            'ordered_by' => $this->user->id,
+        ]);
+        $this->assertSame('Net 15', $supplierDefault->payment_terms);
+
+        $this->supplier->update(['payment_terms' => null]);
+        $settingsDefault = $this->service->createPurchaseOrder([
+            'purchase_request_ids' => [$this->approvedPurchaseRequest()->id],
+            'shop_owner_id' => $this->shopOwner->id,
+            'ordered_by' => $this->user->id,
+        ]);
+        $this->assertSame('Net 45', $settingsDefault->payment_terms);
+
+        ProcurementSettings::where('shop_owner_id', $this->shopOwner->id)->update([
+            'default_payment_terms' => 'Net 90',
+        ]);
+        $systemDefault = $this->service->createPurchaseOrder([
+            'purchase_request_ids' => [$this->approvedPurchaseRequest()->id],
+            'shop_owner_id' => $this->shopOwner->id,
+            'ordered_by' => $this->user->id,
+        ]);
+        $this->assertSame('Net 30', $systemDefault->payment_terms);
+    }
+
+    public function test_purchase_order_total_is_passed_to_eloquent_as_decimal_text(): void
+    {
+        $capturedTotal = null;
+        PurchaseOrder::creating(function (PurchaseOrder $purchaseOrder) use (&$capturedTotal): void {
+            if ((int) $purchaseOrder->shop_owner_id === (int) $this->shopOwner->id) {
+                $capturedTotal = $purchaseOrder->getAttributes()['total_cost'];
+            }
+        });
+
+        $first = $this->approvedPurchaseRequest();
+        $first->update([
+            'unit_cost' => '0.10',
+            'total_cost' => '0.10',
+        ]);
+        $second = $this->approvedPurchaseRequest();
+        $second->update([
+            'unit_cost' => '0.20',
+            'total_cost' => '0.20',
+        ]);
+
+        $this->service->createPurchaseOrder([
+            'purchase_request_ids' => [$first->id, $second->id],
+            'shop_owner_id' => $this->shopOwner->id,
+            'payment_terms' => 'Net 30',
+            'ordered_by' => $this->user->id,
+        ]);
+
+        $this->assertSame('0.30', (string) $capturedTotal);
+    }
+
     /** @test */
     public function it_generates_unique_po_numbers()
     {
@@ -80,11 +152,40 @@ class PurchaseOrderServiceTest extends TestCase
         $po2 = $this->service->createPurchaseOrder([
             'purchase_request_ids' => [$pr2->id],
             'shop_owner_id' => $this->shopOwner->id,
-            'payment_terms' => 'COD',
+            'payment_terms' => 'Net 30',
             'ordered_by' => $this->user->id,
         ]);
 
         $this->assertNotEquals($po1->po_number, $po2->po_number);
+    }
+
+    public function test_po_numbers_are_scoped_per_shop(): void
+    {
+        $otherShop = ShopOwner::factory()->create();
+        $otherSupplier = Supplier::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherUser = User::factory()->for($otherShop)->create();
+        $otherPr = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'supplier_id' => $otherSupplier->id,
+            'requested_by' => $otherUser->id,
+            'status' => 'approved',
+        ]);
+
+        $first = $this->service->createPurchaseOrder([
+            'purchase_request_ids' => [$this->approvedPurchaseRequest()->id],
+            'shop_owner_id' => $this->shopOwner->id,
+            'payment_terms' => 'Net 30',
+            'ordered_by' => $this->user->id,
+        ]);
+        $second = $this->service->createPurchaseOrder([
+            'purchase_request_ids' => [$otherPr->id],
+            'shop_owner_id' => $otherShop->id,
+            'payment_terms' => 'Net 30',
+            'ordered_by' => $otherUser->id,
+        ]);
+
+        $this->assertSame('PO-' . date('Y') . '-001', $first->po_number);
+        $this->assertSame($first->po_number, $second->po_number);
     }
 
     public function test_po_number_sequence_handles_more_than_three_digits(): void
@@ -121,7 +222,7 @@ class PurchaseOrderServiceTest extends TestCase
             'status' => 'draft',
         ]);
 
-        $result = $this->service->sendToSupplier($po->id);
+        $result = $this->service->sendToSupplier($po->id, $this->user->id);
 
         $this->assertEquals('sent', $result->status);
     }
@@ -203,5 +304,14 @@ class PurchaseOrderServiceTest extends TestCase
         $overduePOs = $this->service->checkOverduePOs($this->shopOwner->id);
 
         $this->assertCount(1, $overduePOs);
+    }
+
+    private function approvedPurchaseRequest(): PurchaseRequest
+    {
+        return PurchaseRequest::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'approved',
+        ]);
     }
 }

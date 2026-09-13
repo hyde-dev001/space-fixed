@@ -10,6 +10,107 @@ export interface User {
     email: string;
 }
 
+export type PaymentTerms = 'Net 7' | 'Net 15' | 'Net 30' | 'Net 45' | 'Net 60';
+export type SupplierPaymentDestinationType = 'bank_account' | 'e_wallet';
+
+export interface SupplierPaymentProfile {
+    id: number;
+    destination_type: SupplierPaymentDestinationType | string;
+    wallet_provider?: string | null;
+    bank_name?: string | null;
+    bank_code?: string | null;
+    account_name: string;
+    masked_account_number: string | null;
+    masked_account_identifier?: string | null;
+    status: 'unverified' | 'verified' | 'disabled' | string;
+    verified_by?: number | null;
+    verified_at?: string | null;
+}
+
+export type RevealedSupplierPaymentProfile = SupplierPaymentProfile & {
+    account_number?: string | null;
+    account_identifier?: string | null;
+};
+
+export interface UpsertSupplierPaymentProfilePayload {
+    destination_type: SupplierPaymentDestinationType;
+    wallet_provider?: string;
+    bank_name?: string;
+    bank_code?: string;
+    account_name: string;
+    account_number?: string;
+    account_identifier?: string;
+}
+
+export type SupplierPaymentMethod = 'manual_bank_transfer' | 'manual_e_wallet';
+
+export interface SupplierPaymentAttemptSummary {
+    id: number;
+    status: 'initiating' | 'awaiting_verification' | 'succeeded' | 'rejected' | 'cancelled' | string;
+    payment_status?: string;
+    amount: number | string;
+    currency?: string;
+    payment_method: SupplierPaymentMethod | string;
+    internal_reference?: string;
+    external_transaction_reference?: string | null;
+    masked_destination?: Pick<SupplierPaymentProfile, 'wallet_provider' | 'bank_name' | 'bank_code' | 'account_name' | 'masked_account_number' | 'masked_account_identifier'> & {
+        destination_type?: string | null;
+    };
+    supplier_email_masked?: string | null;
+    supplier_email_status?: 'pending' | 'ready_to_send' | 'queued' | 'dispatched' | 'failed' | string | null;
+    supplier_email_failure_message?: string | null;
+    finance_note?: string | null;
+    initiated_by?: { id: number; name: string } | null;
+    rejection_reason?: string | null;
+    cancellation_reason?: string | null;
+    initiated_at?: string | null;
+    externally_paid_at?: string | null;
+    submitted_for_verification_at?: string | null;
+    verified_at?: string | null;
+    proof_media?: Array<{ id: number; file_name: string; mime_type: string; size: number }>;
+}
+
+export type SupplierAdjustmentReasonCategory =
+    | 'manufacturing_defect'
+    | 'damaged'
+    | 'wrong_item'
+    | 'incorrect_size_or_variant'
+    | 'other';
+
+export interface SupplierAdjustmentEvidence {
+    id: number;
+    file_name: string;
+    mime_type: string;
+    size: number;
+}
+
+export interface SupplierAdjustment {
+    id: number;
+    issue_stage: 'receiving_defect' | 'post_payment_issue' | string;
+    reported_quantity: number;
+    unit_cost_snapshot: number | string;
+    reason_category: SupplierAdjustmentReasonCategory | string;
+    inventory_notes: string;
+    status: string;
+    resolution?: 'replacement' | 'refund' | string | null;
+    procurement_notes?: string | null;
+    expected_refund_amount?: number | string | null;
+    refunded_amount?: number | string | null;
+    supplier_reported_refund_amount?: number | string | null;
+    supplier_reported_refund_reference?: string | null;
+    supplier_reported_refund_date?: string | null;
+    reported_at?: string | null;
+    resolved_at?: string | null;
+    reported_by?: { id: number; name: string } | null;
+    purchase_order?: { id: number | null; number: string | null; status: string | null };
+    receipt?: { id: number | null; status: string | null };
+    receipt_item_id?: number | null;
+    purchase_order_item_id?: number | null;
+    evidence?: SupplierAdjustmentEvidence[];
+    supplier_refund_proof?: SupplierAdjustmentEvidence[];
+    finance_confirmation_proof?: SupplierAdjustmentEvidence[];
+}
+
 export interface InventoryItem {
     id: number;
     product_name: string;
@@ -72,7 +173,7 @@ export interface PurchaseOrder {
     total_cost: number;
     expected_delivery_date?: string;
     actual_delivery_date?: string;
-    payment_terms: string;
+    payment_terms: PaymentTerms;
     status: 'draft' | 'sent' | 'confirmed' | 'in_transit' | 'partially_received' | 'delivered' | 'completed' | 'cancelled';
     is_historical?: boolean;
     items?: PurchaseOrderItem[];
@@ -92,6 +193,8 @@ export interface PurchaseOrder {
     is_overdue?: boolean;
     days_until_delivery?: number;
     days_since_delivery?: number;
+    can_complete?: boolean;
+    completion_blockers?: string[];
     created_at: string;
     updated_at: string;
 }
@@ -116,6 +219,7 @@ export interface PurchaseOrderItem {
 export interface PurchaseOrderReceiptItem {
     id: number;
     purchase_order_item_id: number;
+    replacement_for_adjustment_id?: number | null;
     received_quantity: number;
     defective_quantity: number;
     accepted_quantity: number;
@@ -131,6 +235,47 @@ export interface PurchaseOrderReceipt {
     notes?: string;
     void_reason?: string;
     items: PurchaseOrderReceiptItem[];
+}
+
+export interface ProcurementExpenseDetails {
+    purchase_order_id?: number;
+    po_number?: string;
+    receipt_number?: string;
+    receipt_id?: number;
+    supplier_id?: number;
+    received_at?: string | null;
+    receipt_date?: string | null;
+    supplier_name?: string | null;
+    product_name?: string | null;
+    quantity?: number | null;
+    ordered_quantity?: number | null;
+    received_quantity?: number | null;
+    accepted_quantity?: number | null;
+    defective_quantity?: number | null;
+    requested_size?: string | null;
+    requested_color?: string | null;
+    unit_cost?: number | string | null;
+    total_cost?: number | string | null;
+    payable_amount?: number | string | null;
+    payment_terms?: PaymentTerms | string | null;
+    expected_delivery_date?: string | null;
+    actual_delivery_date?: string | null;
+    due_date?: string | null;
+    expense_status?: string | null;
+    payment_status?: 'unpaid' | 'partially_paid' | 'paid' | string | null;
+    payment_timing?: 'Overdue' | 'Due Today' | 'Due Soon' | 'Not Due' | string | null;
+    payment_profile?: SupplierPaymentProfile | null;
+    payment_attempt?: SupplierPaymentAttemptSummary | null;
+    adjustments?: SupplierAdjustment[];
+    items?: Array<{
+        purchase_order_item_id: number;
+        product_name?: string | null;
+        ordered_quantity?: number | null;
+        unit_cost?: number | string | null;
+        received_quantity: number;
+        defective_quantity: number;
+        accepted_quantity: number;
+    }>;
 }
 
 export interface StockRequestApproval {
@@ -181,6 +326,12 @@ export interface Supplier {
     email?: string;
     phone?: string;
     address?: string;
+    city?: string;
+    country?: string;
+    payment_terms?: PaymentTerms;
+    payment_profile_status?: 'unverified' | 'verified' | 'disabled' | string | null;
+    lead_time_days?: number;
+    products_supplied?: string;
     purchase_order_count: number;
     last_order_date?: string;
     total_order_value: number;
@@ -196,7 +347,7 @@ export interface ProcurementSettings {
     shop_owner_id: number;
     auto_pr_approval_threshold: number;
     require_finance_approval: boolean;
-    default_payment_terms: string;
+    default_payment_terms: PaymentTerms;
     auto_generate_po: boolean;
     notification_emails?: string[];
     settings_json?: Record<string, any>;
@@ -381,13 +532,13 @@ export interface RejectPurchaseRequestPayload {
 export interface CreatePurchaseOrderPayload {
     purchase_request_ids: number[];
     expected_delivery_date?: string;
-    payment_terms: string;
+    payment_terms: PaymentTerms;
     notes?: string;
 }
 
 export interface UpdatePurchaseOrderPayload {
     expected_delivery_date?: string;
-    payment_terms?: string;
+    payment_terms?: PaymentTerms;
     notes?: string;
 }
 
@@ -402,10 +553,22 @@ export interface CreatePurchaseOrderReceiptPayload {
     notes?: string;
     items: Array<{
         purchase_order_item_id: number;
+        replacement_for_adjustment_id?: number | null;
         received_quantity: number;
         defective_quantity: number;
+        reason_category?: SupplierAdjustmentReasonCategory;
+        inventory_notes?: string;
+        defect_evidence?: File[];
         size_quantities?: Array<{ inventory_size_id: number; received_quantity: number; defective_quantity: number }>;
     }>;
+}
+
+export interface CreatePostPaymentIssuePayload {
+    idempotency_key: string;
+    reported_quantity: number;
+    reason_category: SupplierAdjustmentReasonCategory;
+    inventory_notes: string;
+    defect_evidence: File[];
 }
 
 export interface CancelPurchaseOrderPayload {
@@ -431,8 +594,13 @@ export interface CreateSupplierPayload {
     email?: string;
     phone?: string;
     address?: string;
+    city?: string;
+    country?: string;
+    payment_terms?: PaymentTerms;
+    lead_time_days?: number;
     products_supplied?: string;
     notes?: string;
+    payment_profile?: UpsertSupplierPaymentProfilePayload;
 }
 
 export interface UpdateSupplierPayload {
@@ -441,6 +609,10 @@ export interface UpdateSupplierPayload {
     email?: string;
     phone?: string;
     address?: string;
+    city?: string;
+    country?: string;
+    payment_terms?: PaymentTerms;
+    lead_time_days?: number;
     products_supplied?: string;
     is_active?: boolean;
     notes?: string;
@@ -453,7 +625,7 @@ export interface UpdateSupplierRatingPayload {
 export interface UpdateProcurementSettingsPayload {
     auto_pr_approval_threshold?: number;
     require_finance_approval?: boolean;
-    default_payment_terms?: string;
+    default_payment_terms?: PaymentTerms;
     auto_generate_po?: boolean;
     notification_emails?: string[];
     settings_json?: Record<string, any>;

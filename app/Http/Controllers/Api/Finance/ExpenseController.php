@@ -8,6 +8,8 @@ use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderReceipt;
+use App\Models\SupplierAdjustment;
+use App\Models\SupplierPaymentAttempt;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -21,6 +23,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 use Spatie\QueryBuilder\QueryBuilder;
 use Spatie\QueryBuilder\AllowedFilter;
@@ -70,10 +73,10 @@ class ExpenseController extends Controller
             ->defaultSort('-date')
             ->paginate($request->get('per_page', 15));
 
-        $this->appendProcurementDetails($expenses->getCollection(), (int) $shopId);
         $expenses->getCollection()->each(function (Expense $expense) use ($shopId): void {
             $expense->setAttribute('settlement_state', $this->expenseSettlementService->state($expense, (int) $shopId));
         });
+        $this->appendProcurementDetails($expenses->getCollection(), (int) $shopId);
 
         return response()->json($expenses);
     }
@@ -88,8 +91,8 @@ class ExpenseController extends Controller
         $expense = Expense::where('shop_id', $shopId)
             ->findOrFail($id);
 
-        $this->appendProcurementDetails(collect([$expense]), (int) $shopId);
         $expense->setAttribute('settlement_state', $this->expenseSettlementService->state($expense, (int) $shopId));
+        $this->appendProcurementDetails(collect([$expense]), (int) $shopId);
 
         return response()->json($expense);
     }
@@ -102,9 +105,25 @@ class ExpenseController extends Controller
         $receiptIds = $expenses->pluck('procurement_receipt_id')->filter()->unique()->values();
         $receipts = PurchaseOrderReceipt::with([
             'purchaseOrder.supplier:id,name',
+            'purchaseOrder.supplier.paymentProfile',
             'purchaseOrder.items',
             'items.purchaseOrderItem',
         ])->where('shop_owner_id', $shopId)->whereIn('id', $receiptIds)->get()->keyBy('id');
+        $receiptItemIds = $receipts->flatMap(fn (PurchaseOrderReceipt $receipt) => $receipt->items->pluck('id'))->values();
+        $adjustments = SupplierAdjustment::query()
+            ->where('shop_owner_id', $shopId)
+            ->whereIn('purchase_order_receipt_item_id', $receiptItemIds)
+            ->with('media')
+            ->latest('id')
+            ->get()
+            ->groupBy('purchase_order_receipt_item_id');
+        $paymentAttempts = SupplierPaymentAttempt::query()
+            ->with(['media', 'initiatedBy:id,name'])
+            ->where('shop_owner_id', $shopId)
+            ->whereIn('expense_id', $expenses->pluck('id'))
+            ->latest('id')
+            ->get()
+            ->groupBy('expense_id');
         $poIds = [];
         $poNumbers = [];
 
@@ -112,19 +131,74 @@ class ExpenseController extends Controller
             $receipt = $receipts->get($expense->procurement_receipt_id);
             if ($receipt) {
                 $purchaseOrder = $receipt->purchaseOrder;
+                $receiptItems = $receipt->items;
+                $detailItems = $receiptItems->map(fn ($receiptItem) => [
+                    'purchase_order_item_id' => $receiptItem->purchase_order_item_id,
+                    'product_name' => $receiptItem->purchaseOrderItem?->product_name,
+                    'ordered_quantity' => $receiptItem->purchaseOrderItem?->ordered_quantity,
+                    'unit_cost' => $receiptItem->purchaseOrderItem?->unit_cost,
+                    'received_quantity' => $receiptItem->received_quantity,
+                    'defective_quantity' => $receiptItem->defective_quantity,
+                    'accepted_quantity' => $receiptItem->accepted_quantity,
+                ])->values();
+                $unitCosts = $detailItems->pluck('unit_cost')->filter(fn ($cost) => $cost !== null)->unique()->values();
+                $settlementState = (array) $expense->getAttribute('settlement_state');
+                $paymentAttempt = $paymentAttempts->get($expense->id)?->first();
+                $receiptAdjustments = $receiptItems->flatMap(
+                    fn ($receiptItem) => $adjustments->get($receiptItem->id, collect()),
+                )->map(fn (SupplierAdjustment $adjustment): array => [
+                    'id' => (int) $adjustment->id,
+                    'issue_stage' => (string) $adjustment->issue_stage,
+                    'reported_quantity' => (int) $adjustment->reported_quantity,
+                    'unit_cost_snapshot' => (string) $adjustment->unit_cost_snapshot,
+                    'reason_category' => (string) $adjustment->reason_category,
+                    'inventory_notes' => (string) $adjustment->inventory_notes,
+                    'status' => (string) $adjustment->status,
+                    'resolution' => $adjustment->resolution,
+                    'expected_refund_amount' => $adjustment->expected_refund_amount,
+                    'refunded_amount' => ExpenseSettlement::validRefundedAmountForAdjustment((int) $adjustment->id),
+                    'supplier_reported_refund_amount' => $adjustment->supplier_reported_refund_amount,
+                    'supplier_reported_refund_reference' => $adjustment->supplier_reported_refund_reference,
+                    'supplier_reported_refund_date' => $adjustment->supplier_reported_refund_date?->toDateString(),
+                    'procurement_notes' => $adjustment->procurement_notes,
+                    'receipt_item_id' => (int) $adjustment->purchase_order_receipt_item_id,
+                    'supplier_refund_proof' => $adjustment->getMedia('supplier_refund_proof')->map(fn ($media): array => [
+                        'id' => (int) $media->id,
+                        'file_name' => $media->file_name,
+                        'mime_type' => $media->mime_type,
+                        'size' => (int) $media->size,
+                    ])->values()->all(),
+                    'finance_confirmation_proof' => $adjustment->getMedia('finance_confirmation_proof')->map(fn ($media): array => [
+                        'id' => (int) $media->id,
+                        'file_name' => $media->file_name,
+                        'mime_type' => $media->mime_type,
+                        'size' => (int) $media->size,
+                    ])->values()->all(),
+                ])->values()->all();
                 $expense->setAttribute('procurement_details', [
                     'purchase_order_id' => $purchaseOrder->id,
                     'po_number' => $purchaseOrder->po_number,
+                    'receipt_number' => "RCV-{$receipt->id}",
+                    'supplier_id' => $purchaseOrder->supplier?->id,
                     'supplier_name' => $purchaseOrder->supplier?->name,
+                    'payment_profile' => $purchaseOrder->supplier?->paymentProfile?->toMaskedArray(),
                     'receipt_id' => $receipt->id,
                     'received_at' => $receipt->received_at,
-                    'items' => $receipt->items->map(fn ($receiptItem) => [
-                        'purchase_order_item_id' => $receiptItem->purchase_order_item_id,
-                        'product_name' => $receiptItem->purchaseOrderItem?->product_name,
-                        'received_quantity' => $receiptItem->received_quantity,
-                        'defective_quantity' => $receiptItem->defective_quantity,
-                        'accepted_quantity' => $receiptItem->accepted_quantity,
-                    ])->values(),
+                    'receipt_date' => optional($receipt->received_at)->toDateString(),
+                    'payment_terms' => $purchaseOrder->payment_terms,
+                    'due_date' => optional($expense->due_date)->toDateString(),
+                    'expense_status' => $expense->status,
+                    'payment_status' => $this->procurementPaymentStatus($paymentAttempt, $settlementState),
+                    'payment_attempt' => $this->paymentAttemptDetails($paymentAttempt),
+                    'payment_timing' => $this->paymentTiming($expense->due_date),
+                    'ordered_quantity' => (int) $receiptItems->sum(fn ($item) => (int) ($item->purchaseOrderItem?->ordered_quantity ?? 0)),
+                    'received_quantity' => (int) $receiptItems->sum('received_quantity'),
+                    'accepted_quantity' => (int) $receiptItems->sum('accepted_quantity'),
+                    'defective_quantity' => (int) $receiptItems->sum('defective_quantity'),
+                    'unit_cost' => $unitCosts->count() === 1 ? $unitCosts->first() : null,
+                    'payable_amount' => $expense->amount,
+                    'items' => $detailItems,
+                    'adjustments' => $receiptAdjustments,
                 ]);
                 continue;
             }
@@ -153,7 +227,7 @@ class ExpenseController extends Controller
         }
 
         $poQuery = PurchaseOrder::query()
-            ->with(['supplier:id,name'])
+            ->with(['supplier:id,name', 'supplier.paymentProfile'])
             ->where('shop_owner_id', $shopId)
             ->where(function ($query) use ($poIds, $poNumbers) {
                 if (!empty($poIds)) {
@@ -198,7 +272,9 @@ class ExpenseController extends Controller
             $expense->setAttribute('procurement_details', [
                 'purchase_order_id' => $purchaseOrder->id,
                 'po_number' => $purchaseOrder->po_number,
+                'supplier_id' => $purchaseOrder->supplier?->id,
                 'supplier_name' => $purchaseOrder->supplier?->name,
+                'payment_profile' => $purchaseOrder->supplier?->paymentProfile?->toMaskedArray(),
                 'product_name' => $purchaseOrder->product_name,
                 'quantity' => $purchaseOrder->quantity,
                 'requested_size' => $purchaseOrder->requested_size,
@@ -207,8 +283,91 @@ class ExpenseController extends Controller
                 'total_cost' => $purchaseOrder->total_cost,
                 'expected_delivery_date' => $purchaseOrder->expected_delivery_date,
                 'actual_delivery_date' => $purchaseOrder->actual_delivery_date,
+                'payment_terms' => $purchaseOrder->payment_terms,
+                'due_date' => optional($expense->due_date)->toDateString(),
+                'expense_status' => $expense->status,
+                'payment_status' => $this->procurementPaymentStatus(
+                    $paymentAttempts->get($expense->id)?->first(),
+                    (array) $expense->getAttribute('settlement_state'),
+                ),
+                'payment_attempt' => $this->paymentAttemptDetails($paymentAttempts->get($expense->id)?->first()),
+                'payment_timing' => $this->paymentTiming($expense->due_date),
             ]);
         }
+    }
+
+    private function procurementPaymentStatus(?SupplierPaymentAttempt $attempt, array $settlementState): string
+    {
+        if ($attempt) {
+            if ($attempt->status === SupplierPaymentAttempt::STATUS_SUCCEEDED) {
+                return (string) ($settlementState['status'] ?? 'paid');
+            }
+
+            return (string) $attempt->status;
+        }
+
+        return (string) ($settlementState['status'] ?? 'unpaid');
+    }
+
+    /** @return array<string, mixed>|null */
+    private function paymentAttemptDetails(?SupplierPaymentAttempt $attempt): ?array
+    {
+        if (! $attempt) {
+            return null;
+        }
+
+        return [
+            'id' => (int) $attempt->id,
+            'status' => (string) $attempt->status,
+            'amount' => (string) $attempt->amount,
+            'currency' => (string) $attempt->currency,
+            'payment_method' => $attempt->payment_method,
+            'internal_reference' => $attempt->internal_reference,
+            'external_transaction_reference' => $attempt->externalTransactionReference(),
+            'masked_destination' => $attempt->maskedDestination(),
+            'supplier_email_masked' => $attempt->maskedSupplierEmail(),
+            'supplier_email_status' => $attempt->supplier_email_status,
+            'supplier_email_failure_message' => $attempt->supplier_email_failure_message,
+            'finance_note' => $attempt->finance_note,
+            'initiated_by' => $attempt->initiatedBy ? [
+                'id' => (int) $attempt->initiatedBy->id,
+                'name' => (string) $attempt->initiatedBy->name,
+            ] : null,
+            'rejection_reason' => $attempt->rejection_reason,
+            'cancellation_reason' => $attempt->cancellation_reason,
+            'initiated_at' => $attempt->initiated_at?->toISOString(),
+            'externally_paid_at' => $attempt->externally_paid_at?->toISOString(),
+            'submitted_for_verification_at' => $attempt->submitted_for_verification_at?->toISOString(),
+            'verified_at' => $attempt->verified_at?->toISOString(),
+            'proof_media' => $attempt->getMedia('payment_proof')->map(fn ($media): array => [
+                'id' => (int) $media->id,
+                'file_name' => $media->file_name,
+                'mime_type' => $media->mime_type,
+                'size' => (int) $media->size,
+            ])->values()->all(),
+        ];
+    }
+
+    private function paymentTiming($dueDate): string
+    {
+        if (! $dueDate) {
+            return 'Not Due';
+        }
+
+        $today = now()->startOfDay();
+        $due = ($dueDate instanceof Carbon ? $dueDate->copy() : Carbon::parse($dueDate))->startOfDay();
+
+        if ($due->lt($today)) {
+            return 'Overdue';
+        }
+        if ($due->equalTo($today)) {
+            return 'Due Today';
+        }
+        if ($due->lte($today->copy()->addDays(3))) {
+            return 'Due Soon';
+        }
+
+        return 'Not Due';
     }
 
     public function store(Request $request)
@@ -383,6 +542,14 @@ class ExpenseController extends Controller
         ]);
 
         try {
+            if ($expense->procurement_receipt_id) {
+                throw new FinanceDomainException(
+                    'Procurement receipt expenses can only be settled through the supplier payment workflow.',
+                    'INVALID_STATE',
+                    422,
+                );
+            }
+
             $result = $this->expenseSettlementService->record($expense, Auth::user(), $data);
 
             return response()->json([

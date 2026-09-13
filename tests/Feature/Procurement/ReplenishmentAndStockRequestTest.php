@@ -39,6 +39,13 @@ class ReplenishmentAndStockRequestTest extends TestCase
         ]);
     }
 
+    public function test_stock_request_sorting_rejects_unapproved_columns_and_directions(): void
+    {
+        $this->actingAs($this->user)
+            ->getJson('/api/erp/procurement/stock-requests?sort_by=users.password&sort_order=drop')
+            ->assertUnprocessable();
+    }
+
     /** @test */
     public function user_can_create_replenishment_request()
     {

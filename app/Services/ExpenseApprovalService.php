@@ -4,10 +4,17 @@ namespace App\Services;
 
 use App\Models\Approval;
 use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
 use App\Models\User;
 use App\Models\PurchaseOrderReceipt;
+use App\Models\PurchaseOrder;
+use App\Models\PurchaseOrderItem;
+use App\Models\PurchaseOrderReceiptItem;
+use App\Models\Supplier;
 use App\Enums\ApprovalStatus;
 use App\Enums\NotificationType;
+use App\Support\Finance\FinanceDomainException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 
 class ExpenseApprovalService
@@ -21,10 +28,11 @@ class ExpenseApprovalService
     public function submitProcurementExpense(
         PurchaseOrderReceipt $receipt,
         User $creator,
-        float $amount
+        string|int $amount
     ): Expense {
         $purchaseOrder = $receipt->purchaseOrder()->with('supplier')->firstOrFail();
         $dueDate = $this->deriveSupplierDueDate($purchaseOrder->payment_terms, $receipt->received_at);
+        $amountText = $this->formatCents($this->toCents($amount));
 
         $expense = Expense::firstOrCreate(
             ['procurement_receipt_id' => $receipt->id],
@@ -35,7 +43,7 @@ class ExpenseApprovalService
                 'category' => 'Procurement',
                 'vendor' => $purchaseOrder->supplier?->name,
                 'description' => "Receipt for purchase order {$purchaseOrder->po_number}",
-                'amount' => $amount,
+                'amount' => $amountText,
                 'tax_amount' => 0,
                 'status' => 'submitted',
                 'shop_id' => $purchaseOrder->shop_owner_id,
@@ -51,17 +59,24 @@ class ExpenseApprovalService
         );
 
         if ($expense->wasRecentlyCreated) {
-            try {
-                $this->notificationService->notifyExpenseSubmitted((int) $purchaseOrder->shop_owner_id, [
-                    'reference' => $expense->reference,
-                    'amount' => number_format((float) $expense->amount, 2),
-                    'category' => $expense->category,
-                    'expense_id' => $expense->id,
-                    'source' => 'procurement_receipt',
-                ]);
-            } catch (\Throwable $exception) {
-                report($exception);
-            }
+            $notificationPayload = [
+                'reference' => $expense->reference,
+                'amount' => $amountText,
+                'category' => $expense->category,
+                'expense_id' => $expense->id,
+                'source' => 'procurement_receipt',
+            ];
+
+            DB::afterCommit(function () use ($purchaseOrder, $notificationPayload): void {
+                try {
+                    $this->notificationService->notifyExpenseSubmitted(
+                        (int) $purchaseOrder->shop_owner_id,
+                        $notificationPayload
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            });
         }
 
         return $expense->fresh();
@@ -69,14 +84,149 @@ class ExpenseApprovalService
 
     private function deriveSupplierDueDate(?string $paymentTerms, $receivedAt): ?string
     {
-        $terms = trim((string) $paymentTerms);
-        if ($terms === '' || ! preg_match('/^Net\s+([1-9]\d{0,2})$/i', $terms, $matches)) {
+        $days = PurchaseOrder::paymentTermDays($paymentTerms);
+        if ($days === null) {
             return null;
         }
 
         return \Illuminate\Support\Carbon::parse($receivedAt)
-            ->addDays((int) $matches[1])
+            ->addDays($days)
             ->toDateString();
+    }
+
+    public function reviewAndReleaseProcurementExpense(
+        Expense $expense,
+        User $reviewer,
+        ?string $approvalNotes = null
+    ): Expense {
+        $shopId = (int) ($reviewer->shop_owner_id ?? 0);
+        if ($shopId <= 0) {
+            throw new FinanceDomainException('A Finance shop context is required.', 'TENANT_CONTEXT_REQUIRED', 403);
+        }
+
+        $approvalNotes = $approvalNotes !== null ? trim($approvalNotes) : null;
+
+        $released = DB::transaction(function () use ($expense, $reviewer, $shopId, $approvalNotes): Expense {
+            $lockedExpense = Expense::query()
+                ->whereKey($expense->getKey())
+                ->lockForUpdate()
+                ->first();
+
+            if (! $lockedExpense) {
+                throw (new ModelNotFoundException())->setModel(Expense::class, [$expense->getKey()]);
+            }
+            if ((int) $lockedExpense->shop_id !== $shopId) {
+                throw new FinanceDomainException('The expense is not available in this shop.', 'FORBIDDEN', 403);
+            }
+            if (! $lockedExpense->procurement_receipt_id) {
+                throw new FinanceDomainException('Only procurement receipt expenses can use Review & Release.', 'INVALID_STATE', 422);
+            }
+            if ((string) $lockedExpense->status !== 'submitted') {
+                throw new FinanceDomainException('Only submitted procurement expenses can be released.', 'INVALID_STATE', 422);
+            }
+
+            $receipt = PurchaseOrderReceipt::query()
+                ->whereKey($lockedExpense->procurement_receipt_id)
+                ->lockForUpdate()
+                ->first();
+            if (! $receipt || (int) $receipt->shop_owner_id !== $shopId) {
+                throw new FinanceDomainException('The procurement receipt is not available in this shop.', 'INVALID_STATE', 422);
+            }
+
+            $purchaseOrder = PurchaseOrder::query()
+                ->whereKey($receipt->purchase_order_id)
+                ->lockForUpdate()
+                ->first();
+            if (! $purchaseOrder || (int) $purchaseOrder->shop_owner_id !== $shopId) {
+                throw new FinanceDomainException('The purchase order is not available in this shop.', 'INVALID_STATE', 422);
+            }
+
+            $supplier = Supplier::query()
+                ->whereKey($purchaseOrder->supplier_id)
+                ->lockForUpdate()
+                ->first();
+            if (! $supplier || (int) $supplier->shop_owner_id !== $shopId) {
+                throw new FinanceDomainException('The supplier is not available in this shop.', 'INVALID_STATE', 422);
+            }
+
+            if ((string) $receipt->status !== 'posted' || $receipt->voided_at !== null) {
+                throw new FinanceDomainException('Only a posted, nonvoid procurement receipt can be released.', 'INVALID_STATE', 422);
+            }
+
+            $receiptItems = PurchaseOrderReceiptItem::query()
+                ->where('purchase_order_receipt_id', $receipt->id)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+            $itemIds = $receiptItems->pluck('purchase_order_item_id')->unique()->values();
+            $purchaseOrderItems = PurchaseOrderItem::query()
+                ->where('purchase_order_id', $purchaseOrder->id)
+                ->whereIn('id', $itemIds)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            if ($purchaseOrderItems->count() !== $itemIds->count()) {
+                throw new FinanceDomainException('The receipt contains an invalid purchase order item.', 'INVALID_STATE', 422);
+            }
+
+            $expectedCents = 0;
+            foreach ($receiptItems as $receiptItem) {
+                $orderItem = $purchaseOrderItems->get($receiptItem->purchase_order_item_id);
+                if (! $orderItem) {
+                    throw new FinanceDomainException('The receipt contains an invalid purchase order item.', 'INVALID_STATE', 422);
+                }
+
+                $expectedCents += (int) $receiptItem->accepted_quantity * $this->toCents($orderItem->unit_cost);
+            }
+
+            if ($this->toCents($lockedExpense->amount) !== $expectedCents) {
+                throw new FinanceDomainException('The procurement expense amount does not match accepted receipt value.', 'INVALID_STATE', 422);
+            }
+
+            $lockedExpense->update([
+                'status' => 'posted',
+                'approved_by' => $reviewer->id,
+                'approved_at' => now(),
+                'approval_notes' => $approvalNotes,
+            ]);
+
+            return $lockedExpense->fresh();
+        }, 3);
+
+        try {
+            $purchaseOrder = PurchaseOrderReceipt::query()
+                ->with('purchaseOrder')
+                ->find($released->procurement_receipt_id)?->purchaseOrder;
+
+            $this->notificationService->notifyProcurementExpenseReleased($shopId, [
+                'expense_id' => $released->id,
+                'po_number' => $purchaseOrder?->po_number ?? 'unknown',
+                'amount' => (string) $released->amount,
+            ]);
+        } catch (\Throwable $exception) {
+            report($exception);
+        }
+
+        return $released;
+    }
+
+    private function toCents(mixed $amount): int
+    {
+        $text = trim((string) $amount);
+        if (! preg_match('/^\d+(?:\.\d{1,2})?$/', $text)) {
+            throw new FinanceDomainException('The procurement expense contains an invalid amount.', 'INVALID_STATE', 422);
+        }
+
+        [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '0');
+
+        return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
+    }
+
+    private function formatCents(int $cents): string
+    {
+        return intdiv($cents, 100) . '.' . str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
     }
 
     /**
@@ -109,7 +259,8 @@ class ExpenseApprovalService
 
     public function rejectForVoidedReceipt(Expense $expense, PurchaseOrderReceipt $receipt): void
     {
-        if ($expense->status === 'submitted') {
+        $unpaid = ExpenseSettlement::validSettledAmountForExpense((int) $expense->id) === '0.00';
+        if ($unpaid && in_array($expense->status, ['submitted', 'posted'], true)) {
             $expense->update([
                 'status' => 'rejected',
                 'approval_notes' => "System rejected after procurement receipt #{$receipt->id} was voided.",

@@ -82,6 +82,16 @@ enum NotificationType: string
     case INVOICE_CREATED_FINANCE = 'invoice_created_finance';
     case EXPENSE_SUBMITTED = 'expense_submitted';
     case PURCHASE_REQUEST_SUBMITTED = 'purchase_request_submitted';
+    case PROCUREMENT_EXPENSE_RELEASED = 'procurement_expense_released';
+    case PURCHASE_ORDER_IN_TRANSIT = 'purchase_order_in_transit';
+    case SUPPLIER_ISSUE_REPORTED = 'supplier_issue_reported';
+    case SUPPLIER_REPLACEMENT_REQUESTED = 'supplier_replacement_requested';
+    case SUPPLIER_PAYMENT_AWAITING_VERIFICATION = 'supplier_payment_awaiting_verification';
+    case SUPPLIER_PAYMENT_VERIFIED = 'supplier_payment_verified';
+    case SUPPLIER_PAYMENT_REJECTED = 'supplier_payment_rejected';
+    case SUPPLIER_REFUND_PROOF_SUBMITTED = 'supplier_refund_proof_submitted';
+    case SUPPLIER_REFUND_CONFIRMED = 'supplier_refund_confirmed';
+    case SUPPLIER_PAYMENT_PROFILE_DISABLED = 'supplier_payment_profile_disabled';
     
     // ==================== SUPER ADMIN NOTIFICATIONS ====================
     case SHOP_REGISTRATION_PENDING = 'shop_registration_pending';
@@ -197,6 +207,16 @@ enum NotificationType: string
             self::INVOICE_CREATED_FINANCE => 'New Invoice Created',
             self::EXPENSE_SUBMITTED => 'New Expense Submitted',
             self::PURCHASE_REQUEST_SUBMITTED => 'New Purchase Request',
+            self::PROCUREMENT_EXPENSE_RELEASED => 'Procurement Expense Released',
+            self::PURCHASE_ORDER_IN_TRANSIT => 'Purchase Order In Transit',
+            self::SUPPLIER_ISSUE_REPORTED => 'Supplier Issue Reported',
+            self::SUPPLIER_REPLACEMENT_REQUESTED => 'Supplier Replacement Requested',
+            self::SUPPLIER_PAYMENT_AWAITING_VERIFICATION => 'Supplier Payment Awaiting Verification',
+            self::SUPPLIER_PAYMENT_VERIFIED => 'Supplier Payment Verified',
+            self::SUPPLIER_PAYMENT_REJECTED => 'Supplier Payment Rejected',
+            self::SUPPLIER_REFUND_PROOF_SUBMITTED => 'Supplier Refund Proof Submitted',
+            self::SUPPLIER_REFUND_CONFIRMED => 'Supplier Refund Confirmed',
+            self::SUPPLIER_PAYMENT_PROFILE_DISABLED => 'Supplier Payment Profile Disabled',
             
             // Super admin notifications
             self::SHOP_REGISTRATION_PENDING => 'New Shop Registration',
@@ -255,7 +275,12 @@ enum NotificationType: string
             self::INVOICE_CREATED, self::INVOICE_CREATED_FINANCE,
             self::EXPENSE_SUBMITTED, self::EXPENSE_REJECTED,
             self::PRICE_CHANGE_REJECTED,
-            self::PURCHASE_REQUEST_SUBMITTED => 'finance',
+            self::PURCHASE_REQUEST_SUBMITTED,
+            self::PROCUREMENT_EXPENSE_RELEASED, self::PURCHASE_ORDER_IN_TRANSIT,
+            self::SUPPLIER_ISSUE_REPORTED, self::SUPPLIER_REPLACEMENT_REQUESTED,
+            self::SUPPLIER_PAYMENT_AWAITING_VERIFICATION, self::SUPPLIER_PAYMENT_VERIFIED,
+            self::SUPPLIER_PAYMENT_REJECTED, self::SUPPLIER_REFUND_PROOF_SUBMITTED,
+            self::SUPPLIER_REFUND_CONFIRMED, self::SUPPLIER_PAYMENT_PROFILE_DISABLED => 'finance',
             
             self::LEAVE_APPROVAL, self::LEAVE_REQUEST_PENDING,
             self::LEAVE_SUBMITTED, self::LEAVE_REQUEST_APPROVED, self::LEAVE_REQUEST_REJECTED,
@@ -339,6 +364,7 @@ enum NotificationType: string
             self::SHOP_DOCUMENT_EXPIRING,
             self::BUSINESS_UPGRADE_REQUEST_APPROVED,
             self::BUSINESS_UPGRADE_REQUEST_REJECTED,
+            self::SUPPLIER_PAYMENT_AWAITING_VERIFICATION,
         ]);
     }
 
@@ -371,6 +397,12 @@ enum NotificationType: string
             self::SHOP_REPORT_FILED,
             self::REVIEW_REPORTED,
             self::SUSPENSION_APPEAL_SUBMITTED,
+            self::SUPPLIER_PAYMENT_AWAITING_VERIFICATION,
+            self::SUPPLIER_PAYMENT_REJECTED,
+            self::SUPPLIER_REFUND_PROOF_SUBMITTED,
+            self::SUPPLIER_ISSUE_REPORTED,
+            self::SUPPLIER_REPLACEMENT_REQUESTED,
+            self::SUPPLIER_PAYMENT_PROFILE_DISABLED,
         ]);
     }
 
