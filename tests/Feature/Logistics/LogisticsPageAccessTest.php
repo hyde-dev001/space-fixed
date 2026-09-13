@@ -105,6 +105,7 @@ class LogisticsPageAccessTest extends TestCase
     {
         config([
             'shop_modules.enforcement_enabled' => true,
+            'logistics_tracking.enabled' => true,
         ]);
         $shop = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
@@ -139,7 +140,8 @@ class LogisticsPageAccessTest extends TestCase
         $this->actingAs($shop, 'shop_owner')
             ->getJson("/api/shop-owner/erp/logistics/shipments/{$shipment->id}")
             ->assertOk()
-            ->assertJsonPath('shipment.id', $shipment->id);
+            ->assertJsonPath('shipment.id', $shipment->id)
+            ->assertJsonPath('shipment.live_tracking_enabled', true);
 
         $this->actingAs($shop, 'shop_owner')
             ->postJson("/api/logistics/legs/{$leg->id}/assign", [

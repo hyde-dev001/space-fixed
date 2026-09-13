@@ -60,6 +60,24 @@ describe('ShipmentTrackingModal', () => {
     );
   });
 
+  it('uses the ERP tracking endpoint when one is provided', async () => {
+    render(
+      <ShipmentTrackingModal
+        shipmentId={12}
+        isOpen
+        onClose={vi.fn()}
+        trackingEndpoint="/api/logistics/shipments"
+      />,
+    );
+
+    await screen.findByText('Retail Delivery Movement');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/logistics/shipments/12',
+      expect.objectContaining({ headers: { Accept: 'application/json' } }),
+    );
+  });
+
   it('calls onClose for the close button and Escape key', async () => {
     const onClose = vi.fn();
     render(<ShipmentTrackingModal shipmentId={12} isOpen onClose={onClose} />);
