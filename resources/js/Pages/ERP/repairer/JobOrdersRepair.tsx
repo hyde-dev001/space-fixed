@@ -1427,7 +1427,7 @@ export default function JobOrdersRepair() {
       `,
       icon: "question",
       showCancelButton: true,
-      confirmButtonText: "Confirm physical receipt",
+      confirmButtonText: "Confirm",
       cancelButtonText: "Cancel",
       confirmButtonColor: "#2563eb",
     });
