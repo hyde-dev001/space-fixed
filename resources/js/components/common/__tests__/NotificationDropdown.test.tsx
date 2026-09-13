@@ -56,6 +56,12 @@ describe('NotificationDropdown customer palette', () => {
     expect(getByRole('button', { name: 'Toggle theme' })).toBeInTheDocument();
     expect(getByRole('button', { name: 'Mark all as read' })).toBeInTheDocument();
 
+    expect(getByRole('link', { name: 'View All' })).toHaveClass(
+      'text-gray-900',
+      'dark:text-gray-100',
+      'dark:hover:text-white',
+    );
+
     unmount();
 
     const shopOwnerRender = render(
