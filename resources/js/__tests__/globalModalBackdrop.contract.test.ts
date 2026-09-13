@@ -33,6 +33,15 @@ describe('global modal backdrop adoption', () => {
     expect(css).toContain('body.swal2-shown:not(.swal2-toast-shown) .swal2-container');
   });
 
+  it('isolates live tracking tiles from Leaflet blend and theme filters', () => {
+    const css = source('resources/css/app.css');
+
+    expect(css).toContain('#app .erp-theme .live-tracking-map .leaflet-container img.leaflet-tile');
+    expect(css).toContain('mix-blend-mode: normal !important;');
+    expect(css).toContain('filter: none !important;');
+    expect(css).toContain('opacity: 1 !important;');
+  });
+
   it('marks every full-screen painted application overlay and removes transparent duplicate shields', () => {
     const unmarkedBackdropLines = applicationSources.flatMap((relativePath) => source(relativePath)
       .split(/\r?\n/)

@@ -6,6 +6,7 @@ import Shipments from '../Shipments';
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(() => Promise.resolve()),
+  axiosGet: vi.fn(),
   get: vi.fn(),
   reload: vi.fn(),
   props: {} as any,
@@ -40,7 +41,7 @@ vi.mock('@inertiajs/react', () => ({
   Head: () => null, Link: ({ children }: React.PropsWithChildren) => <a>{children}</a>, router: { get: mocks.get, reload: mocks.reload },
   usePage: () => ({ props: mocks.props }),
 }));
-vi.mock('axios', () => ({ default: { post: mocks.post } }));
+vi.mock('axios', () => ({ default: { get: mocks.axiosGet, post: mocks.post } }));
 vi.mock('sweetalert2', () => ({ default: { fire: vi.fn(() => Promise.resolve({ isConfirmed: true })) } }));
 vi.mock('@/layout/AppLayout_ERP', () => ({ default: ({ children }: React.PropsWithChildren) => <>{children}</> }));
 vi.mock('@/components/logistics/ShipmentTrackingModal', () => ({
@@ -63,6 +64,7 @@ vi.mock('@/components/logistics/ShipmentTrackingModal', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.props = defaultProps();
+  mocks.axiosGet.mockResolvedValue({ data: { locations: [] } });
   mocks.post.mockResolvedValue(undefined);
   mocks.reload.mockImplementation((options) => options?.onFinish?.());
 });
@@ -89,20 +91,32 @@ it('renders responsive shipment cards without a wide table', () => {
   expect(screen.getByText('Dasmariñas, Cavite')).toBeInTheDocument();
 });
 
-it('shows the tracking button for active assigned shipments without a page-level tracking card', () => {
+it('shows the tracking button only for shipments returned by live-location polling', async () => {
   const second = structuredClone(mocks.props.shipments.data[0]);
   second.id = 2;
-  second.legs[0].assignments = [];
   mocks.props.shipments.data.push(second);
+  mocks.props.riderMode = false;
+  mocks.props.liveTrackingEnabled = true;
+  mocks.props.canViewShipments = true;
+  mocks.axiosGet.mockResolvedValue({ data: { locations: [{ shipment_id: 1 }] } });
+
+  render(<Shipments />);
+
+  await waitFor(() => expect(mocks.axiosGet).toHaveBeenCalledWith('/api/logistics/live-locations'));
+  expect(await screen.findByRole('button', { name: 'Open live tracking for Shipment 1' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Open live tracking for Shipment 2' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Live rider tracking')).not.toBeInTheDocument();
+});
+
+it('hides the tracking button when no live location matches the shipment', async () => {
   mocks.props.riderMode = false;
   mocks.props.liveTrackingEnabled = true;
   mocks.props.canViewShipments = true;
 
   render(<Shipments />);
 
-  expect(screen.getByRole('button', { name: 'Open live tracking for Shipment 1' })).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Open live tracking for Shipment 2' })).not.toBeInTheDocument();
-  expect(screen.queryByText('Live rider tracking')).not.toBeInTheDocument();
+  await waitFor(() => expect(mocks.axiosGet).toHaveBeenCalledWith('/api/logistics/live-locations'));
+  expect(screen.queryByRole('button', { name: 'Open live tracking for Shipment 1' })).not.toBeInTheDocument();
 });
 
 it('hides the tracking button when live tracking is disabled', () => {
@@ -115,13 +129,14 @@ it('hides the tracking button when live tracking is disabled', () => {
   expect(screen.queryByRole('button', { name: 'Open live tracking for Shipment 1' })).not.toBeInTheDocument();
 });
 
-it('opens the existing tracking modal for the clicked shipment', () => {
+it('opens the existing tracking modal for the clicked shipment', async () => {
   mocks.props.riderMode = false;
   mocks.props.liveTrackingEnabled = true;
   mocks.props.canViewShipments = true;
+  mocks.axiosGet.mockResolvedValue({ data: { locations: [{ shipment_id: 1 }] } });
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open live tracking for Shipment 1' }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Open live tracking for Shipment 1' }));
 
   expect(screen.getByRole('dialog', { name: 'Shipment tracking' })).toHaveTextContent('Tracking shipment 1');
 });
