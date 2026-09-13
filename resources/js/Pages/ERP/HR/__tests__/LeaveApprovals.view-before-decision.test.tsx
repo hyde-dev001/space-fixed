@@ -55,5 +55,11 @@ describe('leave request review actions', () => {
 
     expect(screen.getByRole('button', { name: /approve leave request/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reject leave request/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^close$/i })).toHaveClass(
+      'bg-gray-950',
+      'text-white',
+      'hover:bg-black',
+      'dark:bg-gray-950',
+    );
   });
 });

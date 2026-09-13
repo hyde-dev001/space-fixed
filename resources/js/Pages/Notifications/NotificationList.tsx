@@ -20,11 +20,13 @@ import { resolveNotificationActionUrl } from '../../utils/resolveNotificationAct
 interface NotificationListProps {
   basePath?: string;
   title?: string;
+  showSettings?: boolean;
 }
 
 const NotificationList: React.FC<NotificationListProps> = ({ 
   basePath = '/api/notifications',
-  title = 'Notifications'
+  title = 'Notifications',
+  showSettings = true,
 }) => {
   const page = usePage();
   const [currentPage, setCurrentPage] = useState(1);
@@ -977,16 +979,18 @@ const NotificationList: React.FC<NotificationListProps> = ({
               </button>
 
               {/* Settings Link */}
-              <Link
-                href={basePath.includes('shop-owner') ? '/shop-owner/notifications/settings' : basePath.includes('hr') ? '/erp/notifications/settings' : '/notifications/settings'}
-                className={themeClasses(
-                  'flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors',
-                  'dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800',
-                )}
-              >
-                <Settings size={18} />
-                Settings
-              </Link>
+              {showSettings && (
+                <Link
+                  href={basePath.includes('shop-owner') ? '/shop-owner/notifications/settings' : basePath.includes('hr') ? '/erp/notifications/settings' : '/notifications/settings'}
+                  className={themeClasses(
+                    'flex items-center gap-2 px-4 py-2 text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors',
+                    'dark:bg-gray-900 dark:text-gray-200 dark:border-gray-700 dark:hover:bg-gray-800',
+                  )}
+                >
+                  <Settings size={18} />
+                  Settings
+                </Link>
+              )}
 
               {/* Mark All Read */}
               {!showArchived && totalNotifications > 0 && (
