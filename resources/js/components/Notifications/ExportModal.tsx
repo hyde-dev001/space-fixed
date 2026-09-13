@@ -86,33 +86,33 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
         />
 
         {/* Modal */}
-        <div className="relative bg-white rounded-lg shadow-xl max-w-2xl w-full">
+        <div className="relative w-full max-w-2xl rounded-lg bg-white text-gray-900 shadow-xl dark:bg-gray-900 dark:text-white">
           {/* Header */}
-          <div className="flex items-center justify-between p-6 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-              <Download className="w-6 h-6 text-blue-600" />
+          <div className="flex items-center justify-between border-b border-gray-200 p-6 dark:border-gray-700">
+            <h2 className="flex items-center gap-2 text-xl font-semibold text-gray-900 dark:text-white">
+              <Download className="h-6 w-6 text-gray-700 dark:text-gray-300" />
               Export Notifications
             </h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="text-gray-400 transition-colors hover:text-gray-950 dark:hover:text-white"
             >
-              <X className="w-6 h-6" />
+              <X className="h-6 w-6" />
             </button>
           </div>
 
           {/* Content */}
-          <div className="p-6 space-y-6">
+          <div className="space-y-6 p-6">
             {/* Format Selection */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">Export Format</label>
+              <label className="mb-3 block text-sm font-medium text-gray-700 dark:text-gray-300">Export Format</label>
               <div className="flex gap-4">
                 <button
                   onClick={() => setFormat('json')}
                   className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
                     format === 'json'
                       ? 'border-gray-950 bg-gray-950 text-white dark:border-gray-950 dark:bg-gray-950 dark:text-white'
-                      : 'border-gray-300 hover:border-gray-400 text-gray-700'
+                      : 'border-gray-300 text-gray-700 hover:border-gray-400 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500'
                   }`}
                 >
                   JSON
@@ -122,7 +122,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                   className={`flex-1 py-3 px-4 rounded-lg border-2 font-medium transition-all ${
                     format === 'csv'
                       ? 'border-gray-950 bg-gray-950 text-white dark:border-gray-950 dark:bg-gray-950 dark:text-white'
-                      : 'border-gray-300 hover:border-gray-400 text-gray-700'
+                      : 'border-gray-300 text-gray-700 hover:border-gray-400 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500'
                   }`}
                 >
                   CSV
@@ -131,10 +131,10 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
             </div>
 
             {/* Filters Section */}
-            <div className="border-t border-gray-200 pt-6">
+            <div className="border-t border-gray-200 pt-6 dark:border-gray-700">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                  <Filter className="w-4 h-4" />
+                <h3 className="flex items-center gap-2 text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <Filter className="h-4 w-4" />
                   Filter Options
                 </h3>
                 <button
@@ -148,52 +148,52 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
               <div className="grid grid-cols-2 gap-4">
                 {/* Date Range */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <Calendar className="w-4 h-4 inline mr-1" />
+                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Calendar className="mr-1 inline h-4 w-4" />
                     Start Date
                   </label>
                   <input
                     type="date"
                     value={filters.startDate}
                     onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-gray-950 focus:ring-2 focus:ring-gray-950 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    <Calendar className="w-4 h-4 inline mr-1" />
+                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    <Calendar className="mr-1 inline h-4 w-4" />
                     End Date
                   </label>
                   <input
                     type="date"
                     value={filters.endDate}
                     onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-gray-950 focus:ring-2 focus:ring-gray-950 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300"
                   />
                 </div>
 
                 {/* Priority */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Priority</label>
+                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Priority</label>
                   <MonochromeSelect
                     value={filters.priority}
                     onChange={(e) => setFilters({ ...filters, priority: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-gray-950 focus:ring-2 focus:ring-gray-950 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300"
                   >
                     <option value="">All Priorities</option>
-                    <option value="high">🔴 High</option>
-                    <option value="medium">🔵 Medium</option>
-                    <option value="low">⚪ Low</option>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
                   </MonochromeSelect>
                 </div>
 
                 {/* Type */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Type</label>
+                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
                   <MonochromeSelect
                     value={filters.type}
                     onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-950 focus:border-gray-950"
+                    className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:border-gray-950 focus:ring-2 focus:ring-gray-950 dark:border-gray-700 dark:bg-gray-950 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300"
                   >
                     <option value="">All Types</option>
                     <option value="order">Order</option>
@@ -207,7 +207,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
 
                 {/* Status */}
                 <div className="col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Status</label>
+                  <label className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
                   <div className="flex gap-3">
                     {['all', 'read', 'unread'].map((status) => (
                       <button
@@ -216,7 +216,7 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
                         className={`flex-1 py-2 px-4 rounded-lg border font-medium transition-all ${
                           filters.status === status
                             ? 'border-gray-950 bg-gray-950 text-white dark:border-gray-950 dark:bg-gray-950 dark:text-white'
-                            : 'border-gray-300 hover:border-gray-400 text-gray-700'
+                            : 'border-gray-300 text-gray-700 hover:border-gray-400 dark:border-gray-700 dark:text-gray-300 dark:hover:border-gray-500'
                         }`}
                       >
                         {status.charAt(0).toUpperCase() + status.slice(1)}
@@ -228,8 +228,8 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
             </div>
 
             {/* Summary */}
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-              <p className="text-sm text-blue-800">
+            <div className="rounded-lg border border-gray-300 bg-gray-100 p-4 dark:border-gray-700 dark:bg-gray-800">
+              <p className="text-sm text-gray-800 dark:text-gray-200">
                 <strong>Note:</strong> Export will include notifications matching the selected filters. 
                 All data will be sanitized for privacy compliance.
               </p>
@@ -237,11 +237,11 @@ const ExportModal: React.FC<ExportModalProps> = ({ isOpen, onClose }) => {
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-end gap-3 border-t border-gray-200 bg-gray-50 p-6 dark:border-gray-700 dark:bg-gray-800">
             <button
               onClick={onClose}
               disabled={isExporting}
-              className="px-4 py-2 text-gray-700 hover:text-gray-900 font-medium transition-colors disabled:opacity-50"
+              className="px-4 py-2 font-medium text-gray-700 transition-colors hover:text-gray-950 disabled:opacity-50 dark:text-gray-300 dark:hover:text-white"
             >
               Cancel
             </button>

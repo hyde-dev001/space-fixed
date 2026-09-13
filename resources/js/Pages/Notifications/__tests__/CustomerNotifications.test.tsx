@@ -86,6 +86,20 @@ describe('CustomerNotifications', () => {
     expect(page).toHaveClass('dark:bg-gray-950');
   });
 
+  it.each([
+    ['/api/notifications', 'My Notifications'],
+    ['/api/shop-owner/notifications', 'Shop Notifications'],
+    ['/api/hr/notifications', 'ERP Notifications'],
+  ])('uses monochrome controls for %s', (basePath, title) => {
+    const { container } = render(<NotificationList basePath={basePath} title={title} />);
+    const page = container.querySelector('.min-h-screen');
+    const markAllReadButton = screen.getByRole('button', { name: 'Mark All Read' });
+
+    expect(markAllReadButton).toHaveClass('bg-gray-950', 'text-white', 'hover:bg-black');
+    expect(markAllReadButton).toHaveClass('dark:bg-gray-950');
+    expect(page?.querySelectorAll('[class*="blue-"], [class*="red-"], [class*="orange-"], [class*="purple-"]')).toHaveLength(0);
+  });
+
   it('keeps customer delivery reports on the dispatcher shipment page', () => {
     const originalLocation = Object.getOwnPropertyDescriptor(window, 'location');
     const location = { href: '/erp/notifications' };
