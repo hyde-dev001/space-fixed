@@ -78,7 +78,7 @@ const setDispatcherLeg = (leg: Record<string, unknown>) => {
 
 it('renders responsive shipment cards without a wide table', () => {
   render(<Shipments><p>Batch panel</p></Shipments>);
-  expect(screen.getByTestId('shipments-page')).toHaveClass('overflow-x-hidden');
+  expect(screen.getByTestId('shipments-page')).toHaveClass('overflow-x-clip');
   expect(screen.getByRole('search')).toHaveClass('w-full');
   expect(screen.getByLabelText('Search shipments')).toHaveClass('min-h-11');
   expect(screen.getByRole('article')).toHaveClass('min-w-0');
