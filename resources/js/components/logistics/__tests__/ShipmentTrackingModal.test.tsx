@@ -51,7 +51,17 @@ describe('ShipmentTrackingModal', () => {
     expect(screen.getByText('Loading shipment tracking...')).toBeInTheDocument();
     expect(await screen.findByText('Retail Delivery Movement')).toBeInTheDocument();
     expect(screen.getByText('In Transit').parentElement).toHaveClass('md:items-center', 'md:text-center');
-    expect(screen.getByRole('dialog', { name: 'Shipment tracking' })).toHaveClass('userside-tracking-modal', 'erp-modal-backdrop', 'bg-black/60');
+    expect(screen.getByRole('dialog', { name: 'Shipment tracking' })).toHaveClass(
+      'userside-tracking-modal',
+      'erp-modal-backdrop',
+      'bg-black/60',
+      'fixed',
+      'inset-0',
+      'z-[99999]',
+      'min-h-dvh',
+      'w-screen',
+      'overflow-y-auto',
+    );
     expect(screen.getByText('Updates').closest('section')).toHaveClass('userside-tracking-section');
     expect(screen.getByText('SHP-12')).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(
@@ -76,6 +86,19 @@ describe('ShipmentTrackingModal', () => {
       '/api/logistics/shipments/12',
       expect.objectContaining({ headers: { Accept: 'application/json' } }),
     );
+  });
+
+  it('locks both document scroll containers while open', () => {
+    fetchMock.mockReturnValueOnce(new Promise(() => {}));
+    const { unmount } = render(<ShipmentTrackingModal shipmentId={12} isOpen onClose={vi.fn()} />);
+
+    expect(document.documentElement.style.overflow).toBe('hidden');
+    expect(document.body.style.overflow).toBe('hidden');
+
+    unmount();
+
+    expect(document.documentElement.style.overflow).toBe('');
+    expect(document.body.style.overflow).toBe('');
   });
 
   it('calls onClose for the close button and Escape key', async () => {
