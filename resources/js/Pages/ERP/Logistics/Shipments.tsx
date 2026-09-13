@@ -1184,6 +1184,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
           isOpen={selectedTrackingShipmentId !== null}
           onClose={closeLiveTracking}
           returnFocusRef={trackingTriggerRef}
+          trackingEndpoint="/api/logistics/shipments"
         />
 
         {shipments.total > 0 && (

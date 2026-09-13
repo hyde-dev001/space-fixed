@@ -13,6 +13,7 @@ export type ShipmentTrackingModalProps = {
   isOpen: boolean;
   onClose: () => void;
   returnFocusRef?: { current: HTMLElement | null };
+  trackingEndpoint?: string;
 };
 
 export default function ShipmentTrackingModal({
@@ -20,6 +21,7 @@ export default function ShipmentTrackingModal({
   isOpen,
   onClose,
   returnFocusRef,
+  trackingEndpoint = '/tracking/shipments',
 }: ShipmentTrackingModalProps) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const dialog = useRef<HTMLDivElement>(null);
@@ -40,7 +42,7 @@ export default function ShipmentTrackingModal({
     let active = true;
     setRequest({ status: 'loading' });
 
-    fetch(`/tracking/shipments/${shipmentId}`, {
+    fetch(`${trackingEndpoint}/${shipmentId}`, {
       credentials: 'same-origin',
       headers: { Accept: 'application/json' },
       signal: controller.signal,
@@ -62,7 +64,7 @@ export default function ShipmentTrackingModal({
       active = false;
       controller.abort();
     };
-  }, [isOpen, retryCount, shipmentId]);
+  }, [isOpen, retryCount, shipmentId, trackingEndpoint]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -186,7 +188,13 @@ export default function ShipmentTrackingModal({
             </div>
           )}
 
-          {request.status === 'success' && <ShipmentTrackingPanel shipment={request.shipment} compact />}
+          {request.status === 'success' && (
+            <ShipmentTrackingPanel
+              shipment={request.shipment}
+              compact
+              trackingEndpoint={trackingEndpoint}
+            />
+          )}
         </div>
       </div>
     </div>

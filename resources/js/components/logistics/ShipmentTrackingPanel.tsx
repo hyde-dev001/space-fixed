@@ -284,11 +284,13 @@ function DeliveryProofDialog({
 export type ShipmentTrackingPanelProps = {
   shipment: TrackingShipment;
   compact?: boolean;
+  trackingEndpoint?: string;
 };
 
 export default function ShipmentTrackingPanel({
   shipment,
   compact = false,
+  trackingEndpoint = '/tracking/shipments',
 }: ShipmentTrackingPanelProps) {
   const [failedProofIds, setFailedProofIds] = useState<number[]>([]);
   const [selectedProof, setSelectedProof] = useState<CustomerDeliveryProof | null>(null);
@@ -321,7 +323,7 @@ export default function ShipmentTrackingPanel({
     let disposed = false;
     const poll = async () => {
       try {
-        const response = await axios.get<{ shipment?: typeof shipment }>(`/tracking/shipments/${shipment.id}`);
+        const response = await axios.get<{ shipment?: typeof shipment }>(`${trackingEndpoint}/${shipment.id}`);
         if (disposed || !response.data.shipment) return;
         setCurrentShipment(response.data.shipment);
         setPollError(false);
@@ -336,7 +338,7 @@ export default function ShipmentTrackingPanel({
       disposed = true;
       window.clearInterval(timer);
     };
-  }, [shipment.id, shouldPoll]);
+  }, [shipment.id, shouldPoll, trackingEndpoint]);
 
   const isReturn = currentShipment.purpose === 'refund_return';
   const isRepair = currentShipment.source_type === 'repair_request';

@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\RiderLocationService;
 use App\Services\Logistics\AssignmentService;
+use App\Services\Logistics\CustomerTrackingService;
 use App\Services\Logistics\DeliveryTypeResolver;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\ProofReviewService;
@@ -70,15 +71,13 @@ class ShipmentController extends Controller
         ])->header('Cache-Control', 'no-store, private');
     }
 
-    public function show(Shipment $shipment): JsonResponse
+    public function show(Shipment $shipment, CustomerTrackingService $tracking): JsonResponse
     {
         $shop = $this->authorizedShop('view-logistics-shipments');
         $this->abortUnlessTenant($shipment->shop_owner_id, $shop);
 
-        $shipment = $shipment->load(['legs.proofs', 'legs.assignments.riderProfile', 'events']);
-        $this->attachDeliveryTypeToShipment($shipment);
-
-        return response()->json(['shipment' => $shipment]);
+        return response()->json(['shipment' => $tracking->payload($shipment)])
+            ->header('Cache-Control', 'no-store, private');
     }
 
     public function investigateDispute(DeliveryDispute $dispute, DeliveryDisputeService $disputes): JsonResponse
