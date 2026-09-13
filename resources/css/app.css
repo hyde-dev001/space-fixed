@@ -4978,6 +4978,11 @@ body .erp-modal-backdrop:not([class~='opacity-0']) {
   opacity: 1 !important;
 }
 
+body .userside-tracking-modal.erp-modal-backdrop {
+  background: rgba(0, 0, 0, 0.6) !important;
+  background-color: rgba(0, 0, 0, 0.6) !important;
+}
+
 body.swal2-shown:not(.swal2-toast-shown) .swal2-container {
   --swal2-backdrop: rgba(0, 0, 0, 0.25);
   -webkit-backdrop-filter: blur(2px);
