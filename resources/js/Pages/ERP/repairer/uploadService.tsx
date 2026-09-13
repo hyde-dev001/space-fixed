@@ -13,7 +13,7 @@ type Service = {
   category: string;
   price: string;
   duration: string;
-  description: string;
+  description: string | null;
   status: "Active" | "Inactive" | "Pending";
   material_templates?: MaterialTemplateLine[];
 };
@@ -632,7 +632,7 @@ export default function UploadService() {
       durationFrom: parsedDuration.durationFrom,
       durationTo: parsedDuration.durationTo,
       durationUnit: parsedDuration.durationUnit,
-      description: service.description,
+      description: service.description ?? "",
       status: service.status,
       material_templates: (service.material_templates || []).map((line) => ({
         inventory_item_id: Number(line.inventory_item_id),

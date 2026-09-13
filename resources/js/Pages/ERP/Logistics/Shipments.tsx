@@ -578,6 +578,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
           <div className="grid w-full min-w-0 grid-cols-2 gap-2 sm:gap-3 xl:flex xl:w-auto xl:flex-wrap xl:items-center xl:gap-3">
             <MonochromeSelect
               value={filters.status}
+              placement="bottom"
               onChange={(event) => updateFilter('status', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by status"
@@ -586,6 +587,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             </MonochromeSelect>
             {!riderMode && <MonochromeSelect
               value={filters.purpose ?? 'all'}
+              placement="bottom"
               onChange={(event) => updateFilter('purpose', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by type"
@@ -594,6 +596,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             </MonochromeSelect>}
             {!riderMode && showModuleFilter && <MonochromeSelect
               value={selectedModule}
+              placement="bottom"
               onChange={(event) => updateFilter('module', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by module"
@@ -603,6 +606,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             </MonochromeSelect>}
             {!riderMode && <MonochromeSelect
               value={filters.window ?? 'all'}
+              placement="bottom"
               onChange={(event) => updateFilter('window', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter shipments by delivery window"
@@ -613,6 +617,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
             </MonochromeSelect>}
             {riderMode && <MonochromeSelect
               value={filters.window}
+              placement="bottom"
               onChange={(event) => updateFilter('window', event.target.value)}
               className="min-h-11 min-w-0 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none transition-colors focus:border-gray-950 focus:ring-2 focus:ring-gray-950/20 dark:border-gray-600 dark:bg-gray-700 dark:text-white dark:focus:border-gray-300 dark:focus:ring-gray-300/20 xl:w-auto xl:rounded-lg"
               aria-label="Filter deliveries by time"
