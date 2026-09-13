@@ -69,12 +69,15 @@ export default function ShipmentTrackingModal({
   useEffect(() => {
     if (!isOpen) return;
 
-    const previousOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    const previousBodyOverflow = document.body.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
     document.body.style.overflow = 'hidden';
     const focusFrame = window.requestAnimationFrame(() => closeButton.current?.focus());
 
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+      document.body.style.overflow = previousBodyOverflow;
       window.cancelAnimationFrame(focusFrame);
       queueMicrotask(() => returnFocusRef?.current?.focus());
     };
@@ -127,7 +130,7 @@ export default function ShipmentTrackingModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="shipment-tracking-title"
-      className="userside-tracking-modal fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-0 sm:p-6 erp-modal-backdrop"
+      className="userside-tracking-modal fixed inset-0 z-[99999] flex min-h-dvh w-screen items-center justify-center overflow-y-auto bg-black/60 p-0 sm:p-6 erp-modal-backdrop"
       onClick={(event) => {
         if (event.target === event.currentTarget) closeModal();
       }}
