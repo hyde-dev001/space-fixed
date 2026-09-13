@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Order;
 use App\Models\RepairRequest;
+use App\Models\SupplierPaymentProfile;
 use App\Enums\NotificationType;
 use App\Mail\NotificationEmail;
 use App\Services\Notifications\RecipientResolver;
@@ -1118,16 +1119,33 @@ class NotificationService
 
     public function notifyPurchaseOrderInTransit(int $shopId, array $data): void
     {
-        $this->sendToErpRole(
-            roleName: 'Inventory Manager',
-            shopId: $shopId,
-            type: NotificationType::PURCHASE_ORDER_IN_TRANSIT,
-            title: 'Purchase Order In Transit',
-            message: "Purchase order {$data['po_number']} is in transit and awaiting receipt.",
-            data: $data,
-            actionUrl: '/erp/inventory/supplier-order-monitoring',
-            priority: 'medium',
-        );
+        $groupKey = 'purchase-order:' . (int) ($data['purchase_order_id'] ?? 0) . ':in-transit';
+        $recipients = User::query()
+            ->permission('inventory.view')
+            ->where('shop_owner_id', $shopId)
+            ->where('status', 'active')
+            ->get();
+
+        foreach ($recipients as $recipient) {
+            if (Notification::query()
+                ->forUser((int) $recipient->id)
+                ->byGroup($groupKey)
+                ->exists()) {
+                continue;
+            }
+
+            $this->sendToUser(
+                userId: (int) $recipient->id,
+                type: NotificationType::PURCHASE_ORDER_IN_TRANSIT,
+                title: 'Purchase Order In Transit',
+                message: "Purchase order {$data['po_number']} is in transit and awaiting receipt.",
+                data: $data,
+                actionUrl: '/erp/inventory/supplier-order-monitoring',
+                shopId: $shopId,
+                priority: 'medium',
+                groupKey: $groupKey,
+            );
+        }
     }
 
     public function notifySupplierIssueReported(int $shopId, array $data): void
@@ -1232,6 +1250,48 @@ class NotificationService
             actionUrl: '/erp/procurement/purchase-orders',
             priority: 'medium',
         );
+    }
+
+    public function notifySupplierPaymentProfileDisabled(int $shopId, array $data): void
+    {
+        $supplierName = (string) ($data['supplier_name'] ?? 'Supplier');
+        $profileId = (int) ($data['payment_profile_id'] ?? 0);
+        $supplierId = (int) ($data['supplier_id'] ?? 0);
+        $safeData = [
+            'supplier_id' => $supplierId,
+            'supplier_name' => $supplierName,
+            'payment_profile_id' => $profileId,
+            'destination_type' => (string) ($data['destination_type'] ?? ''),
+            'status' => SupplierPaymentProfile::STATUS_DISABLED,
+        ];
+        $groupKey = 'supplier-payment-profile:' . $profileId . ':disabled:' . (string) ($data['event_key'] ?? 'current');
+        $recipients = User::query()
+            ->permission(['procurement.manage_suppliers', 'access-suppliers-management'])
+            ->where('shop_owner_id', $shopId)
+            ->where('status', 'active')
+            ->get();
+
+        foreach ($recipients as $recipient) {
+            if (Notification::query()
+                ->forUser((int) $recipient->id)
+                ->byGroup($groupKey)
+                ->exists()) {
+                continue;
+            }
+
+            $this->sendToUser(
+                userId: (int) $recipient->id,
+                type: NotificationType::SUPPLIER_PAYMENT_PROFILE_DISABLED,
+                title: "{$supplierName} Payment Profile Disabled",
+                message: "The payment profile for {$supplierName} was disabled. Replace the destination and wait for Finance verification before making another supplier payment.",
+                data: $safeData,
+                actionUrl: '/erp/procurement/suppliers-management?supplier=' . $supplierId,
+                shopId: $shopId,
+                priority: 'high',
+                groupKey: $groupKey,
+                requiresAction: true,
+            );
+        }
     }
 
     /** Notify requester when their expense is rejected */

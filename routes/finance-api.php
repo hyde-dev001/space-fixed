@@ -109,7 +109,8 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::get('/{attemptId}/proof/{mediaId}', [ProcurementExpenseController::class, 'supplierPaymentProof'])->whereNumber(['attemptId', 'mediaId'])->name('finance.supplier-payment-attempts.proof');
         Route::post('/{attemptId}/submit', [ProcurementExpenseController::class, 'submitSupplierPayment'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.submit');
         Route::post('/{attemptId}/cancel', [ProcurementExpenseController::class, 'cancelSupplierPayment'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.cancel');
-        Route::post('/{attemptId}/resend-confirmation', [ProcurementExpenseController::class, 'resendSupplierPaymentConfirmation'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.resend-confirmation');
+        Route::post('/{attemptId}/send-receipt', [ProcurementExpenseController::class, 'sendSupplierPaymentReceipt'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.send-receipt');
+        Route::post('/{attemptId}/resend-confirmation', [ProcurementExpenseController::class, 'sendSupplierPaymentReceipt'])->whereNumber('attemptId')->name('finance.supplier-payment-attempts.resend-confirmation');
     });
 
     Route::prefix('supplier-adjustments')->middleware('permission:access-finance-expenses')->group(function () {
@@ -130,6 +131,9 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::get('/{supplierId}/payment-profile', [ProcurementExpenseController::class, 'showPaymentProfile'])
             ->whereNumber('supplierId')
             ->name('finance.suppliers.payment-profile.show');
+        Route::get('/{supplierId}/payment-profile/reveal', [ProcurementExpenseController::class, 'revealPaymentProfile'])
+            ->whereNumber('supplierId')
+            ->name('finance.suppliers.payment-profile.reveal');
     });
 
     Route::prefix('suppliers')->middleware('permission:access-approval-workflow|approve-expenses')->group(function () {

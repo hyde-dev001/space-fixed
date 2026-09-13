@@ -390,6 +390,17 @@ const Expense: React.FC = () => {
     setIsViewOpen(false);
   };
 
+  const refreshExpenses = async (expenseId?: string) => {
+    const result = await refetchExpenses();
+    const refreshedExpenses = (result.data ?? []).map(normalizeExpense);
+
+    if (expenseId) {
+      setActiveExpense(refreshedExpenses.find((expense) => expense.id === expenseId) ?? null);
+    }
+
+    return refreshedExpenses;
+  };
+
   const handleApprovalAction = async (expense: Expense, action: "approve" | "reject") => {
     const isRejecting = action === "reject";
     const result = await Swal.fire({
@@ -469,8 +480,7 @@ const Expense: React.FC = () => {
       });
       if (!response.ok) throw new Error(response.error || "The procurement expense could not be released.");
 
-      closeViewModal();
-      await refetchExpenses();
+      await refreshExpenses(expense.id);
       await Swal.fire({
         icon: "success",
         title: "Expense released",
@@ -494,13 +504,27 @@ const Expense: React.FC = () => {
     const supplierId = expense.procurement_details?.supplier_id;
     if (!supplierId) return;
 
+    if (action === "disable") {
+      const confirmation = await Swal.fire({
+        title: "Disable supplier payment profile?",
+        text: "New supplier payments will be blocked until Procurement replaces the destination and Finance verifies it again.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Disable Payment Profile",
+        cancelButtonText: "Keep Profile",
+        confirmButtonColor: "#d97706",
+        reverseButtons: true,
+      });
+
+      if (!confirmation.isConfirmed) return;
+    }
+
     setIsPaymentProfileActionPending(true);
     try {
       const response = await api.post(`/api/finance/suppliers/${supplierId}/payment-profile/${action}`, {});
       if (!response?.ok) throw new Error(response?.error || "The supplier payment profile could not be updated.");
 
-      closeViewModal();
-      await refetchExpenses();
+      await refreshExpenses(expense.id);
       await Swal.fire({
         icon: "success",
         title: action === "verify" ? "Payment profile verified" : "Payment profile disabled",
@@ -531,6 +555,20 @@ const Expense: React.FC = () => {
       && details?.payment_profile?.status === "verified"
       && paymentStatus !== "paid"
       && !["initiating", "awaiting_verification"].includes(attemptStatus || paymentStatus);
+  };
+
+  const procurementStatusLabel = (expense: Expense): string => {
+    const paymentStatus = expense.procurement_details?.payment_status;
+
+    if (paymentStatus === "paid") return "Paid";
+    if (paymentStatus === "awaiting_verification") return "Awaiting Shop Owner Verification";
+    if (paymentStatus === "initiating") return "Payment Initiated";
+    if (paymentStatus === "rejected") return "Payment Rejected";
+    if (paymentStatus === "cancelled") return "Payment Cancelled";
+    if (expense.status === "submitted") return "Submitted";
+    if (expense.status === "posted" && paymentStatus === "unpaid") return "Ready for Payment";
+
+    return expense.status.charAt(0).toUpperCase() + expense.status.slice(1);
   };
 
   const calculateTax = (amount: number, taxRateId: string) => {
@@ -935,7 +973,7 @@ const Expense: React.FC = () => {
                   <td className="py-4 px-6">
                     {isProcurementExpense(expense) ? (
                       <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
-                        Review only
+                        {procurementStatusLabel(expense)}
                       </span>
                     ) : getApprovalStatusBadge(false, expense.status)}
                   </td>
@@ -1004,9 +1042,9 @@ const Expense: React.FC = () => {
       </div>
 
       {isViewOpen && activeExpense && (
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm erp-modal-backdrop sm:py-8">
+          <div className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Expense</p>
                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white">{activeExpense.category}</h4>
@@ -1020,7 +1058,7 @@ const Expense: React.FC = () => {
               </button>
             </div>
 
-            <div className="px-6 py-4 space-y-3">
+            <div className="space-y-1 px-5 py-2">
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
                 <span className="text-gray-500 dark:text-gray-400">Date</span>
                 <div className="text-right">
@@ -1053,8 +1091,8 @@ const Expense: React.FC = () => {
                   canPaySupplier={canStartSupplierPayment(activeExpense)}
                   onPaySupplier={openSupplierPayment}
                   ownerMode={ownerMode}
-                  onReviewSupplierPayment={ownerMode ? openSupplierPayment : undefined}
-                  onRefundChanged={async () => { await refetchExpenses(); }}
+                  onReviewSupplierPayment={openSupplierPayment}
+                  onRefundChanged={async () => { await refreshExpenses(activeExpense.id); }}
                 />
               )}
 
@@ -1062,7 +1100,7 @@ const Expense: React.FC = () => {
                 <span className="text-gray-500 dark:text-gray-400">Status</span>
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(activeExpense.status)}`}>
                   {isProcurementExpense(activeExpense)
-                    ? "Review only"
+                    ? procurementStatusLabel(activeExpense)
                     : activeExpense.status.charAt(0).toUpperCase() + activeExpense.status.slice(1)}
                 </span>
               </div>
@@ -1102,7 +1140,7 @@ const Expense: React.FC = () => {
               )}
             </div>
 
-            <div className="flex flex-col gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
+            <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800">
               <div className="flex items-center justify-between gap-3">
                 {activeExpense.status === "submitted" && !showArchived && !isProcurementExpense(activeExpense) ? (
                   <div className="flex items-center gap-2">
@@ -1143,14 +1181,14 @@ const Expense: React.FC = () => {
           amount={activeExpense.amount}
           initialAttempt={activeExpense.procurement_details.payment_attempt as SupplierPaymentAttemptSummary | null | undefined}
           onClose={() => setIsSupplierPaymentOpen(false)}
-          onChanged={async () => { await refetchExpenses(); }}
+          onChanged={async () => { await refreshExpenses(activeExpense.id); }}
         />
       )}
 
       {canCreateExpense && isAddOpen && (
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
-          <div className="w-full max-w-lg max-h-[90vh] rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm erp-modal-backdrop sm:py-8">
+          <div className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">New Expense</p>
                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Add Expense</h4>
@@ -1164,7 +1202,7 @@ const Expense: React.FC = () => {
               </button>
             </div>
 
-            <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
+            <div className="space-y-2 px-5 py-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
                 <input
@@ -1344,7 +1382,7 @@ const Expense: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 flex-shrink-0">
+            <div className="flex shrink-0 items-center justify-end gap-3 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800">
               <button
                 className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 onClick={closeAddModal}

@@ -79,7 +79,7 @@ class SupplierManualPaymentTest extends TestCase
         ));
         $this->assertTrue($indexes->contains(
             fn (array $index): bool => $index['unique']
-                && $index['columns'] === ['provider_reference'],
+                && $index['columns'] === ['shop_owner_id', 'provider_reference'],
         ));
     }
 
@@ -98,7 +98,8 @@ class SupplierManualPaymentTest extends TestCase
         $response->assertCreated()
             ->assertJsonPath('data.status', SupplierPaymentAttempt::STATUS_INITIATING)
             ->assertJsonPath('data.amount', '100.00')
-            ->assertJsonPath('data.supplier_email_to', 'supplier@example.test')
+            ->assertJsonPath('data.supplier_email_masked', 's*******@example.test')
+            ->assertJsonMissingPath('data.supplier_email_to')
             ->assertJsonPath('data.masked_destination.masked_account_number', '******7890')
             ->assertJsonMissingPath('data.destination_snapshot');
 
@@ -120,6 +121,8 @@ class SupplierManualPaymentTest extends TestCase
             ->assertOk()
             ->assertJsonPath('procurement_details.payment_status', SupplierPaymentAttempt::STATUS_INITIATING)
             ->assertJsonPath('procurement_details.payment_attempt.payment_method', SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER)
+            ->assertJsonPath('procurement_details.payment_attempt.supplier_email_masked', 's*******@example.test')
+            ->assertJsonMissingPath('procurement_details.payment_attempt.supplier_email_to')
             ->assertJsonMissingPath('procurement_details.payment_attempt.destination_snapshot');
     }
 
@@ -225,6 +228,44 @@ class SupplierManualPaymentTest extends TestCase
         $this->assertSame(1, SupplierPaymentAttempt::findOrFail($attempt->id)->getMedia('payment_proof')->count());
     }
 
+    public function test_external_payment_date_cannot_be_in_the_future(): void
+    {
+        Storage::fake('local');
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $attempt = $this->startAttempt($finance, $expense);
+
+        $this->actingAs($finance, 'user')->post(
+            "/api/finance/supplier-payment-attempts/{$attempt->id}/submit",
+            [
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
+                'amount' => '100.00',
+                'external_transaction_reference' => 'FUTURE-001',
+                'externally_paid_at' => now()->addDay()->toDateTimeString(),
+                'payment_proof' => UploadedFile::fake()->create('future-proof.pdf', 20, 'application/pdf'),
+            ],
+            ['Accept' => 'application/json'],
+        )->assertUnprocessable();
+
+        $this->assertSame(SupplierPaymentAttempt::STATUS_INITIATING, $attempt->fresh()->status);
+    }
+
+    public function test_external_transaction_reference_is_unique_per_shop(): void
+    {
+        Storage::fake('local');
+        [$shopA, $financeA, $ownerA, $supplierA, $expenseA] = $this->paymentContext();
+        [$shopB, $financeB, $ownerB, $supplierB, $expenseB] = $this->paymentContext();
+        $attemptA = $this->startAttempt($financeA, $expenseA);
+        $attemptB = $this->startAttempt($financeB, $expenseB);
+
+        $this->submitProof($financeA, $attemptA, 'CROSS-SHOP-001');
+        $this->submitProof($financeB, $attemptB, 'CROSS-SHOP-001');
+
+        $this->assertSame(
+            SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            $attemptB->fresh()->status,
+        );
+    }
+
     public function test_profile_changes_after_initiation_do_not_change_the_attempt_snapshot(): void
     {
         Storage::fake('local');
@@ -252,11 +293,13 @@ class SupplierManualPaymentTest extends TestCase
         $this->actingAs($finance, 'user')
             ->get("/api/finance/supplier-payment-attempts/{$attempt->id}/proof/{$media->id}")
             ->assertOk()
-            ->assertHeader('cache-control', 'no-store, private');
+            ->assertHeader('cache-control', 'no-store, private')
+            ->assertHeader('content-disposition', 'inline; filename=proof.pdf');
 
         $this->actingAs($owner, 'shop_owner')
             ->get("/api/shop-owner/finance/supplier-payment-attempts/{$attempt->id}/proof/{$media->id}")
-            ->assertOk();
+            ->assertOk()
+            ->assertHeader('content-disposition', 'inline; filename=proof.pdf');
 
         $otherShop = ShopOwner::factory()->create();
         $otherFinance = User::factory()->create(['shop_owner_id' => $otherShop->id]);
@@ -266,7 +309,7 @@ class SupplierManualPaymentTest extends TestCase
             ->assertNotFound();
     }
 
-    public function test_shop_owner_confirmation_records_one_settlement_and_emails_the_snapshotted_address(): void
+    public function test_shop_owner_confirmation_records_one_settlement_and_marks_receipt_ready_without_sending_email(): void
     {
         Storage::fake('local');
         Mail::fake();
@@ -282,7 +325,8 @@ class SupplierManualPaymentTest extends TestCase
 
         $confirmed->assertOk()
             ->assertJsonPath('data.status', SupplierPaymentAttempt::STATUS_SUCCEEDED)
-            ->assertJsonPath('data.payment_status', 'paid');
+            ->assertJsonPath('data.payment_status', 'paid')
+            ->assertJsonPath('data.supplier_email_status', 'ready_to_send');
 
         $this->assertDatabaseCount('finance_expense_settlements', 1);
         $this->assertDatabaseHas('supplier_payment_attempts', [
@@ -292,52 +336,62 @@ class SupplierManualPaymentTest extends TestCase
             'supplier_email_to' => 'supplier@example.test',
         ]);
         $this->assertSame('100.00', $expense->fresh()->validSettledAmount());
+        Mail::assertNothingSent();
+    }
+
+    public function test_finance_explicitly_sends_the_ready_supplier_receipt_after_confirmation(): void
+    {
+        Storage::fake('local');
+        Mail::fake();
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $attempt = $this->startAttempt($finance, $expense);
+        $this->submitProof($finance, $attempt);
+
+        $this->actingAs($owner, 'shop_owner')->postJson(
+            "/api/shop-owner/finance/supplier-payment-attempts/{$attempt->id}/confirm",
+        )->assertOk()->assertJsonPath('data.supplier_email_status', 'ready_to_send');
+
+        $sent = $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/supplier-payment-attempts/{$attempt->id}/send-receipt",
+        );
+
+        $sent->assertOk()
+            ->assertJsonPath('data.status', SupplierPaymentAttempt::STATUS_SUCCEEDED)
+            ->assertJsonPath('data.supplier_email_status', 'dispatched');
+        $this->assertDatabaseCount('finance_expense_settlements', 1);
         Mail::assertSent(SupplierPaymentConfirmationMail::class, function (SupplierPaymentConfirmationMail $mail): bool {
             return $mail->hasTo('supplier@example.test')
                 && $mail->amount === '100.00'
                 && $mail->externalTransactionReference === 'BANK-001';
         });
-    }
 
-    public function test_email_failure_does_not_rollback_successful_payment_and_can_be_resent(): void
-    {
-        Storage::fake('local');
-        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
-        $attempt = $this->startAttempt($finance, $expense);
-        $this->submitProof($finance, $attempt);
-
-        Mail::shouldReceive('to')->once()->andThrow(new \RuntimeException('SMTP unavailable'));
-
-        $confirmed = $this->actingAs($owner, 'shop_owner')->postJson(
-            "/api/shop-owner/finance/supplier-payment-attempts/{$attempt->id}/confirm",
-        );
-
-        $confirmed->assertOk()
-            ->assertJsonPath('data.status', SupplierPaymentAttempt::STATUS_SUCCEEDED)
-            ->assertJsonPath('data.supplier_email_status', 'failed');
-        $this->assertDatabaseCount('finance_expense_settlements', 1);
-    }
-
-    public function test_replaying_successful_confirmation_does_not_send_a_duplicate_supplier_email(): void
-    {
-        Storage::fake('local');
-        Mail::fake();
-        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
-        $attempt = $this->startAttempt($finance, $expense);
-        $this->submitProof($finance, $attempt);
-
-        $this->actingAs($owner, 'shop_owner')->postJson(
-            "/api/shop-owner/finance/supplier-payment-attempts/{$attempt->id}/confirm",
-        )->assertOk();
-        $this->actingAs($owner, 'shop_owner')->postJson(
-            "/api/shop-owner/finance/supplier-payment-attempts/{$attempt->id}/confirm",
-        )->assertOk()->assertJsonPath('data.status', SupplierPaymentAttempt::STATUS_SUCCEEDED);
-
-        $this->assertDatabaseCount('finance_expense_settlements', 1);
+        $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/supplier-payment-attempts/{$attempt->id}/send-receipt",
+        )->assertUnprocessable();
         Mail::assertSent(SupplierPaymentConfirmationMail::class, 1);
     }
 
-    public function test_failed_supplier_confirmation_can_be_resent_without_a_second_settlement(): void
+    public function test_email_failure_does_not_rollback_successful_payment_and_can_be_retried_by_finance(): void
+    {
+        Storage::fake('local');
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $attempt = $this->startAttempt($finance, $expense);
+        $this->submitProof($finance, $attempt);
+
+        $this->actingAs($owner, 'shop_owner')->postJson(
+            "/api/shop-owner/finance/supplier-payment-attempts/{$attempt->id}/confirm",
+        )->assertOk();
+
+        Mail::shouldReceive('to')->once()->andThrow(new \RuntimeException('SMTP unavailable'));
+        $failed = $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/supplier-payment-attempts/{$attempt->id}/send-receipt",
+        );
+
+        $failed->assertOk()->assertJsonPath('data.supplier_email_status', 'failed');
+        $this->assertDatabaseCount('finance_expense_settlements', 1);
+    }
+
+    public function test_failed_supplier_receipt_can_be_retried_without_a_second_settlement(): void
     {
         Storage::fake('local');
         Mail::fake();
@@ -348,15 +402,34 @@ class SupplierManualPaymentTest extends TestCase
         $this->actingAs($owner, 'shop_owner')->postJson(
             "/api/shop-owner/finance/supplier-payment-attempts/{$attempt->id}/confirm",
         )->assertOk();
-        $attempt->refresh()->update(['supplier_email_status' => 'failed']);
+        $attempt->refresh()->update(['supplier_email_status' => SupplierPaymentAttempt::EMAIL_STATUS_FAILED]);
 
         $resent = $this->actingAs($finance, 'user')->postJson(
-            "/api/finance/supplier-payment-attempts/{$attempt->id}/resend-confirmation",
+            "/api/finance/supplier-payment-attempts/{$attempt->id}/send-receipt",
         );
 
-        $resent->assertOk()->assertJsonPath('data.supplier_email_status', 'sent');
+        $resent->assertOk()->assertJsonPath('data.supplier_email_status', 'dispatched');
         $this->assertDatabaseCount('finance_expense_settlements', 1);
         Mail::assertSent(SupplierPaymentConfirmationMail::class, fn (SupplierPaymentConfirmationMail $mail): bool => $mail->hasTo('supplier@example.test'));
+    }
+
+    public function test_replaying_successful_confirmation_does_not_send_or_duplicate_a_supplier_email(): void
+    {
+        Storage::fake('local');
+        Mail::fake();
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $attempt = $this->startAttempt($finance, $expense);
+        $this->submitProof($finance, $attempt);
+
+        $this->actingAs($owner, 'shop_owner')->postJson(
+            "/api/shop-owner/finance/supplier-payment-attempts/{$attempt->id}/confirm",
+        )->assertOk()->assertJsonPath('data.supplier_email_status', 'ready_to_send');
+        $this->actingAs($owner, 'shop_owner')->postJson(
+            "/api/shop-owner/finance/supplier-payment-attempts/{$attempt->id}/confirm",
+        )->assertOk()->assertJsonPath('data.supplier_email_status', 'ready_to_send');
+
+        $this->assertDatabaseCount('finance_expense_settlements', 1);
+        Mail::assertNothingSent();
     }
 
     public function test_shop_owner_rejection_is_terminal_and_allows_a_new_attempt_without_a_settlement(): void
@@ -404,6 +477,36 @@ class SupplierManualPaymentTest extends TestCase
             'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_E_WALLET,
             'reference' => 'GCASH-001',
         ]);
+    }
+
+    public function test_manual_e_wallet_attempt_snapshots_the_explicit_wallet_destination(): void
+    {
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $profile = $supplier->paymentProfile()->firstOrFail();
+        $profile->fill([
+            'destination_type' => SupplierPaymentProfile::DESTINATION_E_WALLET,
+            'wallet_provider' => 'GCash',
+            'bank_name' => null,
+            'bank_code' => null,
+            'account_number' => null,
+            'account_identifier' => '09171234567',
+        ]);
+        $profile->save();
+
+        $response = $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/expenses/{$expense->id}/supplier-payment-attempts",
+            [
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_E_WALLET,
+                'idempotency_key' => 'wallet-snapshot-1',
+            ],
+        );
+
+        $response->assertCreated()
+            ->assertJsonPath('data.masked_destination.destination_type', 'e_wallet')
+            ->assertJsonPath('data.masked_destination.wallet_provider', 'GCash')
+            ->assertJsonPath('data.masked_destination.masked_account_identifier', '*******4567')
+            ->assertJsonPath('data.masked_destination.bank_name', null)
+            ->assertJsonMissingPath('data.destination_snapshot');
     }
 
     public function test_finance_can_cancel_only_an_unsubmitted_initiating_attempt(): void
@@ -528,9 +631,11 @@ class SupplierManualPaymentTest extends TestCase
             externallyPaidAt: CarbonImmutable::parse('2026-09-12 10:00:00'),
             maskedDestination: [
                 'destination_type' => 'e_wallet',
-                'bank_name' => 'GCash',
-                'masked_account_number' => '******7890',
+                'wallet_provider' => 'GCash',
+                'masked_account_identifier' => '*******4567',
             ],
+            shopName: 'SoleSpace Main Shop',
+            receiptNumber: 'RCV-12',
         );
 
         $body = $mail->render();
@@ -538,7 +643,10 @@ class SupplierManualPaymentTest extends TestCase
         $this->assertStringContainsString('PO-2026-003', $body);
         $this->assertStringContainsString('100.00', $body);
         $this->assertStringContainsString('GCASH-001', $body);
-        $this->assertStringContainsString('******7890', $body);
+        $this->assertStringContainsString('SoleSpace Main Shop', $body);
+        $this->assertStringContainsString('RCV-12', $body);
+        $this->assertStringContainsString('Verified / Paid', $body);
+        $this->assertStringContainsString('*******4567', $body);
         $this->assertStringNotContainsString('1234567890', $body);
     }
 

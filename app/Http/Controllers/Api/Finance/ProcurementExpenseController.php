@@ -15,6 +15,7 @@ use App\Http\Requests\Finance\InitiateSupplierPaymentRequest;
 use App\Http\Requests\Finance\SubmitSupplierPaymentProofRequest;
 use App\Services\ExpenseApprovalService;
 use App\Services\Finance\SupplierPaymentService;
+use App\Services\NotificationService;
 use App\Services\SupplierAdjustmentService;
 use App\Support\Finance\FinanceDomainException;
 use App\Support\Finance\FinanceErrorResponse;
@@ -22,6 +23,7 @@ use App\Support\Finance\FinanceShopContext;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\HeaderUtils;
 
 final class ProcurementExpenseController extends Controller
 {
@@ -30,6 +32,7 @@ final class ProcurementExpenseController extends Controller
         private readonly FinanceShopContext $shopContext,
         private readonly SupplierPaymentService $supplierPaymentService,
         private readonly SupplierAdjustmentService $adjustmentService,
+        private readonly NotificationService $notificationService,
     ) {}
 
     public function reviewAndRelease(Request $request, int $id)
@@ -70,6 +73,33 @@ final class ProcurementExpenseController extends Controller
         return response()->json([
             'data' => $supplier->paymentProfile?->toMaskedArray(),
         ]);
+    }
+
+    public function revealPaymentProfile(Request $request, int $supplierId)
+    {
+        $shopId = $this->shopContext->id($request);
+        $supplier = Supplier::query()->where('shop_owner_id', $shopId)->findOrFail($supplierId);
+        $profile = $supplier->paymentProfile;
+        $actor = $request->user('user');
+
+        abort_if(! $profile, 404);
+        abort_unless($actor instanceof User, 401);
+
+        activity('sensitive_payment_profiles')
+            ->causedBy($actor)
+            ->performedOn($profile)
+            ->withProperties([
+                'supplier_id' => (int) $supplier->id,
+                'payment_profile_id' => (int) $profile->id,
+                'destination_type' => (string) $profile->destination_type,
+            ])
+            ->log('supplier_payment_profile_revealed');
+
+        return response()->json([
+            'data' => $profile->toRevealedArray(),
+        ])
+            ->header('Cache-Control', 'no-store, private')
+            ->header('Pragma', 'no-cache');
     }
 
     public function verifyPaymentProfile(Request $request, int $supplierId)
@@ -162,7 +192,7 @@ final class ProcurementExpenseController extends Controller
         }
     }
 
-    public function resendSupplierPaymentConfirmation(Request $request, int $attemptId)
+    public function sendSupplierPaymentReceipt(Request $request, int $attemptId)
     {
         $shopId = $this->shopContext->id($request);
         $attempt = SupplierPaymentAttempt::query()
@@ -172,11 +202,11 @@ final class ProcurementExpenseController extends Controller
         abort_unless($actor instanceof User, 401);
 
         try {
-            $updated = $this->supplierPaymentService->resendConfirmation($attempt, $actor);
+            $updated = $this->supplierPaymentService->sendConfirmation($attempt, $actor);
 
             return response()->json(['data' => $this->supplierPaymentService->present($updated)]);
         } catch (\Throwable $exception) {
-            return FinanceErrorResponse::json($exception, 'supplier_payment.resend_confirmation', 500, [
+            return FinanceErrorResponse::json($exception, 'supplier_payment.send_receipt', 500, [
                 'shop_id' => $shopId,
                 'record_id' => $attemptId,
             ]);
@@ -192,8 +222,13 @@ final class ProcurementExpenseController extends Controller
         $media = $attempt->getMedia('payment_proof')->firstWhere('id', $mediaId);
         abort_unless($media, 404);
 
-        $response = response()->download($media->getPath(), $media->file_name, [
+        $response = response()->file($media->getPath(), [
             'Content-Type' => $media->mime_type,
+            'Content-Disposition' => HeaderUtils::makeDisposition(
+                HeaderUtils::DISPOSITION_INLINE,
+                basename($media->file_name),
+            ),
+            'X-Content-Type-Options' => 'nosniff',
         ]);
         $response->headers->set('Cache-Control', 'private, no-store');
 
@@ -269,7 +304,7 @@ final class ProcurementExpenseController extends Controller
         abort_unless($actor instanceof User, 401);
 
         try {
-            $profile = DB::transaction(function () use ($shopId, $supplierId, $status, $actor): SupplierPaymentProfile {
+            $result = DB::transaction(function () use ($shopId, $supplierId, $status, $actor): array {
                 $supplier = Supplier::query()
                     ->where('shop_owner_id', $shopId)
                     ->lockForUpdate()
@@ -288,6 +323,7 @@ final class ProcurementExpenseController extends Controller
                     throw new FinanceDomainException('A disabled payment profile must be updated before verification.', 'INVALID_STATE', 422);
                 }
 
+                $previousStatus = (string) $profile->status;
                 $profile->status = $status;
                 if ($status === SupplierPaymentProfile::STATUS_VERIFIED) {
                     $profile->verified_by = $actor->id;
@@ -295,8 +331,35 @@ final class ProcurementExpenseController extends Controller
                 }
                 $profile->save();
 
-                return $profile->fresh();
+                return [
+                    'profile' => $profile->fresh(),
+                    'supplier' => $supplier,
+                    'previous_status' => $previousStatus,
+                ];
             }, 3);
+
+            /** @var SupplierPaymentProfile $profile */
+            $profile = $result['profile'];
+            /** @var Supplier $supplier */
+            $supplier = $result['supplier'];
+
+            if ($status === SupplierPaymentProfile::STATUS_DISABLED
+                && $result['previous_status'] !== SupplierPaymentProfile::STATUS_DISABLED) {
+                try {
+                    $this->notificationService->notifySupplierPaymentProfileDisabled(
+                        shopId: $shopId,
+                        data: [
+                            'supplier_id' => (int) $supplier->id,
+                            'supplier_name' => (string) $supplier->name,
+                            'payment_profile_id' => (int) $profile->id,
+                            'destination_type' => (string) $profile->destination_type,
+                            'event_key' => $profile->updated_at?->format('YmdHisv') ?? (string) $profile->id,
+                        ],
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            }
 
             return response()->json([
                 'message' => $status === SupplierPaymentProfile::STATUS_VERIFIED

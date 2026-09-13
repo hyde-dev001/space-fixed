@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Expense from "../Expense";
 
@@ -7,9 +7,12 @@ const mocks = vi.hoisted(() => ({
 	approve: vi.fn(),
 	reject: vi.fn(),
 	reviewRelease: vi.fn(),
+	revealPaymentProfile: vi.fn(),
+	swalFire: vi.fn(),
 	status: "submitted" as "submitted" | "posted",
 	paymentStatus: "unpaid" as string,
 	paymentAttempt: null as Record<string, unknown> | null,
+	paymentProfileStatus: "unverified" as "unverified" | "verified" | "disabled",
 	ownerMode: false,
 }));
 
@@ -17,9 +20,9 @@ vi.mock("@inertiajs/react", () => ({
 	usePage: () => ({ props: { auth: { erpActor: { ownerMode: mocks.ownerMode } } } }),
 }));
 vi.mock("react-apexcharts", () => ({ default: () => null }));
-vi.mock("sweetalert2", () => ({ default: { fire: vi.fn() } }));
+vi.mock("sweetalert2", () => ({ default: { fire: mocks.swalFire } }));
 vi.mock("../../../../hooks/useFinanceApi", () => ({
-	useFinanceApi: () => ({ delete: vi.fn(), post: mocks.reviewRelease }),
+	useFinanceApi: () => ({ delete: vi.fn(), get: mocks.revealPaymentProfile, post: mocks.reviewRelease }),
 }));
 vi.mock("../../../../hooks/useFinanceQueries", () => ({
 	useExpenses: () => ({
@@ -56,7 +59,7 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 					bank_code: "TBK",
 					account_name: "Supplier",
 					masked_account_number: "******7890",
-					status: "unverified",
+					status: mocks.paymentProfileStatus,
 				},
 			},
 		}],
@@ -74,7 +77,10 @@ beforeEach(() => {
 	mocks.status = "submitted";
 	mocks.paymentStatus = "unpaid";
 	mocks.paymentAttempt = null;
+	mocks.paymentProfileStatus = "unverified";
 	mocks.refetch.mockResolvedValue(undefined);
+	mocks.revealPaymentProfile.mockResolvedValue({ ok: true, status: 200, data: { id: 8, account_number: "1234567890" } });
+	mocks.swalFire.mockResolvedValue({ isConfirmed: true });
 });
 
 afterEach(() => {
@@ -107,6 +113,9 @@ describe("Finance procurement expenses", () => {
 		expect(screen.getByText("RCV-303")).toBeInTheDocument();
 		expect(screen.getByText("Review & Release")).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Pay Supplier" })).not.toBeInTheDocument();
+		expect(document.querySelector(".erp-modal-backdrop .overflow-y-auto")).not.toBeInTheDocument();
+		expect(document.querySelector(".erp-modal-backdrop")).toHaveClass("py-6");
+	expect(document.querySelector(".erp-modal-backdrop > div")).toHaveClass("max-w-3xl");
 	});
 
 	it("shows only masked supplier payment details and Finance verification controls", () => {
@@ -118,6 +127,44 @@ describe("Finance procurement expenses", () => {
 		expect(screen.queryByDisplayValue("1234567890")).not.toBeInTheDocument();
 	});
 
+	it("reveals and hides the supplier account only after an explicit Finance action", async () => {
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByText("******7890")).toBeInTheDocument();
+		const showAccountButton = screen.getByRole("button", { name: "Show full account details" });
+		expect(showAccountButton).toHaveAttribute("title", "Show full account details");
+		expect(showAccountButton).not.toHaveTextContent("Show full account details");
+		fireEvent.click(showAccountButton);
+
+		await waitFor(() => expect(screen.getByText("1234567890")).toBeInTheDocument());
+		expect(mocks.revealPaymentProfile).toHaveBeenCalledWith("/api/finance/suppliers/4/payment-profile/reveal");
+
+		const hideAccountButton = screen.getByRole("button", { name: "Hide full account details" });
+		expect(hideAccountButton).toHaveAttribute("title", "Hide full account details");
+		expect(hideAccountButton).not.toHaveTextContent("Hide full account details");
+		fireEvent.click(hideAccountButton);
+		expect(screen.queryByText("1234567890")).not.toBeInTheDocument();
+		expect(screen.getByText("******7890")).toBeInTheDocument();
+	});
+
+	it("uses a SweetAlert confirmation before Finance disables a payment profile", async () => {
+		mocks.paymentProfileStatus = "verified";
+		mocks.swalFire.mockResolvedValueOnce({ isConfirmed: false });
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+		fireEvent.click(screen.getByRole("button", { name: "Disable Payment Profile" }));
+
+		await waitFor(() => expect(mocks.swalFire).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Disable supplier payment profile?",
+			showCancelButton: true,
+			confirmButtonText: "Disable Payment Profile",
+			cancelButtonText: "Keep Profile",
+		})));
+		expect(mocks.reviewRelease).not.toHaveBeenCalled();
+	});
+
 	it("shows payment readiness only after procurement release", () => {
 		mocks.status = "posted";
 		render(<Expense />);
@@ -126,6 +173,15 @@ describe("Finance procurement expenses", () => {
 		expect(screen.getByText("READY FOR PAYMENT")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Pay Supplier" })).toBeDisabled();
 		expect(screen.queryByRole("button", { name: "Review & Release" })).not.toBeInTheDocument();
+	});
+
+	it("shows the backend procurement payment state in the open expense", () => {
+		mocks.status = "posted";
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getAllByText("Ready for Payment")).toHaveLength(2);
+		expect(screen.queryByText("Review only")).not.toBeInTheDocument();
 	});
 
 	it("shows the manual payment verification state instead of a duplicate pay action", () => {
@@ -146,6 +202,82 @@ describe("Finance procurement expenses", () => {
 
 		expect(screen.getByText("AWAITING SHOP OWNER VERIFICATION")).toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Pay Supplier" })).not.toBeInTheDocument();
+	});
+
+	it("lets Finance view submitted proof while payment awaits Shop Owner verification", () => {
+		mocks.status = "posted";
+		mocks.paymentStatus = "awaiting_verification";
+		mocks.paymentAttempt = {
+			id: 44,
+			status: "awaiting_verification",
+			amount: "200.00",
+			payment_method: "manual_bank_transfer",
+			supplier_email_status: "pending",
+			proof_media: [{ id: 9, file_name: "proof.pdf", mime_type: "application/pdf", size: 100 }],
+		};
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByRole("button", { name: "View Submitted Proof" })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "View Submitted Proof" }));
+		expect(screen.getByRole("button", { name: /View proof\.pdf/i })).toBeInTheDocument();
+	});
+
+	it("lets Finance reopen a paid payment when its receipt is ready to send", () => {
+		mocks.status = "posted";
+		mocks.paymentStatus = "paid";
+		mocks.paymentAttempt = {
+			id: 44,
+			status: "succeeded",
+			amount: "200.00",
+			payment_method: "manual_bank_transfer",
+			supplier_email_status: "ready_to_send",
+			proof_media: [{ id: 9, file_name: "proof.pdf", mime_type: "application/pdf", size: 100 }],
+		};
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByRole("button", { name: "View Payment Proof" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Send Payment Receipt" })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "View Payment Proof" }));
+		expect(screen.getByRole("button", { name: /View proof\.pdf/i })).toBeInTheDocument();
+	});
+
+	it("lets the Shop Owner reopen a paid payment review without Finance actions", () => {
+		mocks.ownerMode = true;
+		mocks.status = "posted";
+		mocks.paymentStatus = "paid";
+		mocks.paymentAttempt = {
+			id: 44,
+			status: "succeeded",
+			amount: "200.00",
+			payment_method: "manual_bank_transfer",
+			supplier_email_status: "ready_to_send",
+			proof_media: [{ id: 9, file_name: "proof.pdf", mime_type: "application/pdf", size: 100 }],
+		};
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByRole("button", { name: "View Payment Proof" })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Send Payment Receipt" })).not.toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "View Payment Proof" }));
+		expect(screen.getByRole("heading", { name: "Review Supplier Payment" })).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: /proof\.pdf/i })).toBeInTheDocument();
+	});
+
+	it("does not expose payment-profile controls to the Shop Owner", () => {
+		mocks.ownerMode = true;
+		mocks.paymentProfileStatus = "verified";
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.queryByRole("button", { name: "Verify Payment Profile" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Disable Payment Profile" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Show full account details" })).not.toBeInTheDocument();
 	});
 
 	it("hides expense creation from the shop owner while keeping the page readable", () => {

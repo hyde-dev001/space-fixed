@@ -15,7 +15,6 @@ class PurchaseOrder extends Model
     use HasFactory, SoftDeletes;
 
     public const PAYMENT_TERM_DAYS = [
-        'COD' => 0,
         'Net 7' => 7,
         'Net 15' => 15,
         'Net 30' => 30,

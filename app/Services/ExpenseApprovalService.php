@@ -28,10 +28,11 @@ class ExpenseApprovalService
     public function submitProcurementExpense(
         PurchaseOrderReceipt $receipt,
         User $creator,
-        float $amount
+        string|int $amount
     ): Expense {
         $purchaseOrder = $receipt->purchaseOrder()->with('supplier')->firstOrFail();
         $dueDate = $this->deriveSupplierDueDate($purchaseOrder->payment_terms, $receipt->received_at);
+        $amountText = $this->formatCents($this->toCents($amount));
 
         $expense = Expense::firstOrCreate(
             ['procurement_receipt_id' => $receipt->id],
@@ -42,7 +43,7 @@ class ExpenseApprovalService
                 'category' => 'Procurement',
                 'vendor' => $purchaseOrder->supplier?->name,
                 'description' => "Receipt for purchase order {$purchaseOrder->po_number}",
-                'amount' => $amount,
+                'amount' => $amountText,
                 'tax_amount' => 0,
                 'status' => 'submitted',
                 'shop_id' => $purchaseOrder->shop_owner_id,
@@ -58,17 +59,24 @@ class ExpenseApprovalService
         );
 
         if ($expense->wasRecentlyCreated) {
-            try {
-                $this->notificationService->notifyExpenseSubmitted((int) $purchaseOrder->shop_owner_id, [
-                    'reference' => $expense->reference,
-                    'amount' => number_format((float) $expense->amount, 2),
-                    'category' => $expense->category,
-                    'expense_id' => $expense->id,
-                    'source' => 'procurement_receipt',
-                ]);
-            } catch (\Throwable $exception) {
-                report($exception);
-            }
+            $notificationPayload = [
+                'reference' => $expense->reference,
+                'amount' => $amountText,
+                'category' => $expense->category,
+                'expense_id' => $expense->id,
+                'source' => 'procurement_receipt',
+            ];
+
+            DB::afterCommit(function () use ($purchaseOrder, $notificationPayload): void {
+                try {
+                    $this->notificationService->notifyExpenseSubmitted(
+                        (int) $purchaseOrder->shop_owner_id,
+                        $notificationPayload
+                    );
+                } catch (\Throwable $exception) {
+                    report($exception);
+                }
+            });
         }
 
         return $expense->fresh();
@@ -214,6 +222,11 @@ class ExpenseApprovalService
         [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '0');
 
         return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
+    }
+
+    private function formatCents(int $cents): string
+    {
+        return intdiv($cents, 100) . '.' . str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
     }
 
     /**

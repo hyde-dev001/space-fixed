@@ -346,7 +346,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 				}
 			);
 
-			fetchPurchaseRequests();
+			await fetchPurchaseRequests();
 
 			const successText = isFinanceFinalStage
 				? `${request.pr_number} was finalized by Finance.`
@@ -408,7 +408,7 @@ export default function PurchaseRequestApproval({ onModalStateChange, requests: 
 				}
 			);
 
-			fetchPurchaseRequests();
+			await fetchPurchaseRequests();
 
 			await Swal.fire({
 				icon: "success",

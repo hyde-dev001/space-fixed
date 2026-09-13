@@ -9,6 +9,7 @@ use App\Models\SupplierPaymentAttempt;
 use App\Services\Finance\SupplierPaymentService;
 use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Http\Request;
+use Symfony\Component\HttpFoundation\HeaderUtils;
 
 final class SupplierPaymentController extends Controller
 {
@@ -88,8 +89,13 @@ final class SupplierPaymentController extends Controller
         $media = $attempt->getMedia('payment_proof')->firstWhere('id', $mediaId);
         abort_unless($media, 404);
 
-        $response = response()->download($media->getPath(), $media->file_name, [
+        $response = response()->file($media->getPath(), [
             'Content-Type' => $media->mime_type,
+            'Content-Disposition' => HeaderUtils::makeDisposition(
+                HeaderUtils::DISPOSITION_INLINE,
+                basename($media->file_name),
+            ),
+            'X-Content-Type-Options' => 'nosniff',
         ]);
         $response->headers->set('Cache-Control', 'private, no-store');
 

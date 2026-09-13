@@ -20,7 +20,7 @@ const order = {
 	quantity: 5,
 	unit_cost: 100,
 	total_cost: 500,
-	payment_terms: "COD",
+	payment_terms: "Net 30",
 	status: "completed",
 	is_historical: true,
 	ordered_by: 1,

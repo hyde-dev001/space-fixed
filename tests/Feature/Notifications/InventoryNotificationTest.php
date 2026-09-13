@@ -17,6 +17,7 @@ use App\Models\User;
 use App\Notifications\LowStockNotification;
 use App\Notifications\OutOfStockNotification;
 use App\Services\StockRequestApprovalService;
+use App\Services\NotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
@@ -28,6 +29,42 @@ use Tests\TestCase;
 final class InventoryNotificationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_purchase_order_in_transit_notifies_active_same_shop_inventory_viewers_once(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $otherShop = ShopOwner::factory()->create();
+        $permission = Permission::findOrCreate('inventory.view', 'user');
+        $viewer = User::factory()->for($shop)->create(['status' => 'active']);
+        $viewer->givePermissionTo($permission);
+        $inactiveViewer = User::factory()->for($shop)->create(['status' => 'inactive']);
+        $inactiveViewer->givePermissionTo($permission);
+        $otherShopViewer = User::factory()->for($otherShop)->create(['status' => 'active']);
+        $otherShopViewer->givePermissionTo($permission);
+        $sameShopWithoutPermission = User::factory()->for($shop)->create(['status' => 'active']);
+
+        $payload = [
+            'purchase_order_id' => 17,
+            'po_number' => 'PO-2026-017',
+            'supplier_id' => 23,
+            'supplier_name' => 'Supplier Trading',
+            'expected_delivery' => '2026-09-20',
+            'status' => 'in_transit',
+            'shop_id' => $shop->id,
+        ];
+
+        app(NotificationService::class)->notifyPurchaseOrderInTransit($shop->id, $payload);
+        app(NotificationService::class)->notifyPurchaseOrderInTransit($shop->id, $payload);
+
+        $notification = DatabaseNotification::query()->where('user_id', $viewer->id)->sole();
+        $this->assertSame(NotificationType::PURCHASE_ORDER_IN_TRANSIT->value, $notification->type->value);
+        $this->assertSame($payload, $notification->data);
+        $this->assertSame('purchase-order:17:in-transit', $notification->group_key);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $inactiveViewer->id]);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $otherShopViewer->id]);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $sameShopWithoutPermission->id]);
+        $this->assertSame(1, DatabaseNotification::query()->where('group_key', 'purchase-order:17:in-transit')->count());
+    }
 
     public function test_variant_alert_notifications_are_queued_and_only_reach_same_shop_inventory_viewers(): void
     {
@@ -190,4 +227,3 @@ final class InventoryNotificationTest extends TestCase
         ]);
     }
 }
-

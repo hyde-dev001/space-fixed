@@ -4,15 +4,19 @@
     <p>Hello {{ $supplierName }},</p>
 
     <p>
-        We have processed payment for {{ $poNumber }} in the amount of PHP {{ $amount }}.
-        Payment was sent via {{ $paymentMethod }} under reference
-        {{ $externalTransactionReference }}.
+        {{ $shopName }} verified and paid the supplier payment for purchase order
+        {{ $poNumber }} in the amount of PHP {{ $amount }}.
     </p>
 
     <p>
+        Receipt number: {{ $receiptNumber }}<br>
+        Payment status: {{ $paymentStatus }}<br>
+        Payment method: {{ $paymentMethod }}<br>
+        External reference: {{ $externalTransactionReference }}<br>
         Payment date: {{ optional($externallyPaidAt)->toDateTimeString() }}<br>
-        Destination: {{ $maskedDestination['bank_name'] ?? $maskedDestination['destination_type'] ?? 'Configured destination' }}
-        ({{ $maskedDestination['masked_account_number'] ?? 'masked account' }})
+        Destination:
+        {{ $maskedDestination['wallet_provider'] ?? $maskedDestination['bank_name'] ?? $maskedDestination['destination_type'] ?? 'Configured destination' }}
+        ({{ $maskedDestination['masked_account_identifier'] ?? $maskedDestination['masked_account_number'] ?? 'masked account' }})
     </p>
 
     <p>Please verify receipt of the funds in your account.</p>

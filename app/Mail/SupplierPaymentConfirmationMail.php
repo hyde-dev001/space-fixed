@@ -22,6 +22,9 @@ final class SupplierPaymentConfirmationMail extends Mailable
         public string $externalTransactionReference,
         public ?CarbonInterface $externallyPaidAt,
         public array $maskedDestination,
+        public string $shopName = 'SoleSpace',
+        public string $receiptNumber = '',
+        public string $paymentStatus = 'Verified / Paid',
     ) {}
 
     public function envelope(): Envelope
@@ -41,6 +44,9 @@ final class SupplierPaymentConfirmationMail extends Mailable
                 'externalTransactionReference' => $this->externalTransactionReference,
                 'externallyPaidAt' => $this->externallyPaidAt,
                 'maskedDestination' => $this->maskedDestination,
+                'shopName' => $this->shopName,
+                'receiptNumber' => $this->receiptNumber,
+                'paymentStatus' => $this->paymentStatus,
             ],
         );
     }

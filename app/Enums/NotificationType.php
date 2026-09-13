@@ -91,6 +91,7 @@ enum NotificationType: string
     case SUPPLIER_PAYMENT_REJECTED = 'supplier_payment_rejected';
     case SUPPLIER_REFUND_PROOF_SUBMITTED = 'supplier_refund_proof_submitted';
     case SUPPLIER_REFUND_CONFIRMED = 'supplier_refund_confirmed';
+    case SUPPLIER_PAYMENT_PROFILE_DISABLED = 'supplier_payment_profile_disabled';
     
     // ==================== SUPER ADMIN NOTIFICATIONS ====================
     case SHOP_REGISTRATION_PENDING = 'shop_registration_pending';
@@ -215,6 +216,7 @@ enum NotificationType: string
             self::SUPPLIER_PAYMENT_REJECTED => 'Supplier Payment Rejected',
             self::SUPPLIER_REFUND_PROOF_SUBMITTED => 'Supplier Refund Proof Submitted',
             self::SUPPLIER_REFUND_CONFIRMED => 'Supplier Refund Confirmed',
+            self::SUPPLIER_PAYMENT_PROFILE_DISABLED => 'Supplier Payment Profile Disabled',
             
             // Super admin notifications
             self::SHOP_REGISTRATION_PENDING => 'New Shop Registration',
@@ -278,7 +280,7 @@ enum NotificationType: string
             self::SUPPLIER_ISSUE_REPORTED, self::SUPPLIER_REPLACEMENT_REQUESTED,
             self::SUPPLIER_PAYMENT_AWAITING_VERIFICATION, self::SUPPLIER_PAYMENT_VERIFIED,
             self::SUPPLIER_PAYMENT_REJECTED, self::SUPPLIER_REFUND_PROOF_SUBMITTED,
-            self::SUPPLIER_REFUND_CONFIRMED => 'finance',
+            self::SUPPLIER_REFUND_CONFIRMED, self::SUPPLIER_PAYMENT_PROFILE_DISABLED => 'finance',
             
             self::LEAVE_APPROVAL, self::LEAVE_REQUEST_PENDING,
             self::LEAVE_SUBMITTED, self::LEAVE_REQUEST_APPROVED, self::LEAVE_REQUEST_REJECTED,
@@ -400,6 +402,7 @@ enum NotificationType: string
             self::SUPPLIER_REFUND_PROOF_SUBMITTED,
             self::SUPPLIER_ISSUE_REPORTED,
             self::SUPPLIER_REPLACEMENT_REQUESTED,
+            self::SUPPLIER_PAYMENT_PROFILE_DISABLED,
         ]);
     }
 

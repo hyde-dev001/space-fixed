@@ -81,6 +81,37 @@ class PurchaseRequestServiceTest extends TestCase
         $this->assertNotEquals($pr1->pr_number, $pr2->pr_number);
     }
 
+    public function test_pr_numbers_are_scoped_per_shop(): void
+    {
+        $otherShop = ShopOwner::factory()->create();
+        $otherSupplier = Supplier::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherUser = User::factory()->for($otherShop)->create();
+
+        $first = $this->service->createPurchaseRequest([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'product_name' => 'Shop A Product',
+            'quantity' => 1,
+            'unit_cost' => 100,
+            'priority' => 'medium',
+            'justification' => 'Test',
+            'requested_by' => $this->user->id,
+        ]);
+        $second = $this->service->createPurchaseRequest([
+            'shop_owner_id' => $otherShop->id,
+            'supplier_id' => $otherSupplier->id,
+            'product_name' => 'Shop B Product',
+            'quantity' => 1,
+            'unit_cost' => 100,
+            'priority' => 'medium',
+            'justification' => 'Test',
+            'requested_by' => $otherUser->id,
+        ]);
+
+        $this->assertSame('PR-' . date('Y') . '-001', $first->pr_number);
+        $this->assertSame($first->pr_number, $second->pr_number);
+    }
+
     /** @test */
     public function it_can_submit_to_finance()
     {
@@ -90,7 +121,7 @@ class PurchaseRequestServiceTest extends TestCase
             'status' => 'draft',
         ]);
 
-        $result = $this->service->submitToFinance($pr->id);
+        $result = $this->service->submitToFinance($pr->id, $this->user);
 
         $this->assertInstanceOf(PurchaseRequest::class, $result);
         $this->assertEquals('pending_finance', $result->status);
@@ -107,7 +138,7 @@ class PurchaseRequestServiceTest extends TestCase
             'status' => 'draft',
         ]);
 
-        $submitted = $this->service->submitToFinance($pr->id);
+        $submitted = $this->service->submitToFinance($pr->id, $this->user);
         $this->assertSame(false, $submitted->requires_owner_approval);
 
         $this->setPurchaseRequestApproval(true);

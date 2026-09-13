@@ -10,26 +10,36 @@ export interface User {
     email: string;
 }
 
-export type PaymentTerms = 'COD' | 'Net 7' | 'Net 15' | 'Net 30' | 'Net 45' | 'Net 60';
+export type PaymentTerms = 'Net 7' | 'Net 15' | 'Net 30' | 'Net 45' | 'Net 60';
+export type SupplierPaymentDestinationType = 'bank_account' | 'e_wallet';
 
 export interface SupplierPaymentProfile {
     id: number;
-    destination_type: string;
-    bank_name: string;
-    bank_code: string;
+    destination_type: SupplierPaymentDestinationType | string;
+    wallet_provider?: string | null;
+    bank_name?: string | null;
+    bank_code?: string | null;
     account_name: string;
     masked_account_number: string | null;
+    masked_account_identifier?: string | null;
     status: 'unverified' | 'verified' | 'disabled' | string;
     verified_by?: number | null;
     verified_at?: string | null;
 }
 
+export type RevealedSupplierPaymentProfile = SupplierPaymentProfile & {
+    account_number?: string | null;
+    account_identifier?: string | null;
+};
+
 export interface UpsertSupplierPaymentProfilePayload {
-    destination_type: string;
-    bank_name: string;
-    bank_code: string;
+    destination_type: SupplierPaymentDestinationType;
+    wallet_provider?: string;
+    bank_name?: string;
+    bank_code?: string;
     account_name: string;
     account_number?: string;
+    account_identifier?: string;
 }
 
 export type SupplierPaymentMethod = 'manual_bank_transfer' | 'manual_e_wallet';
@@ -43,11 +53,11 @@ export interface SupplierPaymentAttemptSummary {
     payment_method: SupplierPaymentMethod | string;
     internal_reference?: string;
     external_transaction_reference?: string | null;
-    masked_destination?: Pick<SupplierPaymentProfile, 'bank_name' | 'bank_code' | 'account_name' | 'masked_account_number'> & {
+    masked_destination?: Pick<SupplierPaymentProfile, 'wallet_provider' | 'bank_name' | 'bank_code' | 'account_name' | 'masked_account_number' | 'masked_account_identifier'> & {
         destination_type?: string | null;
     };
-    supplier_email_to?: string | null;
-    supplier_email_status?: 'pending' | 'sent' | 'failed' | string | null;
+    supplier_email_masked?: string | null;
+    supplier_email_status?: 'pending' | 'ready_to_send' | 'queued' | 'dispatched' | 'failed' | string | null;
     supplier_email_failure_message?: string | null;
     finance_note?: string | null;
     initiated_by?: { id: number; name: string } | null;
@@ -183,6 +193,8 @@ export interface PurchaseOrder {
     is_overdue?: boolean;
     days_until_delivery?: number;
     days_since_delivery?: number;
+    can_complete?: boolean;
+    completion_blockers?: string[];
     created_at: string;
     updated_at: string;
 }
@@ -317,6 +329,7 @@ export interface Supplier {
     city?: string;
     country?: string;
     payment_terms?: PaymentTerms;
+    payment_profile_status?: 'unverified' | 'verified' | 'disabled' | string | null;
     lead_time_days?: number;
     products_supplied?: string;
     purchase_order_count: number;
@@ -587,6 +600,7 @@ export interface CreateSupplierPayload {
     lead_time_days?: number;
     products_supplied?: string;
     notes?: string;
+    payment_profile?: UpsertSupplierPaymentProfilePayload;
 }
 
 export interface UpdateSupplierPayload {

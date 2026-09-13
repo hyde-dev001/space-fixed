@@ -325,7 +325,7 @@ class ExpenseController extends Controller
             'internal_reference' => $attempt->internal_reference,
             'external_transaction_reference' => $attempt->externalTransactionReference(),
             'masked_destination' => $attempt->maskedDestination(),
-            'supplier_email_to' => $attempt->supplier_email_to,
+            'supplier_email_masked' => $attempt->maskedSupplierEmail(),
             'supplier_email_status' => $attempt->supplier_email_status,
             'supplier_email_failure_message' => $attempt->supplier_email_failure_message,
             'finance_note' => $attempt->finance_note,

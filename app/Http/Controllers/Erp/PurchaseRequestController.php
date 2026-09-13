@@ -303,13 +303,16 @@ class PurchaseRequestController extends Controller
             $data = $this->sanitizePurchaseRequestPayloadForSchema($data);
             $data['total_cost'] = $this->calculatePurchaseRequestTotalCost($data, (int) $purchaseRequest->shop_owner_id);
             
-            if ($request->submit_to_finance && $purchaseRequest->status === 'draft') {
-                $data['status'] = 'pending_finance';
-            }
-
             $purchaseRequest->update($data);
 
             DB::commit();
+
+            if ($request->boolean('submit_to_finance')) {
+                $purchaseRequest = $this->purchaseRequestService->submitToFinance(
+                    (int) $purchaseRequest->id,
+                    Auth::user(),
+                );
+            }
 
             return response()->json([
                 'message' => 'Purchase request updated successfully.',
@@ -371,7 +374,10 @@ class PurchaseRequestController extends Controller
             ], 403);
         }
 
-        $purchaseRequest = $this->purchaseRequestService->submitToFinance((int) $purchaseRequest->id);
+        $purchaseRequest = $this->purchaseRequestService->submitToFinance(
+            (int) $purchaseRequest->id,
+            Auth::user(),
+        );
 
         return response()->json([
             'message' => 'Purchase request submitted to finance successfully.',

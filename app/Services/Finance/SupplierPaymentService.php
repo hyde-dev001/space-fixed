@@ -107,18 +107,12 @@ final class SupplierPaymentService
                 'payment_method' => $paymentMethod,
                 'internal_reference' => 'SPM-' . Str::upper(Str::random(20)),
                 'idempotency_key' => $idempotencyKey,
-                'destination_snapshot' => [
-                    'destination_type' => $profile->destination_type,
-                    'bank_name' => $profile->bank_name,
-                    'bank_code' => $profile->bank_code,
-                    'account_name' => $profile->account_name,
-                    'account_number' => $profile->account_number,
-                ],
+                'destination_snapshot' => $this->destinationSnapshot($profile),
                 'status' => SupplierPaymentAttempt::STATUS_INITIATING,
                 'initiated_by_user_id' => $actor->id,
                 'initiated_at' => now(),
                 'supplier_email_to' => trim((string) $supplier->email),
-                'supplier_email_status' => 'pending',
+                'supplier_email_status' => SupplierPaymentAttempt::EMAIL_STATUS_PENDING,
             ]);
 
             return ['attempt' => $attempt->fresh(), 'replayed' => false];
@@ -176,6 +170,7 @@ final class SupplierPaymentService
                     throw new FinanceDomainException('An external transaction reference is required.', 'INVALID_STATE', 422);
                 }
                 if (SupplierPaymentAttempt::query()
+                    ->where('shop_owner_id', $shopId)
                     ->where('provider', 'manual')
                     ->where('provider_reference', $reference)
                     ->whereKeyNot($lockedAttempt->id)
@@ -183,10 +178,15 @@ final class SupplierPaymentService
                     throw new FinanceDomainException('That external transaction reference is already in use.', 'DUPLICATE_SUBMISSION', 409);
                 }
 
+                $externallyPaidAt = CarbonImmutable::parse($data['externally_paid_at']);
+                if ($externallyPaidAt->isFuture()) {
+                    throw new FinanceDomainException('The external payment date cannot be in the future.', 'INVALID_STATE', 422);
+                }
+
                 $media = $lockedAttempt->addMedia($proof)->toMediaCollection('payment_proof');
                 $lockedAttempt->update([
                     'provider_reference' => $reference,
-                    'externally_paid_at' => CarbonImmutable::parse($data['externally_paid_at'])->toDateTimeString(),
+                    'externally_paid_at' => $externallyPaidAt->toDateTimeString(),
                     'submitted_for_verification_at' => now(),
                     'finance_note' => isset($data['finance_note']) ? trim((string) $data['finance_note']) : null,
                     'status' => SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
@@ -317,7 +317,7 @@ final class SupplierPaymentService
                 'verified_at' => now(),
                 'succeeded_at' => now(),
                 'settled_at' => now(),
-                'supplier_email_status' => 'pending',
+                'supplier_email_status' => SupplierPaymentAttempt::EMAIL_STATUS_READY_TO_SEND,
             ]);
             $settledNow = true;
 
@@ -338,7 +338,7 @@ final class SupplierPaymentService
             }
         }
 
-        return $this->deliverSupplierConfirmation($confirmed);
+        return $confirmed;
     }
 
     public function reject(SupplierPaymentAttempt $attempt, ShopOwner $shopOwner, string $reason): SupplierPaymentAttempt
@@ -383,20 +383,23 @@ final class SupplierPaymentService
         return $rejected;
     }
 
-    public function resendConfirmation(SupplierPaymentAttempt $attempt, User $actor): SupplierPaymentAttempt
+    public function sendConfirmation(SupplierPaymentAttempt $attempt, User $actor): SupplierPaymentAttempt
     {
         $shopId = (int) ($actor->shop_owner_id ?? 0);
 
-        $pending = DB::transaction(function () use ($attempt, $shopId): SupplierPaymentAttempt {
+        $claimed = DB::transaction(function () use ($attempt, $shopId): SupplierPaymentAttempt {
             $lockedAttempt = SupplierPaymentAttempt::query()->whereKey($attempt->getKey())->lockForUpdate()->firstOrFail();
             $this->assertAttemptBelongsToShop($lockedAttempt, $shopId);
             if ((string) $lockedAttempt->status !== SupplierPaymentAttempt::STATUS_SUCCEEDED
-                || (string) $lockedAttempt->supplier_email_status !== 'failed') {
-                throw new FinanceDomainException('Only a failed supplier payment confirmation can be resent.', 'INVALID_STATE', 422);
+                || ! in_array((string) $lockedAttempt->supplier_email_status, [
+                    SupplierPaymentAttempt::EMAIL_STATUS_READY_TO_SEND,
+                    SupplierPaymentAttempt::EMAIL_STATUS_FAILED,
+                ], true)) {
+                throw new FinanceDomainException('This supplier payment receipt is not ready to send.', 'INVALID_STATE', 422);
             }
 
             $lockedAttempt->update([
-                'supplier_email_status' => 'pending',
+                'supplier_email_status' => SupplierPaymentAttempt::EMAIL_STATUS_QUEUED,
                 'supplier_email_failure_message' => null,
                 'supplier_email_failed_at' => null,
             ]);
@@ -404,7 +407,12 @@ final class SupplierPaymentService
             return $lockedAttempt->fresh();
         }, 3);
 
-        return $this->deliverSupplierConfirmation($pending);
+        return $this->deliverSupplierConfirmation($claimed);
+    }
+
+    public function resendConfirmation(SupplierPaymentAttempt $attempt, User $actor): SupplierPaymentAttempt
+    {
+        return $this->sendConfirmation($attempt, $actor);
     }
 
     /** @return array<string, mixed> */
@@ -433,7 +441,7 @@ final class SupplierPaymentService
             'payment_method' => (string) $attempt->payment_method,
             'internal_reference' => (string) $attempt->internal_reference,
             'external_transaction_reference' => $attempt->externalTransactionReference(),
-            'supplier_email_to' => $attempt->supplier_email_to,
+            'supplier_email_masked' => $attempt->maskedSupplierEmail(),
             'supplier_email_status' => $attempt->supplier_email_status,
             'supplier_email_sent_at' => $attempt->supplier_email_sent_at?->toISOString(),
             'supplier_email_failed_at' => $attempt->supplier_email_failed_at?->toISOString(),
@@ -453,7 +461,6 @@ final class SupplierPaymentService
             'supplier' => [
                 'id' => $attempt->supplier?->id,
                 'name' => $attempt->supplier?->name,
-                'email' => $attempt->supplier?->email,
             ],
             'purchase_order' => [
                 'id' => $purchaseOrder?->id,
@@ -477,11 +484,17 @@ final class SupplierPaymentService
 
     private function deliverSupplierConfirmation(SupplierPaymentAttempt $attempt): SupplierPaymentAttempt
     {
-        if ((string) $attempt->supplier_email_status !== 'pending') {
+        if ((string) $attempt->supplier_email_status !== SupplierPaymentAttempt::EMAIL_STATUS_QUEUED) {
             return $attempt->fresh();
         }
 
-        $attempt->loadMissing(['supplier', 'expense.procurementReceipt.purchaseOrder']);
+        $attempt->loadMissing([
+            'supplier',
+            'expense.procurementReceipt.purchaseOrder',
+            'expense.procurementReceipt.shopOwner',
+        ]);
+        $receipt = $attempt->expense?->procurementReceipt;
+        $shopName = trim((string) $receipt?->shopOwner?->business_name) ?: 'SoleSpace';
 
         try {
             Mail::to($attempt->supplier_email_to)->send(new SupplierPaymentConfirmationMail(
@@ -492,10 +505,13 @@ final class SupplierPaymentService
                 externalTransactionReference: (string) $attempt->provider_reference,
                 externallyPaidAt: $attempt->externally_paid_at,
                 maskedDestination: $attempt->maskedDestination(),
+                shopName: $shopName,
+                receiptNumber: $receipt ? 'RCV-' . $receipt->id : '',
+                paymentStatus: 'Verified / Paid',
             ));
 
             $attempt->forceFill([
-                'supplier_email_status' => 'sent',
+                'supplier_email_status' => SupplierPaymentAttempt::EMAIL_STATUS_DISPATCHED,
                 'supplier_email_sent_at' => now(),
                 'supplier_email_failed_at' => null,
                 'supplier_email_failure_message' => null,
@@ -506,7 +522,7 @@ final class SupplierPaymentService
                 'shop_id' => $attempt->shop_owner_id,
             ]);
             $attempt->forceFill([
-                'supplier_email_status' => 'failed',
+                'supplier_email_status' => SupplierPaymentAttempt::EMAIL_STATUS_FAILED,
                 'supplier_email_failed_at' => now(),
                 'supplier_email_failure_message' => 'Supplier email delivery failed.',
             ])->save();
@@ -585,6 +601,27 @@ final class SupplierPaymentService
             || strtoupper((string) $attempt->currency) !== 'PHP') {
             throw new FinanceDomainException('The supplier payment no longer matches its procurement records.', 'INVALID_STATE', 409);
         }
+    }
+
+    /** @return array<string, mixed> */
+    private function destinationSnapshot(SupplierPaymentProfile $profile): array
+    {
+        if ($profile->destination_type === SupplierPaymentProfile::DESTINATION_E_WALLET) {
+            return [
+                'destination_type' => SupplierPaymentProfile::DESTINATION_E_WALLET,
+                'wallet_provider' => $profile->wallet_provider,
+                'account_name' => $profile->account_name,
+                'account_identifier' => $profile->account_identifier,
+            ];
+        }
+
+        return [
+            'destination_type' => SupplierPaymentProfile::DESTINATION_BANK_ACCOUNT,
+            'bank_name' => $profile->bank_name,
+            'bank_code' => $profile->bank_code,
+            'account_name' => $profile->account_name,
+            'account_number' => $profile->account_number,
+        ];
     }
 
     private function outstandingAmount(Expense $expense): string

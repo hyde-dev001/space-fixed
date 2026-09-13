@@ -47,6 +47,13 @@ class PurchaseRequestController extends Controller
 
         if ($request->filled('status')) {
             $query->where('status', $request->status);
+
+            if ($request->status === 'pending_shop_owner') {
+                $query->where(function ($approvalQuery) {
+                    $approvalQuery->whereNull('requires_owner_approval')
+                        ->orWhere('requires_owner_approval', true);
+                });
+            }
         }
 
         if ($request->filled('search')) {

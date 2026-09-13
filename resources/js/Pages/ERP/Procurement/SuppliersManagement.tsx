@@ -5,11 +5,11 @@ import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import IconButton from "../../../components/ui/icon-button/IconButton";
 import { supplierApi, type Supplier } from "@/services/procurementApi";
-import type { SupplierPaymentProfile } from "@/types/procurement";
+import type { SupplierPaymentDestinationType, SupplierPaymentProfile, UpsertSupplierPaymentProfilePayload } from "@/types/procurement";
 import { erpUrl } from "@/utils/erpCapabilities";
 import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
-const PAYMENT_TERMS = ["COD", "Net 7", "Net 15", "Net 30", "Net 45", "Net 60"] as const;
+const PAYMENT_TERMS = ["Net 7", "Net 15", "Net 30", "Net 45", "Net 60"] as const;
 
 
 const PencilIcon = ({ className }: { className?: string }) => (
@@ -43,6 +43,21 @@ const ChevronRightIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
+const EyeIcon = ({ crossed = false }: { crossed?: boolean }) => (
+	<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+		<path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.27 2.943 9.542 7-1.272 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+		<circle cx="12" cy="12" r="3" />
+		{crossed && <path strokeLinecap="round" d="m4 4 16 16" />}
+	</svg>
+);
+
+const paymentProfileStatusPresentation = (status?: string | null) => {
+	if (status === "verified") return ["Payment Verified", "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"];
+	if (status === "unverified") return ["Payment Unverified", "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"];
+	if (status === "disabled") return ["Payment Disabled", "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"];
+	return ["Payment Not Set", "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"];
+};
+
 interface FormState {
 	name: string;
 	contact_person: string;
@@ -72,19 +87,93 @@ const initialFormState: FormState = {
 };
 
 interface PaymentProfileFormState {
-	destination_type: string;
+	destination_type: SupplierPaymentDestinationType;
+	wallet_provider: string;
 	bank_name: string;
 	bank_code: string;
 	account_name: string;
 	account_number: string;
+	account_identifier: string;
 }
 
 const initialPaymentProfileFormState: PaymentProfileFormState = {
 	destination_type: "bank_account",
+	wallet_provider: "",
 	bank_name: "",
 	bank_code: "",
 	account_name: "",
 	account_number: "",
+	account_identifier: "",
+};
+
+interface SupplierFormFieldsProps {
+	formData: FormState;
+	onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
+	idPrefix: string;
+}
+
+const supplierFieldClass = "w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white";
+const supplierLabelClass = "mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300";
+
+const SupplierFormFields = ({ formData, onChange, idPrefix }: SupplierFormFieldsProps) => {
+	const fieldId = (name: string) => `${idPrefix}-supplier-${name}`;
+
+	return (
+		<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+			<div className="sm:col-span-2">
+				<label htmlFor={fieldId("name")} className={supplierLabelClass}>Supplier Name *</label>
+				<input id={fieldId("name")} type="text" name="name" value={formData.name} onChange={onChange} placeholder="e.g., Metro Footwear Trading" className={supplierFieldClass} />
+			</div>
+
+			<div className="sm:col-span-2">
+				<label htmlFor={fieldId("address")} className={supplierLabelClass}>Address</label>
+				<input id={fieldId("address")} type="text" name="address" value={formData.address} onChange={onChange} placeholder="e.g., 123 Main Street" className={supplierFieldClass} />
+			</div>
+
+			<div>
+				<label htmlFor={fieldId("city")} className={supplierLabelClass}>City</label>
+				<input id={fieldId("city")} type="text" name="city" value={formData.city} onChange={onChange} className={supplierFieldClass} />
+			</div>
+			<div>
+				<label htmlFor={fieldId("country")} className={supplierLabelClass}>Country</label>
+				<input id={fieldId("country")} type="text" name="country" value={formData.country} onChange={onChange} className={supplierFieldClass} />
+			</div>
+
+			<div>
+				<label htmlFor={fieldId("payment-terms")} className={supplierLabelClass}>Payment Terms</label>
+				<select id={fieldId("payment-terms")} name="payment_terms" value={formData.payment_terms} onChange={onChange} className={supplierFieldClass}>
+					<option value="">Use procurement default</option>
+					{PAYMENT_TERMS.map((terms) => <option key={terms} value={terms}>{terms}</option>)}
+				</select>
+			</div>
+			<div>
+				<label htmlFor={fieldId("lead-time-days")} className={supplierLabelClass}>Lead Time (days)</label>
+				<input id={fieldId("lead-time-days")} type="number" min="0" name="lead_time_days" value={formData.lead_time_days} onChange={onChange} className={supplierFieldClass} />
+			</div>
+
+			<div className="sm:col-span-2">
+				<label htmlFor={fieldId("products-supplied")} className={supplierLabelClass}>Products Supplied</label>
+				<input id={fieldId("products-supplied")} type="text" name="products_supplied" value={formData.products_supplied} onChange={onChange} placeholder="e.g., running shoes, laces" className={supplierFieldClass} />
+			</div>
+
+			<div>
+				<label htmlFor={fieldId("contact-person")} className={supplierLabelClass}>Contact Person</label>
+				<input id={fieldId("contact-person")} type="text" name="contact_person" value={formData.contact_person} onChange={onChange} placeholder="e.g., Juan Dela Cruz" className={supplierFieldClass} />
+			</div>
+			<div>
+				<label htmlFor={fieldId("email")} className={supplierLabelClass}>Email</label>
+				<input id={fieldId("email")} type="email" name="email" value={formData.email} onChange={onChange} placeholder="e.g., contact@email.com" className={supplierFieldClass} />
+			</div>
+			<div>
+				<label htmlFor={fieldId("phone")} className={supplierLabelClass}>Phone</label>
+				<input id={fieldId("phone")} type="tel" name="phone" value={formData.phone} onChange={onChange} inputMode="numeric" maxLength={11} pattern="[0-9]{1,11}" placeholder="e.g., 09174561188" className={supplierFieldClass} />
+			</div>
+			<div>
+				<label htmlFor={fieldId("notes")} className={supplierLabelClass}>Notes</label>
+				<input id={fieldId("notes")} type="text" name="notes" value={formData.notes} onChange={onChange} placeholder="e.g., Preferred payment: bank transfer. Lead time: 7 days." className={supplierFieldClass} />
+			</div>
+		</div>
+	);
 };
 
 export default function SuppliersManagement() {
@@ -102,6 +191,7 @@ export default function SuppliersManagement() {
 	const [paymentProfile, setPaymentProfile] = useState<SupplierPaymentProfile | null>(null);
 	const [paymentProfileForm, setPaymentProfileForm] = useState<PaymentProfileFormState>(initialPaymentProfileFormState);
 	const [paymentProfileLoading, setPaymentProfileLoading] = useState(false);
+	const [showPaymentAccount, setShowPaymentAccount] = useState(false);
 
 	const getApiErrorMessage = (error: unknown, fallback: string) => {
 		if (!axios.isAxiosError(error)) return fallback;
@@ -110,6 +200,8 @@ export default function SuppliersManagement() {
 			message?: string;
 			errors?: Record<string, string[]>;
 		} | undefined;
+		const status = error.response?.status;
+		if (!status || status >= 500) return fallback;
 
 		const firstValidationError = responseData?.errors
 			? Object.values(responseData.errors).flat()[0]
@@ -169,17 +261,20 @@ export default function SuppliersManagement() {
 		try {
 			const profile = await supplierApi.getPaymentProfile(supplierId);
 			setPaymentProfile(profile);
-			setPaymentProfileForm({
-				destination_type: profile?.destination_type || "bank_account",
-				bank_name: profile?.bank_name || "",
-				bank_code: profile?.bank_code || "",
-				account_name: profile?.account_name || "",
-				account_number: "",
-			});
+				setPaymentProfileForm({
+					destination_type: (profile?.destination_type as SupplierPaymentDestinationType) || "bank_account",
+					wallet_provider: profile?.wallet_provider || "",
+					bank_name: profile?.bank_name || "",
+					bank_code: profile?.bank_code || "",
+					account_name: profile?.account_name || "",
+					account_number: "",
+					account_identifier: "",
+				});
 		} catch (error) {
 			console.error("Failed to load supplier payment profile:", error);
 			setPaymentProfile(null);
 			setPaymentProfileForm(initialPaymentProfileFormState);
+			setShowPaymentAccount(false);
 		} finally {
 			setPaymentProfileLoading(false);
 		}
@@ -188,8 +283,9 @@ export default function SuppliersManagement() {
 	const closeEditModal = () => {
 		setEditingSupplier(null);
 		setFormData(initialFormState);
-		setPaymentProfile(null);
-		setPaymentProfileForm(initialPaymentProfileFormState);
+			setPaymentProfile(null);
+			setPaymentProfileForm(initialPaymentProfileFormState);
+			setShowPaymentAccount(false);
 	};
 
 	const handleEdit = (supplier: Supplier) => {
@@ -207,7 +303,9 @@ export default function SuppliersManagement() {
 			address: supplier.address || "",
 			city: supplier.city || "",
 			country: supplier.country || "",
-			payment_terms: supplier.payment_terms || "",
+			payment_terms: PAYMENT_TERMS.includes(supplier.payment_terms as typeof PAYMENT_TERMS[number])
+				? supplier.payment_terms
+				: "",
 			lead_time_days: supplier.lead_time_days?.toString() || "",
 			products_supplied: supplier.products_supplied || "",
 			notes: supplier.notes || "",
@@ -305,21 +403,32 @@ export default function SuppliersManagement() {
 				products_supplied: formData.products_supplied,
 				notes: formData.notes,
 			});
-			if (paymentProfileForm.bank_name.trim() || paymentProfileForm.bank_code.trim() || paymentProfileForm.account_name.trim() || paymentProfileForm.account_number.trim()) {
-				await supplierApi.upsertPaymentProfile(editingSupplier.id, {
-					destination_type: paymentProfileForm.destination_type,
-					bank_name: paymentProfileForm.bank_name,
-					bank_code: paymentProfileForm.bank_code,
-					account_name: paymentProfileForm.account_name,
-					account_number: paymentProfileForm.account_number || undefined,
-				});
-			}
+				const isWallet = paymentProfileForm.destination_type === "e_wallet";
+				if (paymentProfileForm.wallet_provider.trim() || paymentProfileForm.bank_name.trim() || paymentProfileForm.bank_code.trim() || paymentProfileForm.account_name.trim() || paymentProfileForm.account_number.trim() || paymentProfileForm.account_identifier.trim()) {
+					const paymentProfilePayload: UpsertSupplierPaymentProfilePayload = isWallet
+						? {
+							destination_type: "e_wallet",
+							wallet_provider: paymentProfileForm.wallet_provider,
+							account_name: paymentProfileForm.account_name,
+							account_identifier: paymentProfileForm.account_identifier || undefined,
+						}
+						: {
+							destination_type: "bank_account",
+							bank_name: paymentProfileForm.bank_name,
+							bank_code: paymentProfileForm.bank_code,
+							account_name: paymentProfileForm.account_name,
+							account_number: paymentProfileForm.account_number || undefined,
+						};
+					await supplierApi.upsertPaymentProfile(editingSupplier.id, {
+						...paymentProfilePayload,
+					});
+				}
 
 			await Swal.fire("Success", "Supplier updated successfully", "success");
 			closeEditModal();
 			await fetchSuppliers();
 		} catch (error) {
-			console.error("Failed to update supplier:", error);
+			console.error("Failed to update supplier");
 			await Swal.fire("Error", getApiErrorMessage(error, "Failed to update supplier"), "error");
 		}
 	};
@@ -327,13 +436,17 @@ export default function SuppliersManagement() {
 	const handleOpenModal = () => {
 		if (ownerMode) return;
 
-		setFormData(initialFormState);
-		setIsModalOpen(true);
+			setFormData(initialFormState);
+			setPaymentProfileForm(initialPaymentProfileFormState);
+			setShowPaymentAccount(false);
+			setIsModalOpen(true);
 	};
 
 	const handleCloseModal = () => {
-		setIsModalOpen(false);
-		setFormData(initialFormState);
+			setIsModalOpen(false);
+			setFormData(initialFormState);
+			setPaymentProfileForm(initialPaymentProfileFormState);
+			setShowPaymentAccount(false);
 	};
 
 	const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -345,8 +458,14 @@ export default function SuppliersManagement() {
 	};
 
 	const handlePaymentProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-		const { name, value } = e.target;
-		setPaymentProfileForm((prev) => ({ ...prev, [name]: value }));
+			const { name, value } = e.target;
+			setPaymentProfileForm((prev) => name === "destination_type"
+				? {
+					...initialPaymentProfileFormState,
+					destination_type: value as SupplierPaymentDestinationType,
+					account_name: prev.account_name,
+				}
+				: { ...prev, [name]: value });
 	};
 
 	const handleAddSupplier = async () => {
@@ -363,8 +482,26 @@ export default function SuppliersManagement() {
 		}
 
 		try {
-			await supplierApi.create({
-				name: formData.name,
+				const isWallet = paymentProfileForm.destination_type === "e_wallet";
+				const hasPaymentProfileInput = paymentProfileForm.wallet_provider.trim() || paymentProfileForm.bank_name.trim() || paymentProfileForm.bank_code.trim() || paymentProfileForm.account_name.trim() || paymentProfileForm.account_number.trim() || paymentProfileForm.account_identifier.trim();
+				const paymentProfilePayload: UpsertSupplierPaymentProfilePayload | undefined = hasPaymentProfileInput
+					? isWallet
+						? {
+							destination_type: "e_wallet",
+							wallet_provider: paymentProfileForm.wallet_provider,
+							account_name: paymentProfileForm.account_name,
+							account_identifier: paymentProfileForm.account_identifier,
+						}
+						: {
+							destination_type: "bank_account",
+							bank_name: paymentProfileForm.bank_name,
+							bank_code: paymentProfileForm.bank_code,
+							account_name: paymentProfileForm.account_name,
+							account_number: paymentProfileForm.account_number,
+						}
+					: undefined;
+				await supplierApi.create({
+					name: formData.name,
 				contact_person: formData.contact_person,
 				email: formData.email,
 				phone: formData.phone,
@@ -373,9 +510,10 @@ export default function SuppliersManagement() {
 				country: formData.country,
 				payment_terms: formData.payment_terms as Supplier["payment_terms"],
 				lead_time_days: formData.lead_time_days ? Number(formData.lead_time_days) : undefined,
-				products_supplied: formData.products_supplied,
-				notes: formData.notes,
-			});
+					products_supplied: formData.products_supplied,
+					notes: formData.notes,
+					payment_profile: paymentProfilePayload,
+				});
 
 			await Swal.fire("Success", "Supplier created successfully", "success");
 			handleCloseModal();
@@ -387,6 +525,7 @@ export default function SuppliersManagement() {
 	};
 
 	const isAnyModalOpen = isModalOpen || !!viewingSupplier || !!editingSupplier;
+	const paymentDestinationIsWallet = paymentProfileForm.destination_type === "e_wallet";
 
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
@@ -459,9 +598,15 @@ export default function SuppliersManagement() {
 										<tr key={supplier.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
 										<td className="px-4 py-3">
 											<p className="text-sm font-medium text-gray-900 dark:text-white">{supplier.name}</p>
-											<span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium mt-1 ${supplier.is_active ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
-												{supplier.is_active ? "Active" : "Inactive"}
-											</span>
+											<div className="mt-1 flex flex-wrap gap-1">
+												<span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${supplier.is_active ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
+													{supplier.is_active ? "Active" : "Inactive"}
+												</span>
+												{(() => {
+													const [label, className] = paymentProfileStatusPresentation(supplier.payment_profile_status);
+													return <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${className}`}>{label}</span>;
+												})()}
+											</div>
 										</td>
 										<td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">
 											<p>{supplier.email}</p>
@@ -561,10 +706,10 @@ export default function SuppliersManagement() {
 
 			{/* Add Supplier Modal */}
 			{isModalOpen && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+				<div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:py-8">
 					<button type="button" aria-label="Close add supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={handleCloseModal} />
-					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
-						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+					<div className="relative flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
+						<div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add New Supplier</h2>
 							<button
 								onClick={handleCloseModal}
@@ -574,143 +719,58 @@ export default function SuppliersManagement() {
 							</button>
 						</div>
 
-						<div className="p-6 space-y-4">
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Supplier Name *
-								</label>
-								<input
-									type="text"
-									name="name"
-									value={formData.name}
-									onChange={handleFormChange}
-									placeholder="e.g., Metro Footwear Trading"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
+						<div className="px-5 py-3">
+							<SupplierFormFields formData={formData} onChange={handleFormChange} idPrefix="add" />
 
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+							<div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2 dark:border-blue-900/60 dark:bg-blue-950/20 sm:col-span-2">
 								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
-									<input type="text" name="city" value={formData.city} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+									<h3 className="text-sm font-semibold text-gray-900 dark:text-white">Payment Profile (optional)</h3>
+									<p className="text-xs text-gray-500 dark:text-gray-400">Save a verified destination for later Finance payment review.</p>
+								</div>
+								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+									<div>
+										<label htmlFor="add-payment-destination-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Destination Type</label>
+										<select id="add-payment-destination-type" name="destination_type" value={paymentProfileForm.destination_type} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
+											<option value="bank_account">Bank Account</option>
+											<option value="e_wallet">E-wallet</option>
+										</select>
+									</div>
+									<div>
+										<label htmlFor="add-payment-provider" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{paymentDestinationIsWallet ? "Wallet Provider" : "Bank Name"}</label>
+										<input id="add-payment-provider" name={paymentDestinationIsWallet ? "wallet_provider" : "bank_name"} value={paymentDestinationIsWallet ? paymentProfileForm.wallet_provider : paymentProfileForm.bank_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+									</div>
+								</div>
+								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+									{paymentDestinationIsWallet ? (
+										<div>
+											<label htmlFor="add-payment-account-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Account Name</label>
+											<input id="add-payment-account-name" name="account_name" value={paymentProfileForm.account_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+										</div>
+									) : (
+										<div>
+											<label htmlFor="add-payment-bank-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bank Code</label>
+											<input id="add-payment-bank-code" name="bank_code" value={paymentProfileForm.bank_code} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+										</div>
+									)}
+									{!paymentDestinationIsWallet && (
+										<div>
+											<label htmlFor="add-payment-account-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Account Name</label>
+											<input id="add-payment-account-name" name="account_name" value={paymentProfileForm.account_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+										</div>
+									)}
 								</div>
 								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Country</label>
-									<input type="text" name="country" value={formData.country} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+									<label htmlFor="add-payment-account" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{paymentDestinationIsWallet ? "Mobile / Account Number" : "Account Number"}</label>
+									<div className="flex gap-2">
+										<input id="add-payment-account" name={paymentDestinationIsWallet ? "account_identifier" : "account_number"} value={paymentDestinationIsWallet ? paymentProfileForm.account_identifier : paymentProfileForm.account_number} onChange={handlePaymentProfileChange} autoComplete="off" type={showPaymentAccount ? "text" : "password"} placeholder={paymentDestinationIsWallet ? "Enter wallet mobile/account identifier" : "Enter supplier account number"} className="min-w-0 flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+										<button type="button" onClick={() => setShowPaymentAccount((visible) => !visible)} aria-label={showPaymentAccount ? "Hide account number" : "Show account number"} title={showPaymentAccount ? "Hide account number" : "Show account number"} aria-pressed={showPaymentAccount} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"><EyeIcon crossed={showPaymentAccount} /></button>
+									</div>
 								</div>
-							</div>
-
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Payment Terms</label>
-									<select name="payment_terms" value={formData.payment_terms} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-										<option value="">Use procurement default</option>
-										{PAYMENT_TERMS.map((terms) => <option key={terms} value={terms}>{terms}</option>)}
-									</select>
-								</div>
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Lead Time (days)</label>
-									<input type="number" min="0" name="lead_time_days" value={formData.lead_time_days} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-								</div>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Products Supplied</label>
-								<input type="text" name="products_supplied" value={formData.products_supplied} onChange={handleFormChange} placeholder="e.g., running shoes, laces" className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-							</div>
-
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">City</label>
-									<input type="text" name="city" value={formData.city} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-								</div>
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Country</label>
-									<input type="text" name="country" value={formData.country} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-								</div>
-							</div>
-
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Payment Terms</label>
-									<select name="payment_terms" value={formData.payment_terms} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-										<option value="">Use procurement default</option>
-										{PAYMENT_TERMS.map((terms) => <option key={terms} value={terms}>{terms}</option>)}
-									</select>
-								</div>
-								<div>
-									<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Lead Time (days)</label>
-									<input type="number" min="0" name="lead_time_days" value={formData.lead_time_days} onChange={handleFormChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-								</div>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Products Supplied</label>
-								<input type="text" name="products_supplied" value={formData.products_supplied} onChange={handleFormChange} placeholder="e.g., running shoes, laces" className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Contact Person
-								</label>
-								<input
-									type="text"
-									name="contact_person"
-									value={formData.contact_person}
-									onChange={handleFormChange}
-									placeholder="e.g., Juan Dela Cruz"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Email
-								</label>
-								<input
-									type="email"
-									name="email"
-									value={formData.email}
-									onChange={handleFormChange}
-									placeholder="e.g., contact@email.com"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Phone
-								</label>
-								<input
-									 type="tel"
-									 name="phone"
-									 value={formData.phone}
-									 onChange={handleFormChange}
-									 inputMode="numeric"
-									 maxLength={11}
-									 pattern="[0-9]{1,11}"
-									 placeholder="e.g., 09174561188"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Notes
-								</label>
-								<input
-									type="text"
-									name="notes"
-									value={formData.notes}
-									onChange={handleFormChange}
-									placeholder="e.g., Preferred payment: bank transfer. Lead time: 7 days."
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
 							</div>
 
 						</div>
 
-						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+						<div className="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800/50">
 							<button
 								onClick={handleCloseModal}
 								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -730,10 +790,10 @@ export default function SuppliersManagement() {
 
 			{/* View Supplier Modal */}
 			{viewingSupplier && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+				<div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:py-8">
 					<button type="button" aria-label="Close view supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={() => setViewingSupplier(null)} />
-					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl max-h-[90vh] overflow-y-auto">
-						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800 sticky top-0 bg-white dark:bg-gray-900">
+					<div className="relative w-full max-w-3xl rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
+						<div className="flex items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Supplier Details</h2>
 							<button
 								onClick={() => setViewingSupplier(null)}
@@ -743,13 +803,13 @@ export default function SuppliersManagement() {
 							</button>
 						</div>
 
-						<div className="p-6 space-y-4">
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+						<div className="space-y-3 p-5">
+							<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Supplier Name</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.name}</p>
 								</div>
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Status</p>
 									<span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${viewingSupplier.is_active ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"}`}>
 										{viewingSupplier.is_active ? "Active" : "Inactive"}
@@ -758,69 +818,69 @@ export default function SuppliersManagement() {
 							</div>
 
 							{viewingSupplier.contact_person && (
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Contact Person</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.contact_person}</p>
 								</div>
 							)}
 
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+							<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Email</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white break-all">{viewingSupplier.email || "—"}</p>
 								</div>
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Phone</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.phone || "—"}</p>
 								</div>
 							</div>
 
 			{viewingSupplier.address && (
-				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+				<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Address</p>
 					<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.address}</p>
 				</div>
 			)}
 
-			<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+			<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+				<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">City / Country</p>
 					<p className="text-base font-semibold text-gray-900 dark:text-white">{[viewingSupplier.city, viewingSupplier.country].filter(Boolean).join(", ") || "—"}</p>
 				</div>
-				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+				<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Payment Terms</p>
 					<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.payment_terms || "Use procurement default"}</p>
 				</div>
-				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+				<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Lead Time</p>
 					<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.lead_time_days ?? "—"}{viewingSupplier.lead_time_days !== undefined ? " days" : ""}</p>
 				</div>
-				<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+				<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 					<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Products Supplied</p>
 					<p className="text-sm text-gray-700 dark:text-gray-300">{viewingSupplier.products_supplied || "—"}</p>
 				</div>
 			</div>
 
 {viewingSupplier.notes && (
-							<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+							<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 								<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Notes</p>
 								<p className="text-sm text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{viewingSupplier.notes}</p>
 							</div>
 						)}
 
-							<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+							<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Purchase Orders</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.purchase_order_count} {viewingSupplier.purchase_order_count === 1 ? "order" : "orders"}</p>
 								</div>
-								<div className="rounded-xl bg-gray-50 dark:bg-gray-800/40 p-4 border border-gray-200 dark:border-gray-800">
+								<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Last Order Date</p>
 									<p className="text-base font-semibold text-gray-900 dark:text-white">{viewingSupplier.last_order_date || "No orders yet"}</p>
 								</div>
 							</div>
 						</div>
 
-						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
+						<div className="flex gap-3 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800/50">
 							<button
 								onClick={() => setViewingSupplier(null)}
 								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -834,10 +894,10 @@ export default function SuppliersManagement() {
 
 			{/* Edit Supplier Modal */}
 			{editingSupplier && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+				<div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:py-8">
 					<button type="button" aria-label="Close edit supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={closeEditModal} />
-					<div className="relative w-full max-w-2xl rounded-2xl border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 shadow-xl">
-						<div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-800">
+					<div className="relative flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
+						<div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
 							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Supplier</h2>
 							<button
 								onClick={closeEditModal}
@@ -847,88 +907,15 @@ export default function SuppliersManagement() {
 							</button>
 						</div>
 
-						<div className="p-6 space-y-4">
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Supplier Name *
-								</label>
-								<input
-									type="text"
-									name="name"
-									value={formData.name}
-									onChange={handleFormChange}
-									placeholder="e.g., Metro Footwear Trading"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Contact Person
-								</label>
-								<input
-									type="text"
-									name="contact_person"
-									value={formData.contact_person}
-									onChange={handleFormChange}
-									placeholder="e.g., Juan Dela Cruz"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Email
-								</label>
-								<input
-									type="email"
-									name="email"
-									value={formData.email}
-									onChange={handleFormChange}
-									placeholder="e.g., contact@email.com"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Phone
-								</label>
-								<input
-									 type="tel"
-									 name="phone"
-									 value={formData.phone}
-									 onChange={handleFormChange}
-									 inputMode="numeric"
-									 maxLength={11}
-									 pattern="[0-9]{1,11}"
-									 placeholder="e.g., 09174561188"
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
-
-							<div>
-								<label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-									Notes
-								</label>
-								<input
-									type="text"
-									name="notes"
-									value={formData.notes}
-									onChange={handleFormChange}
-									placeholder="e.g., Preferred payment: bank transfer. Lead time: 7 days."
-									className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400 focus:ring-2 focus:ring-blue-500/20"
-								/>
-							</div>
-
-
+						<div className="px-5 py-3">
+							<SupplierFormFields formData={formData} onChange={handleFormChange} idPrefix="edit" />
 						</div>
 
-						<div className="rounded-xl border border-blue-200 dark:border-blue-900/60 bg-blue-50/60 dark:bg-blue-950/20 p-4 space-y-4">
+						<div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2 dark:border-blue-900/60 dark:bg-blue-950/20">
 							<div>
 								<h3 className="text-sm font-semibold text-gray-900 dark:text-white">Payment Profile</h3>
 								<p className="text-xs text-gray-500 dark:text-gray-400">
-									{paymentProfile ? `Status: ${paymentProfile.status}. Account: ${paymentProfile.masked_account_number || "—"}` : "No payment profile saved yet."}
+									{paymentProfile ? `Status: ${paymentProfile.status}. Account: ${paymentProfile.masked_account_identifier || paymentProfile.masked_account_number || "—"}` : "No payment profile saved yet."}
 								</p>
 							</div>
 
@@ -936,24 +923,27 @@ export default function SuppliersManagement() {
 								<p className="text-sm text-gray-500 dark:text-gray-400">Loading payment profile…</p>
 							) : (
 								<>
-									<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+									<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 										<div>
 											<label htmlFor="payment-destination-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Destination Type</label>
 											<select id="payment-destination-type" name="destination_type" value={paymentProfileForm.destination_type} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
 												<option value="bank_account">Bank Account</option>
+												<option value="e_wallet">E-wallet</option>
 											</select>
 										</div>
 										<div>
-											<label htmlFor="payment-bank-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bank Name</label>
-											<input id="payment-bank-name" aria-label="Bank Name" type="text" name="bank_name" value={paymentProfileForm.bank_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+											<label htmlFor="payment-provider" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{paymentDestinationIsWallet ? "Wallet Provider" : "Bank Name"}</label>
+											<input id="payment-provider" aria-label={paymentDestinationIsWallet ? "Wallet Provider" : "Bank Name"} type="text" name={paymentDestinationIsWallet ? "wallet_provider" : "bank_name"} value={paymentDestinationIsWallet ? paymentProfileForm.wallet_provider : paymentProfileForm.bank_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
 										</div>
 									</div>
 
-									<div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-										<div>
-											<label htmlFor="payment-bank-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bank Code</label>
-											<input id="payment-bank-code" aria-label="Bank Code" type="text" name="bank_code" value={paymentProfileForm.bank_code} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-										</div>
+									<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+										{!paymentDestinationIsWallet && (
+											<div>
+												<label htmlFor="payment-bank-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bank Code</label>
+												<input id="payment-bank-code" aria-label="Bank Code" type="text" name="bank_code" value={paymentProfileForm.bank_code} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+											</div>
+										)}
 										<div>
 											<label htmlFor="payment-account-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Account Name</label>
 											<input id="payment-account-name" aria-label="Account Name" type="text" name="account_name" value={paymentProfileForm.account_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
@@ -961,15 +951,22 @@ export default function SuppliersManagement() {
 									</div>
 
 									<div>
-										<label htmlFor="payment-account-number" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Account Number</label>
-										<input id="payment-account-number" aria-label="Account Number" autoComplete="off" type="password" name="account_number" value={paymentProfileForm.account_number} onChange={handlePaymentProfileChange} placeholder={paymentProfile ? "Leave blank to keep the saved account" : "Enter supplier account number"} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+										<label htmlFor="payment-account" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{paymentDestinationIsWallet ? "Mobile / Account Number" : "Account Number"}</label>
+										<div className="flex gap-2">
+											<input id="payment-account" aria-label={paymentDestinationIsWallet ? "Mobile / Account Number" : "Account Number"} autoComplete="off" type={showPaymentAccount ? "text" : "password"} name={paymentDestinationIsWallet ? "account_identifier" : "account_number"} value={paymentDestinationIsWallet ? paymentProfileForm.account_identifier : paymentProfileForm.account_number} onChange={handlePaymentProfileChange} placeholder={paymentProfile ? "Leave blank to keep the saved account" : paymentDestinationIsWallet ? "Enter wallet mobile/account identifier" : "Enter supplier account number"} className="min-w-0 flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
+											<button type="button" onClick={() => setShowPaymentAccount((visible) => !visible)} aria-label={showPaymentAccount ? "Hide account number" : "Show account number"} title={showPaymentAccount ? "Hide account number" : "Show account number"} aria-pressed={showPaymentAccount} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"><EyeIcon crossed={showPaymentAccount} /></button>
+										</div>
 									</div>
-									<p className="text-xs text-gray-500 dark:text-gray-400">Changing destination details returns the profile to unverified for Finance review.</p>
+									<p className="text-xs text-gray-500 dark:text-gray-400">
+										{paymentProfile?.status === "disabled"
+											? "Disabled by Finance. Replace the destination here; Finance must verify it before it can be used for a supplier payment."
+											: "Changing destination details returns the profile to unverified for Finance review."}
+									</p>
 								</>
 							)}
 						</div>
 
-						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
+						<div className="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800/50">
 							<button
 								onClick={closeEditModal}
 								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"

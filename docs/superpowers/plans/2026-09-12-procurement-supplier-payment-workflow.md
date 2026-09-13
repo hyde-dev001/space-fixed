@@ -17,6 +17,8 @@
 - Preserve receipt-driven `partially_received` and `delivered`; payment never sets either status.
 - Preserve the `ExpenseSettlementService` approval guard and append-only history.
 - Supplier payment uses a real external manual bank/e-wallet transfer. No PayMongo supplier disbursement fallback or simulation is allowed.
+- Shop Owner confirmation records the settlement and changes supplier email status to `ready_to_send`; Finance explicitly sends the receipt from the Finance workflow.
+- Supplier receipt email is never sent automatically during Shop Owner confirmation.
 - `Due Soon` means tomorrow through today + 3 calendar days, inclusive.
 - Use only `manufacturing_defect`, `damaged`, `wrong_item`, `incorrect_size_or_variant`, and `other`; `other` requires notes.
 - Reuse `supplier_adjustments` for receiving-time and post-payment defects. Do not add a refund or second defect table.
@@ -66,7 +68,7 @@
 - Create: `app/Http/Requests/Finance/InitiateSupplierPaymentRequest.php`.
 - Create: `app/Http/Requests/Finance/ConfirmSupplierRefundRequest.php`.
 - Modify: `routes/procurement-api.php` - nested profile, adjustment, evidence, issue, and replacement-aware receipt routes.
-- Modify: `routes/finance-api.php` - release, payment, profile verification, and refund-confirmation routes.
+- Modify: `routes/finance-api.php` - release, payment, profile verification, refund-confirmation, and explicit supplier-receipt-send routes.
 
 ### Notifications and audit
 
@@ -163,8 +165,8 @@ Add assertions that:
 
 1. final PR approval does not create a PO, while explicit manual PO creation succeeds;
 2. Procurement can only progress `draft -> sent -> confirmed -> in_transit`, and cannot manually set `delivered`;
-3. only the six approved payment terms validate;
-4. COD and unimplemented allowlisted Net terms currently expose the due-date gap;
+3. only the five approved payment terms validate;
+4. unsupported payment terms, including COD and 50/50 terms, expose no due-date path;
 5. arbitrary `sort_by` and invalid `sort_order` never reach SQL;
 6. `POST /api/finance/expenses/{id}/settlements` rejects a procurement receipt expense even when it is posted; and
 7. the service-level submitted-expense settlement guard remains unchanged.
@@ -262,7 +264,7 @@ git commit --only -m "feat: add supplier payment and adjustment records" -- data
 
 - [ ] **Step 1: Expand failing tests for all terms and snapshot precedence.**
 
-Freeze time and assert COD = receipt date; Net 7/15/30/45/60 = receipt date plus the exact calendar-day offset. Assert precedence is explicit valid PO term, supplier default, valid Procurement setting, then Net 30, and editing the supplier later leaves the PO unchanged.
+Freeze time and assert Net 7/15/30/45/60 = receipt date plus the exact calendar-day offset. Assert precedence is explicit valid PO term, supplier default, valid Procurement setting, then Net 30, and editing the supplier later leaves the PO unchanged.
 
 - [ ] **Step 2: Define the allowlist once on the PO domain.**
 
@@ -270,7 +272,6 @@ Use one constant map and one parser, for example:
 
 ```php
 public const PAYMENT_TERM_DAYS = [
-    'COD' => 0,
     'Net 7' => 7,
     'Net 15' => 15,
     'Net 30' => 30,
@@ -403,11 +404,11 @@ Nest show/upsert routes under `/api/erp/procurement/suppliers/{id}/payment-profi
 
 - [ ] **Step 4: Implement Finance verification without editing.**
 
-Expose verify and disable actions under the Finance expense/profile route. Finance receives bank name, account name, masked suffix, and status only. It cannot submit replacement destination fields. Verification records the actor/time; disabling clears neither encrypted history nor payment-attempt snapshots.
+Expose verify and disable actions under the Finance expense/profile route. Finance receives bank name, account name, masked suffix, and status by default, with an explicit Finance-only reveal action for the account needed to perform the manual transfer. The reveal is no-store, audited, and never part of normal projections. Finance cannot submit replacement destination fields. Verification records the actor/time; disabling clears neither encrypted history nor payment-attempt snapshots.
 
 - [ ] **Step 5: Add the existing Supplier and Finance UI controls.**
 
-The supplier modal owns destination editing. The Finance procurement panel owns verify/disable actions and never renders the full account number. Do not cache raw details in React state, notifications, or errors.
+The supplier modal owns destination editing. The Finance procurement panel and payment dialog keep the destination masked by default and offer an explicit Show/Hide full-details action only to Finance. The Shop Owner sees masked details and payment approve/reject actions only; it has no profile verify/disable controls. A Finance disable action requires the existing SweetAlert confirmation. Do not cache raw details in normal projections, notifications, or errors.
 
 - [ ] **Step 6: Run profile tests.**
 
@@ -508,7 +509,7 @@ access is tenant- and role-protected and uses no public storage URL.
 - [x] **Step 5: Enforce the maker/checker boundary server-side.**
 
 Finance uses the existing `access-finance-expenses` capability for initiation,
-submission, cancellation, and resend. Shop Owner review uses the existing
+submission, cancellation, receipt sending, and retry. Shop Owner review uses the existing
 `auth:shop_owner` plus `shop.isolation` route boundary. The service accepts a
 `ShopOwner` checker and never compares its numeric ID to the Finance User ID.
 Only the Shop Owner guard can confirm or reject; rejection requires a reason.
@@ -520,16 +521,27 @@ full current outstanding balance and proof/reference, then calls only
 `ExpenseSettlementService::record()` with source
 `supplier_manual_payment`. It links the settlement and marks the attempt
 `succeeded`; it never directly updates Expense to paid. Generic settlement and
-generic reversal routes cannot bypass this flow.
+generic reversal routes cannot bypass this flow. Confirmation does not send
+supplier email; it only changes the email status to `ready_to_send`.
 
-- [x] **Step 7: Deliver supplier email after the financial transaction.**
+- [x] **Step 7: Require explicit Finance receipt sending after verification.**
 
-The successful attempt and settlement commit before synchronous email delivery
-is attempted. The existing Laravel mail infrastructure is reused with
-`SupplierPaymentConfirmationMail`; the email contains PO, amount, method,
-external reference, paid date, and masked destination, never raw account data
-or proof. Email status is independent: `pending -> sent|failed`, and Finance
-may resend a failed notification without creating another settlement.
+The successful attempt and settlement commit first, then the attempt exposes
+`ready_to_send`. Finance explicitly clicks `Send Payment Receipt` from the
+existing Finance workflow. The send action resolves the immutable same-shop
+supplier email snapshot, uses the existing Laravel mail infrastructure and
+`SupplierPaymentConfirmationMail`, and never sends raw account data or proof.
+Email status is independent:
+
+~~~text
+ready_to_send -> queued -> dispatched|failed
+failed -> queued -> dispatched|failed
+~~~
+
+Use `sent` or `delivered` only when the configured mail infrastructure can
+prove that state. A local log or accepted synchronous transport must not be
+presented as inbox delivery. Sending is idempotent and never creates a second
+settlement.
 
 - [x] **Step 8: Preserve receipt void and PO completion guards.**
 
@@ -880,6 +892,10 @@ Implemented supplier payment: REAL MANUAL BANK/E-WALLET TRANSFER
 -> Shop Owner verification
 -> ExpenseSettlementService settlement
 -> supplier payment-confirmation email.
+
+For the repair addendum, the controlled sequence is Shop Owner verifies payment,
+settlement is recorded, email status becomes Ready to Send, Finance clicks
+Send Payment Receipt, and only then is the supplier receipt dispatched.
 ```
 
 Do not create placeholder PayMongo supplier-payout tests or claim automated
@@ -931,3 +947,540 @@ Result: skipped; no durable learning documentation changed.
 ## Completion evidence required
 
 The implementation handoff must list exact migrations, models, services, controllers/routes, policies or reused permissions, frontend components, notification changes, tests executed, results, unrelated existing failures, and the PayMongo blocker. It must explicitly confirm that `PurchaseOrderReceiptService`, `ExpenseSettlementService`, shop isolation, receipt-driven `delivered`, append-only payment/refund history, and every excluded feature remained intact.
+
+## Post-audit repair addendum: prioritized procurement fixes
+
+This addendum follows the read-only end-to-end procurement audit. It does not
+rewrite the completed Tasks 1-11 and does not authorize production-code
+changes by itself. It is the next implementation plan for the remaining
+defects and hardening gaps.
+
+### Audit inventory reconciliation
+
+The inventory is corrected to **22 findings**:
+
+- `K1`-`K9`: nine previously reported Supplier, notification, Finance,
+  proof, modal, and email issues;
+- `A1`-`A13`: thirteen additional findings discovered during the full audit.
+
+`A13` remains a low-priority cleanup/dependency decision rather than being
+silently omitted.
+
+### Approved reusable e-wallet profile schema
+
+Reusable supplier profiles support both `bank_account` and `e_wallet`.
+Wallet data must never be placed in `bank_name`, `bank_code`, or a field named
+`account_number`.
+
+Phase 2 must add the smallest additive schema for:
+
+- nullable `wallet_provider`;
+- encrypted nullable `account_identifier`;
+- nullable `bank_code` for e-wallet rows only;
+- conditional validation and masking by `destination_type`.
+
+Bank profiles continue to use the existing bank name/code and encrypted
+account number. E-wallet profiles use `wallet_provider`, `account_name`, and
+encrypted `account_identifier` such as a mobile number. Both destination
+types retain the existing verification-reset, snapshot, tenant, and Finance
+approval rules.
+
+### Finding-to-phase map
+
+| Finding | Phase |
+| --- | --- |
+| K1 duplicate Add Supplier fields | Phase 2, before K2 |
+| K2 Add Supplier payment-profile creation | Phase 2, after K1 |
+| K3 destination-type validation | Phase 2 |
+| K4 account-number UX and masking | Phase 5 |
+| K5 PO in-transit Inventory notification | Phase 2 |
+| K6 oversized modals | Phase 5 |
+| K7 stale Finance active expense/status | Phase 5 |
+| K8 inline Shop Owner proof preview | Phase 5 |
+| K9 supplier receipt-email state/content | Phase 2 |
+| A1 shop-scoped PR/PO numbering | Phase 4 |
+| A2 Stock Request raw sorting | Phase 1 |
+| A3 PR update submission bypass | Phase 1 |
+| A4 PO update payment-term bypass | Phase 3 |
+| A5 floating-point receipt calculations | Phase 3 |
+| A6 pre-commit external notifications | Phase 3 |
+| A7 globally scoped manual references | Phase 2 |
+| A8 stale retry evidence/request keys | Phase 1 |
+| A9 future external payment dates | Phase 2 |
+| A10 service-level tenant checks | Phase 1 |
+| A11 duplicate confirmation-email race | Phase 1 |
+| A12 raw supplier email in projections | Phase 5 |
+| A13 dormant PayMongo/legacy payment states | Final cleanup review |
+
+### Approved execution order
+
+Execute phases strictly in this order:
+
+`Phase 1 -> Phase 3 -> Phase 2 -> Phase 4 -> Phase 5`
+
+Do not begin a later phase until the preceding phase's focused tests are
+green. Phase 2 depends on the security/idempotency protections from Phase 1
+and the financial arithmetic/transaction boundaries from Phase 3.
+
+## Phase 1: Security, canonical workflow, and payment idempotency
+
+**Goal:** close authorization, workflow-bypass, retry-evidence, and duplicate
+email risks before changing presentation behavior.
+
+**Files:**
+
+- Modify: `app/Http/Controllers/Erp/StockRequestApprovalController.php`
+- Modify: `app/Http/Controllers/Erp/PurchaseRequestController.php`
+- Modify: `app/Services/StockRequestApprovalService.php`
+- Modify: `app/Services/PurchaseRequestService.php`
+- Modify: `app/Services/PurchaseOrderService.php`
+- Modify: `app/Services/Finance/SupplierPaymentService.php`
+- Modify: `resources/js/Pages/ERP/Finance/components/SupplierPaymentDialog.tsx`
+- Test: `tests/Feature/Procurement/ProcurementApiContractTest.php`
+- Test: `tests/Feature/Procurement/PurchaseRequestWorkflowTest.php`
+- Test: `tests/Feature/Procurement/ProcurementAuthorizationTest.php`
+- Test: `tests/Feature/Procurement/ProcurementConcurrencyTest.php`
+- Test: `tests/Feature/Finance/SupplierManualPaymentTest.php`
+- Test: `tests/Feature/Finance/ExpenseSettlementTest.php`
+- Test: `tests/Feature/Notifications/NotificationCriticalFlowsTest.php`
+- Test: `resources/js/Pages/ERP/Finance/__tests__/SupplierPaymentDialog.test.tsx`
+
+- [x] **Step 1: Add red regression tests for A2, A3, A8, A10, and A11.**
+
+Cover invalid Stock Request sorting, update-submit parity with explicit
+submit, cross-shop direct service calls, retry evidence clearing and stable
+idempotency keys, concurrent explicit receipt-send requests, and duplicate
+supplier-email prevention. Keep maker-checker actor types unchanged.
+
+- [x] **Step 2: Run the focused tests and verify causal failures.**
+
+~~~text
+php artisan test tests/Feature/Procurement/ProcurementApiContractTest.php tests/Feature/Procurement/PurchaseRequestWorkflowTest.php tests/Feature/Procurement/ProcurementAuthorizationTest.php tests/Feature/Procurement/ProcurementConcurrencyTest.php tests/Feature/Finance/SupplierManualPaymentTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php
+~~~
+
+- [x] **Step 3: Allowlist Stock Request sorting.**
+
+Map supported display fields to fixed query columns and normalize direction to
+`asc` or `desc`. Never pass request text directly to `orderBy`.
+
+- [x] **Step 4: Route every PR submission through the canonical service.**
+
+Make the draft update path call `PurchaseRequestService::submitToFinance()`
+instead of directly mutating `pending_finance`. Preserve manual PR-to-PO
+creation, owner-approval snapshots, notifications, and tenant policy.
+
+- [x] **Step 5: Add service-level same-shop assertions.**
+
+At shared service boundaries, resolve the actor shop and assert that the
+locked record belongs to it before mutation. Preserve controller policy checks;
+this is defense in depth, not a second authorization system. Keep lock order
+stable.
+
+- [x] **Step 6: Make a new payment retry a genuinely new attempt.**
+
+Keep one request key for one initiation action and reuse it for a network
+retry. When Finance starts a new attempt after rejection/cancellation, clear
+proof, external reference, paid date, note, and decision fields. Never reuse a
+rejected attempt.
+
+- [x] **Step 7: Close the explicit receipt-send race without moving accounting.**
+
+Keep settlement and attempt success inside the committed financial transaction.
+Confirmation sets email status to `ready_to_send` and performs no mail I/O.
+The Finance send action claims only a ready/failed receipt using the existing
+delivery state or audit mechanism, preventing two concurrent sends. Mail
+failure remains separate from payment success.
+
+- [x] **Step 8: Run the Phase 1 suite and commit only a green slice.**
+
+Expected: invalid sort input is rejected, every submit path uses the canonical
+service, direct cross-shop calls fail, retries cannot reuse evidence, and
+concurrent Finance sends create at most one receipt dispatch.
+
+Result: PASS. The focused backend gate passed 114 tests with 504 assertions
+and two intentional SQLite lock-test skips. The explicit supplier receipt-send
+frontend test passed 4 tests. Confirmation now records settlement and
+`ready_to_send` without mail I/O; only the Finance send action may dispatch the
+existing supplier receipt mailable.
+
+## Phase 2: Supplier/payment workflow and notifications
+
+**Goal:** clean the canonical Supplier form first, then make first-time
+supplier setup, reusable bank/e-wallet profiles, Inventory notification,
+manual payment references, payment dates, and supplier receipt status correct.
+
+**Files:**
+
+- Create: `database/migrations/2026_09_13_000001_add_supplier_wallet_profile_fields.php`
+- Create: `database/migrations/2026_09_13_000003_scope_supplier_payment_reference_per_shop.php`
+- Modify: `app/Http/Controllers/Erp/SupplierController.php`
+- Modify: `app/Http/Requests/StoreSupplierPaymentProfileRequest.php`
+- Modify: `app/Models/SupplierPaymentProfile.php` only for approved constants
+  and safe serialization
+- Modify: `app/Services/PurchaseOrderService.php`
+- Modify: `app/Services/NotificationService.php`
+- Modify: `app/Services/Finance/SupplierPaymentService.php`
+- Modify: `app/Mail/SupplierPaymentConfirmationMail.php`
+- Modify: `resources/views/emails/supplier-payment-confirmation.blade.php`
+- Modify: `app/Http/Controllers/ShopOwner/SupplierPaymentController.php`
+- Modify: `app/Http/Controllers/Api/Finance/ProcurementExpenseController.php`
+- Modify: `routes/finance-api.php`
+- Modify: `resources/js/services/supplierApi.ts`
+- Modify: `resources/js/types/procurement.ts`
+- Modify: `resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/Expense.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/components/SupplierPaymentDialog.tsx`
+- Test: `tests/Feature/Finance/SupplierPaymentProfileTest.php`
+- Test: `tests/Feature/Finance/SupplierManualPaymentTest.php`
+- Test: `tests/Feature/Finance/ProcurementExpenseReleaseTest.php`
+- Test: `tests/Feature/Notifications/InventoryNotificationTest.php`
+- Test: `tests/Feature/Notifications/NotificationCriticalFlowsTest.php`
+- Test: `resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx`
+- Test: `resources/js/Pages/ERP/Finance/__tests__/SupplierPaymentDialog.test.tsx`
+- Test: `resources/js/services/__tests__/procurementApis.test.ts`
+
+- [x] **Step 1: Add red canonical Supplier form tests for K1.**
+
+Assert that Add Supplier renders one and only one instance of every supplier
+field, that Edit Supplier uses the same field meanings, and that the optional
+payment-profile section can be rendered without duplicating supplier fields.
+
+- [x] **Step 2: Remove duplicate JSX before adding profile creation.**
+
+Use one local canonical field block for Add and Edit. Preserve the existing
+form contract, restore any missing address input, and keep responsive modal
+layout work deferred to Phase 5.
+
+- [x] **Step 3: Add red profile, destination, notification, and email tests.**
+
+Cover optional atomic profile creation, no orphan profile, supported
+destination validation for bank/e-wallet fields, encrypted wallet identifiers,
+verification reset, same-shop Inventory recipients, complete PO payload,
+notification deduplication, and dispatch-vs-delivery email labels.
+
+- [x] **Step 4: Implement the wallet schema and conditional validation.**
+
+Add `wallet_provider` and encrypted `account_identifier` through the additive
+migration. Make `bank_code` nullable only for e-wallet rows. Reject wallet
+data in bank-only fields and reject bank-only fields that are required for no
+destination type. Return masked values only.
+
+- [x] **Step 5: Implement Add Supplier profile creation atomically.**
+
+Use the existing Supplier policy and transaction. If the nested profile is
+omitted, create no profile. If profile validation or persistence fails, roll
+back the supplier as well.
+
+- [x] **Step 6: Implement both approved destination types.**
+
+Bank profiles use the existing bank fields and encrypted account number.
+E-wallet profiles use the explicit wallet fields and encrypted account
+identifier. Manual payment methods remain `manual_bank_transfer` and
+`manual_e_wallet`; no PayMongo supplier payout is added.
+
+- [x] **Step 7: Fix the in-transit notification at the existing transition.**
+
+Keep `PurchaseOrderService::updateStatus()` as the only transition boundary.
+After committed `confirmed -> in_transit`, target active same-shop users with
+`inventory.view`, include PO/supplier/date/status data, and use a PO-specific
+group key.
+
+- [x] **Step 8: Correct supplier email dispatch reporting.**
+
+Resolve the immutable snapshot recipient from the canonical same-shop
+supplier/payment attempt. Keep settlement first and mail I/O after commit.
+After Shop Owner confirmation, report `ready_to_send`. Finance must click
+`Send Payment Receipt` before any mail I/O occurs. The send action transitions
+to `queued`/`dispatched` or `failed`. Use `sent`/`delivered` only when the
+configured infrastructure can prove that state; a local log or accepted
+synchronous transport must not be presented as inbox delivery. Include shop,
+receipt, method, reference, date, and verified/paid status in the existing
+mailable.
+
+- [x] **Step 9: Validate manual references and payment dates.**
+
+Scope duplicate external-reference checks according to shop/method/provider
+conventions and reject future `externally_paid_at` values. Preserve existing
+full-outstanding-amount and verified-profile guards.
+
+- [x] **Step 10: Run the Phase 2 suite and record the green gate.**
+
+Expected: a supplier can be created with or without a valid profile, Inventory
+receives one complete same-shop notification, Shop Owner confirmation produces
+`ready_to_send` without sending mail, and the Finance action dispatches at most
+one receipt while preserving settlement behavior.
+
+Result: PASS — the focused backend gate passed 179 tests with 816 assertions,
+including profile encryption/masking, atomic bank/e-wallet creation, payment
+date/reference validation, same-shop Inventory notification delivery and
+deduplication, explicit Finance receipt sending, and the existing procurement
+authorization/release/receiving/settlement regressions. The focused frontend
+gate passed 4 files and 19 tests. Changes remain uncommitted so the approved
+Phase 4 tenant-key review can be completed against the same working tree.
+
+## Phase 3: Financial correctness and transaction boundaries
+
+**Goal:** remove rounding risk, invalid payment terms, and external side
+effects that escape a failed receipt transaction.
+
+**Files:**
+
+- Modify: `app/Services/PurchaseOrderReceiptService.php`
+- Modify: `app/Services/PurchaseOrderService.php`
+- Modify: `app/Services/ExpenseApprovalService.php`
+- Modify: `app/Http/Controllers/Erp/PurchaseOrderController.php`
+- Modify: `app/Services/NotificationService.php` only for after-commit dispatch
+- Test: `tests/Feature/Procurement/PurchaseOrderReceivingTest.php`
+- Test: `tests/Feature/Procurement/PurchaseOrderWorkflowTest.php`
+- Test: `tests/Feature/Procurement/ProcurementApiContractTest.php`
+- Test: `tests/Feature/Notifications/NotificationCriticalFlowsTest.php`
+- Test: `tests/Feature/Finance/ExpenseSettlementTest.php`
+- Test: `tests/Feature/Finance/ProcurementExpenseReleaseTest.php`
+
+- [x] **Step 1: Add red tests for A4, A5, and A6.**
+
+Cover invalid PO term updates, multi-line decimal-safe receiving totals, and
+notification/email suppression when later receipt work rolls back.
+
+- [x] **Step 2: Reuse the canonical payment-term map.**
+
+Apply the exact allowlist used during PO creation to PO updates and due-date
+derivation. Do not add another regular expression or term list.
+
+- [x] **Step 3: Replace receipt/PO float arithmetic at financial boundaries.**
+
+Use integer centavos or decimal-string arithmetic for accepted quantity,
+unit-cost multiplication, expense creation, and comparisons. Preserve
+accepted/defective and post-payment replacement semantics.
+
+- [x] **Step 4: Move external notification effects after the outer commit.**
+
+Keep database notification rows transactional where required, but defer
+email/external effects until the complete receipt transaction commits.
+Notification failure must not roll back inventory, expense, or settlement work.
+
+- [x] **Step 5: Run the Phase 3 suite and commit only a green slice.**
+
+Expected: exact payable values remain stable for decimal costs, invalid terms
+cannot enter PO updates, and failed receipt transactions create no external
+approval email.
+
+Result: PASS. The Phase 3 gate passed 85 tests with 407 assertions. Draft PO
+updates now use the canonical six-term allowlist; PO and receipt totals reach
+the database as decimal text derived from integer cents; and procurement
+expense notifications are deferred until the outer transaction commits.
+
+## Phase 4: Shop-scoped PR/PO numbering
+
+**Goal:** make new human-readable procurement references independent per shop
+without renumbering historical records or changing internal IDs/URLs. The
+canonical tenant key was verified as `shop_owner_id` for both PR and PO:
+each table foreign-keys it to `shop_owners`; Finance's `shop_id` is a separate
+legacy convention and is not used for these records.
+
+**Files:**
+
+- Create: `database/migrations/2026_09_13_000002_scope_procurement_reference_numbers_per_shop.php`
+- Modify: `app/Services/PurchaseRequestService.php`
+- Modify: `app/Services/PurchaseOrderService.php`
+- Modify: `app/Models/PurchaseRequest.php` only for reference-scope helpers
+- Modify: `app/Models/PurchaseOrder.php` only for reference-scope helpers
+- Test: `tests/Feature/Procurement/PurchaseRequestWorkflowTest.php`
+- Test: `tests/Feature/Procurement/PurchaseOrderWorkflowTest.php`
+- Test: `tests/Feature/Procurement/ProcurementConcurrencyTest.php`
+- Test: `tests/Feature/Procurement/ProcurementApiContractTest.php`
+- Test: `tests/Unit/Services/PurchaseRequestServiceTest.php`
+- Test: `tests/Unit/Services/PurchaseOrderServiceTest.php`
+
+- [x] **Step 1: Add red cross-shop and concurrent-reference tests.**
+
+Assert Shop A and Shop B can both receive their first matching reference,
+concurrent requests cannot duplicate a reference within one shop, and
+historical records remain accessible by existing IDs and old references.
+
+- [x] **Step 2: Replace global uniqueness with shop-scoped uniqueness.**
+
+Before writing the migration, verify which tenant key is canonical by tracing
+the `shop_id` relationships on Purchase Request, Purchase Order, policies,
+controllers, and existing tenant scopes. The review confirmed that
+`shop_owner_id` is the true canonical key for these two tables, so the
+migration replaces global PR/PO unique indexes with composite indexes on
+`shop_owner_id` plus the reference column. It does not renumber or rewrite
+historical rows.
+
+- [x] **Step 3: Lock the existing shop row during generation.**
+
+Generate the next reference while holding the canonical tenant row lock,
+scoped by document type and shop. Keep duplicate-key retry only as a final
+database safety net.
+
+- [x] **Step 4: Run numbering tests and verify old links/reports.**
+
+Expected: references are race-safe per shop and existing IDs, foreign keys,
+URLs, and historical references still resolve.
+
+Result: PASS — the migration allows independent per-shop PR/PO references,
+the generators lock the canonical `shop_owners` row and scan only that shop's
+references, and the Phase 4 gate passed 92 tests with 324 assertions. Four
+MySQL-only concurrency tests are intentionally skipped on SQLite; the
+cross-shop and sequence tests pass locally.
+
+## Phase 5: UI, proof preview, privacy, and stale-state fixes
+
+**Goal:** repair remaining presentation and state-refresh issues without
+changing backend workflow transitions.
+
+**Files:**
+
+- Modify: `resources/js/Pages/ERP/Procurement/SuppliersManagement.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/Expense.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/components/ProcurementExpensePanel.tsx`
+- Modify: `resources/js/Pages/ERP/Finance/components/SupplierPaymentDialog.tsx`
+- Modify: `app/Http/Controllers/ShopOwner/SupplierPaymentController.php`
+- Modify: `app/Http/Controllers/Api/Finance/ProcurementExpenseController.php`
+- Modify: `app/Http/Controllers/Api/Finance/ExpenseController.php`
+- Modify: `app/Services/Finance/SupplierPaymentService.php`
+- Modify: `resources/js/types/procurement.ts`
+- Test: `resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx`
+- Test: `resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx`
+- Test: `resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx`
+- Test: `resources/js/Pages/ERP/Finance/__tests__/SupplierPaymentDialog.test.tsx`
+- Test: `resources/js/services/__tests__/procurementApis.test.ts`
+- Test: `tests/Feature/Finance/SupplierManualPaymentTest.php`
+
+- [x] **Step 1: Add red UI/state/proof tests for K4, K6, K7, K8, and A12.**
+
+Cover empty/masked account numbers, show/hide input, responsive modal
+structure, refreshed active expense/status, inline proof response, nested
+lightbox state, missing proof, and masked supplier email projections. The red
+run failed on raw email output, forced proof downloads, new-tab proof opening,
+stale status text, and the missing modal shell. K1 is tested and fixed in
+Phase 2 before K2.
+
+- [x] **Step 2: Remove duplicate JSX and reuse the existing modal shell.**
+
+Keep the current theme and components. Use a fixed header/footer, scrolling
+body, viewport max height, and responsive two-column fields. Do not introduce
+a new form or modal framework.
+
+- [x] **Step 3: Reconcile Finance state after each relevant refetch.**
+
+Update `activeExpense` from the refreshed query result after payment, profile,
+release, or refund actions. Derive the status badge from backend state rather
+than showing literal `Review only` for every procurement expense.
+
+- [x] **Step 4: Implement secure inline proof preview.**
+
+Keep private storage and current authenticated shop-owner/Finance routes.
+Return supported media inline with safe MIME handling, show bounded image
+thumbnails, open a nested lightbox, preserve rejection text, and return a
+safe unavailable state for missing files.
+
+- [x] **Step 5: Mask sensitive presentation fields with controlled Finance reveal.**
+
+Expose only masked account/email values and safe provider/profile data in normal
+responses. Finance may explicitly reveal the current payment destination while
+paying, then hide it again; the reveal response is no-store and audited. Never
+serialize encrypted values, raw storage paths, secrets, or frontend-controlled
+mail recipients. Shop Owner remains masked and cannot verify or disable a
+payment profile.
+
+- [x] **Step 6: Run the Phase 5 frontend/backend suites.**
+
+Expected: no browser zoom or hard refresh is required, proof review stays
+inside the approval workflow, and payment/profile state is consistent in the
+table and open modal.
+
+Result: PASS — the red regressions were implemented with the existing
+controllers, model serializer, Finance refetch path, and modal conventions.
+The Phase 5 backend gate passed 223 tests with 1,161 assertions and four
+intentional SQLite skips for MySQL row-lock coverage. The frontend gate passed
+five files and 23 tests, including inline image/PDF proof preview, Escape/close
+handling, unavailable-file fallback, masked email projections, backend-derived
+status, and responsive supplier/payment shells.
+
+The repository-wide Vitest command was also run: 252 test files and 1,451
+tests passed; three existing/temporary contract failures were reported. The
+two modal-backdrop failures were caused by the new lightbox marker and were
+fixed; the focused modal contracts then passed 5 tests. The remaining
+`Finance.presentation-consistency.test.ts` failure is an existing exact
+class-string expectation for the Finance page, outside the procurement
+behavior change. The focused Purchase Orders page suite passed 8 tests after
+adding its missing `getSupplierAdjustments` mock. The production Vite build
+passed and `git diff --check` was clean.
+
+### Follow-up PO closure, approval queue, and refresh repair
+
+- [x] Require a posted receipt, fully settled receipt expenses, no active
+  supplier payment attempt, and no unresolved supplier adjustment before a
+  delivered PO can be completed.
+- [x] Return completion eligibility and blocker messages from the PO detail
+  endpoint and hide the completion action until that server decision is true.
+- [x] Exclude `requires_owner_approval = false` requests from the Shop Owner
+  pending queue while preserving the approval snapshot on the request.
+- [x] Remove COD and 50/50 payment-term options and reject unsupported terms
+  through the canonical PO allowlist.
+- [x] Refresh the PO list, approved-PR selector, and metrics when the
+  Procurement page becomes visible again; await Finance approval-list refreshes.
+
+Result: PASS — the focused procurement backend regression gate passed 104
+tests with 426 assertions, the focused frontend gate passed 5 files with 22
+tests, and `git diff --check` was clean.
+
+## Final cleanup review for A13
+
+- [ ] Inspect callers of dormant PayMongo defaults/status constants and legacy
+  `supplier_orders` read surfaces.
+- [ ] Do not remove or migrate them during repair phases unless a live
+  procurement path depends on them.
+- [ ] Confirm customer PayMongo payment/refund behavior remains untouched.
+- [ ] Record the result as compatibility debt or a separate approved cleanup
+  task.
+
+## Dependency-ordered execution checklist
+
+- [x] Execute this approved addendum phase-by-phase; do not skip the green
+  gate between phases.
+- [x] Complete Phase 1 and green tests.
+- [x] Complete Phase 3 and green financial/transaction tests.
+- [x] Complete Phase 2, including K1 before K2 and the approved wallet schema.
+- [x] Complete Phase 4 only after verifying the canonical tenant key:
+  procurement PR/PO records use `shop_owner_id`; Finance's `shop_id` is a
+  separate context key and was not used for procurement numbering.
+- [x] Complete Phase 5 after backend response contracts were stable.
+- [x] Run the full relevant backend suite, frontend suite, production build,
+  and diff hygiene checks; record the one pre-existing frontend contract
+  failure rather than claiming a clean repository-wide suite.
+- [x] Do not create a Supplier Portal, alternate settlement writer, second
+  receiving path, automatic PO/payment path, fake PayMongo payout, or new
+  approval/proof/payment system.
+
+## Recommended verification commands
+
+~~~text
+php artisan test tests/Feature/Procurement tests/Feature/Finance/ProcurementExpenseReleaseTest.php tests/Feature/Finance/SupplierPaymentProfileTest.php tests/Feature/Finance/SupplierManualPaymentTest.php tests/Feature/Finance/SupplierRefundTest.php tests/Feature/Finance/ExpenseSettlementTest.php tests/Feature/Notifications/NotificationCriticalFlowsTest.php tests/Feature/Notifications/InventoryNotificationTest.php
+
+pnpm exec vitest run resources/js/Pages/ERP/Procurement/__tests__/SuppliersManagement.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx resources/js/Pages/ERP/Finance/__tests__/Expense.settlements.test.tsx resources/js/Pages/ERP/Finance/__tests__/SupplierPaymentDialog.test.tsx resources/js/Pages/ERP/Procurement/__tests__/PurchaseOrders.test.tsx resources/js/services/__tests__/procurementApis.test.ts
+
+composer test
+pnpm run test:frontend
+pnpm run build
+git diff --check
+git status --short
+~~~
+
+The final implementation report must distinguish:
+
+- automated PayMongo supplier disbursement remains externally blocked;
+- reusable bank/e-wallet profile support is backed by explicit destination
+  fields, encrypted identifiers, conditional validation, and masked output;
+- no wallet value is stored in bank-specific columns;
+- email status distinguishes dispatch/queue acceptance from actual inbox
+  delivery and never claims more than the configured mail infrastructure can
+  prove;
+- manual supplier payment remains external bank/e-wallet transfer followed by
+  private proof, Shop Owner verification, `ExpenseSettlementService`, and a
+  Finance-controlled supplier receipt email;
+- all confirmed healthy receipt, settlement, authorization, tenant, and
+  maker-checker behavior remains unchanged.

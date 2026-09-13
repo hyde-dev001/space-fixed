@@ -59,7 +59,7 @@ class PurchaseOrderItemsTest extends TestCase
 
         $this->actingAs($this->user, 'user')->postJson('/api/erp/procurement/purchase-orders', [
             'purchase_request_ids' => [$pr->id],
-            'payment_terms' => 'COD',
+            'payment_terms' => 'Net 30',
             'quantity' => 999,
             'total_cost' => 1,
         ])->assertUnprocessable();
@@ -89,7 +89,7 @@ class PurchaseOrderItemsTest extends TestCase
 
         $response = $this->actingAs($this->user, 'user')->postJson('/api/erp/procurement/purchase-orders', [
             'purchase_request_ids' => [$pr->id],
-            'payment_terms' => 'COD',
+            'payment_terms' => 'Net 30',
         ])->assertCreated();
 
         $po = PurchaseOrder::with('items')->findOrFail($response->json('data.id'));
@@ -120,7 +120,7 @@ class PurchaseOrderItemsTest extends TestCase
         $this->actingAs($this->user, 'user')
             ->postJson('/api/erp/procurement/purchase-orders', [
                 'purchase_request_ids' => [$pr->id],
-                'payment_terms' => 'COD',
+                'payment_terms' => 'Net 30',
             ])
             ->assertUnprocessable();
 
@@ -136,12 +136,12 @@ class PurchaseOrderItemsTest extends TestCase
 
         $this->actingAs($this->user, 'user')->postJson('/api/erp/procurement/purchase-orders', [
             'purchase_request_ids' => [$approved->id, $mixed->id],
-            'payment_terms' => 'COD',
+                'payment_terms' => 'Net 30',
         ])->assertUnprocessable();
 
         $this->actingAs($this->user, 'user')->postJson('/api/erp/procurement/purchase-orders', [
             'purchase_request_ids' => [$draft->id],
-            'payment_terms' => 'COD',
+                'payment_terms' => 'Net 30',
         ])->assertUnprocessable();
 
         $this->assertDatabaseCount('purchase_orders', 0);
@@ -150,7 +150,7 @@ class PurchaseOrderItemsTest extends TestCase
     public function test_non_cancelled_po_blocks_pr_reuse_but_cancelled_po_releases_it(): void
     {
         $pr = $this->approvedPr();
-        $payload = ['purchase_request_ids' => [$pr->id], 'payment_terms' => 'COD'];
+        $payload = ['purchase_request_ids' => [$pr->id], 'payment_terms' => 'Net 30'];
 
         $first = $this->actingAs($this->user, 'user')
             ->postJson('/api/erp/procurement/purchase-orders', $payload)
@@ -176,7 +176,7 @@ class PurchaseOrderItemsTest extends TestCase
 
         $response = $this->actingAs($this->user, 'user')->postJson('/api/erp/procurement/purchase-orders', [
             'purchase_request_ids' => [$first->id, $second->id],
-            'payment_terms' => 'COD',
+            'payment_terms' => 'Net 30',
         ])->assertCreated();
 
         $this->actingAs($this->user, 'user')
@@ -199,7 +199,7 @@ class PurchaseOrderItemsTest extends TestCase
         $poId = $this->actingAs($this->user, 'user')->postJson('/api/erp/procurement/purchase-orders', [
             'purchase_request_ids' => [$pr->id],
             'expected_delivery_date' => today()->toDateString(),
-            'payment_terms' => 'COD',
+            'payment_terms' => 'Net 30',
         ])->assertCreated()->json('data.id');
 
         Permission::findOrCreate('procurement.manage_purchase_orders', 'user');

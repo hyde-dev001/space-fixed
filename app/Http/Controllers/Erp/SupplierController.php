@@ -13,6 +13,7 @@ use App\Http\Requests\StoreSupplierPaymentProfileRequest;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use App\Support\Erp\ErpActorContext;
 use App\Models\PurchaseOrder;
@@ -41,6 +42,12 @@ class SupplierController extends Controller
         $showArchived = $request->boolean('archived');
         
         $suppliers = Supplier::where('shop_owner_id', $shopOwnerId)
+            ->addSelect([
+                'payment_profile_status' => SupplierPaymentProfile::query()
+                    ->select('status')
+                    ->whereColumn('supplier_id', 'suppliers.id')
+                    ->limit(1),
+            ])
             ->when($showArchived, function ($query) {
                 $query->onlyTrashed();
             })
@@ -89,15 +96,39 @@ class SupplierController extends Controller
             'payment_terms' => ['nullable', 'string', Rule::in(PurchaseOrder::supportedPaymentTerms())],
             'lead_time_days' => 'nullable|integer|min:0',
             'products_supplied' => 'nullable|string',
-            'notes' => 'nullable|string'
+            'notes' => 'nullable|string',
+            'payment_profile' => 'nullable|array',
         ]);
         
         $shopOwnerId = $request->user()->shop_owner_id;
-        
-        $supplier = Supplier::create(array_merge($validated, [
-            'shop_owner_id' => $shopOwnerId,
-            'is_active' => true
-        ]));
+
+        $profileData = null;
+        if (array_key_exists('payment_profile', $validated)) {
+            $profileData = Validator::make(
+                $validated['payment_profile'],
+                StoreSupplierPaymentProfileRequest::profileRules(
+                    destinationType: $validated['payment_profile']['destination_type'] ?? null,
+                ),
+            )->validate();
+            unset($validated['payment_profile']);
+        }
+
+        $supplier = DB::transaction(function () use ($validated, $profileData, $shopOwnerId): Supplier {
+            $supplier = Supplier::create(array_merge($validated, [
+                'shop_owner_id' => $shopOwnerId,
+                'is_active' => true,
+            ]));
+
+            if ($profileData !== null) {
+                SupplierPaymentProfile::create(array_merge($profileData, [
+                    'shop_owner_id' => $shopOwnerId,
+                    'supplier_id' => $supplier->id,
+                    'status' => SupplierPaymentProfile::STATUS_UNVERIFIED,
+                ]));
+            }
+
+            return $supplier;
+        });
         
         return response()->json([
             'message' => 'Supplier created successfully',
@@ -291,20 +322,30 @@ class SupplierController extends Controller
                 ->lockForUpdate()
                 ->first();
             $data = $request->validated();
-            $accountNumber = filled($data['account_number'] ?? null)
-                ? $data['account_number']
-                : $profile?->account_number;
+            $destinationType = (string) $data['destination_type'];
+            $isBankAccount = $destinationType === SupplierPaymentProfile::DESTINATION_BANK_ACCOUNT;
+            $accountNumber = $isBankAccount
+                ? (filled($data['account_number'] ?? null) ? $data['account_number'] : $profile?->account_number)
+                : null;
+            $accountIdentifier = ! $isBankAccount
+                ? (filled($data['account_identifier'] ?? null) ? $data['account_identifier'] : $profile?->account_identifier)
+                : null;
 
-            if ($accountNumber === null) {
-                abort(422, 'An account number is required for a new payment profile.');
+            if ($isBankAccount && $accountNumber === null) {
+                abort(422, 'An account number is required for a new bank payment profile.');
+            }
+            if (! $isBankAccount && $accountIdentifier === null) {
+                abort(422, 'An account identifier is required for a new e-wallet payment profile.');
             }
 
             $destination = [
-                'destination_type' => $data['destination_type'],
-                'bank_name' => $data['bank_name'],
-                'bank_code' => $data['bank_code'],
+                'destination_type' => $destinationType,
+                'wallet_provider' => $isBankAccount ? null : $data['wallet_provider'],
+                'bank_name' => $isBankAccount ? $data['bank_name'] : null,
+                'bank_code' => $isBankAccount ? $data['bank_code'] : null,
                 'account_name' => $data['account_name'],
-                'account_number' => $accountNumber,
+                'account_number' => $isBankAccount ? $accountNumber : null,
+                'account_identifier' => $isBankAccount ? null : $accountIdentifier,
             ];
             $changed = ! $profile || collect($destination)->some(
                 fn ($value, $key): bool => (string) $profile->getAttribute($key) !== (string) $value

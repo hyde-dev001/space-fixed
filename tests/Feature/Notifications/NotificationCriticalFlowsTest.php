@@ -23,6 +23,7 @@ use App\Services\SupplierOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -569,10 +570,10 @@ class NotificationCriticalFlowsTest extends TestCase
         $procurementB = User::factory()->create(['shop_owner_id' => $shopB->id]);
         $financeRole = Role::findOrCreate('Finance', 'user');
         $procurementRole = Role::findOrCreate('Procurement Manager', 'user');
-        $inventoryRole = Role::findOrCreate('Inventory Manager', 'user');
+        $inventoryPermission = Permission::findOrCreate('inventory.view', 'user');
         $financeA->assignRole($financeRole);
         $procurementA->assignRole($procurementRole);
-        $inventoryA->assignRole($inventoryRole);
+        $inventoryA->givePermissionTo($inventoryPermission);
         $procurementB->assignRole($procurementRole);
 
         $service = app(NotificationService::class);
@@ -584,6 +585,11 @@ class NotificationCriticalFlowsTest extends TestCase
         $service->notifyPurchaseOrderInTransit($shopA->id, [
             'purchase_order_id' => 11,
             'po_number' => 'PO-2026-002',
+            'supplier_id' => 21,
+            'supplier_name' => 'Supplier A',
+            'expected_delivery' => '2026-09-20',
+            'status' => 'in_transit',
+            'shop_id' => $shopA->id,
         ]);
         $service->notifySupplierIssueReported($shopA->id, [
             'adjustment_id' => 12,

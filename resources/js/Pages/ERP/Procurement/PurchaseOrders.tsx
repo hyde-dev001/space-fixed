@@ -3,6 +3,7 @@ import { Head, usePage } from "@inertiajs/react";
 import { useMemo, useState, useEffect, useRef } from "react";
 import type { ComponentType } from "react";
 import Swal from "sweetalert2";
+import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { purchaseOrderApi } from "@/services/purchaseOrderApi";
 import { purchaseRequestApi } from "@/services/purchaseRequestApi";
@@ -432,6 +433,19 @@ export default function PurchaseOrders() {
 		}
 	};
 
+	const openViewingOrder = async (order: PurchaseOrderType) => {
+		try {
+			setViewingOrder(await purchaseOrderApi.getById(order.id));
+		} catch (error) {
+			console.error("Failed to fetch purchase order details:", error);
+			setViewingOrder({
+				...order,
+				can_complete: false,
+				completion_blockers: ["Unable to verify the purchase-order completion requirements."],
+			});
+		}
+	};
+
 	const upsertOrderInState = (updatedOrder: PurchaseOrderType) => {
 		setPurchaseOrders((prev) => prev.map((order) => (order.id === updatedOrder.id ? { ...order, ...updatedOrder } : order)));
 		setViewingOrder((prev: PurchaseOrderType | null) => (prev && prev.id === updatedOrder.id ? { ...prev, ...updatedOrder } : prev));
@@ -444,6 +458,23 @@ export default function PurchaseOrders() {
 		fetchApprovedPRs();
 		fetchMetrics();
 	}, [ownerMode, initialData]);
+
+	useEffect(() => {
+		if (ownerMode) return;
+
+		const refreshWhenVisible = () => {
+			if (document.visibilityState !== "visible") return;
+			void Promise.all([fetchPurchaseOrders(), fetchApprovedPRs(), fetchMetrics()]);
+		};
+
+		window.addEventListener("focus", refreshWhenVisible);
+		document.addEventListener("visibilitychange", refreshWhenVisible);
+
+		return () => {
+			window.removeEventListener("focus", refreshWhenVisible);
+			document.removeEventListener("visibilitychange", refreshWhenVisible);
+		};
+	}, [ownerMode]);
 
 	useEffect(() => {
 		if (!isDeliveryCalendarOpen) return;
@@ -630,6 +661,15 @@ export default function PurchaseOrders() {
 	const handleProgressOrder = async (order: PurchaseOrderType) => {
 		const nextStatus = nextStatusMap[order.status as PurchaseOrderStatus];
 		if (!nextStatus || (nextStatus === "completed" ? !canComplete : !canManage)) return;
+		if (nextStatus === "completed" && order.can_complete !== true) {
+			await Swal.fire({
+				icon: "warning",
+				title: "PO Not Ready",
+				text: order.completion_blockers?.[0] ?? "Complete the supplier payment and receipt workflow first.",
+				confirmButtonColor: "#111827",
+			});
+			return;
+		}
 
 		const result = await Swal.fire({
 			title: `Move to ${formatStatus(nextStatus)}?`,
@@ -657,11 +697,14 @@ export default function PurchaseOrders() {
 				timer: 1400,
 				showConfirmButton: false,
 			});
-		} catch (error) {
+		} catch (error: unknown) {
 			console.error("Failed to update status:", error);
+			const message = axios.isAxiosError<{ message?: string; errors?: Record<string, string[]> }>(error)
+				? error.response?.data?.message ?? error.response?.data?.errors?.status?.[0]
+				: undefined;
 			await Swal.fire({
 				title: "Error",
-				text: "Failed to update order status. Please try again.",
+				text: message ?? "Failed to update order status. Please try again.",
 				icon: "error",
 				confirmButtonColor: "#111827",
 			});
@@ -824,8 +867,8 @@ export default function PurchaseOrders() {
 												</td>
 												<td className="px-4 py-3 whitespace-nowrap text-sm">
 													<div className="flex gap-2">
-														<button
-															onClick={() => setViewingOrder(order)}
+										<button
+											onClick={() => void openViewingOrder(order)}
 															className="rounded-lg p-2 transition-colors hover:bg-blue-50 dark:hover:bg-blue-900/20"
 															title="View details"
 														>
@@ -1045,11 +1088,11 @@ export default function PurchaseOrders() {
 										onChange={(event) => setFormData((prev) => ({ ...prev, paymentTerms: event.target.value }))}
 										className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
 									>
-										<option value="Net 30">Net 30</option>
-										<option value="COD">COD</option>
-										<option value="50% down, 50% on delivery">50% down, 50% on delivery</option>
-										<option value="Net 15">Net 15</option>
-										<option value="Net 60">Net 60</option>
+											<option value="Net 7">Net 7</option>
+											<option value="Net 15">Net 15</option>
+											<option value="Net 30">Net 30</option>
+											<option value="Net 45">Net 45</option>
+											<option value="Net 60">Net 60</option>
 									</MonochromeSelect>
 								</div>
 							</div>
@@ -1209,7 +1252,7 @@ export default function PurchaseOrders() {
 
 						<div className="flex gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50 sticky bottom-0">
 							<button onClick={() => setViewingOrder(null)} className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">Close</button>
-							{nextStatusMap[viewingOrder.status as PurchaseOrderStatus] && (viewingOrder.status === "delivered" ? canComplete : canManage) && (
+							{nextStatusMap[viewingOrder.status as PurchaseOrderStatus] && (viewingOrder.status === "delivered" ? canComplete && viewingOrder.can_complete === true : canManage) && (
 								<button
 									onClick={() => handleProgressOrder(viewingOrder)}
 									className="flex-1 px-4 py-2 rounded-lg bg-green-600 hover:bg-green-700 text-white font-medium transition-colors"

@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\PurchaseRequest;
 use App\Models\ShopOwner;
+use App\Models\Supplier;
 use App\Models\User;
 use App\Enums\NotificationType;
 use Illuminate\Database\QueryException;
@@ -33,9 +34,19 @@ class PurchaseRequestService
         DB::beginTransaction();
         
         try {
+            $shopOwnerId = (int) ($data['shop_owner_id'] ?? 0);
+            if ($shopOwnerId < 1 || ! Supplier::query()
+                ->whereKey((int) ($data['supplier_id'] ?? 0))
+                ->where('shop_owner_id', $shopOwnerId)
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'supplier_id' => 'The selected supplier is not available in this shop.',
+                ]);
+            }
+
             $candidatePrNumber = isset($data['pr_number'])
                 ? (string) $data['pr_number']
-                : $this->generatePRNumber();
+                : $this->generatePRNumber($shopOwnerId);
 
             // Calculate total cost
             $data['total_cost'] = $data['total_cost'] ?? $data['quantity'] * $data['unit_cost'];
@@ -64,7 +75,7 @@ class PurchaseRequestService
                         'attempt' => $attempt + 1,
                     ]);
 
-                    $candidatePrNumber = $this->incrementPrNumber($candidatePrNumber);
+                    $candidatePrNumber = $this->incrementPrNumber($candidatePrNumber, $shopOwnerId);
                 }
             }
 
@@ -104,12 +115,14 @@ class PurchaseRequestService
     /**
      * Generate unique PR number for shop owner.
      */
-    public function generatePRNumber(): string
+    public function generatePRNumber(int $shopOwnerId): string
     {
+        ShopOwner::query()->whereKey($shopOwnerId)->lockForUpdate()->firstOrFail();
         $year = (int) date('Y');
         $maxSequence = 0;
 
         $existingPrNumbers = PurchaseRequest::query()
+            ->where('shop_owner_id', $shopOwnerId)
             ->where('pr_number', 'LIKE', "PR-{$year}-%")
             ->pluck('pr_number');
 
@@ -128,10 +141,10 @@ class PurchaseRequestService
         return sprintf('PR-%d-%03d', $year, $maxSequence + 1);
     }
 
-    private function incrementPrNumber(string $prNumber): string
+    private function incrementPrNumber(string $prNumber, int $shopOwnerId): string
     {
         if (preg_match('/^PR-(\d{4})-(\d+)$/', $prNumber, $matches) !== 1) {
-            return $this->generatePRNumber();
+            return $this->generatePRNumber($shopOwnerId);
         }
 
         $year = (int) $matches[1];
@@ -151,10 +164,16 @@ class PurchaseRequestService
     /**
      * Submit purchase request to finance for approval.
      */
-    public function submitToFinance(int $prId): PurchaseRequest
+    public function submitToFinance(int $prId, User $actor): PurchaseRequest
     {
-        $purchaseRequest = DB::transaction(function () use ($prId): PurchaseRequest {
+        $purchaseRequest = DB::transaction(function () use ($prId, $actor): PurchaseRequest {
             $purchaseRequest = PurchaseRequest::query()->lockForUpdate()->findOrFail($prId);
+
+            if ((int) $purchaseRequest->shop_owner_id !== (int) $actor->shop_owner_id) {
+                throw ValidationException::withMessages([
+                    'shop_id' => 'The purchase request is not available in this shop.',
+                ]);
+            }
 
             if ($purchaseRequest->status !== 'draft') {
                 throw new \Exception('Only draft purchase requests can be submitted to finance.');
@@ -185,6 +204,11 @@ class PurchaseRequestService
     {
         $purchaseRequest = DB::transaction(function () use ($prId, $actor, $notes) {
             $purchaseRequest = PurchaseRequest::lockForUpdate()->findOrFail($prId);
+            if ((int) $purchaseRequest->shop_owner_id !== (int) $actor->shop_owner_id) {
+                throw ValidationException::withMessages([
+                    'shop_id' => 'The purchase request is not available in this shop.',
+                ]);
+            }
             if (!$purchaseRequest->reviewByFinance($actor, $notes)) {
                 throw ValidationException::withMessages(['status' => 'Only a pending Finance request may be reviewed.']);
             }
@@ -201,6 +225,11 @@ class PurchaseRequestService
     {
         $purchaseRequest = DB::transaction(function () use ($prId, $actor, $notes) {
             $purchaseRequest = PurchaseRequest::lockForUpdate()->findOrFail($prId);
+            if ((int) $purchaseRequest->shop_owner_id !== (int) $actor->id) {
+                throw ValidationException::withMessages([
+                    'shop_id' => 'The purchase request is not available in this shop.',
+                ]);
+            }
             if (!$purchaseRequest->approveByShopOwner($actor, $notes)) {
                 throw ValidationException::withMessages(['status' => 'Only a request pending Shop Owner approval may be approved.']);
             }
@@ -217,6 +246,11 @@ class PurchaseRequestService
     {
         $purchaseRequest = DB::transaction(function () use ($prId, $actor, $notes) {
             $purchaseRequest = PurchaseRequest::lockForUpdate()->findOrFail($prId);
+            if ((int) $purchaseRequest->shop_owner_id !== (int) $actor->shop_owner_id) {
+                throw ValidationException::withMessages([
+                    'shop_id' => 'The purchase request is not available in this shop.',
+                ]);
+            }
             if (!$purchaseRequest->releaseByFinance($actor, $notes)) {
                 throw ValidationException::withMessages(['status' => 'Only an owner-approved request may receive final Finance release.']);
             }
@@ -234,6 +268,11 @@ class PurchaseRequestService
         $previousStatus = '';
         $purchaseRequest = DB::transaction(function () use ($prId, $actor, $reason, &$previousStatus) {
             $purchaseRequest = PurchaseRequest::lockForUpdate()->findOrFail($prId);
+            if ((int) $purchaseRequest->shop_owner_id !== (int) $actor->shop_owner_id) {
+                throw ValidationException::withMessages([
+                    'shop_id' => 'The purchase request is not available in this shop.',
+                ]);
+            }
             $previousStatus = (string) $purchaseRequest->status;
             if (!$purchaseRequest->rejectByFinance($actor, $reason)) {
                 throw ValidationException::withMessages(['status' => 'This request is not awaiting Finance review.']);

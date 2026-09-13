@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useFinanceApi } from "../../../../hooks/useFinanceApi";
-import type { ProcurementExpenseDetails, SupplierAdjustment, SupplierPaymentMethod } from "@/types/procurement";
+import type { ProcurementExpenseDetails, RevealedSupplierPaymentProfile, SupplierAdjustment, SupplierPaymentMethod } from "@/types/procurement";
 
 interface ProcurementExpensePanelProps {
 	details: ProcurementExpenseDetails;
@@ -31,10 +31,18 @@ const formatDate = (value: string | null | undefined) => {
 };
 
 const DetailRow = ({ label, value }: { label: string; value: string | number }) => (
-	<div className="flex justify-between gap-4 text-sm text-gray-700 dark:text-gray-300">
+	<div className="flex justify-between gap-4 text-[13px] leading-5 text-gray-700 dark:text-gray-300">
 		<span className="text-gray-500 dark:text-gray-400">{label}</span>
 		<span className="font-semibold text-right">{value}</span>
 	</div>
+);
+
+const EyeIcon = ({ crossed = false }: { crossed?: boolean }) => (
+	<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
+		<path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.27 2.943 9.542 7-1.272 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+		<circle cx="12" cy="12" r="3" />
+		{crossed && <path strokeLinecap="round" d="m4 4 16 16" />}
+	</svg>
 );
 
 export default function ProcurementExpensePanel({
@@ -63,6 +71,9 @@ export default function ProcurementExpensePanel({
 	const [refundProof, setRefundProof] = useState<File | null>(null);
 	const [refundBusy, setRefundBusy] = useState(false);
 	const [refundError, setRefundError] = useState<string | null>(null);
+	const [revealedPaymentProfile, setRevealedPaymentProfile] = useState<RevealedSupplierPaymentProfile | null>(null);
+	const [isPaymentProfileRevealPending, setIsPaymentProfileRevealPending] = useState(false);
+	const [paymentProfileRevealError, setPaymentProfileRevealError] = useState<string | null>(null);
 	const isSubmitted = expenseStatus === "submitted";
 	const paymentStatus = details.payment_status || "unpaid";
 	const isAwaitingVerification = paymentStatus === "awaiting_verification";
@@ -70,6 +81,21 @@ export default function ProcurementExpensePanel({
 		&& paymentStatus !== "paid"
 		&& !["initiating", "awaiting_verification"].includes(paymentStatus);
 	const refundAdjustments = (details.adjustments ?? []).filter((adjustment) => adjustment.resolution === "refund" && ["awaiting_verification", "partially_refunded"].includes(adjustment.status));
+	const hasPaymentProof = (details.payment_attempt?.proof_media?.length ?? 0) > 0;
+	const canReviewSupplierPayment = Boolean(onReviewSupplierPayment) && (ownerMode || hasPaymentProof);
+	const isPaymentProfileRevealed = Boolean(details.payment_profile && revealedPaymentProfile && revealedPaymentProfile.id === details.payment_profile.id);
+	const revealedAccount = details.payment_profile?.destination_type === "e_wallet"
+		? revealedPaymentProfile?.account_identifier
+		: revealedPaymentProfile?.account_number;
+	const paymentAccountLabel = details.payment_profile?.destination_type === "e_wallet" ? "Mobile / Account Number" : "Account Number";
+	const paymentAccountValue = isPaymentProfileRevealed
+		? revealedAccount || "—"
+		: details.payment_profile?.masked_account_identifier || details.payment_profile?.masked_account_number || "—";
+
+	useEffect(() => {
+		setRevealedPaymentProfile(null);
+		setPaymentProfileRevealError(null);
+	}, [details.payment_profile?.id]);
 
 	const confirmRefund = async (adjustment: SupplierAdjustment) => {
 		if (!refundAmount.trim() || !refundReference.trim() || !refundProof) {
@@ -103,34 +129,75 @@ export default function ProcurementExpensePanel({
 		}
 	};
 
+	const togglePaymentProfileReveal = async () => {
+		if (isPaymentProfileRevealed) {
+			setRevealedPaymentProfile(null);
+			setPaymentProfileRevealError(null);
+			return;
+		}
+
+		const supplierId = details.supplier_id;
+		if (!supplierId) {
+			setPaymentProfileRevealError("The supplier payment destination is unavailable.");
+			return;
+		}
+
+		setIsPaymentProfileRevealPending(true);
+		setPaymentProfileRevealError(null);
+		try {
+			const response = await api.get<RevealedSupplierPaymentProfile>(`/api/finance/suppliers/${supplierId}/payment-profile/reveal`);
+			if (!response.ok || !response.data) {
+				throw new Error(response.error || "The supplier payment destination could not be revealed.");
+			}
+
+			setRevealedPaymentProfile(response.data);
+		} catch (caught) {
+			setPaymentProfileRevealError(caught instanceof Error ? caught.message : "The supplier payment destination could not be revealed.");
+		} finally {
+			setIsPaymentProfileRevealPending(false);
+		}
+	};
+
 	return (
-		<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-2">
+		<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-1">
 			<p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Procurement Payable</p>
-			<DetailRow label="Supplier" value={details.supplier_name || "—"} />
-			<DetailRow label="PO Number" value={details.po_number || "—"} />
-			<DetailRow label="Receipt Number" value={details.receipt_number || (details.receipt_id ? `RCV-${details.receipt_id}` : "—")} />
-			<DetailRow label="Ordered" value={details.ordered_quantity ?? details.quantity ?? "—"} />
-			<DetailRow label="Received" value={details.received_quantity ?? "—"} />
-			<DetailRow label="Accepted" value={details.accepted_quantity ?? "—"} />
-			<DetailRow label="Defective" value={details.defective_quantity ?? "—"} />
-			<DetailRow label="Unit Cost" value={details.unit_cost == null ? "—" : formatCurrency(details.unit_cost)} />
-			<DetailRow label="Payable Amount" value={formatCurrency(details.payable_amount ?? amount)} />
-			<DetailRow label="Payment Terms" value={details.payment_terms || "—"} />
-			<DetailRow label="Receipt Date" value={formatDate(details.receipt_date ?? details.received_at)} />
-			<DetailRow label="Due Date" value={formatDate(details.due_date)} />
-			<DetailRow label="Expense Status" value={details.expense_status || expenseStatus} />
-			<DetailRow label="Payment Status" value={details.payment_status || "unpaid"} />
-			<DetailRow label="Payment Timing" value={details.payment_timing || "Not Due"} />
+			<div className="grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2">
+				<DetailRow label="Supplier" value={details.supplier_name || "—"} />
+				<DetailRow label="PO Number" value={details.po_number || "—"} />
+				<DetailRow label="Receipt Number" value={details.receipt_number || (details.receipt_id ? `RCV-${details.receipt_id}` : "—")} />
+				<DetailRow label="Ordered" value={details.ordered_quantity ?? details.quantity ?? "—"} />
+				<DetailRow label="Received" value={details.received_quantity ?? "—"} />
+				<DetailRow label="Accepted" value={details.accepted_quantity ?? "—"} />
+				<DetailRow label="Defective" value={details.defective_quantity ?? "—"} />
+				<DetailRow label="Unit Cost" value={details.unit_cost == null ? "—" : formatCurrency(details.unit_cost)} />
+				<DetailRow label="Payable Amount" value={formatCurrency(details.payable_amount ?? amount)} />
+				<DetailRow label="Payment Terms" value={details.payment_terms || "—"} />
+				<DetailRow label="Receipt Date" value={formatDate(details.receipt_date ?? details.received_at)} />
+				<DetailRow label="Due Date" value={formatDate(details.due_date)} />
+				<DetailRow label="Expense Status" value={details.expense_status || expenseStatus} />
+				<DetailRow label="Payment Status" value={details.payment_status || "unpaid"} />
+				<DetailRow label="Payment Timing" value={details.payment_timing || "Not Due"} />
+			</div>
 			{paymentStatus === "initiating" && <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold uppercase text-blue-800">PAYMENT INITIATED</p>}
 			{isAwaitingVerification && (
 				<div className="rounded-lg bg-amber-50 p-3 text-sm font-semibold uppercase text-amber-800">
 					<p>AWAITING SHOP OWNER VERIFICATION</p>
-					{ownerMode && onReviewSupplierPayment && <button type="button" onClick={onReviewSupplierPayment} className="mt-3 min-h-11 w-full rounded-lg bg-amber-700 px-3 py-2 text-white hover:bg-amber-800">Review Supplier Payment</button>}
+					{canReviewSupplierPayment && <button type="button" onClick={onReviewSupplierPayment} className="mt-3 min-h-10 w-full rounded-lg bg-amber-700 px-3 py-2 text-white hover:bg-amber-800">{ownerMode ? "Review Supplier Payment" : "View Submitted Proof"}</button>}
 				</div>
 			)}
 			{paymentStatus === "rejected" && <p className="rounded-lg bg-rose-50 p-3 text-sm font-semibold uppercase text-rose-800">PAYMENT REJECTED · NEW ATTEMPT AVAILABLE</p>}
 			{paymentStatus === "cancelled" && <p className="rounded-lg bg-gray-100 p-3 text-sm font-semibold uppercase text-gray-700">PAYMENT CANCELLED · NEW ATTEMPT AVAILABLE</p>}
-			{paymentStatus === "paid" && <p className="rounded-lg bg-emerald-50 p-3 text-sm font-semibold uppercase text-emerald-800">PAID · PAYMENT VERIFIED</p>}
+			{paymentStatus === "paid" && (
+				<div className="space-y-2 rounded-lg bg-emerald-50 p-2.5 text-sm font-semibold uppercase text-emerald-800">
+					<p>PAID · PAYMENT VERIFIED</p>
+					{details.payment_attempt?.status === "succeeded" && canReviewSupplierPayment && (
+						<button type="button" onClick={onReviewSupplierPayment} className="min-h-10 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold normal-case text-white hover:bg-emerald-800">View Payment Proof</button>
+					)}
+					{details.payment_attempt?.status === "succeeded" && !ownerMode && details.payment_attempt.supplier_email_status === "ready_to_send" && onPaySupplier && (
+						<button type="button" onClick={onPaySupplier} className="min-h-10 w-full rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold normal-case text-emerald-800 hover:bg-emerald-100">Send Payment Receipt</button>
+					)}
+				</div>
+			)}
 
 			{refundAdjustments.length > 0 && (
 				<div className="space-y-3 border-t border-gray-200 pt-3 dark:border-gray-700">
@@ -156,26 +223,50 @@ export default function ProcurementExpensePanel({
 			)}
 
 			{details.payment_profile && (
-				<div className="pt-2 space-y-2 border-t border-gray-200 dark:border-gray-700">
+				<div className="space-y-1 border-t border-gray-200 pt-1 dark:border-gray-700">
 					<p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Supplier Payment Profile</p>
-					<DetailRow label="Bank" value={details.payment_profile.bank_name || "—"} />
-					<DetailRow label="Account" value={details.payment_profile.masked_account_number || "—"} />
-					<DetailRow label="Profile Status" value={details.payment_profile.status} />
-					{details.payment_profile.status === "unverified" && onVerifyPaymentProfile && (
+					<div className="grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2">
+						<DetailRow label="Destination" value={details.payment_profile.destination_type === "e_wallet" ? "E-wallet" : "Bank Account"} />
+						<DetailRow label={details.payment_profile.destination_type === "e_wallet" ? "Wallet Provider" : "Bank"} value={details.payment_profile.wallet_provider || details.payment_profile.bank_name || "—"} />
+						<DetailRow label="Account Name" value={details.payment_profile.account_name || "—"} />
+						<div className="flex justify-between gap-4 text-[13px] leading-5 text-gray-700 dark:text-gray-300">
+							<span className="text-gray-500 dark:text-gray-400">{paymentAccountLabel}</span>
+							<span className="flex items-center gap-2 text-right font-semibold">
+								<span>{paymentAccountValue}</span>
+								{!ownerMode && (
+									<button
+										type="button"
+										disabled={isPaymentProfileRevealPending}
+										aria-label={isPaymentProfileRevealPending ? "Loading account details" : isPaymentProfileRevealed ? "Hide full account details" : "Show full account details"}
+										title={isPaymentProfileRevealPending ? "Loading account details" : isPaymentProfileRevealed ? "Hide full account details" : "Show full account details"}
+										aria-pressed={isPaymentProfileRevealed}
+										className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+										onClick={() => void togglePaymentProfileReveal()}
+									>
+										<EyeIcon crossed={isPaymentProfileRevealed} />
+									</button>
+								)}
+							</span>
+						</div>
+						{details.payment_profile.destination_type !== "e_wallet" && <DetailRow label="Bank Code" value={details.payment_profile.bank_code || "—"} />}
+						<DetailRow label="Profile Status" value={details.payment_profile.status} />
+					</div>
+					{!ownerMode && paymentProfileRevealError && <p role="alert" className="text-xs text-rose-700 dark:text-rose-300">{paymentProfileRevealError}</p>}
+					{!ownerMode && details.payment_profile.status === "unverified" && onVerifyPaymentProfile && (
 						<button
 							type="button"
 							disabled={isPaymentProfileActionPending}
-							className="w-full px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+							className="w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
 							onClick={onVerifyPaymentProfile}
 						>
 							Verify Payment Profile
 						</button>
 					)}
-					{details.payment_profile.status === "verified" && onDisablePaymentProfile && (
+					{!ownerMode && details.payment_profile.status === "verified" && onDisablePaymentProfile && (
 						<button
 							type="button"
 							disabled={isPaymentProfileActionPending}
-							className="w-full px-3 py-2 rounded-lg bg-amber-600 text-white text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
+							className="w-full rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
 							onClick={onDisablePaymentProfile}
 						>
 							Disable Payment Profile

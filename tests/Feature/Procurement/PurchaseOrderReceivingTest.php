@@ -17,6 +17,8 @@ use App\Models\SupplierAdjustment;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -118,6 +120,64 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->assertSame(12, $inventory->fresh()->available_quantity);
     }
 
+    public function test_receipt_expense_is_passed_to_eloquent_as_decimal_text(): void
+    {
+        $capturedAmount = null;
+        Expense::creating(function (Expense $expense) use (&$capturedAmount): void {
+            if ($expense->category === 'Procurement') {
+                $capturedAmount = $expense->getAttributes()['amount'];
+            }
+        });
+
+        [$po, $item] = $this->poItem(3, 100);
+        $po->update([
+            'unit_cost' => '0.10',
+            'total_cost' => '0.30',
+        ]);
+        $item->update([
+            'unit_cost' => '0.10',
+            'line_total' => '0.30',
+        ]);
+
+        $this->postReceiptPayload($po, $this->payload('decimal-receipt', $item->id, 3, 0))
+            ->assertCreated();
+
+        $this->assertSame('0.30', (string) $capturedAmount);
+    }
+
+    public function test_procurement_expense_notification_waits_for_the_outer_transaction_commit(): void
+    {
+        Mail::fake();
+        $finance = User::factory()->for($this->owner)->create();
+        $finance->assignRole(Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']));
+        [$po] = $this->poItem(1, 100);
+        $receipt = PurchaseOrderReceipt::create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->owner->id,
+            'source' => 'manual',
+            'status' => 'posted',
+            'idempotency_key' => 'notification-rollback',
+            'payload_hash' => hash('sha256', 'notification-rollback'),
+            'received_by' => $this->receiver->id,
+            'received_at' => now(),
+        ]);
+
+        try {
+            DB::transaction(function () use ($receipt): void {
+                app(\App\Services\ExpenseApprovalService::class)
+                    ->submitProcurementExpense($receipt, $this->receiver, '100.00');
+
+                throw new \RuntimeException('Rollback after notification scheduling.');
+            });
+        } catch (\RuntimeException $exception) {
+            $this->assertSame('Rollback after notification scheduling.', $exception->getMessage());
+        }
+
+        $this->assertDatabaseCount('finance_expenses', 0);
+        $this->assertDatabaseCount('notifications', 0);
+        Mail::assertNothingSent();
+    }
+
     public function test_existing_procurement_expense_workflow_is_blocked_for_finance_approval(): void
     {
         $finance = User::factory()->for($this->owner)->create();
@@ -155,22 +215,9 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->assertSame(ApprovalStatus::CANCELLED, $legacyApproval->fresh()->status);
     }
 
-    public function test_cod_supplier_terms_are_due_on_the_receipt_date(): void
-    {
-        [$po, $item] = $this->poItem(2, 100);
-        $po->update(['payment_terms' => 'COD']);
-
-        $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('cod-terms', $item->id, 2, 0))
-            ->assertCreated();
-
-        $this->assertSame(Expense::sole()->date->toDateString(), Expense::sole()->due_date->toDateString());
-    }
-
     public function test_all_supported_supplier_terms_set_the_receipt_expense_due_date(): void
     {
         foreach ([
-            'COD' => 0,
             'Net 7' => 7,
             'Net 15' => 15,
             'Net 30' => 30,

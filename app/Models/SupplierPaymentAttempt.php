@@ -14,6 +14,12 @@ class SupplierPaymentAttempt extends Model implements HasMedia
 {
     use HasFactory, InteractsWithMedia;
 
+    public const EMAIL_STATUS_PENDING = 'pending';
+    public const EMAIL_STATUS_READY_TO_SEND = 'ready_to_send';
+    public const EMAIL_STATUS_QUEUED = 'queued';
+    public const EMAIL_STATUS_DISPATCHED = 'dispatched';
+    public const EMAIL_STATUS_FAILED = 'failed';
+
     public const STATUS_INITIATING = 'initiating';
     public const STATUS_AWAITING_VERIFICATION = 'awaiting_verification';
     public const STATUS_PROCESSING = 'processing';
@@ -152,19 +158,36 @@ class SupplierPaymentAttempt extends Model implements HasMedia
         return $this->provider === 'manual' ? $this->provider_reference : null;
     }
 
+    public function maskedSupplierEmail(): ?string
+    {
+        $email = trim((string) $this->supplier_email_to);
+        if (! filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return null;
+        }
+
+        [$localPart, $domain] = explode('@', $email, 2);
+
+        return substr($localPart, 0, 1) . str_repeat('*', max(1, strlen($localPart) - 1)) . '@' . $domain;
+    }
+
     /** @return array<string, mixed> */
     public function maskedDestination(): array
     {
         $destination = (array) $this->destination_snapshot;
+        $isWallet = ($destination['destination_type'] ?? null) === SupplierPaymentProfile::DESTINATION_E_WALLET;
 
         return [
             'destination_type' => $destination['destination_type'] ?? null,
-            'bank_name' => $destination['bank_name'] ?? null,
-            'bank_code' => $destination['bank_code'] ?? null,
+            'wallet_provider' => $isWallet ? ($destination['wallet_provider'] ?? null) : null,
+            'bank_name' => $isWallet ? null : ($destination['bank_name'] ?? null),
+            'bank_code' => $isWallet ? null : ($destination['bank_code'] ?? null),
             'account_name' => $destination['account_name'] ?? null,
-            'masked_account_number' => SupplierPaymentProfile::maskAccountNumber(
-                isset($destination['account_number']) ? (string) $destination['account_number'] : null
+            'masked_account_number' => $isWallet ? null : SupplierPaymentProfile::maskAccountNumber(
+                isset($destination['account_number']) ? (string) $destination['account_number'] : null,
             ),
+            'masked_account_identifier' => $isWallet ? SupplierPaymentProfile::maskAccountIdentifier(
+                isset($destination['account_identifier']) ? (string) $destination['account_identifier'] : null,
+            ) : null,
         ];
     }
 }

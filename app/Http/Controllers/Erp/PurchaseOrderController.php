@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 use App\Services\PurchaseOrderService;
 
 class PurchaseOrderController extends Controller
@@ -134,7 +135,10 @@ class PurchaseOrderController extends Controller
 
         $this->authorize('view', $purchaseOrder);
 
-        return response()->json($purchaseOrder);
+        return response()->json([
+            ...$purchaseOrder->toArray(),
+            ...$this->purchaseOrderService->completionState($purchaseOrder),
+        ]);
     }
 
     /**
@@ -155,7 +159,7 @@ class PurchaseOrderController extends Controller
 
         $validatedData = $request->validate([
             'expected_delivery_date' => 'nullable|date|after_or_equal:today',
-            'payment_terms' => 'sometimes|string|max:255',
+            'payment_terms' => ['sometimes', 'string', Rule::in(PurchaseOrder::supportedPaymentTerms())],
             'notes' => 'nullable|string',
         ]);
 
@@ -243,7 +247,10 @@ class PurchaseOrderController extends Controller
         }
 
         try {
-            $purchaseOrder = $this->purchaseOrderService->sendToSupplier($purchaseOrder->id);
+            $purchaseOrder = $this->purchaseOrderService->sendToSupplier(
+                $purchaseOrder->id,
+                (int) Auth::id(),
+            );
             event(new PurchaseOrderSent($purchaseOrder));
 
             return response()->json([

@@ -117,6 +117,25 @@ class PurchaseOrderWorkflowTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_draft_purchase_order_update_rejects_unsupported_payment_terms(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'draft',
+            'payment_terms' => 'Net 30',
+        ]);
+
+        $this->actingAs($this->user)
+            ->putJson("/api/erp/procurement/purchase-orders/{$po->id}", [
+                'payment_terms' => 'Net 90',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payment_terms');
+
+        $this->assertSame('Net 30', $po->fresh()->payment_terms);
+    }
+
     /** @test */
     public function user_can_send_po_to_supplier()
     {
@@ -344,6 +363,29 @@ class PurchaseOrderWorkflowTest extends TestCase
             'received_quantity' => 1,
             'accepted_quantity' => 1,
         ]);
+        $expense = Expense::create([
+            'reference' => 'EXP-COMPLETE',
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $this->shopOwner->id,
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        ExpenseSettlement::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '100.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'SUPPLIER-PAID-COMPLETE',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $this->user->id,
+            'idempotency_key' => 'completion-settlement',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:completion',
+        ]);
 
         $this->assertSame('delivered', $po->fresh()->status);
 
@@ -368,6 +410,46 @@ class PurchaseOrderWorkflowTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame('in_transit', $inTransit->fresh()->status);
+    }
+
+    public function test_completion_is_blocked_until_a_posted_receipt_expense_is_fully_settled(): void
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+        $item = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $po->id,
+            'ordered_quantity' => 1,
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => 'posted',
+        ]);
+        PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+
+        $this->actingAs($this->user)
+            ->getJson("/api/erp/procurement/purchase-orders/{$po->id}")
+            ->assertOk()
+            ->assertJsonPath('can_complete', false)
+            ->assertJsonPath('completion_blockers.0', 'A posted receipt expense is required before completion.');
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", [
+                'status' => 'completed',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('status');
+
+        $this->assertSame('delivered', $po->fresh()->status);
     }
 
     public function test_completion_is_blocked_while_a_supplier_payment_attempt_is_active(): void
@@ -522,7 +604,7 @@ class PurchaseOrderWorkflowTest extends TestCase
             ->postJson('/api/erp/procurement/purchase-orders', [
                 'purchase_request_ids' => [$this->pr->id],
                 'expected_delivery_date' => now()->addDays(10)->format('Y-m-d'),
-                'payment_terms' => 'COD',
+                'payment_terms' => 'Net 30',
             ]);
 
         $createResponse->assertStatus(201);

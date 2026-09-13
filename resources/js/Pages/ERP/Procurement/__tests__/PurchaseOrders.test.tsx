@@ -9,7 +9,7 @@ vi.mock("sweetalert2", () => ({ default: { fire: vi.fn().mockResolvedValue({ isC
 
 const order = (overrides: Partial<PurchaseOrder> = {}) => ({
 	id: 10, po_number: "PO-10", shop_owner_id: 1, supplier_id: 1, product_name: "Mixed items", quantity: 5,
-	unit_cost: 100, total_cost: 500, payment_terms: "COD", status: "in_transit", ordered_by: 1,
+	unit_cost: 100, total_cost: 500, payment_terms: "Net 30", status: "in_transit", ordered_by: 1,
 	ordered_date: "2026-08-02", created_at: "2026-08-02", updated_at: "2026-08-02",
 	items: [{ id: 20, purchase_order_id: 10, product_name: "Shoe cleaner", ordered_quantity: 5, accepted_quantity: 0, remaining_quantity: 5, unit_cost: 100, line_total: 500, quantity_multiplier: 1 }],
 	receipts: [], ...overrides,

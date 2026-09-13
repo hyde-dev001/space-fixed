@@ -9,6 +9,7 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\PurchaseRequest;
 use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
 use App\Models\ShopOwner;
 use App\Models\Supplier;
 use App\Models\SupplierAdjustment;
@@ -16,8 +17,12 @@ use App\Models\SupplierPaymentAttempt;
 use App\Models\SupplierPaymentProfile;
 use App\Models\StockRequestApproval;
 use App\Models\User;
+use App\Services\PurchaseOrderService;
+use App\Services\PurchaseRequestService;
+use App\Services\StockRequestApprovalService;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -46,6 +51,47 @@ class ProcurementAuthorizationTest extends TestCase
         $this->actingAs($user)
             ->getJson("/api/erp/procurement/purchase-orders/{$purchaseOrder->id}")
             ->assertNotFound();
+    }
+
+    public function test_shared_procurement_services_reject_foreign_shop_mutations(): void
+    {
+        [$user, $shop] = $this->userForShop();
+        [, $otherShop] = $this->userForShop();
+        $otherSupplier = Supplier::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherInventory = InventoryItem::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherStockRequest = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'inventory_item_id' => $otherInventory->id,
+            'status' => 'pending',
+        ]);
+        $otherPurchaseRequest = PurchaseRequest::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'supplier_id' => $otherSupplier->id,
+            'status' => 'pending_finance',
+        ]);
+        $otherPurchaseOrder = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'supplier_id' => $otherSupplier->id,
+            'status' => 'draft',
+            'ordered_by' => $user->id,
+        ]);
+
+        try {
+            app(StockRequestApprovalService::class)->approveStockRequest($otherStockRequest->id, $user->id);
+            $this->fail('A stock request from another shop was mutated.');
+        } catch (ValidationException) {
+            $this->assertSame('pending', $otherStockRequest->fresh()->status);
+        }
+
+        try {
+            app(PurchaseRequestService::class)->reviewByFinance($otherPurchaseRequest->id, $user, 'Cross-shop review.');
+            $this->fail('A purchase request from another shop was mutated.');
+        } catch (ValidationException) {
+            $this->assertSame('pending_finance', $otherPurchaseRequest->fresh()->status);
+        }
+
+        $this->expectException(ValidationException::class);
+        app(PurchaseOrderService::class)->updateStatus($otherPurchaseOrder->id, 'sent', $user->id);
     }
 
     public function test_dashboard_access_does_not_authorize_purchase_request_review(): void
@@ -120,7 +166,7 @@ class ProcurementAuthorizationTest extends TestCase
         $this->actingAs($user)
             ->postJson('/api/erp/procurement/purchase-orders', [
                 'pr_id' => $purchaseRequest->id,
-                'payment_terms' => 'COD',
+                'payment_terms' => 'Net 30',
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('pr_id');
@@ -284,7 +330,44 @@ class ProcurementAuthorizationTest extends TestCase
         ]);
         PurchaseOrderItem::factory()->create([
             'purchase_order_id' => $purchaseOrder->id,
-            'ordered_quantity' => 0,
+            'ordered_quantity' => 1,
+            'unit_cost' => '100.00',
+        ]);
+        $item = $purchaseOrder->items()->firstOrFail();
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'shop_owner_id' => $shop->id,
+            'received_by' => $completer->id,
+            'status' => 'posted',
+        ]);
+        PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+        $expense = Expense::create([
+            'reference' => 'EXP-AUTH-COMPLETE',
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => '100.00',
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $shop->id,
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => '100.00',
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => 'AUTH-COMPLETE-PAID',
+            'paid_at' => now(),
+            'recorded_by_user_id' => $completer->id,
+            'idempotency_key' => 'auth-complete-settlement',
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => 'supplier-manual-payment:auth-complete',
         ]);
 
         $this->actingAs($completer)

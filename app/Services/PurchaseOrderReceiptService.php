@@ -143,7 +143,7 @@ class PurchaseOrderReceiptService
                 'notes' => $data['notes'] ?? null,
             ]);
 
-            $expenseAmount = 0.0;
+            $expenseAmountCents = 0;
             foreach ($normalizedItems as $input) {
                 $orderItem = $orderItems[$input['purchase_order_item_id']];
                 $replacementAdjustment = $replacementAdjustments[$orderItem->id] ?? null;
@@ -163,7 +163,7 @@ class PurchaseOrderReceiptService
                     ]);
                     if ($input['replacement_for_adjustment_id'] === null
                         || $replacementAdjustment?->issue_stage === 'receiving_defect') {
-                        $expenseAmount += $accepted * (float) $orderItem->unit_cost;
+                        $expenseAmountCents += $accepted * $this->toCents($orderItem->unit_cost);
                     }
                 }
 
@@ -187,8 +187,12 @@ class PurchaseOrderReceiptService
                 }
             }
 
-            if ($expenseAmount > 0) {
-                $this->expenseApprovalService->submitProcurementExpense($receipt, $receiver, $expenseAmount);
+            if ($expenseAmountCents > 0) {
+                $this->expenseApprovalService->submitProcurementExpense(
+                    $receipt,
+                    $receiver,
+                    $this->formatCents($expenseAmountCents),
+                );
             }
 
             if (! $preserveFulfillmentStatus) {
@@ -525,5 +529,24 @@ class PurchaseOrderReceiptService
             ->map(fn (UploadedFile $file): string => (string) hash_file('sha256', $file->getRealPath()))
             ->values()
             ->all();
+    }
+
+    private function toCents(mixed $amount): int
+    {
+        $text = trim((string) $amount);
+        if (! preg_match('/^\d+(?:\.\d{1,2})?$/', $text)) {
+            throw ValidationException::withMessages([
+                'items' => 'A purchase-order item contains an invalid unit cost.',
+            ]);
+        }
+
+        [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '0');
+
+        return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
+    }
+
+    private function formatCents(int $cents): string
+    {
+        return intdiv($cents, 100) . '.' . str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
     }
 }
