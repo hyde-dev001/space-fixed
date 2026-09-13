@@ -82,11 +82,11 @@ type ShopSettingsPageProps = {
 
 const SETTINGS_SECTION_OPTIONS = [
 	{ key: 'profile', label: 'Profile' },
+	{ key: 'subscription', label: 'Subscription' },
 	{ key: 'modules-team', label: 'Modules & Team' },
 	{ key: 'payments-approvals', label: 'Payments & Approvals' },
 	{ key: 'operations', label: 'Operations' },
 	{ key: 'policies-compliance', label: 'Policies & Compliance' },
-	{ key: 'subscription', label: 'Subscription' },
 ] as const;
 
 type SettingsSectionKey = typeof SETTINGS_SECTION_OPTIONS[number]['key'];
@@ -118,12 +118,12 @@ const ToggleSwitch: React.FC<{
 			disabled={disabled}
 			aria-label={ariaLabel}
 			title={ariaLabel}
-			className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 ${
-				enabled ? 'bg-gray-900' : 'bg-gray-300'
+			className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 dark:focus:ring-gray-300 ${
+				enabled ? 'bg-gray-900 dark:bg-white' : 'bg-gray-300 dark:bg-gray-600'
 			} ${disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
 		>
 			<span
-				className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${
+				className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 dark:bg-gray-900 ${
 					enabled ? 'translate-x-5' : 'translate-x-0'
 				}`}
 			/>
@@ -1534,7 +1534,7 @@ const ShopSetting: React.FC = () => {
 		<>
 			<Head title="Shop Settings" />
 
-			<div className="min-h-screen bg-slate-50">
+			<div data-testid="shop-settings-page" className="shop-settings-page min-h-screen bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
 				<div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 xl:max-w-[1440px] xl:px-10 2xl:px-16">
 					<div className="mb-6 flex items-center justify-between gap-3">
 						<button
@@ -1558,7 +1558,7 @@ const ShopSetting: React.FC = () => {
 						data-testid="settings-desktop-shell"
 						className="contents xl:grid xl:grid-cols-[220px_minmax(0,1fr)] xl:items-start xl:gap-10"
 					>
-					<nav aria-label="Settings sections" className="mb-6 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm xl:sticky xl:top-6 xl:mb-0 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:rounded-xl xl:p-3 xl:shadow-none">
+					<nav aria-label="Settings sections" className="mb-6 rounded-2xl border border-gray-200 bg-white p-2 shadow-sm dark:border-gray-700 dark:bg-gray-900 xl:sticky xl:top-6 xl:mb-0 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:rounded-xl xl:p-3 xl:shadow-none">
 						<div className="mb-3 hidden xl:block">
 							<p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500">Settings</p>
 							<p className="mt-1 text-sm font-medium text-gray-900">Manage your shop workspace</p>
@@ -1591,7 +1591,7 @@ const ShopSetting: React.FC = () => {
 						id="settings-section-profile"
 						ref={setSettingsSectionRef('profile')}
 						tabIndex={-1}
-						className="relative scroll-mt-6 overflow-hidden rounded-2xl border border-gray-300 bg-white p-5 shadow-sm outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4 lg:col-span-12 lg:order-1 xl:order-1 xl:shadow-none"
+						className="relative scroll-mt-6 overflow-hidden rounded-2xl border border-gray-300 bg-white p-5 shadow-sm outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4 dark:border-gray-700 dark:bg-gray-900 dark:focus:ring-gray-300 lg:col-span-12 lg:order-1 xl:order-1 xl:shadow-none"
 					>
 						<div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-black/5 blur-3xl xl:hidden" />
 						<div className="pointer-events-none absolute -bottom-20 -left-16 h-56 w-56 rounded-full bg-gray-300/30 blur-3xl xl:hidden" />
@@ -1608,68 +1608,10 @@ const ShopSetting: React.FC = () => {
 											{shop_settings.business_type === 'repair' ? <Wrench size={12} /> : <Store size={12} />}
 											{businessTypeLabel}
 										</span>
-										{showPremiumBadge && (
-											<span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${premiumBadgeClass}`}>
-												{premiumBadgeLabel}
-											</span>
-										)}
 									</div>
-									{premiumIsEligible && (
-										<div className="ml-auto flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5">
-											<span className="text-xs font-medium text-gray-700">Auto Renewal</span>
-											<ToggleSwitch
-												enabled={autoRenewalEnabled}
-												onChange={handleToggleAutoRenewal}
-												disabled={autoRenewalToggleDisabled}
-												ariaLabel="Toggle auto renewal subscription"
-											/>
-										</div>
-									)}
 								</div>
 								<p className="truncate text-sm text-gray-700">{shop_settings.business_name || 'Business'}</p>
 
-								<div
-									id="settings-section-subscription"
-									ref={setSettingsSectionRef('subscription')}
-									tabIndex={-1}
-									aria-label="Subscription settings"
-						className="scroll-mt-6 rounded-xl outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4"
-								>
-									{premiumIsEligible && (
-										<div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
-										<p className="font-semibold text-gray-900">
-											{shop_settings.premium.plan_name || 'No active premium plan'}
-										</p>
-										<p className="mt-1 text-xs text-gray-600">
-											{premiumIsActive
-												? (premiumNextBillingAt
-													? `Next billing on ${premiumNextBillingAt}`
-													: autoRenewalEnabled
-														? 'Your subscription will automatically renew until cancelled.'
-														: 'Auto renewal is turned off. Your subscription will end at the current billing period.')
-												: 'Upgrade to unlock the virtual showroom and image-sequence uploads.'}
-										</p>
-										{shop_settings.premium.showroom_slot_limit ? (
-											<p className="mt-1 text-xs text-gray-600">
-												Showroom slots: {shop_settings.premium.showroom_slot_limit}
-												{premiumStartsAt ? ` • Started ${premiumStartsAt}` : ''}
-												{premiumNextBillingAt ? ` • Next billing ${premiumNextBillingAt}` : ''}
-											</p>
-										) : null}
-										{premiumIsEligible && !premiumIsActive ? (
-											<p className="mt-2 text-xs text-amber-700">Auto renewal can be changed once your subscription is active.</p>
-										) : null}
-										{autoRenewalError ? (
-											<p className="mt-2 text-xs text-red-600">{autoRenewalError}</p>
-										) : null}
-										{autoRenewalSuccess ? (
-											<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
-												<Check size={13} /> Auto renewal preference saved.
-											</p>
-										) : null}
-										</div>
-									)}
-								</div>
 
 					<div className="mt-3">
 						<EmployeeTotpSecurity
@@ -1694,25 +1636,92 @@ const ShopSetting: React.FC = () => {
 										</div>
 									))}
 								</div>
-								{premiumIsEligible && (
-										<div className="mt-4 border-t border-gray-200 pt-4">
-											{!premiumIsActive ? (
-												<p className="mb-3 text-center text-sm text-gray-600">
-													Unlock premium benefits: virtual showroom access, more display slots, horizontal product viewing, and image-sequence uploads.
-												</p>
-											) : null}
-											<button
-												type="button"
-												onClick={() => router.get('/shop-owner/premium-benefits')}
-												className="inline-flex w-full items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
-											>
-												{premiumIsActive ? 'View Premium Benefits' : 'Upgrade Premium Benefits'}
-											</button>
-										</div>
-									)}
 								</div>
 								</div>
 							</div>
+
+					<div
+						id="settings-section-subscription"
+						ref={setSettingsSectionRef('subscription')}
+						tabIndex={-1}
+						aria-label="Subscription settings"
+						className="scroll-mt-6 rounded-2xl border border-gray-300 bg-white shadow-sm outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4 dark:border-gray-700 dark:bg-gray-900 dark:focus:ring-gray-300 lg:col-span-12 lg:order-2 xl:order-2"
+					>
+						<div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-200 p-5 sm:p-6">
+							<div className="flex flex-wrap items-center gap-2">
+								<h2 className="text-xl font-semibold text-gray-900">Subscription</h2>
+								{showPremiumBadge && (
+									<span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${premiumBadgeClass}`}>
+										{premiumBadgeLabel}
+									</span>
+								)}
+								<p className="basis-full text-sm text-gray-600">Manage your premium plan and renewal preferences.</p>
+							</div>
+							{premiumIsEligible && (
+								<div className="ml-auto flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1.5">
+									<span className="text-xs font-medium text-gray-700">Auto Renewal</span>
+									<ToggleSwitch
+										enabled={autoRenewalEnabled}
+										onChange={handleToggleAutoRenewal}
+										disabled={autoRenewalToggleDisabled}
+										ariaLabel="Toggle auto renewal subscription"
+									/>
+								</div>
+							)}
+						</div>
+						<div className="p-5 sm:p-6">
+							{premiumIsEligible && (
+								<div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-3 text-sm text-gray-700">
+									<p className="font-semibold text-gray-900">
+										{shop_settings.premium.plan_name || 'No active premium plan'}
+									</p>
+									<p className="mt-1 text-xs text-gray-600">
+										{premiumIsActive
+											? (premiumNextBillingAt
+												? `Next billing on ${premiumNextBillingAt}`
+												: autoRenewalEnabled
+													? 'Your subscription will automatically renew until cancelled.'
+													: 'Auto renewal is turned off. Your subscription will end at the current billing period.')
+											: 'Upgrade to unlock the virtual showroom and image-sequence uploads.'}
+									</p>
+									{shop_settings.premium.showroom_slot_limit ? (
+										<p className="mt-1 text-xs text-gray-600">
+											Showroom slots: {shop_settings.premium.showroom_slot_limit}
+											{premiumStartsAt ? ` • Started ${premiumStartsAt}` : ''}
+											{premiumNextBillingAt ? ` • Next billing ${premiumNextBillingAt}` : ''}
+										</p>
+									) : null}
+									{!premiumIsActive ? (
+										<p className="mt-2 text-xs text-amber-700">Auto renewal can be changed once your subscription is active.</p>
+									) : null}
+									{autoRenewalError ? (
+										<p className="mt-2 text-xs text-red-600">{autoRenewalError}</p>
+									) : null}
+									{autoRenewalSuccess ? (
+										<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
+											<Check size={13} /> Auto renewal preference saved.
+										</p>
+									) : null}
+								</div>
+							)}
+							{premiumIsEligible && (
+								<div className="mt-4 border-t border-gray-200 pt-4">
+									{!premiumIsActive ? (
+										<p className="mb-3 text-center text-sm text-gray-600">
+											Unlock premium benefits: virtual showroom access, more display slots, horizontal product viewing, and image-sequence uploads.
+										</p>
+									) : null}
+									<button
+										type="button"
+										onClick={() => router.get('/shop-owner/premium-benefits')}
+										className="inline-flex w-full items-center justify-center rounded-xl border border-gray-900 bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2"
+									>
+										{premiumIsActive ? 'View Premium Benefits' : 'Upgrade Premium Benefits'}
+									</button>
+								</div>
+							)}
+						</div>
+					</div>
 
 					<div
 						id="settings-section-modules-team"

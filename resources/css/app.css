@@ -593,6 +593,99 @@ html:not(.dark) #app [class~="group"][class~="relative"][class~="overflow-hidden
   }
 }
 
+/* Shop settings is a legacy light-only surface. Keep its compatibility
+   palette scoped so dark mode covers the whole page without changing other
+   ERP screens. */
+@media screen {
+  .dark #app .erp-theme .shop-settings-page {
+    color: #f8fafc;
+    color-scheme: dark;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="bg-white"]) {
+    background-color: #111827 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="bg-gray-50"], [class*="bg-gray-50/"]) {
+    background-color: #1f2937 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="bg-gray-100"], [class~="bg-gray-300"], [class*="bg-gray-300/"]) {
+    background-color: #374151 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="bg-gray-400"], [class~="bg-gray-600"], [class~="bg-slate-100"], [class~="bg-slate-200"]) {
+    background-color: #4b5563 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page [class~="bg-green-50"] {
+    background-color: #123b2b !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page [class~="bg-red-50"] {
+    background-color: #451a1a !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page [class~="bg-amber-50"] {
+    background-color: #3b2a12 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="text-gray-900"], [class~="text-gray-800"], [class~="text-black"]) {
+    color: #f8fafc !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="text-gray-700"], [class~="text-gray-600"], [class~="text-gray-500"], [class~="text-gray-400"], [class~="text-slate-700"], [class~="text-slate-600"], [class~="text-slate-500"]) {
+    color: #cbd5e1 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="text-green-600"], [class~="text-green-700"], [class~="text-green-800"]) {
+    color: #86efac !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="text-red-500"], [class~="text-red-600"], [class~="text-red-700"], [class~="text-red-800"]) {
+    color: #fca5a5 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page [class~="text-amber-700"] {
+    color: #fcd34d !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="border-gray-100"], [class~="border-gray-200"], [class~="border-gray-300"], [class~="border-gray-400"], [class~="border-gray-500"], [class~="border-slate-200"], [class~="border-slate-300"]) {
+    border-color: #4b5563 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page [class~="border-green-200"] {
+    border-color: #047857 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page [class~="border-red-200"] {
+    border-color: #7f1d1d !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is(input, select, textarea) {
+    background-color: #111827 !important;
+    border-color: #4b5563 !important;
+    color: #f8fafc !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is(input, textarea)::placeholder {
+    color: #94a3b8 !important;
+    opacity: 1;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="hover:bg-white"], [class~="hover:bg-gray-50"]):hover {
+    background-color: #1f2937 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="hover:bg-gray-100"], [class~="hover:bg-slate-100"]):hover {
+    background-color: #374151 !important;
+  }
+
+  .dark #app .erp-theme .shop-settings-page :is([class~="hover:text-gray-900"], [class~="hover:text-black"], [class~="hover:text-slate-900"]):hover {
+    color: #ffffff !important;
+  }
+}
+
 /* ApexCharts renders series colors as SVG attributes. Override those
    attributes only in Light Mode so every account uses one monochrome chart
    language while Dark Mode keeps each chart's original palette. */
