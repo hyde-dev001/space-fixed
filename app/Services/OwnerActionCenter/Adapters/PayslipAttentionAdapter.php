@@ -55,7 +55,13 @@ final class PayslipAttentionAdapter implements OwnerAttentionAdapter
             ->whereHas('approval', static function (Builder $approvalQuery) use ($owner): void {
                 $approvalQuery
                     ->where('approvals.approvable_type', Payroll::class)
-                    ->where('approvals.shop_owner_id', (int) $owner->getKey())
+                    ->where(function (Builder $tenantQuery) use ($owner): void {
+                        $tenantQuery
+                            ->where('approvals.shop_owner_id', (int) $owner->getKey())
+                            ->orWhereHas('shopOwner', static function (Builder $ownerUserQuery) use ($owner): void {
+                                $ownerUserQuery->where('users.shop_owner_id', (int) $owner->getKey());
+                            });
+                    })
                     ->where('approvals.status', 'pending')
                     ->where('approvals.current_level', '>', 0)
                     ->where('approvals.current_approver_role', 'shop_owner');

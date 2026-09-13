@@ -381,7 +381,7 @@ export default function ShipmentTrackingPanel({
     <div className={`userside-tracking-panel ${compact ? 'space-y-4' : 'space-y-6'}`}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-500">{itemLabel} #{shipment.id}</p>
+          <p className="text-sm font-medium text-gray-500">{itemLabel} #{shipment.shipment_number ?? shipment.id}</p>
           <h1 className="text-2xl font-bold tracking-tight text-slate-950">{itemLabel}</h1>
         </div>
         <span className="w-fit rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-semibold text-gray-800">

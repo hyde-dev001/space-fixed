@@ -61,6 +61,28 @@ class InventoryServiceTest extends TestCase
     }
 
     /** @test */
+    public function it_excludes_inactive_items_from_low_and_out_of_stock_counts(): void
+    {
+        InventoryItem::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'available_quantity' => 0,
+            'reorder_level' => 10,
+            'is_active' => false,
+        ]);
+        InventoryItem::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'available_quantity' => 2,
+            'reorder_level' => 10,
+            'is_active' => false,
+        ]);
+
+        $metrics = $this->service->getDashboardMetrics($this->shopOwner->id);
+
+        $this->assertSame(0, $metrics['low_stock_count']);
+        $this->assertSame(0, $metrics['out_of_stock_count']);
+    }
+
+    /** @test */
     public function it_gets_stock_levels_chart()
     {
         InventoryItem::factory()->create([

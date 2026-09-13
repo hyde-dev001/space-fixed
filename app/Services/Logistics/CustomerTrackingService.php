@@ -97,6 +97,7 @@ class CustomerTrackingService
 
                 $payload = [
                     'id' => $leg->id,
+                    'delivery_number' => $leg->delivery_number,
                     'sequence' => $leg->sequence,
                     'leg_type' => $leg->leg_type,
                     'delivery_type' => $deliveryType['delivery_type'],
@@ -143,7 +144,8 @@ class CustomerTrackingService
                             : null,
                         'delivered_at' => optional($leg->delivered_at)->toISOString(),
                         'location' => $this->snapshotLabel($leg->destination_snapshot),
-                        'tracking_number' => $leg->tracking_number ?: "SHP-{$shipment->id}",
+                        'tracking_number' => $leg->tracking_number ?: 'SHP-' . ($shipment->shipment_number ?? $shipment->id),
+                        'proof_number' => $proof->proof_number,
                         'status' => 'Delivered',
                     ];
                 }

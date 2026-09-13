@@ -1032,9 +1032,9 @@ class LogisticsApiTest extends TestCase
         Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         $cases = [
-            'customer_unavailable' => ['partial', 400.00, 'pickup fee of PHP 100.00 was retained'],
-            'vehicle_or_rider_problem' => ['full', 500.00, 'includes the paid pickup fee of PHP 100.00'],
-            'other' => ['full', 500.00, 'Finance must decide whether the paid pickup fee of PHP 100.00 is refundable'],
+            'customer_unavailable' => ['partial', 400.00, 'pickup fee of PHP 100.00 is not refundable'],
+            'vehicle_or_rider_problem' => ['partial', 400.00, 'pickup fee of PHP 100.00 is not refundable'],
+            'other' => ['partial', 400.00, 'pickup fee of PHP 100.00 is not refundable'],
         ];
 
         foreach ($cases as $reason => [$requestType, $requestedAmount, $noteFragment]) {

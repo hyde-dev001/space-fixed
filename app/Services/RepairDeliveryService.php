@@ -150,6 +150,16 @@ final class RepairDeliveryService
             && trim((string) data_get($snapshot, 'external_tracking.tracking_number')) !== '';
     }
 
+    public function requiresCustomerIntakeTracking(RepairRequest $repair): bool
+    {
+        $method = (string) ($repair->intake_delivery_method
+            ?: (($repair->delivery_method ?? null) === 'walk_in' ? 'walk_in' : 'customer_delivery'));
+
+        return $this->isSponsoredWarranty($repair)
+            && $method === 'customer_delivery'
+            && ! $this->hasRequiredExternalTracking($repair, 'intake');
+    }
+
     public function recordPickupRecovery(RepairRequest $repair, int $shipmentId, int $failedLegId): ?array
     {
         if (! $this->isSponsoredWarranty($repair)) {
@@ -401,6 +411,7 @@ final class RepairDeliveryService
                 ->whereKey($repair->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+            ShopOwner::query()->whereKey($lockedRepair->shop_owner_id)->lockForUpdate()->firstOrFail();
 
             if ((string) $lockedRepair->intake_delivery_method !== 'shop_pickup'
                 || ! $this->hasAcceptedIntake($lockedRepair)
@@ -463,6 +474,8 @@ final class RepairDeliveryService
                     && in_array($recoveryWindow, ['morning', 'afternoon'], true);
                 $leg = $existing->legs()->create([
                     'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
+                    'shop_owner_id' => $lockedRepair->shop_owner_id,
+                    'delivery_number' => ShipmentLeg::nextDeliveryNumber((int) $lockedRepair->shop_owner_id),
                     'leg_type' => 'inbound',
                     'status' => 'pending',
                     'origin_snapshot' => [
@@ -831,6 +844,7 @@ final class RepairDeliveryService
             ];
         $canConfirm = in_array((string) $repair->status, ['pending', 'repairer_accepted'], true)
             && $paymentSatisfied
+            && ! $this->requiresCustomerIntakeTracking($repair)
             && ($method !== 'shop_pickup' || $state['approved']);
 
         $blockedReason = null;
@@ -838,6 +852,8 @@ final class RepairDeliveryService
             $blockedReason = 'This repair is not awaiting physical intake receipt.';
         } elseif (! $paymentSatisfied) {
             $blockedReason = 'Initial payment must be settled before physical receipt.';
+        } elseif ($this->requiresCustomerIntakeTracking($repair)) {
+            $blockedReason = 'Waiting for customer courier tracking. The repair cannot be received until the customer provides the courier tracking details.';
         } elseif ($method === 'shop_pickup' && ! $state['shipment']) {
             $blockedReason = 'Waiting for the shop pickup to be dispatched.';
         } elseif ($method === 'shop_pickup' && $state['proof_correction_required']) {

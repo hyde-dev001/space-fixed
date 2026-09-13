@@ -123,6 +123,7 @@ const MetricCard: React.FC<MetricCardProps> = ({
 
 export default function UploadService() {
   const erpMode = (usePage().props as any)?.erpMode === true;
+  const canManageServices = false;
   const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [services, setServices] = useState<Service[]>([]);
   const [repairMaterials, setRepairMaterials] = useState<RepairMaterialOption[]>([]);
@@ -710,7 +711,7 @@ export default function UploadService() {
               >
                 {showArchivedServices ? 'Show Active' : 'Show Archived'}
               </button>
-              {!showArchivedServices && (
+              {canManageServices && !showArchivedServices && (
                 <button
                   onClick={() => {
                     resetForm();
@@ -850,15 +851,17 @@ export default function UploadService() {
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Status
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Actions
-                      </th>
+                      {canManageServices && (
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      )}
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-white/[0.02] divide-y divide-gray-200 dark:divide-gray-800">
                     {loading ? (
                       <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                        <td colSpan={canManageServices ? 6 : 5} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                           Loading services...
                         </td>
                       </tr>
@@ -901,7 +904,7 @@ export default function UploadService() {
                               {service.status}
                             </span>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          {canManageServices && <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                             <div className="flex items-center gap-2">
                               {!showArchivedServices ? (
                                 <>
@@ -930,12 +933,12 @@ export default function UploadService() {
                                 </button>
                               )}
                             </div>
-                          </td>
+                          </td>}
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center">
+                        <td colSpan={canManageServices ? 6 : 5} className="px-6 py-12 text-center">
                           <div className="flex flex-col items-center justify-center">
                             <UploadIcon className="w-12 h-12 text-gray-400 dark:text-gray-600 mb-4" />
                             <p className="text-gray-500 dark:text-gray-400">{showArchivedServices ? 'No archived services found' : 'No services found'}</p>
@@ -966,13 +969,14 @@ export default function UploadService() {
             <RepairPackageManager
               serviceEndpoint="/api/shop-owner/repair-services"
               materialsEndpoint="/api/shop-owner/repair-materials"
+              readOnly={!canManageServices}
             />
           </div>
         )}
       </div>
 
       {/* Add Service Modal */}
-      {isAddModalOpen && (
+      {canManageServices && isAddModalOpen && (
         <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 dark:border-gray-800">
@@ -1218,7 +1222,7 @@ export default function UploadService() {
       )}
 
       {/* Edit Service Modal */}
-      {isEditModalOpen && selectedService && (
+      {canManageServices && isEditModalOpen && selectedService && (
         <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 dark:border-gray-800">

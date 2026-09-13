@@ -253,6 +253,16 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertNull($fallback->return_address_confirmed_at);
         $this->assertNull($fallback->return_address_confirmed_version);
         $this->assertTrue($fallback->intake_logistics_locked_at->equalTo($intakeLock));
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$linked->id}/external-tracking", [
+                'leg' => 'return',
+                'carrier' => 'Customer courier',
+                'tracking_number' => 'WARRANTY-RETURN-001',
+            ])
+            ->assertOk();
+
+        $fallback = $linked->fresh();
         $this->assertTrue($delivery->returnHandoff($fallback, true)['can_release']);
 
         $shopOwner = ShopOwner::query()->findOrFail($linked->shop_owner_id);

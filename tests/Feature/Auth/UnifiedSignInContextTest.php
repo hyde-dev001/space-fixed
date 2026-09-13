@@ -28,6 +28,33 @@ class UnifiedSignInContextTest extends TestCase
     }
 
     #[Test]
+    public function authenticated_employees_are_redirected_away_from_public_login_pages(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create();
+        $employee = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($employee, 'user')
+            ->get('/')
+            ->assertRedirect(route('erp.time-in'));
+        $this->get('/login')->assertRedirect(route('erp.time-in'));
+        $this->get('/user/login')->assertRedirect(route('erp.time-in'));
+    }
+
+    #[Test]
+    public function authenticated_shop_owners_are_redirected_to_the_owner_home(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/')
+            ->assertRedirect(route('shop-owner.dashboard'));
+        $this->get('/shop-owner/login')->assertRedirect(route('shop-owner.dashboard'));
+    }
+
+    #[Test]
     public function unified_user_login_authenticates_an_approved_shop_owner(): void
     {
         $owner = ShopOwner::factory()->approved()->create([

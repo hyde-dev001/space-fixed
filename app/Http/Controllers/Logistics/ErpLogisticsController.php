@@ -618,6 +618,7 @@ class ErpLogisticsController extends Controller
                             'key' => "proof-correction:{$leg->id}:{$proof->id}",
                             'id' => $proof->id,
                             'delivery_id' => $leg->id,
+                            'delivery_number' => $leg->delivery_number,
                             'parent_key' => $parentKey,
                             'business_types' => $businessTypes,
                             'delivery_type' => $deliverySummary['delivery_type'],
@@ -659,6 +660,7 @@ class ErpLogisticsController extends Controller
                     'key' => "issue:{$attempt->id}",
                     'id' => $attempt->id,
                     'delivery_id' => $leg->id,
+                    'delivery_number' => $leg->delivery_number,
                     'parent_key' => $parentKey,
                     'business_types' => $businessTypes,
                     'delivery_type' => $deliverySummary['delivery_type'],
@@ -706,11 +708,18 @@ class ErpLogisticsController extends Controller
         $payload['rider_progress_state'] = $leg->rider_progress_state->value;
         $payload['failed_attempt_count'] = $leg->attempts->count();
         $payload['arrivals'] = $this->arrivalPayload($leg);
+        $proofNumbers = $leg->relationLoaded('proofs')
+            ? $leg->proofs->keyBy('id')
+            : collect();
         $payload['proofs'] = $leg->relationLoaded('proofs')
-            ? $leg->proofs->map(function (HandoffProof $proof): array {
+            ? $leg->proofs->map(function (HandoffProof $proof) use ($proofNumbers): array {
                 $this->attachProofUrl($proof);
+                $proofPayload = $proof->toArray();
+                $proofPayload['replaces_proof_number'] = $proof->replaces_proof_id
+                    ? $proofNumbers->get($proof->replaces_proof_id)?->proof_number
+                    : null;
 
-                return $proof->toArray();
+                return $proofPayload;
             })->values()->all()
             : [];
         $currentDeliveryProof = $this->latestDeliveryProof($leg);
@@ -780,7 +789,16 @@ class ErpLogisticsController extends Controller
             return;
         }
 
-        $leg->proofs->each(fn (HandoffProof $proof) => $this->attachProofUrl($proof));
+        $proofNumbers = $leg->proofs->keyBy('id');
+        $leg->proofs->each(function (HandoffProof $proof) use ($proofNumbers): void {
+            $this->attachProofUrl($proof);
+            $proof->setAttribute(
+                'replaces_proof_number',
+                $proof->replaces_proof_id
+                    ? $proofNumbers->get($proof->replaces_proof_id)?->proof_number
+                    : null,
+            );
+        });
     }
 
     private function attachProofUrl(HandoffProof $proof): void

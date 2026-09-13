@@ -414,7 +414,7 @@ class CustomerTrackingTest extends TestCase
         $proof = $legs->firstWhere('id', $leg->id)['delivery_proof'];
 
         $this->assertSame(
-            ['id', 'available', 'url', 'delivered_at', 'location', 'tracking_number', 'status'],
+            ['id', 'available', 'url', 'delivered_at', 'location', 'tracking_number', 'proof_number', 'status'],
             array_keys($proof)
         );
         $this->assertSame($selected->id, $proof['id']);
@@ -425,6 +425,7 @@ class CustomerTrackingTest extends TestCase
         );
         $this->assertSame('Miguel Dela Rosa - Dasmariñas, Cavite', $proof['location']);
         $this->assertSame("SHP-{$shipment->id}", $proof['tracking_number']);
+        $this->assertNull($proof['proof_number']);
         $this->assertSame('Delivered', $proof['status']);
         $this->assertArrayNotHasKey('delivery_proof', $legs->firstWhere('id', $nonDelivered->id));
         $this->assertSame([
@@ -434,6 +435,7 @@ class CustomerTrackingTest extends TestCase
             'delivered_at' => null,
             'location' => 'Location unavailable',
             'tracking_number' => "SHP-{$shipment->id}",
+            'proof_number' => null,
             'status' => 'Delivered',
         ], $legs->firstWhere('id', $missingLeg->id)['delivery_proof']);
     }

@@ -258,6 +258,13 @@ const ReceiptIcon = ({ className }: { className?: string }) => (
 	</svg>
 );
 
+interface RefundComponent {
+	label: string;
+	eligible_amount?: number;
+	refunded_amount?: number;
+	status?: string;
+}
+
 interface RefundRequest {
 	id: number;
 	refundType?: "order" | "repair";
@@ -278,6 +285,12 @@ interface RefundRequest {
 	orderTotal?: string;
 	refundAmount: string;
 	refundAmountValue?: number;
+	refundComponents?: {
+		repair_service?: RefundComponent;
+		pickup_intake?: RefundComponent;
+		return_delivery?: RefundComponent;
+		total_refunded?: number;
+	};
 	payoutAmount?: string;
 	payoutAmountValue?: number;
 	canAdjustRefundAmount?: boolean;
@@ -1709,6 +1722,31 @@ export default function RefundApproval() {
 										</div>
 									</div>
 								</div>
+
+								{selectedRequest.refundType === "repair" && selectedRequest.refundComponents && (
+									<div>
+										<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund Components</p>
+										<div className="border border-gray-200 dark:border-gray-800 rounded-lg p-4 text-sm bg-white dark:bg-gray-900 space-y-3">
+											{[
+												selectedRequest.refundComponents.repair_service,
+												selectedRequest.refundComponents.pickup_intake,
+												selectedRequest.refundComponents.return_delivery,
+											].map((component) => component && (
+												<div key={component.label} className="flex items-center justify-between gap-4">
+													<span className="text-gray-600 dark:text-gray-300">{component.label}</span>
+													<span className="font-semibold text-gray-900 dark:text-gray-100">
+														₱{Number(component.refunded_amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+														{component.status === "not_refunded" && <span className="ml-2 text-xs font-normal text-gray-500">Not refunded</span>}
+													</span>
+												</div>
+											))}
+											<div className="border-t border-gray-200 dark:border-gray-800 pt-3 flex items-center justify-between font-semibold text-gray-900 dark:text-gray-100">
+												<span>Total Refunded</span>
+												<span>₱{Number(selectedRequest.refundComponents.total_refunded ?? selectedRequest.refundAmountValue ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+											</div>
+										</div>
+									</div>
+								)}
 
 								{selectedRequest.refundType === "repair" && resolveRepairRefundPaymentType(selectedRequest) !== "pure_online" && (
 									<div>

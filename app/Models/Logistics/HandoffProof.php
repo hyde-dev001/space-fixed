@@ -17,6 +17,8 @@ class HandoffProof extends Model
 
     protected $fillable = [
         'shipment_leg_id',
+        'shop_owner_id',
+        'proof_number',
         'replaces_proof_id',
         'idempotency_key',
         'handoff_type',
@@ -35,6 +37,7 @@ class HandoffProof extends Model
     ];
 
     protected $casts = [
+        'proof_number' => 'integer',
         'metadata' => 'array',
         'recorded_at' => 'datetime',
         'reviewed_at' => 'datetime',
@@ -43,6 +46,11 @@ class HandoffProof extends Model
     public function leg(): BelongsTo
     {
         return $this->belongsTo(ShipmentLeg::class, 'shipment_leg_id');
+    }
+
+    public function shopOwner(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\ShopOwner::class);
     }
 
     public function replacedProof(): BelongsTo

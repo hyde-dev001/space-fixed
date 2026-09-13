@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 use App\Enums\OrderStatus;
 use App\Models\OrderRefund;
+use App\Models\ShopOwner;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
@@ -355,11 +356,29 @@ class Order extends Model
     }
 
     /**
-     * Generate a unique order number
+     * Generate the next human-readable order reference for one shop.
+     *
+     * The caller must be inside the transaction that creates the order so the
+     * shop-owner row lock covers number generation and persistence.
      */
-    public static function generateOrderNumber(): string
+    public static function generateOrderNumber(int $shopOwnerId, string $prefix = 'ORD'): string
     {
-        return 'ORD-' . date('YmdHis') . '-' . str_pad(rand(0, 999), 3, '0', STR_PAD_LEFT);
+        ShopOwner::query()->whereKey($shopOwnerId)->lockForUpdate()->firstOrFail();
+        $year = now()->format('Y');
+        $maxSequence = 0;
+
+        $escapedPrefix = preg_quote($prefix, '/');
+
+        foreach (self::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('order_number', 'LIKE', "{$prefix}-{$year}-%")
+            ->pluck('order_number') as $orderNumber) {
+            if (preg_match("/^{$escapedPrefix}-{$year}-(\\d+)$/", (string) $orderNumber, $matches) === 1) {
+                $maxSequence = max($maxSequence, (int) $matches[1]);
+            }
+        }
+
+        return sprintf('%s-%s-%03d', $prefix, $year, $maxSequence + 1);
     }
 
     /**

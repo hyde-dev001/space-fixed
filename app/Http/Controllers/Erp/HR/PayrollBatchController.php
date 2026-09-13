@@ -13,6 +13,7 @@ use App\Models\HR\AuditLog;
 use App\Models\ShopOwner;
 use App\Services\HR\PayrollService;
 use App\Services\HR\EmployeeOperationalPolicy;
+use App\Services\PayslipApprovalService;
 use App\Traits\HR\LogsHRActivity;
 use App\Notifications\HR\PayslipGenerated;
 use Illuminate\Http\Request;
@@ -39,11 +40,17 @@ class PayrollBatchController extends Controller
 
     protected PayrollService $payrollService;
     protected EmployeeOperationalPolicy $employeePolicy;
+    protected PayslipApprovalService $payslipApprovalService;
 
-    public function __construct(PayrollService $payrollService, EmployeeOperationalPolicy $employeePolicy)
+    public function __construct(
+        PayrollService $payrollService,
+        EmployeeOperationalPolicy $employeePolicy,
+        PayslipApprovalService $payslipApprovalService
+    )
     {
         $this->payrollService = $payrollService;
         $this->employeePolicy = $employeePolicy;
+        $this->payslipApprovalService = $payslipApprovalService;
     }
 
     // ============================================================
@@ -328,6 +335,10 @@ class PayrollBatchController extends Controller
                     'disbursed_by' => null,
                     'disbursed_at' => null,
                 ]);
+
+                if ($user instanceof \App\Models\User) {
+                    $this->payslipApprovalService->createGeneratedPayrollApproval($payroll, $user);
+                }
 
                 $createdPayrolls[] = $payroll->load('employee', 'components');
 

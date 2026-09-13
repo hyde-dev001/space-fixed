@@ -33,6 +33,9 @@ const ownerRequiredChange = {
   retroactive: false,
   requires_owner_approval: true,
   owner_action_required: true,
+  approval_stage: 'shop_owner',
+  next_approver_type: 'shop_owner',
+  status_label: 'Pending Shop Owner Approval',
   created_at: '2026-08-28T00:00:00.000000Z',
   updated_at: '2026-08-28T00:00:00.000000Z',
 };
@@ -44,6 +47,9 @@ const financeOnlyChange = {
   employee: { id: 11, name: 'Finance Review Employee', department: 'Finance' },
   requires_owner_approval: false,
   owner_action_required: false,
+  approval_stage: 'manager',
+  next_approver_type: 'manager',
+  status_label: 'Pending Manager Approval',
 };
 
 beforeEach(() => {
@@ -71,5 +77,12 @@ describe('shop-owner salary change actions', () => {
     expect(await screen.findByText('Owner Review Employee')).toBeInTheDocument();
     expect(screen.getAllByTitle('Approve')).toHaveLength(1);
     expect(screen.queryByTitle('Cancel')).not.toBeInTheDocument();
+  });
+
+  it('shows the backend-derived next approver instead of generic pending text', async () => {
+    render(<SalaryChanges />);
+
+    expect(await screen.findByText('Pending Shop Owner Approval')).toBeInTheDocument();
+    expect(screen.getByText('Pending Manager Approval')).toBeInTheDocument();
   });
 });

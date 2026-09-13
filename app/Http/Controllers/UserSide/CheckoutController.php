@@ -1557,7 +1557,7 @@ class CheckoutController extends Controller
                     $orderPayload = [
                         'shop_owner_id' => $shopOwnerId,
                         'customer_id' => $customerId,
-                        'order_number' => Order::generateOrderNumber(),
+                        'order_number' => Order::generateOrderNumber($shopOwnerId),
                         'total_amount' => 0, // Item subtotal, updated after items
                         'shipping_fee' => $shippingFeeForOrder,
                         'status' => 'pending',

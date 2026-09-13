@@ -6,6 +6,7 @@ use App\Enums\Logistics\CarrierType;
 use App\Models\ShopOwner;
 use App\Models\Logistics\ShippingMethod;
 use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShipmentLeg;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -50,6 +51,7 @@ class ShipmentRequestService
             $shipmentNumber = (int) Shipment::query()
                 ->where('shop_owner_id', $data['shop_owner_id'])
                 ->max('shipment_number') + 1;
+            $deliveryNumber = ShipmentLeg::nextDeliveryNumber((int) $data['shop_owner_id']);
 
             $shipment = Shipment::create([
                 'shipment_number' => $shipmentNumber,
@@ -85,6 +87,8 @@ class ShipmentRequestService
 
                 $shipment->legs()->create([
                     'sequence' => $index + 1,
+                    'shop_owner_id' => $data['shop_owner_id'],
+                    'delivery_number' => $deliveryNumber++,
                     'leg_type' => $legData['leg_type'],
                     'status' => 'pending',
                     'shipping_method_id' => $legData['shipping_method_id'] ?? null,

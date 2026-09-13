@@ -102,7 +102,7 @@ class RepairRefundWorkflowController extends Controller
         ], $result['status'] === 'processing' ? 202 : 200);
     }
 
-    public function financeIndex(Request $request)
+    public function financeIndex(Request $request, RepairPosRefundService $refundService)
     {
         $actor = Auth::guard('user')->user();
 
@@ -121,11 +121,11 @@ class RepairRefundWorkflowController extends Controller
         $refunds = $query->get();
 
         return response()->json([
-            'data' => $refunds->map(fn (PosRefund $refund) => $this->transformApprovalRefund($refund))->values(),
+            'data' => $refunds->map(fn (PosRefund $refund) => $this->transformApprovalRefund($refund, $refundService))->values(),
         ]);
     }
 
-    public function ownerIndex(Request $request)
+    public function ownerIndex(Request $request, RepairPosRefundService $refundService)
     {
         $actor = Auth::guard('shop_owner')->user();
 
@@ -135,11 +135,11 @@ class RepairRefundWorkflowController extends Controller
         )->get();
 
         return response()->json([
-            'data' => $refunds->map(fn (PosRefund $refund) => $this->transformApprovalRefund($refund))->values(),
+            'data' => $refunds->map(fn (PosRefund $refund) => $this->transformApprovalRefund($refund, $refundService))->values(),
         ]);
     }
 
-    public function ownerShow(Request $request, int $id)
+    public function ownerShow(Request $request, int $id, RepairPosRefundService $refundService)
     {
         $actor = Auth::guard('shop_owner')->user();
         if (!$actor) {
@@ -155,7 +155,7 @@ class RepairRefundWorkflowController extends Controller
         }
 
         return response()->json([
-            'data' => $this->transformApprovalRefund($refund),
+            'data' => $this->transformApprovalRefund($refund, $refundService),
         ]);
     }
 
@@ -501,7 +501,7 @@ class RepairRefundWorkflowController extends Controller
                 'sourceTransaction.paymentLines:id,pos_transaction_id,tender_type,provider_reference,status',
                 'repairRequest:id,request_id,customer_name,paymongo_payment_id',
                 'requestedByUser:id,name',
-                'legs:id,pos_refund_id,leg_type,requested_amount,approved_amount,status',
+                'legs:id,pos_refund_id,leg_type,requested_amount,approved_amount,status,meta',
             ])
             ->where('module_type', 'repair')
             ->where('shop_owner_id', $shopOwnerId);
@@ -535,7 +535,7 @@ class RepairRefundWorkflowController extends Controller
         return $query->latest('requested_at')->latest('id');
     }
 
-    private function transformApprovalRefund(PosRefund $refund): array
+    private function transformApprovalRefund(PosRefund $refund, RepairPosRefundService $refundService): array
     {
         $source = $refund->sourceTransaction;
         $repair = $refund->repairRequest;
@@ -655,13 +655,20 @@ class RepairRefundWorkflowController extends Controller
             }
         }
 
+        $isRefunded = in_array($status, ['succeeded', 'completed', 'paid', 'refunded'], true);
+        $displayAmount = $isRefunded
+            ? (float) ($refund->approved_amount ?? 0)
+            : (float) ($refund->requested_amount ?? 0);
+        $refundComponents = $refundService->refundComponentBreakdown($refund);
+
         return [
             'id' => (int) $refund->id,
             'refundType' => 'repair',
             'orderNumber' => $receiptNo !== '' ? $receiptNo : ($transactionNo !== '' ? $transactionNo : (string) $refund->refund_no),
             'customerName' => $customerName,
+            'refundAmountValue' => $displayAmount,
             'orderTotal' => '₱' . number_format((float) ($source?->total_amount ?? $refund->requested_amount), 2),
-            'refundAmount' => '₱' . number_format((float) ($refund->requested_amount ?? 0), 2),
+            'refundAmount' => '₱' . number_format($displayAmount, 2),
             'refundMethod' => $this->resolveRefundMethodLabel($source?->paymentLines?->pluck('tender_type')->first()),
             'requestedBy' => $requestedBy,
             'requestDate' => optional($refund->requested_at ?? $refund->created_at)->toISOString(),
@@ -697,9 +704,10 @@ class RepairRefundWorkflowController extends Controller
             'financeExecution' => [
                 'execution_channel' => (string) ($refund->execution_channel ?? ''),
                 'execution_reference' => (string) ($refund->execution_reference ?? ''),
-                'execution_amount' => (float) ($refund->execution_amount ?? 0),
+                'execution_amount' => (float) ($refund->execution_amount ?? ($isRefunded ? $displayAmount : 0)),
                 'execution_proof_urls' => is_array($refund->execution_proof_urls) ? $refund->execution_proof_urls : [],
             ],
+            'refundComponents' => $refundComponents,
             'owner_projection' => $this->orderRefundOwnerProjection->project($refund),
         ];
     }

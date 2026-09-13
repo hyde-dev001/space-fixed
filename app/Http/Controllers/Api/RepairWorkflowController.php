@@ -2223,6 +2223,11 @@ class RepairWorkflowController extends Controller
                     'payment' => ['Initial payment must be settled before physical receipt.'],
                 ]);
             }
+            if ($this->repairDeliveryService->requiresCustomerIntakeTracking($repair)) {
+                throw ValidationException::withMessages([
+                    'tracking' => ['Waiting for customer courier tracking. The repair cannot be received until the customer provides the courier tracking details.'],
+                ]);
+            }
             if ((string) $repair->intake_delivery_method === 'shop_pickup'
                 && ! $this->repairDeliveryService->hasApprovedProof($repair, 'repair_pickup')) {
                 throw ValidationException::withMessages([

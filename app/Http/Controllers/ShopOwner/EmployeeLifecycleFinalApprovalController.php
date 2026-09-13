@@ -131,9 +131,14 @@ final class EmployeeLifecycleFinalApprovalController extends Controller
             return response()->json(['message' => 'Employee lifecycle request not found.'], 404);
         } catch (\RuntimeException $exception) {
             if ($exception->getCode() === 409) {
+                $message = $exception->getMessage();
+                $alreadyDecided = str_contains(strtolower($message), 'already reached');
+
                 return response()->json([
-                    'message' => $exception->getMessage(),
-                    'code' => strtoupper($type->value).'_REQUEST_ALREADY_DECIDED',
+                    'message' => $message,
+                    'code' => $alreadyDecided
+                        ? strtoupper($type->value).'_REQUEST_ALREADY_DECIDED'
+                        : 'EMPLOYEE_LIFECYCLE_CONFLICT',
                 ], 409);
             }
 

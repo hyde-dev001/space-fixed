@@ -211,6 +211,39 @@ describe("OwnerApprovalDetailPanel", () => {
     expect(screen.getByRole("button", { name: /^Refresh$/i })).toHaveClass("border-gray-300", "focus-visible:ring-gray-500");
   });
 
+  it("shows a domain conflict instead of mislabeling it as stale", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 12, amount: 450, status: "pending" }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          code: "EMPLOYEE_LIFECYCLE_CONFLICT",
+          message: "The rehire date must be after the termination date.",
+        }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <OwnerApprovalDetailPanel
+        item={item({ source_type: "rehire_request", category: "rehire_request", title: "Employee rehire" })}
+        selection={{ sourceType: "rehire_request", sourceId: 12 }}
+        onClose={vi.fn()}
+        onDecisionComplete={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Decision summary" });
+    fireEvent.click(screen.getByRole("button", { name: /^Approve$/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The rehire date must be after the termination date.");
+    expect(alert).not.toHaveTextContent(/changed before the decision was saved/i);
+  });
+
   it("sends the required action with Shop Owner suspension decisions", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({

@@ -54,9 +54,10 @@ class InventoryItemPolicy
      */
     public function delete(User $user, InventoryItem $inventoryItem): bool
     {
-        // User must belong to the same shop and have delete permission
+        // Archiving is part of the existing uploaded-inventory capability.
         return $user->shop_owner_id === $inventoryItem->shop_owner_id &&
-               $this->hasInventoryPermission($user, 'inventory.delete');
+               ($this->hasInventoryPermission($user, 'inventory.delete')
+                   || $this->hasInventoryPermission($user, 'access-upload-inventory'));
     }
 
     /**
@@ -64,9 +65,10 @@ class InventoryItemPolicy
      */
     public function restore(User $user, InventoryItem $inventoryItem): bool
     {
-        // User must belong to the same shop and have delete permission
+        // Restoring is part of the existing uploaded-inventory capability.
         return $user->shop_owner_id === $inventoryItem->shop_owner_id &&
-               $this->hasInventoryPermission($user, 'inventory.delete');
+               ($this->hasInventoryPermission($user, 'inventory.delete')
+                   || $this->hasInventoryPermission($user, 'access-upload-inventory'));
     }
 
     /**

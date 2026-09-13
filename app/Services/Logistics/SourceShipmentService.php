@@ -3,6 +3,7 @@
 namespace App\Services\Logistics;
 
 use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\RepairRequest;
@@ -223,6 +224,8 @@ class SourceShipmentService
 
                 $leg = $existing->legs()->create([
                     'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
+                    'shop_owner_id' => $lockedRepair->shop_owner_id,
+                    'delivery_number' => ShipmentLeg::nextDeliveryNumber((int) $lockedRepair->shop_owner_id),
                     'leg_type' => $legData['leg_type'],
                     'status' => 'pending',
                     'origin_snapshot' => $legData['origin_snapshot'],
@@ -347,6 +350,8 @@ class SourceShipmentService
 
                 $leg = $existing->legs()->create([
                     'sequence' => ((int) $existing->legs()->max('sequence')) + 1,
+                    'shop_owner_id' => $lockedRepair->shop_owner_id,
+                    'delivery_number' => ShipmentLeg::nextDeliveryNumber((int) $lockedRepair->shop_owner_id),
                     'leg_type' => $legData['leg_type'],
                     'status' => 'pending',
                     'origin_snapshot' => $legData['origin_snapshot'],

@@ -20,10 +20,12 @@ class InventoryService
             ->count();
         
         $lowStockItems = InventoryItem::where('shop_owner_id', $shopOwnerId)
+            ->where('is_active', true)
             ->lowStock()
             ->count();
         
         $outOfStockItems = InventoryItem::where('shop_owner_id', $shopOwnerId)
+            ->where('is_active', true)
             ->outOfStock()
             ->count();
         

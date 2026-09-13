@@ -14,7 +14,7 @@ export default function Shipments() {
         <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
           <table className="min-w-full divide-y divide-gray-200 text-sm">
             <thead className="bg-gray-50 text-left text-xs font-semibold uppercase text-gray-500">
-              <tr><th className="px-4 py-3">ID</th><th>Purpose</th><th>Status</th><th>Source</th><th>Legs</th></tr>
+              <tr><th className="px-4 py-3">Shipment #</th><th>Purpose</th><th>Status</th><th>Source</th><th>Legs</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {shipments.map((shipment) => (

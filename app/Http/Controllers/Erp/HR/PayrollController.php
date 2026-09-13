@@ -14,6 +14,7 @@ use App\Models\HR\AuditLog;
 use App\Services\HR\PayrollService;
 use App\Services\HR\EmployeeOperationalPolicy;
 use App\Services\Finance\ExpenseSettlementService;
+use App\Services\PayslipApprovalService;
 use App\Services\NotificationService;
 use App\Support\Finance\FinanceErrorResponse;
 use App\Traits\HR\LogsHRActivity;
@@ -44,18 +45,21 @@ class PayrollController extends Controller
     protected NotificationService $notificationService;
     protected ExpenseSettlementService $expenseSettlementService;
     protected EmployeeOperationalPolicy $employeePolicy;
+    protected PayslipApprovalService $payslipApprovalService;
 
     public function __construct(
         PayrollService $payrollService,
         NotificationService $notificationService,
         ExpenseSettlementService $expenseSettlementService,
         EmployeeOperationalPolicy $employeePolicy,
+        PayslipApprovalService $payslipApprovalService,
     )
     {
         $this->payrollService = $payrollService;
         $this->notificationService = $notificationService;
         $this->expenseSettlementService = $expenseSettlementService;
         $this->employeePolicy = $employeePolicy;
+        $this->payslipApprovalService = $payslipApprovalService;
     }
 
     // ============================================================
@@ -311,6 +315,10 @@ class PayrollController extends Controller
                 'disbursed_by' => null,
                 'disbursed_at' => null,
             ]);
+
+            if ($user instanceof User) {
+                $this->payslipApprovalService->createGeneratedPayrollApproval($payroll, $user);
+            }
 
             $this->auditCustom(
                 AuditLog::MODULE_PAYROLL,

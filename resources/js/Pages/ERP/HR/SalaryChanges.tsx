@@ -54,6 +54,9 @@ interface SalaryChange {
   updated_at: string;
   requires_owner_approval?: boolean | null;
   owner_action_required?: boolean;
+  approval_stage?: string | null;
+  next_approver_type?: string | null;
+  status_label?: string | null;
 }
 
 interface Summary {
@@ -95,6 +98,10 @@ const changeTypePill: Record<ChangeType, string> = {
   major_adjustment: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",
   correction: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
 };
+
+const statusLabel = (change: SalaryChange): string => (
+  change.status_label ?? `${change.status.charAt(0).toUpperCase()}${change.status.slice(1)}`
+);
 
 // ─── Modal Portal ─────────────────────────────────────────────────────────────
 
@@ -656,7 +663,7 @@ const SalaryChanges: React.FC = () => {
               <div>
                 <p className="text-gray-500 dark:text-gray-400">Status</p>
                 <span className={`inline-block mt-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusPill[change.status]}`}>
-                  {change.status.charAt(0).toUpperCase() + change.status.slice(1)}
+                  {statusLabel(change)}
                 </span>
               </div>
               <div>
@@ -957,7 +964,7 @@ const SalaryChanges: React.FC = () => {
                     <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{fmtDate(change.effective_date)}</td>
                     <td className="px-6 py-4">
                       <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-semibold ${statusPill[change.status]}`}>
-                        {change.status.charAt(0).toUpperCase() + change.status.slice(1)}
+                        {statusLabel(change)}
                       </span>
                     </td>
                     <td className="px-6 py-4 text-center">

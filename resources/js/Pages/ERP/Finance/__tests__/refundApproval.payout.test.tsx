@@ -89,4 +89,51 @@ describe("Finance canonical retail refund payout", () => {
     expect(confirmation.html).toContain("₱2,499.00");
     expect(confirmation.html).not.toContain("₱2,607.00");
   });
+
+  it("shows the service-only repair refund breakdown without either shipping leg", async () => {
+    mocks.fetch.mockImplementation((url: string) => {
+      if (url.startsWith("/api/finance/refunds?")) return response({ data: [] });
+      if (url.startsWith("/api/finance/repair-refunds?")) {
+        return response({
+          data: [{
+            id: 12,
+            orderNumber: "REP-12",
+            customerName: "Miguel Dela Rosa",
+            refundType: "repair",
+            refundAmount: "₱300.00",
+            refundAmountValue: 300,
+            refundMethod: "GCash",
+            requestedBy: "Miguel Dela Rosa",
+            requestDate: "2026-08-01",
+            refundReason: "Repair refund",
+            reason: "Repair refund",
+            status: "Refunded",
+            rawStatus: "succeeded",
+            refundPaymentType: "pure_online",
+            repairerStatus: "approved",
+            financeStatus: "approved",
+            shopOwnerStatus: "skipped",
+            financeExecution: { execution_amount: 300 },
+            refundComponents: {
+              repair_service: { label: "Repair / Service Refund", refunded_amount: 300, status: "refunded" },
+              pickup_intake: { label: "Pickup / Intake Fee Refund", refunded_amount: 0, status: "not_refunded" },
+              return_delivery: { label: "Return / Delivery Fee Refund", refunded_amount: 0, status: "not_refunded" },
+            },
+          }],
+        });
+      }
+      if (url.startsWith("/api/finance/repair-delivery-reconciliations?")) return response({ data: [] });
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    render(<RefundApproval />);
+
+    expect(await screen.findByText("₱300.00")).toBeInTheDocument();
+    fireEvent.click(await screen.findByTitle("View Details"));
+
+    expect(await screen.findByText("Refund Components")).toBeInTheDocument();
+    expect(screen.getByText("Repair / Service Refund")).toBeInTheDocument();
+    expect(screen.getByText("Pickup / Intake Fee Refund")).toBeInTheDocument();
+    expect(screen.getByText("Return / Delivery Fee Refund")).toBeInTheDocument();
+  });
 });

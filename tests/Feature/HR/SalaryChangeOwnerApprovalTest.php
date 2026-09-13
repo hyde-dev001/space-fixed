@@ -299,6 +299,48 @@ class SalaryChangeOwnerApprovalTest extends TestCase
         $this->assertSame(SalaryChange::STATUS_APPLIED, $change->fresh()->status);
     }
 
+    public function test_salary_change_list_exposes_the_current_next_approver(): void
+    {
+        $ownerChange = SalaryChange::create([
+            'employee_id' => $this->employee->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'proposed_by' => $this->proposer->id,
+            'previous_salary' => 1000,
+            'new_salary' => 1200,
+            'change_percent' => 20,
+            'change_type' => SalaryChange::TYPE_MAJOR,
+            'effective_date' => now()->addDays(3)->toDateString(),
+            'reason' => 'Owner stage projection',
+            'status' => SalaryChange::STATUS_PENDING,
+            'requires_owner_approval' => true,
+        ]);
+        $managerChange = SalaryChange::create([
+            'employee_id' => $this->employee->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'proposed_by' => $this->proposer->id,
+            'previous_salary' => 1000,
+            'new_salary' => 1100,
+            'change_percent' => 10,
+            'change_type' => SalaryChange::TYPE_MAJOR,
+            'effective_date' => now()->addDays(4)->toDateString(),
+            'reason' => 'Manager stage projection',
+            'status' => SalaryChange::STATUS_PENDING,
+            'requires_owner_approval' => false,
+        ]);
+
+        $response = $this->actingAs($this->proposer, 'user')
+            ->getJson('/api/hr/salary-changes?status=pending')
+            ->assertOk();
+
+        $items = collect($response->json('data'))->keyBy('id');
+        $this->assertSame('shop_owner', $items[$ownerChange->id]['approval_stage']);
+        $this->assertSame('shop_owner', $items[$ownerChange->id]['next_approver_type']);
+        $this->assertSame('Pending Shop Owner Approval', $items[$ownerChange->id]['status_label']);
+        $this->assertSame('manager', $items[$managerChange->id]['approval_stage']);
+        $this->assertSame('manager', $items[$managerChange->id]['next_approver_type']);
+        $this->assertSame('Pending Manager Approval', $items[$managerChange->id]['status_label']);
+    }
+
     public function test_retroactive_submission_requires_override_reason(): void
     {
         $retroactiveDate = now()->subDays(5)->startOfDay();

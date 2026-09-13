@@ -577,7 +577,7 @@ const tabLabels: Record<RiderDeliveryTab, string> = {
 };
 
 const deliveryNumber = (delivery?: TrackingShipmentLeg | null) =>
-  delivery?.shipment?.shipment_number ?? delivery?.id ?? '-';
+  delivery?.delivery_number ?? delivery?.shipment?.shipment_number ?? delivery?.id ?? '-';
 
 const itemTitle = (item: RiderDeliveryWorkItem) =>
   item.kind === 'batch' ? `Batch #${item.id}` : `Single delivery #${deliveryNumber(item.deliveries[0])}`;
@@ -818,7 +818,7 @@ function DeliveryActions({
   const deliveryReference =
     item.kind === 'batch'
       ? `stop ${delivery.stop_sequence ?? delivery.id} in batch #${item.id}`
-      : `delivery #${delivery.id}`;
+      : `delivery #${deliveryNumber(delivery)}`;
 
   if (isStagedRetry) {
     const scheduledDate = delivery.scheduled_delivery_date?.slice(0, 10) ?? null;
@@ -1437,7 +1437,7 @@ function ProofCorrectionAction({
     form.append('idempotency_key', idempotencyKey.current ?? (idempotencyKey.current = crypto.randomUUID()));
     form.append('replaces_proof_id', String(proofId));
     runAction(key, () => logisticsApi.recordProof(issue.delivery_id, form), {
-      title: `Replace proof for delivery #${issue.delivery_id}?`,
+      title: `Replace proof for delivery #${issue.delivery_number ?? issue.delivery_id}?`,
       text: 'This creates a new proof record linked to the rejected submission.',
       confirmButtonText: 'Submit replacement',
     });
@@ -1553,7 +1553,7 @@ function CurrentDeliveryCard({
                 {deliveryLabel}
               </p>
               <h3 className="mt-1 text-xl font-extrabold text-slate-950 dark:text-white">
-                {isReturnToShop ? `${deliveryLabel} #${actionable.id}` : itemTitle(item)}
+                {isReturnToShop ? `${deliveryLabel} #${deliveryNumber(actionable)}` : itemTitle(item)}
               </h3>
             </div>
             <StatusChip status={item.status} label={isReturnToShop ? deliveryLabel : undefined} />
@@ -1952,9 +1952,9 @@ function CompactListItem({
         <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
           <div>
             <p className="font-bold text-slate-950 dark:text-white">
-              {correction ? 'Proof correction' : 'Issue'} · Delivery #{item.delivery_id}
+              {correction ? 'Proof correction' : 'Issue'} · Delivery #{item.delivery_number ?? item.delivery_id}
             </p>
-            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.parent_key.replace(':', ' #')}</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.delivery_label ?? 'Delivery issue'}</p>
           </div>
           <StatusChip status={correction ? 'proof_action_required' : 'delivery_attempted'} />
         </div>

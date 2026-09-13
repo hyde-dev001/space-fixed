@@ -6,6 +6,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\ShopOwner;
+use App\Models\Approval;
 use App\Models\Employee;
 use App\Models\HR\Payroll;
 use App\Models\HR\AttendanceRecord;
@@ -13,10 +14,13 @@ use App\Models\HR\LeaveRequest;
 use App\Models\HR\PayrollComponent;
 use App\Models\HR\ThirteenthMonthAccrual;
 use App\Services\HR\PayrollService;
+use App\Services\OwnerActionCenter\Adapters\PayslipAttentionAdapter;
+use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Carbon\Carbon;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class PayrollControllerTest extends TestCase
 {
@@ -110,6 +114,7 @@ class PayrollControllerTest extends TestCase
         ]);
 
         Permission::findOrCreate('access-payslip-generation', 'user');
+        Permission::findOrCreate('access-payslip-approval', 'user');
         $this->hrUser->givePermissionTo('access-payslip-generation');
 
         $this->employee = Employee::factory()->create([
@@ -141,6 +146,65 @@ class PayrollControllerTest extends TestCase
             'payroll_period' => $period,
             'status' => 'pending',
         ]);
+    }
+
+    #[Test]
+    public function test_generated_payroll_enters_owner_approval_workflow_and_notifies_owner(): void
+    {
+        Role::findOrCreate('shop-owner', 'user');
+        Role::findOrCreate('finance', 'user');
+        $ownerUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'role' => 'Shop Owner',
+        ]);
+        $ownerUser->assignRole('shop-owner');
+        $financeUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'role' => 'Finance',
+        ]);
+        $financeUser->assignRole('finance');
+        $financeUser->givePermissionTo('access-payslip-approval');
+
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll', $this->payrollPayload([
+                'payrollPeriod' => now()->addMonth()->format('Y-m'),
+            ]));
+
+        $response->assertCreated();
+
+        $payroll = Payroll::query()->latest('id')->firstOrFail();
+
+        $this->assertNotNull($payroll->approval_id);
+        $this->assertSame('v4_multi_level', $payroll->approval_workflow_version);
+        $this->assertSame('pending', $payroll->approval_status);
+        $this->assertDatabaseHas('approvals', [
+            'id' => $payroll->approval_id,
+            'approvable_type' => Payroll::class,
+            'approvable_id' => $payroll->id,
+            'shop_owner_id' => $ownerUser->id,
+            'current_approver_role' => 'finance',
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($financeUser, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payroll->id}/approve", [
+                'notes' => 'Finance review complete',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $this->shopOwner->id,
+            'title' => 'Payslip Awaiting Shop Owner Approval',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=payslip:{$payroll->id}",
+        ]);
+
+        $ownerQueue = app(PayslipAttentionAdapter::class)->read(
+            $this->shopOwner,
+            new OwnerAttentionQuery(perPage: 20),
+        );
+
+        $this->assertCount(1, $ownerQueue->items);
+        $this->assertSame($payroll->id, $ownerQueue->items[0]->sourceId);
     }
 
     #[Test]
@@ -371,6 +435,13 @@ class PayrollControllerTest extends TestCase
         $this->assertEquals(780.0, (float) $previewCalculation['performance_bonus']);
         $this->assertEquals(750.0, (float) $previewCalculation['other_allowances']);
 
+        Role::findOrCreate('shop-owner', 'user');
+        $ownerUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'role' => 'Shop Owner',
+        ]);
+        $ownerUser->assignRole('shop-owner');
+
         $generateResponse = $this->actingAs($this->hrUser, 'user')
             ->postJson('/api/hr/payroll/batch/generate', [
                 'payrollPeriod' => $period,
@@ -391,6 +462,8 @@ class PayrollControllerTest extends TestCase
         $this->assertTrue($payroll->components->contains('component_name', 'Sales Commission'));
         $this->assertTrue($payroll->components->contains('component_name', 'Performance Bonus'));
         $this->assertTrue($payroll->components->contains('component_name', 'Other Allowances'));
+        $this->assertNotNull($payroll->approval_id);
+        $this->assertSame('v4_multi_level', $payroll->approval_workflow_version);
     }
 
     #[Test]

@@ -6,6 +6,7 @@ use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\ShopOwner;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -116,8 +117,16 @@ class ProofService
                 }
             }
 
+            $shopOwnerId = (int) $leg->shipment->shop_owner_id;
+            ShopOwner::query()->whereKey($shopOwnerId)->lockForUpdate()->firstOrFail();
+            $proofNumber = (int) HandoffProof::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->max('proof_number') + 1;
+
             $proof = $leg->proofs()->create([
                 ...$data,
+                'shop_owner_id' => $shopOwnerId,
+                'proof_number' => $proofNumber,
                 'recorded_at' => now(),
             ]);
 

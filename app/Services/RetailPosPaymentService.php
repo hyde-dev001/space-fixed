@@ -134,7 +134,7 @@ class RetailPosPaymentService
                 'customer_id' => (string) ($payload['customer_type'] ?? 'walk_in') === 'registered'
                     ? (int) ($payload['customer_id'] ?? 0)
                     : null,
-                'order_number' => $this->generateRetailPosOrderNumber(),
+                'order_number' => $this->generateRetailPosOrderNumber($shopOwnerId),
                 'total_amount' => round((float) $breakdown['net'], 2),
                 'shipping_fee' => 0,
                 'vat_rate' => self::VAT_RATE_PERCENT,
@@ -331,13 +331,9 @@ class RetailPosPaymentService
         return $invoice;
     }
 
-    private function generateRetailPosOrderNumber(): string
+    private function generateRetailPosOrderNumber(int $shopOwnerId): string
     {
-        do {
-            $orderNumber = 'RPOS-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(0, 999), 3, '0', STR_PAD_LEFT);
-        } while (Order::query()->where('order_number', $orderNumber)->exists());
-
-        return $orderNumber;
+        return Order::generateOrderNumber($shopOwnerId, 'RPOS');
     }
 
     private function generateTransactionNo(): string

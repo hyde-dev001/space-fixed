@@ -354,6 +354,32 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function owner_rehire_business_conflict_is_not_reported_as_already_decided(): void
+    {
+        $employee = Employee::factory()->for($this->shop)->create([
+            'status' => EmployeeStatus::TERMINATED,
+            'terminated_at' => now(),
+        ]);
+        $request = EmployeeLifecycleRequest::factory()->for($employee)->create([
+            'requested_by' => $this->hr->id,
+            'request_type' => 'rehire',
+            'status' => 'pending_owner',
+            'manager_status' => 'approved',
+            'owner_status' => 'pending',
+            'rehire_role' => 'Staff',
+            'rehire_position' => 'Repair Technician',
+        ]);
+
+        $this->actingAs($this->shop, 'shop_owner')
+            ->postJson("/api/shop-owner/rehire-requests/{$request->id}/review", [
+                'action' => 'approve',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('code', 'EMPLOYEE_LIFECYCLE_CONFLICT')
+            ->assertJsonPath('message', 'The rehire date must be after the termination date.');
+    }
+
+    #[Test]
     public function manager_can_filter_termination_and_rehire_history_by_rejected_status(): void
     {
         $terminationEmployee = Employee::factory()->for($this->shop)->create([

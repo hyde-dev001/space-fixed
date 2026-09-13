@@ -30,14 +30,19 @@ class RepairPosRefundService
     public function computeRepairRefundableAmount(int $repairId): float
     {
         $paid = $this->resolveRepairPaidAmount($repairId);
+        $servicePaid = $this->resolveRepairServicePaidAmount($repairId);
+        if ($servicePaid !== null) {
+            $paid = $servicePaid;
+        }
 
-        $refunded = (float) PosRefund::query()
-            ->where('module_type', 'repair')
-            ->where('module_reference_id', $repairId)
-            ->where('status', 'succeeded')
-            ->sum('approved_amount');
+        $refunded = $this->sumSuccessfulCustomerRepairRefunds($repairId);
 
         return max(0.0, round($paid - $refunded, 2));
+    }
+
+    public function computeRepairServicePaidAmount(int $repairId): ?float
+    {
+        return $this->resolveRepairServicePaidAmount($repairId);
     }
 
     public function computeRecordedRepairRefundableAmount(int $repairId): float
@@ -54,6 +59,36 @@ class RepairPosRefundService
             ->sum('approved_amount');
 
         return max(0.0, round($paid - $refunded, 2));
+    }
+
+    /**
+     * Repair customer refunds cover the service/package charge only.
+     * Delivery reconciliation is a separate, explicitly requested workflow.
+     */
+    public function refundComponentBreakdown(PosRefund $refund): array
+    {
+        if (strtolower((string) ($refund->workflow_source ?? 'pos')) === 'delivery_reconciliation') {
+            return [];
+        }
+
+        $refund->loadMissing('legs');
+        $stored = collect($refund->legs ?? [])
+            ->map(fn ($leg) => is_array($leg->meta ?? null) ? $leg->meta : [])
+            ->first(fn (array $meta): bool => is_array($meta['refund_components'] ?? null));
+
+        if (is_array($stored['refund_components'] ?? null)) {
+            return $stored['refund_components'];
+        }
+
+        $amount = (float) ($refund->status === 'succeeded'
+            ? ($refund->approved_amount ?? 0)
+            : ($refund->approved_amount ?? $refund->requested_amount ?? 0));
+        $servicePaid = $this->resolveRepairServicePaidAmount((int) $refund->module_reference_id);
+
+        return $this->buildServiceOnlyRefundComponents(
+            min(max(0.0, $amount), max(0.0, $servicePaid ?? $amount)),
+            $servicePaid,
+        );
     }
 
     public function computeRecordedPaidIntakeDeliveryAmount(int $repairId): float
@@ -131,7 +166,10 @@ class RepairPosRefundService
                 return $existing;
             }
 
-            $pickupFee = $this->computeRecordedPaidIntakeDeliveryAmount((int) $repair->id);
+            $serviceAmount = $this->resolveRepairServicePaidAmount((int) $repair->id);
+            $serviceAmount = $serviceAmount !== null
+                ? min($paidAmount, $serviceAmount)
+                : max(0.0, round($paidAmount - $this->computeRecordedPaidIntakeDeliveryAmount((int) $repair->id), 2));
             $transaction = PosTransaction::create([
                 'transaction_no' => 'POS-BKF-RFD-' . now()->format('YmdHis') . '-' . strtoupper(Str::random(4)),
                 'shop_owner_id' => (int) $repair->shop_owner_id,
@@ -152,8 +190,8 @@ class RepairPosRefundService
                     'source' => 'repair_refund_online_backfill',
                     'phase' => 'initial',
                     'leg' => 'intake',
-                    'service_amount' => max(0.0, round($paidAmount - $pickupFee, 2)),
-                    'delivery_amount' => $pickupFee,
+                    'service_amount' => round($serviceAmount, 2),
+                    'delivery_amount' => max(0.0, round($paidAmount - $serviceAmount, 2)),
                 ],
             ]);
             PosPaymentLine::create([
@@ -626,6 +664,10 @@ class RepairPosRefundService
                 ->where('module_type', 'repair')
                 ->where('module_reference_id', (int) $source->module_reference_id)
                 ->whereIn('status', ['approved', 'processing'])
+                ->where(function ($query): void {
+                    $query->whereNull('workflow_source')
+                        ->orWhere('workflow_source', '!=', 'delivery_reconciliation');
+                })
                 ->sum('approved_amount');
 
             $maxRefundable = max(0, $this->computeRepairRefundableAmount((int) $source->module_reference_id) - $alreadyCommitted);
@@ -869,6 +911,13 @@ class RepairPosRefundService
         $source = $refund->sourceTransaction()->firstOrFail();
 
         $approvedAmount = round((float) ($refund->approved_amount ?? $refund->requested_amount), 2);
+        $workflowSource = strtolower(trim((string) ($refund->workflow_source ?? 'pos')));
+        if ($workflowSource !== 'delivery_reconciliation') {
+            $serviceRefundable = $this->computeRepairRefundableAmount((int) $source->module_reference_id);
+            if ($this->repairRequestExists((int) $source->module_reference_id)) {
+                $approvedAmount = min($approvedAmount, $serviceRefundable);
+            }
+        }
         if ($approvedAmount <= 0) {
             throw ValidationException::withMessages([
                 'approved_amount' => ['Approved amount must be greater than zero before execution.'],
@@ -876,7 +925,6 @@ class RepairPosRefundService
         }
 
         $refund->loadMissing('legs');
-        $workflowSource = strtolower(trim((string) ($refund->workflow_source ?? 'pos')));
 
         $gatewayLegAmount = round((float) collect($refund->legs)
             ->filter(fn ($leg) => (string) ($leg->leg_type ?? '') === 'gateway')
@@ -1003,6 +1051,8 @@ class RepairPosRefundService
         }
 
         $statuses = [];
+        $providerConfirmedAmount = 0.0;
+        $hasProviderConfirmedAmount = false;
         foreach ($refundIds as $refundId) {
             $gateway = $this->fetchRefundStatusUsingAnySecret($secretKeyCandidates, $refundId);
             if (!($gateway['success'] ?? false)) {
@@ -1016,6 +1066,10 @@ class RepairPosRefundService
             }
 
             $statuses[] = strtolower((string) ($gateway['status'] ?? 'processing'));
+            if (is_numeric($gateway['amount_in_centavos'] ?? null) && (int) $gateway['amount_in_centavos'] > 0) {
+                $providerConfirmedAmount = round($providerConfirmedAmount + ((int) $gateway['amount_in_centavos'] / 100), 2);
+                $hasProviderConfirmedAmount = true;
+            }
         }
 
         $hasFailure = collect($statuses)
@@ -1039,6 +1093,15 @@ class RepairPosRefundService
                 return $refund;
             }
 
+            $manualAmount = round((float) collect($refund->legs ?? [])
+                ->filter(fn ($leg) => (string) ($leg->leg_type ?? '') === 'pos_manual')
+                ->sum(fn ($leg) => (float) ($leg->approved_amount ?? $leg->requested_amount ?? 0)), 2);
+            $gatewayFallback = max(0.0, round($approvedAmount - $manualAmount, 2));
+            $resolvedGatewayAmount = $hasProviderConfirmedAmount
+                ? $providerConfirmedAmount
+                : $gatewayFallback;
+            $approvedAmount = round($resolvedGatewayAmount + $manualAmount, 2);
+
             $paymentReferences = $this->normalizeGatewayReferences(array_merge(
                 is_array($refund->paymongo_payment_ids) ? $refund->paymongo_payment_ids : [],
                 [(string) ($refund->paymongo_payment_id ?? '')],
@@ -1053,6 +1116,7 @@ class RepairPosRefundService
                 executionNote: (string) ($refund->execution_notes ?: null),
                 paymongoPaymentId: $paymentReferences[0] ?? (string) ($refund->paymongo_payment_id ?: null),
                 paymongoRefundId: $refundIds[0] ?? (string) ($refund->paymongo_refund_id ?: null),
+                providerConfirmedAmount: $hasProviderConfirmedAmount ? $resolvedGatewayAmount : null,
             );
 
             $settled->update([
@@ -1201,6 +1265,7 @@ class RepairPosRefundService
 
         $submittedRefundIds = [];
         $submittedAmount = 0.0;
+        $providerConfirmedAmount = 0.0;
         $hasProcessingLeg = false;
 
         foreach ($allocations as $allocation) {
@@ -1231,6 +1296,13 @@ class RepairPosRefundService
             }
 
             $submittedAmount = round($submittedAmount + (float) $allocation['amount'], 2);
+            $providerConfirmedAmount = round(
+                $providerConfirmedAmount + $this->resolveProviderConfirmedRefundAmount(
+                    $gatewayResult,
+                    (float) $allocation['amount'],
+                ),
+                2,
+            );
 
             $gatewayStatus = strtolower((string) ($gatewayResult['status'] ?? 'processing'));
             $refundId = trim((string) ($gatewayResult['refund_id'] ?? ''));
@@ -1262,9 +1334,10 @@ class RepairPosRefundService
             return $refund->fresh();
         }
 
-        $settledAmount = $finalApprovedAmount !== null
-            ? max($submittedAmount, round((float) $finalApprovedAmount, 2))
-            : $submittedAmount;
+        $manualAmount = $finalApprovedAmount !== null
+            ? max(0.0, round((float) $finalApprovedAmount - $targetGatewayAmount, 2))
+            : 0.0;
+        $settledAmount = round($providerConfirmedAmount + $manualAmount, 2);
 
         $succeeded = $this->markRefundSucceeded(
             refund: $refund->fresh(),
@@ -1275,6 +1348,7 @@ class RepairPosRefundService
             executionNote: $effectiveExecutionNote,
             paymongoPaymentId: $allocations[0]['payment_reference'] ?? null,
             paymongoRefundId: $submittedRefundIds[0] ?? null,
+            providerConfirmedAmount: $providerConfirmedAmount,
         );
 
         $succeeded->update([
@@ -1294,10 +1368,12 @@ class RepairPosRefundService
         ?string $executionNote,
         ?string $paymongoPaymentId,
         ?string $paymongoRefundId,
+        ?float $providerConfirmedAmount = null,
     ): PosRefund {
         $refund->update([
             'status' => 'succeeded',
             'approved_amount' => round($approvedAmount, 2),
+            'execution_amount' => round($approvedAmount, 2),
             'execution_mode' => $executionMode,
             'execution_notes' => $executionNote
                 ? Str::limit(trim($executionNote), 1000, '')
@@ -1312,6 +1388,8 @@ class RepairPosRefundService
             $refund = $this->recoveryService()->recordSuccessfulExecution($refund, $actorId);
         }
 
+        $this->persistRefundComponentBreakdown($refund, $approvedAmount, $providerConfirmedAmount);
+
         $totalRefundedForTransaction = (float) PosRefund::query()
             ->where('source_transaction_id', $source->id)
             ->where('status', 'succeeded')
@@ -1325,13 +1403,10 @@ class RepairPosRefundService
 
         $repair = RepairRequest::query()->find((int) $source->module_reference_id);
         if ($repair) {
-            $totalRefundedForRepair = (float) PosRefund::query()
-                ->where('module_type', 'repair')
-                ->where('module_reference_id', $repair->id)
-                ->where('status', 'succeeded')
-                ->sum('approved_amount');
+            $totalRefundedForRepair = $this->sumSuccessfulCustomerRepairRefunds((int) $repair->id);
 
-            $repairPaidAmount = $this->resolveRepairPaidAmount((int) $repair->id);
+            $repairPaidAmount = $this->resolveRepairServicePaidAmount((int) $repair->id)
+                ?? $this->resolveRepairPaidAmount((int) $repair->id);
             $repairRefundStatus = $totalRefundedForRepair > 0
                 ? ($repairPaidAmount > 0 && $totalRefundedForRepair >= $repairPaidAmount ? 'refunded' : 'partially_refunded')
                 : (string) ($repair->payment_status_derived ?? $repair->payment_status ?? 'unpaid');
@@ -1358,6 +1433,57 @@ class RepairPosRefundService
         }
 
         return $refund->fresh();
+    }
+
+    private function resolveProviderConfirmedRefundAmount(array $gatewayResult, float $submittedAmount): float
+    {
+        $submittedAmount = round(max(0.0, $submittedAmount), 2);
+        $providerAmount = $gatewayResult['amount_in_centavos'] ?? null;
+
+        if (! is_numeric($providerAmount) || (int) $providerAmount <= 0) {
+            return $submittedAmount;
+        }
+
+        return round(min($submittedAmount, ((int) $providerAmount) / 100), 2);
+    }
+
+    private function persistRefundComponentBreakdown(
+        PosRefund $refund,
+        float $refundedAmount,
+        ?float $providerConfirmedAmount = null,
+    ): void {
+        if (strtolower((string) ($refund->workflow_source ?? 'pos')) === 'delivery_reconciliation') {
+            return;
+        }
+
+        $servicePaid = $this->resolveRepairServicePaidAmount((int) $refund->module_reference_id);
+        $components = $this->buildServiceOnlyRefundComponents($refundedAmount, $servicePaid);
+        $legType = $providerConfirmedAmount !== null ? 'gateway' : 'pos_manual';
+        $leg = $refund->legs()->where('leg_type', $legType)->first();
+
+        if (! $leg) {
+            $leg = $refund->legs()->create([
+                'leg_type' => $legType,
+                'requested_amount' => round($providerConfirmedAmount ?? $refundedAmount, 2),
+                'approved_amount' => round($providerConfirmedAmount ?? $refundedAmount, 2),
+                'status' => 'succeeded',
+                'source_transaction_id' => $refund->source_transaction_id,
+            ]);
+        }
+
+        $meta = is_array($leg->meta) ? $leg->meta : [];
+        $meta['refund_components'] = $components;
+        $meta['local_refunded_amount'] = round($refundedAmount, 2);
+
+        if ($providerConfirmedAmount !== null) {
+            $meta['provider_confirmed_amount'] = round($providerConfirmedAmount, 2);
+            $meta['provider_confirmed_amount_in_centavos'] = (int) round($providerConfirmedAmount * 100);
+        }
+
+        $leg->update([
+            'status' => 'succeeded',
+            'meta' => $meta,
+        ]);
     }
 
     private function markRefundFailed(PosRefund $refund, int $actorId, string $reason, ?string $executionNote): PosRefund
@@ -1566,18 +1692,7 @@ class RepairPosRefundService
             return false;
         }
 
-        if ($workflowSource === 'online_myrepair') {
-            return true;
-        }
-
-        if ($workflowSource === 'shop_pos_repair') {
-            return true;
-        }
-
-        return in_array($reasonCode, [
-            'customer_cancelled_repair',
-            'pickup_attempts_exhausted',
-        ], true);
+        return $workflowSource !== 'delivery_reconciliation';
     }
 
     private function isIndividualShopOwner(int $shopOwnerId): bool
@@ -1606,6 +1721,138 @@ class RepairPosRefundService
             ->where('module_reference_id', $repairId)
             ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
             ->sum('paid_amount'), 2);
+    }
+
+    private function sumSuccessfulCustomerRepairRefunds(int $repairId): float
+    {
+        return round((float) PosRefund::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repairId)
+            ->where('status', 'succeeded')
+            ->where(function ($query): void {
+                $query->whereNull('workflow_source')
+                    ->orWhere('workflow_source', '!=', 'delivery_reconciliation');
+            })
+            ->sum('approved_amount'), 2);
+    }
+
+    private function repairRequestExists(int $repairId): bool
+    {
+        return $repairId > 0 && RepairRequest::query()->whereKey($repairId)->exists();
+    }
+
+    private function resolveRepairServicePaidAmount(int $repairId): ?float
+    {
+        $repair = RepairRequest::query()->find($repairId);
+        if (! $repair) {
+            return null;
+        }
+
+        $hasTransactionComponentData = false;
+        $servicePaid = 0.0;
+        $transactions = PosTransaction::query()
+            ->where('module_type', 'repair')
+            ->where('module_reference_id', $repairId)
+            ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
+            ->get(['paid_amount', 'metadata']);
+
+        foreach ($transactions as $transaction) {
+            $metadata = is_array($transaction->metadata) ? $transaction->metadata : [];
+            if (array_key_exists('service_amount', $metadata)) {
+                $hasTransactionComponentData = true;
+                $servicePaid += max(0.0, (float) $metadata['service_amount']);
+                continue;
+            }
+
+            if (array_key_exists('delivery_amount', $metadata)) {
+                $hasTransactionComponentData = true;
+                $servicePaid += max(
+                    0.0,
+                    (float) $transaction->paid_amount - (float) $metadata['delivery_amount'],
+                );
+            }
+        }
+
+        if (! $hasTransactionComponentData) {
+            $reconciliationEntries = collect(data_get($repair->logistics_payment_reconciliation, 'entries', []))
+                ->filter(fn ($entry): bool => is_array($entry));
+            $sessions = RepairPaymentSession::query()
+                ->where('repair_request_id', $repairId)
+                ->whereIn('status', ['paid', 'reconciliation'])
+                ->get(['id', 'status', 'service_amount']);
+
+            foreach ($sessions as $session) {
+                $entry = $reconciliationEntries->firstWhere('payment_session_id', $session->id);
+                if ((string) $session->status === 'reconciliation') {
+                    if (is_array($entry) && array_key_exists('service_amount_applied', $entry)) {
+                        $servicePaid += max(0.0, (float) $entry['service_amount_applied']);
+                    }
+
+                    continue;
+                }
+
+                $servicePaid += max(0.0, (float) $session->service_amount);
+            }
+        }
+
+        if ($hasTransactionComponentData || $servicePaid > 0) {
+            $ceiling = $this->resolveRepairServiceCeiling($repair);
+            return round($ceiling > 0 ? min($servicePaid, $ceiling) : $servicePaid, 2);
+        }
+
+        $paid = $this->resolveRepairPaidAmount($repairId);
+        $ceiling = $this->resolveRepairServiceCeiling($repair);
+
+        return round($ceiling > 0 ? min($paid, $ceiling) : $paid, 2);
+    }
+
+    private function resolveRepairServiceCeiling(RepairRequest $repair): float
+    {
+        $pricingBreakdown = is_array($repair->pricing_breakdown) ? $repair->pricing_breakdown : [];
+        $packagePrice = round((float) ($repair->package_price ?? ($pricingBreakdown['package_price'] ?? 0)), 2);
+        $addOnsTotal = round((float) ($repair->add_ons_total ?? ($pricingBreakdown['add_ons_total'] ?? 0)), 2);
+
+        return round(max(
+            $this->resolveRepairGrandTotal($repair),
+            (float) ($repair->final_total ?? 0),
+            (float) ($repair->total ?? 0),
+            (float) ($pricingBreakdown['base_total'] ?? 0),
+            (float) ($pricingBreakdown['final_total'] ?? 0),
+            $repair->repair_package_id ? $packagePrice + $addOnsTotal : 0,
+        ), 2);
+    }
+
+    private function buildServiceOnlyRefundComponents(float $refundedAmount, ?float $servicePaid): array
+    {
+        $refundedAmount = round(max(0.0, $refundedAmount), 2);
+        $eligibleServiceAmount = round(max($refundedAmount, (float) ($servicePaid ?? 0)), 2);
+        $serviceStatus = $refundedAmount <= 0
+            ? 'not_refunded'
+            : ($servicePaid !== null && $refundedAmount >= (float) $servicePaid
+                ? 'refunded'
+                : 'partially_refunded');
+
+        return [
+            'repair_service' => [
+                'label' => 'Repair / Service Refund',
+                'eligible_amount' => $eligibleServiceAmount,
+                'refunded_amount' => $refundedAmount,
+                'status' => $serviceStatus,
+            ],
+            'pickup_intake' => [
+                'label' => 'Pickup / Intake Fee Refund',
+                'eligible_amount' => 0.0,
+                'refunded_amount' => 0.0,
+                'status' => 'not_refunded',
+            ],
+            'return_delivery' => [
+                'label' => 'Return / Delivery Fee Refund',
+                'eligible_amount' => 0.0,
+                'refunded_amount' => 0.0,
+                'status' => 'not_refunded',
+            ],
+            'total_refunded' => $refundedAmount,
+        ];
     }
 
     private function resolveRepairPaidAmount(int $repairId): float

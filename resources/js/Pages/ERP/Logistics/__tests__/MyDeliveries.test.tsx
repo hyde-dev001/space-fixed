@@ -222,6 +222,34 @@ describe('MyDeliveries task-first hierarchy', () => {
     expect(screen.queryByText('Single delivery #9')).not.toBeInTheDocument();
   });
 
+  it('uses the shop-scoped delivery number in rider issue labels', () => {
+    mocks.props.deliveryData.filters = {
+      tab: 'issues',
+      business: 'all',
+      window: 'all',
+      search: '',
+    };
+    mocks.props.deliveryData.list.data = [{
+      item_type: 'issue',
+      issue_type: 'delivery_attempt',
+      key: 'issue:12',
+      id: 12,
+      delivery_id: 9,
+      delivery_number: 42,
+      parent_key: 'single:9',
+      business_types: ['retail'],
+      delivery_label: 'Retail Delivery',
+      reason: 'Customer unavailable',
+    }];
+
+    render(<MyDeliveries />);
+
+    expect(screen.getByText('Issue · Delivery #42')).toBeVisible();
+    expect(screen.getByText('Retail Delivery')).toBeVisible();
+    expect(screen.queryByText('Issue · Delivery #9')).not.toBeInTheDocument();
+    expect(screen.queryByText('single #9')).not.toBeInTheDocument();
+  });
+
   it('keeps Current delivery before new assignment offers', () => {
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [
       leg(9, null, 'in_transit'),
