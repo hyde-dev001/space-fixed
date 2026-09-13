@@ -233,6 +233,32 @@ describe("canonical settings sections", () => {
     expect(document.getElementById("settings-section-payments-approvals")).toHaveClass("xl:order-4");
   });
 
+  it("places Subscription directly below Profile", () => {
+    renderSettings("profile");
+
+    const content = screen.getByTestId("settings-content");
+    const sectionIds = Array.from(content.children)
+      .map((child) => child.id)
+      .filter(Boolean);
+    const navigationLabels = Array.from(
+      screen.getByRole("navigation", { name: "Settings sections" }).querySelectorAll("a"),
+    ).map((link) => link.textContent?.trim() ?? "");
+
+    expect(sectionIds.indexOf("settings-section-subscription"))
+      .toBe(sectionIds.indexOf("settings-section-profile") + 1);
+    expect(document.getElementById("settings-section-profile")?.querySelector("#settings-section-subscription")).toBeNull();
+    expect(navigationLabels.slice(0, 3)).toEqual(["Profile", "Subscription", "Modules & Team"]);
+  });
+
+  it("marks the settings surfaces for dark mode styling", () => {
+    renderSettings("profile");
+
+    expect(screen.getByTestId("shop-settings-page")).toHaveClass("shop-settings-page", "dark:bg-gray-950", "dark:text-gray-100");
+    expect(screen.getByRole("navigation", { name: "Settings sections" })).toHaveClass("dark:border-gray-700", "dark:bg-gray-900");
+    expect(document.getElementById("settings-section-profile")).toHaveClass("dark:border-gray-700", "dark:bg-gray-900");
+    expect(document.getElementById("settings-section-subscription")).toHaveClass("dark:border-gray-700", "dark:bg-gray-900");
+  });
+
   it("renders shared, retail, and repair policy editors as separate direct sections", async () => {
     mocks.axiosGet.mockResolvedValueOnce({
       data: {
