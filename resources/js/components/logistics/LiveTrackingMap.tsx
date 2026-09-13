@@ -77,8 +77,6 @@ const normalizedHeading = (value: number | null): number | null => {
   return ((value % 360) + 360) % 360;
 };
 
-const MOTORCYCLE_IMAGE = '/images/logistics/bikers.png';
-
 const riderIcon = (
   L: typeof import('leaflet'),
   heading: number | null,
@@ -87,7 +85,7 @@ const riderIcon = (
     className: 'live-rider-marker',
     iconSize: [40, 40],
     iconAnchor: [20, 20],
-    html: '<span style="display:block;width:40px;height:40px;transform:rotate(' + (heading ?? 0) + 'deg)"><img src="' + MOTORCYCLE_IMAGE + '" width="40" height="40" alt="" aria-hidden="true" draggable="false" style="display:block;width:40px;height:40px;object-fit:contain" /></span>',
+    html: '<span style="display:block;width:40px;height:40px;transform:rotate(' + (heading ?? 0) + 'deg)"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40" aria-hidden="true"><circle cx="20" cy="20" r="19" fill="#1677e8" stroke="white" stroke-width="2"/><g transform="translate(8 8)" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></g></svg></span>',
   });
 };
 

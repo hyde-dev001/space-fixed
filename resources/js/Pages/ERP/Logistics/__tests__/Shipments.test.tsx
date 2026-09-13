@@ -9,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   reload: vi.fn(),
   props: {} as any,
-  dispatcherLocations: [] as Array<{ shipment_id: number | null }>,
 }));
 
 const defaultProps = () => ({
@@ -44,19 +43,6 @@ vi.mock('@inertiajs/react', () => ({
 vi.mock('axios', () => ({ default: { post: mocks.post } }));
 vi.mock('sweetalert2', () => ({ default: { fire: vi.fn(() => Promise.resolve({ isConfirmed: true })) } }));
 vi.mock('@/layout/AppLayout_ERP', () => ({ default: ({ children }: React.PropsWithChildren) => <>{children}</> }));
-vi.mock('@/components/logistics/DispatcherLiveTracking', () => ({
-  default: ({
-    onLocationsChange,
-  }: {
-    onLocationsChange?: (locations: Array<{ shipment_id: number | null }>) => void;
-  }) => {
-    React.useEffect(() => {
-      onLocationsChange?.(mocks.dispatcherLocations);
-    }, [onLocationsChange]);
-
-    return null;
-  },
-}));
 vi.mock('@/components/logistics/ShipmentTrackingModal', () => ({
   default: ({
     shipmentId,
@@ -77,7 +63,6 @@ vi.mock('@/components/logistics/ShipmentTrackingModal', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.props = defaultProps();
-  mocks.dispatcherLocations = [];
   mocks.post.mockResolvedValue(undefined);
   mocks.reload.mockImplementation((options) => options?.onFinish?.());
 });
@@ -104,40 +89,39 @@ it('renders responsive shipment cards without a wide table', () => {
   expect(screen.getByText('Dasmariñas, Cavite')).toBeInTheDocument();
 });
 
-it('shows live tracking only for the shipment in the live-location response', async () => {
+it('shows the tracking button for active assigned shipments without a page-level tracking card', () => {
   const second = structuredClone(mocks.props.shipments.data[0]);
   second.id = 2;
+  second.legs[0].assignments = [];
   mocks.props.shipments.data.push(second);
   mocks.props.riderMode = false;
   mocks.props.liveTrackingEnabled = true;
   mocks.props.canViewShipments = true;
-  mocks.dispatcherLocations = [{ shipment_id: 1 }];
 
   render(<Shipments />);
 
-  expect(await screen.findByRole('button', { name: 'Open live tracking for Shipment 1' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Open live tracking for Shipment 1' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Open live tracking for Shipment 2' })).not.toBeInTheDocument();
+  expect(screen.queryByText('Live rider tracking')).not.toBeInTheDocument();
 });
 
-it('hides live tracking when no returned location matches the shipment', async () => {
+it('hides the tracking button when live tracking is disabled', () => {
   mocks.props.riderMode = false;
-  mocks.props.liveTrackingEnabled = true;
+  mocks.props.liveTrackingEnabled = false;
   mocks.props.canViewShipments = true;
-  mocks.dispatcherLocations = [{ shipment_id: 999 }];
 
   render(<Shipments />);
 
-  await waitFor(() => expect(screen.queryByRole('button', { name: 'Open live tracking for Shipment 1' })).not.toBeInTheDocument());
+  expect(screen.queryByRole('button', { name: 'Open live tracking for Shipment 1' })).not.toBeInTheDocument();
 });
 
-it('opens the existing tracking modal for the clicked shipment', async () => {
+it('opens the existing tracking modal for the clicked shipment', () => {
   mocks.props.riderMode = false;
   mocks.props.liveTrackingEnabled = true;
   mocks.props.canViewShipments = true;
-  mocks.dispatcherLocations = [{ shipment_id: 1 }];
 
   render(<Shipments />);
-  fireEvent.click(await screen.findByRole('button', { name: 'Open live tracking for Shipment 1' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Open live tracking for Shipment 1' }));
 
   expect(screen.getByRole('dialog', { name: 'Shipment tracking' })).toHaveTextContent('Tracking shipment 1');
 });
