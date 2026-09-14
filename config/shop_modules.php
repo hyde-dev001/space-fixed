@@ -2604,6 +2604,37 @@ if (isset($routes['shop-owner.erp.finance.refund-approvals'])) {
     $routes['shop-owner.erp.finance.refund-approvals']['owner_denial_reason'] = null;
 }
 
+// Owner refund decisions are part of the retail/repair owner workflows, not
+// the company-only Finance module. Controllers still enforce shop tenancy and
+// refund state transitions for every read and mutation.
+$ownerRefundRouteBusinessTypes = [
+    'shop_owner.refunds.index' => ['retail', 'both'],
+    'shop_owner.refunds.show' => ['retail', 'both'],
+    'shop_owner.refunds.approve' => ['retail', 'both'],
+    'shop_owner.refunds.reject' => ['retail', 'both'],
+    'shop_owner.refunds.execute' => ['retail', 'both'],
+    'shop_owner.repair-refunds.index' => ['repair', 'both'],
+    'shop_owner.repair-refunds.show' => ['repair', 'both'],
+    'shop_owner.repair-refunds.approve' => ['repair', 'both'],
+    'shop_owner.repair-refunds.reject' => ['repair', 'both'],
+    'shop_owner.repair-refunds.execute' => ['repair', 'both'],
+];
+
+foreach ($ownerRefundRouteBusinessTypes as $routeName => $businessTypes) {
+    if (! isset($routes[$routeName])) {
+        continue;
+    }
+
+    $routes[$routeName]['classification'] = 'core';
+    $routes[$routeName]['module_keys'] = [];
+    $routes[$routeName]['mode'] = null;
+    $routes[$routeName]['registration_types'] = ['individual', 'company'];
+    $routes[$routeName]['business_types'] = $businessTypes;
+    $routes[$routeName]['actor_guard'] = 'shop_owner';
+    $routes[$routeName]['owner_access'] = 'allowed';
+    $routes[$routeName]['owner_denial_reason'] = null;
+}
+
 // Assist Center is a company-owner destination. Individual owners keep the
 // shared infrastructure out of their navigation and direct route access.
 foreach (['shop-owner.dss-insights', 'api.shop_owner.dashboard.dss-insights'] as $routeName) {

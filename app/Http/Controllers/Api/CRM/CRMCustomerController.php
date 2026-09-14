@@ -41,6 +41,11 @@ class CRMCustomerController extends Controller
             || RepairRequest::where('shop_owner_id', $shopOwnerId)->where('user_id', $customerId)->exists();
     }
 
+    private function orderSpendExpression(): string
+    {
+        return 'COALESCE(total_amount, 0) + COALESCE(shipping_fee, 0) + COALESCE(vat_amount, 0)';
+    }
+
     // ─── Endpoints ────────────────────────────────────────────────────────────
 
     /**
@@ -67,7 +72,7 @@ class CRMCustomerController extends Controller
             ->select(
                 'customer_id as user_id',
                 DB::raw('COUNT(*) as order_count'),
-                DB::raw('COALESCE(SUM(total_amount), 0) as total_spent'),
+                DB::raw('COALESCE(SUM('.$this->orderSpendExpression().'), 0) as total_spent'),
                 DB::raw('MAX(created_at) as last_order_at')
             )
             ->groupBy('customer_id')
@@ -201,8 +206,8 @@ class CRMCustomerController extends Controller
 
             $customer->total_spent   = (float) Order::where('shop_owner_id', $shopOwnerId)
                 ->where('customer_id', $customer->id)
-                ->whereNotNull('total_amount')
-                ->sum('total_amount');
+                ->selectRaw('COALESCE(SUM('.$this->orderSpendExpression().'), 0) as total_spent')
+                ->value('total_spent');
 
             return $customer;
         });
@@ -250,7 +255,11 @@ class CRMCustomerController extends Controller
             'stats'    => [
                 'total_orders'  => $orders->count(),
                 'total_repairs' => $repairs->count(),
-                'total_spent'   => (float) $orders->sum('total_amount'),
+                'total_spent'   => (float) $orders->sum(function (Order $order): float {
+                    return (float) $order->total_amount
+                        + (float) $order->shipping_fee
+                        + (float) $order->vat_amount;
+                }),
                 'member_since'  => $customer->created_at?->toDateString(),
             ],
         ]);

@@ -31,6 +31,10 @@ final class PayslipAttentionAdapter implements OwnerAttentionAdapter
 
     public function read(ShopOwner $owner, OwnerAttentionQuery $query): OwnerAttentionAdapterResult
     {
+        if (strtolower(trim((string) $owner->registration_type)) !== 'company') {
+            return new OwnerAttentionAdapterResult([], 0);
+        }
+
         $baseQuery = Payroll::query()
             ->select([
                 'id',
@@ -43,28 +47,43 @@ final class PayslipAttentionAdapter implements OwnerAttentionAdapter
                 'approval_status',
                 'approval_id',
                 'approval_workflow_version',
+                'approved_by',
+                'final_approved_by',
                 'created_at',
                 'updated_at',
             ])
             ->with(['employee:id,first_name,last_name'])
             ->where('shop_owner_id', (int) $owner->getKey())
             ->where('status', 'pending')
-            ->where('approval_status', 'pending')
-            ->where('approval_workflow_version', 'v4_multi_level')
-            ->whereNotNull('approval_id')
-            ->whereHas('approval', static function (Builder $approvalQuery) use ($owner): void {
-                $approvalQuery
-                    ->where('approvals.approvable_type', Payroll::class)
-                    ->where(function (Builder $tenantQuery) use ($owner): void {
-                        $tenantQuery
-                            ->where('approvals.shop_owner_id', (int) $owner->getKey())
-                            ->orWhereHas('shopOwner', static function (Builder $ownerUserQuery) use ($owner): void {
-                                $ownerUserQuery->where('users.shop_owner_id', (int) $owner->getKey());
+            ->where(function (Builder $workflowQuery) use ($owner): void {
+                $workflowQuery
+                    ->where(function (Builder $v4Query) use ($owner): void {
+                        $v4Query
+                            ->where('approval_status', 'pending')
+                            ->where('approval_workflow_version', 'v4_multi_level')
+                            ->whereNotNull('approval_id')
+                            ->whereHas('approval', static function (Builder $approvalQuery) use ($owner): void {
+                                $approvalQuery
+                                    ->where('approvals.approvable_type', Payroll::class)
+                                    ->where(function (Builder $tenantQuery) use ($owner): void {
+                                        $tenantQuery
+                                            ->where('approvals.shop_owner_id', (int) $owner->getKey())
+                                            ->orWhereHas('shopOwner', static function (Builder $ownerUserQuery) use ($owner): void {
+                                                $ownerUserQuery->where('users.shop_owner_id', (int) $owner->getKey());
+                                            });
+                                    })
+                                    ->where('approvals.status', 'pending')
+                                    ->where('approvals.current_level', '>', 0)
+                                    ->where('approvals.current_approver_role', 'shop_owner');
                             });
                     })
-                    ->where('approvals.status', 'pending')
-                    ->where('approvals.current_level', '>', 0)
-                    ->where('approvals.current_approver_role', 'shop_owner');
+                    ->orWhere(function (Builder $legacyQuery): void {
+                        $legacyQuery
+                            ->where('approval_status', 'approved')
+                            ->whereNotNull('approved_by')
+                            ->whereNull('final_approved_by')
+                            ->where('approval_workflow_version', '!=', 'v4_multi_level');
+                    });
             })
             ->orderByDesc('updated_at')
             ->orderByDesc('id');

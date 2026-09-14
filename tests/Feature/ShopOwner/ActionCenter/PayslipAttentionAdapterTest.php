@@ -45,9 +45,30 @@ final class PayslipAttentionAdapterTest extends TestCase
         );
     }
 
+    public function test_company_owner_queue_includes_legacy_payslip_after_finance_approval(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
+        $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
+        $payslip = $this->createPayslip($owner, $requester, workflowVersion: 'legacy');
+        $payslip->update([
+            'approval_id' => null,
+            'approval_workflow_version' => 'v3_legacy',
+            'approval_status' => 'approved',
+            'approved_by' => $requester->id,
+            'final_approved_by' => null,
+            'status' => 'pending',
+        ]);
+
+        $result = $this->adapter()->read($owner, new OwnerAttentionQuery(coverage: 'payslips'));
+
+        $this->assertSame(1, $result->qualifyingCount);
+        $this->assertSame('payslip', $result->items[0]->sourceType);
+        $this->assertSame($payslip->id, $result->items[0]->sourceId);
+    }
+
     public function test_payslip_projection_has_bounded_query_count(): void
     {
-        $owner = ShopOwner::factory()->approved()->create();
+        $owner = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
         $requester = User::factory()->create(['shop_owner_id' => $owner->id]);
         $this->createPayslip($owner, $requester);
 

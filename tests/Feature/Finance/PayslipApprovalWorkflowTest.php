@@ -12,6 +12,7 @@ use App\Services\PayslipApprovalService;
 use App\Services\OwnerActionCenter\Adapters\PayslipAttentionAdapter;
 use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -177,6 +178,47 @@ class PayslipApprovalWorkflowTest extends TestCase
         $this->assertApprovalStage($payslip, 4, 4, 'finance_final');
     }
 
+    public function test_company_owner_action_center_lists_payslip_after_finance_approval(): void
+    {
+        $this->shopOwnerAuth->update([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        config([
+            'owner_shell.enabled' => true,
+            'owner_shell.allowlisted_shop_ids' => [],
+            'owner_action_center.enabled' => true,
+            'owner_action_center.allowlisted_shop_ids' => [],
+            'owner_action_center.coverage.refunds' => false,
+            'owner_action_center.coverage.prices' => false,
+            'owner_action_center.coverage.payslips' => true,
+            'owner_action_center.coverage.salary_changes' => false,
+            'owner_action_center.coverage.expenses' => false,
+            'owner_action_center.coverage.purchase_requests' => false,
+            'owner_action_center.coverage.suspensions' => false,
+            'owner_action_center.coverage.terminations' => false,
+            'owner_action_center.coverage.rehires' => false,
+        ]);
+
+        $payslip = $this->createWorkflowBoundPayslip();
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
+                'notes' => 'Finance approved for owner review',
+            ])
+            ->assertOk();
+
+        $this->actingAs($this->shopOwnerAuth, 'shop_owner')
+            ->get(route('shop-owner.shell.action-center'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('approvalCoverageSources', ['payslips'])
+                ->where('ownerActionCenter.health.enabled_adapter_keys', ['payslips'])
+                ->where('ownerActionCenter.pagination.total', 1)
+                ->where('ownerActionCenter.items.0.source_type', 'payslip')
+                ->where('ownerActionCenter.items.0.source_id', $payslip->id));
+    }
+
     public function test_payslip_policy_off_removes_only_the_shop_owner_stage(): void
     {
         $this->setPayslipApproval(false);
@@ -265,6 +307,7 @@ class PayslipApprovalWorkflowTest extends TestCase
 
     public function test_generated_payroll_without_a_mapped_owner_user_creates_the_canonical_owner_stage(): void
     {
+        $this->shopOwnerAuth->update(['registration_type' => 'company']);
         $this->shopOwnerMappedUser->delete();
         $payslip = $this->createPayrollRecord();
 
