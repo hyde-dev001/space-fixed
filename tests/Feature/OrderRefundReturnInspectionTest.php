@@ -178,7 +178,10 @@ class OrderRefundReturnInspectionTest extends TestCase
                 'line_dispositions' => [$this->disposition($line->order_item_id)],
             ])
             ->assertOk()
-            ->assertJsonPath('success', true);
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('refund_ready_for_finance_release', false)
+            ->assertJsonPath('refund_ready_for_owner_payout', true)
+            ->assertJsonPath('message', 'Every returned item was inspected. You can now execute the refund payout.');
 
         $this->assertDatabaseHas('order_refunds', [
             'id' => $refund->id,

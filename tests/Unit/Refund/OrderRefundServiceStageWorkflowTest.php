@@ -325,6 +325,39 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function completed_individual_return_notifies_the_shop_owner_to_execute_payout(): void
+    {
+        $this->notificationService
+            ->expects($this->once())
+            ->method('sendToShopOwner')
+            ->with(
+                202,
+                NotificationType::REFUND_REQUEST,
+                'Refund Payout Ready',
+                $this->stringContains('you to execute'),
+                $this->isType('array'),
+                $this->stringContains('/shop-owner/erp/retail/orders'),
+                'high',
+                'refund-payout-ready:order:5001',
+                true,
+            );
+
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'in_transit',
+            'status' => 'pending_approval',
+        ], registrationType: 'individual');
+        $refund->setAttribute('id', 5001);
+        $refund->setAttribute('shop_owner_id', 202);
+
+        $result = $this->service->confirmReturnReceived($refund, staffId: null, notes: 'Inspected by owner');
+
+        $this->assertSame('received', $result['result']);
+        $this->assertStringContainsString('execute the refund payout', strtolower((string) $result['message']));
+    }
+
+    #[Test]
     public function final_finance_approval_notifies_finance_when_return_was_already_received(): void
     {
         $this->notificationService

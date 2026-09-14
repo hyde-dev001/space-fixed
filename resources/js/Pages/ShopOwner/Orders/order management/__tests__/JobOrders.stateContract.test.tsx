@@ -36,4 +36,11 @@ describe('shop owner order state contract', () => {
     expect(source).toContain('<h1 className="sr-only">Customer Orders</h1>');
     expect(source).not.toContain('Open Approval');
   });
+
+  it('exposes the individual-owner refund payout action after return receipt', () => {
+    expect(source).toContain('can_execute_payout?: boolean;');
+    expect(source).toContain('handleExecuteRefundPayout');
+    expect(source).toContain('/api/shop-owner/refunds/${refund.id}/execute-gateway-refund');
+    expect(source).toContain('Execute Refund Payout');
+  });
 });
