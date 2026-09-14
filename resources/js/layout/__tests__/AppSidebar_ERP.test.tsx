@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   url: '/erp/logistics',
   role: 'Logistics Dispatcher',
   roles: ['Logistics Dispatcher'] as string[],
+  shopOwnerId: null as number | null,
   permissions: [] as string[],
   shopModules: {} as Record<string, unknown> | undefined,
   moduleStates: {} as Record<string, unknown>,
@@ -38,7 +39,7 @@ vi.mock('@inertiajs/react', () => ({
     url: state.url,
     props: {
       auth: {
-        user: { role: state.role, roles: state.roles },
+        user: { role: state.role, roles: state.roles, shop_owner_id: state.shopOwnerId },
         permissions: state.permissions,
         shopModules: state.shopModules,
         shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
@@ -56,9 +57,10 @@ vi.mock('@inertiajs/react', () => ({
 }));
 
 vi.mock('ziggy-js', () => ({
-  route: (name: string) => {
+  route: (name: string, params?: Record<string, unknown>) => {
     if (name === 'landing') return '/';
     if (name === 'erp.time-in') return '/erp/time-in';
+    if (name === 'shop-profile.virtual-showroom') return `/shop-profile/${params?.id}/virtual-showroom`;
     if (name === 'shop-owner.dashboard') return '/shop-owner.dashboard';
     const ownerSubmenuPaths: Record<string, string> = {
       'shop-owner.logistics.dashboard': '/shop-owner/logistics',
@@ -86,6 +88,7 @@ beforeEach(() => {
   state.url = '/erp/logistics';
   state.role = 'Logistics Dispatcher';
   state.roles = ['Logistics Dispatcher'];
+  state.shopOwnerId = null;
   state.permissions = [];
   state.shopModules = moduleStates();
   state.moduleStates = state.shopModules;
@@ -137,6 +140,21 @@ it('shows Staff Articles for an eligible retail Staff viewer and keeps it active
   render(<AppSidebarERP />);
 
   expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveClass('menu-item-active');
+});
+
+it('shows Staff a link to their linked shop showroom', () => {
+  state.url = '/erp/staff/dashboard';
+  state.role = 'STAFF';
+  state.roles = ['Staff'];
+  state.shopOwnerId = 17;
+  state.permissions = ['access-staff-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /virtual showroom/i })).toHaveAttribute(
+    'href',
+    '/shop-profile/17/virtual-showroom',
+  );
 });
 
 it.each([

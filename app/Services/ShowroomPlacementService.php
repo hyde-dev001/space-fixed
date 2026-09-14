@@ -10,6 +10,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -35,6 +36,10 @@ final class ShowroomPlacementService
 
     public function canEdit(Request $request, int $shopOwnerId): bool
     {
+        if (!Schema::hasTable('showroom_product_placements')) {
+            return false;
+        }
+
         $owner = $request->user('shop_owner');
         if ($owner && (int) $owner->getKey() === $shopOwnerId) {
             return true;
@@ -51,6 +56,10 @@ final class ShowroomPlacementService
 
     public function placementsForShop(int $shopOwnerId): Collection
     {
+        if (!Schema::hasTable('showroom_product_placements')) {
+            return new Collection();
+        }
+
         return ShowroomProductPlacement::query()
             ->select(['product_id', 'slot_key'])
             ->where('shop_owner_id', $shopOwnerId)
