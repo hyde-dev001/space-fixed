@@ -35,6 +35,11 @@ class ShipmentRequestService
             'legs.*.schedule_override_reason' => ['nullable', 'string'],
             'legs.*.distance_km' => ['nullable', 'numeric', 'min:0'],
             'legs.*.estimated_at' => ['nullable', 'date'],
+            'legs.*.tracking_number' => ['nullable', 'string', 'max:255'],
+            'legs.*.tracking_url' => ['nullable', 'url', 'max:500'],
+            'legs.*.provider_status' => ['nullable', 'string', 'max:80'],
+            'legs.*.requires_pickup_proof' => ['nullable', 'boolean'],
+            'legs.*.requires_delivery_proof' => ['nullable', 'boolean'],
         ]);
 
         if ($validator->fails()) {
@@ -92,6 +97,9 @@ class ShipmentRequestService
                     'leg_type' => $legData['leg_type'],
                     'status' => 'pending',
                     'shipping_method_id' => $legData['shipping_method_id'] ?? null,
+                    'tracking_number' => $legData['tracking_number'] ?? null,
+                    'tracking_url' => $legData['tracking_url'] ?? null,
+                    'provider_status' => $legData['provider_status'] ?? null,
                     'origin_snapshot' => $legData['origin_snapshot'] ?? null,
                     'destination_snapshot' => $legData['destination_snapshot'] ?? null,
                     'requires_pickup_proof' => (bool) ($legData['requires_pickup_proof'] ?? $method?->requires_pickup_proof ?? false),

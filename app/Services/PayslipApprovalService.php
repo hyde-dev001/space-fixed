@@ -15,7 +15,8 @@ class PayslipApprovalService
     public function __construct(
         private ApprovalService $approvalService,
         private NotificationService $notificationService,
-        private ShopOwnerApprovalPolicyService $approvalPolicyService
+        private ShopOwnerApprovalPolicyService $approvalPolicyService,
+        private ShopOwnerActorUserResolver $shopOwnerActorUserResolver,
     ) {}
 
     /**
@@ -102,26 +103,17 @@ class PayslipApprovalService
      */
     public function createGeneratedPayrollApproval(Payroll $payslip, User $generatedBy): ?Approval
     {
-        $shopOwner = User::query()
-            ->where('shop_owner_id', (int) $payslip->shop_owner_id)
-            ->where(function ($query): void {
-                $query
-                    ->whereIn('role', ['Shop Owner', 'SHOP_OWNER', 'shop_owner', 'shop-owner'])
-                    ->orWhereHas('roles', fn ($roles) => $roles->whereIn('name', [
-                        'Shop Owner', 'SHOP_OWNER', 'shop_owner', 'shop-owner',
-                    ]));
-            })
-            ->orderByDesc('id')
-            ->first();
-
-        // Some legacy tenants have a ShopOwner record but no matching user
-        // identity yet. Keep payroll generation compatible for those tenants;
-        // configured owner identities still receive the canonical workflow.
+        $shopOwner = \App\Models\ShopOwner::query()->find($payslip->shop_owner_id);
         if (! $shopOwner) {
             return null;
         }
 
-        return $this->createPayslipApproval($payslip, $shopOwner, $generatedBy);
+        $shopOwnerUserId = $this->shopOwnerActorUserResolver->ensure($shopOwner);
+        $shopOwnerUser = $shopOwnerUserId ? User::query()->find($shopOwnerUserId) : null;
+
+        return $shopOwnerUser
+            ? $this->createPayslipApproval($payslip, $shopOwnerUser, $generatedBy)
+            : null;
     }
 
     /**
@@ -136,60 +128,63 @@ class PayslipApprovalService
             ];
         }
 
-        $approval = Approval::find($payslip->approval_id);
-        if (!$approval) {
-            return [
-                'success' => false,
-                'message' => 'Approval record not found'
-            ];
-        }
+        $result = DB::transaction(function () use ($payslip, $approver, $comments): array {
+            $lockedPayslip = Payroll::query()->lockForUpdate()->find($payslip->id);
+            $approval = $lockedPayslip?->approval_id
+                ? Approval::query()->lockForUpdate()->find($lockedPayslip->approval_id)
+                : null;
 
-        // Use ApprovalService to transition
-        $result = $this->approvalService->approve($approval, $approver, $comments);
+            if (! $approval) {
+                return [
+                    'success' => false,
+                    'message' => 'Approval record not found',
+                ];
+            }
 
-        if (!$result['success']) {
+            $result = $this->approvalService->approve($approval, $approver, $comments);
+            if (! $result['success']) {
+                return $result;
+            }
+
+            if ($result['is_final'] ?? false) {
+                $lockedPayslip->update([
+                    'status' => 'approved',
+                    'approval_status' => 'approved',
+                    'final_approved_by' => $approver->id,
+                    'final_approved_at' => now(),
+                    'final_approval_notes' => $comments,
+                    'current_approval_level' => $approval->current_level,
+                ]);
+            } else {
+                $nextLevel = $approval->current_level;
+                $lockedPayslip->update([
+                    'current_approval_level' => $nextLevel,
+                    'status' => 'pending',
+                    'approval_status' => 'pending',
+                ]);
+
+                if ($nextLevel === 2) {
+                    $lockedPayslip->update([
+                        'approved_by' => $approver->id,
+                        'approved_at' => now(),
+                        'approval_notes' => $comments,
+                    ]);
+                } elseif ($nextLevel === 3) {
+                    $lockedPayslip->update(['final_approved_by' => null]);
+                } elseif ($nextLevel === 4) {
+                    $lockedPayslip->update(['payout_reference' => null]);
+                }
+            }
+
+            return $result;
+        });
+
+        if (! $result['success']) {
             return $result;
         }
 
-        if ($result['is_final'] ?? false) {
-            // Final approval - payslip is ready for disbursement
-            $payslip->update([
-                'status' => 'approved',
-                'approval_status' => 'approved',
-                'final_approved_by' => $approver->id,
-                'final_approved_at' => now(),
-                'final_approval_notes' => $comments,
-                'current_approval_level' => $approval->current_level
-            ]);
-        } else {
-            // Intermediate approval - move to next level
-            $nextLevel = $approval->current_level;
-            $payslip->update([
-                'current_approval_level' => $nextLevel,
-                'status' => 'pending',
-                'approval_status' => 'pending'
-            ]);
-
-            // Track intermediate approval
-            if ($nextLevel === 2) {
-                // After Finance level 1
-                $payslip->update([
-                    'approved_by' => $approver->id,
-                    'approved_at' => now(),
-                    'approval_notes' => $comments
-                ]);
-            } elseif ($nextLevel === 3) {
-                // After the second decision - prepare for any remaining stage
-                $payslip->update([
-                    'final_approved_by' => null,  // Clear final, waiting for level 3
-                ]);
-            } elseif ($nextLevel === 4) {
-                // After the secondary Finance decision - prepare for final Finance
-                $payslip->update([
-                    'payout_reference' => null,  // Clear previous payout state
-                ]);
-            }
-        }
+        $payslip->refresh();
+        $approval = Approval::query()->findOrFail($payslip->approval_id);
 
         $this->dispatchPayslipApprovalNotifications(
             payslip: $payslip,
@@ -214,30 +209,42 @@ class PayslipApprovalService
             ];
         }
 
-        $approval = Approval::find($payslip->approval_id);
-        if (!$approval) {
-            return [
-                'success' => false,
-                'message' => 'Approval record not found'
-            ];
-        }
+        $result = DB::transaction(function () use ($payslip, $rejector, $comments): array {
+            $lockedPayslip = Payroll::query()->lockForUpdate()->find($payslip->id);
+            $approval = $lockedPayslip?->approval_id
+                ? Approval::query()->lockForUpdate()->find($lockedPayslip->approval_id)
+                : null;
 
-        // Use ApprovalService to reject
-        $result = $this->approvalService->reject($approval, $rejector, $comments);
+            if (! $approval) {
+                return [
+                    'success' => false,
+                    'message' => 'Approval record not found',
+                ];
+            }
 
-        if (!$result['success']) {
+            $result = $this->approvalService->reject($approval, $rejector, $comments);
+            if (! $result['success']) {
+                return $result;
+            }
+
+            $lockedPayslip->update([
+                'status' => 'pending',
+                'approval_status' => 'rejected',
+                'approved_by' => $rejector->id,
+                'approved_at' => now(),
+                'approval_notes' => $comments,
+                'current_approval_level' => $approval->current_level,
+            ]);
+
+            return $result;
+        });
+
+        if (! $result['success']) {
             return $result;
         }
 
-        // Update payslip to rejected status
-        $payslip->update([
-            'status' => 'pending',  // Return to pending for HR to correct
-            'approval_status' => 'rejected',
-            'approved_by' => $rejector->id,
-            'approved_at' => now(),
-            'approval_notes' => $comments,
-            'current_approval_level' => $approval->current_level
-        ]);
+        $payslip->refresh();
+        $approval = Approval::query()->findOrFail($payslip->approval_id);
 
         $this->dispatchPayslipRejectionNotifications($payslip, $approval, $comments);
 
@@ -257,8 +264,9 @@ class PayslipApprovalService
             data: $payload,
             actionUrl: $this->financePayslipActionUrl($payslip->id),
             priority: 'medium',
-            groupKey: "payslip-approval-{$payslip->id}",
+            groupKey: "payslip-approval-{$payslip->id}-finance-level-1",
             requiresAction: true,
+            requiredPermission: 'access-payslip-approval',
         );
     }
 
@@ -309,6 +317,7 @@ class PayslipApprovalService
                 data: $payload,
                 actionUrl: $this->notificationService->ownerApprovalActionUrl('payslip', $payslip->id),
                 priority: 'medium',
+                groupKey: "payslip-approval-{$payslip->id}-shop_owner-level-{$approval->current_level}",
                 requiresAction: true,
             );
 
@@ -332,7 +341,9 @@ class PayslipApprovalService
                 data: $payload,
                 actionUrl: $this->financePayslipActionUrl($payslip->id),
                 priority: 'medium',
+                groupKey: "payslip-approval-{$payslip->id}-{$nextRole}-level-{$approval->current_level}",
                 requiresAction: true,
+                requiredPermission: 'access-payslip-approval',
             );
         }
     }

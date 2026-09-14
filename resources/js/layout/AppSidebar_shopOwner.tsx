@@ -384,7 +384,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
     const canManageStaff = shopOwner.can_manage_staff === true;
 
     if (menuItem.route === 'shop-owner.dss-insights') {
-      return true;
+      return isCompany || canManageStaff;
     }
 
     if (menuItem.route === 'shop-owner.vouchers-discount') {

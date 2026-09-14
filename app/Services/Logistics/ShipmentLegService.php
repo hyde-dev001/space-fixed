@@ -251,6 +251,117 @@ class ShipmentLegService
         });
     }
 
+    public function updateThirdParty(
+        ShipmentLeg $leg,
+        ShopOwner $shop,
+        string $action,
+        array $data,
+    ): ShipmentLeg {
+        return DB::transaction(function () use ($leg, $shop, $action, $data): ShipmentLeg {
+            $leg = ShipmentLeg::query()
+                ->with('shipment')
+                ->lockForUpdate()
+                ->findOrFail($leg->id);
+            $shipment = $leg->shipment;
+
+            abort_unless(
+                $shipment
+                && (int) $shipment->shop_owner_id === (int) $shop->id
+                && $shipment->source_type === 'order'
+                && $shipment->purpose === 'retail_delivery',
+                403,
+            );
+
+            $order = Order::query()
+                ->whereKey($shipment->source_id)
+                ->where('shop_owner_id', $shop->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            abort_unless($order->resolvedDeliveryMethod() === 'third_party', 403);
+
+            $orderFields = ['carrier_company', 'carrier_name', 'carrier_phone', 'tracking_number', 'tracking_link'];
+            $orderChanges = [];
+            foreach ($orderFields as $field) {
+                if (array_key_exists($field, $data) && filled($data[$field])) {
+                    $orderChanges[$field] = $data[$field];
+                }
+            }
+            if ($orderChanges !== []) {
+                $order->forceFill($orderChanges + ['delivery_method' => 'third_party'])->save();
+            }
+
+            if ($action === 'update') {
+                if ($orderChanges === [] && ! array_key_exists('provider_status', $data)) {
+                    throw ValidationException::withMessages([
+                        'tracking_number' => ['Provide courier or tracking details to update this delivery.'],
+                    ]);
+                }
+                if ($leg->status->value === 'delivered' || $leg->status->value === 'cancelled') {
+                    throw ValidationException::withMessages([
+                        'status' => ['A completed or cancelled third-party delivery cannot be updated.'],
+                    ]);
+                }
+
+                $leg->update([
+                    'tracking_number' => $order->tracking_number,
+                    'tracking_url' => $order->tracking_link,
+                    'provider_status' => $data['provider_status'] ?? $leg->provider_status ?? 'handoff_pending',
+                    'requires_delivery_proof' => false,
+                ]);
+                $this->events->record($shipment, $leg, [
+                    'event_type' => 'third_party_tracking_updated',
+                    'visibility' => 'customer',
+                    'message' => 'Third-party courier tracking details updated.',
+                ]);
+
+                return $leg->fresh();
+            }
+
+            $status = $leg->status->value;
+            if ($action === 'in_transit') {
+                if ($status === 'in_transit') {
+                    return $leg->fresh();
+                }
+                $this->assertTransitionAllowed($leg, ['pending'], 'in transit');
+                $leg->update([
+                    'status' => 'in_transit',
+                    'picked_up_at' => $leg->picked_up_at ?? now(),
+                    'provider_status' => $data['provider_status'] ?? 'in_transit',
+                    'requires_delivery_proof' => false,
+                    'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
+                ]);
+                $this->syncShipmentStatus($leg);
+                $this->events->record($shipment, $leg, [
+                    'event_type' => 'in_transit',
+                    'visibility' => 'customer',
+                    'message' => 'Third-party courier has the shipment.',
+                ]);
+
+                return $leg->fresh();
+            }
+
+            if ($status === 'delivered') {
+                return $leg->fresh();
+            }
+            $this->assertTransitionAllowed($leg, ['in_transit'], 'delivered');
+            $leg->update([
+                'status' => 'delivered',
+                'delivered_at' => now(),
+                'provider_status' => $data['provider_status'] ?? 'delivered',
+                'requires_delivery_proof' => false,
+                'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
+            ]);
+            $this->syncShipmentStatus($leg);
+            $this->events->record($shipment, $leg, [
+                'event_type' => 'delivered',
+                'visibility' => 'customer',
+                'message' => 'Third-party courier marked the shipment delivered.',
+            ]);
+
+            return $leg->fresh();
+        });
+    }
+
     public function markDelivered(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
     {
         return DB::transaction(function () use ($leg, $rider) {
@@ -1121,7 +1232,7 @@ class ShipmentLegService
             && $statuses->contains('delivered')
             && $statuses->every(fn ($status) => in_array($status, ['delivered', 'cancelled'], true))) {
             $shipment->update(['status' => 'completed', 'completed_at' => now(), 'cancelled_at' => null]);
-            $this->completeShopOwnedRetailOrder($shipment);
+            $this->completeRetailOrder($shipment);
             $this->completeShopOwnedReturn($shipment);
 
             return;
@@ -1130,15 +1241,19 @@ class ShipmentLegService
         $shipment->update(['status' => 'active', 'completed_at' => null, 'cancelled_at' => null]);
     }
 
-    private function completeShopOwnedRetailOrder($shipment): void
+    private function completeRetailOrder($shipment): void
     {
         if ($shipment->source_type !== 'order') {
             return;
         }
 
+        $order = Order::query()->whereKey($shipment->source_id)->first();
+        if (! $order || ! in_array($order->resolvedDeliveryMethod(), ['shop_owned', 'third_party'], true)) {
+            return;
+        }
+
         Order::query()
-            ->whereKey($shipment->source_id)
-            ->whereRaw('LOWER(carrier_company) = ?', ['shop-owned logistics'])
+            ->whereKey($order->id)
             ->where('status', 'shipped')
             ->update(['status' => 'delivered']);
     }

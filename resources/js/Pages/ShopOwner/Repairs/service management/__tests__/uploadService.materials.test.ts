@@ -19,11 +19,11 @@ describe("Shop Owner repair service materials contract", () => {
     expect(source).not.toContain("axios.get('/api/shop-owner/inventory/items'");
   });
 
-  it("keeps Shop Owner repair service and package management read-only", () => {
+  it("gates repair service management to individual owners", () => {
     const source = readFileSync(sourcePath, "utf8");
     const packageSource = readFileSync(packageManagerPath, "utf8");
 
-    expect(source).toContain("const canManageServices = false;");
+    expect(source).toContain('const canManageServices = registrationType === "individual";');
     expect(source).toContain("readOnly={!canManageServices}");
     expect(packageSource).toContain("readOnly?: boolean;");
   });

@@ -12,6 +12,9 @@ export type DeliveryType =
 export type DeliveryTypePresentation = {
   delivery_type?: DeliveryType | string | null;
   delivery_label?: string | null;
+  delivery_method?: 'shop_owned' | 'third_party' | string | null;
+  provider?: string | null;
+  provider_status?: string | null;
 };
 
 export const logisticsDeliveryLabel = (value?: DeliveryTypePresentation | null): string =>
@@ -133,6 +136,8 @@ export type TrackingShipmentLeg = {
   delivery_number?: number | null;
   delivery_type?: DeliveryType | string | null;
   delivery_label?: string | null;
+  delivery_method?: 'shop_owned' | 'third_party' | string | null;
+  provider?: string | null;
   delivery_batch_id?: number | null;
   return_for_leg_id?: number | null;
   sequence: number;
@@ -257,6 +262,8 @@ export type TrackingShipment = {
   shipment_number?: number | null;
   delivery_type?: DeliveryType | string | null;
   delivery_label?: string | null;
+  delivery_method?: 'shop_owned' | 'third_party' | string | null;
+  provider?: string | null;
   purpose: string;
   status: string;
   source_type: string;
@@ -302,6 +309,8 @@ export type LogisticsShipment = {
   shipment_number?: number | null;
   delivery_type?: DeliveryType | string | null;
   delivery_label?: string | null;
+  delivery_method?: 'shop_owned' | 'third_party' | string | null;
+  provider?: string | null;
   purpose: string;
   status: string;
   source_type: string;

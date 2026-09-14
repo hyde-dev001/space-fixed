@@ -11,6 +11,7 @@ use Illuminate\Support\Carbon;
 use App\Enums\OrderStatus;
 use App\Models\OrderRefund;
 use App\Models\ShopOwner;
+use App\Models\Logistics\Shipment;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
@@ -95,6 +96,7 @@ class Order extends Model
         'product',
         'quantity',
         'total',
+        'delivery_method',
         // Pickup confirmation fields
         'pickup_enabled',
         'pickup_enabled_at',
@@ -282,6 +284,28 @@ class Order extends Model
     public function deliveryDisputes(): HasMany
     {
         return $this->hasMany(DeliveryDispute::class);
+    }
+
+    public function logisticsShipments(): HasMany
+    {
+        return $this->hasMany(Shipment::class, 'source_id')
+            ->where('source_type', 'order')
+            ->where('purpose', 'retail_delivery');
+    }
+
+    public function resolvedDeliveryMethod(): ?string
+    {
+        $method = strtolower(trim((string) $this->getAttribute('delivery_method')));
+        if (in_array($method, ['shop_owned', 'third_party'], true)) {
+            return $method;
+        }
+
+        $carrier = strtolower(trim((string) $this->carrier_company));
+        if ($carrier === 'shop-owned logistics') {
+            return 'shop_owned';
+        }
+
+        return $carrier !== '' ? 'third_party' : null;
     }
 
     /**

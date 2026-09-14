@@ -122,8 +122,13 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function UploadService() {
-  const erpMode = (usePage().props as any)?.erpMode === true;
-  const canManageServices = false;
+  const { auth, erpMode } = usePage().props as any;
+  const registrationType = String(
+    auth?.shop_owner?.registration_type
+      ?? auth?.user?.shop_owner?.registration_type
+      ?? '',
+  ).toLowerCase();
+  const canManageServices = registrationType === "individual";
   const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [services, setServices] = useState<Service[]>([]);
   const [repairMaterials, setRepairMaterials] = useState<RepairMaterialOption[]>([]);

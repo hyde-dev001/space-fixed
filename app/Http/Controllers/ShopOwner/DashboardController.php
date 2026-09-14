@@ -583,10 +583,13 @@ class DashboardController extends Controller
                             'product_id' => $item->product_id,
                             'quantity' => $item->quantity,
                             'price' => $item->price,
+                            'product_name' => $item->product_name,
+                            'product_image' => $item->product_image,
                             'product' => $item->product ? [
                                 'id' => $item->product->id,
                                 'name' => $item->product->name,
-                                'images' => $item->product->images,
+                                'main_image_url' => $item->product->main_image_url,
+                                'image_urls' => $item->product->image_urls,
                             ] : null,
                         ];
                     }),

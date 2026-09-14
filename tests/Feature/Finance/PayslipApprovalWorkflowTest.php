@@ -9,6 +9,8 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\Employee;
 use App\Services\PayslipApprovalService;
+use App\Services\OwnerActionCenter\Adapters\PayslipAttentionAdapter;
+use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
@@ -259,6 +261,55 @@ class PayslipApprovalWorkflowTest extends TestCase
             'title' => 'Payslip Rejected In Approval Workflow',
             'action_url' => "/erp/hr?section=payroll-view&payroll={$payslip->id}",
         ]);
+    }
+
+    public function test_generated_payroll_without_a_mapped_owner_user_creates_the_canonical_owner_stage(): void
+    {
+        $this->shopOwnerMappedUser->delete();
+        $payslip = $this->createPayrollRecord();
+
+        $approval = $this->payslipApprovalService->createGeneratedPayrollApproval($payslip, $this->requester);
+
+        $this->assertNotNull($approval);
+        $this->assertSame('shop_owner', $approval->approval_roles['2']);
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
+                'notes' => 'Finance approved seeded-equivalent payroll',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $this->shopOwnerAuth->id,
+            'title' => 'Payslip Awaiting Shop Owner Approval',
+            'group_key' => "payslip-approval-{$payslip->id}-shop_owner-level-2",
+        ]);
+
+        $projection = app(PayslipAttentionAdapter::class)->read(
+            $this->shopOwnerAuth,
+            new OwnerAttentionQuery(coverage: 'payslips'),
+        );
+
+        $this->assertSame(1, $projection->qualifyingCount);
+        $this->assertSame('payslip:' . $payslip->id . ':payslip_approval', $projection->items[0]->attentionKey);
+    }
+
+    public function test_repeated_payslip_stage_notification_is_deduplicated_per_stage(): void
+    {
+        $payslip = $this->createWorkflowBoundPayslip();
+        $before = \App\Models\Notification::query()
+            ->where('shop_id', $this->shopOwnerAuth->id)
+            ->where('group_key', "payslip-approval-{$payslip->id}-finance-level-1")
+            ->count();
+
+        $this->payslipApprovalService->notifyPayslipApprovalRequested($payslip, $this->requester);
+
+        $this->assertSame($before,
+            \App\Models\Notification::query()
+                ->where('shop_id', $this->shopOwnerAuth->id)
+                ->where('group_key', "payslip-approval-{$payslip->id}-finance-level-1")
+                ->count()
+        );
     }
 
     public function test_generic_finance_hr_and_cross_shop_owner_cannot_approve_owner_stage(): void

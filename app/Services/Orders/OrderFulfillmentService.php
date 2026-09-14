@@ -57,6 +57,7 @@ final class OrderFulfillmentService
             );
 
             $this->applyShippingData($lockedOrder, $shippingData);
+            $lockedOrder->delivery_method ??= $lockedOrder->resolvedDeliveryMethod();
             $this->persistStatus($lockedOrder, OrderStatus::SHIPPED, $actor);
             $this->sourceShipmentService->ensureRetailOrderShipment($this->fresh($lockedOrder));
 
@@ -333,10 +334,14 @@ final class OrderFulfillmentService
 
     private function applyShippingData(Order $order, array $shippingData): void
     {
-        foreach (['tracking_number', 'carrier_company', 'carrier_name', 'carrier_phone', 'tracking_link', 'eta'] as $field) {
+        foreach (['tracking_number', 'carrier_company', 'carrier_name', 'carrier_phone', 'tracking_link', 'eta', 'delivery_method'] as $field) {
             if (array_key_exists($field, $shippingData)) {
                 $order->{$field} = $shippingData[$field];
             }
+        }
+
+        if (! in_array($order->delivery_method, ['shop_owned', 'third_party'], true)) {
+            $order->delivery_method = $order->resolvedDeliveryMethod();
         }
     }
 

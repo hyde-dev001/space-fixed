@@ -16,10 +16,13 @@ interface OrderItem {
   product_id: number;
   quantity: number;
   price: number;
+  product_image?: string | null;
+  product_name?: string | null;
   product?: {
     id: number;
     name: string;
-    images: string | null;
+    main_image_url?: string | null;
+    image_urls?: Array<{ url?: string | null }>;
   };
 }
 
@@ -123,28 +126,26 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
 
   const getFirstProductImage = (order: Order) => {
     const firstItem = order.order_items?.[0];
-    if (firstItem?.product?.images) {
-      try {
-        const parsed = JSON.parse(firstItem.product.images);
-
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return normalizeImageUrl(parsed[0]);
-        }
-
-        if (typeof parsed === 'string') {
-          return normalizeImageUrl(parsed);
-        }
-
-        return FALLBACK_PRODUCT_IMAGE;
-      } catch {
-        return normalizeImageUrl(firstItem.product.images);
-      }
+    if (firstItem?.product_image) {
+      return normalizeImageUrl(firstItem.product_image);
     }
+
+    if (firstItem?.product?.main_image_url) {
+      return normalizeImageUrl(firstItem.product.main_image_url);
+    }
+
+    const productImage = firstItem?.product?.image_urls?.find((image) => image.url)?.url;
+    if (productImage) {
+      return normalizeImageUrl(productImage);
+    }
+
     return FALLBACK_PRODUCT_IMAGE;
   };
 
   const getPrimaryOrderLabel = (order: Order) => {
-    return order.order_items?.[0]?.product?.name || 'Order item';
+    return order.order_items?.[0]?.product_name
+      || order.order_items?.[0]?.product?.name
+      || 'Order item';
   };
 
   const getItemsCount = (order: Order) => {

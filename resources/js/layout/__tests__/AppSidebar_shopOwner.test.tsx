@@ -187,11 +187,12 @@ it('uses one Approval Center entry instead of the Approval Pages group', () => {
   render(<AppSidebarShopOwner />);
 
   expect(screen.getByRole('link', { name: /^Dashboard$/i })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: /Assist Center/i })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /Assist Center/i })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: /^Approval Center$/i })).toHaveAttribute(
     'href',
     '/shop-owner/action-center',
   );
+  expect(screen.queryByRole('link', { name: /Assist Center/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Approval Pages' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /Refund Approval|Price Approvals|Payslip Approval|Salary Adjustment Approval|Purchase Request Approval|Expense Approvals|Repair Reject Approval/i })).not.toBeInTheDocument();
 });

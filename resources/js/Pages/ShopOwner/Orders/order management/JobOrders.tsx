@@ -61,6 +61,9 @@ type Order = {
   carrierPhone?: string;
   trackingNumber?: string;
   trackingLink?: string;
+  deliveryMethod?: 'shop_owned' | 'third_party' | string;
+  thirdPartyDeliveryStatus?: string | null;
+  thirdPartyProviderStatus?: string | null;
   items: OrderItem[];
   quantity: number;
   shopName?: string;
@@ -407,6 +410,9 @@ export default function JobOrdersPage() {
             carrierPhone: order.carrier_phone || undefined,
             trackingNumber: order.tracking_number || undefined,
             trackingLink: order.tracking_link || undefined,
+            deliveryMethod: order.delivery_method || undefined,
+            thirdPartyDeliveryStatus: order.third_party_delivery_status || null,
+            thirdPartyProviderStatus: order.third_party_provider_status || null,
             items: order.items || [],
             quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
             shopName: order.shop?.shop_name || undefined,
@@ -977,6 +983,9 @@ export default function JobOrdersPage() {
             carrierPhone: item.carrier_phone || undefined,
             trackingNumber: item.tracking_number || undefined,
             trackingLink: item.tracking_link || undefined,
+            deliveryMethod: item.delivery_method || undefined,
+            thirdPartyDeliveryStatus: item.third_party_delivery_status || null,
+            thirdPartyProviderStatus: item.third_party_provider_status || null,
             eta: item.eta || undefined,
             pickup_enabled: item.pickup_enabled || false,
             pickup_enabled_at: item.pickup_enabled_at || null,
@@ -1188,10 +1197,13 @@ export default function JobOrdersPage() {
             product: item.items?.[0]?.product_name || '',
             carrierCompany: item.carrier_company || undefined,
             carrierName: item.carrier_name || undefined,
-            carrierPhone: item.carrier_phone || undefined,
-            trackingNumber: item.tracking_number || undefined,
-            trackingLink: item.tracking_link || undefined,
-            eta: item.eta || undefined,
+              carrierPhone: item.carrier_phone || undefined,
+              trackingNumber: item.tracking_number || undefined,
+              trackingLink: item.tracking_link || undefined,
+              deliveryMethod: item.delivery_method || undefined,
+              thirdPartyDeliveryStatus: item.third_party_delivery_status || null,
+              thirdPartyProviderStatus: item.third_party_provider_status || null,
+              eta: item.eta || undefined,
             pickup_enabled: item.pickup_enabled || false,
             pickup_enabled_at: item.pickup_enabled_at || null,
             retail_pos_refund: item.retail_pos_refund || null,
@@ -1455,6 +1467,9 @@ export default function JobOrdersPage() {
               carrierPhone: order.carrier_phone || undefined,
               trackingNumber: order.tracking_number || undefined,
               trackingLink: order.tracking_link || undefined,
+              deliveryMethod: order.delivery_method || undefined,
+              thirdPartyDeliveryStatus: order.third_party_delivery_status || null,
+              thirdPartyProviderStatus: order.third_party_provider_status || null,
               eta: order.eta || undefined,
               pickup_enabled: order.pickup_enabled || false,
               pickup_enabled_at: order.pickup_enabled_at || null,
@@ -1587,6 +1602,88 @@ export default function JobOrdersPage() {
         title: 'Error',
         text: error.response?.data?.message || 'Failed to activate pickup',
         icon: 'error',
+      });
+    }
+  };
+
+  const handleThirdPartyDelivery = async (
+    order: Order,
+    action: 'update' | 'in_transit' | 'delivered',
+  ) => {
+    let trackingNumberValue = order.trackingNumber || '';
+    if (action === 'update') {
+      const result = await Swal.fire({
+        title: 'Update courier tracking',
+        input: 'text',
+        inputValue: trackingNumberValue,
+        inputLabel: 'Tracking number',
+        inputPlaceholder: 'Enter the courier tracking number',
+        showCancelButton: true,
+        confirmButtonText: 'Save',
+        confirmButtonColor: '#2563eb',
+        inputValidator: (value) => value.trim() ? undefined : 'Tracking number is required.',
+      });
+      if (!result.isConfirmed) return;
+      trackingNumberValue = String(result.value || '').trim();
+    } else {
+      const label = action === 'in_transit' ? 'confirm the courier handoff' : 'mark this delivery as delivered';
+      const result = await Swal.fire({
+        title: 'Confirm courier update?',
+        text: 'This will ' + label + '.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Confirm',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#2563eb',
+      });
+      if (!result.isConfirmed) return;
+    }
+
+    try {
+      const csrfResponse = await fetch('/api/csrf-token', {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      if (!csrfResponse.ok) throw new Error('Failed to get CSRF token');
+      const { csrf_token: csrfToken } = await csrfResponse.json();
+      const response = await axios.post(
+        '/api/shop-owner/orders/' + order.id + '/third-party-delivery',
+        {
+          action,
+          carrier_company: order.carrierCompany,
+          carrier_name: order.carrierName,
+          carrier_phone: order.carrierPhone,
+          tracking_number: trackingNumberValue || undefined,
+          tracking_link: order.trackingLink,
+        },
+        {
+          headers: { 'X-CSRF-TOKEN': csrfToken },
+          withCredentials: true,
+        },
+      );
+      const nextLegStatus = response.data.leg?.status || order.thirdPartyDeliveryStatus;
+      const nextProviderStatus = response.data.leg?.provider_status || order.thirdPartyProviderStatus;
+      const nextOrder = {
+        ...order,
+        status: action === 'delivered' ? 'delivered' as OrderStatus : order.status,
+        trackingNumber: trackingNumberValue || order.trackingNumber,
+        thirdPartyDeliveryStatus: nextLegStatus,
+        thirdPartyProviderStatus: nextProviderStatus,
+      };
+      setOrders((previous) => previous.map((item) => item.id === order.id ? nextOrder : item));
+      setViewOrder((previous) => previous?.id === order.id ? nextOrder : previous);
+      await Swal.fire({
+        title: 'Updated',
+        text: action === 'update' ? 'Courier tracking was updated.' : 'Third-party delivery status was updated.',
+        icon: 'success',
+        confirmButtonColor: '#2563eb',
+      });
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Unable to update delivery',
+        text: error.response?.data?.message || 'The third-party delivery update was not completed.',
+        icon: 'error',
+        confirmButtonColor: '#2563eb',
       });
     }
   };
@@ -2623,6 +2720,37 @@ export default function JobOrdersPage() {
                   >
                     Arrange Return Pickup
                   </button>
+                )}
+                {isIndividualRegistration && viewOrder.status === 'shipped' && viewOrder.deliveryMethod === 'third_party' && (
+                  <>
+                    {viewOrder.thirdPartyDeliveryStatus !== 'delivered' && (
+                      <button
+                        type="button"
+                        onClick={() => handleThirdPartyDelivery(viewOrder, 'update')}
+                        className="px-4 py-2 border border-slate-600 bg-white hover:bg-slate-50 text-slate-900 rounded-lg font-medium transition-colors"
+                      >
+                        Update Tracking
+                      </button>
+                    )}
+                    {(!viewOrder.thirdPartyDeliveryStatus || viewOrder.thirdPartyDeliveryStatus === 'pending') && (
+                      <button
+                        type="button"
+                        onClick={() => handleThirdPartyDelivery(viewOrder, 'in_transit')}
+                        className="px-4 py-2 border border-blue-600 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                      >
+                        Confirm Courier Handoff
+                      </button>
+                    )}
+                    {viewOrder.thirdPartyDeliveryStatus === 'in_transit' && (
+                      <button
+                        type="button"
+                        onClick={() => handleThirdPartyDelivery(viewOrder, 'delivered')}
+                        className="px-4 py-2 border border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors"
+                      >
+                        Mark Delivered
+                      </button>
+                    )}
+                  </>
                 )}
                 {isIndividualRegistration && viewOrder.status === "shipped" && (
                   <button

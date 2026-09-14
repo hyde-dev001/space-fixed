@@ -693,7 +693,8 @@ class RepairPackageController extends Controller
 
     private function shopOwnerReadOnlyResponse(): ?JsonResponse
     {
-        if (! Auth::guard('shop_owner')->check()) {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if (! $shopOwner || strtolower(trim((string) $shopOwner->registration_type)) === 'individual') {
             return null;
         }
 

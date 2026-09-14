@@ -6,17 +6,22 @@ const readPage = (fileName: string) => readFileSync(
   join(process.cwd(), "resources/js/Pages/ERP/Finance", fileName),
   "utf8",
 );
+const readComponent = (fileName: string) => readFileSync(
+  join(process.cwd(), "resources/js/Pages/ERP/Finance/components", fileName),
+  "utf8",
+);
 
 const expense = readPage("Expense.tsx");
+const procurementExpensePanel = readComponent("ProcurementExpensePanel.tsx");
 const createInvoice = readPage("createInvoice.tsx");
 const invoice = readPage("Invoice.tsx");
 const payslipApproval = readPage("payslipApproval.tsx");
 
 describe("Finance UI consistency presentation", () => {
   it("uses a neutral surface for procured stock details", () => {
-    expect(expense).toContain("rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-2");
-    expect(expense).not.toContain("border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20");
-    expect(expense).toContain("Procured Stock Details");
+    expect(procurementExpensePanel).toContain("rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 space-y-1");
+    expect(procurementExpensePanel).not.toContain("border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20");
+    expect(procurementExpensePanel).toContain("Procurement Payable");
   });
 
   it("right-aligns Save Invoice with the back link and keeps it black", () => {

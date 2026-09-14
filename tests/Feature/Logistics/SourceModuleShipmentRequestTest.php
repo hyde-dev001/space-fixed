@@ -13,6 +13,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\Logistics\SourceShipmentService;
+use App\Services\Logistics\CustomerTrackingService;
 use App\Services\OrderRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
@@ -21,6 +22,67 @@ use Tests\TestCase;
 class SourceModuleShipmentRequestTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_individual_owner_can_progress_third_party_retail_delivery_and_customer_sees_provider(): void
+    {
+        $shop = ShopOwner::factory()->create([
+            'business_type' => 'retail',
+            'registration_type' => 'individual',
+            'status' => 'approved',
+        ]);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'processing',
+            'delivery_method' => 'third_party',
+            'carrier_company' => 'Lalamove',
+            'tracking_number' => 'LAM-123',
+            'tracking_link' => 'https://example.test/track/LAM-123',
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->patchJson("/api/shop-owner/orders/{$order->id}/status", [
+                'status' => 'shipped',
+                'delivery_method' => 'third_party',
+                'carrier_company' => 'Lalamove',
+                'tracking_number' => 'LAM-123',
+                'tracking_link' => 'https://example.test/track/LAM-123',
+            ])
+            ->assertOk();
+
+        $shipment = Shipment::query()
+            ->where('source_type', 'order')
+            ->where('source_id', $order->id)
+            ->where('purpose', 'retail_delivery')
+            ->firstOrFail();
+        $leg = $shipment->legs()->firstOrFail();
+
+        $this->assertSame('third_party', $order->fresh()->resolvedDeliveryMethod());
+        $this->assertSame('LAM-123', $leg->tracking_number);
+        $this->assertFalse((bool) $leg->requires_delivery_proof);
+        $this->assertSame('handoff_pending', $leg->provider_status);
+
+        $payload = app(CustomerTrackingService::class)->payload($shipment->fresh());
+        $this->assertSame('third_party', $payload['delivery_method']);
+        $this->assertSame('Lalamove', $payload['provider']);
+        $this->assertSame('LAM-123', $payload['legs'][0]['tracking_number']);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/orders/{$order->id}/third-party-delivery", [
+                'action' => 'in_transit',
+            ])
+            ->assertOk()
+            ->assertJsonPath('leg.status', 'in_transit');
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/orders/{$order->id}/third-party-delivery", [
+                'action' => 'delivered',
+            ])
+            ->assertOk()
+            ->assertJsonPath('leg.status', 'delivered');
+
+        $this->assertSame('delivered', $order->fresh()->status->value);
+        $this->assertSame('completed', $shipment->fresh()->status->value);
+    }
 
     public function test_order_marked_shipped_requests_outbound_shipment(): void
     {
