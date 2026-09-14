@@ -76,7 +76,8 @@ export default defineConfig({
                     }
 
                     if (id.includes('/three/')) {
-                        return 'vendor-three-core';
+                        // Bust the cached URL of a previously shipped malformed shader bundle.
+                        return 'vendor-three-core-showroom';
                     }
 
                     if (id.includes('/leaflet/')) {
