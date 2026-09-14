@@ -16,6 +16,7 @@ import {
 import { PosMode, resolveAllowedModes } from "../../../ERP/cashier/posModeResolver";
 import { buildRepairBreakdown } from "../../../../utils/repairPricing";
 import { repairPosHistoryApi } from "../../../../services/repairPosHistoryApi";
+import { useMaintenance } from "../../../../providers/MaintenanceProvider";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
@@ -498,6 +499,11 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 
 const PointOfSalePage = () => {
 	const { props } = usePage();
+	const { isRouteFrozen } = useMaintenance();
+	const repairCheckoutFrozen = isRouteFrozen("api.repair-pos.checkout");
+	const repairRefundFrozen = isRouteFrozen("api.repair-pos.refunds.store");
+	const retailRefundFrozen = isRouteFrozen("api.retail-pos.refunds.store");
+	const maintenanceFreezeMessage = "Critical POS actions are paused during maintenance.";
 	const erpMode = (props as any)?.erpMode === true;
 	const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
 	const cashierName = String((props as any)?.auth?.shop_owner?.name || (props as any)?.auth?.user?.name || "Shop Owner Cashier");
@@ -1150,9 +1156,10 @@ useEffect(() => {
 		cashReceivedInput,
 		hasInsufficientCash,
 		proofReference,
-	});
+	}) && !repairCheckoutFrozen;
 	const canPrint = isPaid;
 	const payDisableReason = useMemo(() => {
+		if (repairCheckoutFrozen) return maintenanceFreezeMessage;
 		if (isProcessingPayment) return "Processing payment...";
 		if (items.length === 0) return "Add at least one service before checkout.";
 		if (selectedRepairOrder && (customerName.trim().length === 0 || !isCustomerPhoneValid)) return 'This repair order is missing canonical customer name or phone. Update the repair record before checkout.';
@@ -1163,7 +1170,7 @@ useEffect(() => {
 		if (paymentMethod !== "cash" && !hasProofReference) return "Enter proof reference for GCash/Card payments.";
 		if (hasInsufficientCash) return `Insufficient cash by ${formatPeso(shortValue)}.`;
 		return "";
-	}, [customerEmail, customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, selectedRepairOrder, shortValue]);
+	}, [customerEmail, customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, maintenanceFreezeMessage, paymentMethod, repairCheckoutFrozen, selectedRepairOrder, shortValue]);
 	const effectiveDueType = useMemo(() => {
 		const policy = selectedRepairOrder?.paymentPolicy ?? "deposit_50";
 		return resolveDueTypeForPolicy(policy, requestedDueType);
@@ -2060,6 +2067,10 @@ useEffect(() => {
 	};
 
 	const handlePay = async () => {
+		if (repairCheckoutFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!canPay) return;
 
 		const hasRepairReference = Boolean(selectedRepairOrder || requestedRepairRequestId);
@@ -2234,6 +2245,10 @@ useEffect(() => {
 	};
 
 	const handleRetailRefund = async (receipt: ReceiptSnapshot) => {
+		if (retailRefundFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!canRequestRetailRefund(receipt)) {
 			await Swal.fire({
 				icon: "info",
@@ -2452,6 +2467,10 @@ useEffect(() => {
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
 		if (receipt.moduleType === "retail") {
 			await handleRetailRefund(receipt);
+			return;
+		}
+		if (repairRefundFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
 			return;
 		}
 
@@ -3797,7 +3816,8 @@ useEffect(() => {
 								<button
 									type="button"
 									onClick={handlePay}
-									disabled={!canPay}
+									disabled={!canPay || repairCheckoutFrozen}
+									title={repairCheckoutFrozen ? maintenanceFreezeMessage : undefined}
 									className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
 								>
 									{isProcessingPayment ? "Processing..." : "Pay"}
@@ -4022,10 +4042,11 @@ useEffect(() => {
 															</button>
 														)}
 														{(receipt.moduleType === "retail" ? canRequestRetailRefund(receipt) : canRequestRepairRefund(receipt)) && (
-															<button
-																type="button"
-																onClick={() => handleRequestRefund(receipt)}
-																title="Refund"
+									<button
+										type="button"
+										onClick={() => handleRequestRefund(receipt)}
+										disabled={receipt.moduleType === "retail" ? retailRefundFrozen : repairRefundFrozen}
+										title={(receipt.moduleType === "retail" ? retailRefundFrozen : repairRefundFrozen) ? maintenanceFreezeMessage : "Refund"}
 																aria-label="Refund"
 																className="inline-flex items-center justify-center bg-transparent p-1 text-amber-600 transition-colors hover:text-amber-700"
 															>

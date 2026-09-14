@@ -4,6 +4,11 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
+Schedule::command('maintenance:reconcile')
+    ->everyMinute()
+    ->withoutOverlapping()
+    ->onOneServer();
+
 Schedule::command('logistics:monitor-overdue')->everyFiveMinutes()->withoutOverlapping();
 
 Artisan::command('inspire', function () {

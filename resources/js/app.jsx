@@ -8,6 +8,7 @@ import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { ThemeProvider } from './context/ThemeContext';
 import { SidebarProvider } from './context/SidebarContext';
 import { QueryProvider } from './providers/QueryProvider';
+import { MaintenanceProvider } from './providers/MaintenanceProvider';
 import { CartProvider } from './contexts/CartContext';
 import { dismissAppLoader } from './utils/appLoader';
 import { syncPageTheme } from './utils/pageTheme';
@@ -36,7 +37,7 @@ const syncPagePresentation = (componentName = '') => {
     syncPageTheme(componentName);
 };
 
-const ApplicationProviders = ({ initialComponent, children }) => {
+const ApplicationProviders = ({ initialComponent, initialStatus, children }) => {
     const [component, setComponent] = useState(initialComponent);
 
     useEffect(() => {
@@ -50,17 +51,32 @@ const ApplicationProviders = ({ initialComponent, children }) => {
 
     return (
         <QueryProvider>
-            <ThemeProvider>
-                <SidebarProvider>
-                    <CartProvider syncEnabled={isUserSidePage && !isUserAuthPage}>
-                        {children}
-                    </CartProvider>
-                    <CustomerPageTransition />
-                </SidebarProvider>
-            </ThemeProvider>
+            <MaintenanceProvider isMaintenancePage={component === 'Maintenance'} initialStatus={initialStatus}>
+                <ThemeProvider>
+                    <SidebarProvider>
+                        <CartProvider syncEnabled={isUserSidePage && !isUserAuthPage}>
+                            {children}
+                        </CartProvider>
+                        <CustomerPageTransition />
+                    </SidebarProvider>
+                </ThemeProvider>
+            </MaintenanceProvider>
         </QueryProvider>
     );
 };
+
+const dispatchMaintenanceActive = (event) => {
+    const response = event?.detail?.response;
+    const header = response?.headers?.get?.('X-SoleSpace-Maintenance')
+        ?? response?.headers?.['x-solespace-maintenance'];
+
+    if (response?.status === 503 && header === 'active') {
+        window.dispatchEvent(new CustomEvent('solespace:maintenance-active'));
+    }
+};
+
+router.on('invalid', dispatchMaintenanceActive);
+router.on('error', dispatchMaintenanceActive);
 
 // Update CSRF token after each Inertia navigation
 router.on('navigate', (event) => {
@@ -113,7 +129,7 @@ createInertiaApp({
         installSweetAlertSelectObserver();
 
         root.render(
-            <ApplicationProviders initialComponent={component}>
+            <ApplicationProviders initialComponent={component} initialStatus={props.initialPage?.props?.status}>
                 <App {...props} />
             </ApplicationProviders>
         );

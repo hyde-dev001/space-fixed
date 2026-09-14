@@ -26,7 +26,8 @@ Route::get('/address/geocode', AddressGeocodingController::class)
 /**
  * PayMongo Webhook - Must be accessible without authentication
  */
-Route::post('/webhooks/paymongo', [\App\Http\Controllers\PaymongoWebhookController::class, 'handle']);
+Route::post('/webhooks/paymongo', [\App\Http\Controllers\PaymongoWebhookController::class, 'handle'])
+    ->name('webhooks.paymongo');
 
 /**
  * PayMongo Proxy - Frontend calls this to avoid CORS
@@ -232,16 +233,18 @@ Route::middleware(['web', 'auth:user', 'customer.identity.approved', 'throttle:1
         \Illuminate\Support\Facades\Log::error('PayMongo Proxy Exception', ['error' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
         return response()->json(['error' => 'Server error while creating payment session'], 500);
     }
-});
+})->name('payments.paymongo.create');
 
 Route::middleware(['web', 'auth:user,shop_owner'])->prefix('repair-pos')->group(function () {
-    Route::post('/checkout', [\App\Http\Controllers\Api\RepairPosController::class, 'checkout']);
+    Route::post('/checkout', [\App\Http\Controllers\Api\RepairPosController::class, 'checkout'])
+        ->name('api.repair-pos.checkout');
     Route::post('/warranty-claims', [\App\Http\Controllers\Api\RepairPosWarrantyClaimController::class, 'store']);
     Route::get('/manual-queue', [\App\Http\Controllers\Api\RepairPosController::class, 'listManualQueue']);
     Route::patch('/manual-queue/{repairId}/status', [\App\Http\Controllers\Api\RepairPosController::class, 'updateManualQueueStatus']);
     Route::get('/transactions', [\App\Http\Controllers\Api\RepairPosController::class, 'listTransactions']);
     Route::post('/payment-lines/{line}/verify', [\App\Http\Controllers\Api\RepairPosController::class, 'verifyPaymentLine']);
-    Route::post('/refunds', [\App\Http\Controllers\Api\RepairPosController::class, 'requestRefund']);
+    Route::post('/refunds', [\App\Http\Controllers\Api\RepairPosController::class, 'requestRefund'])
+        ->name('api.repair-pos.refunds.store');
     Route::post('/refunds/manual-rejected-no-account', [\App\Http\Controllers\Api\RepairPosController::class, 'manualRefundRejectedNoAccount']);
     Route::get('/refunds/mine', [\App\Http\Controllers\Api\RepairPosController::class, 'listMyRefunds']);
     Route::get('/refunds/queue', [\App\Http\Controllers\Api\RepairPosController::class, 'listRefundQueue']);
@@ -254,10 +257,12 @@ Route::middleware(['web', 'auth:user,shop_owner'])->prefix('repair-pos')->group(
 
 Route::middleware(['web', 'auth:user,shop_owner'])->prefix('retail-pos')->group(function () {
     Route::get('/products', [\App\Http\Controllers\Api\RetailPosController::class, 'listProducts']);
-    Route::post('/checkout', [\App\Http\Controllers\Api\RetailPosController::class, 'checkout']);
+    Route::post('/checkout', [\App\Http\Controllers\Api\RetailPosController::class, 'checkout'])
+        ->name('api.retail-pos.checkout');
     Route::get('/transactions', [\App\Http\Controllers\Api\RetailPosController::class, 'listTransactions']);
     Route::get('/transactions/{transaction}/receipt', [\App\Http\Controllers\Api\RetailPosController::class, 'showReceipt']);
-    Route::post('/refunds', [\App\Http\Controllers\Api\RetailPosController::class, 'requestRefund']);
+    Route::post('/refunds', [\App\Http\Controllers\Api\RetailPosController::class, 'requestRefund'])
+        ->name('api.retail-pos.refunds.store');
     Route::post('/refunds/{refund}/approve', [\App\Http\Controllers\Api\RetailPosController::class, 'approveRefund']);
     Route::post('/refunds/{refund}/execute', [\App\Http\Controllers\Api\RetailPosController::class, 'executeRefund']);
 });
@@ -290,8 +295,10 @@ Route::middleware(['web', 'auth:user', 'shop.isolation'])->prefix('finance/appro
         Route::get('pending', [\App\Http\Controllers\ApprovalController::class, 'getPending']);
         Route::get('history', [\App\Http\Controllers\ApprovalController::class, 'getHistory']);
         Route::get('{id}/history', [\App\Http\Controllers\ApprovalController::class, 'getApprovalHistory']);
-        Route::post('{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve']);
-        Route::post('{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject']);
+        Route::post('{id}/approve', [\App\Http\Controllers\ApprovalController::class, 'approve'])
+            ->name('api.finance.approvals.approve');
+        Route::post('{id}/reject', [\App\Http\Controllers\ApprovalController::class, 'reject'])
+            ->name('api.finance.approvals.reject');
     });
 });
 
@@ -301,13 +308,15 @@ Route::middleware(['web', 'auth:user', 'shop.isolation'])->prefix('finance/appro
 Route::post('/checkout/create-order', [\App\Http\Controllers\UserSide\CheckoutController::class, 'createOrder'])
     ->middleware(['web', 'auth:user', 'customer.identity.approved']);
 Route::post('/orders/{id}/update-payment-link', [\App\Http\Controllers\UserSide\CheckoutController::class, 'updatePaymentLink'])
-    ->middleware(['web', 'auth:user', 'throttle:20,1']);
+    ->middleware(['web', 'auth:user', 'throttle:20,1'])
+    ->name('api.orders.update-payment-link');
 Route::post('/orders/{id}/verify-payment', [\App\Http\Controllers\UserSide\CheckoutController::class, 'verifyPayment'])
     ->middleware(['web', 'auth:user', 'throttle:20,1']);
 Route::post('/orders/{id}/verify-payment-return', [\App\Http\Controllers\UserSide\CheckoutController::class, 'verifyPayment'])
     ->middleware(['web', 'throttle:20,1']);
 Route::post('/orders/{id}/retry-payment-session', [\App\Http\Controllers\UserSide\CheckoutController::class, 'retryPaymentSession'])
-    ->middleware(['web', 'auth:user', 'throttle:20,1']);
+    ->middleware(['web', 'auth:user', 'throttle:20,1'])
+    ->name('api.orders.retry-payment-session');
 Route::get('/orders/{id}/details', [\App\Http\Controllers\UserSide\CheckoutController::class, 'getOrderDetails'])
     ->middleware(['web', 'auth:user', 'throttle:20,1']);
 Route::post('/shipping/estimate', [\App\Http\Controllers\UserSide\ShippingEstimateController::class, 'estimate'])
@@ -392,7 +401,8 @@ Route::prefix('repairer/conversations')->middleware(['web', 'auth:user', 'permis
     Route::post('/{conversation}/transfer', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'transfer']);
     Route::patch('/{conversation}/status', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'updateStatus']);
     Route::patch('/{conversation}/priority', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'updatePriority']);
-    Route::post('/{conversation}/activate-payment', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'activatePayment']);
+    Route::post('/{conversation}/activate-payment', [\App\Http\Controllers\Api\Repairer\ConversationController::class, 'activatePayment'])
+        ->name('api.repairer.conversations.activate-payment');
 });
 
 /**

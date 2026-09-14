@@ -1,4 +1,5 @@
 import React from 'react';
+import { useMaintenance } from '../../../providers/MaintenanceProvider';
 
 /**
  * Get badge component for approval status
@@ -84,10 +85,14 @@ export const InlineApprovalActions: React.FC<InlineApprovalActionsProps> = ({
   onApprovalSuccess,
 }) => {
   const [isLoading, setIsLoading] = React.useState(false);
+  const { isRouteFrozen } = useMaintenance();
+  const approveFrozen = transactionType === 'expense' && isRouteFrozen('finance.expenses.approve');
+  const rejectFrozen = transactionType === 'expense' && isRouteFrozen('finance.expenses.reject');
+  const maintenanceFreezeMessage = 'Expense approval actions are paused during maintenance.';
   const canApprove = userRole && userApprovalLimit && amount <= userApprovalLimit;
 
   const handleApprove = async () => {
-    if (!canApprove) return;
+    if (!canApprove || approveFrozen) return;
 
     setIsLoading(true);
     try {
@@ -115,6 +120,7 @@ export const InlineApprovalActions: React.FC<InlineApprovalActionsProps> = ({
   };
 
   const handleReject = async () => {
+    if (rejectFrozen) return;
     setIsLoading(true);
     try {
       const endpoint = transactionType === 'expense'
@@ -146,15 +152,16 @@ export const InlineApprovalActions: React.FC<InlineApprovalActionsProps> = ({
 
   return (
     <div className="flex items-center gap-2">
+      {(approveFrozen || rejectFrozen) && <span role="status" className="text-xs font-medium text-amber-700 dark:text-amber-300">{maintenanceFreezeMessage}</span>}
       <button
         onClick={handleApprove}
-        disabled={!canApprove || isLoading}
+        disabled={!canApprove || isLoading || approveFrozen}
         className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
           canApprove && !isLoading
             ? 'text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300 hover:bg-green-50 dark:hover:bg-green-900/30'
             : 'text-gray-400 dark:text-gray-500 cursor-not-allowed'
         }`}
-        title="Approve"
+        title={approveFrozen ? maintenanceFreezeMessage : "Approve"}
       >
         {isLoading ? (
           <span className="animate-spin">↻</span>
@@ -166,13 +173,13 @@ export const InlineApprovalActions: React.FC<InlineApprovalActionsProps> = ({
       </button>
       <button
         onClick={handleReject}
-        disabled={isLoading}
+        disabled={isLoading || rejectFrozen}
         className={`inline-flex items-center justify-center w-8 h-8 rounded-lg transition-colors ${
           !isLoading
             ? 'text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30'
             : 'text-gray-400 dark:text-gray-500 cursor-not-allowed'
         }`}
-        title="Reject"
+        title={rejectFrozen ? maintenanceFreezeMessage : "Reject"}
       >
         {isLoading ? (
           <span className="animate-spin">↻</span>

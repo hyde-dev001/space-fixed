@@ -26,6 +26,7 @@ type NavItem = {
 
 const routeFallbacks: Record<string, string> = {
   'admin.system-monitoring': '/admin/system-monitoring',
+  'admin.maintenance.index': '/admin/maintenance',
   'admin.audit': '/admin/audit',
   'admin.administrators.index': '/admin/administrators',
   'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
@@ -100,6 +101,7 @@ const AppSidebar: React.FC = () => {
           { name: "Business Upgrade Requests", route: "admin.business-upgrade-requests.index", capability: "review_registrations", pro: false },
           { name: "Shop Reports", route: "admin.shop-reports", capability: "moderate_reports", pro: false },
           { name: "Suspension Appeals", route: "admin.suspension-appeals", capability: "view_appeals", pro: false },
+          { name: "System Maintenance", route: "admin.maintenance.index", capability: "view_platform_maintenance", pro: false },
           { name: "Audit History", route: "admin.audit", capability: "view_privileged_audit", pro: false },
         ],
       },

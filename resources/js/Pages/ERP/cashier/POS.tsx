@@ -16,6 +16,7 @@ import {
 import { repairPosHistoryApi } from "../../../services/repairPosHistoryApi";
 import { buildRepairBreakdown } from "../../../utils/repairPricing";
 import { PosMode, resolveAllowedModes } from "./posModeResolver";
+import { useMaintenance } from "../../../providers/MaintenanceProvider";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
@@ -776,6 +777,12 @@ const resolvePosBusinessType = (props: any): string => {
 
 const PointOfSalePage = () => {
 	const { props } = usePage();
+	const { isRouteFrozen } = useMaintenance();
+	const repairCheckoutFrozen = isRouteFrozen("api.repair-pos.checkout");
+	const retailCheckoutFrozen = isRouteFrozen("api.retail-pos.checkout");
+	const repairRefundFrozen = isRouteFrozen("api.repair-pos.refunds.store");
+	const retailRefundFrozen = isRouteFrozen("api.retail-pos.refunds.store");
+	const maintenanceFreezeMessage = "Critical POS actions are paused during maintenance.";
 	const cashierName = String((props as any)?.auth?.user?.name || "Repairer Cashier");
 	const businessType = resolvePosBusinessType(props as any);
 	const allowedModes = useMemo(() => resolveAllowedModes(businessType), [businessType]);
@@ -1488,6 +1495,10 @@ const PointOfSalePage = () => {
 	};
 
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
+		if (repairRefundFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (isActiveWarrantyClaimStatus(receipt.latestWarrantyClaimStatus)) {
 			await Swal.fire({
 				icon: "info",
@@ -1794,6 +1805,10 @@ const PointOfSalePage = () => {
 	};
 
 	const handleRetailRefund = async (receipt: ReceiptSnapshot) => {
+		if (retailRefundFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!canRequestRetailRefund(receipt)) {
 			await Swal.fire({
 				icon: "info",
@@ -2155,9 +2170,10 @@ const PointOfSalePage = () => {
 		cashReceivedInput,
 		hasInsufficientCash,
 		proofReference,
-	});
+	}) && !repairCheckoutFrozen;
 	const canPrint = isPaid;
 	const payDisableReason = useMemo(() => {
+		if (repairCheckoutFrozen) return maintenanceFreezeMessage;
 		if (isProcessingPayment) return "Processing payment...";
 		if (items.length === 0) return "Add at least one service before checkout.";
 		if (selectedRepairOrder && (customerName.trim().length === 0 || !isCustomerPhoneValid)) return 'This repair order is missing canonical customer name or phone. Update the repair record before checkout.';
@@ -2168,7 +2184,7 @@ const PointOfSalePage = () => {
 		if (paymentMethod !== "cash" && !hasProofReference) return "Enter proof reference for GCash/Card payments.";
 		if (hasInsufficientCash) return `Insufficient cash by ${formatPeso(shortValue)}.`;
 		return "";
-	}, [customerEmail, customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, selectedRepairOrder, shortValue]);
+	}, [customerEmail, customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, maintenanceFreezeMessage, paymentMethod, repairCheckoutFrozen, selectedRepairOrder, shortValue]);
 	const retailSubtotal = useMemo(() => {
 		return retailCart.reduce((sum, item) => sum + (item.qty * item.unitPrice), 0);
 	}, [retailCart]);
@@ -2196,8 +2212,9 @@ const PointOfSalePage = () => {
 		hasInsufficientCash: retailHasInsufficientCash,
 		proofReference: retailProofReference,
 		requireCustomerInfo: false,
-	});
+	}) && !retailCheckoutFrozen;
 	const retailPayDisableReason = useMemo(() => {
+		if (retailCheckoutFrozen) return maintenanceFreezeMessage;
 		if (retailProcessingPayment) return "Processing payment...";
 		if (retailCart.length === 0) return "Add at least one product before checkout.";
 		if (!isOptionalEmailValid(retailCustomerEmail)) return 'Enter a valid email address or leave email blank.';
@@ -2205,7 +2222,7 @@ const PointOfSalePage = () => {
 		if (retailPaymentMethod !== "cash" && retailProofReference.trim().length === 0) return "Enter proof reference for GCash/Card payments.";
 		if (retailHasInsufficientCash) return `Insufficient cash by ${formatPeso(retailShortValue)}.`;
 		return "";
-	}, [retailCart.length, retailCashReceivedInput, retailCustomerEmail, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
+	}, [maintenanceFreezeMessage, retailCart.length, retailCashReceivedInput, retailCustomerEmail, retailCustomerName, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue, retailCheckoutFrozen]);
 	const effectiveDueType = useMemo(() => {
 		if (selectedRepairOrder) {
 			return selectedRepairOrder.dueTypeToCollect ?? "full";
@@ -2889,6 +2906,10 @@ const PointOfSalePage = () => {
 	};
 
 	const handlePay = async () => {
+		if (repairCheckoutFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!canPay) return;
 
 		const hasRepairReference = Boolean(selectedRepairOrder || requestedRepairRequestId);
@@ -3055,6 +3076,10 @@ const PointOfSalePage = () => {
 	};
 
 	const handleRetailPay = async () => {
+		if (retailCheckoutFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!retailCanPay) {
 			return;
 		}
@@ -3682,7 +3707,8 @@ const PointOfSalePage = () => {
 									<button
 										type="button"
 										onClick={handleRetailPay}
-										disabled={!retailCanPay}
+										disabled={!retailCanPay || retailCheckoutFrozen}
+										title={retailCheckoutFrozen ? maintenanceFreezeMessage : undefined}
 										className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
 									>
 										{retailProcessingPayment ? "Processing..." : "Pay"}
@@ -4167,7 +4193,8 @@ const PointOfSalePage = () => {
 								<button
 									type="button"
 									onClick={handlePay}
-									disabled={!canPay}
+									disabled={!canPay || repairCheckoutFrozen}
+									title={repairCheckoutFrozen ? maintenanceFreezeMessage : undefined}
 									className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
 								>
 									{isProcessingPayment ? "Processing..." : "Pay"}
@@ -4323,11 +4350,12 @@ const PointOfSalePage = () => {
 															</button>
 														)}
 															{receipt.moduleType !== "retail" && canRequestRepairRefund(receipt) && (
-															<button
-																type="button"
-																onClick={() => handleRequestRefund(receipt)}
-																title={isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund"}
-																aria-label={isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund"}
+																	<button
+																		type="button"
+																		onClick={() => handleRequestRefund(receipt)}
+																		disabled={repairRefundFrozen}
+																		title={repairRefundFrozen ? maintenanceFreezeMessage : (isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund")}
+																		aria-label={isManualRejectedNoAccountRepair(receipt) ? "Manual POS Refund" : "Request Refund"}
 																className="inline-flex items-center justify-center bg-transparent p-1 text-amber-600 transition-colors hover:text-amber-700"
 															>
 																<svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -4348,9 +4376,11 @@ const PointOfSalePage = () => {
 															</button>
 														)}
 															{receipt.moduleType === "retail" && canRequestRetailRefund(receipt) && (
-																<button
-																	type="button"
-																	onClick={() => handleRetailRefund(receipt)}
+										<button
+											type="button"
+											onClick={() => handleRetailRefund(receipt)}
+											disabled={retailRefundFrozen}
+											title={retailRefundFrozen ? maintenanceFreezeMessage : undefined}
 																	className="rounded-lg border border-violet-300 px-3 py-1 text-xs font-semibold text-violet-700 transition hover:bg-violet-50"
 																>
 																	Retail Refund

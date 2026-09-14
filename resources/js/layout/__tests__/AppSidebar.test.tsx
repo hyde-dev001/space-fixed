@@ -51,6 +51,7 @@ beforeEach(() => {
           'view_appeals',
           'view_privileged_audit',
           'view_monitoring',
+          'view_platform_maintenance',
         ],
       },
     },
@@ -60,6 +61,7 @@ beforeEach(() => {
     const routes: Record<string, string> = {
       landing: '/',
       'admin.system-monitoring': '/admin/system-monitoring',
+      'admin.maintenance.index': '/admin/maintenance',
       'admin.audit': '/admin/audit',
       'admin.registrations.index': '/admin/registrations',
       'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
@@ -95,6 +97,7 @@ it('shows truthful canonical operational links to both privileged roles', () => 
 
   expect(screen.getByRole('link', { name: /dashboard/i })).toHaveAttribute('href', '/admin/system-monitoring');
   expect(screen.getByRole('link', { name: /audit history/i })).toHaveAttribute('href', '/admin/audit');
+  expect(screen.getByRole('link', { name: /system maintenance/i })).toHaveAttribute('href', '/admin/maintenance');
   expect(screen.getByRole('link', { name: /user management/i })).toHaveAttribute('href', '/admin/users');
   expect(screen.getByRole('link', { name: /shop management/i })).toHaveAttribute('href', '/admin/registrations');
   expect(screen.getByRole('link', { name: /registered shops/i })).toHaveAttribute('href', '/admin/shops');
