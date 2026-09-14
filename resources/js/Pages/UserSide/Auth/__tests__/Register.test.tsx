@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -12,7 +13,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
-  router: { post: mocks.routerPost },
+  Link: ({ children, href, ...props }: { children?: ReactNode; href?: string; [key: string]: unknown }) => (
+    <a href={href} {...props}>{children}</a>
+  ),
+  router: { post: mocks.routerPost, visit: vi.fn() },
 }));
 
 vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
