@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:public/build/assets/index-B6cL9mSR.js
-import{j as e}from"./app-BhAMfv0w.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
-========
-import{j as e}from"./app-DZOAx_zU.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
->>>>>>>> 9a497dee4 (feat: add platform maintenance mode):public/build/assets/index-Bshi_Utd.js
