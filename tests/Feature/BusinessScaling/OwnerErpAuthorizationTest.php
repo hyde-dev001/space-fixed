@@ -217,6 +217,26 @@ final class OwnerErpAuthorizationTest extends TestCase
         }
     }
 
+    public function test_individual_owner_refund_queues_are_not_gated_by_the_company_finance_module(): void
+    {
+        $retailOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+        $repairOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+
+        $this->actingAs($retailOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/refunds')
+            ->assertOk();
+
+        $this->actingAs($repairOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/repair-refunds')
+            ->assertOk();
+    }
+
     public function test_owner_audit_export_fails_closed_before_controller_guard_mismatch(): void
     {
         $owner = ShopOwner::factory()->approved()->create([
