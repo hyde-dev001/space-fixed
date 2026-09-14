@@ -1040,6 +1040,9 @@ class LandingPageController extends Controller
                 : [],
             'can_edit_showroom' => $forVirtualShowroom
                 && $this->showroomPlacements->canEdit(request(), (int) $shopOwner->id),
+            'showroom_setup_required' => $forVirtualShowroom
+                && $this->showroomPlacements->canManage(request(), (int) $shopOwner->id)
+                && !Schema::hasTable('showroom_product_placements'),
         ];
 
         $isRepairCapableShop = in_array($normalizedBusinessType, ['repair', 'both'], true);

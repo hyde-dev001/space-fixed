@@ -63,4 +63,14 @@ describe('connected flagship layout', () => {
 			)?.key).toBe(seat.key);
 		}
 	});
+
+	it('seats the camera facing the game table', () => {
+		const layout = getShowroomLayout(60);
+		layout.seats.forEach((seat, index) => {
+			const lounge = layout.lounges[index];
+			expect(seat.cameraPosition[0]).toBe(lounge.x);
+			expect(seat.cameraPosition[2]).toBeGreaterThan(lounge.z);
+			expect(seat.lookAt).toEqual([lounge.x, 0.8, lounge.z - 0.4]);
+		});
+	});
 });

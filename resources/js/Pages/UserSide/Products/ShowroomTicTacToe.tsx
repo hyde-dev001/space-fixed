@@ -12,6 +12,11 @@ interface ShowroomTicTacToeProps {
 	open: boolean;
 	onStandUp: () => void;
 	onClose: () => void;
+	onBoardChange?: (board: TicTacToeBoard, winningLine: number[], result: RoundResult | null) => void;
+}
+
+export interface ShowroomTicTacToeHandle {
+	playAt: (index: number) => void;
 }
 
 type RoundResult = 'X' | 'O' | 'draw';
@@ -27,7 +32,7 @@ const ROUND_TRANSITION_MS = 1650;
 
 const createEmptyBoard = (): TicTacToeBoard => [...EMPTY_BOARD] as TicTacToeBoard;
 
-const ShowroomTicTacToe: React.FC<ShowroomTicTacToeProps> = ({ open, onStandUp, onClose }) => {
+const ShowroomTicTacToe = React.forwardRef<ShowroomTicTacToeHandle, ShowroomTicTacToeProps>(({ open, onStandUp, onClose, onBoardChange }, ref) => {
 	const [board, setBoard] = useState<TicTacToeBoard>(createEmptyBoard);
 	const [turn, setTurn] = useState<'X' | 'O'>('X');
 	const [result, setResult] = useState<RoundResult | null>(null);
@@ -101,6 +106,11 @@ const ShowroomTicTacToe: React.FC<ShowroomTicTacToeProps> = ({ open, onStandUp, 
 		setTurn('O');
 	};
 
+	React.useImperativeHandle(ref, () => ({ playAt: play }));
+	useEffect(() => {
+		onBoardChange?.(board, winningLine, result);
+	}, [board, winningLine, result, onBoardChange]);
+
 	useEffect(() => {
 		if (!open || turn !== 'O' || result) return;
 
@@ -169,23 +179,22 @@ const ShowroomTicTacToe: React.FC<ShowroomTicTacToeProps> = ({ open, onStandUp, 
 				}
 			`}</style>
 			<div
-				className="pointer-events-auto absolute inset-0 z-50 flex items-center justify-center bg-[#120f0c]/65 p-4 backdrop-blur-[2px]"
+				className="pointer-events-none absolute inset-0 z-50"
 				onPointerDown={(event) => event.stopPropagation()}
 				onPointerMove={(event) => event.stopPropagation()}
 				onPointerUp={(event) => event.stopPropagation()}
 				onPointerCancel={(event) => event.stopPropagation()}
 			>
 				<section
-					role="dialog"
-					aria-modal="true"
+					role="region"
 					aria-labelledby="showroom-xox-title"
-					className="relative w-full max-w-2xl overflow-hidden rounded-[1.4rem] border border-[#8e6d4b] bg-[#1a1714] text-[#f2e8d8] shadow-[0_28px_90px_rgba(0,0,0,0.55)]"
+					className="pointer-events-auto absolute bottom-4 right-4 w-[min(90vw,300px)] overflow-hidden rounded-xl border border-[#8e6d4b] bg-[#1a1714]/95 text-[#f2e8d8] shadow-[0_20px_55px_rgba(0,0,0,0.5)]"
 				>
 					<div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#d7b77d] to-transparent opacity-90" />
 					<div className="flex items-start justify-between gap-4 border-b border-[#46392d] px-5 py-4 sm:px-6">
 						<div>
 							<p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[#bfa47f]">Lounge table / XOX session</p>
-							<h2 id="showroom-xox-title" className="mt-1 text-xl font-semibold tracking-tight sm:text-2xl">Play against the showroom bot</h2>
+							<h2 id="showroom-xox-title" className="mt-1 text-base font-semibold tracking-tight">XOX at the lounge table</h2>
 						</div>
 						<button
 							type="button"
@@ -197,14 +206,14 @@ const ShowroomTicTacToe: React.FC<ShowroomTicTacToeProps> = ({ open, onStandUp, 
 						</button>
 					</div>
 
-					<div className="grid gap-5 p-5 sm:p-6 lg:grid-cols-[minmax(0,1fr)_150px]">
+					<div className="grid gap-3 p-4">
 						<div>
 							<div className="flex items-center justify-between gap-3">
 								<p className="text-sm text-[#d8c7b0]" aria-live="polite">{status}</p>
-								<span className="rounded-full border border-[#594836] bg-[#211c18] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#bfa47f]">Continuous rounds</span>
+								<span className="sr-only">Continuous rounds</span>
 							</div>
 
-							<div className="relative mt-4 rounded-2xl border border-[#5b4634] bg-[#100e0c] p-3 shadow-inner shadow-black/40 sm:p-4" role="grid" aria-label="XOX board">
+							<div className="sr-only" role="grid" aria-label="XOX board">
 								<div className="grid grid-cols-3 gap-2 sm:gap-3">
 									{board.map((cell, index) => {
 										const isWinningCell = winningLine.includes(index);
@@ -237,17 +246,17 @@ const ShowroomTicTacToe: React.FC<ShowroomTicTacToeProps> = ({ open, onStandUp, 
 								)}
 							</div>
 
-							<p className="mt-3 text-xs text-[#8f7c68]">Rounds continue automatically while you remain seated.</p>
+							<p className="mt-2 text-xs text-[#bfa47f]">Click a square on the table. Rounds continue while seated.</p>
+							{resultLabel && <p className="xox-result-enter mt-2 text-lg font-bold text-[#e4c486]" aria-live="assertive">{resultLabel}</p>}
 						</div>
 
-						<aside className="rounded-2xl border border-[#554332] bg-[#211b17] p-4 shadow-inner shadow-black/25" aria-label="Session score">
+						<aside className="rounded-xl border border-[#554332] bg-[#211b17] p-3" aria-label="Session score">
 							<p className="text-[10px] font-semibold uppercase tracking-[0.25em] text-[#bfa47f]">Session score</p>
-							<div className="mt-4 space-y-3">
-								<div className="flex items-center justify-between border-b border-[#443429] pb-3"><span className="text-sm text-[#eadfce]">You</span><strong className="text-2xl text-[#f2e8d8]">{sessionScore.wins}</strong></div>
-								<div className="flex items-center justify-between border-b border-[#443429] pb-3"><span className="text-sm text-[#c58d7e]">Bot</span><strong className="text-2xl text-[#db8d71]">{sessionScore.losses}</strong></div>
-								<div className="flex items-center justify-between"><span className="text-sm text-[#d9b975]">Draws</span><strong className="text-2xl text-[#e2bc72]">{sessionScore.draws}</strong></div>
+							<div className="mt-3 flex justify-between gap-3">
+								<div className="flex flex-col items-center"><span className="text-xs text-[#eadfce]">You</span><strong className="text-xl text-[#f2e8d8]">{sessionScore.wins}</strong></div>
+								<div className="flex flex-col items-center"><span className="text-xs text-[#c58d7e]">Bot</span><strong className="text-xl text-[#db8d71]">{sessionScore.losses}</strong></div>
+								<div className="flex flex-col items-center"><span className="text-xs text-[#d9b975]">Draws</span><strong className="text-xl text-[#e2bc72]">{sessionScore.draws}</strong></div>
 							</div>
-							<div className="mt-5 rounded-xl border border-[#584634] bg-[#181411] px-3 py-2 text-center text-[10px] uppercase tracking-[0.18em] text-[#8f7c68]">Stand up to end session</div>
 						</aside>
 					</div>
 
@@ -258,6 +267,7 @@ const ShowroomTicTacToe: React.FC<ShowroomTicTacToeProps> = ({ open, onStandUp, 
 			</div>
 		</>
 	);
-};
+});
 
+ShowroomTicTacToe.displayName = 'ShowroomTicTacToe';
 export default ShowroomTicTacToe;

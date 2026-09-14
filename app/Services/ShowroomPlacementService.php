@@ -36,10 +36,12 @@ final class ShowroomPlacementService
 
     public function canEdit(Request $request, int $shopOwnerId): bool
     {
-        if (!Schema::hasTable('showroom_product_placements')) {
-            return false;
-        }
+        return Schema::hasTable('showroom_product_placements')
+            && $this->canManage($request, $shopOwnerId);
+    }
 
+    public function canManage(Request $request, int $shopOwnerId): bool
+    {
         $owner = $request->user('shop_owner');
         if ($owner && (int) $owner->getKey() === $shopOwnerId) {
             return true;

@@ -73,14 +73,15 @@ describe('standalone virtual showroom', () => {
 		expect(sceneSource).not.toContain("sign('SOLESPACE'");
 	});
 
-	it('provides cursor-look and world-space interaction cues without stealing edit drags', () => {
+	it('uses drag-look and E placement with world-space interaction cues', () => {
 		expect(showroomSource).toContain('createShowroomPromptSprite');
-		expect(showroomSource).toContain('updateCameraTargetFromPointer');
-		expect(showroomSource).toContain('Move your cursor to look around');
-		expect(showroomSource).toContain('editModeRef.current');
+		expect(showroomSource).toContain('targetCameraYawRef.current += deltaX * sensitivity');
+		expect(showroomSource).toContain('handlePlacementKey()');
+		expect(showroomSource).toContain('nearbyPlacementSlot()');
+		expect(showroomSource).toContain('Click and drag to look around');
 		expect(sceneSource).toContain('seatPromptSprites');
 		expect(sceneSource).toContain("createShowroomPromptSprite('E', 'PLAY'");
-		expect(showroomSource).toContain("createShowroomPromptSprite('CLICK'");
+		expect(showroomSource).toContain("createShowroomPromptSprite(canEditShowroom ? 'CLICK + E' : 'CLICK')");
 	});
 
 	it('keeps XOX as a themed continuous scored session', () => {
@@ -88,5 +89,7 @@ describe('standalone virtual showroom', () => {
 		expect(xoxSource).toContain('sessionScore');
 		expect(xoxSource).toContain('xox-result');
 		expect(xoxSource).not.toContain('New game');
+		expect(showroomSource).toContain('drawTableBoard');
+		expect(showroomSource).toContain('xoxGameRef.current?.playAt');
 	});
 });

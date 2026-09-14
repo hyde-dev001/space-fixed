@@ -25,6 +25,7 @@ interface Shop {
   showroom_plan_name?: string | null;
   showroom_placements?: Array<{ product_id: number; slot_key: string }>;
   can_edit_showroom?: boolean;
+  showroom_setup_required?: boolean;
 }
 
 interface Props {
@@ -64,6 +65,7 @@ const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
             slotKey: placement.slot_key,
           }))}
           canEditShowroom={shop.can_edit_showroom === true}
+          showroomSetupRequired={shop.showroom_setup_required === true}
           isStandalonePage
           onFocusModeChange={setIsFocusMode}
           showroomSlotLimit={shop.showroom_slot_limit}
