@@ -9,6 +9,7 @@ use App\Models\ShopOwnerSubscription;
 use App\Models\ShowroomProductPlacement;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -190,6 +191,20 @@ class ShowroomPlacementTest extends TestCase
             ->get(route('shop-profile.virtual-showroom', ['id' => $shop->id]))
             ->assertInertia(fn ($page) => $page
                 ->component('UserSide/Profile/VirtualShowroomPage')
+                ->where('shop.can_edit_showroom', false));
+    }
+
+    public function test_showroom_page_remains_readable_before_placement_migration_runs(): void
+    {
+        $shop = $this->shopWithSubscription();
+
+        Schema::dropIfExists('showroom_product_placements');
+
+        $this->actingAs($shop, 'shop_owner')
+            ->get(route('shop-profile.virtual-showroom', ['id' => $shop->id]))
+            ->assertInertia(fn ($page) => $page
+                ->component('UserSide/Profile/VirtualShowroomPage')
+                ->where('shop.showroom_placements', [])
                 ->where('shop.can_edit_showroom', false));
     }
 }

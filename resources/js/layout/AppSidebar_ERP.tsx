@@ -976,6 +976,7 @@ const EmployeeSidebarERP: React.FC = () => {
     ?? Boolean(shopModules);
   const role = (props as any)?.auth?.user?.role;
   const roles = (props as any)?.auth?.user?.roles || [];
+  const staffShopOwnerId = Number(auth?.user?.shop_owner_id ?? 0);
   const permissions = (props as any)?.auth?.permissions || [];
   const rawBusinessType = String(
     auth?.shop_owner?.business_type
@@ -1225,6 +1226,11 @@ const EmployeeSidebarERP: React.FC = () => {
         const queryString = url.includes("?") ? url.split("?")[1] : "";
         const baseUrl = url.split("?")[0];
 
+        if (routeName === "shop-profile.virtual-showroom" && params?.id) {
+          const showroomPath = `/shop-profile/${params.id}/virtual-showroom`;
+          return baseUrl === showroomPath || baseUrl.startsWith(showroomPath + "/");
+        }
+
         if (routeName === "erp.staff.warranty-queue") {
           if (baseUrl === "/erp/staff/warranty-queue" || baseUrl === "/erp/repairer/warranty-queue") {
             return true;
@@ -1295,6 +1301,10 @@ const EmployeeSidebarERP: React.FC = () => {
 
   const getHrefByRoute = (routeName?: string, params?: Record<string, any>) => {
     if (!routeName) return "#";
+
+    if (routeName === "shop-profile.virtual-showroom" && params?.id) {
+      return `/shop-profile/${params.id}/virtual-showroom`;
+    }
     
     // First try to use route() helper so route-name changes stay in sync with backend
     try {
@@ -1466,7 +1476,7 @@ const EmployeeSidebarERP: React.FC = () => {
     if (activeSubmenuKey && openSubmenu !== activeSubmenuKey) {
       setOpenSubmenu(activeSubmenuKey);
     }
-  }, [url, isActive, role, roles, permissions, setOpenSubmenu]);
+  }, [url, isActive, role, roles, permissions, staffShopOwnerId, setOpenSubmenu]);
 
   useEffect(() => {
     if (openSubmenu !== null) {
@@ -2019,7 +2029,26 @@ const EmployeeSidebarERP: React.FC = () => {
   const getFilteredStaffItems = () => {
     if (isCashierOnly) return [];
 
-    return staffItems.filter((item) => {
+    const staffShowroomItem: NavItem | null = staffShopOwnerId > 0 ? {
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 10.5 12 3l9 7.5" />
+          <path d="M5 9.5V21h14V9.5" />
+          <path d="M8 21v-7h8v7" />
+          <path d="M8 10h8" />
+        </svg>
+      ),
+      name: "Virtual Showroom",
+      route: "shop-profile.virtual-showroom",
+      params: { id: staffShopOwnerId },
+    } : null;
+    const items = staffShowroomItem ? [...staffItems, staffShowroomItem] : staffItems;
+
+    return items.filter((item) => {
+      if (item.route === "shop-profile.virtual-showroom") {
+        return staffShopOwnerId > 0;
+      }
+
       if (item.route?.startsWith("erp.logistics.")) {
         return false;
       }
