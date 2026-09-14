@@ -14,6 +14,8 @@ use App\Services\OrderRefundService;
 use App\Services\Orders\OrderFulfillmentService;
 use App\Services\Orders\OrderOwnerProjection;
 use App\Services\RetailPosRefundSummaryService;
+use App\Services\Logistics\ShipmentLegService;
+use App\Models\Logistics\Shipment;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -50,6 +52,7 @@ class OrderController extends Controller
             ->with([
                 'items.product',
                 'customer',
+                'logisticsShipments.legs',
                 'refunds' => function ($refundQuery) use ($includeRefundItems) {
                     if ($includeRefundItems) {
                         $refundQuery->with('items.orderItem');
@@ -98,6 +101,9 @@ class OrderController extends Controller
                     ? round((float) $order->vat_rate, 2)
                     : null;
                 $latestRefund = $order->refunds->first();
+                $thirdPartyLeg = $order->logisticsShipments
+                    ->flatMap(fn ($shipment) => $shipment->legs)
+                    ->first();
 
                 $latestRefundItems = [];
                 if ($includeRefundItems && $latestRefund) {
@@ -147,6 +153,16 @@ class OrderController extends Controller
                     'payment_method' => $order->payment_method ?? '',
                     'tracking_number' => $order->tracking_number ?? '',
                     'carrier_company' => $order->carrier_company ?? '',
+                    'carrier_name' => $order->carrier_name ?? '',
+                    'carrier_phone' => $order->carrier_phone ?? '',
+                    'tracking_link' => $order->tracking_link ?? '',
+                    'delivery_method' => $order->resolvedDeliveryMethod(),
+                    'third_party_delivery_status' => $order->resolvedDeliveryMethod() === 'third_party'
+                        ? $thirdPartyLeg?->status?->value
+                        : null,
+                    'third_party_provider_status' => $order->resolvedDeliveryMethod() === 'third_party'
+                        ? $thirdPartyLeg?->provider_status
+                        : null,
                     'eta' => $order->eta ?? null,
                     'retail_pos_refund' => $retailPosRefundSummaries[(int) $order->id] ?? null,
                     'latest_refund' => $latestRefund ? [
@@ -226,6 +242,7 @@ class OrderController extends Controller
             ->with([
                 'items.product',
                 'customer',
+                'logisticsShipments.legs',
                 'refunds' => function ($refundQuery) use ($includeRefundItems) {
                     if ($includeRefundItems) {
                         $refundQuery->with('items.orderItem');
@@ -248,6 +265,9 @@ class OrderController extends Controller
             ? round((float) $order->vat_rate, 2)
             : null;
         $latestRefund = $order->refunds->first();
+        $thirdPartyLeg = $order->logisticsShipments
+            ->flatMap(fn ($shipment) => $shipment->legs)
+            ->first();
         $latestRefundItems = [];
         if ($includeRefundItems && $latestRefund) {
             $latestRefundItems = $latestRefund->items
@@ -302,6 +322,13 @@ class OrderController extends Controller
             'carrier_name' => $order->carrier_name ?? '',
             'carrier_phone' => $order->carrier_phone ?? '',
             'tracking_link' => $order->tracking_link ?? '',
+            'delivery_method' => $order->resolvedDeliveryMethod(),
+            'third_party_delivery_status' => $order->resolvedDeliveryMethod() === 'third_party'
+                ? $thirdPartyLeg?->status?->value
+                : null,
+            'third_party_provider_status' => $order->resolvedDeliveryMethod() === 'third_party'
+                ? $thirdPartyLeg?->provider_status
+                : null,
             'eta' => $order->eta ?? null,
             'retail_pos_refund' => $retailPosRefundSummary[(int) $order->id] ?? null,
             'latest_refund' => $latestRefund ? [
@@ -380,6 +407,7 @@ class OrderController extends Controller
             'carrier_phone' => 'nullable|string|max:50',
             'tracking_link' => 'nullable|url|max:500',
             'eta' => 'nullable|date',
+            'delivery_method' => 'nullable|in:shop_owned,third_party',
         ]);
 
         $order = Order::where('shop_owner_id', $shopOwner->id)->find($id);
@@ -401,6 +429,7 @@ class OrderController extends Controller
                         'carrier_phone',
                         'tracking_link',
                         'eta',
+                        'delivery_method',
                     ])),
                 ),
                 'completed' => $this->orderFulfillmentService->completeDirectly($order, $shopOwner),
@@ -422,6 +451,53 @@ class OrderController extends Controller
                 'tracking_number' => $updatedOrder->tracking_number,
                 'updated_at' => $updatedOrder->updated_at->toISOString(),
             ],
+        ]);
+    }
+
+    public function updateThirdPartyDelivery(Request $request, $id, ShipmentLegService $legs)
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if (! $shopOwner) {
+            return response()->json(['error' => 'Unauthenticated'], 401);
+        }
+
+        if ($readOnlyResponse = $this->denyNonIndividualOrderMutation($shopOwner)) {
+            return $readOnlyResponse;
+        }
+
+        $validated = $request->validate([
+            'action' => ['required', 'in:update,in_transit,delivered'],
+            'carrier_company' => ['nullable', 'string', 'max:255'],
+            'carrier_name' => ['nullable', 'string', 'max:255'],
+            'carrier_phone' => ['nullable', 'string', 'max:50'],
+            'tracking_number' => ['nullable', 'string', 'max:255'],
+            'tracking_link' => ['nullable', 'url', 'max:500'],
+            'provider_status' => ['nullable', 'string', 'max:80'],
+        ]);
+
+        $order = Order::query()
+            ->whereKey($id)
+            ->where('shop_owner_id', $shopOwner->id)
+            ->firstOrFail();
+        abort_unless($order->resolvedDeliveryMethod() === 'third_party', 403);
+
+        $leg = Shipment::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->where('source_type', 'order')
+            ->where('source_id', $order->id)
+            ->where('purpose', 'retail_delivery')
+            ->with('legs')
+            ->latest('id')
+            ->firstOrFail()
+            ->legs
+            ->firstOrFail();
+
+        $updatedLeg = $legs->updateThirdParty($leg, $shopOwner, (string) $validated['action'], $validated);
+
+        return response()->json([
+            'success' => true,
+            'leg' => $updatedLeg,
+            'order' => $order->fresh(['logisticsShipments.legs']),
         ]);
     }
 

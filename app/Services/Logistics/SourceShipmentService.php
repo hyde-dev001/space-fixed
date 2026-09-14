@@ -23,14 +23,19 @@ class SourceShipmentService
     {
         return DB::transaction(function () use ($order) {
             ShopOwner::query()->whereKey($order->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $order->loadMissing('shopOwner', 'address');
+            $deliveryMethod = $order->resolvedDeliveryMethod();
             $existing = $this->findExisting('order', (int) $order->id, 'retail_delivery');
             if ($existing) {
+                if ($deliveryMethod === 'third_party') {
+                    $this->syncThirdPartyLeg($existing, $order);
+                }
+
                 return $existing->load('legs');
             }
 
-            $order->loadMissing('shopOwner', 'address');
             $address = $order->address;
-            $coverage = strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics'
+            $coverage = $deliveryMethod === 'shop_owned'
                 ? $this->schedules->coverage(
                     $order->shopOwner,
                     $address?->latitude !== null ? (float) $address->latitude : null,
@@ -70,10 +75,21 @@ class SourceShipmentService
                     ],
                     ...$schedule,
                     'estimated_at' => ($schedule['schedule_status'] ?? null) === 'scheduled' ? now() : null,
+                    'tracking_number' => $deliveryMethod === 'third_party' ? $order->tracking_number : null,
+                    'tracking_url' => $deliveryMethod === 'third_party' ? $order->tracking_link : null,
+                    'provider_status' => $deliveryMethod === 'third_party' ? 'handoff_pending' : null,
+                    'requires_delivery_proof' => $deliveryMethod !== 'third_party',
                 ]],
             ]);
 
             $leg = $shipment->legs->first();
+            if ($deliveryMethod === 'third_party') {
+                $this->events->record($shipment, $leg, [
+                    'event_type' => 'third_party_delivery_recorded',
+                    'visibility' => 'customer',
+                    'message' => 'Third-party courier delivery recorded.',
+                ]);
+            }
             if (($schedule['schedule_status'] ?? null) === 'scheduled') {
                 $this->events->record($shipment, $leg, ['event_type' => 'delivery_schedule_created', 'message' => 'Delivery scheduled.']);
                 $this->events->record($shipment, $leg, [
@@ -90,6 +106,23 @@ class SourceShipmentService
 
             return $shipment->fresh(['legs', 'events']);
         });
+    }
+
+    private function syncThirdPartyLeg(Shipment $shipment, Order $order): void
+    {
+        $leg = $shipment->legs()->lockForUpdate()->first();
+        if (! $leg) {
+            return;
+        }
+
+        $changes = array_filter([
+            'tracking_number' => $order->tracking_number,
+            'tracking_url' => $order->tracking_link,
+        ], static fn ($value) => filled($value));
+
+        if ($changes !== []) {
+            $leg->update($changes);
+        }
     }
 
     public function ensureRefundReturnShipment(OrderRefund $refund): Shipment

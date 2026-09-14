@@ -2592,8 +2592,20 @@ foreach ([
     }
 }
 
-// Assist Center is a shared owner destination, including the individual
-// workspace. It was previously caught by the broad excluded-route defaults.
+// The legacy refund redirect is a shared Action Center compatibility route.
+// Its canonical refund APIs keep their existing owner/Finance authorization.
+if (isset($routes['shop-owner.erp.finance.refund-approvals'])) {
+    $routes['shop-owner.erp.finance.refund-approvals']['classification'] = 'core';
+    $routes['shop-owner.erp.finance.refund-approvals']['module_keys'] = [];
+    $routes['shop-owner.erp.finance.refund-approvals']['mode'] = null;
+    $routes['shop-owner.erp.finance.refund-approvals']['registration_types'] = ['individual', 'company'];
+    $routes['shop-owner.erp.finance.refund-approvals']['business_types'] = ['retail', 'repair', 'both'];
+    $routes['shop-owner.erp.finance.refund-approvals']['owner_access'] = 'allowed';
+    $routes['shop-owner.erp.finance.refund-approvals']['owner_denial_reason'] = null;
+}
+
+// Assist Center is a company-owner destination. Individual owners keep the
+// shared infrastructure out of their navigation and direct route access.
 foreach (['shop-owner.dss-insights', 'api.shop_owner.dashboard.dss-insights'] as $routeName) {
     if (! isset($routes[$routeName])) {
         continue;
@@ -2601,7 +2613,7 @@ foreach (['shop-owner.dss-insights', 'api.shop_owner.dashboard.dss-insights'] as
 
     $routes[$routeName]['owner_access'] = 'allowed';
     $routes[$routeName]['owner_denial_reason'] = null;
-    $routes[$routeName]['registration_types'] = ['individual', 'company'];
+    $routes[$routeName]['registration_types'] = ['company'];
     $routes[$routeName]['business_types'] = ['retail', 'repair', 'both'];
     $routes[$routeName]['actor_persistence'] = 'server_resolved_shop_owner';
 }

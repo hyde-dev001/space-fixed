@@ -1161,10 +1161,10 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
             ->with('premium_subscription_id', $subscriptionId);
     })->name('premium-success');
 
-    // DSS INSIGHTS - Available to all individual accounts (repair, retail, both) AND company accounts
+    // DSS INSIGHTS - Company owners only
     Route::get('/dss-insights', function () {
         return Inertia::render('ShopOwner/DssInsights');
-    })->name('dss-insights');
+    })->middleware('check.registration.type:company')->name('dss-insights');
 
     // VOUCHERS & DISCOUNT - Retail-capable shops only
     Route::get('/vouchers-discount', function () {
@@ -1253,10 +1253,13 @@ Route::middleware('auth:shop_owner')->prefix('api/shop-owner')->group(function (
         ->middleware(['erp.audience', 'erp.actor'])
         ->name('shop-owner.erp.api.retail.dashboard-stats');
     Route::get('dashboard/low-stock', [\App\Http\Controllers\ShopOwner\DashboardController::class, 'getLowStockAlerts']);
-    Route::get('dashboard/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])->name('api.shop_owner.dashboard.dss-insights');
+    Route::get('dashboard/dss-insights', [\App\Http\Controllers\ShopOwner\DssController::class, 'getInsights'])
+        ->middleware('check.registration.type:company')
+        ->name('api.shop_owner.dashboard.dss-insights');
     Route::get('orders', [\App\Http\Controllers\ShopOwner\OrderController::class, 'index'])->middleware('check.business.type:retail,both');
     Route::get('orders/{id}', [\App\Http\Controllers\ShopOwner\OrderController::class, 'show'])->middleware('check.business.type:retail,both');
     Route::patch('orders/{id}/status', [\App\Http\Controllers\ShopOwner\OrderController::class, 'updateStatus'])->middleware('check.business.type:retail,both');
+    Route::post('orders/{id}/third-party-delivery', [\App\Http\Controllers\ShopOwner\OrderController::class, 'updateThirdPartyDelivery'])->middleware('check.business.type:retail,both');
     Route::post('orders/{id}/correct-terminal-outcome', [\App\Http\Controllers\ShopOwner\OrderController::class, 'correctTerminalOutcome'])->middleware('check.business.type:retail,both');
 
     // Profile

@@ -696,6 +696,47 @@ final class OwnerErpApiContractTest extends TestCase
         ]);
     }
 
+    public function test_individual_repair_shop_owner_can_create_repair_service(): void
+    {
+        config(['shop_modules.enforcement_enabled' => true]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'module_key' => 'repair_operations',
+            'enabled' => true,
+        ]);
+        $material = InventoryItem::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'category' => 'repair_materials',
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->postJson('/api/shop-owner/repair-services', [
+                'name' => 'Individual Shoe Restoration',
+                'category' => 'Restoration',
+                'price' => 1250,
+                'duration' => '3 days',
+                'description' => 'Individual-created repair service',
+                'status' => 'Active',
+                'material_templates' => [[
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                    'is_critical' => false,
+                    'tolerance_percent' => 20,
+                ]],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'Individual Shoe Restoration');
+
+        $this->assertDatabaseHas('repair_services', [
+            'shop_owner_id' => $owner->id,
+            'name' => 'Individual Shoe Restoration',
+        ]);
+    }
+
     public function test_owner_repair_service_reads_and_updates_are_tenant_scoped(): void
     {
         config(['shop_modules.enforcement_enabled' => true]);

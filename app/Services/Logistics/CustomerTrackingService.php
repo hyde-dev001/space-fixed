@@ -70,10 +70,12 @@ class CustomerTrackingService
             'events' => fn ($query) => $query->where('visibility', 'customer')->latest(),
         ]);
 
+        $deliveryType = $this->deliveryTypes->resolve($shipment);
+        $retailDelivery = $this->retailDeliveryDetails($shipment);
         $liveTracking = (bool) config('logistics_tracking.enabled')
+            && $retailDelivery['delivery_method'] !== 'third_party'
             ? $this->locations->customerLiveLocationForShipment($shipment)
             : null;
-        $deliveryType = $this->deliveryTypes->resolve($shipment);
 
         return [
             'id' => $shipment->id,
@@ -81,12 +83,16 @@ class CustomerTrackingService
             'purpose' => $shipment->purpose,
             'delivery_type' => $deliveryType['delivery_type'],
             'delivery_label' => $deliveryType['delivery_label'],
+            'delivery_method' => $retailDelivery['delivery_method'],
+            'provider' => $retailDelivery['provider'],
+            'tracking_number' => $retailDelivery['tracking_number'],
+            'tracking_url' => $retailDelivery['tracking_url'],
             'status' => $shipment->status->value,
             'source_type' => $shipment->source_type,
             'source_summary' => $this->repairSourceSummary($shipment),
             'created_at' => optional($shipment->created_at)->toISOString(),
             'live_tracking_enabled' => (bool) config('logistics_tracking.enabled'),
-            'legs' => $shipment->legs->map(function ($leg) use ($shipment, $liveTracking) {
+            'legs' => $shipment->legs->map(function ($leg) use ($shipment, $liveTracking, $retailDelivery) {
                 $deliveryType = $this->deliveryTypes->resolve($shipment, $leg);
                 $attempt = $leg->attempts->first();
                 $proof = $leg->status->value === 'delivered'
@@ -102,6 +108,9 @@ class CustomerTrackingService
                     'leg_type' => $leg->leg_type,
                     'delivery_type' => $deliveryType['delivery_type'],
                     'delivery_label' => $deliveryType['delivery_label'],
+                    'delivery_method' => $retailDelivery['delivery_method'],
+                    'provider' => $retailDelivery['provider'],
+                    'provider_status' => $leg->provider_status,
                     'status' => $leg->status->value === 'proof_correction_required'
                         ? 'awaiting_proof_approval'
                         : $leg->status->value,
@@ -159,6 +168,37 @@ class CustomerTrackingService
                 'message' => $event->message,
                 'created_at' => optional($event->created_at)->toISOString(),
             ])->values()->all(),
+        ];
+    }
+
+    private function retailDeliveryDetails(Shipment $shipment): array
+    {
+        $empty = [
+            'delivery_method' => null,
+            'provider' => null,
+            'tracking_number' => null,
+            'tracking_url' => null,
+        ];
+
+        if ($shipment->source_type !== 'order' || $shipment->purpose !== 'retail_delivery') {
+            return $empty;
+        }
+
+        $order = Order::query()
+            ->whereKey($shipment->source_id)
+            ->where('shop_owner_id', $shipment->shop_owner_id)
+            ->first();
+        if (! $order) {
+            return $empty;
+        }
+
+        return [
+            'delivery_method' => $order->resolvedDeliveryMethod(),
+            'provider' => filled($order->carrier_company)
+                ? (string) $order->carrier_company
+                : (filled($order->carrier_name) ? (string) $order->carrier_name : null),
+            'tracking_number' => $order->tracking_number,
+            'tracking_url' => $order->tracking_link,
         ];
     }
 

@@ -52,6 +52,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $this->assertSame(['home', 'action-center', 'operate'], array_column($metadata['groups'], 'key'));
         $this->assertTrue($groups['operate']['default_expanded']);
         $this->assertSame(['retail', 'customers', 'cashier'], array_column($groups['operate']['items'], 'key'));
+        $this->assertNull(collect($groups['home']['items'])->firstWhere('key', 'assist-center'));
         $this->assertArrayNotHasKey('oversee', $groups->all());
         $this->assertNull(collect($groups['operate']['items'])->firstWhere('key', 'repair'));
         $retailItem = collect($groups['operate']['items'])->firstWhere('key', 'retail');
@@ -198,7 +199,7 @@ final class CanonicalOwnerShellServiceTest extends TestCase
         $groups = collect(app(CanonicalOwnerShellService::class)->forOwner($owner)->toArray()['groups'])->keyBy('key');
 
         $this->assertSame(['home', 'action-center', 'reports'], array_keys($groups->all()));
-        $this->assertSame(['home'], array_column($groups['home']['items'], 'key'));
+        $this->assertSame(['home', 'assist-center'], array_column($groups['home']['items'], 'key'));
         $this->assertSame(['action-center'], array_column($groups['action-center']['items'], 'key'));
         $this->assertSame('/shop-owner/action-center', $groups['action-center']['items'][0]['canonical_url']);
         $this->assertSame(['/shop-owner/action-center'], $groups['action-center']['items'][0]['active_matching']);

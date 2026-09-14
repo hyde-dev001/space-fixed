@@ -302,6 +302,8 @@ export default function ShipmentTrackingPanel({
 
   const currentLeg = currentShipment.legs[currentShipment.legs.length - 1];
   const liveTracking = currentLeg?.live_tracking ?? null;
+  const deliveryMethod = currentLeg?.delivery_method ?? currentShipment.delivery_method;
+  const isThirdParty = deliveryMethod === 'third_party';
   const isLiveCustomerDelivery = trackableStatuses.includes(currentLeg?.status ?? '')
     && currentLeg?.destination_snapshot?.type === 'customer';
   const isLiveRepairPickup = isRepairPickupTrackingLeg(currentShipment, currentLeg);
@@ -312,6 +314,7 @@ export default function ShipmentTrackingPanel({
   const isRetailRefundReturnPhase = isLiveRetailRefundReturn || isRetailRefundReturnHandoff;
   const shouldPoll = currentShipment.live_tracking_enabled === true
     && currentShipment.status === 'active'
+    && !isThirdParty
     && (isLiveCustomerDelivery || isRepairPickupPhase || isRetailRefundReturnPhase);
 
   useEffect(() => {
@@ -354,8 +357,16 @@ export default function ShipmentTrackingPanel({
         : isLiveRepairPickup ? 'Customer pickup map' : 'Customer delivery map';
   const shipmentNumber = currentShipment.shipment_number ?? currentShipment.id;
   const itemLabel = logisticsDeliveryLabel(currentShipment);
-  const trackingNumber = isReturn ? `RET-${currentShipment.id}` : (currentLeg?.tracking_number || `SHP-${currentShipment.id}`);
-  const trackingUrl = isReturn ? `/tracking/shipments/${currentShipment.id}` : currentLeg?.tracking_url;
+  const trackingNumber = isReturn ? 'RET-' + currentShipment.id : (currentLeg?.tracking_number || 'SHP-' + currentShipment.id);
+  const trackingUrl = isReturn ? '/tracking/shipments/' + currentShipment.id : currentLeg?.tracking_url;
+  const deliveryMethodLabel = isThirdParty
+    ? 'Third-party courier'
+    : deliveryMethod === 'shop_owned'
+      ? 'Shop rider delivery'
+      : isReturn
+        ? 'Return delivery'
+        : 'Delivery method unavailable';
+  const provider = currentLeg?.provider ?? currentShipment.provider;
   const awaitingConfirmation = ['awaiting_proof_approval', 'proof_correction_required'].includes(currentLeg?.status ?? '');
   const roadRoute = liveTracking?.route?.source === 'direct' ? null : liveTracking?.route ?? null;
   const customerMapLocations: LiveRiderLocation[] = liveTracking ? [{
@@ -397,7 +408,7 @@ export default function ShipmentTrackingPanel({
       )}
 
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.35)] sm:p-6">
-        <div className="grid gap-5 md:grid-cols-3">
+        <div className="grid gap-5 md:grid-cols-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Current Leg</p>
             <p className="mt-1 text-sm font-semibold text-gray-900">{currentLeg ? titleCase(currentLeg.leg_type) : '-'}</p>
@@ -407,14 +418,17 @@ export default function ShipmentTrackingPanel({
             <p className="mt-1 text-sm font-semibold text-gray-900">{trackingNumber}</p>
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{trackingUrl ? 'Tracking Link' : 'Delivery Method'}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Delivery Method</p>
+            <p className="mt-1 text-sm font-semibold text-gray-900">{deliveryMethodLabel}</p>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{provider ? 'Courier' : 'Tracking Link'}</p>
+            {provider && <p className="mt-1 text-sm font-semibold text-gray-900">{provider}</p>}
             {trackingUrl ? (
               <a className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold text-slate-950 underline decoration-gray-300 underline-offset-4 hover:decoration-current focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-950 dark:focus-visible:ring-white" href={trackingUrl}>
                 {isReturn ? 'Open return tracking' : 'Open courier page'}
               </a>
-            ) : (
-              <p className="mt-1 text-sm font-semibold text-gray-900">Shop rider delivery</p>
-            )}
+            ) : null}
           </div>
         </div>
       </section>

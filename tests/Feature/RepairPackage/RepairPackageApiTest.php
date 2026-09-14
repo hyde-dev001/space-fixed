@@ -77,7 +77,10 @@ class RepairPackageApiTest extends TestCase
 
     public function test_shop_owner_repair_package_management_is_read_only(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'repair',
+        ]);
         $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
         $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 700]);
         $material = $this->createRepairMaterial($shopOwner);
@@ -109,8 +112,14 @@ class RepairPackageApiTest extends TestCase
 
     public function test_shop_owner_cannot_create_any_repair_package(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create();
-        $otherShopOwner = ShopOwner::factory()->approved()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'repair',
+        ]);
+        $otherShopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'repair',
+        ]);
 
         $ownService = $this->createService($shopOwner, ['name' => 'Own Service']);
         $foreignService = $this->createService($otherShopOwner, ['name' => 'Foreign Service']);
@@ -136,6 +145,39 @@ class RepairPackageApiTest extends TestCase
         $this->assertDatabaseMissing('repair_packages', [
             'shop_owner_id' => $shopOwner->id,
             'name' => 'Invalid Mixed Package',
+        ]);
+    }
+
+    public function test_individual_repair_shop_owner_can_create_repair_package(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+        $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
+        $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 700]);
+        $material = $this->createRepairMaterial($shopOwner);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson('/api/repair-packages', [
+                'name' => 'Individual Restore Bundle',
+                'description' => 'Includes two services',
+                'package_price' => 1000,
+                'status' => 'active',
+                'service_ids' => [$s1->id, $s2->id],
+                'material_templates' => [[
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                    'is_critical' => true,
+                    'tolerance_percent' => 20,
+                ]],
+            ])
+            ->assertCreated()
+            ->assertJsonPath('data.name', 'Individual Restore Bundle');
+
+        $this->assertDatabaseHas('repair_packages', [
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Individual Restore Bundle',
         ]);
     }
 

@@ -51,4 +51,23 @@ describe('Shop owner dashboard widgets', () => {
     expect(screen.getByText('Showing 6 to 10 of 10 orders')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
   });
+
+  it('uses the ordered product image snapshot before the product relation', () => {
+    render(<RecentOrders orders={[{
+      ...orders[0],
+      order_items: [{
+        ...orders[0].order_items![0],
+        product_image: '/storage/orders/ordered-product.jpg',
+        product: {
+          ...orders[0].order_items![0].product!,
+          images: null,
+        },
+      }],
+    }]} />);
+
+    expect(screen.getByRole('img', { name: 'Product 1' })).toHaveAttribute(
+      'src',
+      '/storage/orders/ordered-product.jpg',
+    );
+  });
 });

@@ -862,9 +862,24 @@ class NotificationService
         string $priority = 'medium',
         ?string $groupKey = null,
         bool $requiresAction = false,
+        ?string $requiredPermission = null,
     ): void {
         $users = User::where('shop_owner_id', $shopId)
-            ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', [strtolower($roleName)]))
+            ->where('status', 'active')
+            ->where(function ($query) use ($roleName, $requiredPermission): void {
+                if ($requiredPermission === null) {
+                    $query->whereHas('roles', fn ($roleQuery) => $roleQuery->whereRaw('LOWER(name) = ?', [strtolower($roleName)]));
+                    return;
+                }
+
+                $query
+                    ->whereHas('permissions', fn ($permissionQuery) => $permissionQuery->where('name', $requiredPermission))
+                    ->orWhereHas('roles', function ($roleQuery) use ($roleName, $requiredPermission): void {
+                        $roleQuery
+                            ->whereRaw('LOWER(name) = ?', [strtolower($roleName)])
+                            ->whereHas('permissions', fn ($permissionQuery) => $permissionQuery->where('name', $requiredPermission));
+                    });
+            })
             ->get();
 
         foreach ($users as $user) {

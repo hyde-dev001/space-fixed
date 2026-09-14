@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Enums\ApprovalStatus;
 use App\Models\Finance\Expense;
+use App\Models\HR\Payroll;
 
 class Approval extends Model
 {
@@ -196,6 +197,15 @@ class Approval extends Model
     {
         if ($this->approvable_type === Expense::class) {
             return ['approve-expenses', 'access-approval-workflow'];
+        }
+
+        if ($this->approvable_type === Payroll::class) {
+            return [
+                'access-payslip-approval',
+                'approve-payroll',
+                'approve-expenses',
+                'access-approval-workflow',
+            ];
         }
 
         return [

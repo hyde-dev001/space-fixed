@@ -117,7 +117,7 @@ final class CanonicalOwnerShellService
             (bool) config('shop_modules.enforcement_enabled', false),
         );
         $groups = [
-            $this->homeGroup($context === 'individual'),
+            $this->homeGroup($context === 'company'),
         ];
 
         $actionCenter = $this->actionCenterGroup($owner);

@@ -3,23 +3,21 @@
 namespace App\Http\Controllers\Api\Finance;
 
 use App\Http\Controllers\Controller;
-use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\HR\Payroll;
 use App\Models\HR\PayrollComponent;
 use App\Notifications\HR\PayslipGenerated;
 use App\Services\NotificationService;
 use App\Services\PayslipApprovalService;
+use App\Services\ShopOwnerActorUserResolver;
 use App\Traits\HR\LogsHRActivity;
 use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 
 /**
  * PayslipApprovalController (Finance module)
@@ -41,7 +39,8 @@ class PayslipApprovalController extends Controller
 
     public function __construct(
         private NotificationService $notificationService,
-        private PayslipApprovalService $payslipApprovalService
+        private PayslipApprovalService $payslipApprovalService,
+        private ShopOwnerActorUserResolver $shopOwnerActorUserResolver,
     )
     {
     }
@@ -49,105 +48,6 @@ class PayslipApprovalController extends Controller
     // ============================================================
     // AUTH HELPER
     // ============================================================
-
-    private function resolveShopOwnerActorUserId(int $shopOwnerId): ?int
-    {
-        $shopOwner = ShopOwner::query()->select('id', 'email')->find($shopOwnerId);
-
-        $mappedByPermissionRole = User::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['Shop Owner', 'SHOP_OWNER', 'shop_owner', 'shop-owner']))
-            ->orderByDesc('id')
-            ->value('id');
-
-        if ($mappedByPermissionRole) {
-            return (int) $mappedByPermissionRole;
-        }
-
-        if ($shopOwner && ! empty($shopOwner->email)) {
-            $mappedByEmail = User::query()
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereRaw('LOWER(email) = ?', [strtolower((string) $shopOwner->email)])
-                ->orderByDesc('id')
-                ->value('id');
-
-            if ($mappedByEmail) {
-                return (int) $mappedByEmail;
-            }
-        }
-
-        return null;
-    }
-
-    private function ensureShopOwnerActorUserId($shopOwner): ?int
-    {
-        if (! isset($shopOwner->id)) {
-            return null;
-        }
-
-        $resolvedId = $this->resolveShopOwnerActorUserId((int) $shopOwner->id);
-        if ($resolvedId) {
-            return $resolvedId;
-        }
-
-        $primaryEmail = strtolower(trim((string) ($shopOwner->email ?? '')));
-        $fallbackEmail = 'shopowner+' . $shopOwner->id . '@solespace.local';
-        $candidateEmails = array_values(array_unique(array_filter([$primaryEmail, $fallbackEmail])));
-
-        foreach ($candidateEmails as $candidateEmail) {
-            $existingUser = User::query()->whereRaw('LOWER(email) = ?', [strtolower($candidateEmail)])->first();
-            if (! $existingUser) {
-                continue;
-            }
-
-            if (! empty($existingUser->shop_owner_id) && (int) $existingUser->shop_owner_id !== (int) $shopOwner->id) {
-                continue;
-            }
-
-            $existingUser->shop_owner_id = (int) $shopOwner->id;
-            if (empty($existingUser->name)) {
-                $existingUser->name = trim((string) ($shopOwner->first_name ?? '') . ' ' . (string) ($shopOwner->last_name ?? ''));
-            }
-            if (empty($existingUser->email_verified_at)) {
-                $existingUser->email_verified_at = now();
-            }
-            $existingUser->save();
-
-            try {
-                if (! $existingUser->hasRole('Shop Owner')) {
-                    $existingUser->assignRole('Shop Owner');
-                }
-            } catch (\Throwable $e) {
-            }
-
-            return (int) $existingUser->id;
-        }
-
-        $firstName = (string) ($shopOwner->first_name ?? 'Shop');
-        $lastName = (string) ($shopOwner->last_name ?? 'Owner');
-        $name = trim($firstName . ' ' . $lastName);
-
-        try {
-            $newUser = User::query()->create([
-                'first_name' => $firstName,
-                'last_name' => $lastName,
-                'name' => $name !== '' ? $name : ('Shop Owner #' . $shopOwner->id),
-                'email' => $fallbackEmail,
-                'password' => Hash::make(Str::random(40)),
-                'shop_owner_id' => (int) $shopOwner->id,
-                'email_verified_at' => now(),
-            ]);
-
-            try {
-                $newUser->assignRole('Shop Owner');
-            } catch (\Throwable $e) {
-            }
-
-            return (int) $newUser->id;
-        } catch (\Throwable $e) {
-            return null;
-        }
-    }
 
     private function authorizeWorkflowViewer(): ?array
     {
@@ -169,7 +69,7 @@ class PayslipApprovalController extends Controller
 
         $shopOwner = Auth::guard('shop_owner')->user();
         if ($shopOwner) {
-            $actorUserId = $this->ensureShopOwnerActorUserId($shopOwner);
+            $actorUserId = $this->shopOwnerActorUserResolver->ensure($shopOwner);
             return [
                 'shop_owner_id' => (int) $shopOwner->id,
                 'actor_user_id' => $actorUserId,
@@ -216,7 +116,7 @@ class PayslipApprovalController extends Controller
 
         $shopOwner = Auth::guard('shop_owner')->user();
         if ($shopOwner) {
-            $actorUserId = $this->ensureShopOwnerActorUserId($shopOwner);
+            $actorUserId = $this->shopOwnerActorUserResolver->ensure($shopOwner);
             return [
                 'shop_owner_id' => (int) $shopOwner->id,
                 'actor_user_id' => $actorUserId,
