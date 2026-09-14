@@ -1,9 +1,13 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MaintenanceIndex from '../Index';
 
-const routerGet = vi.hoisted(() => vi.fn());
+const { routerGet, routerPost, confirmAlert } = vi.hoisted(() => ({
+  routerGet: vi.fn(),
+  routerPost: vi.fn(),
+  confirmAlert: vi.fn(),
+}));
 const pageState = vi.hoisted(() => ({
   props: {
     current: null,
@@ -18,8 +22,12 @@ const pageState = vi.hoisted(() => ({
 
 vi.mock('@inertiajs/react', () => ({
   Head: () => null,
-  router: { get: routerGet },
+  router: { get: routerGet, post: routerPost },
   usePage: () => pageState,
+}));
+
+vi.mock('../../../../utils/workflowFeedback', () => ({
+  workflowFeedback: { confirm: confirmAlert },
 }));
 
 vi.mock('../../../../layout/AppLayout', () => ({
@@ -48,6 +56,9 @@ const windowRecord = {
 
 beforeEach(() => {
   routerGet.mockReset();
+  routerPost.mockReset();
+  confirmAlert.mockReset();
+  confirmAlert.mockResolvedValue({ isConfirmed: true });
   pageState.props = {
     current: windowRecord,
     upcoming: null,
@@ -70,18 +81,28 @@ describe('Super Admin maintenance page', () => {
     expect(screen.queryByRole('button', { name: /start maintenance now/i })).not.toBeInTheDocument();
   });
 
-  it('submits server-backed filters and preserves the current page contract', () => {
+  it('automatically applies server-backed filters and preserves the current page contract', () => {
+    vi.useFakeTimers();
     render(<MaintenanceIndex />);
 
     fireEvent.change(screen.getByLabelText('Text search'), { target: { value: 'upgrade' } });
-    fireEvent.change(screen.getByLabelText('Date from'), { target: { value: '2026-09-14' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    vi.advanceTimersByTime(250);
 
-    expect(routerGet).toHaveBeenCalledWith(
+    expect(routerGet).toHaveBeenLastCalledWith(
+      '/admin/maintenance',
+      { search: 'upgrade' },
+      { preserveState: true, preserveScroll: true, replace: true },
+    );
+
+    fireEvent.change(screen.getByLabelText('Date from'), { target: { value: '2026-09-14' } });
+
+    expect(routerGet).toHaveBeenLastCalledWith(
       '/admin/maintenance',
       { search: 'upgrade', date_from: '2026-09-14' },
       { preserveState: true, preserveScroll: true, replace: true },
     );
+
+    vi.useRealTimers();
   });
 
   it('shows lifecycle controls only with the manage capability', () => {
@@ -90,5 +111,47 @@ describe('Super Admin maintenance page', () => {
 
     expect(screen.getByRole('button', { name: /start maintenance now/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /clear filters/i })).toBeInTheDocument();
+  });
+
+  it('uses the branded confirmation workflow before starting maintenance', async () => {
+    pageState.props.can_manage = true;
+    render(<MaintenanceIndex />);
+
+    fireEvent.change(screen.getByLabelText('Emergency title'), { target: { value: 'Emergency update' } });
+    fireEvent.change(screen.getByLabelText('Public message'), { target: { value: 'We are applying an urgent update.' } });
+    fireEvent.change(screen.getByLabelText('Estimated end (Manila)'), { target: { value: '2026-09-14T23:00' } });
+    fireEvent.submit(screen.getByRole('button', { name: /start maintenance now/i }).closest('form')!);
+
+    expect(confirmAlert).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Start platform maintenance now?',
+    }));
+    await waitFor(() => expect(routerPost).toHaveBeenCalledWith(
+      '/admin/maintenance/start-now',
+      expect.objectContaining({ title: 'Emergency update' }),
+      { preserveScroll: true },
+    ));
+  });
+
+  it('submits a scheduled window so users can receive advance notice', () => {
+    pageState.props.can_manage = true;
+    render(<MaintenanceIndex />);
+
+    fireEvent.change(screen.getByLabelText('Title'), { target: { value: 'Planned update' } });
+    fireEvent.change(screen.getByLabelText('Scheduled public message'), { target: { value: 'Maintenance is planned.' } });
+    fireEvent.change(screen.getByLabelText('Starts (Manila)'), { target: { value: '2026-09-15T10:00' } });
+    fireEvent.change(screen.getByLabelText('Expected end (Manila)'), { target: { value: '2026-09-15T11:00' } });
+    fireEvent.submit(screen.getByRole('button', { name: 'Schedule maintenance' }).closest('form')!);
+
+    expect(routerPost).toHaveBeenCalledWith(
+      '/admin/maintenance',
+      expect.objectContaining({
+        title: 'Planned update',
+        starts_at: expect.any(String),
+        ends_at: expect.any(String),
+        notify_before_minutes: 15,
+        transaction_freeze_minutes: 3,
+      }),
+      { preserveScroll: true },
+    );
   });
 });

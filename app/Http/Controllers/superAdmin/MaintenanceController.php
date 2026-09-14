@@ -49,7 +49,9 @@ class MaintenanceController extends Controller
         ]);
 
         $query = MaintenanceWindow::query();
-        $query->when($filters['status'] ?? null, fn (Builder $builder, string $status): Builder => $builder->where('status', $status));
+        if (($filters['status'] ?? null) !== null && ($filters['status'] ?? '') !== '') {
+            $this->whereEffectiveState($query, (string) $filters['status'], $now);
+        }
         $query->when(($filters['search'] ?? null) !== null && $filters['search'] !== '', function (Builder $builder) use ($filters): void {
             $search = addcslashes((string) $filters['search'], "\\%_");
             $builder->where(function (Builder $searchQuery) use ($search): void {
@@ -78,18 +80,19 @@ class MaintenanceController extends Controller
         $current = $this->adminSummary($allWindows, $now);
         $upcoming = $allWindows
             ->filter(fn (MaintenanceWindow $window): bool => $window->starts_at?->gt($now) === true
-                && $window->status === MaintenanceStatus::Scheduled
+                && $this->stateService->effectiveState($window, $now) === MaintenanceStatus::Scheduled->value
                 && (! $current || $window->id !== $current['id']))
             ->sortBy('starts_at')
             ->first();
 
-        $statusCounts = array_fill_keys(self::STATUS_VALUES, 0);
+        $statusCounts = array_fill_keys([...self::STATUS_VALUES, 'operational'], 0);
         foreach ($allWindows as $window) {
-            $state = $window->status instanceof MaintenanceStatus ? $window->status->value : (string) $window->status;
+            $state = $this->stateService->effectiveState($window, $now);
             if (array_key_exists($state, $statusCounts)) {
                 $statusCounts[$state]++;
             }
         }
+        $statusCounts['operational'] = $current === null ? 1 : 0;
 
         return Inertia::render('superAdmin/Maintenance/Index', [
             'current' => $current,
@@ -115,7 +118,20 @@ class MaintenanceController extends Controller
 
     public function store(Request $request)
     {
-        $validated = $request->validate($this->draftRules());
+        $validated = $request->validate(array_merge($this->draftRules(), [
+            'starts_at' => ['sometimes', 'nullable', 'date', 'required_with:ends_at'],
+            'ends_at' => ['sometimes', 'nullable', 'date', 'required_with:starts_at'],
+        ]));
+
+        if (($validated['starts_at'] ?? null) !== null || ($validated['ends_at'] ?? null) !== null) {
+            return $this->perform($request, 'schedule', fn (SuperAdmin $actor) => $this->lifecycle->createScheduled(
+                $actor,
+                $validated,
+                $this->carbon($validated['starts_at']),
+                $this->carbon($validated['ends_at']),
+                $request,
+            ));
+        }
 
         return $this->perform($request, 'create', fn (SuperAdmin $actor) => $this->lifecycle->createDraft($actor, $validated, $request));
     }
@@ -302,6 +318,21 @@ class MaintenanceController extends Controller
         $selected = $active ?? $warned ?? $future;
 
         return $selected ? $this->serializeWindow($selected, $now) : null;
+    }
+
+    private function whereEffectiveState(Builder $query, string $state, CarbonInterface $now): void
+    {
+        $query->whereRaw(
+            "CASE
+                WHEN status IN ('ended', 'cancelled') THEN status
+                WHEN status = 'draft' THEN 'draft'
+                WHEN starts_at IS NULL OR ends_at IS NULL THEN status
+                WHEN starts_at > ? THEN 'scheduled'
+                WHEN ends_at > ? THEN 'active'
+                ELSE 'ended'
+            END = ?",
+            [$now->toDateTimeString(), $now->toDateTimeString(), $state],
+        );
     }
 
     /** @return array<string, mixed> */

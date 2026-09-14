@@ -63,14 +63,15 @@ describe('PrivilegedAuditHistory', () => {
     expect(screen.queryByRole('button', { name: /export|download|delete/i })).not.toBeInTheDocument();
   });
 
-  it('submits allowlisted filters and preserves them while paging', () => {
+  it('automatically applies allowlisted filters and preserves them while paging', () => {
+    vi.useFakeTimers();
     render(<PrivilegedAuditHistory />);
 
     fireEvent.change(screen.getByLabelText(/event/i), { target: { value: 'user_suspended' } });
     fireEvent.change(screen.getByLabelText(/actor id/i), { target: { value: '4' } });
-    fireEvent.click(screen.getByRole('button', { name: /apply filters/i }));
+    vi.advanceTimersByTime(250);
 
-    expect(getMock).toHaveBeenCalledWith(
+    expect(getMock).toHaveBeenLastCalledWith(
       '/admin/audit',
       { event: 'user_suspended', actor_id: '4' },
       expect.objectContaining({ preserveState: true, replace: true }),
@@ -82,6 +83,8 @@ describe('PrivilegedAuditHistory', () => {
       { event: 'user_suspended', actor_id: '4', page: '2' },
       expect.objectContaining({ preserveState: true, replace: true }),
     );
+
+    vi.useRealTimers();
   });
 
   it('shows an explicit empty state when no entries are available', () => {

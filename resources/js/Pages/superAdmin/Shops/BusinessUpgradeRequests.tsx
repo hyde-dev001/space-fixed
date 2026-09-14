@@ -1,8 +1,8 @@
 import MonochromeSelect from "@/components/form/Select";
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { Head, router } from '@inertiajs/react';
-import { Eye, FileText, X } from 'lucide-react';
+import { Check, Clock3, Eye, FileText, RefreshCcw, X, XCircle } from 'lucide-react';
 import AppLayout from '../../../layout/AppLayout';
 import { workflowFeedback } from '../../../utils/workflowFeedback';
 
@@ -55,10 +55,19 @@ type QueuePagination = {
   last_page: number;
 };
 
+type UpgradeStats = {
+  total: number;
+  pending: number;
+  approved: number;
+  rejected: number;
+  superseded: number;
+};
+
 type BusinessUpgradeRequestsProps = {
   requests: BusinessUpgradeRequest[];
   filters: Partial<QueueFilters>;
   pagination: QueuePagination;
+  stats?: Partial<UpgradeStats>;
 };
 
 type ReviewDecision = 'approved' | 'rejected';
@@ -151,6 +160,7 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
   requests,
   filters: initialFilters,
   pagination,
+  stats = {},
 }) => {
   const [rows, setRows] = useState(requests);
   const [total, setTotal] = useState(pagination.total);
@@ -162,6 +172,7 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
   const [expandedDocuments, setExpandedDocuments] = useState<Record<number, Set<number>>>({});
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [reviewingId, setReviewingId] = useState<number | null>(null);
+  const filterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     setRows(requests);
@@ -174,6 +185,10 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
   useEffect(() => {
     setTotal(pagination.total);
   }, [pagination.total]);
+
+  useEffect(() => () => {
+    if (filterTimer.current) clearTimeout(filterTimer.current);
+  }, []);
 
   const selectedRequest = useMemo(
     () => rows.find((request) => request.id === detailsId) ?? null,
@@ -190,25 +205,34 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
     && selectedRequest.documents.length > 0
     && selectedRequest.documents.every((document) => selectedViewedDocuments.has(document.id));
 
-  const queryParams = (): Record<string, string> => {
+  const queryParams = (source = filterForm, page?: number): Record<string, string> => {
     const params: Record<string, string> = {};
-    Object.entries(filterForm).forEach(([key, value]) => {
+    Object.entries(source).forEach(([key, value]) => {
       if (value) params[key] = value;
     });
+    if (page && page > 1) params.page = String(page);
     return params;
   };
 
-  const applyFilters = (event?: React.FormEvent<HTMLFormElement>) => {
-    event?.preventDefault();
-    router.get('/admin/business-upgrade-requests', queryParams(), {
+  const visitFilters = (next: QueueFilters, immediate = false) => {
+    setFilterForm(next);
+    if (filterTimer.current) clearTimeout(filterTimer.current);
+
+    const visit = () => router.get('/admin/business-upgrade-requests', queryParams(next), {
       preserveState: true,
       preserveScroll: true,
       replace: true,
     });
+    if (immediate) {
+      visit();
+      return;
+    }
+
+    filterTimer.current = setTimeout(visit, 250);
   };
 
   const goToPage = (page: number) => {
-    router.get('/admin/business-upgrade-requests', { ...queryParams(), page: String(page) }, {
+    router.get('/admin/business-upgrade-requests', queryParams(filterForm, page), {
       preserveState: true,
       preserveScroll: true,
       replace: true,
@@ -354,13 +378,34 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
           </p>
         </div>
 
-        <form onSubmit={applyFilters} className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5 dark:border-slate-800 dark:bg-slate-900">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {[
+            ['Total requests', stats.total, FileText],
+            ['Pending', stats.pending, Clock3],
+            ['Approved', stats.approved, Check],
+            ['Rejected', stats.rejected, XCircle],
+            ['Superseded', stats.superseded, RefreshCcw],
+          ].map(([title, value, Icon]) => (
+            <div key={title as string} className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-800 dark:hover:border-gray-700">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-100">
+                  <Icon className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300">Snapshot</span>
+              </div>
+              <p className="mt-5 text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
+              <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{Number(value ?? 0).toLocaleString()}</p>
+            </div>
+          ))}
+        </div>
+
+        <form onSubmit={(event) => event.preventDefault()} className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-5 dark:border-slate-800 dark:bg-slate-900">
           <label className="text-sm font-medium text-slate-700 dark:text-slate-200">
             Status
             <MonochromeSelect
               aria-label="Filter status"
               value={filterForm.status}
-              onChange={(event) => setFilterForm((previous) => ({ ...previous, status: event.target.value as QueueFilters['status'] }))}
+              onChange={(event) => visitFilters({ ...filterForm, status: event.target.value as QueueFilters['status'] }, true)}
               className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
             >
               <option value="">All statuses</option>
@@ -372,7 +417,7 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
             <input
               aria-label="Search requests"
               value={filterForm.search}
-              onChange={(event) => setFilterForm((previous) => ({ ...previous, search: event.target.value }))}
+              onChange={(event) => visitFilters({ ...filterForm, search: event.target.value })}
               placeholder="Shop, owner, email, or ID"
               className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
             />
@@ -383,7 +428,7 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
               aria-label="Date from"
               type="date"
               value={filterForm.date_from}
-              onChange={(event) => setFilterForm((previous) => ({ ...previous, date_from: event.target.value }))}
+              onChange={(event) => visitFilters({ ...filterForm, date_from: event.target.value }, true)}
               className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
             />
           </label>
@@ -393,12 +438,12 @@ const BusinessUpgradeRequests: React.FC<BusinessUpgradeRequestsProps> = ({
               aria-label="Date to"
               type="date"
               value={filterForm.date_to}
-              onChange={(event) => setFilterForm((previous) => ({ ...previous, date_to: event.target.value }))}
+              onChange={(event) => visitFilters({ ...filterForm, date_to: event.target.value }, true)}
               className="mt-1 min-h-11 w-full rounded-lg border border-slate-300 px-3 text-sm dark:border-slate-700 dark:bg-slate-800"
             />
           </label>
-          <button type="submit" className="min-h-11 self-end rounded-lg bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:bg-white dark:text-slate-900">
-            Apply filters
+          <button type="button" onClick={() => visitFilters({ status: '', search: '', date_from: '', date_to: '' }, true)} className="min-h-11 self-end rounded-lg border border-slate-300 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
+            Clear filters
           </button>
         </form>
 

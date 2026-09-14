@@ -8,7 +8,7 @@ export function MaintenanceWarningModal(): React.JSX.Element | null {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] grid place-items-center bg-black/40 p-4" role="presentation">
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-black/40 p-4 erp-modal-backdrop" role="presentation">
       <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900" role="dialog" aria-modal="true" aria-labelledby="maintenance-warning-title" aria-describedby="maintenance-warning-message">
         <h2 id="maintenance-warning-title" className="text-xl font-bold text-gray-900 dark:text-white">Maintenance warning</h2>
         <p id="maintenance-warning-message" className="mt-3 text-sm text-gray-600 dark:text-gray-300">{state.message}</p>
