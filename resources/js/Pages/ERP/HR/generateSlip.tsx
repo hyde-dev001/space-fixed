@@ -2,6 +2,7 @@ import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
+import { useMaintenance } from "../../../providers/MaintenanceProvider";
 
 // ==================== Type Definitions ====================
 type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";
@@ -380,6 +381,11 @@ export default function GenerateSlip() {
 	const { auth, initialPayrollEmployees } = usePage().props as any;
 	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const hrApiBase = ownerMode ? "/api/shop-owner/hr" : "/api/hr";
+	const { isRouteFrozen } = useMaintenance();
+	const batchGenerateFrozen = isRouteFrozen("hr.payroll.batch.generate");
+	const batchRetryFrozen = isRouteFrozen("hr.payroll.batch.retry");
+	const thirteenthReleaseFrozen = isRouteFrozen("hr.payroll.thirteenth.release");
+	const maintenanceFreezeMessage = "Critical payroll actions are paused during maintenance.";
 	const [employeeData, setEmployeeData] = useState<Employee[]>([]);
 	const [isLoadingEmployees, setIsLoadingEmployees] = useState(true);
 	const [payrollPeriods, setPayrollPeriods] = useState<PayrollPeriod[]>([]);
@@ -1030,6 +1036,10 @@ export default function GenerateSlip() {
 
 	// Confirm and generate batch
 	const handleConfirmBatchGeneration = async () => {
+		if (batchGenerateFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!batchPreviewData) return;
 
 		const result = await Swal.fire({
@@ -1173,9 +1183,9 @@ export default function GenerateSlip() {
 						` : ''}
 					</div>
 				`,
-				showDenyButton: hasErrors && batchResult.retry_queue.length > 0,
+				showDenyButton: hasErrors && batchResult.retry_queue.length > 0 && !batchRetryFrozen,
 				confirmButtonText: "Export to CSV",
-				denyButtonText: `Retry Failed (${batchResult.retry_queue.length})`,
+				denyButtonText: batchRetryFrozen ? "Retry paused during maintenance" : `Retry Failed (${batchResult.retry_queue.length})`,
 				showCancelButton: true,
 				cancelButtonText: "Close",
 				confirmButtonColor: "#16a34a",
@@ -1261,6 +1271,10 @@ export default function GenerateSlip() {
 
 	// Retry failed generations
 	const handleRetryFailed = async () => {
+		if (batchRetryFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (retryQueue.length === 0) return;
 
 		setIsGenerating(true);
@@ -1539,6 +1553,10 @@ export default function GenerateSlip() {
 	const thirteenthYearOptions = [currentYear - 1, currentYear, currentYear + 1];
 
 	const handleReleaseThirteenthMonth = async () => {
+		if (thirteenthReleaseFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (ownerMode) {
 			await Swal.fire({
 				icon: "info",
@@ -1652,11 +1670,13 @@ export default function GenerateSlip() {
 						</select>
 						<button
 							onClick={handleReleaseThirteenthMonth}
-							disabled={ownerMode || isProcessingThirteenth}
+							disabled={ownerMode || isProcessingThirteenth || thirteenthReleaseFrozen}
+							title={thirteenthReleaseFrozen ? maintenanceFreezeMessage : undefined}
 							className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
 						>
 							{ownerMode ? 'Finance workflow required' : isProcessingThirteenth ? 'Processing…' : 'Run 13th-Month Release'}
 						</button>
+						{thirteenthReleaseFrozen && <p role="status" className="text-xs font-semibold text-amber-700">{maintenanceFreezeMessage}</p>}
 					</div>
 				</div>
 			</div>
@@ -2601,13 +2621,16 @@ export default function GenerateSlip() {
 							>
 								Cancel
 							</button>
-							<button
+			<button
 								onClick={handleConfirmBatchGeneration}
+								disabled={batchGenerateFrozen}
+								title={batchGenerateFrozen ? maintenanceFreezeMessage : undefined}
 								className="px-5 py-2.5 rounded-lg bg-green-600 text-white text-sm font-medium hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg shadow-green-500/30"
 							>
 								<CheckIcon className="size-4" />
 								Confirm & Generate All
 							</button>
+							{batchGenerateFrozen && <p role="status" className="self-center text-xs font-semibold text-amber-700">{maintenanceFreezeMessage}</p>}
 						</div>
 					</div>
 				</div>,

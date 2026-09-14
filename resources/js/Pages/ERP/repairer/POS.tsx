@@ -6,6 +6,7 @@ import Swal from "sweetalert2";
 import { computeCanPay, getPhoneDisplayForReceipt } from "../../Repairs/posPaymentValidation";
 import { repairPosHistoryApi } from "../../../services/repairPosHistoryApi";
 import { buildRepairBreakdown } from "../../../utils/repairPricing";
+import { useMaintenance } from "../../../providers/MaintenanceProvider";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
@@ -282,6 +283,10 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 
 const PointOfSalePage = () => {
 	const { props } = usePage();
+	const { isRouteFrozen } = useMaintenance();
+	const repairCheckoutFrozen = isRouteFrozen("api.repair-pos.checkout");
+	const repairRefundFrozen = isRouteFrozen("api.repair-pos.refunds.store");
+	const maintenanceFreezeMessage = "Critical POS actions are paused during maintenance.";
 	const cashierName = String((props as any)?.auth?.user?.name || "Repairer Cashier");
 	const shopRepairPaymentPolicy: ManualPaymentPolicy =
 		String(
@@ -675,6 +680,10 @@ const PointOfSalePage = () => {
 	}, [isRefundQueueOpen]);
 
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
+		if (repairRefundFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!canRequestRepairRefund(receipt)) {
 			await Swal.fire({
 				icon: "info",
@@ -881,9 +890,10 @@ const PointOfSalePage = () => {
 		cashReceivedInput,
 		hasInsufficientCash,
 		proofReference,
-	});
+	}) && !repairCheckoutFrozen;
 	const canPrint = isPaid;
 	const payDisableReason = useMemo(() => {
+		if (repairCheckoutFrozen) return maintenanceFreezeMessage;
 		if (isProcessingPayment) return "Processing payment...";
 		if (items.length === 0) return "Add at least one service before checkout.";
 		if (customerName.trim().length === 0) return "Customer name is required.";
@@ -892,7 +902,7 @@ const PointOfSalePage = () => {
 		if (paymentMethod !== "cash" && !hasProofReference) return "Enter proof reference for GCash/Card payments.";
 		if (hasInsufficientCash) return `Insufficient cash by ${formatPeso(shortValue)}.`;
 		return "";
-	}, [customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, shortValue]);
+	}, [customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, maintenanceFreezeMessage, paymentMethod, repairCheckoutFrozen, shortValue]);
 	const effectiveDueType = useMemo(() => {
 		if (selectedRepairOrder) {
 			return selectedRepairOrder.dueTypeToCollect ?? "full";
@@ -1247,6 +1257,10 @@ const PointOfSalePage = () => {
 	};
 
 	const handlePay = async () => {
+		if (repairCheckoutFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!canPay) return;
 
 		const hasRepairReference = Boolean(selectedRepairOrder || requestedRepairRequestId);
@@ -2096,7 +2110,8 @@ const PointOfSalePage = () => {
 								<button
 									type="button"
 									onClick={handlePay}
-									disabled={!canPay}
+									disabled={!canPay || repairCheckoutFrozen}
+									title={repairCheckoutFrozen ? maintenanceFreezeMessage : undefined}
 									className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
 								>
 									{isProcessingPayment ? "Processing..." : "Pay"}
@@ -2227,10 +2242,12 @@ const PointOfSalePage = () => {
 															</span>
 														)}
 														{canRequestRepairRefund(receipt) && (
-															<button
-																type="button"
-																onClick={() => handleRequestRefund(receipt)}
-																className="rounded-lg border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-50"
+									<button
+										type="button"
+										onClick={() => handleRequestRefund(receipt)}
+										disabled={repairRefundFrozen}
+										title={repairRefundFrozen ? maintenanceFreezeMessage : "Request Refund"}
+										className="rounded-lg border border-amber-300 px-3 py-1 text-xs font-semibold text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
 															>
 																Request Refund
 															</button>

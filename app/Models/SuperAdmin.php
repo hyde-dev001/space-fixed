@@ -59,6 +59,8 @@ class SuperAdmin extends Authenticatable
     public const CAP_VIEW_PRIVILEGED_AUDIT = 'view_privileged_audit';
     public const CAP_MANAGE_OWN_SECURITY = 'manage_own_security';
     public const CAP_MANAGE_PLATFORM_SECURITY = 'manage_platform_security';
+    public const CAP_VIEW_PLATFORM_MAINTENANCE = 'view_platform_maintenance';
+    public const CAP_MANAGE_PLATFORM_MAINTENANCE = 'manage_platform_maintenance';
 
     private const CAPABILITIES_BY_ROLE = [
         self::ROLE_ADMIN => [
@@ -69,6 +71,7 @@ class SuperAdmin extends Authenticatable
             self::CAP_VIEW_APPEALS,
             self::CAP_VIEW_PRIVILEGED_AUDIT,
             self::CAP_MANAGE_OWN_SECURITY,
+            self::CAP_VIEW_PLATFORM_MAINTENANCE,
         ],
         self::ROLE_SUPER_ADMIN => [
             self::CAP_VIEW_MONITORING,
@@ -83,6 +86,8 @@ class SuperAdmin extends Authenticatable
             self::CAP_VIEW_PRIVILEGED_AUDIT,
             self::CAP_MANAGE_OWN_SECURITY,
             self::CAP_MANAGE_PLATFORM_SECURITY,
+            self::CAP_VIEW_PLATFORM_MAINTENANCE,
+            self::CAP_MANAGE_PLATFORM_MAINTENANCE,
         ],
     ];
 

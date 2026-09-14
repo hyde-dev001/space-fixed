@@ -11,6 +11,7 @@ import DeliveryDatePicker from './components/DeliveryDatePicker';
 import { riderResolutionInstruction } from './riderDeliveryPresentation';
 import { logisticsApi } from '@/services/logisticsApi';
 import { erpUrl } from '@/utils/erpCapabilities';
+import { useMaintenance } from '@/providers/MaintenanceProvider';
 import type { ErpCapabilities } from '@/types/erp';
 import {
   logisticsModuleForSourceType,
@@ -145,6 +146,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const canApproveProof = !ownerMode && serverCanApproveProof === true;
   const canResolveDisputes = !ownerMode && serverCanResolveDisputes === true;
   const canReportIssue = !ownerMode && serverCanReportIssue === true;
+  const { isRouteFrozen } = useMaintenance();
+  const scheduleFrozen = isRouteFrozen('logistics.api.legs.schedule');
+  const scheduleFreezeMessage = 'Critical logistics scheduling is paused during maintenance.';
   const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
   const returnFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -415,6 +419,11 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   };
 
   const scheduleLeg = async (legId: number, assignAfter: boolean) => {
+    if (scheduleFrozen) {
+      setAssignmentError(scheduleFreezeMessage);
+      toast('error', scheduleFreezeMessage);
+      return;
+    }
     const schedule = deliverySchedules[legId];
     const riderProfileId = Number(selectedRiders[legId]);
     if (!schedule?.date || !schedule.window || (assignAfter && !riderProfileId)) return;
@@ -1036,6 +1045,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                 </div>
                                 {canScheduleLeg && (
                                   <div className="flex flex-col gap-3 border-t border-gray-200 pt-3 dark:border-gray-700">
+                                    {scheduleFrozen && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">{scheduleFreezeMessage}</p>}
                                     <div className="grid gap-3 sm:grid-cols-2">
                                       <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery date
                                         <DeliveryDatePicker
@@ -1052,7 +1062,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       <label className="block text-xs font-semibold text-gray-700 dark:text-gray-200">Delivery window<select aria-label="Delivery window" value={schedule.window} onChange={(event) => setDeliverySchedules({ ...deliverySchedules, [leg.id]: { ...schedule, window: event.target.value } })} className="mt-1 min-h-11 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white lg:rounded-lg"><option value="">Choose a window</option><option value="morning">Morning</option><option value="afternoon">Afternoon</option></select></label>
                                     </div>
                                     {activeAssignment ? (
-                                      <button type="button" disabled={!schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto lg:rounded-lg">Save schedule</button>
+                                      <button type="button" disabled={scheduleFrozen || !schedule.date || !schedule.window || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, false)} title={scheduleFrozen ? scheduleFreezeMessage : undefined} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 lg:w-auto lg:rounded-lg">Save schedule</button>
                                     ) : (
                                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
                                         <label className="block min-w-0 flex-1 text-xs font-semibold text-gray-700 dark:text-gray-200">Available rider
@@ -1066,7 +1076,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                             {assignableRiders.map((rider) => <option key={rider.id} value={rider.id}>{rider.name}{rider.phone ? ` (${rider.phone})` : ''}</option>)}
                                           </select>
                                         </label>
-                                        <button type="button" disabled={!schedule.date || !schedule.window || !selectedRiders[leg.id] || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, true)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto lg:rounded-lg">{assigningLegId === leg.id ? 'Scheduling...' : 'Schedule & assign rider'}</button>
+                                        <button type="button" disabled={scheduleFrozen || !schedule.date || !schedule.window || !selectedRiders[leg.id] || assigningLegId === leg.id} onClick={() => void scheduleLeg(leg.id, true)} title={scheduleFrozen ? scheduleFreezeMessage : undefined} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto lg:rounded-lg">{assigningLegId === leg.id ? 'Scheduling...' : 'Schedule & assign rider'}</button>
                                       </div>
                                     )}
                                   </div>

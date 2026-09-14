@@ -8,6 +8,7 @@ import { calculateRepairRevenue } from "../../../utils/deliveryRevenue";
 import { MoneyIcon } from "../../../components/common/MoneyIcon";
 import { buildRepairBreakdown, type RepairTaxMode } from "../../../utils/repairPricing";
 import repairMaterialsApi, { type RepairMaterialUsage, type RepairMaterialInventoryItem, type RepairMaterialPlanItem } from "../../../services/repairMaterialsApi";
+import { useMaintenance } from "../../../providers/MaintenanceProvider";
 
 type IntakeHandoffEvent = {
   id?: number | string;
@@ -584,6 +585,9 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function JobOrdersRepair() {
+  const { isRouteFrozen } = useMaintenance();
+  const paymentActivationFrozen = isRouteFrozen("api.repairer.repairs.activate-payment");
+  const maintenanceFreezeMessage = "Payment activation is paused during maintenance.";
   const [error, setError] = useState<string | null>(null);
   const { auth } = usePage().props as any;
   const userRole = String(auth?.user?.role || '').toUpperCase();
@@ -1987,6 +1991,10 @@ export default function JobOrdersRepair() {
   };
 
   const handleActivatePayment = async (orderId: string) => {
+    if (paymentActivationFrozen) {
+      await Swal.fire({ title: 'Maintenance in progress', text: maintenanceFreezeMessage, icon: 'info', confirmButtonColor: '#2563eb' });
+      return;
+    }
     const targetOrder =
       (viewOrder && String(viewOrder.database_id) === orderId ? viewOrder : null)
       || orders.find((order) => String(order.database_id) === orderId)
@@ -3012,8 +3020,9 @@ export default function JobOrdersRepair() {
                           {(order.status === "owner_approved" || order.status === "repairer_accepted" || order.status === "waiting_customer_confirmation" || order.status === "pending") && !order.payment_enabled && !isPosManualWalkIn(order) && !isWarrantyNoChargeOrder(order) && (
                             <button
                               onClick={() => handleActivatePayment(String(order.database_id))}
+                              disabled={paymentActivationFrozen}
                               className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
-                              title="Activate payment for this repair"
+                              title={paymentActivationFrozen ? maintenanceFreezeMessage : "Activate payment for this repair"}
                               aria-label="Activate Payment"
                             >
                               <MoneyIcon className="size-5" />
@@ -3025,8 +3034,9 @@ export default function JobOrdersRepair() {
                               {!order.payment_enabled && !isPosManualWalkIn(order) && !isWarrantyNoChargeOrder(order) && (
                                 <button
                                   onClick={() => handleActivatePayment(String(order.database_id))}
+                                  disabled={paymentActivationFrozen}
                                   className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
-                                  title="Activate payment for this repair"
+                                  title={paymentActivationFrozen ? maintenanceFreezeMessage : "Activate payment for this repair"}
                                   aria-label="Activate Payment"
                                 >
                                   <MoneyIcon className="size-5" />
@@ -3070,8 +3080,9 @@ export default function JobOrdersRepair() {
                             && canActivateOnlineRemainingBalance(order) && (
                             <button
                               onClick={() => handleActivatePayment(String(order.database_id))}
-                              className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
-                              title="Activate online payment for remaining balance"
+                              disabled={paymentActivationFrozen}
+                              className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                              title={paymentActivationFrozen ? maintenanceFreezeMessage : "Activate online payment for remaining balance"}
                               aria-label="Activate Remaining Balance"
                             >
                               <MoneyIcon className="size-5" />
@@ -3846,7 +3857,9 @@ export default function JobOrdersRepair() {
                     <button
                       type="button"
                       onClick={() => handleActivatePayment(String(viewOrder.database_id))}
-                      className="rounded-lg bg-amber-600 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-amber-700"
+                      disabled={paymentActivationFrozen}
+                      title={paymentActivationFrozen ? maintenanceFreezeMessage : undefined}
+                      className="rounded-lg bg-amber-600 px-4 py-2.5 font-semibold text-white transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
                       aria-label="Activate Payment"
                     >
                       Activate Payment

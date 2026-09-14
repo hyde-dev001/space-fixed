@@ -9,8 +9,11 @@ describe('application provider boundaries', () => {
     expect(source).toContain('const [component, setComponent] = useState(initialComponent)');
     expect(source).toContain("setComponent(event.detail?.page?.component ?? '')");
     expect(source).toContain("const isUserAuthPage = component.startsWith('UserSide/Auth/')");
-    expect(source).toContain('<ApplicationProviders initialComponent={component}>');
+    expect(source).toContain('<ApplicationProviders initialComponent={component} initialStatus={props.initialPage?.props?.status}>');
     expect(source).toContain("import { CustomerPageTransition } from './components/common/CustomerPageTransition';");
+    expect(source).toContain("import { MaintenanceProvider } from './providers/MaintenanceProvider';");
+    expect(source).toContain("router.on('invalid', dispatchMaintenanceActive);");
+    expect(source).toContain("router.on('error', dispatchMaintenanceActive);");
 
     const providersStart = source.indexOf('const ApplicationProviders');
     const providersEnd = source.indexOf('// Update CSRF token', providersStart);
@@ -19,6 +22,7 @@ describe('application provider boundaries', () => {
     expect(providersStart).toBeGreaterThan(-1);
     expect(providersEnd).toBeGreaterThan(providersStart);
     expect(providers).toContain('<SidebarProvider>');
+    expect(providers).toContain('<MaintenanceProvider isMaintenancePage={component === \'Maintenance\'} initialStatus={initialStatus}>');
     expect(providers).toContain('<CartProvider syncEnabled={isUserSidePage && !isUserAuthPage}>');
     expect(providers).not.toContain('{isUserSidePage ? (');
     expect(providers.match(/<CustomerPageTransition \/>/g)).toHaveLength(1);

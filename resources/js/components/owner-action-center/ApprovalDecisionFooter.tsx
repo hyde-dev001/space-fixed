@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { OwnerAttentionItem } from "../../types/ownerActionCenter";
 import type { ApprovalAction, ApprovalPanelDefinition } from "./approvalPanelRegistry";
+import { useMaintenance } from "../../providers/MaintenanceProvider";
 
 interface ApprovalDecisionFooterProps {
   definition: ApprovalPanelDefinition;
@@ -17,10 +18,15 @@ export default function ApprovalDecisionFooter({
   submitting,
   onSubmit,
 }: ApprovalDecisionFooterProps) {
+  const { isRouteFrozen } = useMaintenance();
   const [pendingAction, setPendingAction] = useState<ApprovalAction | null>(null);
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
   const rejectMaxLength = definition.reject?.maxLength ?? 1000;
+  const approveFrozen = Boolean(definition.approve?.maintenanceRouteName && isRouteFrozen(definition.approve.maintenanceRouteName));
+  const rejectFrozen = Boolean(definition.reject?.maintenanceRouteName && isRouteFrozen(definition.reject.maintenanceRouteName));
+  const actionFrozen = pendingAction === "approve" ? approveFrozen : pendingAction === "reject" ? rejectFrozen : false;
+  const maintenanceFreezeMessage = "Approval actions are paused during maintenance.";
 
   useEffect(() => {
     setPendingAction(null);
@@ -30,6 +36,10 @@ export default function ApprovalDecisionFooter({
 
   const submit = () => {
     if (submitting || pendingAction === null) return;
+    if (actionFrozen) {
+      setReasonError(maintenanceFreezeMessage);
+      return;
+    }
 
     if (pendingAction === "reject") {
       const trimmedReason = reason.trim();
@@ -59,7 +69,8 @@ export default function ApprovalDecisionFooter({
         {definition.approve && (
           <button
             type="button"
-            disabled={submitting}
+            disabled={submitting || approveFrozen}
+            title={approveFrozen ? maintenanceFreezeMessage : undefined}
             onClick={() => {
               setPendingAction("approve");
               setReasonError(null);
@@ -72,7 +83,8 @@ export default function ApprovalDecisionFooter({
         {definition.reject && (
           <button
             type="button"
-            disabled={submitting}
+            disabled={submitting || rejectFrozen}
+            title={rejectFrozen ? maintenanceFreezeMessage : undefined}
             onClick={() => {
               setPendingAction("reject");
               setReasonError(null);
@@ -83,6 +95,7 @@ export default function ApprovalDecisionFooter({
           </button>
         )}
       </div>
+      {(approveFrozen || rejectFrozen) && <p role="status" className="text-sm font-medium text-amber-700 dark:text-amber-300">{maintenanceFreezeMessage}</p>}
 
       {pendingAction === "approve" && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20" aria-live="polite">
@@ -93,7 +106,8 @@ export default function ApprovalDecisionFooter({
           <div className="mt-3 flex flex-wrap gap-3">
             <button
               type="button"
-              disabled={submitting}
+              disabled={submitting || actionFrozen}
+              title={actionFrozen ? maintenanceFreezeMessage : undefined}
               onClick={submit}
               className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:focus-visible:ring-offset-gray-900"
             >
@@ -101,7 +115,8 @@ export default function ApprovalDecisionFooter({
             </button>
             <button
               type="button"
-              disabled={submitting}
+              disabled={submitting || actionFrozen}
+              title={actionFrozen ? maintenanceFreezeMessage : undefined}
               onClick={() => setPendingAction(null)}
               className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-gray-200 dark:focus-visible:ring-offset-gray-900"
             >

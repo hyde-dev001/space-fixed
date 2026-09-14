@@ -5,6 +5,7 @@ import Swal from '../Shared/UserModal';
 import RefundEligibilityTooltip from '@/components/common/RefundEligibilityTooltip';
 import ShipmentTrackingModal from '@/components/logistics/ShipmentTrackingModal';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import { useMaintenance } from '../../../providers/MaintenanceProvider';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -167,6 +168,8 @@ const ORDER_TABS: OrderTab[] = ['all', 'pending', 'processing', 'shipped', 'comp
 
 const MyOrders: React.FC = () => {
   const page = usePage();
+  const { isRouteFrozen } = useMaintenance();
+  const refundFrozen = isRouteFrozen('orders.request-refund');
   const initialOrders = ((page.props as any).orders ?? []) as Order[];
   const [orders, setOrders] = useState<Order[]>(initialOrders || []);
   const [selectedTab, setSelectedTab] = useState<OrderTab>('all');
@@ -1402,6 +1405,10 @@ const MyOrders: React.FC = () => {
   };
 
   const handleSubmitRefund = async () => {
+    if (refundFrozen) {
+      return;
+    }
+
     if (!refundOrderId) return;
 
     const currentRefundOrder = orders.find((order) => order.id === refundOrderId);
@@ -1940,9 +1947,9 @@ const MyOrders: React.FC = () => {
                   const refundButton = (
                     <button
                       type="button"
-                      disabled={!canRefund}
+                      disabled={!canRefund || refundFrozen}
                       onClick={() => {
-                        if (!canRefund) {
+                        if (!canRefund || refundFrozen) {
                           return;
                         }
                         setRefundOrderId(order.id);
@@ -1955,10 +1962,10 @@ const MyOrders: React.FC = () => {
                         setRefundOtherReasonNote('');
                         setShowRefundModal(true);
                       }}
-                      title={canRefund ? 'Request refund' : undefined}
-                      className={`${actionButtonBaseClass} ${canRefund ? actionButtonSecondaryClass : `${actionButtonDisabledClass} pointer-events-none`}`}
+                      title={refundFrozen ? 'Refund requests are temporarily paused for maintenance.' : canRefund ? 'Request refund' : undefined}
+                      className={`${actionButtonBaseClass} ${canRefund && !refundFrozen ? actionButtonSecondaryClass : `${actionButtonDisabledClass} pointer-events-none`}`}
                     >
-                      REFUND
+                      {refundFrozen ? 'REFUND (PAUSED)' : 'REFUND'}
                     </button>
                   );
 
@@ -3211,14 +3218,14 @@ const MyOrders: React.FC = () => {
                   ) : (
                     <button
                       onClick={handleSubmitRefund}
-                      disabled={!isRefundSubmissionReady || isSubmittingRefund}
+                      disabled={!isRefundSubmissionReady || isSubmittingRefund || refundFrozen}
                       className={`${actionButtonBaseClass} ${
-                        isRefundSubmissionReady && !isSubmittingRefund
+                        isRefundSubmissionReady && !isSubmittingRefund && !refundFrozen
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}
                     >
-                      {isSubmittingRefund ? 'Submitting...' : 'Submit Refund Request'}
+                      {refundFrozen ? 'Refunds paused for maintenance' : isSubmittingRefund ? 'Submitting...' : 'Submit Refund Request'}
                     </button>
                   )}
                 </div>

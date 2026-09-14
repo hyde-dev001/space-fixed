@@ -25,11 +25,13 @@ type Props = {
   onRemove: (leg: TrackingShipmentLeg, index: number) => void;
   onSave: () => void;
   onReview: () => void;
+  saveDisabled?: boolean;
+  saveDisabledReason?: string;
 };
 
 export default function BatchWorkspace({
   batch, selectedLegs, date, window, dailyRiderCapacity, overrideReason, submitting, busyLegId,
-  onOverrideReasonChange, onMove, onRemove, onSave, onReview,
+  onOverrideReasonChange, onMove, onRemove, onSave, onReview, saveDisabled = false, saveDisabledReason,
 }: Props) {
   const history = batch && ['completed', 'cancelled'].includes(batch.status);
   const legs = !batch ? selectedLegs : history
@@ -41,7 +43,7 @@ export default function BatchWorkspace({
   const rejectedAt = formatRejectionTime(batch?.rejected_at);
   const cancellationReason = batch?.cancellation_reason || batch?.dispatcher_override_reason;
   const overCapacity = legs.length > capacity;
-  const canSave = !batch && Boolean(date) && legs.length >= 2 && !submitting && (!overCapacity || Boolean(overrideReason.trim()));
+  const canSave = !batch && Boolean(date) && legs.length >= 2 && !submitting && !saveDisabled && (!overCapacity || Boolean(overrideReason.trim()));
 
   return <section className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
     <div className="border-b border-gray-100 p-4 dark:border-gray-700 sm:p-5 xl:p-4">
@@ -81,6 +83,7 @@ export default function BatchWorkspace({
       {batch?.status === 'draft' && <button type="button" onClick={onReview} className="min-h-11 w-full rounded-xl border border-blue-600 px-4 text-sm font-semibold text-blue-700 sm:w-auto">Review &amp; Offer</button>}
       {batch && batch.status !== 'draft' && <span className="mr-auto text-sm font-medium text-gray-500">This route is read-only at the {batch.status.replaceAll('_', ' ')} stage.</span>}
       {!batch && legs.length < 2 && <span className="mr-auto text-sm font-semibold text-amber-700">Select at least 2 deliveries</span>}
+      {!batch && saveDisabledReason && <p role="status" className="mr-auto text-sm font-semibold text-amber-700">{saveDisabledReason}</p>}
       {!batch && <button type="button" disabled={!canSave} onClick={onSave} className="min-h-11 w-full rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40 sm:w-auto">{submitting ? 'Saving Draft...' : 'Save Draft'}</button>}
     </div>
   </section>;

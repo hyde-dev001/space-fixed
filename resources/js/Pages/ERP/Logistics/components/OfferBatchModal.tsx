@@ -17,9 +17,11 @@ type Props = {
   error: string;
   onClose: () => void;
   onOffer: (riderId: number, capacityOverrideReason?: string) => void;
+  disabled?: boolean;
+  disabledReason?: string;
 };
 
-export default function OfferBatchModal({ isOpen, batch, batches, riders, dailyRiderCapacity, forceCapacityOverrideForRiderId, submitting, error, onClose, onOffer }: Props) {
+export default function OfferBatchModal({ isOpen, batch, batches, riders, dailyRiderCapacity, forceCapacityOverrideForRiderId, submitting, error, onClose, onOffer, disabled = false, disabledReason }: Props) {
   const [riderId, setRiderId] = useState('');
   const [capacityOverrideReason, setCapacityOverrideReason] = useState('');
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -85,9 +87,10 @@ export default function OfferBatchModal({ isOpen, batch, batches, riders, dailyR
           <textarea aria-label="Capacity override reason" value={capacityOverrideReason} onChange={(event) => setCapacityOverrideReason(event.target.value)} className="mt-2 min-h-24 w-full rounded-xl border border-gray-300 p-3 font-normal" />
         </label>}
       <ol className="mt-5 space-y-2 rounded-xl border border-gray-200 p-3">{batch.legs.map((leg, index) => <li key={leg.id} className="flex items-center gap-3 rounded-lg bg-gray-50 p-3 text-sm"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-blue-600 font-bold text-white">{index + 1}</span><span><strong>{leg.destination_snapshot?.name || `Stop ${index + 1}`}</strong><span className="block text-xs text-gray-500">{leg.destination_snapshot?.address || 'Address not provided'}</span></span></li>)}</ol>
+      {disabled && disabledReason && <p role="status" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">{disabledReason}</p>}
       <div className="mt-5 flex flex-col-reverse items-stretch gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-2">
         <button type="button" onClick={onClose} className="min-h-11 w-full rounded-xl border px-4 text-sm font-semibold sm:w-auto">Keep as Draft</button>
-        <button type="button" disabled={!riderId || submitting || (overrideRequired && !capacityOverrideReason.trim())} onClick={() => onOffer(Number(riderId), capacityOverrideReason.trim() || undefined)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white disabled:opacity-40 sm:w-auto">{submitting ? 'Offering Batch...' : 'Offer Batch to Rider'}</button>
+        <button type="button" disabled={disabled || !riderId || submitting || (overrideRequired && !capacityOverrideReason.trim())} onClick={() => onOffer(Number(riderId), capacityOverrideReason.trim() || undefined)} className="min-h-11 w-full rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white disabled:opacity-40 sm:w-auto">{submitting ? 'Offering Batch...' : 'Offer Batch to Rider'}</button>
       </div>
     </div>
   </Modal>;

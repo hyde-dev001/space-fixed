@@ -14,6 +14,7 @@ export type ApprovalAction = "approve" | "reject";
 
 export interface ApprovalActionConfig {
   path: (id: number) => string;
+  maintenanceRouteName?: string;
   body?: (reason?: string) => Record<string, unknown>;
   minLength?: number;
   maxLength?: number;
@@ -50,10 +51,12 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: RefundApprovalDetails,
     approve: {
       path: (id) => `/api/shop-owner/refunds/${id}/approve`,
+      maintenanceRouteName: "shop_owner.refunds.approve",
       body: noteBody("approval_note"),
     },
     reject: {
       path: (id) => `/api/shop-owner/refunds/${id}/reject`,
+      maintenanceRouteName: "shop_owner.refunds.reject",
       body: noteBody("rejection_reason"),
       maxLength: 1000,
     },
@@ -67,10 +70,12 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: RefundApprovalDetails,
     approve: {
       path: (id) => `/api/shop-owner/repair-refunds/${id}/approve`,
+      maintenanceRouteName: "shop_owner.repair-refunds.approve",
       body: noteBody("approval_note"),
     },
     reject: {
       path: (id) => `/api/shop-owner/repair-refunds/${id}/reject`,
+      maintenanceRouteName: "shop_owner.repair-refunds.reject",
       body: noteBody("reason"),
       maxLength: 255,
     },
@@ -82,9 +87,10 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     noun: "Product price change",
     detailPath: (id) => `/api/shop-owner/price-changes/${id}`,
     renderer: PriceApprovalDetails,
-    approve: { path: (id) => `/api/shop-owner/price-changes/${id}/approve` },
+    approve: { path: (id) => `/api/shop-owner/price-changes/${id}/approve`, maintenanceRouteName: "shop_owner.price-changes.approve" },
     reject: {
       path: (id) => `/api/shop-owner/price-changes/${id}/reject`,
+      maintenanceRouteName: "shop_owner.price-changes.reject",
       body: noteBody("reason"),
       maxLength: 500,
     },
@@ -98,10 +104,12 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: PriceApprovalDetails,
     approve: {
       path: (id) => `/api/repair-services/${id}/owner/approve`,
+      maintenanceRouteName: "shop_owner.repair-services.owner.approve",
       body: () => ({ request_type: "service" }),
     },
     reject: {
       path: (id) => `/api/repair-services/${id}/owner/reject`,
+      maintenanceRouteName: "shop_owner.repair-services.owner.reject",
       body: (reason) => ({ request_type: "service", reason: reason ?? "" }),
       maxLength: 1000,
     },
@@ -115,10 +123,12 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: PriceApprovalDetails,
     approve: {
       path: (id) => `/api/repair-services/${id}/owner/approve`,
+      maintenanceRouteName: "shop_owner.repair-services.owner.approve",
       body: () => ({ request_type: "package" }),
     },
     reject: {
       path: (id) => `/api/repair-services/${id}/owner/reject`,
+      maintenanceRouteName: "shop_owner.repair-services.owner.reject",
       body: (reason) => ({ request_type: "package", reason: reason ?? "" }),
       maxLength: 1000,
     },
@@ -132,6 +142,7 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: PayslipApprovalDetails,
     approve: {
       path: (id) => `/api/shop-owner/payslip-approvals/${id}/final-approve`,
+      maintenanceRouteName: "shop_owner.payslip_approval.final_approve",
       body: noteBody("notes"),
     },
     consequence: "move the payslip to the authoritative payroll disbursement workflow",
@@ -144,10 +155,12 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: SalaryAdjustmentApprovalDetails,
     approve: {
       path: (id) => `/api/shop-owner/salary-changes/${id}/approve`,
+      maintenanceRouteName: "shop_owner.salary-changes.approve",
       body: noteBody("notes"),
     },
     reject: {
       path: (id) => `/api/shop-owner/salary-changes/${id}/reject`,
+      maintenanceRouteName: "shop_owner.salary-changes.reject",
       body: noteBody("notes"),
       maxLength: 1000,
     },
@@ -161,10 +174,12 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: PurchaseRequestApprovalDetails,
     approve: {
       path: (id) => `/api/shop-owner/purchase-requests/${id}/approve`,
+      maintenanceRouteName: "shop_owner.purchase-requests.approve",
       body: noteBody("approval_notes"),
     },
     reject: {
       path: (id) => `/api/shop-owner/purchase-requests/${id}/reject`,
+      maintenanceRouteName: "shop_owner.purchase-requests.reject",
       body: noteBody("rejection_reason"),
       maxLength: 1000,
     },
@@ -178,10 +193,12 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: SuspensionApprovalDetails,
     approve: {
       path: (id) => `/api/shop-owner/suspension-requests/${id}/review`,
+      maintenanceRouteName: "shop_owner.suspension_requests.review",
       body: noteBody("note"),
     },
     reject: {
       path: (id) => `/api/shop-owner/suspension-requests/${id}/review`,
+      maintenanceRouteName: "shop_owner.suspension_requests.review",
       body: noteBody("note"),
       maxLength: 1000,
     },
@@ -195,10 +212,12 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: ExpenseApprovalDetails,
     approve: {
       path: (id) => `/api/shop-owner/expenses/${id}/approve`,
+      maintenanceRouteName: "shop_owner.expenses.approve",
       body: noteBody("approval_notes"),
     },
     reject: {
       path: (id) => `/api/shop-owner/expenses/${id}/reject`,
+      maintenanceRouteName: "shop_owner.expenses.reject",
       body: noteBody("rejection_reason"),
       maxLength: 1000,
     },
@@ -212,10 +231,12 @@ export const approvalPanelRegistry: Record<ApprovalSourceType, ApprovalPanelDefi
     renderer: RepairRejectApprovalDetails,
     approve: {
       path: (id) => `/api/shop-owner/repairs/${id}/approve-rejection`,
+      maintenanceRouteName: "shop_owner.repairs.approve-rejection",
       body: noteBody("notes"),
     },
     reject: {
       path: (id) => `/api/shop-owner/repairs/${id}/reject-rejection`,
+      maintenanceRouteName: "shop_owner.repairs.reject-rejection",
       body: noteBody("notes"),
       minLength: 10,
       maxLength: 500,

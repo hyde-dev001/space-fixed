@@ -7,6 +7,7 @@ import { stockRequestApi } from "@/services/stockRequestApi";
 import { workflowFeedback } from "@/utils/workflowFeedback";
 import { clearModalDraft, isModalDraftSourceAvailable, loadModalDraft, saveModalDraft, scopedModalDraftKey } from "@/utils/modalDraft";
 import type { StockRequestApproval } from "@/types/procurement";
+import { useMaintenance } from "../../../providers/MaintenanceProvider";
 
 type RequestPriority = "high" | "medium" | "low";
 type PurchaseRequestStatus = "draft" | "pending_finance" | "pending_shop_owner" | "pending_finance_final" | "approved" | "rejected";
@@ -280,6 +281,9 @@ const currency = new Intl.NumberFormat("en-PH", {
 
 export default function PurchaseRequest() {
 	const { auth, initialData, initialSuppliers, initialAcceptedRequests } = usePage().props as any;
+	const { registerDirtySource, isRouteFrozen } = useMaintenance();
+	const submitToFinanceFrozen = isRouteFrozen("procurement.purchase-requests.store");
+	const maintenanceFreezeMessage = "Purchase request submission is paused during maintenance.";
 	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const draftKey = scopedModalDraftKey(PURCHASE_REQUEST_DRAFT_KEY, auth?.user?.shop_owner_id, auth?.user?.id);
 	const [purchaseRequests, setPurchaseRequests] = useState<PurchaseRequestType[]>(initialData?.data ?? []);
@@ -316,6 +320,8 @@ export default function PurchaseRequest() {
 			formData.inventoryItemId !== initialFormState.inventoryItemId,
 		[formData],
 	);
+
+	useEffect(() => registerDirtySource("procurement-purchase-request", isCreateFormDirty), [isCreateFormDirty, registerDirtySource]);
 
 	// Fetch purchase requests
 	const fetchPurchaseRequests = async () => {
@@ -510,6 +516,10 @@ export default function PurchaseRequest() {
 	};
 
 	const handleCreatePR = async () => {
+		if (submitToFinanceFrozen) {
+			await workflowFeedback.warning("Maintenance in progress", maintenanceFreezeMessage);
+			return;
+		}
 		if (!formData.stockRequestId.trim() || !formData.inventoryItemId.trim() || !formData.supplierId.trim() || !formData.quantity.trim() || !formData.unitCost.trim() || !formData.justification.trim()) {
 			await workflowFeedback.warning(
 				"Missing fields",
@@ -949,12 +959,15 @@ export default function PurchaseRequest() {
 							>
 								Cancel
 							</button>
-							<button
-								onClick={handleCreatePR}
-								className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors"
-							>
-								Send to Finance
-							</button>
+			<button
+				onClick={handleCreatePR}
+				disabled={submitToFinanceFrozen}
+				title={submitToFinanceFrozen ? maintenanceFreezeMessage : undefined}
+				className="flex-1 px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors"
+			>
+				Send to Finance
+			</button>
+			{submitToFinanceFrozen && <p role="status" className="self-center text-xs font-semibold text-amber-700">{maintenanceFreezeMessage}</p>}
 						</div>
 					</div>
 				</div>

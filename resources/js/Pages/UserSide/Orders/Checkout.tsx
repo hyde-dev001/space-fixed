@@ -7,6 +7,7 @@ import axios from 'axios';
 import { dispatchCartAddedEvent } from '../../../types/cart-events';
 import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import { useMaintenance } from '../../../providers/MaintenanceProvider';
 
 type CartItem = {
   id: string;
@@ -33,6 +34,9 @@ type ShopGroup = {
 
 const Checkout: React.FC = () => {
   const { auth } = usePage().props as any;
+  const { isRouteFrozen } = useMaintenance();
+  const checkoutFrozen = isRouteFrozen('checkout.create-order');
+  const paymentRetryFrozen = isRouteFrozen('api.orders.retry-payment-session');
   const user = auth?.user;
   
   // Items state starts empty; load from localStorage on client mount
@@ -1237,11 +1241,12 @@ const Checkout: React.FC = () => {
             <button
               type="button"
               onClick={handleCreateRecoverySession}
-              disabled={isCreatingRecoverySession}
-              className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white ${isCreatingRecoverySession ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}
+              disabled={isCreatingRecoverySession || paymentRetryFrozen}
+              className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white ${isCreatingRecoverySession || paymentRetryFrozen ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}
             >
               {isCreatingRecoverySession ? 'Creating...' : 'Create New Payment'}
             </button>
+            {paymentRetryFrozen && <p className="mt-2 text-xs text-amber-700" role="status">Payment initiation is temporarily paused for maintenance.</p>}
           </div>
         )}
 
@@ -1392,13 +1397,14 @@ const Checkout: React.FC = () => {
               <button
                 type="button"
                 onClick={handleCheckout}
-                disabled={selectedCount === 0 || isPaying}
+                disabled={selectedCount === 0 || isPaying || checkoutFrozen}
                 className={`flex-1 rounded-lg px-4 py-3 text-sm font-bold text-white transition-all ${
-                  selectedCount === 0 || isPaying ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#16233b] hover:bg-[#1a2942] shadow-md'
+                  selectedCount === 0 || isPaying || checkoutFrozen ? 'bg-gray-400 cursor-not-allowed' : 'bg-[#16233b] hover:bg-[#1a2942] shadow-md'
                 }`}
               >
                 {isPaying ? 'Placing...' : `Place Order (${selectedCount})`}
               </button>
+              {checkoutFrozen && <p className="mt-2 text-center text-xs text-amber-700" role="status">New orders are temporarily paused for maintenance.</p>}
             </div>
           </div>
         )}
@@ -2117,12 +2123,13 @@ const Checkout: React.FC = () => {
 
               <button
                 onClick={handleCheckout}
-                disabled={selectedCount === 0 || isPaying}
-                className={`w-full flex items-center justify-center gap-3 py-3 rounded-md ${selectedCount === 0 || isPaying ? 'bg-gray-300 text-gray-600' : 'bg-gray-900 text-white'}`}
+                disabled={selectedCount === 0 || isPaying || checkoutFrozen}
+                className={`w-full flex items-center justify-center gap-3 py-3 rounded-md ${selectedCount === 0 || isPaying || checkoutFrozen ? 'bg-gray-300 text-gray-600' : 'bg-gray-900 text-white'}`}
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11V17M9 14h6"/></svg>
                 {isPaying ? 'Placing Order…' : `Place Order (${selectedCount} ${selectedCount === 1 ? 'item' : 'items'})`}
               </button>
+              {checkoutFrozen && <p className="mt-2 text-center text-xs text-amber-700" role="status">New orders are temporarily paused for maintenance.</p>}
             </div>
           </aside>
           )}

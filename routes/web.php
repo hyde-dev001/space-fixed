@@ -11,6 +11,7 @@ use App\Http\Controllers\PrivilegedPasswordResetController;
 use App\Http\Controllers\PrivilegedReauthenticationController;
 use App\Http\Controllers\PrivilegedSecurityController;
 use App\Http\Controllers\PrivilegedSetupController;
+use App\Http\Controllers\SystemMaintenanceController;
 use App\Http\Controllers\ShopOwner\EcommerceController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDocumentRenewalController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
@@ -33,6 +34,7 @@ use App\Http\Controllers\superAdmin\ShopOwnerUpgradeRequestController as SuperAd
 use App\Http\Controllers\superAdmin\SubscriptionInterventionController;
 use App\Http\Controllers\superAdmin\SubscriptionManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
+use App\Http\Controllers\superAdmin\MaintenanceController;
 use App\Http\Controllers\superAdmin\UserInterventionController;
 use App\Http\Controllers\SuperAdminAuthController;
 use App\Http\Controllers\UserController;
@@ -86,6 +88,8 @@ Route::post('/email/verification-notification', function (Request $request) {
 })->middleware(['auth:user,shop_owner', 'throttle:6,1'])->name('verification.send');
 
 // Public Routes (User Side)
+Route::get('/maintenance', [SystemMaintenanceController::class, 'page'])->name('system.maintenance');
+Route::get('/system/maintenance-status', [SystemMaintenanceController::class, 'status'])->name('system.maintenance-status');
 Route::get('/', [LandingPageController::class, 'index'])->name('landing');
 Route::get('/products', [LandingPageController::class, 'products'])->name('products');
 Route::get('/products/{slug}', [LandingPageController::class, 'productShow'])->name('products.show');
@@ -457,12 +461,15 @@ Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth
 Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(function () {
     Route::get('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'index']);
     Route::get('/batch-suggestions', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'suggestions']);
-    Route::post('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'store']);
-    Route::post('/legs/schedule', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'schedule']);
+    Route::post('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'store'])
+        ->name('logistics.api.batches.store');
+    Route::post('/legs/schedule', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'schedule'])
+        ->name('logistics.api.legs.schedule');
     Route::put('/batches/{batch}', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'update']);
     Route::delete('/batches/{batch}/legs/{leg}', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'remove']);
     Route::post('/legs/{leg}/urgent', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'urgent']);
-    Route::post('/batches/{batch}/offer', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'offer']);
+    Route::post('/batches/{batch}/offer', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'offer'])
+        ->name('logistics.api.batches.offer');
     Route::post('/batches/{batch}/accept', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'accept']);
     Route::post('/batches/{batch}/reject', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'reject']);
     Route::post('/batches/{batch}/start', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'start']);
@@ -1382,7 +1389,8 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
 
     // Update payment link (PayMongo integration)
     Route::post('{id}/update-payment-link', [\App\Http\Controllers\Api\RepairRequestController::class, 'updatePaymentLink'])
-        ->middleware('throttle:20,1');
+        ->middleware('throttle:20,1')
+        ->name('api.customer.repairs.update-payment-link');
 
     // Simulate payment for testing (bypasses PayMongo) - disabled in production
     if (! app()->environment('production')) {
@@ -1396,10 +1404,12 @@ Route::middleware('auth:user')->prefix('api/customer/repairs')->group(function (
 
     // Retry payment session creation with fresh PayMongo checkout URL
     Route::post('{id}/retry-payment-session', [\App\Http\Controllers\Api\RepairRequestController::class, 'retryPaymentSession'])
-        ->middleware('throttle:20,1');
+        ->middleware('throttle:20,1')
+        ->name('api.customer.repairs.retry-payment-session');
 
     // Customer-initiated online refund request for myRepairs flow
-    Route::post('{id}/refunds', [\App\Http\Controllers\Api\RepairRequestController::class, 'requestRefundFromMyRepair']);
+    Route::post('{id}/refunds', [\App\Http\Controllers\Api\RepairRequestController::class, 'requestRefundFromMyRepair'])
+        ->name('api.customer.repairs.refunds.store');
 
     // Customer-initiated warranty claim flow
     Route::post('{id}/warranty-claims', [\App\Http\Controllers\Api\RepairWarrantyClaimController::class, 'store'])
@@ -1527,7 +1537,8 @@ Route::middleware(['auth:user', 'check.user.business.type:repair,both'])->prefix
         ->middleware('permission:access-repair-stocks');
 
     // Activate payment for specific repair request
-    Route::post('{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair']);
+    Route::post('{id}/activate-payment', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'activatePaymentForRepair'])
+        ->name('api.repairer.repairs.activate-payment');
     Route::post('{id}/mark-paid-in-shop', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'markPaidInShop']);
 
     // Ship a repair (ready-for-pickup → shipped)
@@ -1598,8 +1609,10 @@ Route::middleware(['auth:shop_owner', 'check.business.type:repair,both'])->prefi
     // Rejection workflow owner approval routes
     Route::get('/rejection-pending', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getOwnerRejectionPendingApprovals']);
     Route::get('/rejection-pending/{id}', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'getOwnerRejectionApproval']);
-    Route::post('{id}/approve-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveOwnerRejection']);
-    Route::post('{id}/reject-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectOwnerRejection']);
+    Route::post('{id}/approve-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'approveOwnerRejection'])
+        ->name('shop_owner.repairs.approve-rejection');
+    Route::post('{id}/reject-rejection', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'rejectOwnerRejection'])
+        ->name('shop_owner.repairs.reject-rejection');
 
     // Ship a repair (ready-for-pickup → shipped)
     Route::post('{id}/ship', [\App\Http\Controllers\Api\RepairWorkflowController::class, 'shipRepair']);
@@ -1613,8 +1626,10 @@ Route::middleware('auth:shop_owner')->prefix('api/reviews')->group(function () {
 // Repair Services - Shop Owner Routes
 Route::middleware(['auth:shop_owner', 'check.business.type:repair,both'])->prefix('api/repair-services')->group(function () {
     Route::get('owner/pending', [\App\Http\Controllers\Api\RepairServiceController::class, 'ownerPending']);
-    Route::post('{id}/owner/approve', [\App\Http\Controllers\Api\RepairServiceController::class, 'ownerApprove']);
-    Route::post('{id}/owner/reject', [\App\Http\Controllers\Api\RepairServiceController::class, 'ownerReject']);
+    Route::post('{id}/owner/approve', [\App\Http\Controllers\Api\RepairServiceController::class, 'ownerApprove'])
+        ->name('shop_owner.repair-services.owner.approve');
+    Route::post('{id}/owner/reject', [\App\Http\Controllers\Api\RepairServiceController::class, 'ownerReject'])
+        ->name('shop_owner.repair-services.owner.reject');
 });
 
 // Product Reviews API (Verified Buyer System)
@@ -1829,6 +1844,39 @@ Route::middleware([
     Route::get('/audit', [PrivilegedAuditController::class, 'index'])
         ->middleware('privileged.capability:view_privileged_audit')
         ->name('audit');
+    Route::get('/maintenance', [MaintenanceController::class, 'index'])
+        ->middleware('privileged.capability:view_platform_maintenance')
+        ->name('maintenance.index');
+    Route::post('/maintenance', [MaintenanceController::class, 'store'])
+        ->middleware('privileged.capability:manage_platform_maintenance')
+        ->name('maintenance.store');
+    Route::post('/maintenance/start-now', [MaintenanceController::class, 'startNow'])
+        ->middleware(['privileged.capability:manage_platform_maintenance', 'privileged.recent'])
+        ->name('maintenance.start-now');
+    Route::patch('/maintenance/{maintenanceWindow}', [MaintenanceController::class, 'update'])
+        ->middleware('privileged.capability:manage_platform_maintenance')
+        ->name('maintenance.update');
+    Route::post('/maintenance/{maintenanceWindow}/schedule', [MaintenanceController::class, 'schedule'])
+        ->middleware('privileged.capability:manage_platform_maintenance')
+        ->name('maintenance.schedule');
+    Route::post('/maintenance/{maintenanceWindow}/cancel', [MaintenanceController::class, 'cancel'])
+        ->middleware('privileged.capability:manage_platform_maintenance')
+        ->name('maintenance.cancel');
+    Route::post('/maintenance/{maintenanceWindow}/start', [MaintenanceController::class, 'start'])
+        ->middleware('privileged.capability:manage_platform_maintenance')
+        ->name('maintenance.start');
+    Route::post('/maintenance/{maintenanceWindow}/extend', [MaintenanceController::class, 'extend'])
+        ->middleware('privileged.capability:manage_platform_maintenance')
+        ->name('maintenance.extend');
+    Route::post('/maintenance/{maintenanceWindow}/progress', [MaintenanceController::class, 'progress'])
+        ->middleware('privileged.capability:manage_platform_maintenance')
+        ->name('maintenance.progress');
+    Route::post('/maintenance/{maintenanceWindow}/public-update', [MaintenanceController::class, 'publicUpdate'])
+        ->middleware('privileged.capability:manage_platform_maintenance')
+        ->name('maintenance.public-update');
+    Route::post('/maintenance/{maintenanceWindow}/end', [MaintenanceController::class, 'end'])
+        ->middleware(['privileged.capability:manage_platform_maintenance', 'privileged.recent'])
+        ->name('maintenance.end');
 
     // Administrator management owns all privileged identity mutations.
     Route::get('/administrators', [AdministratorManagementController::class, 'index'])

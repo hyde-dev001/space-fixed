@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Head, Link, usePage } from '@inertiajs/react';
 import axios from 'axios';
+import { useMaintenance } from '../../../providers/MaintenanceProvider';
 
 const cancellationReasons = [
 	{ value: 'reduce_costs', label: 'I need to reduce business costs' },
@@ -99,6 +100,10 @@ const checkIcon = (
 
 const PremiumBenefits: React.FC<Props> = () => {
 	const pageProps = usePage().props as any;
+	const { isRouteFrozen } = useMaintenance();
+	const premiumCheckoutFrozen = isRouteFrozen('shop_owner.premium.checkout');
+	const premiumUpgradeFrozen = isRouteFrozen('shop_owner.premium.upgrade.confirm');
+	const maintenanceFreezeMessage = 'Premium changes are paused during maintenance.';
 	const shopOwnerId = pageProps.shop_owner?.id ?? pageProps.auth?.shop_owner?.id ?? null;
 	const virtualShowroomHref = shopOwnerId ? `/shop-profile/${shopOwnerId}/virtual-showroom?from=shop-owner-premium` : null;
 
@@ -209,6 +214,10 @@ const PremiumBenefits: React.FC<Props> = () => {
 	};
 
 	const handleConfirmUpgrade = async () => {
+		if (premiumUpgradeFrozen) {
+			setError(maintenanceFreezeMessage);
+			return;
+		}
 		if (!upgradePreview) return;
 
 		setConfirmingUpgrade(true);
@@ -278,6 +287,10 @@ const PremiumBenefits: React.FC<Props> = () => {
 		setSelectedDowngradePlan(null);
 	};
 	const handleCheckout = async (planCode: string) => {
+		if (premiumCheckoutFrozen) {
+			setError(maintenanceFreezeMessage);
+			return;
+		}
 		setCheckoutPlan(planCode);
 		setError(null);
 		try {
@@ -450,9 +463,11 @@ const PremiumBenefits: React.FC<Props> = () => {
 									const isUpgradeOption = hasActiveSubscription && !isCurrentPlan && selectedPrice > currentPrice;
 									const isDowngradeOption = hasActiveSubscription && !isCurrentPlan && selectedPrice < currentPrice;
 									const canCheckoutThisPlan = !activeSubscription && !checkoutPlan;
+									const checkoutActionAvailable = canCheckoutThisPlan && !premiumCheckoutFrozen;
+									const upgradeActionAvailable = isUpgradeOption && !premiumUpgradeFrozen;
 									const canClickPlanAction =
-										(!!canCheckoutThisPlan) ||
-										isUpgradeOption ||
+										(!!checkoutActionAvailable) ||
+										upgradeActionAvailable ||
 										isDowngradeOption;
 									const shouldShowShowroomButton = isCurrentPlan && Boolean(virtualShowroomHref);
 									const isPlanLoading =
@@ -540,12 +555,12 @@ const PremiumBenefits: React.FC<Props> = () => {
 													<button
 														type="button"
 														onClick={() => {
-															if (canCheckoutThisPlan) {
-																handleCheckout(plan.plan_code);
-																return;
-															}
+										if (checkoutActionAvailable) {
+											handleCheckout(plan.plan_code);
+											return;
+										}
 
-															if (isUpgradeOption) {
+										if (upgradeActionAvailable) {
 																handleUpgradePreview(plan);
 																return;
 															}
@@ -566,9 +581,12 @@ const PremiumBenefits: React.FC<Props> = () => {
 														{planButtonLabel}
 														<svg className="h-3.5 w-3.5 transition-transform duration-300 group-hover:translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 															<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-														</svg>
-													</button>
-												)}
+											</svg>
+									</button>
+								)}
+								{((canCheckoutThisPlan && premiumCheckoutFrozen) || (isUpgradeOption && premiumUpgradeFrozen)) && (
+									<p role="status" className="mt-2 text-xs font-semibold text-amber-700">{maintenanceFreezeMessage}</p>
+								)}
 												{isCurrentPlan && subscription?.status !== 'cancelled' ? (
 													<button
 														type="button"
@@ -681,11 +699,13 @@ const PremiumBenefits: React.FC<Props> = () => {
 								<button
 									type="button"
 									onClick={handleConfirmUpgrade}
-									disabled={confirmingUpgrade}
+									disabled={confirmingUpgrade || premiumUpgradeFrozen}
+									title={premiumUpgradeFrozen ? maintenanceFreezeMessage : undefined}
 									className="rounded-full border border-[#16233b] bg-[#16233b] px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:-translate-y-0.5 hover:bg-black disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:opacity-60"
 								>
 									{confirmingUpgrade ? 'Processing...' : 'Confirm Upgrade'}
 								</button>
+								{premiumUpgradeFrozen && <p role="status" className="w-full text-xs font-semibold text-amber-700">{maintenanceFreezeMessage}</p>}
 							</div>
 						</div>
 					</div>
