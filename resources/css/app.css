@@ -11,6 +11,15 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
 /* Flatpickr CSS */
 @import 'flatpickr/dist/flatpickr.min.css';
 
+/* Match the light geometric construction-paper background used by the auth reference. */
+.userside-auth-pattern {
+  background-color: #f7f6f6;
+  background-image: url('/images/auth-geometric-pattern.svg');
+  background-position: center top;
+  background-repeat: repeat;
+  background-size: 20rem 20rem;
+}
+
 /* Shared user-side promo ticker. The duplicated message set loops cleanly at -50%. */
 .landing-marquee {
   animation: landing-marquee 26s linear infinite;
