@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { applyMove, getRandomBotMove, getWinner, isDraw, type TicTacToeBoard } from './showroomTicTacToeRules';
+import {
+	applyMove,
+	getBestBotMove,
+	getRandomBotMove,
+	getWinner,
+	getWinningLine,
+	isDraw,
+	type TicTacToeBoard,
+} from './showroomTicTacToeRules';
 
 describe('showroom XOX rules', () => {
 	it('detects rows, columns, and diagonals', () => {
@@ -20,5 +28,14 @@ describe('showroom XOX rules', () => {
 		const move = getRandomBotMove(board, () => 0.99);
 		expect([1, 3, 5, 6, 8]).toContain(move);
 		expect(board[move!]).toBeNull();
+	});
+
+	it('uses the strongest move and reports the winning line', () => {
+		const winningBoard: TicTacToeBoard = ['O', 'O', null, 'X', 'X', null, null, null, null];
+		const blockingBoard: TicTacToeBoard = ['X', 'X', null, 'O', null, null, null, null, null];
+
+		expect(getBestBotMove(winningBoard, () => 0.5)).toBe(2);
+		expect(getBestBotMove(blockingBoard, () => 0.5)).toBe(2);
+		expect(getWinningLine(['X', null, null, null, 'X', null, null, null, 'X'])).toEqual([0, 4, 8]);
 	});
 });
