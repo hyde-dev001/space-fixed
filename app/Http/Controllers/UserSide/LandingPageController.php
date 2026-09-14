@@ -15,6 +15,7 @@ use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Models\User;
 use App\Models\VoucherClaim;
+use App\Services\ShowroomPlacementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,6 +25,10 @@ use Inertia\Response;
 
 class LandingPageController extends Controller
 {
+    public function __construct(private readonly ShowroomPlacementService $showroomPlacements)
+    {
+    }
+
     /**
      * Display the landing page.
      */
@@ -1026,6 +1031,15 @@ class LandingPageController extends Controller
             'showroom_slot_limit' => $forVirtualShowroom ? $showroomSlotLimit : null,
             'showroom_plan_code' => $forVirtualShowroom ? ($activePremiumSubscription?->plan_code ?? null) : null,
             'showroom_plan_name' => $forVirtualShowroom ? ($activePremiumSubscription?->premiumPlan?->name ?? null) : null,
+            'showroom_placements' => $forVirtualShowroom
+                ? $this->showroomPlacements->placementsForShop((int) $shopOwner->id)
+                    ->map(fn ($placement) => [
+                        'product_id' => (int) $placement->product_id,
+                        'slot_key' => $placement->slot_key,
+                    ])->values()->all()
+                : [],
+            'can_edit_showroom' => $forVirtualShowroom
+                && $this->showroomPlacements->canEdit(request(), (int) $shopOwner->id),
         ];
 
         $isRepairCapableShop = in_array($normalizedBusinessType, ['repair', 'both'], true);

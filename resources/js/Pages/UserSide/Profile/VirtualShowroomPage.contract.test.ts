@@ -10,6 +10,10 @@ const showroomSource = readFileSync(
 	resolve('resources/js/Pages/UserSide/Products/VirtualShowroom.tsx'),
 	'utf8',
 );
+const sceneSource = readFileSync(
+	resolve('resources/js/Pages/UserSide/Products/showroomScene.ts'),
+	'utf8',
+);
 
 describe('standalone virtual showroom', () => {
 	it('does not mount shared customer navigation', () => {
@@ -48,5 +52,13 @@ describe('standalone virtual showroom', () => {
 		expect(showroomSource).toContain('const shouldShowMobileJoystick = isTouchScreenDevice');
 		expect(showroomSource).toContain('ref={viewportRef}');
 		expect(showroomSource).toContain('const container = viewportRef.current;');
+	});
+
+	it('passes showroom identity and editing capability through the page', () => {
+		expect(pageSource).toContain('showroom_placements');
+		expect(pageSource).toContain('can_edit_showroom');
+		expect(pageSource).toContain('shopName={shop.name}');
+		expect(showroomSource).toContain('shopName');
+		expect(showroomSource).toContain('canEditShowroom');
 	});
 });
