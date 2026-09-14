@@ -1,0 +1,1 @@
+import{j as t}from"./app-BmVmkrUO.js";import"./vendor-apexcharts-DPaa2SoU.js";/* empty css            */function s(){return t.jsx("div",{className:"flex justify-center px-4 pt-8 sm:pt-10","data-testid":"auth-brand",children:t.jsx("span",{className:"userside-auth-title text-2xl font-bold tracking-tight text-gray-900",children:"SoleSpace"})})}export{s as default};
