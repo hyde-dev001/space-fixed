@@ -170,20 +170,12 @@ export default function Otp() {
 			<div className="userside-auth-page userside-auth-pattern min-h-screen font-outfit antialiased">
 				<AuthBrand />
 
-				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
-					<div className="text-center mb-12">
-						<h1 className="userside-auth-title text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
-							VERIFY CODE
-						</h1>
-						<p className="userside-auth-subtitle text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
-							We sent a 6-digit verification code to {email || 'your email'}. Enter it to continue.
-						</p>
-						{status === 'otp-sent' && (
-							<p className="text-sm text-green-700 mt-4">Code sent. Please check your inbox and spam folder.</p>
-						)}
-					</div>
-
+				<div className="w-full max-w-480 mx-auto px-6 lg:px-12 py-12 sm:py-16 lg:py-20">
 					<div className="max-w-lg mx-auto">
+						{status === 'otp-sent' && (
+							<p className="mb-4 text-center text-sm text-green-700">Code sent. Please check your inbox and spam folder.</p>
+						)}
+
 						<div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8">
 							<Form onSubmit={handleSubmit} className="space-y-6" autoComplete="off">
 								<div>

@@ -21,4 +21,11 @@ describe('customer auth chrome', () => {
     expect(source).not.toContain('<Navigation');
   });
 
+  it.each(authPages)('$file keeps the auth form as the only visible page-level content', ({ source }) => {
+    expect(source).not.toContain('userside-auth-title');
+    expect(source).not.toContain('userside-auth-subtitle');
+    expect(source).toContain('userside-auth-card');
+    expect(source).toContain('mx-auto');
+  });
+
 });

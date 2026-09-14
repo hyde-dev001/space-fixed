@@ -86,15 +86,7 @@ export default function Forgot() {
 			<div className="userside-auth-page userside-auth-pattern min-h-screen font-outfit antialiased">
 				<AuthBrand />
 
-				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
-					<div className="text-center mb-12">
-						<h1 className="userside-auth-title text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
-							RESET PASSWORD
-						</h1>
-						<p className="userside-auth-subtitle text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
-							Enter your account email and we’ll send a 6-digit verification code.
-						</p>
-					</div>
+				<div className="w-full max-w-480 mx-auto px-6 lg:px-12 py-12 sm:py-16 lg:py-20">
 
 					<div className="max-w-lg mx-auto">
 						<div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8">
