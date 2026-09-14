@@ -1222,15 +1222,7 @@ export default function Register() {
         <AuthBrand />
         <DocumentScreeningOverlay side={screeningSlot} status={screeningStatus} />
 
-      <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-16 sm:pt-20 lg:pt-28 pb-16 sm:pb-24">
-        <div className="text-center mb-7 sm:mb-10 lg:mb-12">
-          <h1 className="userside-auth-title text-[34px] leading-[1.05] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-3 sm:mb-5 tracking-tight">
-            CREATE ACCOUNT
-          </h1>
-          <p className="userside-auth-subtitle text-[15px] sm:text-lg lg:text-xl text-gray-600 max-w-sm sm:max-w-2xl mx-auto leading-relaxed font-light">
-            Please fill in your details to create an account.
-          </p>
-        </div>
+      <div className="w-full max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-12 sm:pt-16 lg:pt-20 pb-16 sm:pb-24">
 
         <div className={`max-w-92.5 mx-auto ${currentStep === 3 ? 'sm:max-w-2xl' : 'sm:max-w-lg'}`}>
           <div className="userside-auth-card bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">

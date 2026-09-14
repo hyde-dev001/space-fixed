@@ -119,16 +119,7 @@ export default function NewPassword() {
 			<div className="userside-auth-page userside-auth-pattern min-h-screen font-outfit antialiased">
 				<AuthBrand />
 
-				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
-					<div className="text-center mb-12">
-						<h1 className="userside-auth-title text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
-							SET NEW PASSWORD
-						</h1>
-						<p className="userside-auth-subtitle text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
-							Set a new password for {email || 'your account'}.
-						</p>
-					</div>
-
+				<div className="w-full max-w-480 mx-auto px-6 lg:px-12 py-12 sm:py-16 lg:py-20">
 					<div className="max-w-lg mx-auto">
 						<div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8">
 							<Form onSubmit={handleSubmit} className="space-y-6">

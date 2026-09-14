@@ -156,17 +156,9 @@ export default function UserLogin() {
       <div className="userside-auth-page userside-auth-pattern min-h-screen font-outfit antialiased">
         <AuthBrand />
 
-      <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-50 sm:pt-24 lg:pt-32 pb-16 sm:pb-24">
-        <div className="text-center mb-10 sm:mb-10 lg:mb-12">
-          <h1 className="userside-auth-title text-[42px] leading-[1.02] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-4 sm:mb-5 tracking-tight">
-            SIGN IN
-          </h1>
-          <p className="userside-auth-subtitle text-[18px] sm:text-lg lg:text-xl text-gray-600 max-w-[320px] sm:max-w-2xl mx-auto leading-snug font-light">
-            Glad to see you again. Sign in to continue.
-          </p>
-        </div>
+      <div className="w-full max-w-480 mx-auto px-4 sm:px-6 lg:px-12 py-12 sm:py-16 lg:py-20">
 
-        <div className="max-w-92.5 sm:max-w-lg mx-auto mt-5 sm:mt-0">
+        <div className="max-w-92.5 sm:max-w-lg mx-auto">
           <div className="userside-auth-card bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
             <Form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
               <div className="relative">
