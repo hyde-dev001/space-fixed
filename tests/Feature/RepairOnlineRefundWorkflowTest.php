@@ -9,6 +9,8 @@ use App\Models\ProcurementSettings;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -742,6 +744,126 @@ class RepairOnlineRefundWorkflowTest extends TestCase
         $this->assertSame('approved', (string) $updated->status);
         $this->assertSame('approved', (string) $updated->finance_status);
         $this->assertSame('approved', (string) $updated->shop_owner_status);
+    }
+
+    #[Test]
+    public function individual_shop_owner_can_execute_an_approved_repair_refund(): void
+    {
+        Storage::fake('public');
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+        $customer = User::factory()->create();
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-IND-RFD-EXECUTE-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 63,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-TDD-IND-RFD-EXECUTE-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 63,
+            'workflow_source' => 'online_myrepair',
+            'request_type' => 'full',
+            'requested_amount' => 500,
+            'approved_amount' => 500,
+            'reason_code' => 'service_defect',
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'repairer_status' => 'approved',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->withHeaders(['Accept' => 'application/json'])
+            ->post("/api/shop-owner/repair-refunds/{$refund->id}/execute", [
+                'execution_mode' => 'manual',
+                'execution_channel' => 'manual_cash',
+                'execution_reference' => 'IND-REPAIR-REFUND-001',
+                'execution_amount' => 500,
+                'execution_proof_images' => [UploadedFile::fake()->create('refund-proof.png', 10, 'image/png')],
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.status', 'succeeded');
+        $this->assertDatabaseHas('pos_refunds', [
+            'id' => $refund->id,
+            'status' => 'succeeded',
+            'execution_mode' => 'manual',
+            'execution_channel' => 'manual_cash',
+            'execution_reference' => 'IND-REPAIR-REFUND-001',
+        ]);
+    }
+
+    #[Test]
+    public function repair_pos_refund_queue_marks_individual_owner_payout_ready(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+        $customer = User::factory()->create();
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-TDD-IND-RFD-QUEUE-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 64,
+            'customer_type' => 'registered',
+            'customer_id' => $customer->id,
+            'due_type' => 'full',
+            'subtotal' => 300,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 300,
+            'paid_amount' => 300,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        PosRefund::create([
+            'refund_no' => 'RFD-TDD-IND-RFD-QUEUE-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 64,
+            'workflow_source' => 'online_myrepair',
+            'request_type' => 'full',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'reason_code' => 'service_defect',
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'repairer_status' => 'approved',
+            'requested_by' => $customer->id,
+            'requested_at' => now(),
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/repair-pos/refunds/queue?include_history=1');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.can_execute_payout', true)
+            ->assertJsonPath('data.0.has_pos_manual_leg', false);
     }
 
     #[Test]

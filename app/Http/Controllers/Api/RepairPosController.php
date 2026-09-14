@@ -573,6 +573,7 @@ class RepairPosController extends Controller
     public function listRefundQueue(Request $request, RepairPosRefundService $service)
     {
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
+        $isIndividualShopOwner = $shopOwnerId > 0 && $this->isIndividualShopOwner($shopOwnerId);
         $includeHistory = filter_var($request->query('include_history', false), FILTER_VALIDATE_BOOLEAN);
 
         $statuses = $includeHistory
@@ -586,11 +587,36 @@ class RepairPosController extends Controller
             ->with([
                 'sourceTransaction:id,transaction_no,module_reference_id,paid_amount,paid_at',
                 'repairRequest:id,request_id,customer_name,status,user_id',
+                'legs:id,pos_refund_id,leg_type,requested_amount,approved_amount',
             ])
             ->orderByDesc('requested_at')
             ->orderByDesc('id')
             ->get()
-            ->map(fn (PosRefund $refund) => $service->reconcileGatewayProcessingRefund($refund))
+            ->map(function (PosRefund $refund) use ($service, $isIndividualShopOwner): PosRefund {
+                $refund = $service->reconcileGatewayProcessingRefund($refund);
+                $refund->loadMissing('legs');
+
+                $status = strtolower((string) ($refund->status ?? ''));
+                $financeStatus = strtolower((string) ($refund->finance_status ?? 'pending'));
+                $ownerStatus = strtolower((string) ($refund->shop_owner_status ?? 'pending'));
+                $terminalStatuses = ['processing', 'succeeded', 'completed', 'paid', 'refunded', 'failed', 'rejected', 'cancelled'];
+
+                $refund->setAttribute(
+                    'can_execute_payout',
+                    $isIndividualShopOwner
+                        && $financeStatus === 'approved'
+                        && in_array($ownerStatus, ['approved', 'skipped'], true)
+                        && !in_array($status, $terminalStatuses, true),
+                );
+                $refund->setAttribute(
+                    'has_pos_manual_leg',
+                    $refund->legs->contains(fn ($leg): bool => (string) ($leg->leg_type ?? '') === 'pos_manual'
+                        && (float) ($leg->requested_amount ?? $leg->approved_amount ?? 0) > 0),
+                );
+                $refund->unsetRelation('legs');
+
+                return $refund;
+            })
             ->values();
 
         return response()->json([

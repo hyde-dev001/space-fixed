@@ -90,6 +90,7 @@ type Order = {
     shop_owner_status: string;
     finance_status: string;
     return_status: string;
+    can_execute_payout?: boolean;
     return_source?: string;
     return_delivery_method?: 'shop_owned' | 'third_party' | null;
     customer_return_tracking_number?: string | null;
@@ -681,6 +682,13 @@ export default function JobOrdersPage() {
         };
       }
 
+      if (refundStatus === 'processing') {
+        return {
+          label: 'Refund Processing',
+          className: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40',
+        };
+      }
+
       if (returnStatus === 'received' && financeStatus === 'approved') {
         return {
           label: isIndividualRegistration ? 'Ready for Refund Payout' : 'Ready for Finance Refund',
@@ -702,12 +710,6 @@ export default function JobOrdersPage() {
         };
       }
 
-      if (refundStatus === 'processing') {
-        return {
-          label: 'Refund Processing',
-          className: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40',
-        };
-      }
     }
 
     if (paymentStatus === 'refunded') {
@@ -1231,13 +1233,76 @@ export default function JobOrdersPage() {
 
       await Swal.fire('Confirmed', data?.message || 'Returned item marked as received.', 'success');
       window.location.assign(
-        `/shop-owner/refund-approvals?status=Approved&focus_order=${encodeURIComponent(order.order_number)}`,
+        `/shop-owner/erp/retail/orders?tab=refund&focus_order=${encodeURIComponent(order.order_number)}`,
       );
       return;
     } catch (error) {
       await Swal.fire({
         title: 'Failed',
         text: error instanceof Error ? error.message : 'Unable to confirm returned item.',
+        icon: 'error',
+        confirmButtonColor: '#2563eb',
+      });
+    }
+  };
+
+  const canExecuteRefundPayout = (order: Order): boolean => (
+    isIndividualRegistration
+      && String(order.latest_refund?.flow_type || '').toLowerCase() === 'request_approval'
+      && order.latest_refund?.can_execute_payout === true
+  );
+
+  const handleExecuteRefundPayout = async (order: Order) => {
+    const refund = order.latest_refund;
+    if (!refund || !canExecuteRefundPayout(order)) return;
+
+    const result = await Swal.fire({
+      title: 'Execute Refund Payout?',
+      text: `Release the refund for order ${order.order_number} to the customer's original payment method?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Execute Refund',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#059669',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const csrfResponse = await fetch('/api/csrf-token', {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      const csrfData = await csrfResponse.json();
+
+      const response = await fetch(`/api/shop-owner/refunds/${refund.id}/execute-gateway-refund`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': csrfData.csrf_token,
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.message || 'Unable to execute refund payout.');
+      }
+
+      await Swal.fire(
+        'Refund Payout Started',
+        data?.message || 'The refund payout has been submitted successfully.',
+        'success',
+      );
+      setIsViewModalOpen(false);
+      setViewOrder(null);
+      window.location.reload();
+    } catch (error) {
+      await Swal.fire({
+        title: 'Failed',
+        text: error instanceof Error ? error.message : 'Unable to execute refund payout.',
         icon: 'error',
         confirmButtonColor: '#2563eb',
       });
@@ -2029,6 +2094,19 @@ export default function JobOrdersPage() {
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
+                          {canExecuteRefundPayout(order) && (
+                            <button
+                              type="button"
+                              onClick={() => handleExecuteRefundPayout(order)}
+                              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              data-erp-icon-action="true"
+                              data-semantic-color="success"
+                              title="Execute refund payout"
+                              aria-label="Execute refund payout"
+                            >
+                              <MoneyIcon className="size-5" />
+                            </button>
+                          )}
                           {canArrangeReturnPickup(order) && (
                             <button
                               type="button"
@@ -2724,6 +2802,16 @@ export default function JobOrdersPage() {
                     title="Confirm returned item received"
                   >
                     Confirm Return Received
+                  </button>
+                )}
+                {canExecuteRefundPayout(viewOrder) && (
+                  <button
+                    type="button"
+                    onClick={() => handleExecuteRefundPayout(viewOrder)}
+                    className="px-4 py-2 border border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors"
+                    title="Execute refund payout"
+                  >
+                    Execute Refund Payout
                   </button>
                 )}
                 {canArrangeReturnPickup(viewOrder) && (

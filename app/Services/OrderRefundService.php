@@ -1145,12 +1145,14 @@ class OrderRefundService
                     : $refund->staff_return_shipped_at,
             ]);
 
-            $this->notifyFinancePayoutReady($refund->fresh() ?? $refund);
+            $resolvedRefund = $refund->fresh() ?? $refund;
+            $resolvedRefund->loadMissing('order.shopOwner');
+            $this->notifyFinancePayoutReady($resolvedRefund);
 
             return [
                 'result' => 'received',
-                'message' => 'Product return has been confirmed as received.',
-                'refund' => $refund->fresh(),
+                'message' => $this->payoutReadyMessage($resolvedRefund),
+                'refund' => $resolvedRefund,
             ];
         }
 
@@ -1189,7 +1191,7 @@ class OrderRefundService
         string $invalidStateMessage,
     ): array {
         return DB::transaction(function () use ($refund, $staffId, $notes, $lineDispositions, $allowPendingStaffPickup, $invalidStateMessage) {
-            $refund = OrderRefund::query()->with('order.items')->lockForUpdate()->findOrFail($refund->id);
+            $refund = OrderRefund::query()->with(['order.shopOwner', 'order.items'])->lockForUpdate()->findOrFail($refund->id);
             $returnStatus = (string) ($refund->return_status ?? 'awaiting_approval');
             $isStaffPickup = (string) ($refund->return_source ?? '') === 'staff';
             $returnDeliveryMethod = $refund->returnDeliveryMethod();
@@ -1285,11 +1287,12 @@ class OrderRefundService
             ]);
 
             $resolvedRefund = $refund->fresh() ?? $refund;
+            $resolvedRefund->loadMissing('order.shopOwner');
             DB::afterCommit(fn () => $this->notifyFinancePayoutReady($resolvedRefund));
 
             return [
                 'result' => 'received',
-                'message' => 'Every returned item was inspected. Finance may now release the refund.',
+                'message' => $this->payoutReadyMessage($resolvedRefund),
                 'refund' => $resolvedRefund,
             ];
         });
@@ -1939,7 +1942,7 @@ class OrderRefundService
             return;
         }
 
-        $refund->loadMissing('order');
+        $refund->loadMissing('order.shopOwner');
         $orderNumber = (string) ($refund->order?->order_number ?? ('#' . (int) ($refund->order_id ?? 0)));
         $payoutAmount = $this->resolvePayoutAmount($refund, $refund->order);
         $data = $this->buildRefundNotificationData($refund, [
@@ -1947,6 +1950,22 @@ class OrderRefundService
             'can_execute_payout' => true,
             'payout_amount' => number_format($payoutAmount, 2, '.', ''),
         ]);
+
+        if ($this->isIndividualRegistrationType((string) ($refund->order?->shopOwner?->registration_type ?? ''))) {
+            $this->notificationService->sendToShopOwner(
+                shopOwnerId: (int) ($refund->shop_owner_id ?? 0),
+                type: NotificationType::REFUND_REQUEST,
+                title: 'Refund Payout Ready',
+                message: "Refund payout for order #{$orderNumber} is ready for you to execute.",
+                data: $data,
+                actionUrl: '/shop-owner/erp/retail/orders?tab=refund&focus_order=' . rawurlencode($orderNumber),
+                priority: 'high',
+                groupKey: 'refund-payout-ready:order:' . (int) ($refund->id ?? 0),
+                requiresAction: true,
+            );
+
+            return;
+        }
 
         $this->notificationService->sendToErpRole(
             roleName: 'Finance',
@@ -1960,6 +1979,15 @@ class OrderRefundService
             groupKey: 'refund-payout-ready:order:' . (int) ($refund->id ?? 0),
             requiresAction: true,
         );
+    }
+
+    private function payoutReadyMessage(OrderRefund $refund): string
+    {
+        return $this->isIndividualRegistrationType(
+            (string) ($refund->order?->shopOwner?->registration_type ?? '')
+        )
+            ? 'Every returned item was inspected. You can now execute the refund payout.'
+            : 'Every returned item was inspected. Finance may now release the refund.';
     }
 
     public function notifyRefundApprovalRequested(OrderRefund $refund): void

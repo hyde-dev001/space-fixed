@@ -147,8 +147,11 @@ type ReceiptSnapshot = {
 type RefundQueueItem = {
 	id: number;
 	status: string;
+	workflow_source?: string | null;
 	finance_status?: string;
 	shop_owner_status?: string;
+	can_execute_payout?: boolean;
+	has_pos_manual_leg?: boolean;
 	requested_amount: number;
 	approved_amount?: number | null;
 	requested_at?: string | null;
@@ -502,10 +505,16 @@ const PointOfSalePage = () => {
 	const { isRouteFrozen } = useMaintenance();
 	const repairCheckoutFrozen = isRouteFrozen("api.repair-pos.checkout");
 	const repairRefundFrozen = isRouteFrozen("api.repair-pos.refunds.store");
+	const repairRefundExecutionFrozen = isRouteFrozen("shop_owner.repair-refunds.execute");
 	const retailRefundFrozen = isRouteFrozen("api.retail-pos.refunds.store");
 	const maintenanceFreezeMessage = "Critical POS actions are paused during maintenance.";
 	const erpMode = (props as any)?.erpMode === true;
 	const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
+	const isIndividualRepairShop = String(
+		(props as any)?.auth?.shop_owner?.registration_type
+			?? (props as any)?.auth?.user?.shop_owner?.registration_type
+			?? "",
+	).toLowerCase() === "individual";
 	const cashierName = String((props as any)?.auth?.shop_owner?.name || (props as any)?.auth?.user?.name || "Shop Owner Cashier");
 	const shopRepairPaymentPolicy: ManualPaymentPolicy = "full_upfront";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
@@ -2718,25 +2727,104 @@ useEffect(() => {
 		}
 	};
 
-	const performRefundAction = async (refundId: number, action: 'approve' | 'reject' | 'execute', payload: Record<string, unknown>) => {
+	const performRefundAction = async (refund: RefundQueueItem, action: 'approve' | 'reject' | 'execute', payload: Record<string, unknown> = {}) => {
+		if (action === 'execute' && repairRefundExecutionFrozen) {
+			await Swal.fire({
+				icon: 'warning',
+				title: 'Maintenance in progress',
+				text: 'Refund execution is temporarily paused during maintenance.',
+				confirmButtonColor: '#2563eb',
+			});
+			return;
+		}
+
 		const actionLabel = action === 'execute' ? 'execute' : action;
-		const confirmation = await Swal.fire({
-			icon: action === 'reject' ? 'warning' : 'question',
-			title: `Confirm ${actionLabel}`,
-			text: `Are you sure you want to ${actionLabel} this refund request?`,
-			showCancelButton: true,
-			confirmButtonText: `Yes, ${actionLabel}`,
-			cancelButtonText: 'Cancel',
-			confirmButtonColor: action === 'reject' ? '#dc2626' : '#2563eb',
-		});
+		let requestPayload: Record<string, unknown> | FormData = payload;
+		const requiresManualPayoutDetails = action === 'execute'
+			&& refund.has_pos_manual_leg === true
+			&& String(refund.workflow_source ?? '').toLowerCase() === 'shop_pos_repair';
+
+		const confirmation = requiresManualPayoutDetails
+			? await Swal.fire({
+				icon: 'question',
+				title: 'Execute refund payout',
+				html: `
+					<div class="text-left space-y-3">
+						<label class="block text-sm font-semibold">Refund channel
+							<select id="repair_refund_execution_channel" class="swal2-input !m-0 !w-full">
+								<option value="">Select channel</option>
+								<option value="gcash">GCash</option>
+								<option value="card">Card</option>
+								<option value="bank_transfer">Bank transfer</option>
+								<option value="manual_cash">Cash</option>
+							</select>
+						</label>
+						<label class="block text-sm font-semibold">Reference
+							<input id="repair_refund_execution_reference" class="swal2-input !m-0 !w-full" placeholder="Transaction/reference number" />
+						</label>
+						<label class="block text-sm font-semibold">Amount
+							<input id="repair_refund_execution_amount" type="number" min="0.01" step="0.01" class="swal2-input !m-0 !w-full" placeholder="Refund amount" />
+						</label>
+						<label class="block text-sm font-semibold">Proof
+							<input id="repair_refund_execution_proof" type="file" accept=".jpg,.jpeg,.png,.webp" multiple class="swal2-file !m-0 !w-full" />
+						</label>
+					</div>
+				`,
+				showCancelButton: true,
+				confirmButtonText: 'Execute payout',
+				cancelButtonText: 'Cancel',
+				confirmButtonColor: '#059669',
+				preConfirm: () => {
+					const channel = (document.getElementById('repair_refund_execution_channel') as HTMLSelectElement | null)?.value.trim() ?? '';
+					const reference = (document.getElementById('repair_refund_execution_reference') as HTMLInputElement | null)?.value.trim() ?? '';
+					const amount = (document.getElementById('repair_refund_execution_amount') as HTMLInputElement | null)?.value.trim() ?? '';
+					const proofInput = document.getElementById('repair_refund_execution_proof') as HTMLInputElement | null;
+
+					if (!channel || !reference || !amount || !proofInput?.files?.length) {
+						Swal.showValidationMessage('Channel, reference, amount, and at least one proof image are required.');
+						return undefined;
+					}
+
+					return {
+						channel,
+						reference,
+						amount,
+						files: Array.from(proofInput.files),
+					};
+				},
+			})
+			: await Swal.fire({
+				icon: action === 'reject' ? 'warning' : 'question',
+				title: `Confirm ${actionLabel}`,
+				text: `Are you sure you want to ${actionLabel} this refund request?`,
+				showCancelButton: true,
+				confirmButtonText: `Yes, ${actionLabel}`,
+				cancelButtonText: 'Cancel',
+				confirmButtonColor: action === 'reject' ? '#dc2626' : '#2563eb',
+			});
 
 		if (!confirmation.isConfirmed) {
 			return;
 		}
 
-		setProcessingRefundId(refundId);
+		if (requiresManualPayoutDetails && confirmation.value) {
+			const formData = new FormData();
+			formData.append('execution_mode', 'manual');
+			formData.append('execution_channel', confirmation.value.channel);
+			formData.append('execution_reference', confirmation.value.reference);
+			formData.append('execution_amount', confirmation.value.amount);
+			for (const file of confirmation.value.files) {
+				formData.append('execution_proof_images[]', file);
+			}
+			requestPayload = formData;
+		}
+
+		setProcessingRefundId(refund.id);
 		try {
-			await axios.post(`/api/repair-pos/refunds/${refundId}/${action}`, payload, { withCredentials: true });
+			const endpoint = action === 'execute'
+				? `/api/shop-owner/repair-refunds/${refund.id}/execute`
+				: `/api/repair-pos/refunds/${refund.id}/${action}`;
+			await axios.post(endpoint, requestPayload, { withCredentials: true });
 			await fetchRefundQueue();
 			await Swal.fire({
 				icon: 'success',
@@ -2908,6 +2996,15 @@ useEffect(() => {
 						>
 							History
 						</button>
+						{mode === "repair" && (
+							<button
+								type="button"
+								onClick={() => setIsRefundQueueOpen(true)}
+								className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+							>
+								Refund Queue
+							</button>
+						)}
 						{mode === "repair" && allowedModes.includes("repair") && (
 							<button
 								type="button"
@@ -3862,7 +3959,7 @@ useEffect(() => {
 											const financeStatus = String(refund.finance_status || 'pending').toLowerCase();
 											const ownerStatus = String(refund.shop_owner_status || 'pending').toLowerCase();
 											const canApprove = refund.status === 'requested' && financeStatus === 'approved_initial' && ownerStatus === 'pending';
-											const canExecute = false;
+											const canExecute = isIndividualRepairShop && refund.can_execute_payout === true;
 											return (
 												<div key={refund.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
 													<div className="flex flex-wrap items-start justify-between gap-3">
@@ -3883,7 +3980,7 @@ useEffect(() => {
 															{canApprove && (
 																<button
 																	type="button"
-																	onClick={() => performRefundAction(refund.id, 'approve', {})}
+																	onClick={() => performRefundAction(refund, 'approve')}
 																	disabled={processingRefundId === refund.id}
 																	className="rounded-lg border border-blue-300 px-3 py-1 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
 																>
@@ -3893,7 +3990,7 @@ useEffect(() => {
 															{canApprove && (
 																<button
 																	type="button"
-																	onClick={() => performRefundAction(refund.id, 'reject', { rejection_reason: 'Rejected by Shop Owner from POS queue' })}
+																	onClick={() => performRefundAction(refund, 'reject', { rejection_reason: 'Rejected by Shop Owner from POS queue' })}
 																	disabled={processingRefundId === refund.id}
 																	className="rounded-lg border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
 																>
@@ -3903,11 +4000,11 @@ useEffect(() => {
 															{canExecute && (
 																<button
 																	type="button"
-																	onClick={() => performRefundAction(refund.id, 'execute', { execution_mode: 'manual' })}
+																	onClick={() => performRefundAction(refund, 'execute')}
 																	disabled={processingRefundId === refund.id}
 																	className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
 																>
-																	Execute
+																	Execute refund payout
 																</button>
 															)}
 														</div>

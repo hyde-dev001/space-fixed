@@ -100,9 +100,10 @@ class OrderController extends Controller
                 ->all(),
         );
         $canFulfillOrders = $this->canFulfillOrders($shopOwner);
+        $isIndividualRegistration = strtolower(trim((string) ($shopOwner->registration_type ?? ''))) === 'individual';
 
         return response()->json([
-            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $returnLegStatuses, $includeRefundItems, $canFulfillOrders) {
+            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $returnLegStatuses, $includeRefundItems, $canFulfillOrders, $isIndividualRegistration) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $hasStoredVat = $order->vat_amount !== null;
@@ -184,6 +185,8 @@ class OrderController extends Controller
                         'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
                         'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
                         'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
+                        'can_execute_payout' => $isIndividualRegistration
+                            && $this->orderRefundService->canExecuteApprovedRefund($latestRefund),
                         'return_source' => (string) ($latestRefund->return_source ?? 'customer'),
                         'return_delivery_method' => $latestRefund->returnDeliveryMethod(),
                         'return_logistics' => $returnLegStatuses->has($latestRefund->id)
@@ -305,6 +308,7 @@ class OrderController extends Controller
 
         $retailPosRefundSummary = $this->retailPosRefundSummaryService->buildForOrders((int) $shopOwner->id, [(int) $order->id]);
         $canFulfillOrders = $this->canFulfillOrders($shopOwner);
+        $isIndividualRegistration = strtolower(trim((string) ($shopOwner->registration_type ?? ''))) === 'individual';
 
         return response()->json([
             'id' => $order->id,
@@ -357,6 +361,8 @@ class OrderController extends Controller
                 'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
                 'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
                 'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
+                'can_execute_payout' => $isIndividualRegistration
+                    && $this->orderRefundService->canExecuteApprovedRefund($latestRefund),
                 'return_source' => (string) ($latestRefund->return_source ?? 'customer'),
                 'return_delivery_method' => $latestRefund->returnDeliveryMethod(),
                 'return_logistics' => $returnLegStatus !== null ? ['leg_status' => $returnLegStatus] : null,
@@ -736,12 +742,16 @@ class OrderController extends Controller
             ], 422);
         }
 
+        $isIndividualRegistration = strtolower(trim((string) ($shopOwner->registration_type ?? ''))) === 'individual';
+        $refundReady = ((string) (($result['refund']->finance_status ?? 'pending')) === 'approved')
+            && ((string) (($result['refund']->return_status ?? 'pending_customer_shipment')) === 'received');
+
         return response()->json([
             'success' => true,
             'message' => $result['message'] ?? 'Return has been confirmed.',
             'refund' => $result['refund'],
-            'refund_ready_for_finance_release' => ((string) (($result['refund']->finance_status ?? 'pending')) === 'approved')
-                && ((string) (($result['refund']->return_status ?? 'pending_customer_shipment')) === 'received'),
+            'refund_ready_for_finance_release' => $refundReady && !$isIndividualRegistration,
+            'refund_ready_for_owner_payout' => $refundReady && $isIndividualRegistration,
         ]);
     }
 
