@@ -167,11 +167,11 @@ export default function Otp() {
 		<>
 			<Head title="Verify Reset Code" />
 
-			<div className="userside-auth-page userside-auth-pattern min-h-screen flex flex-col font-outfit antialiased">
+			<div className="userside-auth-page userside-auth-pattern relative min-h-screen font-outfit antialiased">
 				<AuthBrand />
 
-				<div className="flex w-full max-w-480 flex-1 items-center justify-center mx-auto px-6 lg:px-12 py-12 sm:py-16 lg:py-20">
-					<div className="max-w-lg mx-auto">
+				<div className="flex min-h-screen w-full max-w-480 items-center justify-center mx-auto px-6 lg:px-12 py-24">
+					<div className="w-full max-w-lg mx-auto">
 						{status === 'otp-sent' && (
 							<p className="mb-4 text-center text-sm text-green-700">Code sent. Please check your inbox and spam folder.</p>
 						)}
