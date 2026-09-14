@@ -28,4 +28,11 @@ describe('customer auth chrome', () => {
     expect(source).toContain('mx-auto');
   });
 
+  it.each(authPages)('$file vertically centers its auth content below the brand', ({ source }) => {
+    expect(source).toContain('min-h-screen flex flex-col');
+    expect(source).toContain('flex-1');
+    expect(source).toContain('items-center');
+    expect(source).toContain('justify-center');
+  });
+
 });
