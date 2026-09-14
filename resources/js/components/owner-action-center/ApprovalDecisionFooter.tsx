@@ -57,7 +57,9 @@ export default function ApprovalDecisionFooter({
       input: "select",
       inputOptions: rejectionReasonOptions,
       inputPlaceholder: "Select a rejection reason",
-      inputValidator: (value) => value ? undefined : "Choose a rejection reason.",
+      inputValidator: (value) => String(value ?? "").trim()
+        ? undefined
+        : "Choose a rejection reason.",
       showCancelButton: true,
       confirmButtonText: "Continue",
       cancelButtonText: "Cancel",

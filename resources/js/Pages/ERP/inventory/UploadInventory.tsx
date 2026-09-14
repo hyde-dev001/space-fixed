@@ -912,7 +912,7 @@ export default function UploadInventory() {
         });
         // Upload any newly-added repair images when editing
         if (imageFiles.length > 0) {
-          await inventoryItemAPI.uploadImages(editingStock.id, imageFiles);
+          await inventoryItemAPI.uploadImages(editingStock.id, imageFiles, undefined, true);
         }
         // Persist any new colour variants added in edit mode
         if (isShoesMode && newColorVariants.length > 0) {

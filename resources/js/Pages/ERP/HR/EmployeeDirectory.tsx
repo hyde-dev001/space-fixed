@@ -69,6 +69,7 @@ type LifecycleRequestForm = {
 };
 
 type RehireRequestForm = LifecycleRequestForm & {
+  rehireStartDate: string;
   rehirePosition: string;
   rehireDepartment: string;
   rehireSalary: string;
@@ -302,6 +303,14 @@ const formatDate = (value?: string) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleDateString();
+};
+
+const nextDateAfter = (value?: string) => {
+  const raw = String(value ?? '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+
+  const [year, month, day] = raw.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 };
 
 const buildName = (employee: Employee) => `${employee.firstName} ${employee.lastName}`;
@@ -665,6 +674,7 @@ export const EmployeeManagement: React.FC<{
   const [rehireRequestForm, setRehireRequestForm] = useState<RehireRequestForm>({
     reason: "",
     evidence: "",
+    rehireStartDate: "",
     rehirePosition: "",
     rehireDepartment: "",
     rehireSalary: "",
@@ -1250,6 +1260,7 @@ export const EmployeeManagement: React.FC<{
     setRehireRequestForm({
       reason: '',
       evidence: '',
+      rehireStartDate: nextDateAfter(employee.terminatedAt),
       rehirePosition: employee.position || '',
       rehireDepartment: employee.department || '',
       rehireSalary: '',
@@ -1262,12 +1273,13 @@ export const EmployeeManagement: React.FC<{
   const handleRehireRequestSubmit = async () => {
     const employee = employeeToRehire;
     const reason = rehireRequestForm.reason.trim();
+    const rehireStartDate = rehireRequestForm.rehireStartDate.trim();
     if (!employee) return;
 
-    if (reason.length < 3 || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()) {
+    if (reason.length < 3 || !rehireStartDate || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()) {
       await Swal.fire({
         title: 'Complete Rehire Details',
-        text: 'Provide a reason, position, and role before submitting.',
+        text: 'Provide a reason, start date, position, and role before submitting.',
         icon: 'warning',
         confirmButtonColor: '#f59e0b',
       });
@@ -1281,6 +1293,7 @@ export const EmployeeManagement: React.FC<{
         employee_id: employee.id,
         reason,
         evidence: rehireRequestForm.evidence.trim() || null,
+        rehire_start_date: rehireStartDate,
         rehire_position: rehireRequestForm.rehirePosition.trim(),
         rehire_department: rehireRequestForm.rehireDepartment.trim() || null,
         rehire_salary: rehireRequestForm.rehireSalary.trim() || null,
@@ -1295,6 +1308,7 @@ export const EmployeeManagement: React.FC<{
         setRehireRequestForm({
           reason: '',
           evidence: '',
+          rehireStartDate: '',
           rehirePosition: '',
           rehireDepartment: '',
           rehireSalary: '',
@@ -3063,7 +3077,7 @@ export const EmployeeManagement: React.FC<{
                     Request Rehire / Reinstate Employee
                   </h2>
                   <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">
-                    The system generates the effective hired date when the request is finally approved.
+                    The requested start date is reviewed through the approval process and used for the new employment period.
                   </p>
                 </div>
 
@@ -3077,6 +3091,23 @@ export const EmployeeManagement: React.FC<{
                     <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
                       <span className="font-medium">Previous termination:</span> {formatDate(employeeToRehire.terminatedAt)}
                     </p>
+                    <div className="mt-4">
+                      <label htmlFor="rehire-start-date" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                        New Start Date <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        id="rehire-start-date"
+                        type="date"
+                        min={nextDateAfter(employeeToRehire.terminatedAt)}
+                        value={rehireRequestForm.rehireStartDate}
+                        onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireStartDate: event.target.value })}
+                        required
+                        className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                      />
+                      <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                        Select a date after the previous termination date.
+                      </p>
+                    </div>
                   </div>
 
                       <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4 pb-2 border-b border-gray-200 dark:border-gray-700">
@@ -3234,6 +3265,7 @@ export const EmployeeManagement: React.FC<{
                         setRehireRequestForm({
                           reason: '',
                           evidence: '',
+                          rehireStartDate: '',
                           rehirePosition: '',
                           rehireDepartment: '',
                           rehireSalary: '',
@@ -3247,7 +3279,7 @@ export const EmployeeManagement: React.FC<{
                     <button
                       type="button"
                       onClick={handleRehireRequestSubmit}
-                      disabled={isProcessingId === employeeToRehire.id || rehireRequestForm.reason.trim().length < 3 || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()}
+                      disabled={isProcessingId === employeeToRehire.id || rehireRequestForm.reason.trim().length < 3 || !rehireRequestForm.rehireStartDate || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()}
                       className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isProcessingId === employeeToRehire.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       {isProcessingId === employeeToRehire.id ? 'Submitting...' : 'Submit Rehire Request'}

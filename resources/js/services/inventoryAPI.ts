@@ -370,12 +370,15 @@ export const inventoryItemAPI = {
     /**
      * Upload images
      */
-    async uploadImages(itemId: number, images: File[], colorVariantId?: number): Promise<ApiResponse<{ images: any[] }>> {
+    async uploadImages(itemId: number, images: File[], colorVariantId?: number, replaceMainImage = false): Promise<ApiResponse<{ images: any[] }>> {
         try {
             const formData = new FormData();
             formData.append('inventory_item_id', String(itemId));
             if (colorVariantId !== undefined) {
                 formData.append('color_variant_id', String(colorVariantId));
+            }
+            if (replaceMainImage) {
+                formData.append('replace_main_image', '1');
             }
             images.forEach((image, index) => {
                 formData.append(`images[${index}]`, image);

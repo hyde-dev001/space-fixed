@@ -111,6 +111,7 @@ final class EmployeeLifecycleRequestController extends Controller
 
         if ($type === EmployeeLifecycleRequestType::REHIRE) {
             $rules += [
+                'rehire_start_date' => ['required', 'date_format:Y-m-d'],
                 'rehire_position' => ['required', 'string', 'max:100'],
                 'rehire_department' => ['nullable', 'string', 'max:100'],
                 'rehire_functional_role' => ['nullable', 'string', 'max:100'],
