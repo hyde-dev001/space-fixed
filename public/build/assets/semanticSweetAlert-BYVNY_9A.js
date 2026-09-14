@@ -1,0 +1,1 @@
+const c=(t,o)=>Array.isArray(t)?[...t,o]:t?`${t} ${o}`:o,r=(t,o)=>{const s=`erp-swal2-${o}`,n=t.customClass??{};return{...t,customClass:{...n,popup:c(n.popup,s),icon:c(n.icon,s),confirmButton:c(n.confirmButton,s),denyButton:c(n.denyButton,s),cancelButton:c(n.cancelButton,s)}}};export{r as w};
