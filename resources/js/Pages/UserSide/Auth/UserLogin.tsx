@@ -153,7 +153,7 @@ export default function UserLogin() {
           display: none;
         }
       `}</style>
-      <div className="userside-auth-page min-h-screen bg-[radial-gradient(circle_at_top,#eef2f7_0%,#f7f9fc_45%,#ffffff_100%)] md:bg-white font-outfit antialiased">
+      <div className="userside-auth-page userside-auth-pattern min-h-screen font-outfit antialiased">
         <Navigation />
 
       <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-50 sm:pt-24 lg:pt-32 pb-16 sm:pb-24">

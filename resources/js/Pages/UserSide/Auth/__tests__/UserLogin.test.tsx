@@ -59,6 +59,12 @@ beforeEach(() => {
 });
 
 describe('unified sign-in', () => {
+  it('renders the geometric background treatment on the login page', () => {
+    render(<UserLogin />);
+
+    expect(document.querySelector('.userside-auth-page')).toHaveClass('userside-auth-pattern');
+  });
+
   it('renders one account-neutral sign-in form without an account selector', () => {
     render(<UserLogin />);
 
