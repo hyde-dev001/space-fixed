@@ -1218,13 +1218,13 @@ export default function Register() {
   return (
     <>
       <Head title="Register" />
-      <div className="userside-auth-page userside-auth-pattern min-h-screen flex flex-col font-outfit antialiased">
+      <div className="userside-auth-page userside-auth-pattern relative min-h-screen font-outfit antialiased">
         <AuthBrand />
         <DocumentScreeningOverlay side={screeningSlot} status={screeningStatus} />
 
-      <div className="flex w-full max-w-480 flex-1 items-center justify-center mx-auto px-4 sm:px-6 lg:px-12 py-12 sm:py-16 lg:py-20">
+      <div className="flex min-h-screen w-full max-w-480 items-center justify-center mx-auto px-4 sm:px-6 lg:px-12 py-24">
 
-        <div className={`max-w-92.5 mx-auto ${currentStep === 3 ? 'sm:max-w-2xl' : 'sm:max-w-lg'}`}>
+        <div className={`w-full max-w-92.5 mx-auto ${currentStep === 3 ? 'sm:max-w-2xl' : 'sm:max-w-lg'}`}>
           <div className="userside-auth-card bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
             <div className="mb-4 text-center">
               <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Step {currentStep} of 3</p>

@@ -28,11 +28,12 @@ describe('customer auth chrome', () => {
     expect(source).toContain('mx-auto');
   });
 
-  it.each(authPages)('$file vertically centers its auth content below the brand', ({ source }) => {
-    expect(source).toContain('min-h-screen flex flex-col');
-    expect(source).toContain('flex-1');
+  it.each(authPages)('$file keeps its full-width card centered in the viewport', ({ source }) => {
+    expect(source).toContain('relative min-h-screen');
+    expect(source).toContain('flex min-h-screen w-full');
     expect(source).toContain('items-center');
     expect(source).toContain('justify-center');
+    expect(source).toMatch(/className=\{?(?:`|\")w-full max-w-/);
   });
 
 });

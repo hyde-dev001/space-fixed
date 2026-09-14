@@ -153,12 +153,12 @@ export default function UserLogin() {
           display: none;
         }
       `}</style>
-      <div className="userside-auth-page userside-auth-pattern min-h-screen flex flex-col font-outfit antialiased">
+      <div className="userside-auth-page userside-auth-pattern relative min-h-screen font-outfit antialiased">
         <AuthBrand />
 
-      <div className="flex w-full max-w-480 flex-1 items-center justify-center mx-auto px-4 sm:px-6 lg:px-12 py-12 sm:py-16 lg:py-20">
+      <div className="flex min-h-screen w-full max-w-480 items-center justify-center mx-auto px-4 sm:px-6 lg:px-12 py-24">
 
-        <div className="max-w-92.5 sm:max-w-lg mx-auto">
+        <div className="w-full max-w-92.5 sm:max-w-lg mx-auto">
           <div className="userside-auth-card bg-white rounded-[20px] sm:rounded-2xl border border-gray-100 shadow-[0_14px_32px_-20px_rgba(15,23,42,0.35)] p-5 sm:p-8">
             <Form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
               <div className="relative">
