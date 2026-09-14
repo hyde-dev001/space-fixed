@@ -312,7 +312,7 @@ export default function ERPPricingAndServices() {
       showCancelButton: true,
       confirmButtonColor: "#2563eb",
       cancelButtonColor: "#6b7280",
-      confirmButtonText: "Yes, Submit for Approval",
+      confirmButtonText: "Yes",
       cancelButtonText: "Cancel",
     });
 
