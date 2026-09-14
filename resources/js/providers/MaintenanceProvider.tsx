@@ -134,6 +134,10 @@ function getAxios(): AxiosClient {
   return axiosClient;
 }
 
+function isPrivilegedPortal(): boolean {
+  return /^\/(?:admin|superAdmin)(?:\/|$)/.test(window.location.pathname);
+}
+
 export function MaintenanceProvider({
   children,
   isMaintenancePage = false,
@@ -162,7 +166,7 @@ export function MaintenanceProvider({
   const serverNow = useCallback(() => Date.now() + offsetRef.current, []);
 
   const navigateToMaintenance = useCallback(() => {
-    if (isMaintenancePage || window.location.pathname === '/maintenance' || navigationTriggeredRef.current) {
+    if (isMaintenancePage || window.location.pathname === '/maintenance' || isPrivilegedPortal() || navigationTriggeredRef.current) {
       return;
     }
 
@@ -294,10 +298,12 @@ export function MaintenanceProvider({
     warningVisible,
   ]);
 
+  const showPublicMaintenanceUi = !isMaintenancePage && !isPrivilegedPortal();
+
   return (
     <MaintenanceContext.Provider value={contextValue}>
-      {!isMaintenancePage && <MaintenanceBanner />}
-      {!isMaintenancePage && <MaintenanceWarningModal />}
+      {showPublicMaintenanceUi && <MaintenanceBanner />}
+      {showPublicMaintenanceUi && <MaintenanceWarningModal />}
       {children}
     </MaintenanceContext.Provider>
   );

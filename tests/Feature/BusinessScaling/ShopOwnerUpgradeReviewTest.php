@@ -95,6 +95,24 @@ final class ShopOwnerUpgradeReviewTest extends TestCase
         }
     }
 
+    public function test_upgrade_queue_returns_global_status_card_counts(): void
+    {
+        $admin = $this->createAdmin();
+        ShopOwnerUpgradeRequest::factory()->create(['status' => ShopOwnerUpgradeRequest::STATUS_PENDING]);
+        ShopOwnerUpgradeRequest::factory()->create(['status' => ShopOwnerUpgradeRequest::STATUS_APPROVED]);
+        ShopOwnerUpgradeRequest::factory()->create(['status' => ShopOwnerUpgradeRequest::STATUS_REJECTED]);
+        ShopOwnerUpgradeRequest::factory()->create(['status' => ShopOwnerUpgradeRequest::STATUS_SUPERSEDED]);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->getJson(route('admin.business-upgrade-requests.index'))
+            ->assertOk()
+            ->assertJsonPath('stats.total', 4)
+            ->assertJsonPath('stats.pending', 1)
+            ->assertJsonPath('stats.approved', 1)
+            ->assertJsonPath('stats.rejected', 1)
+            ->assertJsonPath('stats.superseded', 1);
+    }
+
     public function test_upgrade_queue_relation_queries_do_not_grow_per_row(): void
     {
         $admin = $this->createAdmin();

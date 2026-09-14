@@ -85,7 +85,8 @@ describe('document renewal review queue UI', () => {
     reloadMock.mockReset();
   });
 
-  it('renders decided renewal history and applies server-side filters', () => {
+  it('renders decided renewal history and automatically applies server-side filters', () => {
+    vi.useFakeTimers();
     render(
       <DocumentRenewalQueue
         renewals={[renewal({ status: 'approved' })]}
@@ -102,12 +103,14 @@ describe('document renewal review queue UI', () => {
     fireEvent.change(screen.getByLabelText('Search renewals'), {
       target: { value: 'Sole' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+    vi.advanceTimersByTime(250);
 
     expect(getMock).toHaveBeenCalledWith(
       '/admin/document-renewals',
       { search: 'Sole', status: 'approved', page: 1, per_page: 20 },
       expect.objectContaining({ replace: true }),
     );
+
+    vi.useRealTimers();
   });
 });

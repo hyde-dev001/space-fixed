@@ -1,8 +1,9 @@
-import React, { FormEvent, useState } from 'react';
+import React, { FormEvent, useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '../../../layout/AppLayout';
 import Select from '../../../components/form/Select';
 import { Table, TableBody, TableCell, TableHeader, TableRow } from '../../../components/ui/table';
+import { workflowFeedback } from '../../../utils/workflowFeedback';
 
 type MaintenanceRecord = {
   id: number;
@@ -109,20 +110,64 @@ const StatusBadge = ({ value }: { value: string }) => (
   </span>
 );
 
+type MetricKind = 'operational' | 'scheduled' | 'active' | 'ended' | 'cancelled';
+
+const MetricIcon = ({ kind }: { kind: MetricKind }) => {
+  const paths: Record<MetricKind, string> = {
+    operational: 'M5 12h14M12 5v14',
+    scheduled: 'M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z',
+    active: 'M5 13l4 4L19 7',
+    ended: 'M5 13l4 4L19 7',
+    cancelled: 'M6 6l12 12M6 18L18 6',
+  };
+
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true"><path d={paths[kind]} /></svg>;
+};
+
+const metricCards: Array<{ value: MetricKind; title: string }> = [
+  { value: 'operational', title: 'Operational' },
+  { value: 'scheduled', title: 'Scheduled' },
+  { value: 'active', title: 'Active' },
+  { value: 'ended', title: 'Ended' },
+  { value: 'cancelled', title: 'Cancelled' },
+];
+
 export default function MaintenanceIndex() {
   const { current, upcoming, history, filters, pagination, status_counts: statusCounts, can_manage: canManage } = usePage<PageProps>().props;
   const [filterForm, setFilterForm] = useState(() => initialFilters(filters));
+  const [scheduleForm, setScheduleForm] = useState({
+    title: '',
+    public_message: '',
+    starts_at: '',
+    ends_at: '',
+    notify_before_minutes: '15',
+    transaction_freeze_minutes: '3',
+  });
   const [startNowForm, setStartNowForm] = useState({ title: '', public_message: '', ends_at: '' });
   const [extension, setExtension] = useState('');
   const [publicUpdate, setPublicUpdate] = useState(current?.public_update_message ?? '');
+  const filterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const applyFilters = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    router.get('/admin/maintenance', queryParams(filterForm), { preserveState: true, preserveScroll: true, replace: true });
+  useEffect(() => () => {
+    if (filterTimer.current) clearTimeout(filterTimer.current);
+  }, []);
+
+  const visitFilters = (next: Filters, immediate = false) => {
+    setFilterForm(next);
+    if (filterTimer.current) clearTimeout(filterTimer.current);
+
+    const visit = () => router.get('/admin/maintenance', queryParams(next), { preserveState: true, preserveScroll: true, replace: true });
+    if (immediate) {
+      visit();
+      return;
+    }
+
+    filterTimer.current = setTimeout(visit, 250);
   };
 
   const clearFilters = () => {
     const cleared = emptyFilters();
+    if (filterTimer.current) clearTimeout(filterTimer.current);
     setFilterForm(cleared);
     router.get('/admin/maintenance', {}, { preserveState: true, preserveScroll: true, replace: true });
   };
@@ -133,17 +178,52 @@ export default function MaintenanceIndex() {
 
   const filterByStatus = (status: string) => {
     const next = { ...filterForm, status };
-    setFilterForm(next);
-    router.get('/admin/maintenance', queryParams(next), { preserveState: true, preserveScroll: true, replace: true });
+    visitFilters(next, true);
   };
 
-  const startNow = (event: FormEvent<HTMLFormElement>) => {
+  const scheduleMaintenance = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!startNowForm.ends_at || !window.confirm('Start platform maintenance now?')) return;
+    if (!scheduleForm.starts_at || !scheduleForm.ends_at) return;
+
+    router.post('/admin/maintenance', {
+      ...scheduleForm,
+      starts_at: manilaInputToUtc(scheduleForm.starts_at),
+      ends_at: manilaInputToUtc(scheduleForm.ends_at),
+      notify_before_minutes: Number(scheduleForm.notify_before_minutes),
+      transaction_freeze_minutes: scheduleForm.transaction_freeze_minutes === ''
+        ? null
+        : Number(scheduleForm.transaction_freeze_minutes),
+    }, { preserveScroll: true });
+  };
+
+  const startNow = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!startNowForm.ends_at) return;
+
+    const confirmation = await workflowFeedback.confirm({
+      title: 'Start platform maintenance now?',
+      text: 'Regular platform traffic will be sent to the maintenance experience immediately.',
+      confirmButtonText: 'Start maintenance',
+    });
+    if (!confirmation.isConfirmed) return;
+
     router.post('/admin/maintenance/start-now', {
       ...startNowForm,
       ends_at: manilaInputToUtc(startNowForm.ends_at),
     }, { preserveScroll: true });
+  };
+
+  const endNow = async () => {
+    if (!current) return;
+
+    const confirmation = await workflowFeedback.confirm({
+      title: 'End platform maintenance now?',
+      text: 'Regular platform traffic will become available immediately.',
+      confirmButtonText: 'End maintenance',
+    });
+    if (confirmation.isConfirmed) {
+      postCommand(`/admin/maintenance/${current.id}/end`);
+    }
   };
 
   const postCommand = (path: string, payload: Record<string, string | number> = {}) => {
@@ -167,22 +247,22 @@ export default function MaintenanceIndex() {
           </span>
         </header>
 
-        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6" aria-label="Maintenance status summary">
-          {[
-            ['operational', 'Operational'],
-            ['scheduled', 'Scheduled'],
-            ['active', 'Active'],
-            ['ended', 'Ended'],
-            ['cancelled', 'Cancelled'],
-          ].map(([value, title]) => (
+        <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5" aria-label="Maintenance status summary">
+          {metricCards.map(({ value, title }) => (
             <button
               key={value}
               type="button"
               onClick={() => filterByStatus(value === 'operational' ? '' : value)}
-              className="rounded-2xl border border-gray-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-gray-800 dark:bg-white/[0.03]"
+              className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 text-left shadow-sm transition hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-800 dark:hover:border-gray-700"
             >
-              <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
-              <p className="mt-2 text-2xl font-bold text-gray-900 dark:text-white">{Number(statusCounts?.[value] ?? 0).toLocaleString()}</p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-100">
+                  <MetricIcon kind={value} />
+                </div>
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300">Snapshot</span>
+              </div>
+              <p className="mt-5 text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>
+              <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{Number(statusCounts?.[value] ?? 0).toLocaleString()}</p>
             </button>
           ))}
         </section>
@@ -227,7 +307,23 @@ export default function MaintenanceIndex() {
           </article>
         </section>
 
-        {canManage && (
+        {canManage && (<>
+          <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="schedule-maintenance-heading">
+            <div className="mb-5">
+              <h2 id="schedule-maintenance-heading" className="text-xl font-semibold text-gray-900 dark:text-white">Schedule maintenance</h2>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Users will see the maintenance banner during the warning window before the scheduled start.</p>
+            </div>
+            <form onSubmit={scheduleMaintenance} className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              <div><label htmlFor="schedule-title" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label><input id="schedule-title" required value={scheduleForm.title} onChange={(event) => setScheduleForm({ ...scheduleForm, title: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div>
+              <div><label htmlFor="schedule-message" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Scheduled public message</label><input id="schedule-message" required value={scheduleForm.public_message} onChange={(event) => setScheduleForm({ ...scheduleForm, public_message: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div>
+              <div><label htmlFor="schedule-start" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Starts (Manila)</label><input id="schedule-start" type="datetime-local" required value={scheduleForm.starts_at} onChange={(event) => setScheduleForm({ ...scheduleForm, starts_at: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div>
+              <div><label htmlFor="schedule-end" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Expected end (Manila)</label><input id="schedule-end" type="datetime-local" required value={scheduleForm.ends_at} onChange={(event) => setScheduleForm({ ...scheduleForm, ends_at: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div>
+              <div><label htmlFor="schedule-warning" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Notify users before</label><select id="schedule-warning" value={scheduleForm.notify_before_minutes} onChange={(event) => setScheduleForm({ ...scheduleForm, notify_before_minutes: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-white">{[5, 10, 15, 30, 60].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}</select></div>
+              <div><label htmlFor="schedule-freeze" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Critical-action freeze</label><select id="schedule-freeze" value={scheduleForm.transaction_freeze_minutes} onChange={(event) => setScheduleForm({ ...scheduleForm, transaction_freeze_minutes: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-white"><option value="">Disabled</option>{[1, 2, 3, 5].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}</select></div>
+              <div className="md:col-span-2 lg:col-span-3"><button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">Schedule maintenance</button></div>
+            </form>
+          </section>
+
           <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="maintenance-controls-heading">
             <div className="mb-5">
               <h2 id="maintenance-controls-heading" className="text-xl font-semibold text-gray-900 dark:text-white">Maintenance controls</h2>
@@ -240,19 +336,19 @@ export default function MaintenanceIndex() {
               <div className="flex items-end"><button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-700 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">Start maintenance now</button></div>
             </form>
             {current?.state === 'scheduled' && <div className="mt-5 flex flex-wrap gap-3"><button type="button" onClick={() => postCommand(`/admin/maintenance/${current.id}/start`)} className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white dark:bg-white dark:text-gray-900">Activate scheduled window</button><button type="button" onClick={() => postCommand(`/admin/maintenance/${current.id}/cancel`)} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">Cancel scheduled window</button></div>}
-            {current?.state === 'active' && <div className="mt-5 grid gap-4 md:grid-cols-3"><div><label htmlFor="extend-end" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Extend ETA (Manila)</label><input id="extend-end" type="datetime-local" value={extension} onChange={(event) => setExtension(event.target.value)} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div><div className="flex items-end"><button type="button" disabled={!extension} onClick={() => postCommand(`/admin/maintenance/${current.id}/extend`, { ends_at: manilaInputToUtc(extension) })} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200">Extend ETA</button></div><div className="flex items-end"><button type="button" onClick={() => window.confirm('End platform maintenance now?') && postCommand(`/admin/maintenance/${current.id}/end`)} className="min-h-11 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">End maintenance now</button></div></div>}
+            {current?.state === 'active' && <div className="mt-5 grid gap-4 md:grid-cols-3"><div><label htmlFor="extend-end" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Extend ETA (Manila)</label><input id="extend-end" type="datetime-local" value={extension} onChange={(event) => setExtension(event.target.value)} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div><div className="flex items-end"><button type="button" disabled={!extension} onClick={() => postCommand(`/admin/maintenance/${current.id}/extend`, { ends_at: manilaInputToUtc(extension) })} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-200">Extend ETA</button></div><div className="flex items-end"><button type="button" onClick={endNow} className="min-h-11 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700">End maintenance now</button></div></div>}
             {current && (current.state === 'scheduled' || current.state === 'active') && <div className="mt-5 grid gap-4 md:grid-cols-2"><div><label htmlFor="progress" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Progress stage</label><Select id="progress" aria-label="Progress stage" options={[{ value: 'Maintenance Starting', label: 'Maintenance Starting' }, { value: 'Maintenance in Progress', label: 'Maintenance in Progress' }, { value: 'Final Checks', label: 'Final Checks' }]} value={current.progress_stage ?? ''} onChange={(value) => postCommand(`/admin/maintenance/${current.id}/progress`, { progress_stage: value })} placeholder="Choose progress stage" /></div><div><label htmlFor="public-update" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Public update</label><div className="flex gap-2"><input id="public-update" value={publicUpdate} onChange={(event) => setPublicUpdate(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-sm dark:border-gray-700 dark:bg-gray-950 dark:text-white" /><button type="button" onClick={() => postCommand(`/admin/maintenance/${current.id}/public-update`, { public_update_message: publicUpdate })} className="min-h-11 rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">Publish</button></div></div></div>}
           </section>
-        )}
+        </>)}
 
         <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="maintenance-filters-heading">
           <div className="mb-5"><h2 id="maintenance-filters-heading" className="text-xl font-semibold text-gray-900 dark:text-white">Filter history</h2><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Filters are validated and applied server-side; the current summary remains independent of the table filter.</p></div>
-          <form onSubmit={applyFilters} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <div><label htmlFor="maintenance-status" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label><Select id="maintenance-status" aria-label="Status" options={statusOptions} value={filterForm.status} onChange={(value) => setFilterForm({ ...filterForm, status: value })} placeholder="All statuses" /></div>
-            <div><label htmlFor="maintenance-search" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Text search</label><input id="maintenance-search" value={filterForm.search} onChange={(event) => setFilterForm({ ...filterForm, search: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-white" placeholder="Title or message" /></div>
-            <div><label htmlFor="maintenance-date-from" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Date from</label><input id="maintenance-date-from" type="date" value={filterForm.date_from} onChange={(event) => setFilterForm({ ...filterForm, date_from: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div>
-            <div><label htmlFor="maintenance-date-to" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Date to</label><input id="maintenance-date-to" type="date" value={filterForm.date_to} onChange={(event) => setFilterForm({ ...filterForm, date_to: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div>
-            <div className="flex items-end gap-3 sm:col-span-2 lg:col-span-5"><button type="submit" className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white dark:bg-white dark:text-gray-900">Apply filters</button><button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">Clear filters</button></div>
+          <form onSubmit={(event) => event.preventDefault()} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            <div><label htmlFor="maintenance-status" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label><Select id="maintenance-status" aria-label="Status" options={statusOptions} value={filterForm.status} onChange={(value) => visitFilters({ ...filterForm, status: value }, true)} placeholder="All statuses" /></div>
+            <div><label htmlFor="maintenance-search" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Text search</label><input id="maintenance-search" value={filterForm.search} onChange={(event) => visitFilters({ ...filterForm, search: event.target.value })} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-white" placeholder="Title or message" /></div>
+            <div><label htmlFor="maintenance-date-from" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Date from</label><input id="maintenance-date-from" type="date" value={filterForm.date_from} onChange={(event) => visitFilters({ ...filterForm, date_from: event.target.value }, true)} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div>
+            <div><label htmlFor="maintenance-date-to" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Date to</label><input id="maintenance-date-to" type="date" value={filterForm.date_to} onChange={(event) => visitFilters({ ...filterForm, date_to: event.target.value }, true)} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-white" /></div>
+            <div className="flex items-end gap-3 sm:col-span-2 lg:col-span-5"><button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 dark:border-gray-700 dark:text-gray-200">Clear filters</button></div>
           </form>
         </section>
 

@@ -150,4 +150,17 @@ describe('MaintenanceProvider', () => {
     expect(routerVisit).toHaveBeenCalledTimes(1);
     expect(routerVisit).toHaveBeenCalledWith('/maintenance', { replace: true });
   });
+
+  it('does not redirect or show public maintenance UI inside the admin portal', async () => {
+    window.history.replaceState({}, '', '/admin/maintenance');
+    axiosGet.mockResolvedValue({
+      data: { ...scheduledResponse.data, state: 'active' },
+    });
+
+    renderProvider();
+    await waitFor(() => expect(axiosGet).toHaveBeenCalledTimes(1));
+
+    expect(routerVisit).not.toHaveBeenCalled();
+    expect(screen.queryByText('Platform upgrade')).not.toBeInTheDocument();
+  });
 });

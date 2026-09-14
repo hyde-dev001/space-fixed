@@ -62,6 +62,7 @@ const props = {
   requests: [pendingRequest],
   filters: { status: 'pending', search: null, date_from: null, date_to: null },
   pagination: { current_page: 1, per_page: 20, total: 1, last_page: 1 },
+  stats: { total: 1, pending: 1, approved: 0, rejected: 0, superseded: 0 },
 };
 
 const allStatusesProps = {
@@ -98,7 +99,8 @@ describe('BusinessUpgradeRequests', () => {
     expect(screen.getByRole('option', { name: /superseded/i })).toBeInTheDocument();
   });
 
-  it('submits status/search filters and requests another page', () => {
+  it('automatically applies status/search filters and requests another page', () => {
+    vi.useFakeTimers();
     render(
       <BusinessUpgradeRequests
         {...props}
@@ -108,9 +110,9 @@ describe('BusinessUpgradeRequests', () => {
 
     fireEvent.change(screen.getByLabelText(/filter status/i), { target: { value: 'rejected' } });
     fireEvent.change(screen.getByLabelText(/search requests/i), { target: { value: 'Sole Space' } });
-    fireEvent.click(screen.getByRole('button', { name: /apply filters/i }));
+    vi.advanceTimersByTime(250);
 
-    expect(getMock).toHaveBeenCalledWith(
+    expect(getMock).toHaveBeenLastCalledWith(
       '/admin/business-upgrade-requests',
       { status: 'rejected', search: 'Sole Space' },
       expect.objectContaining({ preserveState: true }),
@@ -122,6 +124,8 @@ describe('BusinessUpgradeRequests', () => {
       { status: 'rejected', search: 'Sole Space', page: '2' },
       expect.objectContaining({ preserveState: true }),
     );
+
+    vi.useRealTimers();
   });
 
   it('keeps the status selector aligned with the server-side URL filter', async () => {

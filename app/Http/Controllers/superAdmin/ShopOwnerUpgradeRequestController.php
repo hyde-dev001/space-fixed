@@ -24,7 +24,16 @@ final class ShopOwnerUpgradeRequestController extends Controller
     public function index(ReviewRequest $request): JsonResponse|InertiaResponse
     {
         $validated = $request->validated();
-        $query = ShopOwnerUpgradeRequest::query()
+        $baseQuery = ShopOwnerUpgradeRequest::query();
+        $stats = [
+            'total' => (clone $baseQuery)->count(),
+            'pending' => (clone $baseQuery)->where('status', ShopOwnerUpgradeRequest::STATUS_PENDING)->count(),
+            'approved' => (clone $baseQuery)->where('status', ShopOwnerUpgradeRequest::STATUS_APPROVED)->count(),
+            'rejected' => (clone $baseQuery)->where('status', ShopOwnerUpgradeRequest::STATUS_REJECTED)->count(),
+            'superseded' => (clone $baseQuery)->where('status', ShopOwnerUpgradeRequest::STATUS_SUPERSEDED)->count(),
+        ];
+
+        $query = (clone $baseQuery)
             ->select([
                 'id',
                 'shop_owner_id',
@@ -81,6 +90,7 @@ final class ShopOwnerUpgradeRequestController extends Controller
         if ($request->expectsJson()) {
             return response()->json([
                 'data' => $items,
+                'stats' => $stats,
                 'meta' => [
                     'current_page' => $paginator->currentPage(),
                     'per_page' => $paginator->perPage(),
@@ -92,6 +102,7 @@ final class ShopOwnerUpgradeRequestController extends Controller
 
         return Inertia::render('superAdmin/Shops/BusinessUpgradeRequests', [
             'requests' => $items,
+            'stats' => $stats,
             'filters' => [
                 'status' => $validated['status'] ?? null,
                 'search' => $validated['search'] ?? null,

@@ -1,4 +1,4 @@
-import React, { ChangeEvent, FormEvent, useState } from 'react';
+import React, { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayout from '../../../layout/AppLayout';
 import Select from '../../../components/form/Select';
@@ -108,7 +108,7 @@ const formatDate = (value: string | null): string => {
 
 const formatMetadataKey = (key: string): string => formatLabel(key);
 
-const queryParams = (filters: AuditFilters): Record<string, string> => {
+const queryParams = (filters: AuditFilters, page?: number): Record<string, string> => {
   const params: Record<string, string> = {};
   const filterKeys: Array<keyof Omit<AuditFilters, 'per_page'>> = [
     'event',
@@ -124,6 +124,8 @@ const queryParams = (filters: AuditFilters): Record<string, string> => {
     const value = String(filters[key] ?? '').trim();
     if (value !== '') params[key] = value;
   });
+
+  if (page && page > 1) params.page = String(page);
 
   return params;
 };
@@ -147,24 +149,38 @@ const MetadataSummary = ({ metadata }: { metadata: AuditEntry['metadata'] }) => 
 export default function PrivilegedAuditHistory() {
   const { entries, filters, pagination, event_options: eventOptions, target_type_options: targetTypeOptions } = usePage<PageProps>().props;
   const [filterForm, setFilterForm] = useState(() => initialFilters(filters));
+  const filterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const updateFilter = (key: keyof AuditFilters) => (
-    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
-  ) => {
-    setFilterForm((previous) => ({ ...previous, [key]: event.target.value }));
-  };
+  useEffect(() => () => {
+    if (filterTimer.current) clearTimeout(filterTimer.current);
+  }, []);
 
-  const applyFilters = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    router.get('/admin/audit', queryParams(filterForm), {
+  const visitFilters = (next: AuditFilters, immediate = false) => {
+    setFilterForm(next);
+    if (filterTimer.current) clearTimeout(filterTimer.current);
+
+    const visit = () => router.get('/admin/audit', queryParams(next), {
       preserveState: true,
       preserveScroll: true,
       replace: true,
     });
+    if (immediate) {
+      visit();
+      return;
+    }
+
+    filterTimer.current = setTimeout(visit, 250);
+  };
+
+  const updateFilter = (key: keyof AuditFilters, immediate = false) => (
+    event: ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+  ) => {
+    visitFilters({ ...filterForm, [key]: event.target.value }, immediate);
   };
 
   const clearFilters = () => {
     const cleared = emptyFilters();
+    if (filterTimer.current) clearTimeout(filterTimer.current);
     setFilterForm(cleared);
     router.get('/admin/audit', {}, {
       preserveState: true,
@@ -174,7 +190,7 @@ export default function PrivilegedAuditHistory() {
   };
 
   const goToPage = (page: number) => {
-    router.get('/admin/audit', { ...queryParams(filterForm), page: String(page) }, {
+    router.get('/admin/audit', queryParams(filterForm, page), {
       preserveState: true,
       preserveScroll: true,
       replace: true,
@@ -198,10 +214,10 @@ export default function PrivilegedAuditHistory() {
               <h2 id="audit-filters-heading" className="text-lg font-semibold text-slate-900 dark:text-white">Filter history</h2>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Filters are validated and applied inside the server-side visibility boundary.</p>
             </div>
-            <form onSubmit={applyFilters} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <form onSubmit={(event) => event.preventDefault()} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <label htmlFor="event" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Event</label>
-                <Select id="event" aria-label="Event" options={eventOptions} placeholder="All events" value={filterForm.event} onChange={(value) => setFilterForm((previous) => ({ ...previous, event: value }))} />
+                <Select id="event" aria-label="Event" options={eventOptions} placeholder="All events" value={filterForm.event} onChange={(value) => visitFilters({ ...filterForm, event: value }, true)} />
               </div>
               <div>
                 <label htmlFor="actor_id" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Actor ID</label>
@@ -209,7 +225,7 @@ export default function PrivilegedAuditHistory() {
               </div>
               <div>
                 <label htmlFor="target_type" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Target type</label>
-                <Select id="target_type" aria-label="Target type" options={targetTypeOptions} placeholder="All target types" value={filterForm.target_type} onChange={(value) => setFilterForm((previous) => ({ ...previous, target_type: value }))} />
+                <Select id="target_type" aria-label="Target type" options={targetTypeOptions} placeholder="All target types" value={filterForm.target_type} onChange={(value) => visitFilters({ ...filterForm, target_type: value }, true)} />
               </div>
               <div>
                 <label htmlFor="target_id" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Target ID</label>
@@ -221,14 +237,13 @@ export default function PrivilegedAuditHistory() {
               </div>
               <div>
                 <label htmlFor="date_from" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date from</label>
-                <input id="date_from" type="date" value={filterForm.date_from} onChange={updateFilter('date_from')} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                <input id="date_from" type="date" value={filterForm.date_from} onChange={updateFilter('date_from', true)} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
               </div>
               <div>
                 <label htmlFor="date_to" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Date to</label>
-                <input id="date_to" type="date" value={filterForm.date_to} onChange={updateFilter('date_to')} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
+                <input id="date_to" type="date" value={filterForm.date_to} onChange={updateFilter('date_to', true)} className="min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white" />
               </div>
               <div className="flex items-end gap-3 sm:col-span-2 lg:col-span-4">
-                <button type="submit" className="min-h-11 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200" aria-label="Apply filters">Apply filters</button>
                 <button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Clear filters</button>
               </div>
             </form>

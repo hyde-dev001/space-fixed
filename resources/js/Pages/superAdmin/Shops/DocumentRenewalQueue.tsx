@@ -1,5 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
-import React, { useState } from 'react';
+import { Check, Clock3, FileText, XCircle } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Head, router } from '@inertiajs/react';
 import AppLayout from '../../../layout/AppLayout';
 
@@ -110,14 +111,19 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
   const [rejectingId, setRejectingId] = useState<number | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const queueParams = (page: number): Record<string, string | number> => {
+  useEffect(() => () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+  }, []);
+
+  const queueParams = (page: number, nextSearch = searchTerm, nextStatus = filterStatus): Record<string, string | number> => {
     const params: Record<string, string | number> = {
       page,
       per_page: pagination.per_page,
-      status: filterStatus,
+      status: nextStatus,
     };
-    const search = searchTerm.trim();
+    const search = nextSearch.trim();
 
     if (search) params.search = search;
     if (filters.document_id) params.document_id = filters.document_id;
@@ -125,8 +131,8 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
     return params;
   };
 
-  const applyFilters = () => {
-    router.get('/admin/document-renewals', queueParams(1), {
+  const visitFilters = (nextSearch: string, nextStatus: RenewalStatus) => {
+    router.get('/admin/document-renewals', queueParams(1, nextSearch, nextStatus), {
       preserveState: true,
       preserveScroll: true,
       replace: true,
@@ -134,6 +140,7 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
   };
 
   const resetFilters = () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
     setSearchTerm('');
     setFilterStatus('pending');
     router.get('/admin/document-renewals', {
@@ -233,24 +240,26 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
 
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {[
-            ['Total renewals', stats.total, 'All submitted renewals'],
-            ['Pending reviews', stats.pending, 'Awaiting admin decision'],
-            ['Approved', stats.approved, 'Successfully approved'],
-            ['Rejected renewals', stats.rejected, 'Available for correction'],
-          ].map(([label, value, description]) => (
-            <div key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-              <p className="mt-3 text-3xl font-semibold text-slate-950 dark:text-white">{value}</p>
-              <p className="mt-2 text-sm text-slate-500">{description}</p>
+            ['Total renewals', stats.total, FileText],
+            ['Pending reviews', stats.pending, Clock3],
+            ['Approved', stats.approved, Check],
+            ['Rejected renewals', stats.rejected, XCircle],
+          ].map(([label, value, Icon]) => (
+            <div key={label as string} className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 shadow-sm transition hover:border-gray-300 hover:shadow-md dark:border-gray-800 dark:bg-gray-800 dark:hover:border-gray-700">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-gray-200 bg-gray-100 text-gray-900 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-100">
+                  <Icon className="h-6 w-6" aria-hidden="true" />
+                </div>
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-300">Snapshot</span>
+              </div>
+              <p className="mt-5 text-sm font-medium text-gray-500 dark:text-gray-400">{label}</p>
+              <p className="mt-1 text-3xl font-bold text-gray-900 dark:text-white">{Number(value ?? 0).toLocaleString()}</p>
             </div>
           ))}
         </div>
 
         <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            applyFilters();
-          }}
+          onSubmit={(event) => event.preventDefault()}
           className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
         >
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px_auto_auto] md:items-end">
@@ -260,7 +269,12 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
                 id="renewal-search"
                 aria-label="Search renewals"
                 value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setSearchTerm(value);
+                  if (searchTimer.current) clearTimeout(searchTimer.current);
+                  searchTimer.current = setTimeout(() => visitFilters(value, filterStatus), 250);
+                }}
                 placeholder="Business name, owner, email, or document"
                 className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none transition focus:border-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
               />
@@ -271,7 +285,12 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
                 id="renewal-status"
                 aria-label="Filter by Status"
                 value={filterStatus}
-                onChange={(event) => setFilterStatus(event.target.value as RenewalStatus)}
+                onChange={(event) => {
+                  const value = event.target.value as RenewalStatus;
+                  setFilterStatus(value);
+                  if (searchTimer.current) clearTimeout(searchTimer.current);
+                  visitFilters(searchTerm, value);
+                }}
                 className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-slate-900 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
               >
                 <option value="all">All statuses</option>
@@ -280,7 +299,6 @@ const DocumentRenewalQueue: React.FC<DocumentRenewalQueueProps> = ({
                 <option value="rejected">Rejected</option>
               </MonochromeSelect>
             </div>
-            <button type="submit" className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800">Apply filters</button>
             <button type="button" onClick={resetFilters} className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">Reset filters</button>
           </div>
         </form>

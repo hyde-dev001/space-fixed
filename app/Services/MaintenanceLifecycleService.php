@@ -59,6 +59,44 @@ class MaintenanceLifecycleService
         return $window;
     }
 
+    /** @param array<string, mixed> $attributes */
+    public function createScheduled(
+        SuperAdmin $actor,
+        array $attributes,
+        CarbonInterface $startsAt,
+        CarbonInterface $endsAt,
+        ?Request $request = null,
+    ): MaintenanceWindow {
+        $request ??= $this->maintenanceRequest();
+        $now = now();
+
+        [$window, $changed] = $this->commandLock->run(function () use ($actor, $attributes, $startsAt, $endsAt, $request, $now): array {
+            return DB::transaction(function () use ($actor, $attributes, $startsAt, $endsAt, $request, $now): array {
+                $values = $this->validatedAttributes($attributes);
+                $this->ensureTiming($startsAt, $endsAt, $now, true);
+                $window = MaintenanceWindow::query()->create(array_merge($values, [
+                    'status' => MaintenanceStatus::Scheduled,
+                    'starts_at' => $startsAt->copy()->utc(),
+                    'ends_at' => $endsAt->copy()->utc(),
+                    'version' => 1,
+                    'created_by' => $actor->getKey(),
+                    'updated_by' => $actor->getKey(),
+                ]));
+                $this->ensureNoOverlap($window, $now);
+                $this->audit->platformMaintenanceChanged($request, $actor, $window, 'platform_maintenance_created', [], $this->safeState($window));
+                $this->audit->platformMaintenanceChanged($request, $actor, $window, 'platform_maintenance_scheduled', [], $this->safeState($window));
+
+                return [$window, true];
+            });
+        });
+
+        if ($changed) {
+            $this->stateService->forget();
+        }
+
+        return $window;
+    }
+
     public function schedule(
         SuperAdmin $actor,
         MaintenanceWindow $window,
