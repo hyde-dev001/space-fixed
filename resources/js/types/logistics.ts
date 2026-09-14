@@ -71,7 +71,12 @@ export const logisticsSourceLabel = (shipment?: {
     return `Repair ${shipment.source_summary?.request_number || `#${shipment.source_id}`}`;
   }
   if (shipment.source_type === 'order_refund') return `Return #${shipment.source_id}`;
-  if (shipment.source_type === 'order') return `Order #${shipment.order_summary?.order_number ?? shipment.source_id}`;
+  if (shipment.source_type === 'order') {
+    const rawOrderNumber = String(shipment.order_summary?.order_number ?? '').trim();
+    const orderNumber = rawOrderNumber || String(shipment.source_id);
+
+    return `Order ${orderNumber.startsWith('#') ? orderNumber : `#${orderNumber}`}`;
+  }
   return `Delivery #${shipment.source_id}`;
 };
 
