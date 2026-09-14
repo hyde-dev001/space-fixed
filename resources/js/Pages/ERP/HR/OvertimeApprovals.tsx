@@ -1246,14 +1246,14 @@ export function OvertimeRequests() {
                   </div>
 
                   {/* Info Box */}
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                  <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4">
                     <div className="flex items-start gap-2">
-                      <svg className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="h-5 w-5 text-black dark:text-white flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       <div>
-                        <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-1">Assign Overtime</p>
-                        <p className="text-sm text-blue-700 dark:text-blue-400">
+                        <p className="text-sm font-semibold text-black dark:text-white mb-1">Assign Overtime</p>
+                        <p className="text-sm text-black dark:text-white">
                           This will assign overtime to the employee without requiring their approval. The overtime will appear as "Assigned" and will be automatically approved. The employee can start and end their overtime shift from the Time In page.
                         </p>
                       </div>

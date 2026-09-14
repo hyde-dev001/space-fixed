@@ -1059,13 +1059,6 @@ export default function GenerateSlip() {
 						</ul>
 					</div>
 
-					<div class="bg-green-50 border border-green-200 rounded-lg p-4">
-						<label class="flex items-center gap-2 text-sm cursor-pointer">
-							<input type="checkbox" id="sendNotifications" checked class="rounded text-green-600" />
-							<span class="text-green-800">📧 Send email notifications to employees</span>
-						</label>
-					</div>
-
 					<p class="text-xs text-gray-600">
 						This will create payslips and lock the data. You can export to CSV after generation.
 					</p>
@@ -1076,11 +1069,6 @@ export default function GenerateSlip() {
 			cancelButtonText: "Cancel",
 			confirmButtonColor: "#16a34a",
 			cancelButtonColor: "#6b7280",
-			preConfirm: () => {
-				return {
-					sendNotifications: (document.getElementById('sendNotifications') as HTMLInputElement)?.checked
-				};
-			}
 		});
 
 		if (!result.isConfirmed) {
@@ -1108,7 +1096,7 @@ export default function GenerateSlip() {
 					payrollPeriod: payrollPeriodKey || selectedPeriod.month,
 					employeeIds: batchPreviewData.previews.map((preview) => preview.employeeId),
 					paymentMethod: 'bank_transfer',
-					sendNotifications: result.value.sendNotifications,
+					sendNotifications: false,
 				}),
 			});
 
