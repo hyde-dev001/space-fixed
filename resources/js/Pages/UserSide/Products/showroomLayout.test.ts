@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getShowroomLayout, canWalkTo, SHOWROOM_ENTRANCE } from './showroomLayout';
+import { getShowroomLayout, canWalkTo, getNearbyShowroomSeat, SHOWROOM_ENTRANCE } from './showroomLayout';
 
 describe('connected flagship layout', () => {
 	it.each([0, 48, 60, 84, 85, 100, 150])('retains %i usable product positions', (capacity) => {
@@ -39,5 +39,28 @@ describe('connected flagship layout', () => {
 		}
 		expect(canWalkTo(8, 7, layout.colliders)).toBe(false);
 		expect(canWalkTo(23, 0, layout.colliders)).toBe(false);
+	});
+
+	it('keeps slot keys stable as capacity grows', () => {
+		const sixty = getShowroomLayout(60).slots;
+		const full = getShowroomLayout(150).slots;
+		expect(sixty.map(slot => slot.key)).toEqual(full.slice(0, 60).map(slot => slot.key));
+		expect(new Set(full.map(slot => slot.key)).size).toBe(150);
+		expect(full[0].key).toBe('slot-0');
+		expect(full[149].key).toBe('slot-149');
+	});
+
+	it('exposes walkable couch interaction points', () => {
+		const layout = getShowroomLayout(60);
+		expect(layout.seats).toHaveLength(layout.lounges.length);
+		for (const seat of layout.seats) {
+			expect(canWalkTo(seat.interactionPosition[0], seat.interactionPosition[1], layout.colliders)).toBe(true);
+			expect(getNearbyShowroomSeat(
+				seat.interactionPosition[0],
+				seat.interactionPosition[1],
+				layout.seats,
+				1.5,
+			)?.key).toBe(seat.key);
+		}
 	});
 });
