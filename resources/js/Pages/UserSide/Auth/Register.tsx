@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Head, router } from '@inertiajs/react';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
-import Navigation from '../Shared/Navigation';
+import AuthBrand from '../Shared/AuthBrand';
 import Label from '../../../components/form/Label';
 import Input from '../../../components/form/input/InputField';
 import DropzoneComponent from '../../../components/form/form-elements/DropZone';
@@ -1218,12 +1218,12 @@ export default function Register() {
   return (
     <>
       <Head title="Register" />
-      <div className="userside-auth-page min-h-screen bg-[radial-gradient(circle_at_top,#eef2f7_0%,#f7f9fc_45%,#ffffff_100%)] md:bg-white font-outfit antialiased">
-        <Navigation />
+      <div className="userside-auth-page userside-auth-pattern min-h-screen font-outfit antialiased">
+        <AuthBrand />
         <DocumentScreeningOverlay side={screeningSlot} status={screeningStatus} />
 
       <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-16 sm:pt-20 lg:pt-28 pb-16 sm:pb-24">
-        <div className="text-center mt-20 sm:mt-0 mb-7 sm:mb-10 lg:mb-12">
+        <div className="text-center mb-7 sm:mb-10 lg:mb-12">
           <h1 className="userside-auth-title text-[34px] leading-[1.05] sm:text-4xl lg:text-6xl font-bold text-gray-900 mb-3 sm:mb-5 tracking-tight">
             CREATE ACCOUNT
           </h1>

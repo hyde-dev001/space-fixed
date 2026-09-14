@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
-import Navigation from '../Shared/Navigation';
+import AuthBrand from '../Shared/AuthBrand';
 import Form from '../../../components/form/Form';
 import Label from '../../../components/form/Label';
 import Input from '../../../components/form/input/InputField';
@@ -83,8 +83,8 @@ export default function Forgot() {
 		<>
 			<Head title="Forgot Password" />
 
-			<div className="userside-auth-page min-h-screen bg-white font-outfit antialiased">
-				<Navigation />
+			<div className="userside-auth-page userside-auth-pattern min-h-screen font-outfit antialiased">
+				<AuthBrand />
 
 				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
 					<div className="text-center mb-12">

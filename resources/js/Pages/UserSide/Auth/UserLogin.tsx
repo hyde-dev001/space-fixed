@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import Navigation from '../Shared/Navigation';
+import AuthBrand from '../Shared/AuthBrand';
 import Form from '../../../components/form/Form';
 import Label from '../../../components/form/Label';
 import Input from '../../../components/form/input/InputField';
@@ -154,7 +154,7 @@ export default function UserLogin() {
         }
       `}</style>
       <div className="userside-auth-page userside-auth-pattern min-h-screen font-outfit antialiased">
-        <Navigation />
+        <AuthBrand />
 
       <div className="max-w-480 mx-auto px-4 sm:px-6 lg:px-12 pt-50 sm:pt-24 lg:pt-32 pb-16 sm:pb-24">
         <div className="text-center mb-10 sm:mb-10 lg:mb-12">

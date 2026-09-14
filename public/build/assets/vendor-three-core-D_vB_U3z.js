@@ -90,10 +90,10 @@ const Xh=2;const qh=1,Yh=2;const Kh=4;const Zh=300;const $h=1e3,jh=1001;const Jh
 #endif`,io=`#ifdef USE_AOMAP
 	float ambientOcclusion = ( texture2D( aoMap, vAoMapUv ).r - 1.0 ) * aoMapIntensity + 1.0;
 	reflectedLight.indirectDiffuse *= ambientOcclusion;
-	#if defined( USE_CLEARCOAT )
+	#if defined( USE_CLEARCOAT ) 
 		clearcoatSpecularIndirect *= ambientOcclusion;
 	#endif
-	#if defined( USE_SHEEN )
+	#if defined( USE_SHEEN ) 
 		sheenSpecularIndirect *= ambientOcclusion;
 	#endif
 	#if defined( USE_ENVMAP ) && defined( STANDARD )
@@ -248,7 +248,7 @@ vec3 BRDF_BlinnPhong( const in vec3 lightDir, const in vec3 viewDir, const in ve
 	#ifdef ALPHA_TO_COVERAGE
 		float distanceToPlane, distanceGradient;
 		float clipOpacity = 1.0;
-		#pragma unroll_loop_star
+		#pragma unroll_loop_start
 		for ( int i = 0; i < UNION_CLIPPING_PLANES; i ++ ) {
 			plane = clippingPlanes[ i ];
 			distanceToPlane = - dot( vClipPosition, plane.xyz ) + plane.w;
@@ -259,7 +259,7 @@ vec3 BRDF_BlinnPhong( const in vec3 lightDir, const in vec3 viewDir, const in ve
 		#pragma unroll_loop_end
 		#if UNION_CLIPPING_PLANES < NUM_CLIPPING_PLANES
 			float unionClipOpacity = 1.0;
-			#pragma unroll_loop_star
+			#pragma unroll_loop_start
 			for ( int i = UNION_CLIPPING_PLANES; i < NUM_CLIPPING_PLANES; i ++ ) {
 				plane = clippingPlanes[ i ];
 				distanceToPlane = - dot( vClipPosition, plane.xyz ) + plane.w;
@@ -272,7 +272,7 @@ vec3 BRDF_BlinnPhong( const in vec3 lightDir, const in vec3 viewDir, const in ve
 		diffuseColor.a *= clipOpacity;
 		if ( diffuseColor.a == 0.0 ) discard;
 	#else
-		#pragma unroll_loop_star
+		#pragma unroll_loop_start
 		for ( int i = 0; i < UNION_CLIPPING_PLANES; i ++ ) {
 			plane = clippingPlanes[ i ];
 			if ( dot( vClipPosition, plane.xyz ) > plane.w ) discard;
@@ -280,7 +280,7 @@ vec3 BRDF_BlinnPhong( const in vec3 lightDir, const in vec3 viewDir, const in ve
 		#pragma unroll_loop_end
 		#if UNION_CLIPPING_PLANES < NUM_CLIPPING_PLANES
 			bool clipped = true;
-			#pragma unroll_loop_star
+			#pragma unroll_loop_start
 			for ( int i = UNION_CLIPPING_PLANES; i < NUM_CLIPPING_PLANES; i ++ ) {
 				plane = clippingPlanes[ i ];
 				clipped = ( dot( vClipPosition, plane.xyz ) > plane.w ) && clipped;
@@ -587,7 +587,7 @@ vec4 sRGBTransferOETF( in vec4 value ) {
 		#define ENV_WORLDPOS
 	#endif
 	#ifdef ENV_WORLDPOS
-
+		
 		varying vec3 vWorldPosition;
 	#else
 		varying vec3 vReflect;
@@ -660,7 +660,7 @@ void RE_Direct_Lambert( const in IncidentLight directLight, const in vec3 geomet
 void RE_IndirectDiffuse_Lambert( const in vec3 irradiance, const in vec3 geometryPosition, const in vec3 geometryNormal, const in vec3 geometryViewDir, const in vec3 geometryClearcoatNormal, const in LambertMaterial material, inout ReflectedLight reflectedLight ) {
 	reflectedLight.indirectDiffuse += irradiance * BRDF_Lambert( material.diffuseColor );
 }
-#define RE_Direct				RE_Direct_Lamber
+#define RE_Direct				RE_Direct_Lambert
 #define RE_IndirectDiffuse		RE_IndirectDiffuse_Lambert`,ko=`uniform bool receiveShadow;
 uniform vec3 ambientLightColor;
 #if defined( USE_LIGHT_PROBES )
@@ -1218,17 +1218,17 @@ void RE_Direct_Physical( const in IncidentLight directLight, const in vec3 geome
 		clearcoatSpecularDirect += ccIrradiance * BRDF_GGX_Clearcoat( directLight.direction, geometryViewDir, geometryClearcoatNormal, material );
 	#endif
 	#ifdef USE_SHEEN
-
-		sheenSpecularDirect += irradiance * BRDF_Sheen( directLight.direction, geometryViewDir, geometryNormal, material.sheenColor, material.sheenRoughness );
-
-		float sheenAlbedoV = IBLSheenBRDF( geometryNormal, geometryViewDir, material.sheenRoughness );
-		float sheenAlbedoL = IBLSheenBRDF( geometryNormal, directLight.direction, material.sheenRoughness );
-
-		float sheenEnergyComp = 1.0 - max3( material.sheenColor ) * max( sheenAlbedoV, sheenAlbedoL );
-
-		irradiance *= sheenEnergyComp;
-
-	#endif
+ 
+ 		sheenSpecularDirect += irradiance * BRDF_Sheen( directLight.direction, geometryViewDir, geometryNormal, material.sheenColor, material.sheenRoughness );
+ 
+ 		float sheenAlbedoV = IBLSheenBRDF( geometryNormal, geometryViewDir, material.sheenRoughness );
+ 		float sheenAlbedoL = IBLSheenBRDF( geometryNormal, directLight.direction, material.sheenRoughness );
+ 
+ 		float sheenEnergyComp = 1.0 - max3( material.sheenColor ) * max( sheenAlbedoV, sheenAlbedoL );
+ 
+ 		irradiance *= sheenEnergyComp;
+ 
+ 	#endif
 	reflectedLight.directSpecular += irradiance * BRDF_GGX_Multiscatter( directLight.direction, geometryViewDir, geometryNormal, material );
 	reflectedLight.directDiffuse += irradiance * BRDF_Lambert( material.diffuseContribution );
 }
@@ -1247,7 +1247,7 @@ void RE_IndirectSpecular_Physical( const in vec3 radiance, const in vec3 irradia
 	#endif
 	#ifdef USE_SHEEN
 		sheenSpecularIndirect += irradiance * material.sheenColor * IBLSheenBRDF( geometryNormal, geometryViewDir, material.sheenRoughness ) * RECIPROCAL_PI;
-	#endif
+ 	#endif
 	vec3 singleScatteringDielectric = vec3( 0.0 );
 	vec3 multiScatteringDielectric = vec3( 0.0 );
 	vec3 singleScatteringMetallic = vec3( 0.0 );
@@ -1310,7 +1310,7 @@ IncidentLight directLight;
 	#if defined( USE_SHADOWMAP ) && NUM_POINT_LIGHT_SHADOWS > 0
 	PointLightShadow pointLightShadow;
 	#endif
-	#pragma unroll_loop_star
+	#pragma unroll_loop_start
 	for ( int i = 0; i < NUM_POINT_LIGHTS; i ++ ) {
 		pointLight = pointLights[ i ];
 		getPointLightInfo( pointLight, geometryPosition, directLight );
@@ -1330,7 +1330,7 @@ IncidentLight directLight;
 	#if defined( USE_SHADOWMAP ) && NUM_SPOT_LIGHT_SHADOWS > 0
 	SpotLightShadow spotLightShadow;
 	#endif
-	#pragma unroll_loop_star
+	#pragma unroll_loop_start
 	for ( int i = 0; i < NUM_SPOT_LIGHTS; i ++ ) {
 		spotLight = spotLights[ i ];
 		getSpotLightInfo( spotLight, geometryPosition, directLight );
@@ -1361,7 +1361,7 @@ IncidentLight directLight;
 	#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0
 	DirectionalLightShadow directionalLightShadow;
 	#endif
-	#pragma unroll_loop_star
+	#pragma unroll_loop_start
 	for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {
 		directionalLight = directionalLights[ i ];
 		getDirectionalLightInfo( directionalLight, directLight );
@@ -1375,7 +1375,7 @@ IncidentLight directLight;
 #endif
 #if ( NUM_RECT_AREA_LIGHTS > 0 ) && defined( RE_Direct_RectArea )
 	RectAreaLight rectAreaLight;
-	#pragma unroll_loop_star
+	#pragma unroll_loop_start
 	for ( int i = 0; i < NUM_RECT_AREA_LIGHTS; i ++ ) {
 		rectAreaLight = rectAreaLights[ i ];
 		RE_Direct_RectArea( rectAreaLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
@@ -1389,7 +1389,7 @@ IncidentLight directLight;
 		irradiance += getLightProbeIrradiance( lightProbe, geometryNormal );
 	#endif
 	#if ( NUM_HEMI_LIGHTS > 0 )
-		#pragma unroll_loop_star
+		#pragma unroll_loop_start
 		for ( int i = 0; i < NUM_HEMI_LIGHTS; i ++ ) {
 			irradiance += getHemisphereLightIrradiance( hemisphereLights[ i ], geometryNormal );
 		}
@@ -1957,7 +1957,7 @@ gl_Position = projectionMatrix * mvPosition;`,wl=`#ifdef DITHERING
 #endif
 #if defined( USE_SHADOWMAP )
 	#if NUM_DIR_LIGHT_SHADOWS > 0
-		#pragma unroll_loop_star
+		#pragma unroll_loop_start
 		for ( int i = 0; i < NUM_DIR_LIGHT_SHADOWS; i ++ ) {
 			shadowWorldPosition = worldPosition + vec4( shadowWorldNormal * directionalLightShadows[ i ].shadowNormalBias, 0 );
 			vDirectionalShadowCoord[ i ] = directionalShadowMatrix[ i ] * shadowWorldPosition;
@@ -1965,7 +1965,7 @@ gl_Position = projectionMatrix * mvPosition;`,wl=`#ifdef DITHERING
 		#pragma unroll_loop_end
 	#endif
 	#if NUM_POINT_LIGHT_SHADOWS > 0
-		#pragma unroll_loop_star
+		#pragma unroll_loop_start
 		for ( int i = 0; i < NUM_POINT_LIGHT_SHADOWS; i ++ ) {
 			shadowWorldPosition = worldPosition + vec4( shadowWorldNormal * pointLightShadows[ i ].shadowNormalBias, 0 );
 			vPointShadowCoord[ i ] = pointShadowMatrix[ i ] * shadowWorldPosition;
@@ -1974,7 +1974,7 @@ gl_Position = projectionMatrix * mvPosition;`,wl=`#ifdef DITHERING
 	#endif
 #endif
 #if NUM_SPOT_LIGHT_COORDS > 0
-	#pragma unroll_loop_star
+	#pragma unroll_loop_start
 	for ( int i = 0; i < NUM_SPOT_LIGHT_COORDS; i ++ ) {
 		shadowWorldPosition = worldPosition;
 		#if ( defined( USE_SHADOWMAP ) && UNROLLED_LOOP_INDEX < NUM_SPOT_LIGHT_SHADOWS )
@@ -1988,7 +1988,7 @@ gl_Position = projectionMatrix * mvPosition;`,wl=`#ifdef DITHERING
 	#ifdef USE_SHADOWMAP
 	#if NUM_DIR_LIGHT_SHADOWS > 0
 	DirectionalLightShadow directionalLight;
-	#pragma unroll_loop_star
+	#pragma unroll_loop_start
 	for ( int i = 0; i < NUM_DIR_LIGHT_SHADOWS; i ++ ) {
 		directionalLight = directionalLightShadows[ i ];
 		shadow *= receiveShadow ? getShadow( directionalShadowMap[ i ], directionalLight.shadowMapSize, directionalLight.shadowIntensity, directionalLight.shadowBias, directionalLight.shadowRadius, vDirectionalShadowCoord[ i ] ) : 1.0;
@@ -1997,7 +1997,7 @@ gl_Position = projectionMatrix * mvPosition;`,wl=`#ifdef DITHERING
 	#endif
 	#if NUM_SPOT_LIGHT_SHADOWS > 0
 	SpotLightShadow spotLight;
-	#pragma unroll_loop_star
+	#pragma unroll_loop_start
 	for ( int i = 0; i < NUM_SPOT_LIGHT_SHADOWS; i ++ ) {
 		spotLight = spotLightShadows[ i ];
 		shadow *= receiveShadow ? getShadow( spotShadowMap[ i ], spotLight.shadowMapSize, spotLight.shadowIntensity, spotLight.shadowBias, spotLight.shadowRadius, vSpotLightCoord[ i ] ) : 1.0;
@@ -2006,7 +2006,7 @@ gl_Position = projectionMatrix * mvPosition;`,wl=`#ifdef DITHERING
 	#endif
 	#if NUM_POINT_LIGHT_SHADOWS > 0 && ( defined( SHADOWMAP_TYPE_PCF ) || defined( SHADOWMAP_TYPE_BASIC ) )
 	PointLightShadow pointLight;
-	#pragma unroll_loop_star
+	#pragma unroll_loop_start
 	for ( int i = 0; i < NUM_POINT_LIGHT_SHADOWS; i ++ ) {
 		pointLight = pointLightShadows[ i ];
 		shadow *= receiveShadow ? getPointShadow( pointShadowMap[ i ], pointLight.shadowMapSize, pointLight.shadowIntensity, pointLight.shadowBias, pointLight.shadowRadius, vPointShadowCoord[ i ], pointLight.shadowCameraNear, pointLight.shadowCameraFar ) : 1.0;
@@ -3355,10 +3355,10 @@ void main() {
 	#include <transmission_fragment>
 	vec3 outgoingLight = totalDiffuse + totalSpecular + totalEmissiveRadiance;
 	#ifdef USE_SHEEN
-
+ 
 		outgoingLight = outgoingLight + sheenSpecularDirect + sheenSpecularIndirect;
-
-	#endif
+ 
+ 	#endif
 	#ifdef USE_CLEARCOAT
 		float dotNVcc = saturate( dot( geometryClearcoatNormal, geometryViewDir ) );
 		vec3 Fcc = F_Schlick( material.clearcoatF0, material.clearcoatF90, dotNVcc );
@@ -3916,7 +3916,7 @@ void main() {
 `)}const Yu={1:"Linear",2:"Reinhard",3:"Cineon",4:"ACESFilmic",6:"AgX",7:"Neutral",5:"Custom"};function Ku(i,e){const t=Yu[e];return t===void 0?(Re("WebGLProgram: Unsupported toneMapping:",e),"vec3 "+i+"( vec3 color ) { return LinearToneMapping( color ); }"):"vec3 "+i+"( vec3 color ) { return "+t+"ToneMapping( color ); }"}const Ci=new N;function Zu(){Ve.getLuminanceCoefficients(Ci);const i=Ci.x.toFixed(4),e=Ci.y.toFixed(4),t=Ci.z.toFixed(4);return["float luminance( const in vec3 rgb ) {",`	const vec3 weights = vec3( ${i}, ${e}, ${t} );`,"	return dot( weights, rgb );","}"].join(`
 `)}function $u(i){return[i.extensionClipCullDistance?"#extension GL_ANGLE_clip_cull_distance : require":"",i.extensionMultiDraw?"#extension GL_ANGLE_multi_draw : require":""].filter(jn).join(`
 `)}function ju(i){const e=[];for(const t in i){const n=i[t];n!==!1&&e.push("#define "+t+" "+n)}return e.join(`
-`)}function Ju(i,e){const t={},n=i.getProgramParameter(e,i.ACTIVE_ATTRIBUTES);for(let r=0;r<n;r++){const s=i.getActiveAttrib(e,r),a=s.name;let o=1;s.type===i.FLOAT_MAT2&&(o=2),s.type===i.FLOAT_MAT3&&(o=3),s.type===i.FLOAT_MAT4&&(o=4),t[a]={type:s.type,location:i.getAttribLocation(e,a),locationSize:o}}return t}function jn(i){return i!==""}function Ss(i,e){const t=e.numSpotLightShadows+e.numSpotLightMaps-e.numSpotLightShadowsWithMaps;return i.replace(/NUM_DIR_LIGHTS/g,e.numDirLights).replace(/NUM_SPOT_LIGHTS/g,e.numSpotLights).replace(/NUM_SPOT_LIGHT_MAPS/g,e.numSpotLightMaps).replace(/NUM_SPOT_LIGHT_COORDS/g,t).replace(/NUM_RECT_AREA_LIGHTS/g,e.numRectAreaLights).replace(/NUM_POINT_LIGHTS/g,e.numPointLights).replace(/NUM_HEMI_LIGHTS/g,e.numHemiLights).replace(/NUM_DIR_LIGHT_SHADOWS/g,e.numDirLightShadows).replace(/NUM_SPOT_LIGHT_SHADOWS_WITH_MAPS/g,e.numSpotLightShadowsWithMaps).replace(/NUM_SPOT_LIGHT_SHADOWS/g,e.numSpotLightShadows).replace(/NUM_POINT_LIGHT_SHADOWS/g,e.numPointLightShadows)}function Es(i,e){return i.replace(/NUM_CLIPPING_PLANES/g,e.numClippingPlanes).replace(/UNION_CLIPPING_PLANES/g,e.numClippingPlanes-e.numClipIntersection)}const Qu=/^[\t]*#include +<([\w\d./]+)>/gm;function xr(i){return i.replace(Qu,th)}const eh=new Map;function th(i,e){let t=De[e];if(t===void 0){const n=eh.get(e);if(n!==void 0)t=De[n],Re('WebGLRenderer: Shader chunk "%s" has been deprecated. Use "%s" instead.',e,n);else throw new Error("Can not resolve #include <"+e+">")}return xr(t)}const nh=/#pragma unroll_loop_start\s+for\s*\(\s*int\s+i\s*=\s*(\d+)\s*;\s*i\s*<\s*(\d+)\s*;\s*i\s*\+\+\s*\)\s*{([\s\S]+?)}\s+#pragma unroll_loop_end/g;function Ts(i){return i.replace(nh,ih)}function ih(i,e,t,n){let r="";for(let s=parseInt(e);s<parseInt(t);s++)r+=n.replace(/\[\s*i\s*\]/g,"[ "+s+" ]").replace(/UNROLLED_LOOP_INDEX/g,s);return r}function ys(i){let e=`precision ${i.precision} float;
+`)}function Ju(i,e){const t={},n=i.getProgramParameter(e,i.ACTIVE_ATTRIBUTES);for(let r=0;r<n;r++){const s=i.getActiveAttrib(e,r),a=s.name;let o=1;s.type===i.FLOAT_MAT2&&(o=2),s.type===i.FLOAT_MAT3&&(o=3),s.type===i.FLOAT_MAT4&&(o=4),t[a]={type:s.type,location:i.getAttribLocation(e,a),locationSize:o}}return t}function jn(i){return i!==""}function Ss(i,e){const t=e.numSpotLightShadows+e.numSpotLightMaps-e.numSpotLightShadowsWithMaps;return i.replace(/NUM_DIR_LIGHTS/g,e.numDirLights).replace(/NUM_SPOT_LIGHTS/g,e.numSpotLights).replace(/NUM_SPOT_LIGHT_MAPS/g,e.numSpotLightMaps).replace(/NUM_SPOT_LIGHT_COORDS/g,t).replace(/NUM_RECT_AREA_LIGHTS/g,e.numRectAreaLights).replace(/NUM_POINT_LIGHTS/g,e.numPointLights).replace(/NUM_HEMI_LIGHTS/g,e.numHemiLights).replace(/NUM_DIR_LIGHT_SHADOWS/g,e.numDirLightShadows).replace(/NUM_SPOT_LIGHT_SHADOWS_WITH_MAPS/g,e.numSpotLightShadowsWithMaps).replace(/NUM_SPOT_LIGHT_SHADOWS/g,e.numSpotLightShadows).replace(/NUM_POINT_LIGHT_SHADOWS/g,e.numPointLightShadows)}function Es(i,e){return i.replace(/NUM_CLIPPING_PLANES/g,e.numClippingPlanes).replace(/UNION_CLIPPING_PLANES/g,e.numClippingPlanes-e.numClipIntersection)}const Qu=/^[ \t]*#include +<([\w\d./]+)>/gm;function xr(i){return i.replace(Qu,th)}const eh=new Map;function th(i,e){let t=De[e];if(t===void 0){const n=eh.get(e);if(n!==void 0)t=De[n],Re('WebGLRenderer: Shader chunk "%s" has been deprecated. Use "%s" instead.',e,n);else throw new Error("Can not resolve #include <"+e+">")}return xr(t)}const nh=/#pragma unroll_loop_start\s+for\s*\(\s*int\s+i\s*=\s*(\d+)\s*;\s*i\s*<\s*(\d+)\s*;\s*i\s*\+\+\s*\)\s*{([\s\S]+?)}\s+#pragma unroll_loop_end/g;function Ts(i){return i.replace(nh,ih)}function ih(i,e,t,n){let r="";for(let s=parseInt(e);s<parseInt(t);s++)r+=n.replace(/\[\s*i\s*\]/g,"[ "+s+" ]").replace(/UNROLLED_LOOP_INDEX/g,s);return r}function ys(i){let e=`precision ${i.precision} float;
 	precision ${i.precision} int;
 	precision ${i.precision} sampler2D;
 	precision ${i.precision} samplerCube;
