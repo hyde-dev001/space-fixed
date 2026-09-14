@@ -82,7 +82,9 @@ final class EmployeeLifecycleWorkflowService
                 'status' => EmployeeLifecycleRequestStatus::PENDING_MANAGER,
                 'manager_status' => 'pending',
                 'owner_status' => 'pending',
-                'rehire_start_date' => null,
+                'rehire_start_date' => $type === EmployeeLifecycleRequestType::REHIRE
+                    ? ($attributes['rehire_start_date'] ?? Carbon::now()->toDateString())
+                    : null,
                 'rehire_position' => $attributes['rehire_position'] ?? null,
                 'rehire_department' => $attributes['rehire_department'] ?? null,
                 'rehire_functional_role' => $attributes['rehire_functional_role'] ?? null,
@@ -310,7 +312,8 @@ final class EmployeeLifecycleWorkflowService
             throw new \RuntimeException('The rehire request is missing its approved employment terms.', 422);
         }
 
-        $startDate = Carbon::now()->startOfDay();
+        $startDate = $request->rehire_start_date?->copy()->startOfDay()
+            ?? Carbon::now()->startOfDay();
         $terminatedDate = $employee->terminated_at?->copy()->startOfDay();
 
         if ($terminatedDate !== null && $startDate->lessThanOrEqualTo($terminatedDate)) {
@@ -322,9 +325,11 @@ final class EmployeeLifecycleWorkflowService
             throw new \RuntimeException('The selected rehire role is not available for this company.', 422);
         }
 
-        $request->forceFill([
-            'rehire_start_date' => $startDate->toDateString(),
-        ])->save();
+        if ($request->rehire_start_date === null) {
+            $request->forceFill([
+                'rehire_start_date' => $startDate->toDateString(),
+            ])->save();
+        }
 
         $previousPeriod = $employee->employmentPeriods()
             ->whereNull('end_date')

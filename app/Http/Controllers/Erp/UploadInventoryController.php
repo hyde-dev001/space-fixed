@@ -561,7 +561,8 @@ class UploadInventoryController extends Controller
             'inventory_item_id' => 'required|exists:inventory_items,id',
             'images' => 'required|array',
             'images.*' => 'file|mimes:jpeg,png,jpg,gif,webp,avif|max:2048',
-            'color_variant_id' => 'nullable|exists:inventory_color_variants,id'
+            'color_variant_id' => 'nullable|exists:inventory_color_variants,id',
+            'replace_main_image' => 'sometimes|boolean',
         ]);
         
         $shopOwnerId = $this->resolveShopOwnerId($request);
@@ -583,7 +584,8 @@ class UploadInventoryController extends Controller
         $uploadedImages = $this->uploadItemImages(
             $item,
             $request->file('images'),
-            $request->color_variant_id
+            $request->color_variant_id,
+            $request->boolean('replace_main_image'),
         );
 
         $this->syncInventoryImagesToLinkedProduct(
@@ -1324,23 +1326,38 @@ class UploadInventoryController extends Controller
     /**
      * Upload and store images
      */
-    protected function uploadItemImages($item, $images, $colorVariantId = null)
+    protected function uploadItemImages($item, $images, $colorVariantId = null, bool $replaceMainImage = false)
     {
         $uploadedImages = [];
         
         foreach ($images as $index => $image) {
             $path = $image->store('inventory/' . $item->id, 'public');
+
+            if ($replaceMainImage && $index === 0) {
+                $thumbnailQuery = InventoryImage::query()
+                    ->where('inventory_item_id', $item->id);
+
+                if ($colorVariantId === null) {
+                    $thumbnailQuery->whereNull('inventory_color_variant_id');
+                } else {
+                    $thumbnailQuery->where('inventory_color_variant_id', $colorVariantId);
+                }
+
+                $thumbnailQuery->update(['is_thumbnail' => false]);
+            }
+
+            $isThumbnail = $index === 0 && ($replaceMainImage || ! $item->main_image);
             
             $inventoryImage = InventoryImage::create([
                 'inventory_item_id' => $item->id,
                 'inventory_color_variant_id' => $colorVariantId,
                 'image_path' => $path,
-                'is_thumbnail' => $index === 0 && !$item->main_image,
+                'is_thumbnail' => $isThumbnail,
                 'sort_order' => $index
             ]);
             
-            // Set first image as main image if not set
-            if ($index === 0 && !$item->main_image) {
+            // Set the first image as main, or explicitly replace the current main image.
+            if ($index === 0 && $colorVariantId === null && ($replaceMainImage || ! $item->main_image)) {
                 $item->main_image = $path;
                 $item->save();
             }

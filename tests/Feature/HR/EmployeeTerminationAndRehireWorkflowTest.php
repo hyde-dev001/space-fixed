@@ -202,7 +202,7 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function rehire_generates_the_new_start_date_after_approval_and_rejects_duplicates(): void
+    public function rehire_uses_the_stored_start_date_after_approval_and_rejects_duplicates(): void
     {
         Carbon::setTestNow(Carbon::parse('2027-02-01 09:00:00'));
 
@@ -246,7 +246,10 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
                 ->assertCreated()
                 ->json('request');
             $requestId = (int) $request['id'];
-            $this->assertNull(EmployeeLifecycleRequest::findOrFail($requestId)->rehire_start_date);
+            $this->assertSame(
+                '2099-01-01',
+                EmployeeLifecycleRequest::findOrFail($requestId)->rehire_start_date?->toDateString(),
+            );
 
             $this->actingAs($this->hr, 'user')
                 ->postJson('/api/hr/rehire-requests', [
@@ -290,7 +293,7 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
             $linkedUser->refresh();
             $this->assertSame(EmployeeStatus::ACTIVE, $employee->status);
             $this->assertNull($employee->terminated_at);
-            $this->assertSame('2027-02-01', $employee->hire_date->toDateString());
+            $this->assertSame('2099-01-01', $employee->hire_date->toDateString());
             $this->assertSame('Repair Technician', $employee->position);
             $this->assertSame('42000.00', (string) $employee->salary);
             $this->assertSame('active', $linkedUser->getRawOriginal('status'));
@@ -298,7 +301,7 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
             $this->assertSame(2, EmployeeEmploymentPeriod::where('employee_id', $employee->id)->count());
             $this->assertTrue(EmployeeEmploymentPeriod::query()
                 ->where('employee_id', $employee->id)
-                ->whereDate('start_date', '2027-02-01')
+                ->whereDate('start_date', '2099-01-01')
                 ->whereNull('end_date')
                 ->where('role', 'Staff')
                 ->exists());
@@ -307,9 +310,64 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
                 ->whereDate('start_date', '2025-01-10')
                 ->exists());
             $this->assertSame(
-                '2027-02-01',
+                '2099-01-01',
                 EmployeeLifecycleRequest::findOrFail($requestId)->rehire_start_date->toDateString(),
             );
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    #[Test]
+    public function owner_approval_uses_the_stored_rehire_date_when_termination_and_approval_share_a_day(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2027-02-01 15:00:00'));
+
+        try {
+            [$employee, $linkedUser] = $this->employeeWithLinkedUser([
+                'employee' => [
+                    'status' => EmployeeStatus::TERMINATED,
+                    'terminated_at' => Carbon::parse('2027-02-01 09:00:00'),
+                ],
+                'user' => ['status' => 'inactive'],
+            ]);
+
+            $request = $this->actingAs($this->hr, 'user')
+                ->postJson('/api/hr/rehire-requests', [
+                    'employee_id' => $employee->id,
+                    'reason' => 'The employee is returning on the approved future start date.',
+                    'rehire_start_date' => '2027-02-02',
+                    'rehire_position' => 'Repair Technician',
+                    'rehire_role' => 'Staff',
+                ])
+                ->assertCreated()
+                ->json('request');
+
+            $requestId = (int) $request['id'];
+            $this->assertSame(
+                '2027-02-02',
+                EmployeeLifecycleRequest::findOrFail($requestId)->rehire_start_date?->toDateString(),
+            );
+
+            $this->actingAs($this->manager, 'user')
+                ->postJson("/api/manager/rehire-requests/{$requestId}/review", [
+                    'action' => 'approve',
+                    'note' => 'The future start date was reviewed.',
+                ])
+                ->assertOk();
+
+            $this->actingAs($this->shop, 'shop_owner')
+                ->postJson("/api/shop-owner/rehire-requests/{$requestId}/review", [
+                    'action' => 'approve',
+                    'note' => 'Approved for the stored future start date.',
+                ])
+                ->assertOk();
+
+            $employee->refresh();
+            $linkedUser->refresh();
+            $this->assertSame(EmployeeStatus::ACTIVE, $employee->status);
+            $this->assertSame('2027-02-02', $employee->hire_date?->toDateString());
+            $this->assertSame('active', $linkedUser->getRawOriginal('status'));
         } finally {
             Carbon::setTestNow();
         }
@@ -366,6 +424,7 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
             'status' => 'pending_owner',
             'manager_status' => 'approved',
             'owner_status' => 'pending',
+            'rehire_start_date' => now()->toDateString(),
             'rehire_role' => 'Staff',
             'rehire_position' => 'Repair Technician',
         ]);
@@ -377,6 +436,33 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
             ->assertConflict()
             ->assertJsonPath('code', 'EMPLOYEE_LIFECYCLE_CONFLICT')
             ->assertJsonPath('message', 'The rehire date must be after the termination date.');
+    }
+
+    #[Test]
+    public function owner_approval_rejects_a_stored_rehire_date_before_termination(): void
+    {
+        $terminationDate = now()->startOfDay();
+        $employee = Employee::factory()->for($this->shop)->create([
+            'status' => EmployeeStatus::TERMINATED,
+            'terminated_at' => $terminationDate,
+        ]);
+        $request = EmployeeLifecycleRequest::factory()->for($employee)->create([
+            'requested_by' => $this->hr->id,
+            'request_type' => 'rehire',
+            'status' => 'pending_owner',
+            'manager_status' => 'approved',
+            'owner_status' => 'pending',
+            'rehire_start_date' => $terminationDate->copy()->subDay()->toDateString(),
+            'rehire_role' => 'Staff',
+            'rehire_position' => 'Repair Technician',
+        ]);
+
+        $this->actingAs($this->shop, 'shop_owner')
+            ->postJson("/api/shop-owner/rehire-requests/{$request->id}/review", [
+                'action' => 'approve',
+            ])
+            ->assertConflict()
+            ->assertJsonPath('code', 'EMPLOYEE_LIFECYCLE_CONFLICT');
     }
 
     #[Test]

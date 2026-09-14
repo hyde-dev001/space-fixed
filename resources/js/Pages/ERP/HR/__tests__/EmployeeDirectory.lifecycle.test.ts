@@ -14,7 +14,7 @@ describe('employee termination and rehire directory workflow', () => {
     expect(source).toContain('Request Termination');
     expect(source).toContain('Request Rehire');
     expect(source).toContain('Rehire Pending');
-    expect(source).not.toContain('rehire_start_date');
+    expect(source).toContain('rehire_start_date');
     expect(source).toContain('Department / Role');
     expect(source).toContain('Approval Process');
     expect(source).toContain('Employment History');
@@ -30,9 +30,10 @@ describe('employee termination and rehire directory workflow', () => {
     expect(rehireModal).toContain('Phone');
     expect(rehireModal).toContain('Department / Role');
     expect(rehireModal).toContain('Position / Job Title');
-    expect(rehireModal).toContain('system generates the effective hired date');
+    expect(rehireModal).toContain('requested start date is reviewed through the approval process');
+    expect(rehireModal).toContain('New Start Date');
+    expect(rehireModal).toContain('rehireStartDate');
     expect(rehireModal).not.toContain('Hired Date');
-    expect(rehireModal).not.toContain('rehireStartDate');
     expect(rehireModal).toContain('Daily Rate');
     expect(rehireModal).toContain('Reason for Rehire');
     expect(rehireModal).toContain('Evidence / Notes');

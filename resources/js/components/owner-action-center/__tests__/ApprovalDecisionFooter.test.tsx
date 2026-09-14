@@ -46,6 +46,28 @@ describe("ApprovalDecisionFooter", () => {
     expect(onSubmit).toHaveBeenCalledWith("reject", "Insufficient evidence");
   });
 
+  it("validates the current select value instead of treating whitespace as selected", async () => {
+    sweetAlertFire.mockResolvedValueOnce({ isConfirmed: false });
+
+    render(
+      <ApprovalDecisionFooter
+        definition={approvalPanelRegistry.rehire_request}
+        recordLabel="Employee rehire #43"
+        submitting={false}
+        onSubmit={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Reject$/i }));
+
+    await waitFor(() => expect(sweetAlertFire).toHaveBeenCalledTimes(1));
+    const inputValidator = sweetAlertFire.mock.calls[0][0].inputValidator as (value: unknown) => string | undefined;
+
+    expect(inputValidator("Incorrect or incomplete information")).toBeUndefined();
+    expect(inputValidator("   ")).toBe("Choose a rejection reason.");
+    expect(inputValidator(null)).toBe("Choose a rejection reason.");
+  });
+
   it("lets the approver enter a custom reason through Other", async () => {
     const onSubmit = vi.fn();
     sweetAlertFire
