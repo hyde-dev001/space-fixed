@@ -7,6 +7,89 @@ import { getShowroomLayout, SHOWROOM_BOUNDS } from './showroomLayout';
 
 RectAreaLightUniformsLib.init();
 
+interface ShowroomPromptSprite {
+	sprite: THREE.Sprite;
+	texture: THREE.CanvasTexture;
+	material: THREE.SpriteMaterial;
+}
+
+const roundedRect = (
+	context: CanvasRenderingContext2D,
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	radius: number,
+) => {
+	const safeRadius = Math.min(radius, width / 2, height / 2);
+	context.beginPath();
+	context.moveTo(x + safeRadius, y);
+	context.lineTo(x + width - safeRadius, y);
+	context.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+	context.lineTo(x + width, y + height - safeRadius);
+	context.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+	context.lineTo(x + safeRadius, y + height);
+	context.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+	context.lineTo(x, y + safeRadius);
+	context.quadraticCurveTo(x, y, x + safeRadius, y);
+	context.closePath();
+};
+
+export const createShowroomPromptSprite = (keyLabel: string, action = ''): ShowroomPromptSprite => {
+	const canvas = document.createElement('canvas');
+	canvas.width = 640;
+	canvas.height = 176;
+	const context = canvas.getContext('2d')!;
+
+	context.shadowColor = 'rgba(0, 0, 0, 0.36)';
+	context.shadowBlur = 20;
+	context.shadowOffsetY = 10;
+	context.fillStyle = 'rgba(22, 20, 18, 0.96)';
+	roundedRect(context, 16, 16, 608, 144, 24);
+	context.fill();
+	context.shadowColor = 'transparent';
+	context.strokeStyle = 'rgba(205, 174, 125, 0.88)';
+	context.lineWidth = 4;
+	context.stroke();
+
+	if (action) {
+		context.fillStyle = 'rgba(111, 84, 58, 0.94)';
+		roundedRect(context, 34, 34, 142, 108, 18);
+		context.fill();
+		context.strokeStyle = 'rgba(238, 229, 212, 0.34)';
+		context.lineWidth = 2;
+		context.stroke();
+		context.fillStyle = '#f1e8d9';
+		context.font = '700 62px Arial';
+		context.textAlign = 'center';
+		context.textBaseline = 'middle';
+		context.fillText(keyLabel.toUpperCase(), 105, 89);
+		context.fillStyle = '#f1e8d9';
+		context.font = '700 48px Arial';
+		context.fillText(action.toUpperCase(), 397, 91);
+	} else {
+		context.fillStyle = '#f1e8d9';
+		context.font = '700 54px Arial';
+		context.textAlign = 'center';
+		context.textBaseline = 'middle';
+		context.fillText(keyLabel.toUpperCase(), 320, 90);
+	}
+
+	const texture = new THREE.CanvasTexture(canvas);
+	texture.colorSpace = THREE.SRGBColorSpace;
+	const material = new THREE.SpriteMaterial({
+		map: texture,
+		transparent: true,
+		depthTest: true,
+		depthWrite: false,
+		opacity: 0.96,
+	});
+	const sprite = new THREE.Sprite(material);
+	sprite.renderOrder = 2;
+
+	return { sprite, texture, material };
+};
+
 /** Physical fixtures and their product positions share one layout in both lighting modes. */
 export function createShowroomScene(
 	renderer: THREE.WebGLRenderer,
@@ -119,6 +202,7 @@ export function createShowroomScene(
 		panel.rotation.y = rotation;
 		panel.castShadow = false;
 	};
+	const seatPromptSprites: Array<{ key: string; sprite: THREE.Sprite; baseY: number }> = [];
 
 	// A lower coffered ceiling frames the galleries instead of reading as a warehouse roof.
 	const floorMaterial = material({ color: '#c9c6be', map: floorMap, normalMap: floorNormal, roughnessMap: floorRoughness, roughness: 0.48, normalScale: new THREE.Vector2(0.2, 0.2) });
@@ -188,7 +272,7 @@ export function createShowroomScene(
 
 	const leafMaterial = material({ color: '#3d5140', roughness: 0.85 });
 	const leafGeometry = new THREE.SphereGeometry(1, 8, 6);
-	for (const lounge of layout.lounges) {
+	for (const [loungeIndex, lounge] of layout.lounges.entries()) {
 		const ring = mesh(new THREE.TorusGeometry(2, 0.045, 8, 64), glow, lounge.x, 4.9, lounge.z);
 		ring.rotation.x = Math.PI / 2;
 		ring.castShadow = false;
@@ -212,6 +296,18 @@ export function createShowroomScene(
 			leaf.scale.set(0.22, 0.1, 0.72);
 			leaf.rotation.set(0.4, angle, 0.3);
 		}
+		const seatPrompt = createShowroomPromptSprite('E', 'PLAY');
+		seatPrompt.sprite.position.set(lounge.x, 2.35, lounge.z + 1.55);
+		seatPrompt.sprite.scale.set(2.25, 0.62, 1);
+		seatPrompt.sprite.visible = false;
+		scene.add(seatPrompt.sprite);
+		textures.push(seatPrompt.texture);
+		materials.add(seatPrompt.material);
+		seatPromptSprites.push({
+			key: layout.seats[loungeIndex]?.key ?? `lounge-seat-${loungeIndex}`,
+			sprite: seatPrompt.sprite,
+			baseY: seatPrompt.sprite.position.y,
+		});
 	}
 
 	// Broad soft sources light merchandise; the darker ceiling keeps attention at eye level.
@@ -339,6 +435,7 @@ export function createShowroomScene(
 		layout,
 		ready,
 		slotTargets,
+		seatPromptSprites,
 		dispose: () => {
 			disposed = true;
 			reflection.dispose();

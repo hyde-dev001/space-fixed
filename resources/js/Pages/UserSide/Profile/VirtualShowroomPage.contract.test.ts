@@ -14,6 +14,10 @@ const sceneSource = readFileSync(
 	resolve('resources/js/Pages/UserSide/Products/showroomScene.ts'),
 	'utf8',
 );
+const xoxSource = readFileSync(
+	resolve('resources/js/Pages/UserSide/Products/ShowroomTicTacToe.tsx'),
+	'utf8',
+);
 
 describe('standalone virtual showroom', () => {
 	it('does not mount shared customer navigation', () => {
@@ -67,5 +71,22 @@ describe('standalone virtual showroom', () => {
 		expect(sceneSource).toContain('slotTargets');
 		expect(sceneSource).toContain('displayShopName');
 		expect(sceneSource).not.toContain("sign('SOLESPACE'");
+	});
+
+	it('provides cursor-look and world-space interaction cues without stealing edit drags', () => {
+		expect(showroomSource).toContain('createShowroomPromptSprite');
+		expect(showroomSource).toContain('updateCameraTargetFromPointer');
+		expect(showroomSource).toContain('Move your cursor to look around');
+		expect(showroomSource).toContain('editModeRef.current');
+		expect(sceneSource).toContain('seatPromptSprites');
+		expect(sceneSource).toContain("createShowroomPromptSprite('E', 'PLAY'");
+		expect(showroomSource).toContain("createShowroomPromptSprite('CLICK'");
+	});
+
+	it('keeps XOX as a themed continuous scored session', () => {
+		expect(xoxSource).toContain('getBestBotMove');
+		expect(xoxSource).toContain('sessionScore');
+		expect(xoxSource).toContain('xox-result');
+		expect(xoxSource).not.toContain('New game');
 	});
 });
