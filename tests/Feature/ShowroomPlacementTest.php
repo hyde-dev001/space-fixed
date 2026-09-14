@@ -137,6 +137,22 @@ class ShowroomPlacementTest extends TestCase
             ])->assertStatus(422);
     }
 
+    public function test_placement_uses_the_premium_plan_limit_when_subscription_limit_is_empty(): void
+    {
+        $shop = $this->shopWithSubscription(2);
+        ShopOwnerSubscription::query()
+            ->where('shop_owner_id', $shop->id)
+            ->update(['showroom_slot_limit' => 0]);
+        $shoe = $this->shoe($shop, 'Plan limited shoe');
+
+        $this->actingAs($shop, 'shop_owner')
+            ->putJson('/api/showroom/placements', [
+                'product_id' => $shoe->id,
+                'from_slot_key' => 'slot-0',
+                'to_slot_key' => 'slot-1',
+            ])->assertOk();
+    }
+
     public function test_showroom_page_exposes_saved_placement_and_owner_edit_capability(): void
     {
         $shop = $this->shopWithSubscription();
@@ -154,5 +170,26 @@ class ShowroomPlacementTest extends TestCase
                 ->where('shop.can_edit_showroom', true)
                 ->where('shop.showroom_placements.0.product_id', $shoe->id)
                 ->where('shop.showroom_placements.0.slot_key', 'slot-3'));
+    }
+
+    public function test_linked_staff_can_open_the_showroom_and_customers_are_read_only(): void
+    {
+        Permission::findOrCreate('access-product-upload-staff', 'user');
+        $shop = $this->shopWithSubscription();
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $staff->givePermissionTo('access-product-upload-staff');
+
+        $this->actingAs($staff, 'user')
+            ->get(route('shop-profile.virtual-showroom', ['id' => $shop->id]))
+            ->assertInertia(fn ($page) => $page
+                ->component('UserSide/Profile/VirtualShowroomPage')
+                ->where('shop.can_edit_showroom', true));
+
+        $customer = User::factory()->create(['shop_owner_id' => null, 'role' => 'CUSTOMER']);
+        $this->actingAs($customer, 'user')
+            ->get(route('shop-profile.virtual-showroom', ['id' => $shop->id]))
+            ->assertInertia(fn ($page) => $page
+                ->component('UserSide/Profile/VirtualShowroomPage')
+                ->where('shop.can_edit_showroom', false));
     }
 }

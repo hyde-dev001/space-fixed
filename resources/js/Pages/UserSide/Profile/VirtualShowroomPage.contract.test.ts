@@ -61,4 +61,11 @@ describe('standalone virtual showroom', () => {
 		expect(showroomSource).toContain('shopName');
 		expect(showroomSource).toContain('canEditShowroom');
 	});
+
+	it('keeps scene branding dynamic and exposes edit targets', () => {
+		expect(sceneSource).toContain('enableSlotEditing');
+		expect(sceneSource).toContain('slotTargets');
+		expect(sceneSource).toContain('displayShopName');
+		expect(sceneSource).not.toContain("sign('SOLESPACE'");
+	});
 });

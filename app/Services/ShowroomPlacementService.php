@@ -81,7 +81,18 @@ final class ShowroomPlacementService
             ->latest('id')
             ->first();
 
-        return max(0, min(150, (int) ($subscription?->showroom_slot_limit ?? 0)));
+        if (!$subscription) {
+            return 0;
+        }
+
+        $planLimit = (int) ($subscription->premiumPlan?->showroom_slot_limit ?? 0);
+        $subscriptionLimit = (int) ($subscription->showroom_slot_limit ?? 0);
+        $planLabel = strtolower(trim((string) ($subscription->plan_code ?: $subscription->premiumPlan?->name)));
+        $fallback = str_contains($planLabel, 'basic')
+            ? 48
+            : (str_contains($planLabel, 'premium') ? 84 : 60);
+
+        return max(0, min(150, $planLimit > 0 ? $planLimit : ($subscriptionLimit > 0 ? $subscriptionLimit : $fallback)));
     }
 
     public function move(

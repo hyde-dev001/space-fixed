@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyMove, getRandomBotMove, getWinner, isDraw, type TicTacToeBoard } from './showroomTicTacToe';
+import { applyMove, getRandomBotMove, getWinner, isDraw, type TicTacToeBoard } from './showroomTicTacToeRules';
 
 describe('showroom XOX rules', () => {
 	it('detects rows, columns, and diagonals', () => {

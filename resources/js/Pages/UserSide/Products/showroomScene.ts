@@ -8,7 +8,15 @@ import { getShowroomLayout, SHOWROOM_BOUNDS } from './showroomLayout';
 RectAreaLightUniformsLib.init();
 
 /** Physical fixtures and their product positions share one layout in both lighting modes. */
-export function createShowroomScene(renderer: THREE.WebGLRenderer, capacity: number, night: boolean, lowPower: boolean, productCount: number) {
+export function createShowroomScene(
+	renderer: THREE.WebGLRenderer,
+	capacity: number,
+	night: boolean,
+	lowPower: boolean,
+	productCount: number,
+	shopName = '',
+	enableSlotEditing = false,
+) {
 	const scene = new THREE.Scene();
 	const layout = getShowroomLayout(capacity);
 	const textures: THREE.Texture[] = [];
@@ -139,8 +147,9 @@ export function createShowroomScene(renderer: THREE.WebGLRenderer, capacity: num
 	for (const x of [-3.5, 3.5]) box(brass, x, 0.006, 2, 0.025, 0.009, 35);
 	box(black, 0, 3.2, 23.8, 11, 6.4, 0.12);
 	box(walnut, 0, 5.5, -25.65, 28, 1.7, 0.25);
-	sign('SOLESPACE', 'THE SNEAKER GALLERY', 0, 5.55, -25.45, 7);
-	sign('WELCOME TO SOLESPACE', 'EXPLORE / DISCOVER / COLLECT', 0, 4.8, 23.7, 8, Math.PI);
+	const displayShopName = shopName.trim().slice(0, 36) || 'The Gallery';
+	sign(displayShopName, 'THE SNEAKER GALLERY', 0, 5.55, -25.45, 7);
+	sign('WELCOME TO ' + displayShopName, 'EXPLORE / DISCOVER / COLLECT', 0, 4.8, 23.7, 8, Math.PI);
 	sign('01 / MAIN GALLERY', 'CURATED EVERYDAY ICONS', -21.7, 5.65, 2, 5, Math.PI / 2);
 	sign('02 / THE ARCHIVE', 'CRAFT / CULTURE / COLLECTORS', 21.7, 5.65, -8, 5, -Math.PI / 2);
 
@@ -304,10 +313,32 @@ export function createShowroomScene(renderer: THREE.WebGLRenderer, capacity: num
 	});
 	contacts.computeBoundingSphere();
 	scene.add(contacts);
+	const slotTargets: THREE.Mesh[] = [];
+	if (enableSlotEditing) {
+		const targetGeometry = new THREE.PlaneGeometry(1.9, 1.25);
+		const targetMaterial = new THREE.MeshBasicMaterial({
+			transparent: true,
+			opacity: 0,
+			depthWrite: false,
+			side: THREE.DoubleSide,
+		});
+		geometries.add(targetGeometry);
+		materials.add(targetMaterial);
+		for (const slot of layout.slots) {
+			const target = new THREE.Mesh(targetGeometry, targetMaterial.clone());
+			materials.add(target.material);
+			target.position.set(...slot.position);
+			target.rotation.y = slot.rotationY;
+			target.userData.slotKey = slot.key;
+			scene.add(target);
+			slotTargets.push(target);
+		}
+	}
 	return {
 		scene,
 		layout,
 		ready,
+		slotTargets,
 		dispose: () => {
 			disposed = true;
 			reflection.dispose();

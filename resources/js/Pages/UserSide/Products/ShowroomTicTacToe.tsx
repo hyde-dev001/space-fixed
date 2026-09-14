@@ -5,7 +5,7 @@ import {
 	getWinner,
 	isDraw,
 	type TicTacToeBoard,
-} from './showroomTicTacToe';
+} from './showroomTicTacToeRules';
 
 interface ShowroomTicTacToeProps {
 	open: boolean;
@@ -90,7 +90,13 @@ const ShowroomTicTacToe: React.FC<ShowroomTicTacToeProps> = ({ open, onStandUp, 
 			: turn === 'X' ? 'Your turn (X).' : 'Bot is thinking…';
 
 	return (
-		<div className="pointer-events-auto absolute inset-0 z-50 flex items-center justify-center bg-stone-950/45 p-4">
+		<div
+			className="pointer-events-auto absolute inset-0 z-50 flex items-center justify-center bg-stone-950/45 p-4"
+			onPointerDown={(event) => event.stopPropagation()}
+			onPointerMove={(event) => event.stopPropagation()}
+			onPointerUp={(event) => event.stopPropagation()}
+			onPointerCancel={(event) => event.stopPropagation()}
+		>
 			<section
 				role="dialog"
 				aria-modal="true"
@@ -121,7 +127,7 @@ const ShowroomTicTacToe: React.FC<ShowroomTicTacToeProps> = ({ open, onStandUp, 
 				</div>
 				<div className="mt-4 flex flex-wrap justify-end gap-2">
 					<button type="button" onClick={resetGame} className="min-h-11 rounded-lg border border-stone-700 px-3 text-sm hover:bg-stone-800">New game</button>
-					<button type="button" onClick={onStandUp} className="min-h-11 rounded-lg bg-amber-200 px-3 text-sm font-semibold text-stone-950 hover:bg-amber-100">Stand up</button>
+					<button type="button" onClick={() => { resetGame(); onStandUp(); }} className="min-h-11 rounded-lg bg-amber-200 px-3 text-sm font-semibold text-stone-950 hover:bg-amber-100">Stand up</button>
 				</div>
 			</section>
 		</div>
