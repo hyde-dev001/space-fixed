@@ -23,6 +23,10 @@ Route::post('/logout', [AuthController::class, 'logout'])->middleware('auth:web'
 Route::get('/address/geocode', AddressGeocodingController::class)
     ->middleware(['web', 'throttle:10,1,nominatim:']);
 
+Route::middleware(['web', 'auth:user,shop_owner', 'throttle:120,1'])
+    ->put('/showroom/placements', [\App\Http\Controllers\Api\ShowroomPlacementController::class, 'update'])
+    ->name('api.showroom.placements.update');
+
 /**
  * PayMongo Webhook - Must be accessible without authentication
  */

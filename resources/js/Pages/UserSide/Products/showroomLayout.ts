@@ -1,7 +1,15 @@
 export interface ShowroomSlot {
+	key: string;
 	position: [number, number, number];
 	rotationY: number;
 	kind: 'feature' | 'island' | 'wall';
+}
+
+export interface ShowroomSeat {
+	key: string;
+	interactionPosition: [number, number];
+	cameraPosition: [number, number, number];
+	lookAt: [number, number, number];
 }
 
 export interface ShowroomCollider { x: number; z: number; width: number; depth: number }
@@ -22,16 +30,23 @@ export const getShowroomLayout = (capacity: number) => {
 	const islands = [-8, 8].flatMap(x => [-7, 7].map(z => ({ x, z })));
 	const features = Array.from({ length: 6 }, (_, i) => ({ x: (i - 2.5) * 2.5, z: -18, height: 1.1 + (i % 3) * 0.15 }));
 	const lounges = [{ x: -6, z: 13 }, { x: 11, z: -14 }];
+	const pushSlot = (
+		position: [number, number, number],
+		rotationY: number,
+		kind: ShowroomSlot['kind'],
+	) => {
+		slots.push({ key: 'slot-' + slots.length, position, rotationY, kind });
+	};
 
 	for (const feature of features) {
-		slots.push({ position: [feature.x, feature.height + 0.525, feature.z], rotationY: 0, kind: 'feature' });
+		pushSlot([feature.x, feature.height + 0.525, feature.z], 0, 'feature');
 		colliders.push({ ...feature, width: 1.9, depth: 1.6 });
 	}
 	for (const island of islands) {
 		colliders.push({ ...island, width: 6.6, depth: 3.4 });
 		for (const side of [1, -1]) {
 			for (let col = 0; col < 3; col++) {
-				slots.push({ position: [island.x + (col - 1) * 2.1, 1.725, island.z + side * 1.1], rotationY: side === 1 ? 0 : Math.PI, kind: 'island' });
+				pushSlot([island.x + (col - 1) * 2.1, 1.725, island.z + side * 1.1], side === 1 ? 0 : Math.PI, 'island');
 			}
 		}
 	}
@@ -46,10 +61,19 @@ export const getShowroomLayout = (capacity: number) => {
 		colliders.push({ x: bay.x, z: bay.z, width: Math.abs(cos) * 5.6 + Math.abs(sin) * 1.4, depth: Math.abs(sin) * 5.6 + Math.abs(cos) * 1.4 });
 		for (let row = 0; row < 3; row++) {
 			for (const offset of [-1.35, 1.35]) {
-				slots.push({ position: [bay.x + cos * offset + sin * 0.25, 1.375 + row * 1.2, bay.z - sin * offset + cos * 0.25], rotationY: bay.rotationY, kind: 'wall' });
+				pushSlot([bay.x + cos * offset + sin * 0.25, 1.375 + row * 1.2, bay.z - sin * offset + cos * 0.25], bay.rotationY, 'wall');
 			}
 		}
 	}
+	const seats: ShowroomSeat[] = lounges.map((lounge, index) => {
+		const side = lounge.x < 0 ? 1 : -1;
+		return {
+			key: 'lounge-seat-' + index,
+			interactionPosition: [lounge.x + side * 3.25, lounge.z + 1.8],
+			cameraPosition: [lounge.x + side * 3.5, 2.05, lounge.z + 1.8],
+			lookAt: [lounge.x, 1.25, lounge.z + 1.8],
+		};
+	});
 	for (const lounge of lounges) {
 		colliders.push({ x: lounge.x, z: lounge.z + 1.8, width: 5.6, depth: 1.8 });
 		colliders.push({ x: lounge.x, z: lounge.z - 0.4, width: 2.3, depth: 1.8 });
@@ -58,5 +82,16 @@ export const getShowroomLayout = (capacity: number) => {
 	colliders.push({ x: 0, z: -20.8, width: 16.2, depth: 0.16 });
 	for (const x of [-15, 15]) for (const z of [-21, -10, 2, 14]) colliders.push({ x, z, width: 0.46, depth: 0.46 });
 	const limit = Number.isFinite(capacity) ? Math.max(0, Math.min(150, Math.floor(capacity))) : 60;
-	return { slots: slots.slice(0, limit), colliders, bays, islands, features, lounges };
+	return { slots: slots.slice(0, limit), colliders, bays, islands, features, lounges, seats };
 };
+
+export const getNearbyShowroomSeat = (
+	x: number,
+	z: number,
+	seats: readonly ShowroomSeat[],
+	radius = 2.4,
+) => seats.find((seat) => {
+	const dx = x - seat.interactionPosition[0];
+	const dz = z - seat.interactionPosition[1];
+	return dx * dx + dz * dz <= radius * radius;
+}) ?? null;

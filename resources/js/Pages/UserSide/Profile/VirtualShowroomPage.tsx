@@ -23,6 +23,8 @@ interface Shop {
   showroom_slot_limit?: number | null;
   showroom_plan_code?: string | null;
   showroom_plan_name?: string | null;
+  showroom_placements?: Array<{ product_id: number; slot_key: string }>;
+  can_edit_showroom?: boolean;
 }
 
 interface Props {
@@ -56,6 +58,12 @@ const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
 
         <VirtualShowroom
           products={products}
+          shopName={shop.name}
+          showroomPlacements={(shop.showroom_placements ?? []).map((placement) => ({
+            productId: placement.product_id,
+            slotKey: placement.slot_key,
+          }))}
+          canEditShowroom={shop.can_edit_showroom === true}
           isStandalonePage
           onFocusModeChange={setIsFocusMode}
           showroomSlotLimit={shop.showroom_slot_limit}
