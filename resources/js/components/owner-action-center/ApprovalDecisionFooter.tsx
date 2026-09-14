@@ -1,5 +1,6 @@
 import { workflowFeedback } from "../../utils/workflowFeedback";
 import type { ApprovalAction, ApprovalPanelDefinition } from "./approvalPanelRegistry";
+import { useMaintenance } from "../../providers/MaintenanceProvider";
 
 interface ApprovalDecisionFooterProps {
   definition: ApprovalPanelDefinition;
@@ -31,11 +32,19 @@ export default function ApprovalDecisionFooter({
   submitting,
   onSubmit,
 }: ApprovalDecisionFooterProps) {
+  const { isRouteFrozen } = useMaintenance();
+  const approveFrozen = Boolean(definition.approve?.maintenanceRouteName && isRouteFrozen(definition.approve.maintenanceRouteName));
+  const rejectFrozen = Boolean(definition.reject?.maintenanceRouteName && isRouteFrozen(definition.reject.maintenanceRouteName));
+  const maintenanceFreezeMessage = "Approval actions are paused during maintenance.";
   const rejectMaxLength = definition.reject?.maxLength ?? 1000;
   const rejectMinLength = definition.reject?.minLength ?? 0;
 
   const handleApprove = async () => {
     if (submitting || !definition.approve) return;
+    if (approveFrozen) {
+      await workflowFeedback.warning("Maintenance in progress", maintenanceFreezeMessage);
+      return;
+    }
 
     const confirmation = await workflowFeedback.confirm({
       title: `Approve ${recordLabel}?`,
@@ -49,6 +58,10 @@ export default function ApprovalDecisionFooter({
 
   const handleReject = async () => {
     if (submitting || !definition.reject) return;
+    if (rejectFrozen) {
+      await workflowFeedback.warning("Maintenance in progress", maintenanceFreezeMessage);
+      return;
+    }
 
     const selection = await workflowFeedback.alert({
       title: `Reject ${recordLabel}?`,
@@ -110,8 +123,9 @@ export default function ApprovalDecisionFooter({
       {definition.approve && (
         <button
           type="button"
-          disabled={submitting}
+          disabled={submitting || approveFrozen}
           onClick={handleApprove}
+          title={approveFrozen ? maintenanceFreezeMessage : undefined}
           data-critical
           className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500 dark:text-white dark:hover:bg-emerald-400 dark:focus-visible:ring-emerald-400 dark:focus-visible:ring-offset-gray-900"
         >
@@ -121,8 +135,9 @@ export default function ApprovalDecisionFooter({
       {definition.reject && (
         <button
           type="button"
-          disabled={submitting}
+          disabled={submitting || rejectFrozen}
           onClick={handleReject}
+          title={rejectFrozen ? maintenanceFreezeMessage : undefined}
           data-critical
           className="inline-flex min-h-11 items-center justify-center rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:bg-gray-900 dark:text-red-300 dark:hover:bg-red-950/30 dark:focus-visible:ring-red-400 dark:focus-visible:ring-offset-gray-900"
         >

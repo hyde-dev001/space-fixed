@@ -31,6 +31,8 @@ class SuperAdminCapabilityTest extends TestCase
             ['admin', SuperAdmin::CAP_VIEW_PRIVILEGED_AUDIT, true],
             ['admin', SuperAdmin::CAP_MANAGE_OWN_SECURITY, true],
             ['admin', SuperAdmin::CAP_MANAGE_PLATFORM_SECURITY, false],
+            ['admin', SuperAdmin::CAP_VIEW_PLATFORM_MAINTENANCE, true],
+            ['admin', SuperAdmin::CAP_MANAGE_PLATFORM_MAINTENANCE, false],
             ['super_admin', SuperAdmin::CAP_VIEW_MONITORING, true],
             ['super_admin', SuperAdmin::CAP_REVIEW_REGISTRATIONS, true],
             ['super_admin', SuperAdmin::CAP_INTERVENE_ACCOUNTS, true],
@@ -43,6 +45,8 @@ class SuperAdminCapabilityTest extends TestCase
             ['super_admin', SuperAdmin::CAP_VIEW_PRIVILEGED_AUDIT, true],
             ['super_admin', SuperAdmin::CAP_MANAGE_OWN_SECURITY, true],
             ['super_admin', SuperAdmin::CAP_MANAGE_PLATFORM_SECURITY, true],
+            ['super_admin', SuperAdmin::CAP_VIEW_PLATFORM_MAINTENANCE, true],
+            ['super_admin', SuperAdmin::CAP_MANAGE_PLATFORM_MAINTENANCE, true],
         ];
     }
 }

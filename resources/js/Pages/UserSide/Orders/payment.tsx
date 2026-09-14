@@ -15,6 +15,7 @@ import {
 import CustomerAddressMapPicker from '@/components/address/CustomerAddressMapPicker';
 import { resolvePolicySectionsForFlow } from '../../../utils/policySectionResolver';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
+import { useMaintenance } from '../../../providers/MaintenanceProvider';
 
 interface CartItem {
   id: string;
@@ -187,6 +188,8 @@ const voucherEligibilityClass = (eligibility: VoucherEligibility): string => {
 
 const Payment: React.FC = () => {
   const { auth } = usePage().props as any;
+  const { isRouteFrozen } = useMaintenance();
+  const paymentInitiationFrozen = isRouteFrozen('checkout.create-order') || isRouteFrozen('payments.paymongo.create');
   const user = auth?.user;
   const searchParams = new URLSearchParams(window.location.search);
   const repairIdParam = searchParams.get('repair_id');
@@ -263,6 +266,9 @@ const Payment: React.FC = () => {
     reason: 'expired' | 'failed' | 'invalid_state';
   } | null>(null);
   const [isRecoveryCreating, setIsRecoveryCreating] = useState(false);
+  const paymentRetryFrozen = paymentRecovery?.scope === 'repair'
+    ? isRouteFrozen('api.customer.repairs.retry-payment-session')
+    : isRouteFrozen('api.orders.retry-payment-session');
   const [policyShopOwnerId, setPolicyShopOwnerId] = useState<number | null>(null);
   const [activePolicyVersionId, setActivePolicyVersionId] = useState<number | null>(null);
   const [activePolicySections, setActivePolicySections] = useState<Record<string, string>>({});
@@ -2418,11 +2424,12 @@ const Payment: React.FC = () => {
               <button
                 type="button"
                 onClick={handleCreateNewPaymentSession}
-                disabled={isRecoveryCreating}
-                className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white ${isRecoveryCreating ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}
+                disabled={isRecoveryCreating || paymentRetryFrozen}
+                className={`inline-flex items-center rounded-md px-4 py-2 text-sm font-semibold text-white ${isRecoveryCreating || paymentRetryFrozen ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-black'}`}
               >
                 {isRecoveryCreating ? 'Creating...' : 'Create New Payment'}
               </button>
+              {paymentRetryFrozen && <p className="mt-2 text-xs text-amber-700">Payment initiation is temporarily paused for maintenance.</p>}
             </div>
           )}
 
@@ -3537,13 +3544,14 @@ const Payment: React.FC = () => {
               {/* Pay Now Button */}
               <button
                 onClick={handlePayNow}
-                disabled={isProcessing || (isPolicyAcceptanceRequired && !policyAccepted)}
+                disabled={isProcessing || (isPolicyAcceptanceRequired && !policyAccepted) || paymentInitiationFrozen}
                 className={`w-full py-3 rounded-xl font-bold text-white mb-8 transition-colors text-base ${
-                  (isProcessing || (isPolicyAcceptanceRequired && !policyAccepted)) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
+                  (isProcessing || (isPolicyAcceptanceRequired && !policyAccepted) || paymentInitiationFrozen) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >
                 {isProcessing ? 'Processing...' : 'Pay now'}
               </button>
+              {paymentInitiationFrozen && <p className="-mt-4 mb-8 text-center text-xs text-amber-700">Payment initiation is temporarily paused for maintenance.</p>}
 
               {payError && (
                 <div className="p-4 bg-red-50 border border-red-200 rounded text-red-600 text-sm mb-4">
@@ -3650,13 +3658,14 @@ const Payment: React.FC = () => {
               </div>
               <button
                 onClick={handlePayNow}
-                disabled={isProcessing || (isPolicyAcceptanceRequired && !policyAccepted)}
+                disabled={isProcessing || (isPolicyAcceptanceRequired && !policyAccepted) || paymentInitiationFrozen}
                 className={`px-6 py-3 rounded-full text-base font-semibold text-white transition-colors ${
-                  (isProcessing || (isPolicyAcceptanceRequired && !policyAccepted)) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
+                  (isProcessing || (isPolicyAcceptanceRequired && !policyAccepted) || paymentInitiationFrozen) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >
                 {isProcessing ? 'Processing...' : 'Continue to payment'}
               </button>
+              {paymentInitiationFrozen && <p className="mt-2 text-center text-xs text-amber-700">Payment initiation is temporarily paused for maintenance.</p>}
             </div>
           </div>
         </div>

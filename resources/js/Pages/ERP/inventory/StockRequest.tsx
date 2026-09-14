@@ -9,6 +9,7 @@ import { workflowFeedback } from "@/utils/workflowFeedback";
 import { clearModalDraft, loadModalDraft, saveModalDraft, scopedModalDraftKey } from "@/utils/modalDraft";
 import type { InventoryItem } from "@/types/inventory";
 import type { StockRequestApproval } from "@/types/procurement";
+import { useMaintenance } from "../../../providers/MaintenanceProvider";
 
 type DisplayStatus = "Pending" | "Approved" | "Rejected" | "Needs Details";
 type MetricColor = "success" | "warning" | "info";
@@ -225,6 +226,7 @@ const MetricCard = ({ title, value, description, icon: Icon, color }: MetricCard
 
 export default function StockRequest() {
 		const { auth, initialRequests, initialInventoryItems } = usePage().props as any;
+		const { registerDirtySource } = useMaintenance();
 		const ownerMode = auth?.erpActor?.ownerMode === true;
 		const draftKey = scopedModalDraftKey(STOCK_REQUEST_DRAFT_KEY, auth?.user?.shop_owner_id, auth?.user?.id);
 	const [requests, setRequests] = useState<StockRequestApproval[]>(initialRequests?.data ?? []);
@@ -252,8 +254,10 @@ export default function StockRequest() {
 			formData.quantityNeeded.trim() !== initialFormState.quantityNeeded ||
 			formData.priority !== initialFormState.priority ||
 			formData.notes.trim() !== initialFormState.notes,
-		[formData],
+			[formData],
 	);
+
+		useEffect(() => registerDirtySource("inventory-stock-request", isCreateFormDirty), [isCreateFormDirty, registerDirtySource]);
 
 	useEffect(() => {
 		if (!isCreateModalOpen) return;

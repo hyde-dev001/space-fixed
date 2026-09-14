@@ -12,6 +12,7 @@ import { getPaidRepairDeliveryFees } from '../../../utils/deliveryRevenue';
 import type { PreferredReturnChannel } from './refundPayloadBuilder';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 import { useScrollReveal } from '../Shared/useScrollReveal';
+import { useMaintenance } from '../../../providers/MaintenanceProvider';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -1811,6 +1812,9 @@ const getStaticRepairOrders = (): RepairOrder[] => {
 };
 
 const MyRepairs: React.FC = () => {
+  const { isRouteFrozen } = useMaintenance();
+  const repairPaymentRetryFrozen = isRouteFrozen('api.customer.repairs.retry-payment-session');
+  const repairRefundFrozen = isRouteFrozen('api.customer.repairs.refunds.store');
   const isPollingRepairsRef = useRef(false);
   const revealRootRef = useRef<HTMLDivElement | null>(null);
   useScrollReveal(revealRootRef);
@@ -3133,6 +3137,10 @@ const MyRepairs: React.FC = () => {
   };
 
   const handlePayNow = async (orderId: number) => {
+    if (repairPaymentRetryFrozen) {
+      return;
+    }
+
     const selectedOrder = orders.find(o => o.id === orderId);
     if (!selectedOrder) return;
 
@@ -3232,6 +3240,10 @@ const MyRepairs: React.FC = () => {
   };
 
   const handleSubmitRefund = async () => {
+    if (repairRefundFrozen) {
+      return;
+    }
+
     if (!refundOrderId) return;
 
     const targetOrder = orders.find((entry) => entry.id === refundOrderId);
@@ -4855,14 +4867,14 @@ const MyRepairs: React.FC = () => {
                           {isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
-                              disabled={!order.payment_enabled || processingPayment}
+                              disabled={!order.payment_enabled || processingPayment || repairPaymentRetryFrozen}
                               className={`${actionButtonBaseClass} ${
-                                order.payment_enabled && !processingPayment
+                                order.payment_enabled && !processingPayment && !repairPaymentRetryFrozen
                                   ? actionButtonPrimaryClass
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
+                              {repairPaymentRetryFrozen ? 'PAYMENT PAUSED' : processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
                             </button>
                           )}
                           <button
@@ -4897,14 +4909,14 @@ const MyRepairs: React.FC = () => {
                           {isOnlineIntakeFlow(order) && order.payment_enabled && (
                             <button
                               onClick={() => handlePayNow(order.id)}
-                              disabled={!order.payment_enabled || processingPayment}
+                              disabled={!order.payment_enabled || processingPayment || repairPaymentRetryFrozen}
                               className={`${actionButtonBaseClass} ${
-                                order.payment_enabled && !processingPayment
+                                order.payment_enabled && !processingPayment && !repairPaymentRetryFrozen
                                   ? actionButtonPrimaryClass
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
+                              {repairPaymentRetryFrozen ? 'PAYMENT PAUSED' : processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
                             </button>
                           )}
                           <button
@@ -4927,14 +4939,14 @@ const MyRepairs: React.FC = () => {
                           {order.redelivery_payment_due && (
                             <button
                               onClick={() => handlePayNow(order.id)}
-                              disabled={!order.payment_enabled || processingPayment}
+                              disabled={!order.payment_enabled || processingPayment || repairPaymentRetryFrozen}
                               className={`${actionButtonBaseClass} ${
-                                order.payment_enabled && !processingPayment
+                                order.payment_enabled && !processingPayment && !repairPaymentRetryFrozen
                                   ? actionButtonPrimaryClass
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : 'Pay new shipping fee'}
+                              {repairPaymentRetryFrozen ? 'PAYMENT PAUSED' : processingPayment ? 'PROCESSING...' : 'Pay new shipping fee'}
                             </button>
                           )}
                           {!order.redelivery_payment_due
@@ -4942,14 +4954,14 @@ const MyRepairs: React.FC = () => {
                             && getOrderOutstandingBalance(order) > 0 && (
                             <button
                               onClick={() => handlePayNow(order.id)}
-                              disabled={!order.payment_enabled || processingPayment}
+                              disabled={!order.payment_enabled || processingPayment || repairPaymentRetryFrozen}
                               className={`${actionButtonBaseClass} ${
-                                order.payment_enabled && !processingPayment
+                                order.payment_enabled && !processingPayment && !repairPaymentRetryFrozen
                                   ? actionButtonPrimaryClass
                                   : actionButtonDisabledClass
                               }`}
                             >
-                              {processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay return shipping fee' : 'Pay Remaining Balance')}
+                              {repairPaymentRetryFrozen ? 'PAYMENT PAUSED' : processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay return shipping fee' : 'Pay Remaining Balance')}
                             </button>
                           )}
                           {(!order.return_recovery || order.return_recovery.state === 'shop_pickup') && (() => {
@@ -5008,17 +5020,19 @@ const MyRepairs: React.FC = () => {
                               setRefundNote('');
                               setShowRefundModal(true);
                             }}
-                            disabled={hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)}
-                            title={hasReviewForOrder(order)
+                            disabled={repairRefundFrozen || hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)}
+                            title={repairRefundFrozen
+                              ? 'Refund requests are temporarily paused for maintenance.'
+                              : hasReviewForOrder(order)
                               ? 'Refund is not allowed after a review has been submitted.'
                               : hasActiveWarrantyClaim(order)
                                 ? 'Refund is unavailable while a warranty claim is active.'
                                 : isRefundFlowLocked(getLatestRefundForOrder(order)?.status)
                                   ? 'Refund is already filed or completed for this repair.'
                                   : undefined}
-                            className={`${actionButtonBaseClass} ${(hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)) ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
+                            className={`${actionButtonBaseClass} ${(repairRefundFrozen || hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)) ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
                           >
-                            REFUND
+                            {repairRefundFrozen ? 'REFUND (PAUSED)' : 'REFUND'}
                           </button>
                           <button
                             onClick={() => openReviewModal(order.id)}
@@ -5609,14 +5623,14 @@ const MyRepairs: React.FC = () => {
                   ) : (
                     <button
                       onClick={handleSubmitRefund}
-                      disabled={!isRefundReasonValid() || !isMediaRequirementMet() || isSubmittingRefund}
+                      disabled={!isRefundReasonValid() || !isMediaRequirementMet() || isSubmittingRefund || repairRefundFrozen}
                       className={`${actionButtonBaseClass} ${
-                        isRefundReasonValid() && isMediaRequirementMet() && !isSubmittingRefund
+                        isRefundReasonValid() && isMediaRequirementMet() && !isSubmittingRefund && !repairRefundFrozen
                           ? actionButtonPrimaryClass
                           : actionButtonDisabledClass
                       }`}
                     >
-                      {isSubmittingRefund ? 'Submitting...' : 'Submit Refund Request'}
+                      {repairRefundFrozen ? 'Refunds paused for maintenance' : isSubmittingRefund ? 'Submitting...' : 'Submit Refund Request'}
                     </button>
                   )}
                 </div>

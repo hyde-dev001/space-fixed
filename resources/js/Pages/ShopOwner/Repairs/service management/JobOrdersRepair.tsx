@@ -9,6 +9,7 @@ import { MoneyIcon } from "../../../../components/common/MoneyIcon";
 import axios from "axios";
 import { buildRepairBreakdown, type RepairTaxMode } from "../../../../utils/repairPricing";
 import type { RepairMaterialUsage, RepairMaterialInventoryItem, RepairMaterialPlanItem } from "../../../../services/repairMaterialsApi";
+import { useMaintenance } from "../../../../providers/MaintenanceProvider";
 
 type IntakeHandoffEvent = {
   id?: number | string;
@@ -447,6 +448,9 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function JobOrdersRepair() {
+  const { isRouteFrozen } = useMaintenance();
+  const paymentActivationFrozen = isRouteFrozen("shop_owner.repairs.activate-payment");
+  const maintenanceFreezeMessage = "Payment activation is paused during maintenance.";
   const POLL_INTERVAL_MS = 10000;
   const POLL_BACKOFF_MS = 30000;
   const [error, setError] = useState<string | null>(null);
@@ -1717,6 +1721,10 @@ export default function JobOrdersRepair() {
   };
 
   const handleActivatePayment = async (orderId: string) => {
+    if (paymentActivationFrozen) {
+      await Swal.fire({ title: 'Maintenance in progress', text: maintenanceFreezeMessage, icon: 'info', confirmButtonColor: '#2563eb' });
+      return;
+    }
     const targetOrder =
       (viewOrder && String(viewOrder.database_id) === orderId ? viewOrder : null)
       || orders.find((order) => String(order.database_id) === orderId)
@@ -2615,8 +2623,9 @@ export default function JobOrdersRepair() {
                               {!isWarrantyNoChargeOrder(order) && !order.payment_enabled && !isPosManualWalkIn(order) && (
                                 <button
                                   onClick={() => handleActivatePayment(String(order.database_id))}
+                                  disabled={paymentActivationFrozen}
                                   className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
-                                  title="Activate payment for this repair"
+                                  title={paymentActivationFrozen ? maintenanceFreezeMessage : "Activate payment for this repair"}
                                   aria-label="Activate Payment"
                                 >
                                   <MoneyIcon className="size-5" />
@@ -2630,8 +2639,9 @@ export default function JobOrdersRepair() {
                               {!isWarrantyNoChargeOrder(order) && !order.payment_enabled && !isPosManualWalkIn(order) && (
                                 <button
                                   onClick={() => handleActivatePayment(String(order.database_id))}
+                                  disabled={paymentActivationFrozen}
                                   className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
-                                  title="Activate payment for this repair"
+                                  title={paymentActivationFrozen ? maintenanceFreezeMessage : "Activate payment for this repair"}
                                   aria-label="Activate Payment"
                                 >
                                   <MoneyIcon className="size-5" />
@@ -2661,8 +2671,9 @@ export default function JobOrdersRepair() {
                           {order.status === "ready-for-pickup" && canActivateOnlineRemainingBalance(order) && (
                             <button
                               onClick={() => handleActivatePayment(String(order.database_id))}
-                              className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors"
-                              title="Activate online payment for remaining balance"
+                              disabled={paymentActivationFrozen}
+                              className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:text-amber-400 dark:hover:text-amber-300 dark:hover:bg-amber-900/30 transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+                              title={paymentActivationFrozen ? maintenanceFreezeMessage : "Activate online payment for remaining balance"}
                               aria-label="Activate Remaining Balance"
                             >
                               <MoneyIcon className="size-5" />

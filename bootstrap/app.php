@@ -141,12 +141,14 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->web(append: [
+            \App\Http\Middleware\EnforcePlatformMaintenance::class,
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\CheckEmployeeSuspension::class,
             \App\Http\Middleware\EnsureEmployeeSecurity::class,
             \App\Http\Middleware\EnsureCustomerEmailIsVerified::class,
         ]);
         $middleware->api([
+            \App\Http\Middleware\EnforcePlatformMaintenance::class,
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             \App\Http\Middleware\CheckEmployeeSuspension::class,
             \App\Http\Middleware\EnsureEmployeeSecurity::class,
@@ -200,6 +202,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
             \Illuminate\Session\Middleware\StartSession::class,
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+            \App\Http\Middleware\EnforcePlatformMaintenance::class,
             SuperAdminAuth::class,
             EnsurePrivilegedAccountIsActive::class,
             EnsurePrivilegedMfaComplete::class,

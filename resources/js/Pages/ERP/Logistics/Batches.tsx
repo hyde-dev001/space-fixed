@@ -21,6 +21,7 @@ import BatchHistoryModal from './components/BatchHistoryModal';
 import BatchTable from './components/BatchTable';
 import BatchWorkspace from './components/BatchWorkspace';
 import OfferBatchModal from './components/OfferBatchModal';
+import { useMaintenance } from '@/providers/MaintenanceProvider';
 
 const errorMessage = (error: unknown) => {
   const data = (error as { response?: { data?: { errors?: Record<string, string[]>; message?: string } } })?.response?.data;
@@ -44,6 +45,12 @@ export default function Batches() {
     logisticsSchedule,
   } = usePage<DeliveryBatchPageProps & { auth?: any }>().props;
   const ownerMode = (auth as any)?.erpActor?.ownerMode === true;
+  const { isRouteFrozen } = useMaintenance();
+  const createBatchFrozen = isRouteFrozen('logistics.api.batches.store');
+  const scheduleLegsFrozen = isRouteFrozen('logistics.api.legs.schedule');
+  const offerBatchFrozen = isRouteFrozen('logistics.api.batches.offer');
+  const batchBuildFrozen = createBatchFrozen || scheduleLegsFrozen;
+  const maintenanceActionMessage = 'Critical logistics actions are paused during maintenance.';
   const batchesPath = ownerMode ? '/shop-owner/erp/logistics/batches' : '/erp/logistics/batches';
   const [building, setBuilding] = useState(false);
   const [selectedBatchId, setSelectedBatchId] = useState<number>();
@@ -313,6 +320,10 @@ export default function Batches() {
     setReviewOpen(true);
   };
   const offerBatch = async (riderId: number, capacityOverrideReason?: string) => {
+    if (offerBatchFrozen) {
+      setOfferError(maintenanceActionMessage);
+      return;
+    }
     if (!selectedBatch) return;
     const rider = riders.find((candidate) => candidate.id === riderId);
     if (!rider) return;
@@ -383,6 +394,10 @@ export default function Batches() {
     });
   };
   const saveDraft = async () => {
+    if (batchBuildFrozen) {
+      setError(maintenanceActionMessage);
+      return;
+    }
     if (selectedIds.length < 2) {
       setError('Select at least 2 deliveries.');
       return;
@@ -447,6 +462,7 @@ export default function Batches() {
         batch={selectedBatch} selectedLegs={selectedLegs} date={date} window={window} dailyRiderCapacity={dailyRiderCapacity}
         overrideReason={overrideReason} submitting={submitting} busyLegId={busyLegId} onOverrideReasonChange={setOverrideReason}
         onMove={selectedBatch ? moveStops : moveLocal} onRemove={removeStop}
+        saveDisabled={batchBuildFrozen} saveDisabledReason={maintenanceActionMessage}
         onSave={saveDraft} onReview={() => selectedBatch && openReview(selectedBatch.id)}
         suggestions={suggestions} suggestionRows={allDeliveries} suggestionRiders={riders}
         suggestionsLoading={suggestionsLoading} suggestionsError={suggestionsError} onApplySuggestion={applySuggestion}
@@ -463,6 +479,6 @@ export default function Batches() {
     </section>
     <BatchHistoryModal batches={historyBatches} isOpen={historyOpen} onClose={closeHistory} onOpen={(batchId) => { closeHistory(); openBatch(batchId); }} onDetails={openDetails} onRestore={restoreBatch} />
     <BatchDetailsModal batch={detailsBatch} isOpen={Boolean(detailsBatch)} onClose={closeDetails} />
-    <OfferBatchModal isOpen={reviewOpen} batch={selectedBatch} batches={batches} riders={riders} dailyRiderCapacity={dailyRiderCapacity} forceCapacityOverrideForRiderId={offerOverrideRiderId} submitting={offerSubmitting} error={offerError} onClose={() => { setReviewOpen(false); setOfferOverrideRiderId(undefined); }} onOffer={offerBatch} />
+    <OfferBatchModal isOpen={reviewOpen} batch={selectedBatch} batches={batches} riders={riders} dailyRiderCapacity={dailyRiderCapacity} forceCapacityOverrideForRiderId={offerOverrideRiderId} submitting={offerSubmitting} error={offerError} disabled={offerBatchFrozen} disabledReason={maintenanceActionMessage} onClose={() => { setReviewOpen(false); setOfferOverrideRiderId(undefined); }} onOffer={offerBatch} />
   </main></AppLayoutERP>;
 }

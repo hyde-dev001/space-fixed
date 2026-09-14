@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\ShopDocument;
 use App\Models\AccountSuspension;
 use App\Models\IdentityVerification;
+use App\Models\MaintenanceWindow;
 use App\Models\ReviewReport;
 use App\Models\PremiumPlan;
 use App\Models\ShopOwner;
@@ -21,6 +22,64 @@ use Spatie\Activitylog\Models\Activity;
 
 class PrivilegedAudit
 {
+    /** @var array<int, string> */
+    private const MAINTENANCE_EVENTS = [
+        'platform_maintenance_created',
+        'platform_maintenance_scheduled',
+        'platform_maintenance_updated',
+        'platform_maintenance_cancelled',
+        'platform_maintenance_activated',
+        'platform_maintenance_extended',
+        'platform_maintenance_progress_updated',
+        'platform_maintenance_public_update_changed',
+        'platform_maintenance_ended',
+    ];
+
+    /** @param array<string, mixed> $previous @param array<string, mixed> $new */
+    public function platformMaintenanceChanged(
+        Request $request,
+        SuperAdmin $actor,
+        MaintenanceWindow $window,
+        string $event,
+        array $previous,
+        array $new,
+    ): void {
+        $this->assertMaintenanceEvent($event);
+        $this->write(
+            event: $event,
+            actor: $actor,
+            subject: $window,
+            source: 'http',
+            correlationId: $this->correlationId($request),
+            ipAddress: $request->ip(),
+            properties: [
+                'previous' => $previous,
+                'new' => $new,
+            ],
+        );
+    }
+
+    /** @param array<string, mixed> $previous @param array<string, mixed> $new */
+    public function platformMaintenanceReconciled(
+        MaintenanceWindow $window,
+        string $event,
+        string $correlationId,
+        array $previous,
+        array $new,
+    ): void {
+        $this->assertMaintenanceEvent($event);
+        $this->writeConsoleEvent(
+            event: $event,
+            subject: $window,
+            correlationId: $correlationId,
+            properties: [
+                'previous' => $previous,
+                'new' => $new,
+                'system_source' => 'maintenance_scheduler',
+            ],
+        );
+    }
+
     /**
      * Persist a normalized historical event produced by the allowlisted
      * legacy mapper. The record is written directly so provenance and the
@@ -1470,6 +1529,13 @@ class PrivilegedAudit
     {
         if (! in_array($method, ['totp', 'recovery_code'], true)) {
             throw new InvalidArgumentException('The MFA method is not supported.');
+        }
+    }
+
+    private function assertMaintenanceEvent(string $event): void
+    {
+        if (! in_array($event, self::MAINTENANCE_EVENTS, true)) {
+            throw new InvalidArgumentException('The maintenance audit event is not supported.');
         }
     }
 

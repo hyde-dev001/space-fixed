@@ -19,8 +19,14 @@ window.axios.interceptors.request.use(config => {
 window.axios.interceptors.response.use(
     response => response,
     error => {
+        const response = error.response;
+        const code = response?.data?.code;
+        if (response?.status === 503 && code === 'MAINTENANCE_ACTIVE') {
+            window.dispatchEvent(new CustomEvent('solespace:maintenance-active'));
+        }
+
         // Don't redirect on API errors, let the component handle it
-        if (error.response?.status === 419) {
+        if (response?.status === 419) {
             console.error('CSRF token mismatch. Please refresh the page.');
         }
         return Promise.reject(error);
