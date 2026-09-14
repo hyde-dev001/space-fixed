@@ -736,7 +736,7 @@ class PayslipApprovalController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'payslip_ids' => 'required|array',
+            'payslip_ids' => 'sometimes|array|min:1|max:500',
             'payslip_ids.*' => 'required|integer|exists:payrolls,id',
             'notes' => 'nullable|string|max:1000',
         ]);
@@ -750,7 +750,42 @@ class PayslipApprovalController extends Controller
         $errors = [];
         $notes = $request->input('notes');
 
-        foreach ((array) $request->input('payslip_ids', []) as $payslipId) {
+        $payslipIds = $request->has('payslip_ids')
+            ? (array) $request->input('payslip_ids', [])
+            : Payroll::forShopOwner($actor['shop_owner_id'])
+                ->where('status', 'pending')
+                ->where(function (Builder $workflowQuery) use ($actor): void {
+                    $workflowQuery
+                        ->where(function (Builder $v4Query) use ($actor): void {
+                            $v4Query
+                                ->where('approval_status', 'pending')
+                                ->where('approval_workflow_version', 'v4_multi_level')
+                                ->whereNotNull('approval_id')
+                                ->whereHas('approval', static function (Builder $approvalQuery) use ($actor): void {
+                                    $approvalQuery
+                                        ->where('approvals.status', 'pending')
+                                        ->where('approvals.current_approver_role', 'shop_owner')
+                                        ->where(function (Builder $tenantQuery) use ($actor): void {
+                                            $tenantQuery
+                                                ->where('approvals.shop_owner_id', (int) $actor['shop_owner_id'])
+                                                ->orWhereHas('shopOwner', static function (Builder $ownerQuery) use ($actor): void {
+                                                    $ownerQuery->where('users.shop_owner_id', (int) $actor['shop_owner_id']);
+                                                });
+                                        });
+                                });
+                        })
+                        ->orWhere(function (Builder $legacyQuery): void {
+                            $legacyQuery
+                                ->where('approval_status', 'approved')
+                                ->whereNotNull('approved_by')
+                                ->whereNull('final_approved_by')
+                                ->where('approval_workflow_version', '!=', 'v4_multi_level');
+                        });
+                })
+                ->pluck('id')
+                ->all();
+
+        foreach ($payslipIds as $payslipId) {
             try {
                 $payslip = Payroll::forShopOwner($actor['shop_owner_id'])
                     ->with([

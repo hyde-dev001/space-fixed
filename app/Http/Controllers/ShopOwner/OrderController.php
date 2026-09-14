@@ -17,6 +17,7 @@ use App\Services\RetailPosRefundSummaryService;
 use App\Services\Logistics\ShipmentLegService;
 use App\Models\Logistics\Shipment;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -89,10 +90,19 @@ class OrderController extends Controller
             (int) $shopOwner->id,
             $orders->getCollection()->pluck('id')->map(fn ($id) => (int) $id)->all(),
         );
+        $returnLegStatuses = $this->latestReturnLegStatusLookup(
+            (int) $shopOwner->id,
+            $orders->getCollection()
+                ->map(fn ($order) => $order->refunds->first()?->id)
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->values()
+                ->all(),
+        );
         $canFulfillOrders = $this->canFulfillOrders($shopOwner);
 
         return response()->json([
-            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $includeRefundItems, $canFulfillOrders) {
+            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $returnLegStatuses, $includeRefundItems, $canFulfillOrders) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $hasStoredVat = $order->vat_amount !== null;
@@ -175,6 +185,10 @@ class OrderController extends Controller
                         'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
                         'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
                         'return_source' => (string) ($latestRefund->return_source ?? 'customer'),
+                        'return_delivery_method' => $latestRefund->returnDeliveryMethod(),
+                        'return_logistics' => $returnLegStatuses->has($latestRefund->id)
+                            ? ['leg_status' => $returnLegStatuses->get($latestRefund->id)]
+                            : null,
                         'customer_return_tracking_number' => $latestRefund->customer_return_tracking_number,
                         'customer_return_carrier' => $latestRefund->customer_return_carrier,
                         'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
@@ -268,6 +282,9 @@ class OrderController extends Controller
         $thirdPartyLeg = $order->logisticsShipments
             ->flatMap(fn ($shipment) => $shipment->legs)
             ->first();
+        $returnLegStatus = $latestRefund
+            ? $this->latestReturnLegStatusLookup((int) $shopOwner->id, [(int) $latestRefund->id])->get($latestRefund->id)
+            : null;
         $latestRefundItems = [];
         if ($includeRefundItems && $latestRefund) {
             $latestRefundItems = $latestRefund->items
@@ -341,6 +358,8 @@ class OrderController extends Controller
                 'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
                 'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
                 'return_source' => (string) ($latestRefund->return_source ?? 'customer'),
+                'return_delivery_method' => $latestRefund->returnDeliveryMethod(),
+                'return_logistics' => $returnLegStatus !== null ? ['leg_status' => $returnLegStatus] : null,
                 'customer_return_tracking_number' => $latestRefund->customer_return_tracking_number,
                 'customer_return_carrier' => $latestRefund->customer_return_carrier,
                 'customer_return_rider_name' => $latestRefund->customer_return_rider_name,
@@ -739,6 +758,7 @@ class OrderController extends Controller
         }
 
         $validated = $request->validate([
+            'delivery_method' => 'nullable|string|in:shop_owned,third_party',
             'tracking_number' => 'required|string|max:255',
             'carrier_company' => 'required|string|max:255',
             'rider_name' => 'required|string|max:255',
@@ -795,6 +815,34 @@ class OrderController extends Controller
     private function canFulfillOrders(ShopOwner $shopOwner): bool
     {
         return strtolower(trim((string) ($shopOwner->registration_type ?? ''))) === 'individual';
+    }
+
+    private function latestReturnLegStatusLookup(int $shopOwnerId, array $refundIds): Collection
+    {
+        if ($refundIds === [] || !Schema::hasTable('shipments')) {
+            return collect();
+        }
+
+        return Shipment::query()
+            ->with('legs')
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('source_type', 'order_refund')
+            ->whereIn('source_id', $refundIds)
+            ->where('purpose', 'refund_return')
+            ->where('status', '!=', 'cancelled')
+            ->latest('id')
+            ->get()
+            ->groupBy('source_id')
+            ->map(function (Collection $shipments): ?string {
+                $leg = $shipments->first()?->legs
+                    ->whereIn('leg_type', ['inbound', 'return_to_shop'])
+                    ->sortByDesc('sequence')
+                    ->first();
+
+                return $leg?->status instanceof \BackedEnum
+                    ? $leg->status->value
+                    : ($leg?->status !== null ? (string) $leg->status : null);
+            });
     }
 
     private function denyNonIndividualOrderMutation(ShopOwner $shopOwner): ?\Illuminate\Http\JsonResponse

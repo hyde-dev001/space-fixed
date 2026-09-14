@@ -150,6 +150,68 @@ class OrderRefundReturnInspectionTest extends TestCase
         $this->assertSame('pending_customer_shipment', $refund->fresh()->return_status);
     }
 
+    public function test_retail_individual_owner_can_arrange_and_confirm_a_third_party_return(): void
+    {
+        [$refund, , $line] = $this->fixture('individual');
+        $shop = ShopOwner::query()->findOrFail($refund->shop_owner_id);
+        $shop->update(['business_type' => 'retail']);
+        $refund->update([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/orders/{$refund->order_id}/arrange-return-pickup", [
+                'delivery_method' => 'third_party',
+                'tracking_number' => 'LBC-IND-001',
+                'carrier_company' => 'LBC',
+                'rider_name' => 'Juan Rider',
+                'rider_phone' => '09171234567',
+                'tracking_link' => 'https://example.test/returns/LBC-IND-001',
+            ])
+            ->assertOk()
+            ->assertJsonPath('refund.return_status', 'in_transit');
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/orders/{$refund->order_id}/confirm-return-received", [
+                'line_dispositions' => [$this->disposition($line->order_item_id)],
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'return_status' => 'received',
+        ]);
+    }
+
+    public function test_retail_individual_owner_can_confirm_a_legacy_staff_pickup_return(): void
+    {
+        [$refund, , $line] = $this->fixture('individual');
+        $shop = ShopOwner::query()->findOrFail($refund->shop_owner_id);
+        $shop->update(['business_type' => 'retail']);
+        $refund->update([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'Lalamove',
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/orders/{$refund->order_id}/confirm-return-received", [
+                'line_dispositions' => [$this->disposition($line->order_item_id)],
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'return_status' => 'received',
+        ]);
+    }
+
     public function test_customer_can_submit_individual_return_shipment_details_after_approval(): void
     {
         [$refund] = $this->fixture('individual');

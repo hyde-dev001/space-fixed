@@ -7,6 +7,10 @@ import type { OwnerActionCenterResult, OwnerAttentionItem } from "../../../types
 const mocks = vi.hoisted(() => ({
   props: {} as Record<string, unknown>,
   reload: vi.fn(),
+  confirm: vi.fn(),
+  warning: vi.fn(),
+  success: vi.fn(),
+  error: vi.fn(),
 }));
 
 vi.mock("@inertiajs/react", () => ({
@@ -17,6 +21,15 @@ vi.mock("@inertiajs/react", () => ({
 
 vi.mock("../../../layout/AppLayout_shopOwner", () => ({
   default: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock("../../../utils/workflowFeedback", () => ({
+  workflowFeedback: {
+    confirm: mocks.confirm,
+    warning: mocks.warning,
+    success: mocks.success,
+    error: mocks.error,
+  },
 }));
 
 const item = (overrides: Partial<OwnerAttentionItem> = {}): OwnerAttentionItem => ({
@@ -85,6 +98,10 @@ describe("Shop Owner Approval Center", () => {
 
   beforeEach(() => {
     mocks.reload.mockReset();
+    mocks.confirm.mockReset().mockResolvedValue({ isConfirmed: true });
+    mocks.warning.mockReset().mockResolvedValue({ isConfirmed: true });
+    mocks.success.mockReset().mockResolvedValue({ isConfirmed: true });
+    mocks.error.mockReset().mockResolvedValue({ isConfirmed: true });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -140,6 +157,55 @@ describe("Shop Owner Approval Center", () => {
     expect(screen.queryByRole("navigation", { name: /Action Center buckets/i })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: /All Approvals/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /Price Changes/i })).toBeInTheDocument();
+  });
+
+  it("shows direct and bulk approve actions for company-owner payslips", async () => {
+    const firstPayslip = item({
+      attention_key: "payslip:101:payslip_approval",
+      source_type: "payslip",
+      source_id: 101,
+      title: "Payslip approval",
+      concise_summary: "Review Ana Employee's payslip.",
+      coverage_source: "payslips",
+      comparable_monetary_exposure: 25000,
+    });
+    const secondPayslip = item({
+      attention_key: "payslip:102:payslip_approval",
+      source_type: "payslip",
+      source_id: 102,
+      title: "Payslip approval",
+      concise_summary: "Review Ben Employee's payslip.",
+      coverage_source: "payslips",
+      comparable_monetary_exposure: 26000,
+    });
+    mocks.props = {
+      ...mocks.props,
+      ownerActionCenter: result({
+        items: [firstPayslip, secondPayslip],
+        coverage: "payslips",
+        coverage_counts: { payslips: 2 },
+        pagination: { page: 1, per_page: 20, total: 2, last_page: 1 },
+      }),
+      source: "payslips",
+    };
+
+    render(<ActionCenter />);
+
+    expect(screen.getByRole("button", { name: "Approve all payslips (2)" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Approve Payslip approval" })).toHaveLength(2);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Approve Payslip approval" })[0]);
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/shop-owner/payslip-approvals/101/final-approve",
+      expect.objectContaining({ method: "POST" }),
+    ));
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve all payslips (2)" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(
+      "/api/shop-owner/payslip-approvals/batch/final-approve",
+      expect.objectContaining({ method: "POST" }),
+    ));
+    expect(mocks.confirm).toHaveBeenCalledTimes(2);
   });
 
   it("uses neutral treatments for approval navigation and refresh controls", () => {
