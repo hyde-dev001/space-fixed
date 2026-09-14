@@ -5,6 +5,7 @@ import SupplierPaymentDialog from "../components/SupplierPaymentDialog";
 const mocks = vi.hoisted(() => ({
 	post: vi.fn(),
 	get: vi.fn(),
+	confirm: vi.fn(),
 	resolveUrl: (url: string) => url,
 	onChanged: vi.fn(),
 	onClose: vi.fn(),
@@ -12,6 +13,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../../../hooks/useFinanceApi", () => ({
 	useFinanceApi: () => ({ get: mocks.get, post: mocks.post, resolveUrl: mocks.resolveUrl }),
+}));
+
+vi.mock("../../../../utils/workflowFeedback", () => ({
+	workflowFeedback: { confirm: mocks.confirm },
 }));
 
 	const details = {
@@ -36,6 +41,7 @@ vi.mock("../../../../hooks/useFinanceApi", () => ({
 beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.onChanged.mockResolvedValue(undefined);
+	mocks.confirm.mockResolvedValue({ isConfirmed: true });
 	mocks.get.mockResolvedValue({ ok: true, status: 200, data: { id: 8, account_number: "1234567890" } });
 });
 
@@ -69,6 +75,40 @@ describe("SupplierPaymentDialog", () => {
 		await waitFor(() => expect(screen.getByText(/Perform the real transfer/i)).toBeInTheDocument());
 		expect(mocks.post).toHaveBeenCalledWith("/api/finance/expenses/1/supplier-payment-attempts", expect.objectContaining({ payment_method: "manual_bank_transfer" }));
 		 expect(screen.getByRole("button", { name: "Submit for Shop Owner Verification" })).toBeDisabled();
+	});
+
+	it("confirms before submitting payment proof for Shop Owner verification", async () => {
+		mocks.post.mockResolvedValueOnce({
+			ok: true,
+			data: { id: 44, status: "awaiting_verification", amount: "100.00", payment_method: "manual_bank_transfer" },
+		});
+
+		render(
+			<SupplierPaymentDialog
+				open
+				mode="finance"
+				expenseId="1"
+				details={details}
+				amount="100.00"
+				initialAttempt={{ id: 44, status: "initiating", amount: "100.00", payment_method: "manual_bank_transfer" }}
+				onClose={mocks.onClose}
+				onChanged={mocks.onChanged}
+			/>,
+		);
+
+		fireEvent.change(screen.getByLabelText("External transaction/reference number"), { target: { value: "BANK-001" } });
+		fireEvent.change(screen.getByLabelText(/Payment proof/), { target: { files: [new File(["proof"], "proof.jpg", { type: "image/jpeg" })] } });
+		const submitButton = screen.getByRole("button", { name: "Submit for Shop Owner Verification" });
+		fireEvent.submit(submitButton.closest("form")!);
+
+		await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Submit payment for Shop Owner verification?",
+			confirmButtonText: "Submit for Verification",
+		})));
+		await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+			"/api/finance/supplier-payment-attempts/44/submit",
+			expect.any(FormData),
+		));
 	});
 
 	it("lets Finance reveal and hide the current supplier account for the transfer", async () => {

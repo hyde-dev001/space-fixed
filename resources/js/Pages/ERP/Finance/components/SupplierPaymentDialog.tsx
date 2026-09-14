@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useFinanceApi } from "../../../../hooks/useFinanceApi";
+import { workflowFeedback } from "../../../../utils/workflowFeedback";
 import type { ProcurementExpenseDetails, RevealedSupplierPaymentProfile, SupplierPaymentAttemptSummary, SupplierPaymentMethod } from "@/types/procurement";
 
 interface SupplierPaymentDialogProps {
@@ -172,6 +173,14 @@ export default function SupplierPaymentDialog({
 			handleError("Payment proof is required before sending for verification.");
 			return;
 		}
+
+		const confirmation = await workflowFeedback.confirm({
+			title: "Submit payment for Shop Owner verification?",
+			text: "The Shop Owner will review the payment details and proof before the payment is finalized.",
+			confirmButtonText: "Submit for Verification",
+			cancelButtonText: "Cancel",
+		});
+		if (!confirmation.isConfirmed) return;
 
 		setBusy(true);
 		setError(null);

@@ -286,7 +286,7 @@ const mapApiItemToStock = (item: ApiInventoryItem): StockItem | null => {
     sellingPrice: item.price ?? null,
     colorVariants,
     repairImages,
-    imageUrl: toStorageUrl(item.main_image),
+    imageUrl: toStorageUrl(item.main_image) || getPrimaryImageFromVariants(colorVariants),
     createdAt: item.created_at,
     deleted_at: item.deleted_at ?? null,
     apiItem: item,
@@ -374,6 +374,7 @@ export default function UploadInventory() {
   const [editingSizeQty, setEditingSizeQty] = useState<{ sizeId: string; value: string } | null>(null);
   const [colorImageUploading, setColorImageUploading] = useState<Record<string, boolean>>({});
   const [editSizeSystem, setEditSizeSystem] = useState<SizeSystem>('US');
+  const hasColorImageUploadInProgress = Object.values(colorImageUploading).some(Boolean);
 
   const SIZE_OPTIONS = Array.from({ length: 25 }, (_, i) => {
     const size = 3 + i * 0.5;
@@ -791,6 +792,15 @@ export default function UploadInventory() {
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (isSubmitting) return;
+
+    if (hasColorImageUploadInProgress) {
+      await Swal.fire({
+        icon: 'info',
+        title: 'Images are still uploading',
+        text: 'Please wait for the image upload to finish before saving the item.',
+      });
+      return;
+    }
 
     const wasEditing = Boolean(editingStock);
 
@@ -1736,11 +1746,13 @@ export default function UploadInventory() {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || hasColorImageUploadInProgress}
                   className="h-11 w-full rounded-lg bg-black px-4 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-gray-800"
                 >
                   {isSubmitting
                     ? (editingStock ? 'Updating...' : 'Saving...')
+                    : hasColorImageUploadInProgress
+                      ? 'Uploading images...'
                     : (editingStock ? 'Update Stock' : 'Save Stock')}
                 </button>
               </div>
