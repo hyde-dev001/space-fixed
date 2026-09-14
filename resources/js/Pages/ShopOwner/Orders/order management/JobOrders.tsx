@@ -91,6 +91,7 @@ type Order = {
     finance_status: string;
     return_status: string;
     return_source?: string;
+    return_delivery_method?: 'shop_owned' | 'third_party' | null;
     customer_return_tracking_number?: string | null;
     customer_return_carrier?: string | null;
     customer_return_rider_name?: string | null;
@@ -105,6 +106,7 @@ type Order = {
     staff_return_shipped_at?: string | null;
     return_arranged_by_staff_at?: string | null;
     return_confirmed_at?: string | null;
+    return_logistics?: { leg_status?: string | null } | null;
     refund_executed_at?: string | null;
     rejection_reason?: string | null;
     flow_type?: string;
@@ -814,9 +816,21 @@ export default function JobOrdersPage() {
     const latestRefund = order.latest_refund;
     if (!latestRefund) return false;
 
-    return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
-      && ['pending_staff_pickup', 'in_transit'].includes(String(latestRefund.return_status || '').toLowerCase())
-      && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
+    if (String(latestRefund.flow_type || '').toLowerCase() !== 'request_approval'
+      || ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase())) {
+      return false;
+    }
+
+    const returnStatus = String(latestRefund.return_status || '').toLowerCase();
+    const returnMethod = String(latestRefund.return_delivery_method || '').toLowerCase();
+    const isStaffPendingPickup = String(latestRefund.return_source || '').toLowerCase() === 'staff'
+      && returnStatus === 'pending_staff_pickup';
+    if (returnMethod === 'shop_owned') {
+      return returnStatus === 'in_transit'
+        && String(latestRefund.return_logistics?.leg_status || '').toLowerCase() === 'delivered';
+    }
+
+    return returnStatus === 'in_transit' || isStaffPendingPickup;
   };
 
   const canArrangeReturnPickup = (order: Order) => {
@@ -921,6 +935,7 @@ export default function JobOrdersPage() {
           'X-CSRF-TOKEN': csrfData.csrf_token,
         },
         body: JSON.stringify({
+          delivery_method: 'third_party',
           tracking_number: trackingNumber,
           carrier_company: carrierCompany,
           rider_name: riderName,

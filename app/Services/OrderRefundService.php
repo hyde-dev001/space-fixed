@@ -1197,7 +1197,7 @@ class OrderRefundService
             if ($returnDeliveryMethod === 'shop_owned' && !$this->hasDeliveredShopOwnedReturnShipment($refund)) {
                 return $this->invalidReturnReceipt($refund, 'Wait for the Shop-owned return delivery before completing the Staff inspection.');
             }
-            if ($returnDeliveryMethod === 'third_party' && $returnStatus !== 'in_transit') {
+            if ($returnDeliveryMethod === 'third_party' && $returnStatus !== 'in_transit' && ! $staffPickupAllowed) {
                 return $this->invalidReturnReceipt($refund, $invalidStateMessage);
             }
             if ($returnStatus !== 'in_transit' && ! $staffPickupAllowed) {

@@ -216,7 +216,36 @@ class PayslipApprovalWorkflowTest extends TestCase
                 ->where('ownerActionCenter.health.enabled_adapter_keys', ['payslips'])
                 ->where('ownerActionCenter.pagination.total', 1)
                 ->where('ownerActionCenter.items.0.source_type', 'payslip')
-                ->where('ownerActionCenter.items.0.source_id', $payslip->id));
+            ->where('ownerActionCenter.items.0.source_id', $payslip->id));
+    }
+
+    public function test_company_owner_can_bulk_approve_all_payslips_waiting_on_the_owner(): void
+    {
+        $this->shopOwnerAuth->update(['registration_type' => 'company']);
+        $first = $this->createWorkflowBoundPayslip();
+        $second = $this->createWorkflowBoundPayslip();
+
+        foreach ([$first, $second] as $payslip) {
+            $this->actingAs($this->financeFirst, 'user')
+                ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
+                    'notes' => 'Finance approved for owner bulk review',
+                ])
+                ->assertOk();
+        }
+
+        $response = $this->actingAs($this->shopOwnerAuth, 'shop_owner')
+            ->postJson('/api/shop-owner/payslip-approvals/batch/final-approve', [
+                'notes' => 'Owner bulk approved',
+            ]);
+
+        $response->assertOk()
+            ->assertJson([
+                'approved' => 2,
+                'failed' => 0,
+            ]);
+
+        $this->assertApprovalStage($first, 3, 4, 'finance');
+        $this->assertApprovalStage($second, 3, 4, 'finance');
     }
 
     public function test_payslip_policy_off_removes_only_the_shop_owner_stage(): void

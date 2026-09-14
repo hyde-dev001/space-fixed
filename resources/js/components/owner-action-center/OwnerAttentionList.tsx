@@ -3,6 +3,7 @@ import type { OwnerAttentionItem, OwnerAttentionSourceType } from "../../types/o
 interface OwnerAttentionListProps {
   items: OwnerAttentionItem[];
   onReview?: (item: OwnerAttentionItem) => void;
+  onApprove?: (item: OwnerAttentionItem) => void;
   selectedAttentionKey?: string | null;
   ariaLabel?: string;
 }
@@ -56,7 +57,7 @@ const formatExposure = (value: number | null): string => {
   return currencyFormatter.format(value);
 };
 
-export default function OwnerAttentionList({ items, onReview, selectedAttentionKey, ariaLabel = "Owner attention queue" }: OwnerAttentionListProps) {
+export default function OwnerAttentionList({ items, onReview, onApprove, selectedAttentionKey, ariaLabel = "Owner attention queue" }: OwnerAttentionListProps) {
   if (items.length === 0) {
     return null;
   }
@@ -98,21 +99,33 @@ export default function OwnerAttentionList({ items, onReview, selectedAttentionK
               </p>
             </div>
             {requiresDecision && onReview ? (
-              <button
-                type="button"
-                aria-label={`View ${item.title} approval details`}
-                title="View approval details"
-                aria-haspopup="dialog"
-                data-attention-key={item.attention_key}
-                aria-current={selectedAttentionKey === item.attention_key ? "true" : undefined}
-                onClick={() => onReview(item)}
-                className={`inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg border p-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 ${selectedAttentionKey === item.attention_key ? "border-gray-950 bg-gray-950 text-white hover:border-black hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:text-white dark:hover:border-gray-950 dark:hover:bg-black" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800"}`}
-              >
-                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Z" />
-                  <circle cx="12" cy="12" r="2.75" />
-                </svg>
-              </button>
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {item.source_type === "payslip" && onApprove && (
+                  <button
+                    type="button"
+                    aria-label={`Approve ${item.title}`}
+                    onClick={() => onApprove(item)}
+                    className="inline-flex min-h-11 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:focus-visible:ring-offset-gray-900"
+                  >
+                    Approve
+                  </button>
+                )}
+                <button
+                  type="button"
+                  aria-label={`View ${item.title} approval details`}
+                  title="View approval details"
+                  aria-haspopup="dialog"
+                  data-attention-key={item.attention_key}
+                  aria-current={selectedAttentionKey === item.attention_key ? "true" : undefined}
+                  onClick={() => onReview(item)}
+                  className={`inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border p-2 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-gray-900 ${selectedAttentionKey === item.attention_key ? "border-gray-950 bg-gray-950 text-white hover:border-black hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:text-white dark:hover:border-gray-950 dark:hover:bg-black" : "border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800"}`}
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12s3.5-6 9.75-6 9.75 6 9.75 6-3.5 6-9.75 6-9.75-6-9.75-6Z" />
+                    <circle cx="12" cy="12" r="2.75" />
+                  </svg>
+                </button>
+              </div>
             ) : (
               <a
                 href={item.destination_url}

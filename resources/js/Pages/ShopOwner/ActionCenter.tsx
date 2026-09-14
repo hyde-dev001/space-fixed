@@ -8,6 +8,8 @@ import OwnerApprovalFilters, { actionCenterUrl } from "../../components/owner-ac
 import OwnerApprovalHistoryList from "../../components/owner-action-center/OwnerApprovalHistoryList";
 import { approvalDefinitionFor } from "../../components/owner-action-center/approvalPanelRegistry";
 import { parseApprovalSelection, type ApprovalSelection } from "../../components/owner-action-center/approvalSelection";
+import { useMaintenance } from "../../providers/MaintenanceProvider";
+import { workflowFeedback } from "../../utils/workflowFeedback";
 import type {
   OwnerActionCenterCoverage,
   OwnerAttentionItem,
@@ -70,6 +72,23 @@ const pageNumbers = (current: number, last: number): number[] => {
   return Array.from({ length: end - first + 1 }, (_, index) => first + index);
 };
 
+const payslipBulkApprovePath = "/api/shop-owner/payslip-approvals/batch/final-approve";
+
+const csrfToken = (): string | null => (
+  typeof document === "undefined"
+    ? null
+    : document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") ?? null
+);
+
+const responseMessage = (payload: unknown): string => {
+  if (typeof payload === "object" && payload !== null) {
+    if ("error" in payload && typeof payload.error === "string") return payload.error;
+    if ("message" in payload && typeof payload.message === "string") return payload.message;
+  }
+
+  return "The payslip approval could not be saved. Refresh and try again.";
+};
+
 export default function ActionCenter() {
   const { props } = usePage() as { props: ActionCenterPageProps };
   const rawResult = props.ownerActionCenter ?? null;
@@ -95,6 +114,9 @@ export default function ActionCenter() {
   const [selectedSelection, setSelectedSelection] = useState<ApprovalSelection | null>(props.approvalSelection ?? null);
   const lastReviewedKey = useRef<string | null>(null);
   const [queueAnnouncement, setQueueAnnouncement] = useState("");
+  const [approvingAttentionKey, setApprovingAttentionKey] = useState<string | null>(null);
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const { isRouteFrozen } = useMaintenance();
 
   useEffect(() => {
     setSelectedSelection(props.approvalSelection ?? null);
@@ -186,6 +208,110 @@ export default function ActionCenter() {
     router.reload({ preserveScroll: true, preserveState: true });
   };
 
+  const payslipItems = (result?.items ?? []).filter((item) => item.source_type === "payslip" && item.owner_action_required);
+  const pendingPayslipCount = result?.coverage_counts.payslips ?? payslipItems.length;
+  const payslipApprovalFrozen = isRouteFrozen("shop_owner.payslip_approval.final_approve");
+
+  const approvePayslip = async (item: OwnerAttentionItem) => {
+    if (approvingAttentionKey !== null || bulkApproving) return;
+
+    if (payslipApprovalFrozen) {
+      await workflowFeedback.warning("Maintenance in progress", "Payslip approval actions are paused during maintenance.");
+      return;
+    }
+
+    const confirmation = await workflowFeedback.confirm({
+      title: `Approve Payslip #${item.source_id}?`,
+      text: "This will move the payslip to the next payroll approval stage.",
+      confirmButtonText: "Approve",
+      confirmButtonColor: "#059669",
+    });
+    if (!confirmation.isConfirmed) return;
+
+    setApprovingAttentionKey(item.attention_key);
+    try {
+      const token = csrfToken();
+      const headers: Record<string, string> = { Accept: "application/json", "Content-Type": "application/json" };
+      if (token) headers["X-CSRF-TOKEN"] = token;
+
+      const response = await fetch(`/api/shop-owner/payslip-approvals/${item.source_id}/final-approve`, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({}),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(responseMessage(payload));
+
+      await workflowFeedback.success({
+        title: "Payslip approved",
+        text: "The payslip moved to the next approval stage.",
+        timer: 1800,
+        showConfirmButton: false,
+      });
+      setQueueAnnouncement("Payslip approval saved. The Approval Center was refreshed.");
+      router.reload({ preserveScroll: true, preserveState: true });
+    } catch (error) {
+      await workflowFeedback.error(error instanceof Error ? error.message : responseMessage(null), "Approval failed");
+      setQueueAnnouncement("Payslip approval could not be saved.");
+    } finally {
+      setApprovingAttentionKey(null);
+    }
+  };
+
+  const approveAllPayslips = async () => {
+    if (bulkApproving || approvingAttentionKey !== null || pendingPayslipCount < 1) return;
+
+    if (payslipApprovalFrozen) {
+      await workflowFeedback.warning("Maintenance in progress", "Payslip approval actions are paused during maintenance.");
+      return;
+    }
+
+    const confirmation = await workflowFeedback.confirm({
+      title: "Approve all pending payslips?",
+      text: `This will approve all ${pendingPayslipCount} payslip${pendingPayslipCount === 1 ? "" : "s"} currently waiting for your decision.`,
+      confirmButtonText: "Approve all",
+      confirmButtonColor: "#059669",
+    });
+    if (!confirmation.isConfirmed) return;
+
+    setBulkApproving(true);
+    try {
+      const token = csrfToken();
+      const headers: Record<string, string> = { Accept: "application/json", "Content-Type": "application/json" };
+      if (token) headers["X-CSRF-TOKEN"] = token;
+
+      const response = await fetch(payslipBulkApprovePath, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({}),
+      });
+      const payload: unknown = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(responseMessage(payload));
+
+      const approved = typeof payload === "object" && payload !== null && "approved" in payload && typeof payload.approved === "number" ? payload.approved : 0;
+      const failed = typeof payload === "object" && payload !== null && "failed" in payload && typeof payload.failed === "number" ? payload.failed : 0;
+      if (failed > 0) {
+        await workflowFeedback.warning("Bulk approval completed with issues", `${approved} approved, ${failed} could not be approved. Refresh to review the remaining queue.`);
+      } else {
+        await workflowFeedback.success({
+          title: "Payslips approved",
+          text: `${approved} payslip${approved === 1 ? "" : "s"} moved to the next approval stage.`,
+          timer: 1800,
+          showConfirmButton: false,
+        });
+      }
+      setQueueAnnouncement("Bulk payslip approval completed. The Approval Center was refreshed.");
+      router.reload({ preserveScroll: true, preserveState: true });
+    } catch (error) {
+      await workflowFeedback.error(error instanceof Error ? error.message : responseMessage(null), "Bulk approval failed");
+      setQueueAnnouncement("Bulk payslip approval could not be saved.");
+    } finally {
+      setBulkApproving(false);
+    }
+  };
+
   return (
     <AppLayoutShopOwner>
       <Head title="Approval Center - Shop Owner" />
@@ -227,14 +353,28 @@ export default function ActionCenter() {
                 {view === "history" ? "Approved and rejected decisions remain available for reference." : "Review and complete decisions assigned to you."}
               </p>
             </div>
-            <button
-              type="button"
-              aria-label="Refresh Approval Center"
-              onClick={() => router.reload({ preserveScroll: true, preserveState: true })}
-              className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06] dark:focus-visible:ring-offset-gray-900"
-            >
-              Refresh
-            </button>
+            <div className="flex flex-wrap justify-end gap-2">
+              {view === "pending" && pendingPayslipCount > 0 && (
+                <button
+                  type="button"
+                  disabled={bulkApproving || approvingAttentionKey !== null || payslipApprovalFrozen}
+                  onClick={() => void approveAllPayslips()}
+                  title={payslipApprovalFrozen ? "Payslip approval actions are paused during maintenance." : undefined}
+                  data-critical
+                  className="inline-flex min-h-10 items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-emerald-500 dark:hover:bg-emerald-400 dark:focus-visible:ring-offset-gray-900"
+                >
+                  {bulkApproving ? "Approving payslips…" : `Approve all payslips (${pendingPayslipCount})`}
+                </button>
+              )}
+              <button
+                type="button"
+                aria-label="Refresh Approval Center"
+                onClick={() => router.reload({ preserveScroll: true, preserveState: true })}
+                className="inline-flex min-h-10 items-center justify-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 focus-visible:ring-offset-2 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-white/[0.06] dark:focus-visible:ring-offset-gray-900"
+              >
+                Refresh
+              </button>
+            </div>
           </div>
 
           {view === "pending" && (
@@ -282,6 +422,7 @@ export default function ActionCenter() {
                   <OwnerAttentionList
                     items={result?.items ?? []}
                     onReview={selectApproval}
+                    onApprove={(item) => void approvePayslip(item)}
                     selectedAttentionKey={selectedItem?.attention_key ?? null}
                     ariaLabel="Owner approval queue"
                   />
