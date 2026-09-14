@@ -83,10 +83,10 @@ export default function Forgot() {
 		<>
 			<Head title="Forgot Password" />
 
-			<div className="userside-auth-page userside-auth-pattern min-h-screen font-outfit antialiased">
+			<div className="userside-auth-page userside-auth-pattern min-h-screen flex flex-col font-outfit antialiased">
 				<AuthBrand />
 
-				<div className="w-full max-w-480 mx-auto px-6 lg:px-12 py-12 sm:py-16 lg:py-20">
+				<div className="flex w-full max-w-480 flex-1 items-center justify-center mx-auto px-6 lg:px-12 py-12 sm:py-16 lg:py-20">
 
 					<div className="max-w-lg mx-auto">
 						<div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8">
