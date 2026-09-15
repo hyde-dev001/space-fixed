@@ -67,12 +67,14 @@ describe('Repair services visual controls', () => {
     const archiveButton = screen.getByRole('button', { name: 'Show Archived' });
     const addServiceButton = screen.getByRole('button', { name: 'Add Service' });
     const controlsRow = addServiceButton.parentElement?.parentElement;
-    expect(controlsRow).toHaveClass('flex', 'flex-wrap', 'items-center', 'justify-between', 'gap-3');
+    expect(controlsRow).toHaveClass('flex', 'flex-wrap', 'items-center', 'justify-end', 'gap-3');
     expect(archiveButton).toHaveClass('h-10', 'px-4');
     expect(addServiceButton).toHaveClass('h-10', 'px-4');
 
     const servicesTab = screen.getByRole('button', { name: 'Services' });
     expect(servicesTab.parentElement?.parentElement).toBe(controlsRow);
+    expect(servicesTab).toHaveClass('h-8', 'py-0');
+    expect(servicesTab.parentElement).toHaveClass('h-10');
 
     const table = await screen.findByRole('table');
     const category = within(table).getByText('Care');
