@@ -834,6 +834,88 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
     }
 
     #[Test]
+    public function individual_owner_can_execute_legacy_pos_manual_refund_with_uploaded_proof(): void
+    {
+        Storage::fake('public');
+
+        User::factory()->count(2)->create();
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+        $ownerUser = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-LEGACY-MANUAL-EXEC-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 9992,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Legacy POS Customer',
+            'walk_in_phone' => '09170000113',
+            'due_type' => 'full',
+            'subtotal' => 300,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 300,
+            'paid_amount' => 300,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-LEGACY-MANUAL-EXEC-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 9992,
+            'workflow_source' => 'pos',
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'request_type' => 'full',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'reason_code' => 'manual_pos_refund',
+            'requested_at' => now(),
+        ]);
+
+        $refund->legs()->create([
+            'leg_type' => 'pos_manual',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'status' => 'approved',
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->post("/api/shop-owner/repair-refunds/{$refund->id}/execute", [
+                'execution_mode' => 'manual',
+                'execution_channel' => 'manual_cash',
+                'execution_reference' => 'LEGACY-POS-REFUND-001',
+                'execution_amount' => 300,
+                'execution_proof_images' => [
+                    UploadedFile::fake()->create('legacy-pos-refund-proof.png', 80, 'image/png'),
+                ],
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.status', 'succeeded');
+        $this->assertDatabaseHas('pos_refunds', [
+            'id' => $refund->id,
+            'status' => 'succeeded',
+            'execution_mode' => 'manual',
+            'execution_channel' => 'manual_cash',
+            'execution_reference' => 'LEGACY-POS-REFUND-001',
+            'executed_by' => $ownerUser->id,
+        ]);
+
+        $proofUrls = is_array($refund->fresh()->execution_proof_urls)
+            ? $refund->fresh()->execution_proof_urls
+            : [];
+        $this->assertNotEmpty($proofUrls);
+    }
+
+    #[Test]
     public function refund_execution_notifies_customer_via_repair_owner_when_source_customer_id_is_missing(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);

@@ -13,6 +13,11 @@ describe("individual repair refund execution contract", () => {
     expect(source).not.toContain("const canExecute = false;");
   });
 
+  it("opens the proof form for every POS manual leg, including legacy POS refunds", () => {
+    expect(source).toContain("refund.has_pos_manual_leg === true");
+    expect(source).not.toContain("&& String(refund.workflow_source ?? '').toLowerCase() === 'shop_pos_repair'");
+  });
+
   it("shows the shop reference and complete repair/customer details without exposing the numeric id", () => {
     expect(source).toContain("refund.refund_reference");
     expect(source).toContain("customer_phone");

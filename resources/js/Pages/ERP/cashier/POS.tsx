@@ -1189,8 +1189,7 @@ const PointOfSalePage = () => {
 			execution_mode: "manual",
 			execution_note: "Executed from the Repair Refund Queue.",
 		};
-		const requiresManualPayoutDetails = refund.has_pos_manual_leg === true
-			&& String(refund.workflow_source ?? "").toLowerCase() === "shop_pos_repair";
+		const requiresManualPayoutDetails = refund.has_pos_manual_leg === true;
 		const confirmation = requiresManualPayoutDetails
 			? await Swal.fire({
 				icon: "question",

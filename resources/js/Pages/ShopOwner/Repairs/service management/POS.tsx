@@ -2762,8 +2762,7 @@ useEffect(() => {
 		const actionLabel = action === 'execute' ? 'execute' : action;
 		let requestPayload: Record<string, unknown> | FormData = payload;
 		const requiresManualPayoutDetails = action === 'execute'
-			&& refund.has_pos_manual_leg === true
-			&& String(refund.workflow_source ?? '').toLowerCase() === 'shop_pos_repair';
+			&& refund.has_pos_manual_leg === true;
 
 		const confirmation = requiresManualPayoutDetails
 			? await Swal.fire({

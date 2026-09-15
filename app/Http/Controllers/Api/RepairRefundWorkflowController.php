@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\PosRefund;
 use App\Models\RepairRequest;
+use App\Models\User;
 use App\Services\PaymentSettlementService;
 use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
@@ -334,7 +335,7 @@ class RepairRefundWorkflowController extends Controller
 
         $updated = $service->approve(
             refund: $refund,
-            actorId: (int) ($actor->id ?? 0),
+            actorId: $this->resolveActorAuditUserId($actor),
             approvedAmount: isset($validated['approved_amount']) ? (float) $validated['approved_amount'] : null,
             approvalNote: $validated['approval_note'] ?? null,
             stage: 'shop_owner',
@@ -354,7 +355,7 @@ class RepairRefundWorkflowController extends Controller
 
         $updated = $service->reject(
             refund: $refund,
-            actorId: (int) ($actor->id ?? 0),
+            actorId: $this->resolveActorAuditUserId($actor),
             rejectionReason: (string) $validated['reason'],
             stage: 'shop_owner',
         );
@@ -401,7 +402,7 @@ class RepairRefundWorkflowController extends Controller
 
         $updated = $service->execute(
             refund: $refund,
-            actorId: (int) $actor->id,
+            actorId: $this->resolveActorAuditUserId($actor),
             executionMode: (string) ($validated['execution_mode'] ?? 'manual'),
             executionNote: $validated['execution_note'] ?? null,
             executionContext: [
@@ -413,6 +414,35 @@ class RepairRefundWorkflowController extends Controller
         );
 
         return response()->json(['success' => true, 'data' => $updated]);
+    }
+
+    private function resolveActorAuditUserId(?object $actor): int
+    {
+        if ($actor instanceof User) {
+            return (int) $actor->id;
+        }
+
+        $shopOwnerId = (int) ($actor?->id ?? 0);
+        if ($shopOwnerId <= 0) {
+            return 0;
+        }
+
+        $shopOwnerEmail = trim((string) ($actor->email ?? ''));
+        if ($shopOwnerEmail !== '') {
+            $matchedByEmail = (int) (User::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('email', $shopOwnerEmail)
+                ->value('id') ?? 0);
+
+            if ($matchedByEmail > 0) {
+                return $matchedByEmail;
+            }
+        }
+
+        return (int) (User::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->orderBy('id')
+            ->value('id') ?? 0);
     }
 
     private function canOwnerExecute(object $actor, PosRefund $refund): bool
