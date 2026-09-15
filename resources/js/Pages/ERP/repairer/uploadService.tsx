@@ -732,12 +732,12 @@ export default function UploadService() {
       <div className="p-6 space-y-6">
         {/* Header */}
         <h1 className="sr-only">Upload Services</h1>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex w-full rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-white/[0.03] md:w-auto">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="inline-flex h-10 w-full rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-white/[0.03] md:w-auto">
             <button
               type="button"
               onClick={() => setActiveTab("services")}
-              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
+              className={`h-8 flex-1 rounded-lg px-4 py-0 text-sm font-medium transition-colors md:flex-none ${
                 activeTab === "services"
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -748,7 +748,7 @@ export default function UploadService() {
             <button
               type="button"
               onClick={() => setActiveTab("packages")}
-              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
+              className={`h-8 flex-1 rounded-lg px-4 py-0 text-sm font-medium transition-colors md:flex-none ${
                 activeTab === "packages"
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
