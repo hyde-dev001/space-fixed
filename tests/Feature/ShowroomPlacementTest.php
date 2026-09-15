@@ -241,6 +241,39 @@ class ShowroomPlacementTest extends TestCase
         Storage::disk('public')->assertMissing($path);
     }
 
+    public function test_shop_owner_can_upload_wall_art_before_wall_art_columns_are_migrated(): void
+    {
+        Storage::fake('public');
+        $shop = $this->shopWithSubscription();
+
+        Schema::table('shop_owners', fn ($table) => $table->dropColumn([
+            'showroom_left_wall_art_path',
+            'showroom_right_wall_art_path',
+        ]));
+
+        $this->actingAs($shop, 'shop_owner')
+            ->post('/api/showroom/wall-art', [
+                'wall' => 'left',
+                'image' => UploadedFile::fake()->create('left-wall.jpg', 100, 'image/jpeg'),
+            ])
+            ->assertOk()
+            ->assertJsonPath('url', asset("storage/showroom/wall-art/{$shop->id}/left.jpg"));
+
+        Storage::disk('public')->assertExists("showroom/wall-art/{$shop->id}/left.jpg");
+
+        $this->actingAs($shop, 'shop_owner')
+            ->get(route('shop-profile.virtual-showroom', ['id' => $shop->id]))
+            ->assertInertia(fn ($page) => $page
+                ->where('shop.can_manage_showroom_art', true)
+                ->where('shop.showroom_wall_art.left', asset("storage/showroom/wall-art/{$shop->id}/left.jpg")));
+
+        $this->actingAs($shop, 'shop_owner')
+            ->deleteJson('/api/showroom/wall-art/left')
+            ->assertOk();
+
+        Storage::disk('public')->assertMissing("showroom/wall-art/{$shop->id}/left.jpg");
+    }
+
     public function test_staff_cannot_manage_wall_art(): void
     {
         Permission::findOrCreate('access-product-management', 'user');
