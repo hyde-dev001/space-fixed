@@ -65,32 +65,38 @@ final class ShowroomPlacementService
     {
         $owner = $request->user('shop_owner');
 
-        return Schema::hasColumn('shop_owners', 'showroom_left_wall_art_path')
-            && $owner
+        return $owner
             && (int) $owner->getKey() === $shopOwnerId;
     }
 
     /** @return array{left: string|null, right: string|null} */
     public function wallArtPathsForShop(int $shopOwnerId): array
     {
-        if (!Schema::hasColumn('shop_owners', 'showroom_left_wall_art_path')) {
-            return ['left' => null, 'right' => null];
+        if ($this->hasWallArtColumns()) {
+            $shop = ShopOwner::query()
+                ->select(['showroom_left_wall_art_path', 'showroom_right_wall_art_path'])
+                ->whereKey($shopOwnerId)
+                ->first();
+
+            return [
+                'left' => $shop?->showroom_left_wall_art_path ?? $this->legacyWallArtPath($shopOwnerId, 'left'),
+                'right' => $shop?->showroom_right_wall_art_path ?? $this->legacyWallArtPath($shopOwnerId, 'right'),
+            ];
         }
 
-        $shop = ShopOwner::query()
-            ->select(['showroom_left_wall_art_path', 'showroom_right_wall_art_path'])
-            ->whereKey($shopOwnerId)
-            ->first();
-
         return [
-            'left' => $shop?->showroom_left_wall_art_path,
-            'right' => $shop?->showroom_right_wall_art_path,
+            'left' => $this->legacyWallArtPath($shopOwnerId, 'left'),
+            'right' => $this->legacyWallArtPath($shopOwnerId, 'right'),
         ];
     }
 
     public function replaceWallArt(int $shopOwnerId, string $wall, UploadedFile $image): string
     {
         $column = $this->wallArtColumn($wall);
+        if (!$this->hasWallArtColumns()) {
+            return $this->replaceLegacyWallArt($shopOwnerId, $wall, $image);
+        }
+
         $shop = ShopOwner::query()->whereKey($shopOwnerId)->firstOrFail();
         $path = $image->store("showroom/wall-art/{$shopOwnerId}", 'public');
         if (!is_string($path) || $path === '') {
@@ -108,6 +114,9 @@ final class ShowroomPlacementService
         if (is_string($previousPath) && $previousPath !== '') {
             Storage::disk('public')->delete($previousPath);
         }
+        foreach ($this->legacyWallArtFiles($shopOwnerId, $wall) as $legacyPath) {
+            Storage::disk('public')->delete($legacyPath);
+        }
 
         return $path;
     }
@@ -115,12 +124,23 @@ final class ShowroomPlacementService
     public function removeWallArt(int $shopOwnerId, string $wall): void
     {
         $column = $this->wallArtColumn($wall);
+        if (!$this->hasWallArtColumns()) {
+            foreach ($this->legacyWallArtFiles($shopOwnerId, $wall) as $path) {
+                Storage::disk('public')->delete($path);
+            }
+
+            return;
+        }
+
         $shop = ShopOwner::query()->whereKey($shopOwnerId)->firstOrFail();
         $previousPath = $shop->{$column};
         $shop->forceFill([$column => null])->saveOrFail();
 
         if (is_string($previousPath) && $previousPath !== '') {
             Storage::disk('public')->delete($previousPath);
+        }
+        foreach ($this->legacyWallArtFiles($shopOwnerId, $wall) as $legacyPath) {
+            Storage::disk('public')->delete($legacyPath);
         }
     }
 
@@ -256,6 +276,48 @@ final class ShowroomPlacementService
             'right' => 'showroom_right_wall_art_path',
             default => throw new InvalidArgumentException('The wall art side is invalid.'),
         };
+    }
+
+    private function hasWallArtColumns(): bool
+    {
+        return Schema::hasColumn('shop_owners', 'showroom_left_wall_art_path')
+            && Schema::hasColumn('shop_owners', 'showroom_right_wall_art_path');
+    }
+
+    private function legacyWallArtPath(int $shopOwnerId, string $wall): ?string
+    {
+        return $this->legacyWallArtFiles($shopOwnerId, $wall)[0] ?? null;
+    }
+
+    /** @return list<string> */
+    private function legacyWallArtFiles(int $shopOwnerId, string $wall): array
+    {
+        $prefix = $wall . '.';
+        $directory = "showroom/wall-art/{$shopOwnerId}";
+
+        return array_values(array_filter(
+            Storage::disk('public')->files($directory),
+            static fn (string $path): bool => str_starts_with(basename($path), $prefix),
+        ));
+    }
+
+    private function replaceLegacyWallArt(int $shopOwnerId, string $wall, UploadedFile $image): string
+    {
+        $extension = strtolower((string) $image->extension());
+        $extension = in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true) ? $extension : 'jpg';
+        $directory = "showroom/wall-art/{$shopOwnerId}";
+        $path = $image->storeAs($directory, "{$wall}.{$extension}", 'public');
+        if (!is_string($path) || $path === '') {
+            throw new RuntimeException('Unable to store wall art.');
+        }
+
+        foreach ($this->legacyWallArtFiles($shopOwnerId, $wall) as $previousPath) {
+            if ($previousPath !== $path) {
+                Storage::disk('public')->delete($previousPath);
+            }
+        }
+
+        return $path;
     }
 
     private function isRetailCapable(?string $businessType): bool

@@ -2201,7 +2201,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 									}}
 									className="min-h-11 rounded-md border border-white/20 bg-stone-950/85 px-4 py-2 text-sm font-medium text-stone-100 shadow-sm hover:bg-stone-800"
 								>
-									Wall art
+									Upload pictures
 								</button>
 							)}
 							</div>
@@ -2211,8 +2211,8 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 									onPointerDown={(event) => event.stopPropagation()}
 									onPointerMove={(event) => event.stopPropagation()}
 								>
-									<p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Gallery wall art</p>
-									<p className="mt-1 text-xs text-stone-300">Walk up to a frame and press E to upload, or choose a file here. Use one large 16:9 image for each wall.</p>
+									<p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Upload showroom pictures</p>
+									<p className="mt-1 text-xs text-stone-300">Choose a wall below, or walk up to a frame and press E to upload. Use one large 16:9 image for each wall.</p>
 									<div className="mt-3 grid grid-cols-2 gap-3">
 										{(['left', 'right'] as WallArtSide[]).map((side) => (
 											<div key={side} className="space-y-2">

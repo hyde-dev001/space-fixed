@@ -88,11 +88,11 @@ describe('standalone virtual showroom', () => {
 		expect(sceneSource).toContain('DISCOUNTS INSIDE');
 		expect(showroomSource).toContain('handleWallArtKey()');
 		expect(showroomSource).toContain('wallArtInputRefs');
-		expect(showroomSource).toContain('Walk up to a frame and press E to upload');
+		expect(showroomSource).toContain('walk up to a frame and press E to upload');
 	});
 
 	it('supports owner wall art and selectable bot difficulty', () => {
-		expect(showroomSource).toContain('Wall art');
+		expect(showroomSource).toContain('Upload pictures');
 		expect(showroomSource).toContain('/api/showroom/wall-art');
 		expect(xoxSource).toContain('Bot difficulty');
 		expect(xoxSource).toContain("['easy', 'medium', 'hard']");
