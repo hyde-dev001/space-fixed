@@ -196,12 +196,8 @@ export default function RepairJobs() {
       <Head title="Repair Jobs - SoleSpace ERP" />
 
       <main className="space-y-6 py-6 md:py-8" aria-labelledby="owner-repair-jobs-title">
-        <header className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <header>
           <h1 id="owner-repair-jobs-title" className="sr-only">Repair Jobs</h1>
-          <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-            <p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} repairs in view</p>
-            <p className="mt-1 text-gray-500 dark:text-gray-400">Last updated: {formatDateTime(repairs.data?.last_updated_at)}</p>
-          </div>
         </header>
 
         <section className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="owner-repair-filters-title">
@@ -215,7 +211,7 @@ export default function RepairJobs() {
             <div><label htmlFor="owner-repair-to" className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">To</label><input id="owner-repair-to" type="date" value={form.date_to} onChange={(event) => setForm((current) => ({ ...current, date_to: event.target.value }))} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 dark:border-gray-700 dark:bg-gray-900 dark:text-white" /></div>
             <label className="flex min-h-11 items-center gap-2 self-end text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" checked={form.review_pending} onChange={(event) => setForm((current) => ({ ...current, review_pending: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500" />Pending decision only</label>
             <label className="flex min-h-11 items-center gap-2 self-end text-sm text-gray-700 dark:text-gray-300"><input type="checkbox" checked={form.overdue} onChange={(event) => setForm((current) => ({ ...current, overdue: event.target.checked }))} className="h-4 w-4 rounded border-gray-300 text-blue-700 focus:ring-blue-500" />Overdue only</label>
-            <div className="flex flex-wrap items-end gap-2 md:col-span-2 xl:col-span-4"><button type="submit" className="min-h-11 rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200">Apply filters</button><button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear</button></div>
+            <div className="flex flex-wrap items-end justify-between gap-4 md:col-span-2 xl:col-span-6"><div className="flex flex-wrap items-end gap-2"><button type="submit" className="min-h-11 rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 dark:bg-white dark:text-gray-950 dark:hover:bg-gray-200">Apply filters</button><button type="button" onClick={clearFilters} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Clear</button></div><div className="ml-auto rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm shadow-sm dark:border-gray-800 dark:bg-white/[0.03]"><p className="font-semibold text-gray-900 dark:text-white">{payload?.total ?? 0} repairs in view</p><p className="mt-1 text-gray-500 dark:text-gray-400">Last updated: {formatDateTime(repairs.data?.last_updated_at)}</p></div></div>
           </form>
         </section>
 

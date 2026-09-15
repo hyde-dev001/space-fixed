@@ -374,13 +374,6 @@ export default function ERPReports() {
       <Head title="Reports - Solespace" />
 
       <div className="space-y-6 p-4 sm:p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="mb-1 text-2xl font-semibold">Reports &amp; Analytics</h1>
-            <p className="text-gray-600 dark:text-gray-400">Review operational reports for your authorized shop.</p>
-          </div>
-        </div>
-
         {error && (
           <div className="flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 sm:flex-row sm:items-center sm:justify-between dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
             <span>{error}</span>
