@@ -134,6 +134,7 @@ type RepairOrder = {
   completed_at?: string;
   received_at?: string | null;
   shop_id?: number | null;
+  shop_registration_type?: string | null;
   shop_name: string;
   shop_address: string;
   image?: string;
@@ -2079,9 +2080,30 @@ const MyRepairs: React.FC = () => {
     return latestRefundByRepairId[getRefundAnchorRepairId(order)];
   };
 
+  const isCompletedWarrantyJob = (order?: RepairOrder): boolean => {
+    if (!order) return false;
+
+    return [
+      'completed',
+      'ready_for_pickup',
+      'ready-for-pickup',
+      'shipped',
+      'picked_up',
+      'received',
+    ].includes(String(order.status || '').toLowerCase());
+  };
+
   const hasActiveWarrantyClaim = (order: RepairOrder): boolean => {
-    const status = latestWarrantyClaimByRepairId[getRefundAnchorRepairId(order)]?.status;
-    return ['pending_repairer', 'approved'].includes(String(status || '').toLowerCase());
+    const claim = latestWarrantyClaimByRepairId[getRefundAnchorRepairId(order)];
+    const status = String(claim?.status || '').toLowerCase();
+    if (status === 'pending_repairer') return true;
+    if (status !== 'approved') return false;
+
+    const approvedWarrantyJob = claim?.approved_repair_request_id
+      ? orders.find((entry) => Number(entry.id) === Number(claim.approved_repair_request_id))
+      : undefined;
+
+    return !isCompletedWarrantyJob(approvedWarrantyJob);
   };
 
   const hasReviewForOrder = (order: RepairOrder): boolean => {
@@ -2903,8 +2925,11 @@ const MyRepairs: React.FC = () => {
     setWarrantyOrderId(order.id);
     setWarrantyReasonCode('issue_returned');
     setWarrantyReasonDetails('');
-    setWarrantyIntakeMethod(getIntakeMethod(order));
-    setWarrantyReceiveMethod(getReturnMethod(order));
+    const isIndividualRepairShop = String(order.shop_registration_type ?? '').toLowerCase() === 'individual';
+    const intakeMethod = getIntakeMethod(order);
+    const receiveMethod = getReturnMethod(order);
+    setWarrantyIntakeMethod(isIndividualRepairShop && intakeMethod === 'shop_pickup' ? 'walk_in' : intakeMethod);
+    setWarrantyReceiveMethod(isIndividualRepairShop && receiveMethod === 'shop_delivery' ? 'walk_in' : receiveMethod);
     setWarrantyImages([]);
     setShowWarrantyModal(true);
   };
@@ -2971,6 +2996,10 @@ const MyRepairs: React.FC = () => {
       return false;
     }
 
+    if (isIndividualWarrantyShop && (warrantyIntakeMethod === 'shop_pickup' || warrantyReceiveMethod === 'shop_delivery')) {
+      return false;
+    }
+
     if (!warrantyReasonCode) {
       return false;
     }
@@ -2988,6 +3017,16 @@ const MyRepairs: React.FC = () => {
 
   const handleSubmitWarrantyClaim = async () => {
     if (!warrantyOrderId) {
+      return;
+    }
+
+    if (isIndividualWarrantyShop && (warrantyIntakeMethod === 'shop_pickup' || warrantyReceiveMethod === 'shop_delivery')) {
+      await Swal.fire({
+        icon: 'warning',
+        title: 'Shop delivery is unavailable',
+        text: 'Individual Repair warranty claims support walk-in or customer-arranged delivery only.',
+        confirmButtonColor: '#000000',
+      });
       return;
     }
 
@@ -3977,6 +4016,7 @@ const MyRepairs: React.FC = () => {
 
   const refundOrder = refundOrderId ? orders.find((o) => o.id === refundOrderId) : null;
   const warrantyOrder = warrantyOrderId ? orders.find((order) => order.id === warrantyOrderId) : undefined;
+  const isIndividualWarrantyShop = String(warrantyOrder?.shop_registration_type ?? '').toLowerCase() === 'individual';
   const warrantyIntakeAddress = getWarrantyAddress(warrantyOrder, 'intake');
   const warrantyReturnAddress = getWarrantyAddress(warrantyOrder, 'return');
   const refundTotal = refundOrder ? getOrderGrandTotal(refundOrder) : 0;
@@ -5697,7 +5737,7 @@ const MyRepairs: React.FC = () => {
                       {[
                         { value: 'walk_in', label: 'Walk-in', hint: 'Bring the item to the shop yourself.' },
                         { value: 'customer_delivery', label: 'Third-party courier', hint: 'You arrange and pay the courier directly.' },
-                        { value: 'shop_pickup', label: 'Shop rider pickup', hint: 'Coverage and the delivery fee are checked before approval.' },
+                        ...(!isIndividualWarrantyShop ? [{ value: 'shop_pickup', label: 'Shop rider pickup', hint: 'Coverage and the delivery fee are checked before approval.' }] : []),
                       ].map((method) => (
                         <label
                           key={method.value}
@@ -5741,7 +5781,7 @@ const MyRepairs: React.FC = () => {
                       {[
                         { value: 'walk_in', label: 'Pick Up At Shop', hint: 'Pick up your repaired item at the shop once ready.' },
                         { value: 'customer_pickup', label: 'Third-party courier', hint: 'You arrange and pay the courier directly.' },
-                        { value: 'shop_delivery', label: 'Shop rider delivery', hint: 'Coverage and the delivery fee are checked before approval.' },
+                        ...(!isIndividualWarrantyShop ? [{ value: 'shop_delivery', label: 'Shop rider delivery', hint: 'Coverage and the delivery fee are checked before approval.' }] : []),
                       ].map((method) => (
                         <label
                           key={method.value}

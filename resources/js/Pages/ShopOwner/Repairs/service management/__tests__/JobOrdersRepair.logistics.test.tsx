@@ -140,6 +140,31 @@ describe("ShopOwner JobOrdersRepair intake logistics", () => {
     expect(screen.queryByRole("button", { name: /Proceed to POS/i })).not.toBeInTheDocument();
   });
 
+  it("does not offer Open Chat after accepting a POS walk-in repair", async () => {
+    mocks.repair = repair("walk_in", false, {
+      id: 77,
+      database_id: 77,
+      request_id: "REP-POS-77",
+      status: "new_request",
+    });
+
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole("button", { name: /^New Request \(1\)$/ }));
+    await screen.findByText("Rina Santos");
+    fireEvent.click(screen.getByTitle("View details"));
+    await screen.findByRole("heading", { name: "Repair Service Details" });
+    fireEvent.click(screen.getByRole("button", { name: "Accept" }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith("/api/shop-owner/repairs/77/accept"));
+    await waitFor(() => expect(mocks.swal).toHaveBeenCalledTimes(2));
+
+    expect(mocks.swal.mock.calls[1][0]).toMatchObject({
+      title: "Request Accepted",
+      confirmButtonText: "Continue",
+    });
+    expect(mocks.swal.mock.calls[1][0].text).not.toMatch(/chat/i);
+  });
+
   it.each([
     ["walk_in", "Customer drop-off"],
     ["customer_delivery", "Customer-arranged courier"],

@@ -145,10 +145,13 @@ class RepairWarrantyService
         }
 
         $window = $this->validateEligibility($repair, (int) $customer->id);
+        $preferredReturnMethod = $this->normalizePreferredReturnMethod((string) ($validated['preferred_return_method'] ?? 'walk_in'));
+        $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));
+        $this->ensureWarrantyLogisticsAllowed($repair, $preferredReturnMethod, $preferredReceiveMethod);
         $this->warrantyDeliveryPlan(
             $repair,
-            $this->normalizePreferredReturnMethod((string) ($validated['preferred_return_method'] ?? 'walk_in')),
-            $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in')),
+            $preferredReturnMethod,
+            $preferredReceiveMethod,
         );
 
         return $this->createClaimRecord(
@@ -571,6 +574,7 @@ class RepairWarrantyService
 
         $preferredReturnMethod = $this->normalizePreferredReturnMethod((string) ($validated['preferred_return_method'] ?? 'walk_in'));
         $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));
+        $this->ensureWarrantyLogisticsAllowed($repair, $preferredReturnMethod, $preferredReceiveMethod);
 
         $claim = RepairWarrantyClaim::query()->create([
             'claim_no' => $this->generateClaimNo(),
@@ -728,6 +732,8 @@ class RepairWarrantyService
         string $intakeMethod,
         string $returnMethod,
     ): array {
+        $this->ensureWarrantyLogisticsAllowed($repair, $intakeMethod, $returnMethod);
+
         $intake = $this->warrantyDeliveryLeg($repair, 'intake', $intakeMethod);
         $return = $this->warrantyDeliveryLeg($repair, 'return', $returnMethod);
 
@@ -737,6 +743,29 @@ class RepairWarrantyService
             'same_address' => (int) data_get($intake, 'snapshot.address_id') > 0
                 && (int) data_get($intake, 'snapshot.address_id') === (int) data_get($return, 'snapshot.address_id'),
         ];
+    }
+
+    private function ensureWarrantyLogisticsAllowed(
+        RepairRequest $repair,
+        string $intakeMethod,
+        string $returnMethod,
+    ): void {
+        $shopOwner = $repair->shopOwner ?: ShopOwner::query()->find($repair->shop_owner_id);
+        if (strtolower(trim((string) ($shopOwner?->registration_type ?? ''))) !== 'individual') {
+            return;
+        }
+
+        $errors = [];
+        if ($intakeMethod === 'shop_pickup') {
+            $errors['preferred_return_method'][] = 'Individual Repair shops accept warranty items by walk-in or customer-arranged delivery only.';
+        }
+        if ($returnMethod === 'shop_delivery') {
+            $errors['preferred_receive_method'][] = 'Individual Repair shops return warranty items by shop pickup or customer-arranged delivery only.';
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     private function warrantyDeliveryLeg(RepairRequest $repair, string $leg, string $method): array

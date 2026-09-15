@@ -146,6 +146,7 @@ type ReceiptSnapshot = {
 
 type RefundQueueItem = {
 	id: number;
+	refund_reference?: string | null;
 	status: string;
 	workflow_source?: string | null;
 	finance_status?: string;
@@ -156,10 +157,19 @@ type RefundQueueItem = {
 	approved_amount?: number | null;
 	requested_at?: string | null;
 	reason_code?: string;
+	reason_notes?: string | null;
 	failure_reason?: string | null;
+	execution_channel?: string | null;
+	execution_reference?: string | null;
 	repairRequest?: {
 		request_id?: string;
 		customer_name?: string;
+		customer_email?: string | null;
+		customer_phone?: string | null;
+		shoe_type?: string | null;
+		brand?: string | null;
+		description?: string | null;
+		service_name?: string | null;
 	};
 };
 
@@ -3960,13 +3970,23 @@ useEffect(() => {
 											const ownerStatus = String(refund.shop_owner_status || 'pending').toLowerCase();
 											const canApprove = refund.status === 'requested' && financeStatus === 'approved_initial' && ownerStatus === 'pending';
 											const canExecute = isIndividualRepairShop && refund.can_execute_payout === true;
+											const repair = refund.repairRequest;
+											const contact = [repair?.customer_phone, repair?.customer_email].filter(Boolean).join(' / ') || 'N/A';
+											const shoe = [repair?.brand, repair?.shoe_type].filter(Boolean).join(' / ') || 'N/A';
+											const service = repair?.service_name || repair?.description || 'N/A';
 											return (
 												<div key={refund.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
 													<div className="flex flex-wrap items-start justify-between gap-3">
 														<div>
-															<p className="text-sm font-semibold text-slate-900">#{refund.id} {refund.repairRequest?.request_id ? `- ${refund.repairRequest.request_id}` : ''}</p>
-															<p className="text-xs text-slate-600">Customer: {refund.repairRequest?.customer_name || 'N/A'}</p>
+															<p className="text-sm font-semibold text-slate-900">{refund.refund_reference || 'Repair refund'}</p>
+															<p className="text-xs text-slate-600">Customer: {repair?.customer_name || 'N/A'} · {contact}</p>
+															<p className="text-xs text-slate-600">Repair request: {repair?.request_id || 'N/A'}</p>
+															<p className="text-xs text-slate-600">Shoe: {shoe}</p>
+															<p className="text-xs text-slate-600">Service: {service}</p>
 															<p className="text-xs text-slate-600">Amount: {formatPeso(Number(refund.approved_amount ?? refund.requested_amount ?? 0))}</p>
+															<p className="text-xs text-slate-600">Reason: {refund.reason_code || 'N/A'} · Requested: {refund.requested_at ? new Date(refund.requested_at).toLocaleString('en-PH') : 'N/A'}</p>
+															{refund.reason_notes && <p className="text-xs text-slate-600">Refund details: {refund.reason_notes}</p>}
+															{(refund.execution_channel || refund.execution_reference) && <p className="text-xs text-slate-600">Execution: {[refund.execution_channel, refund.execution_reference].filter(Boolean).join(' / ')}</p>}
 															{refund.failure_reason && <p className="text-xs text-red-600">Reason: {refund.failure_reason}</p>}
 														</div>
 														<div className="flex items-center gap-2">

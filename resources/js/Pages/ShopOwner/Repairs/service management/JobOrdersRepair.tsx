@@ -2085,6 +2085,8 @@ export default function JobOrdersRepair() {
   const handleReviewAction = async (action: "accept" | "reject" | "message") => {
     if (!viewOrder) return;
 
+    const isPosCreatedOrder = String(viewOrder.id ?? "").toUpperCase().startsWith("REP-POS-");
+
     if (action === "message") {
       return;
     }
@@ -2094,7 +2096,9 @@ export default function JobOrdersRepair() {
       const confirmation = await Swal.fire({
         title: isAcceptAction ? "Accept Request?" : "Reject Request?",
         text: isAcceptAction
-          ? "This will move the request forward and open the customer support chat."
+          ? isPosCreatedOrder
+            ? "This will accept the walk-in repair request and continue without opening a customer chat."
+            : "This will move the request forward and open the customer support chat."
           : "This will proceed to the rejection form where you can select a reason.",
         icon: "question",
         showCancelButton: true,
@@ -2128,20 +2132,24 @@ export default function JobOrdersRepair() {
             response.data.conversation_id ||
             response.data.conversation?.id ||
             viewOrder.conversation_id;
+          const shouldOpenChat = !isPosCreatedOrder && Number(createdConversationId) > 0;
 
           await Swal.fire({
             title: "Request Accepted",
-            text: response.data.message || "Opening support chat with this customer...",
+            text: shouldOpenChat
+              ? response.data.message || "Opening support chat with this customer..."
+              : "The walk-in repair request was accepted.",
             icon: "success",
-            confirmButtonText: "Open Chat",
+            confirmButtonText: shouldOpenChat ? "Open Chat" : "Continue",
             confirmButtonColor: "#2563eb",
           });
 
-          const supportUrl = createdConversationId
-            ? `/shop-owner/repair-support?conversation_id=${createdConversationId}`
-            : '/shop-owner/repair-support';
-
-          window.location.href = supportUrl;
+          if (shouldOpenChat) {
+            window.location.href = `/shop-owner/repair-support?conversation_id=${createdConversationId}`;
+          } else {
+            setIsViewModalOpen(false);
+            await fetchOrders();
+          }
         }
       } catch (error: any) {
         console.error('Failed to accept repair:', error);

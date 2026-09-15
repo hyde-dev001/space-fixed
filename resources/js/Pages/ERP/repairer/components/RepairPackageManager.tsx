@@ -153,12 +153,14 @@ type RepairPackageManagerProps = {
   serviceEndpoint?: string;
   materialsEndpoint?: string;
   readOnly?: boolean;
+  allowDirectPriceEdit?: boolean;
 };
 
 export default function RepairPackageManager({
   serviceEndpoint = "/api/repair-services",
   materialsEndpoint = "/api/repairer/materials",
   readOnly = false,
+  allowDirectPriceEdit = false,
 }: RepairPackageManagerProps) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -379,8 +381,8 @@ export default function RepairPackageManager({
     }
 
     const packagePrice = Number(formState.package_price);
-    if (!Number.isFinite(packagePrice) || packagePrice < 0) {
-      return "Package price must be a valid non-negative number.";
+    if (!Number.isFinite(packagePrice) || packagePrice < 0.01) {
+      return "Package price must be a valid amount greater than zero.";
     }
 
     return null;
@@ -567,22 +569,22 @@ export default function RepairPackageManager({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Package Price *</label>
                 <input
                   type="number"
-                  min="0"
+                  min="0.01"
                   step="0.01"
                   value={formState.package_price}
                   onChange={(e) => {
                     setFormState((prev) => ({ ...prev, package_price: e.target.value }));
                   }}
-                  disabled={isEditMode}
+                  disabled={isEditMode && !allowDirectPriceEdit}
                   className={`w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white ${
-                    isEditMode
+                    isEditMode && !allowDirectPriceEdit
                       ? "bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
                       : "bg-white dark:bg-gray-800"
                   }`}
                   placeholder="e.g. 948.00"
                 />
                 <div className="mt-1 space-y-1">
-                  {isEditMode ? (
+                  {isEditMode && !allowDirectPriceEdit ? (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Package price is locked when editing.
                     </p>

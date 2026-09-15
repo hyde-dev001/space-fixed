@@ -1343,4 +1343,25 @@ describe("MyRepairs warranty logistics", () => {
     expect(warrantyModal.getByText(/Pinned return address: 5 Intake Street/)).toBeInTheDocument();
     expect(warrantyModal.queryByPlaceholderText("House no., street, building")).not.toBeInTheDocument();
   });
+
+  it("hides shop-owned warranty logistics for an individual repair shop", async () => {
+    mocks.repair = repair({
+      status: "picked_up",
+      picked_up_at: "2026-07-26T10:00:00.000Z",
+      shop_registration_type: "individual",
+      return_logistics_locked_at: "2026-07-26T09:00:00.000Z",
+    });
+
+    render(<MyRepairs />);
+    const completedTabs = await screen.findAllByRole("button", { name: /Completed/i });
+    fireEvent.click(completedTabs[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "WARRANTY CLAIM" }));
+
+    const dialog = screen.getByText("File Warranty Claim").closest("div.fixed");
+    expect(dialog).not.toBeNull();
+    const warrantyModal = within(dialog as HTMLElement);
+    expect(warrantyModal.queryByRole("radio", { name: /Shop rider pickup/i })).not.toBeInTheDocument();
+    expect(warrantyModal.queryByRole("radio", { name: /Shop rider delivery/i })).not.toBeInTheDocument();
+    expect(warrantyModal.getAllByRole("radio", { name: /Third-party courier/i })).toHaveLength(2);
+  });
 });

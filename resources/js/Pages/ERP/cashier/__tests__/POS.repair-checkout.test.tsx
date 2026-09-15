@@ -68,6 +68,7 @@ describe("Cashier POS repair checkout", () => {
     });
 
     swalFireMock.mockResolvedValue({ isConfirmed: true });
+    window.history.replaceState({}, "", "/erp/cashier");
   });
 
   it("loads repair orders through the company repairer endpoint", async () => {
@@ -75,6 +76,28 @@ describe("Cashier POS repair checkout", () => {
 
     await waitFor(() => {
       expect(axiosGetMock).toHaveBeenCalledWith("/api/repairer/repairs", {
+        params: { scope: "pos_checkout" },
+      });
+    });
+  });
+
+  it("loads repair orders through the shop owner endpoint in the individual owner POS", async () => {
+    window.history.replaceState({}, "", "/shop-owner/operate/payments");
+    usePageMock.mockReturnValue({
+      props: {
+        auth: {
+          shop_owner: {
+            business_type: "repair",
+            registration_type: "individual",
+          },
+        },
+      },
+    });
+
+    render(<CashierPOS />);
+
+    await waitFor(() => {
+      expect(axiosGetMock).toHaveBeenCalledWith("/api/shop-owner/repairs", {
         params: { scope: "pos_checkout" },
       });
     });

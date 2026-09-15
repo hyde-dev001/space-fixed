@@ -254,28 +254,31 @@ class RepairPosRefundService
                 $requested,
             );
 
-        $refund = PosRefund::create([
-            'refund_no' => 'RFD-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT),
-            'shop_owner_id' => $source->shop_owner_id,
-            'source_transaction_id' => $source->id,
-            'module_type' => 'repair',
-            'module_reference_id' => $source->module_reference_id,
-            'workflow_source' => $workflowSource,
-            'request_type' => $payload['request_type'],
-            'requested_amount' => $requested,
-            'reason_code' => $payload['reason_code'],
-            'reason_notes' => PosRefund::normalizeReasonNotes($payload['reason_notes'] ?? null),
-            'paymongo_payment_id' => $payload['paymongo_payment_id'] ?? null,
-            'paymongo_payment_ids' => $this->normalizeGatewayReferences(
-                is_array($payload['paymongo_payment_ids'] ?? null) ? $payload['paymongo_payment_ids'] : []
-            ),
-            'status' => 'requested',
-            'finance_status' => 'pending',
-            'shop_owner_status' => 'pending',
-            'requires_owner_approval' => $requiresOwnerApproval,
-            'requested_by' => $actorId > 0 ? $actorId : null,
-            'requested_at' => now(),
-        ]);
+        $refund = DB::transaction(function () use ($source, $payload, $workflowSource, $requested, $requiresOwnerApproval, $actorId): PosRefund {
+            return PosRefund::create([
+                'refund_no' => 'RFD-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT),
+                'shop_refund_reference' => $this->nextShopRefundReference((int) $source->shop_owner_id),
+                'shop_owner_id' => $source->shop_owner_id,
+                'source_transaction_id' => $source->id,
+                'module_type' => 'repair',
+                'module_reference_id' => $source->module_reference_id,
+                'workflow_source' => $workflowSource,
+                'request_type' => $payload['request_type'],
+                'requested_amount' => $requested,
+                'reason_code' => $payload['reason_code'],
+                'reason_notes' => PosRefund::normalizeReasonNotes($payload['reason_notes'] ?? null),
+                'paymongo_payment_id' => $payload['paymongo_payment_id'] ?? null,
+                'paymongo_payment_ids' => $this->normalizeGatewayReferences(
+                    is_array($payload['paymongo_payment_ids'] ?? null) ? $payload['paymongo_payment_ids'] : []
+                ),
+                'status' => 'requested',
+                'finance_status' => 'pending',
+                'shop_owner_status' => 'pending',
+                'requires_owner_approval' => $requiresOwnerApproval,
+                'requested_by' => $actorId > 0 ? $actorId : null,
+                'requested_at' => now(),
+            ]);
+        });
 
         if ($workflowSource !== 'delivery_reconciliation') {
             $this->notifyRefundRequested($refund, $source, $requested);
@@ -360,6 +363,7 @@ class RepairPosRefundService
             $now = now();
             $refund = PosRefund::create([
                 'refund_no' => 'RFD-' . $now->format('YmdHis') . '-' . str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT),
+                'shop_refund_reference' => $this->nextShopRefundReference((int) $source->shop_owner_id),
                 'shop_owner_id' => (int) $source->shop_owner_id,
                 'source_transaction_id' => (int) $source->id,
                 'module_type' => 'repair',
@@ -1684,6 +1688,41 @@ class RepairPosRefundService
                 'error' => $exception->getMessage(),
             ]);
         }
+    }
+
+    private function nextShopRefundReference(int $shopOwnerId): string
+    {
+        if ($shopOwnerId <= 0) {
+            throw new \RuntimeException('Repair refund shop scope is required.');
+        }
+
+        ShopOwner::query()
+            ->whereKey($shopOwnerId)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        $year = now()->format('Y');
+        $maxSequence = 0;
+
+        foreach (PosRefund::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('module_type', 'repair')
+            ->where('shop_refund_reference', 'like', "RFD-{$year}-%")
+            ->pluck('shop_refund_reference') as $reference) {
+            if (preg_match("/^RFD-{$year}-(\\d+)$/", (string) $reference, $matches) === 1) {
+                $maxSequence = max($maxSequence, (int) $matches[1]);
+            }
+        }
+
+        do {
+            $maxSequence++;
+            $reference = sprintf('RFD-%s-%04d', $year, $maxSequence);
+        } while (PosRefund::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('shop_refund_reference', $reference)
+            ->exists());
+
+        return $reference;
     }
 
     private function shouldUseRepairWideLimit(PosTransaction $source, string $workflowSource, string $reasonCode): bool

@@ -77,6 +77,46 @@ class RepairWarrantyEligibilityTest extends TestCase
         ]);
     }
 
+    public function test_individual_repair_claim_rejects_shop_owned_logistics(): void
+    {
+        Storage::fake('public');
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+            'warranty_enabled' => true,
+            'repair_warranty_days' => 30,
+        ]);
+        $customer = User::factory()->create();
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDays(2),
+            'payment_status' => 'completed',
+            'total_paid_amount' => 900,
+        ]);
+
+        $this->actingAs($customer, 'user')->post(
+            "/api/customer/repairs/{$repair->id}/warranty-claims",
+            [
+                'reason_code' => 'issue_returned',
+                'reason_details' => 'Issue came back after two days.',
+                'same_issue_confirmation' => '1',
+                'preferred_return_method' => 'shop_pickup',
+                'preferred_receive_method' => 'shop_delivery',
+                'images' => [UploadedFile::fake()->create('proof-1.jpg', 64, 'image/jpeg')],
+            ],
+            ['Accept' => 'application/json']
+        )
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['preferred_return_method', 'preferred_receive_method']);
+
+        $this->assertDatabaseMissing('repair_warranty_claims', [
+            'original_repair_request_id' => $repair->id,
+        ]);
+    }
+
     public function test_customer_shop_delivery_claim_requires_a_pinned_saved_address_snapshot(): void
     {
         Storage::fake('public');

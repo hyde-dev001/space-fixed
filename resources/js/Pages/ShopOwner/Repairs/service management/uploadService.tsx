@@ -975,6 +975,7 @@ export default function UploadService() {
               serviceEndpoint="/api/shop-owner/repair-services"
               materialsEndpoint="/api/shop-owner/repair-materials"
               readOnly={!canManageServices}
+              allowDirectPriceEdit={canManageServices}
             />
           </div>
         )}
