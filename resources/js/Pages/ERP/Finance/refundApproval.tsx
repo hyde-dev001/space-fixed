@@ -1204,11 +1204,6 @@ export default function RefundApproval() {
 				return;
 			}
 
-			if (!Number.isFinite(executeAmount) || executeAmount <= 0) {
-				setExecuteError("Execution amount must be greater than zero.");
-				return;
-			}
-
 			if (executeProofImages.length === 0) {
 				setExecuteError("At least one transaction screenshot is required for manual refund execution.");
 				return;
@@ -1218,7 +1213,6 @@ export default function RefundApproval() {
 			formData.append("execution_mode", "manual");
 			formData.append("execution_channel", executeChannel);
 			formData.append("execution_reference", reference);
-			formData.append("execution_amount", String(executeAmount));
 			executeProofImages.forEach((file) => {
 				formData.append("execution_proof_images[]", file);
 			});

@@ -1135,7 +1135,6 @@ class RepairPosController extends Controller
             'execution_note' => ['nullable', 'string', 'max:1000'],
             'execution_channel' => ['nullable', 'string', 'max:100'],
             'execution_reference' => ['nullable', 'string', 'max:255'],
-            'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
             'execution_proof_images' => ['nullable', 'array'],
             'execution_proof_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ]);
@@ -1156,7 +1155,6 @@ class RepairPosController extends Controller
         $executionContext = [
             'execution_channel' => $validated['execution_channel'] ?? null,
             'execution_reference' => $validated['execution_reference'] ?? null,
-            'execution_amount' => $validated['execution_amount'] ?? null,
             'execution_proof_urls' => $executionProofUrls,
         ];
 

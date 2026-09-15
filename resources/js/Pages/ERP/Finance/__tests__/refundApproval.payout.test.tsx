@@ -1,7 +1,11 @@
 import React from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import RefundApproval from "../refundApproval";
+
+const pageSource = readFileSync(resolve(__dirname, "../refundApproval.tsx"), "utf8");
 
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
@@ -69,7 +73,13 @@ afterEach(() => {
 });
 
 describe("Finance canonical retail refund payout", () => {
-  it("uses the shipping-excluded payout in the list, details, and execution confirmation", async () => {
+  it("does not accept a manually typed repair payout amount", () => {
+    expect(pageSource).toContain("Amount is fixed based on the approved refund amount.");
+    expect(pageSource).not.toContain('formData.append("execution_amount"');
+    expect(pageSource).not.toContain("Execution amount must be greater than zero.");
+  });
+
+	it("uses the shipping-excluded payout in the list, details, and execution confirmation", async () => {
     render(<RefundApproval />);
 
     const viewButton = await screen.findByTitle("View Details");

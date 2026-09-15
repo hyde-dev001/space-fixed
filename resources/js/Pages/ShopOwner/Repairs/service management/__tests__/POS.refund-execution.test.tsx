@@ -18,6 +18,13 @@ describe("individual repair refund execution contract", () => {
     expect(source).not.toContain("&& String(refund.workflow_source ?? '').toLowerCase() === 'shop_pos_repair'");
   });
 
+  it("uses the approved refund amount instead of accepting a typed payout amount", () => {
+    expect(source).toContain("refund.approved_amount ?? refund.requested_amount");
+    expect(source).toContain("Refund amount (fixed)");
+    expect(source).not.toContain('id="repair_refund_execution_amount"');
+    expect(source).not.toContain("formData.append('execution_amount'");
+  });
+
   it("shows the shop reference and complete repair/customer details without exposing the numeric id", () => {
     expect(source).toContain("refund.refund_reference");
     expect(source).toContain("customer_phone");
