@@ -77,11 +77,15 @@ describe('standalone virtual showroom', () => {
 		expect(showroomSource).toContain('createShowroomPromptSprite');
 		expect(showroomSource).toContain('targetCameraYawRef.current += deltaX * sensitivity');
 		expect(showroomSource).toContain('handlePlacementKey()');
+		expect(showroomSource).toContain('pickShoeAtViewCenter');
 		expect(showroomSource).toContain('nearbyPlacementSlot()');
+		expect(showroomSource).toContain('const walkSpeed = 7.2;');
+		expect(showroomSource).toContain('const sensitivity = 0.007;');
 		expect(showroomSource).toContain('Click and drag to look around');
 		expect(sceneSource).toContain('seatPromptSprites');
 		expect(sceneSource).toContain("createShowroomPromptSprite('E', 'PLAY'");
-		expect(showroomSource).toContain("createShowroomPromptSprite(canEditShowroom ? 'CLICK + E' : 'CLICK')");
+		expect(showroomSource).toContain("createShowroomPromptSprite(canEditShowroom ? 'E TO PICK' : 'CLICK')");
+		expect(sceneSource).not.toContain('lounge.x + 0.2, 0.82');
 	});
 
 	it('keeps XOX as a themed continuous scored session', () => {

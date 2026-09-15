@@ -286,7 +286,6 @@ export function createShowroomScene(
 		for (const side of [-1, 1]) mesh(new RoundedBoxGeometry(0.3, 0.72, 1.7, 3, 0.1), linen, lounge.x + side * 2.7, 0.84, lounge.z + 1.8);
 		mesh(new THREE.CylinderGeometry(1.15, 1.15, 0.12, 32), stone, lounge.x, 0.73, lounge.z - 0.4);
 		mesh(new THREE.CylinderGeometry(0.65, 0.85, 0.65, 24), walnut, lounge.x, 0.36, lounge.z - 0.4);
-		box(black, lounge.x + 0.2, 0.82, lounge.z - 0.4, 0.65, 0.055, 0.45);
 		const plantX = lounge.x + Math.sign(lounge.x) * 3.5;
 		mesh(new THREE.CylinderGeometry(0.6, 0.45, 1, 24), stone, plantX, 0.5, lounge.z);
 		mesh(new THREE.CylinderGeometry(0.04, 0.08, 2, 8), walnut, plantX, 1.8, lounge.z);

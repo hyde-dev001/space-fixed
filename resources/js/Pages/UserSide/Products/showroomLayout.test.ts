@@ -69,8 +69,9 @@ describe('connected flagship layout', () => {
 		layout.seats.forEach((seat, index) => {
 			const lounge = layout.lounges[index];
 			expect(seat.cameraPosition[0]).toBe(lounge.x);
+			expect(seat.cameraPosition[1]).toBeGreaterThan(3);
 			expect(seat.cameraPosition[2]).toBeGreaterThan(lounge.z);
-			expect(seat.lookAt).toEqual([lounge.x, 0.8, lounge.z - 0.4]);
+			expect(seat.lookAt).toEqual([lounge.x, 0.72, lounge.z - 0.4]);
 		});
 	});
 });
