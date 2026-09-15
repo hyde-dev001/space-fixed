@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -110,6 +111,17 @@ class SimplifiedReceivingWorkflowTest extends TestCase
         ]);
 
         $this->assertSame(0, PurchaseOrderReceipt::count());
+    }
+
+    public function test_simplified_receiving_migration_can_be_replayed_after_partial_deployment(): void
+    {
+        $migration = require base_path('database/migrations/2026_09_15_000001_add_simplified_procurement_receiving_workflow.php');
+
+        $migration->up();
+
+        $this->assertTrue(Schema::hasColumn('purchase_order_receipts', 'receipt_reference'));
+        $this->assertTrue(Schema::hasTable('shop_procurement_receipt_sequences'));
+        $this->assertTrue(Schema::hasColumn('supplier_adjustments', 'replacement_status'));
     }
 
     public function test_replacement_uses_the_same_receipt_and_finalizes_once(): void
