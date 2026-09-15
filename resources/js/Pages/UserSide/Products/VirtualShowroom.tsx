@@ -917,7 +917,11 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		const side = nearbyWallArtSideRef.current;
 		if (!canManageShowroomArt || !side || carriedPlacementRef.current !== null) return false;
 
-		wallArtInputRefs.current[side]?.click();
+		const input = wallArtInputRefs.current[side];
+		if (!input) return false;
+
+		input.value = '';
+		input.click();
 		return true;
 	};
 
@@ -2221,7 +2225,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 													{wallArt[side] ? <img src={wallArt[side] ?? undefined} alt={`${side} wall art preview`} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center px-2 text-center text-[10px] text-stone-500">Empty frame</div>}
 												</div>
 												<label className="flex min-h-9 cursor-pointer items-center justify-center rounded-md border border-[#8e6d4b] px-2 text-[11px] font-semibold text-[#f0d59b] hover:bg-stone-800">
-													Upload
+													{wallArt[side] ? 'Replace picture' : 'Upload picture'}
 													<input
 														type="file"
 														accept="image/jpeg,image/png,image/webp"
@@ -2250,6 +2254,22 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 							<div>
 								<p className="text-base font-semibold">Preparing showroom</p>
 								<p className="mt-1 text-xs text-white/65">Loading products and display shelves…</p>
+							</div>
+						</div>
+					</div>
+				)}
+
+				{wallArtStatus === 'saving' && (
+					<div
+						className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-stone-950/80 px-6 backdrop-blur-md"
+						role="status"
+						aria-live="polite"
+					>
+						<div className="flex w-full max-w-xs flex-col items-center gap-4 rounded-2xl border border-[#d4ae73]/60 bg-stone-950/95 px-6 py-7 text-center text-stone-100 shadow-2xl">
+							<div className="h-12 w-12 animate-spin rounded-full border-4 border-stone-600 border-t-[#f0d39b]" aria-hidden="true" />
+							<div>
+								<p className="text-base font-semibold">Uploading picture...</p>
+								<p className="mt-1 text-xs text-stone-300">Updating the frame. Please wait.</p>
 							</div>
 						</div>
 					</div>
