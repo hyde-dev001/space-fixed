@@ -24,6 +24,11 @@ describe("canonical repair refund queue", () => {
 		expect(source).toContain("/api/shop-owner/repair-refunds/${refund.id}/execute");
 	});
 
+	it("opens the proof form for every POS manual leg, including legacy POS refunds", () => {
+		expect(source).toContain("refund.has_pos_manual_leg === true");
+		expect(source).not.toContain("&& String(refund.workflow_source ?? \"\").toLowerCase() === \"shop_pos_repair\"");
+	});
+
 	it("hides internal approval badges and humanizes refund reasons", () => {
 		expect(source).not.toContain("F:{financeStatus}");
 		expect(source).not.toContain("O:{ownerStatus}");

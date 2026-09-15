@@ -1,7 +1,7 @@
 import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
 import { hasAnyPermission } from "../../../utils/permissions";
 
@@ -238,6 +238,8 @@ export default function PayslipApproval({
 	const [viewModalOpen, setViewModalOpen] = useState(false);
 	const [selectedRequest, setSelectedRequest] = useState<PayslipApprovalRequest | null>(null);
 	const [loading, setLoading] = useState(true);
+	const [initialLoading, setInitialLoading] = useState(true);
+	const listRequestRef = useRef<AbortController | null>(null);
 	const [isApproving, setIsApproving] = useState(false);
 	const [paginationMeta, setPaginationMeta] = useState<PaginationMeta>({
 		current_page: 1,
@@ -272,12 +274,23 @@ export default function PayslipApproval({
 		};
 	}, [isAnyModalOpen, onModalStateChange]);
 
-	// Load payslips from API
+	// Load payslips from API without remounting the page for every search keystroke.
 	useEffect(() => {
-		loadPayslips();
+		const timeoutId = window.setTimeout(() => {
+			void loadPayslips();
+		}, searchQuery.trim() ? 300 : 0);
+
+		return () => window.clearTimeout(timeoutId);
 	}, [currentPage, searchQuery, statusFilter]);
 
+	useEffect(() => () => {
+		listRequestRef.current?.abort();
+	}, []);
+
 	const loadPayslips = async () => {
+		listRequestRef.current?.abort();
+		const requestController = new AbortController();
+		listRequestRef.current = requestController;
 		setLoading(true);
 		try {
 			const params = new URLSearchParams({
@@ -299,6 +312,7 @@ export default function PayslipApproval({
 					'Accept': 'application/json',
 				},
 				credentials: 'include',
+				signal: requestController.signal,
 			});
 
 			if (!response.ok) {
@@ -331,6 +345,10 @@ export default function PayslipApproval({
 				setCurrentPage(data.meta.current_page);
 			}
 		} catch (error) {
+			if ((error as Error)?.name === 'AbortError') {
+				return;
+			}
+
 			console.error('Error loading payslips:', error);
 			setRequests([]);
 			setPaginationMeta({
@@ -351,7 +369,10 @@ export default function PayslipApproval({
 			});
 			await Swal.fire('Error', 'Failed to load payslips', 'error');
 		} finally {
-			setLoading(false);
+			if (listRequestRef.current === requestController) {
+				setLoading(false);
+				setInitialLoading(false);
+			}
 		}
 	};
 
@@ -438,6 +459,8 @@ export default function PayslipApproval({
 	const awaitingFinalApprovalCount = summary.awaiting_final_approval;
 	const readyForDisbursementCount = summary.ready_for_disbursement;
 	const paidCount = summary.paid;
+	const selectedEarnings = selectedRequest?.line_items.filter((item) => item.type === 'earning') ?? [];
+	const selectedDeductions = selectedRequest?.line_items.filter((item) => item.type === 'deduction') ?? [];
 
 	const handleView = async (request: PayslipApprovalRequest) => {
 		// Fetch full payslip details
@@ -1107,7 +1130,7 @@ export default function PayslipApproval({
 		}
 	};
 
-	if (loading) {
+	if (initialLoading) {
 		return (
 			<>
 				<Head title={headTitle} />
@@ -1226,6 +1249,11 @@ export default function PayslipApproval({
 								<option value="rejected">Rejected</option>
 							</MonochromeSelect>
 						</div>
+						{loading && (
+							<span className="self-center text-xs text-gray-500 dark:text-gray-400" role="status">
+								Updating…
+							</span>
+						)}
 					</div>
 
 					<div className="overflow-x-auto">
@@ -1390,16 +1418,21 @@ export default function PayslipApproval({
 			</div>
 
 			{viewModalOpen && selectedRequest && (
-				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
-					<div className="w-full max-w-3xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl">
-						<div className="flex items-start justify-between mb-4 px-6 py-4">
+				<div
+					className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="finance-payslip-details-heading"
+				>
+					<div className="w-full max-w-6xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 shadow-xl">
+						<div className="flex items-start justify-between border-b border-gray-200 px-6 py-3 dark:border-gray-800">
 							<div>
-								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Payslip Details</h3>
+								<h3 id="finance-payslip-details-heading" className="text-lg font-semibold text-gray-900 dark:text-white">Payslip Details</h3>
 								<p className="text-sm text-gray-500 dark:text-gray-400">{selectedRequest.employee_name} · {selectedRequest.employee_id}</p>
 							</div>
 							<button
 								onClick={() => setViewModalOpen(false)}
-								className="text-gray-500 hover:text-gray-600 text-xl"
+								className="inline-flex size-10 items-center justify-center rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
 								title="Close"
 								aria-label="Close"
 							>
@@ -1407,24 +1440,24 @@ export default function PayslipApproval({
 							</button>
 						</div>
 
-						<div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-							<div className="space-y-2">
+						<div className="grid grid-cols-1 gap-3 px-6 py-3 md:grid-cols-2 xl:grid-cols-4">
+							<div className="space-y-1">
 								<p className="text-xs uppercase text-gray-400">Role & Department</p>
 								<p className="text-sm text-gray-700 dark:text-gray-200">{selectedRequest.role}</p>
 								<p className="text-sm text-gray-500">{selectedRequest.department}</p>
 							</div>
-							<div className="space-y-2">
+							<div className="space-y-1">
 								<p className="text-xs uppercase text-gray-400">Pay Period</p>
 								<p className="text-sm text-gray-700 dark:text-gray-200">{selectedRequest.pay_period}</p>
 								<p className="text-sm text-gray-500">Generated {selectedRequest.generated_date} by {selectedRequest.generated_by}</p>
 							</div>
-							<div className="space-y-2">
+							<div className="space-y-1">
 								<p className="text-xs uppercase text-gray-400">Amounts</p>
 								<p className="text-sm text-gray-700 dark:text-gray-200">Gross: {formatCurrency(selectedRequest.gross_pay)}</p>
 								<p className="text-sm text-gray-700 dark:text-gray-200">Deductions: {formatCurrency(selectedRequest.deductions)}</p>
 								<p className="text-sm font-semibold text-gray-900 dark:text-white">Net: {formatCurrency(selectedRequest.net_pay)}</p>
 							</div>
-							<div className="space-y-2">
+							<div className="space-y-1">
 								<p className="text-xs uppercase text-gray-400">Workflow Status</p>
 								<span className={`inline-flex px-3 py-1 rounded-full text-xs font-semibold ${workflowPillClasses[selectedRequest.workflow_status]}`}>
 									{workflowStatusLabels[selectedRequest.workflow_status]}
@@ -1432,30 +1465,79 @@ export default function PayslipApproval({
 							</div>
 						</div>
 
-						<div className="px-6 pb-4">
-							<div className="rounded-xl border border-gray-200 dark:border-gray-800 p-4">
-								<div className="flex items-center justify-between mb-3">
-									<p className="font-semibold text-gray-900 dark:text-white">Payslip Breakdown</p>
-								</div>
-								<div className="space-y-2">
-									{selectedRequest.line_items.map((item, idx) => (
-										<div key={idx} className="flex items-center justify-between text-sm text-gray-600 dark:text-gray-300">
-											<span>{item.label}</span>
-											<span className="font-medium text-gray-900 dark:text-white">{formatCurrency(item.amount)}</span>
-										</div>
-									))}
-								</div>
-								{selectedRequest.notes && (
-									<div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
-										HR Notes: {selectedRequest.notes}
-									</div>
-								)}
-							</div>
+						<div className="grid grid-cols-1 gap-3 px-6 pb-3 lg:grid-cols-2">
+							<section className="rounded-xl border border-gray-200 p-3 dark:border-gray-800" aria-labelledby="finance-earnings-heading">
+								<h4 id="finance-earnings-heading" className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">Earnings</h4>
+								<table className="w-full text-xs">
+									<thead>
+										<tr className="border-b border-gray-200 dark:border-gray-700">
+											<th className="py-1 text-left font-medium text-gray-500 dark:text-gray-400">Description</th>
+											<th className="py-1 text-right font-medium text-gray-500 dark:text-gray-400">Amount</th>
+										</tr>
+									</thead>
+									<tbody>
+										{selectedEarnings.length > 0 ? selectedEarnings.map((item, idx) => (
+											<tr key={`earning-${item.label}-${idx}`} className="border-b border-gray-100 dark:border-gray-800">
+												<td className="py-1 text-gray-700 dark:text-gray-300">{item.label}</td>
+												<td className="py-1 text-right text-gray-900 dark:text-white">{formatCurrency(item.amount)}</td>
+											</tr>
+										)) : (
+											<tr><td colSpan={2} className="py-1 text-gray-500 dark:text-gray-400">No earnings listed</td></tr>
+										)}
+									</tbody>
+									<tfoot>
+										<tr>
+											<td className="pt-2 font-bold text-gray-900 dark:text-white">Gross Pay</td>
+											<td className="pt-2 text-right font-bold text-gray-900 dark:text-white">{formatCurrency(selectedRequest.gross_pay)}</td>
+										</tr>
+									</tfoot>
+								</table>
+							</section>
+
+							<section className="rounded-xl border border-gray-200 p-3 dark:border-gray-800" aria-labelledby="finance-deductions-heading">
+								<h4 id="finance-deductions-heading" className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">Deductions</h4>
+								<table className="w-full text-xs">
+									<thead>
+										<tr className="border-b border-gray-200 dark:border-gray-700">
+											<th className="py-1 text-left font-medium text-gray-500 dark:text-gray-400">Description</th>
+											<th className="py-1 text-right font-medium text-gray-500 dark:text-gray-400">Amount</th>
+										</tr>
+									</thead>
+									<tbody>
+										{selectedDeductions.length > 0 ? selectedDeductions.map((item, idx) => (
+											<tr key={`deduction-${item.label}-${idx}`} className="border-b border-gray-100 dark:border-gray-800">
+												<td className="py-1 text-gray-700 dark:text-gray-300">{item.label}</td>
+												<td className="py-1 text-right text-red-600 dark:text-red-400">-{formatCurrency(item.amount)}</td>
+											</tr>
+										)) : (
+											<tr><td colSpan={2} className="py-1 text-gray-500 dark:text-gray-400">No deductions listed</td></tr>
+										)}
+									</tbody>
+									<tfoot>
+										<tr>
+											<td className="pt-2 font-bold text-gray-900 dark:text-white">Total Deductions</td>
+											<td className="pt-2 text-right font-bold text-red-600 dark:text-red-400">-{formatCurrency(selectedRequest.deductions)}</td>
+										</tr>
+									</tfoot>
+								</table>
+							</section>
 						</div>
 
+						<div className="mx-6 mb-3 flex items-center justify-between rounded-lg border border-gray-200 bg-gray-50 px-4 py-2 dark:border-gray-700 dark:bg-gray-800">
+							<span className="text-sm font-bold text-gray-900 dark:text-white">NET PAY</span>
+							<span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(selectedRequest.net_pay)}</span>
+						</div>
+
+						{selectedRequest.notes && (
+							<div className="mx-6 mb-3 rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-600 dark:border-gray-800 dark:text-gray-300">
+								<strong>HR Notes:</strong> {selectedRequest.notes}
+							</div>
+						)}
+
+						<div className="grid grid-cols-1 gap-3 px-6 pb-3 lg:grid-cols-3">
 						{selectedRequest.checker_name && (
-							<div className="px-6 pb-4">
-								<div className="rounded-xl border border-amber-200 dark:border-amber-900 bg-amber-50 dark:bg-amber-900/10 p-4">
+							<div>
+								<div className="rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900 dark:bg-amber-900/10">
 									<p className="font-semibold text-amber-900 dark:text-amber-200 mb-2 text-sm">Finance Checker Approval</p>
 									<p className="text-sm text-amber-800 dark:text-amber-300">Approved by: <strong>{selectedRequest.checker_name}</strong></p>
 									{selectedRequest.checker_approved_at && (
@@ -1469,8 +1551,8 @@ export default function PayslipApproval({
 						)}
 
 						{selectedRequest.final_approver_name && (
-							<div className="px-6 pb-4">
-								<div className="rounded-xl border border-violet-200 dark:border-violet-900 bg-violet-50 dark:bg-violet-900/10 p-4">
+							<div>
+								<div className="rounded-xl border border-violet-200 bg-violet-50 p-3 dark:border-violet-900 dark:bg-violet-900/10">
 									<p className="font-semibold text-violet-900 dark:text-violet-200 mb-2 text-sm">Final Approval (Owner)</p>
 									<p className="text-sm text-violet-800 dark:text-violet-300">Approved by: <strong>{selectedRequest.final_approver_name}</strong></p>
 									{selectedRequest.final_approved_at && (
@@ -1484,8 +1566,8 @@ export default function PayslipApproval({
 						)}
 
 						{selectedRequest.workflow_status === 'paid' && selectedRequest.disbursed_by_name && (
-							<div className="px-6 pb-4">
-								<div className="rounded-xl border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-900/10 p-4">
+							<div>
+								<div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-900 dark:bg-emerald-900/10">
 									<p className="font-semibold text-emerald-900 dark:text-emerald-200 mb-2 text-sm">Disbursement Record</p>
 									<div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-emerald-800 dark:text-emerald-300">
 										{selectedRequest.payment_method && <p>Method: <strong>{selectedRequest.payment_method.replace(/_/g, ' ')}</strong></p>}
@@ -1501,8 +1583,9 @@ export default function PayslipApproval({
 								</div>
 							</div>
 						)}
+						</div>
 
-						<div className="flex items-center justify-end gap-3 border-t border-gray-200 dark:border-gray-800 px-6 py-4">
+						<div className="flex flex-wrap items-center justify-end gap-2 border-t border-gray-200 px-6 py-3 dark:border-gray-800">
 							<button
 								onClick={() => setViewModalOpen(false)}
 								className="px-4 py-2 rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
