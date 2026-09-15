@@ -13,6 +13,13 @@ interface ShowroomPromptSprite {
 	material: THREE.SpriteMaterial;
 }
 
+export interface ShowroomWallArt {
+	left: string | null;
+	right: string | null;
+}
+
+type WallArtSide = keyof ShowroomWallArt;
+
 const roundedRect = (
 	context: CanvasRenderingContext2D,
 	x: number,
@@ -99,6 +106,7 @@ export function createShowroomScene(
 	productCount: number,
 	shopName = '',
 	enableSlotEditing = false,
+	wallArt: ShowroomWallArt = { left: null, right: null },
 ) {
 	const scene = new THREE.Scene();
 	const layout = getShowroomLayout(capacity);
@@ -121,6 +129,72 @@ export function createShowroomScene(
 	const ready = new Promise<void>(resolve => { finishMaterials = resolve; });
 	const manager = new THREE.LoadingManager(() => finishMaterials());
 	const loader = new THREE.TextureLoader(manager);
+	const wallArtTextures = new Map<WallArtSide, THREE.Texture>();
+	const wallArtMaterials = new Map<WallArtSide, THREE.MeshBasicMaterial>();
+	const wallArtImageGeometry = new THREE.PlaneGeometry(10.4, 5.85);
+	geometries.add(wallArtImageGeometry);
+
+	const createWallArtPlaceholder = (side: WallArtSide) => {
+		const canvas = document.createElement('canvas');
+		canvas.width = 1024;
+		canvas.height = 576;
+		const context = canvas.getContext('2d')!;
+		context.fillStyle = '#171411';
+		context.fillRect(0, 0, canvas.width, canvas.height);
+		context.strokeStyle = '#b89a6b';
+		context.lineWidth = 10;
+		context.strokeRect(24, 24, canvas.width - 48, canvas.height - 48);
+		context.textAlign = 'center';
+		context.fillStyle = '#f1e8d9';
+		context.font = '700 44px Arial';
+		context.fillText(`${side.toUpperCase()} WALL`, canvas.width / 2, 250);
+		context.fillStyle = '#c6ad7f';
+		context.font = '24px Arial';
+		context.fillText('UPLOAD YOUR STORY', canvas.width / 2, 312);
+		const texture = new THREE.CanvasTexture(canvas);
+		texture.colorSpace = THREE.SRGBColorSpace;
+		textures.push(texture);
+		return texture;
+	};
+
+	const createWallArtTexture = (side: WallArtSide, url: string | null) => {
+		const previous = wallArtTextures.get(side);
+		if (previous) previous.dispose();
+		if (!url) {
+			const placeholder = createWallArtPlaceholder(side);
+			wallArtTextures.set(side, placeholder);
+			return placeholder;
+		}
+
+		const texture = loader.load(url, (loaded) => {
+			if (disposed) {
+				loaded.dispose();
+				return;
+			}
+			const image = loaded.image as HTMLImageElement;
+			const canvas = document.createElement('canvas');
+			canvas.width = lowPower ? 768 : 1024;
+			canvas.height = Math.round(canvas.width * 9 / 16);
+			const context = canvas.getContext('2d');
+			if (context && image.width && image.height) {
+				const scale = Math.max(canvas.width / image.width, canvas.height / image.height);
+				const width = image.width * scale;
+				const height = image.height * scale;
+				context.drawImage(image, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height);
+				loaded.image = canvas;
+				loaded.needsUpdate = true;
+			}
+		});
+		texture.colorSpace = THREE.SRGBColorSpace;
+		texture.minFilter = THREE.LinearMipmapLinearFilter;
+		texture.magFilter = THREE.LinearFilter;
+		texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), lowPower ? 4 : 8);
+		texture.generateMipmaps = true;
+		textures.push(texture);
+		wallArtTextures.set(side, texture);
+		return texture;
+	};
+
 	const loadMap = (name: string, color = false, repeatX = 1, repeatY = 1) => {
 		const texture = loader.load(`/images/SHOWROOM/materials/${name}.jpg`, loaded => {
 			if (disposed) loaded.dispose();
@@ -181,6 +255,29 @@ export function createShowroomScene(
 		scene.add(object);
 		return object;
 	};
+	const wallArtCenter: [number, number, number] = [0, 3.45, 19.65];
+	for (const side of [-1, 1] as const) {
+		const key = side === -1 ? 'left' : 'right';
+		const x = side * 21.4;
+		const frameX = side * 21.32;
+		box(black, side * 21.62, wallArtCenter[1], wallArtCenter[2], 0.32, 6.25, 10.8, 0, false);
+		box(brass, frameX, wallArtCenter[1] + 3.02, wallArtCenter[2], 0.18, 0.14, 10.85, 0, false);
+		box(brass, frameX, wallArtCenter[1] - 3.02, wallArtCenter[2], 0.18, 0.14, 10.85, 0, false);
+		box(brass, frameX, wallArtCenter[1], wallArtCenter[2] - 5.36, 0.18, 6.18, 0.14, 0, false);
+		box(brass, frameX, wallArtCenter[1], wallArtCenter[2] + 5.36, 0.18, 6.18, 0.14, 0, false);
+		const imageMaterial = new THREE.MeshBasicMaterial({
+			map: createWallArtTexture(key, wallArt[key]),
+			side: THREE.DoubleSide,
+		});
+		materials.add(imageMaterial);
+		wallArtMaterials.set(key, imageMaterial);
+		const image = new THREE.Mesh(wallArtImageGeometry, imageMaterial);
+		image.position.set(x, wallArtCenter[1], wallArtCenter[2]);
+		image.rotation.y = side === -1 ? Math.PI / 2 : -Math.PI / 2;
+		image.castShadow = false;
+		image.receiveShadow = false;
+		scene.add(image);
+	}
 	const sign = (title: string, subtitle: string, x: number, y: number, z: number, width: number, rotation = 0) => {
 		const canvas = document.createElement('canvas');
 		canvas.width = 1024;
@@ -435,6 +532,15 @@ export function createShowroomScene(
 		ready,
 		slotTargets,
 		seatPromptSprites,
+		updateWallArt: (next: ShowroomWallArt) => {
+			for (const side of ['left', 'right'] as const) {
+				const material = wallArtMaterials.get(side);
+				if (!material) continue;
+				const texture = createWallArtTexture(side, next[side]);
+				material.map = texture;
+				material.needsUpdate = true;
+			}
+		},
 		dispose: () => {
 			disposed = true;
 			reflection.dispose();

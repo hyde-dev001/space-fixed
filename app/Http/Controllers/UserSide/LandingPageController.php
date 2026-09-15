@@ -990,6 +990,15 @@ class LandingPageController extends Controller
                 ];
             });
 
+        $showroomWallArt = ['left' => null, 'right' => null];
+        if ($forVirtualShowroom) {
+            foreach ($this->showroomPlacements->wallArtPathsForShop((int) $shopOwner->id) as $side => $path) {
+                $showroomWallArt[$side] = $path
+                    ? asset('storage/' . ltrim($path, '/'))
+                    : null;
+            }
+        }
+
         $shop = [
             'id' => $shopOwner->id,
             'name' => $shopOwner->business_name ?? $shopOwner->name,
@@ -1038,8 +1047,11 @@ class LandingPageController extends Controller
                         'slot_key' => $placement->slot_key,
                     ])->values()->all()
                 : [],
+            'showroom_wall_art' => $showroomWallArt,
             'can_edit_showroom' => $forVirtualShowroom
                 && $this->showroomPlacements->canEdit(request(), (int) $shopOwner->id),
+            'can_manage_showroom_art' => $forVirtualShowroom
+                && $this->showroomPlacements->canManageWallArt(request(), (int) $shopOwner->id),
             'showroom_setup_required' => $forVirtualShowroom
                 && $this->showroomPlacements->canManage(request(), (int) $shopOwner->id)
                 && !Schema::hasTable('showroom_product_placements'),

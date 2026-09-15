@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	applyMove,
 	getBestBotMove,
+	getMediumBotMove,
 	getRandomBotMove,
 	getWinner,
 	getWinningLine,
@@ -37,5 +38,10 @@ describe('showroom XOX rules', () => {
 		expect(getBestBotMove(winningBoard, () => 0.5)).toBe(2);
 		expect(getBestBotMove(blockingBoard, () => 0.5)).toBe(2);
 		expect(getWinningLine(['X', null, null, null, 'X', null, null, null, 'X'])).toEqual([0, 4, 8]);
+	});
+
+	it('medium bot takes wins and blocks immediate losses', () => {
+		expect(getMediumBotMove(['O', 'O', null, 'X', null, null, null, null, null])).toBe(2);
+		expect(getMediumBotMove(['X', 'X', null, 'O', null, null, null, null, null])).toBe(2);
 	});
 });

@@ -24,7 +24,9 @@ interface Shop {
   showroom_plan_code?: string | null;
   showroom_plan_name?: string | null;
   showroom_placements?: Array<{ product_id: number; slot_key: string }>;
+  showroom_wall_art?: { left?: string | null; right?: string | null };
   can_edit_showroom?: boolean;
+  can_manage_showroom_art?: boolean;
   showroom_setup_required?: boolean;
 }
 
@@ -65,6 +67,11 @@ const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
             slotKey: placement.slot_key,
           }))}
           canEditShowroom={shop.can_edit_showroom === true}
+          canManageShowroomArt={shop.can_manage_showroom_art === true}
+          showroomWallArt={{
+            left: shop.showroom_wall_art?.left ?? null,
+            right: shop.showroom_wall_art?.right ?? null,
+          }}
           showroomSetupRequired={shop.showroom_setup_required === true}
           isStandalonePage
           onFocusModeChange={setIsFocusMode}

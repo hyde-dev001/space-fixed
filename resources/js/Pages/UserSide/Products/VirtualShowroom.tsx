@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three';
 import { canWalkTo, getNearbyShowroomSeat, getShowroomLayout, SHOWROOM_ENTRANCE } from './showroomLayout';
 import { resolveShowroomPlacements, swapShowroomPlacements, type ShowroomPlacement } from './showroomPlacement';
-import { createShowroomPromptSprite, createShowroomScene } from './showroomScene';
+import { createShowroomPromptSprite, createShowroomScene, type ShowroomWallArt } from './showroomScene';
 import ShowroomTicTacToe, { type ShowroomTicTacToeHandle } from './ShowroomTicTacToe';
 import type { TicTacToeBoard } from './showroomTicTacToeRules';
 import { fetchWithCsrf } from '@/utils/fetch-with-csrf';
@@ -29,6 +29,8 @@ interface VirtualShowroomProps {
 	shopName?: string;
 	showroomPlacements?: ShowroomPlacement[];
 	canEditShowroom?: boolean;
+	canManageShowroomArt?: boolean;
+	showroomWallArt?: ShowroomWallArt;
 	showroomSetupRequired?: boolean;
 }
 
@@ -78,6 +80,8 @@ const buildProductFrames = (product: Product): string[] => {
 const MAX_SHOWROOM_SLOTS = 150;
 const JOYSTICK_RADIUS_PX = 62;
 const JOYSTICK_DEADZONE = 0.16;
+const WALL_ART_MAX_BYTES = 8 * 1024 * 1024;
+type WallArtSide = keyof ShowroomWallArt;
 
 const drawTableBoard = (
 	texture: THREE.CanvasTexture,
@@ -161,6 +165,8 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	shopName = '',
 	showroomPlacements = [],
 	canEditShowroom = false,
+	canManageShowroomArt = false,
+	showroomWallArt = { left: null, right: null },
 	showroomSetupRequired = false,
 }) => {
 	const mountRef = useRef<HTMLDivElement | null>(null);
@@ -208,6 +214,8 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const placementAssignmentsRef = useRef<ShowroomPlacement[]>([]);
 	const activePlacementTargetRef = useRef<string | null>(null);
 	const carriedPlacementRef = useRef<ShowroomPlacement | null>(null);
+	const showroomWallArtRef = useRef<ShowroomWallArt>(showroomWallArt);
+	const wallArtUpdaterRef = useRef<((wallArt: ShowroomWallArt) => void) | null>(null);
 	const selectedPlacementProductIdRef = useRef<number | null>(null);
 	const pendingPlacementProductIdRef = useRef<number | null>(null);
 	const layoutRef = useRef<ReturnType<typeof getShowroomLayout> | null>(null);
@@ -249,6 +257,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const [seatedSeatKey, setSeatedSeatKey] = useState<string | null>(null);
 	const [isGameOpen, setIsGameOpen] = useState(false);
 	const [gameSessionKey, setGameSessionKey] = useState(0);
+	const [wallArt, setWallArt] = useState<ShowroomWallArt>(showroomWallArt);
+	const [isWallArtPanelOpen, setIsWallArtPanelOpen] = useState(false);
+	const [wallArtStatus, setWallArtStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 	const updateTableBoard = useCallback((board: TicTacToeBoard, winningLine: number[], result: 'X' | 'O' | 'draw' | null) => {
 		xoxVisualRef.current = { board, winningLine, result };
 		if (xoxTextureRef.current) drawTableBoard(xoxTextureRef.current, board, winningLine, result);
@@ -303,6 +314,11 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	useEffect(() => {
 		placementAssignmentsRef.current = placementAssignments;
 	}, [placementAssignments]);
+
+	useEffect(() => {
+		showroomWallArtRef.current = wallArt;
+		wallArtUpdaterRef.current?.(wallArt);
+	}, [wallArt]);
 
 	useEffect(() => {
 		slotTargetsRef.current.forEach((target) => {
@@ -822,6 +838,47 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		}
 	};
 
+	const uploadWallArt = async (side: WallArtSide, file: File) => {
+		if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > WALL_ART_MAX_BYTES) {
+			setWallArtStatus('error');
+			return;
+		}
+
+		setWallArtStatus('saving');
+		const formData = new FormData();
+		formData.append('wall', side);
+		formData.append('image', file);
+
+		try {
+			const response = await fetchWithCsrf('/api/showroom/wall-art', {
+				method: 'POST',
+				headers: { Accept: 'application/json' },
+				body: formData,
+			});
+			const payload = await response.json().catch(() => null) as { url?: unknown } | null;
+			if (!response.ok || typeof payload?.url !== 'string') throw new Error('Unable to save wall art.');
+			setWallArt((previous) => ({ ...previous, [side]: payload.url }));
+			setWallArtStatus('saved');
+		} catch {
+			setWallArtStatus('error');
+		}
+	};
+
+	const removeWallArt = async (side: WallArtSide) => {
+		setWallArtStatus('saving');
+		try {
+			const response = await fetchWithCsrf(`/api/showroom/wall-art/${side}`, {
+				method: 'DELETE',
+				headers: { Accept: 'application/json' },
+			});
+			if (!response.ok) throw new Error('Unable to remove wall art.');
+			setWallArt((previous) => ({ ...previous, [side]: null }));
+			setWallArtStatus('saved');
+		} catch {
+			setWallArtStatus('error');
+		}
+	};
+
 	const nearbyPlacementSlot = () => {
 		const camera = cameraRef.current;
 		if (!camera) return null;
@@ -950,8 +1007,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			shoes.length,
 			shopName,
 			canEditShowroom,
+			showroomWallArtRef.current,
 		);
 		const { scene, layout } = showroom;
+		wallArtUpdaterRef.current = showroom.updateWallArt;
 		layoutRef.current = layout;
 		seatPromptSpritesRef.current = showroom.seatPromptSprites;
 		slotTargetsRef.current = showroom.slotTargets;
@@ -1072,6 +1131,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			texture: THREE.CanvasTexture;
 			material: THREE.SpriteMaterial;
 			card: THREE.Mesh;
+			offsetY: number;
 		}> = [];
 
 		const pickupLookVector = new THREE.Vector3();
@@ -1080,6 +1140,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		const slotDefinitions = new Map(layout.slots.map((slot) => [slot.key, {
 			position: new THREE.Vector3(...slot.position),
 			rotationY: slot.rotationY,
+			kind: slot.kind,
 		}]));
 		let renderedPlacementAssignments = placementAssignmentsRef.current;
 		const cardGeometry = new THREE.PlaneGeometry(1.65, 1.05);
@@ -1124,8 +1185,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			scene.add(card);
 			card.visible = !hiddenShelfShoeIndicesRef.current.has(shoeIdx);
 			const clickPrompt = createShowroomPromptSprite(canEditShowroom ? 'E TO PICK' : 'CLICK');
-			clickPrompt.sprite.position.set(card.position.x, card.position.y + 0.88, card.position.z);
-			clickPrompt.sprite.scale.set(1.08, 0.3, 1);
+			const promptOffsetY = slot.kind === 'wall' ? 0.08 : 0.28;
+			clickPrompt.sprite.position.set(card.position.x, card.position.y + promptOffsetY, card.position.z);
+			clickPrompt.sprite.scale.set(0.92, 0.22, 1);
 			scene.add(clickPrompt.sprite);
 			shoePromptSprites.push({
 				shoeIdx,
@@ -1133,6 +1195,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				texture: clickPrompt.texture,
 				material: clickPrompt.material,
 				card,
+				offsetY: promptOffsetY,
 			});
 
 			shelfCardMaterials.push(material);
@@ -1158,11 +1221,11 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			showroom.seatPromptSprites.forEach(({ sprite, baseY }, index) => {
 				sprite.position.y = baseY + (reducedMotion ? 0 : Math.sin(promptTime + index) * 0.07);
 			});
-			shoePromptSprites.forEach(({ shoeIdx, sprite, card }) => {
+			shoePromptSprites.forEach(({ shoeIdx, sprite, card, offsetY }) => {
 				sprite.visible = card.visible && activePickupShoeIdx !== shoeIdx && carriedPlacementRef.current?.productId !== card.userData.productId;
 				sprite.position.x = card.position.x;
 				sprite.position.z = card.position.z;
-				sprite.position.y = card.position.y + 0.88 + (reducedMotion ? 0 : Math.sin(promptTime + shoeIdx) * 0.025);
+				sprite.position.y = card.position.y + offsetY + (reducedMotion ? 0 : Math.sin(promptTime + shoeIdx) * 0.018);
 			});
 		};
 		const syncPlacementCards = () => {
@@ -1501,6 +1564,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 		return () => {
 			isDisposed = true;
+			wallArtUpdaterRef.current = null;
 			clearJoystickVector();
 			hiddenShelfShoeIndicesRef.current.clear();
 			pickupAnimationRef.current = null;
@@ -2054,7 +2118,55 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 							>
 								{isNightMode ? 'Day Mode' : 'Night Mode'}
 							</button>
-						</div>
+							{canManageShowroomArt && (
+								<button
+									type="button"
+									onPointerDown={(event) => event.stopPropagation()}
+									onClick={(event) => {
+										event.stopPropagation();
+										setIsWallArtPanelOpen((previous) => !previous);
+									}}
+									className="min-h-11 rounded-md border border-white/20 bg-stone-950/85 px-4 py-2 text-sm font-medium text-stone-100 shadow-sm hover:bg-stone-800"
+								>
+									Wall art
+								</button>
+							)}
+							</div>
+							{canManageShowroomArt && isWallArtPanelOpen && (
+								<div
+									className="pointer-events-auto absolute right-3 top-16 z-30 w-[min(92vw,360px)] rounded-xl border border-stone-700 bg-stone-950/95 p-4 text-stone-100 shadow-xl sm:right-4"
+									onPointerDown={(event) => event.stopPropagation()}
+									onPointerMove={(event) => event.stopPropagation()}
+								>
+									<p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Gallery wall art</p>
+									<p className="mt-1 text-xs text-stone-300">Upload one large 16:9 image for each wall.</p>
+									<div className="mt-3 grid grid-cols-2 gap-3">
+										{(['left', 'right'] as WallArtSide[]).map((side) => (
+											<div key={side} className="space-y-2">
+												<p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#d4ae73]">{side} wall</p>
+												<div className="aspect-video overflow-hidden rounded-md border border-stone-700 bg-stone-900">
+													{wallArt[side] ? <img src={wallArt[side] ?? undefined} alt={`${side} wall art preview`} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center px-2 text-center text-[10px] text-stone-500">Empty frame</div>}
+												</div>
+												<label className="flex min-h-9 cursor-pointer items-center justify-center rounded-md border border-[#8e6d4b] px-2 text-[11px] font-semibold text-[#f0d59b] hover:bg-stone-800">
+													Upload
+													<input
+														type="file"
+														accept="image/jpeg,image/png,image/webp"
+														className="sr-only"
+														onChange={(event) => {
+															const file = event.target.files?.[0];
+															if (file) void uploadWallArt(side, file);
+															event.currentTarget.value = '';
+														}}
+													/>
+												</label>
+												{wallArt[side] && <button type="button" onClick={() => void removeWallArt(side)} className="min-h-8 w-full rounded-md text-[11px] text-stone-400 hover:bg-stone-800 hover:text-stone-100">Remove</button>}
+											</div>
+										))}
+									</div>
+									{wallArtStatus !== 'idle' && <p className={`mt-3 text-xs ${wallArtStatus === 'error' ? 'text-red-300' : wallArtStatus === 'saved' ? 'text-emerald-300' : 'text-amber-200'}`}>{wallArtStatus === 'error' ? 'Use JPG, PNG, or WEBP up to 8 MB.' : wallArtStatus === 'saved' ? 'Wall art saved.' : 'Saving wall art…'}</p>}
+								</div>
+							)}
 					</>
 				)}
 

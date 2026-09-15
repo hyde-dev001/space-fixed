@@ -1,6 +1,7 @@
 export type Mark = 'X' | 'O';
 export type Cell = Mark | null;
 export type TicTacToeBoard = [Cell, Cell, Cell, Cell, Cell, Cell, Cell, Cell, Cell];
+export type BotDifficulty = 'easy' | 'medium' | 'hard';
 
 const LINES = [
 	[0, 1, 2], [3, 4, 5], [6, 7, 8],
@@ -75,4 +76,31 @@ export const getRandomBotMove = (
 	const empty = getEmptyCells(board);
 	if (empty.length === 0) return null;
 	return empty[Math.min(empty.length - 1, Math.floor(random() * empty.length))];
+};
+
+const getImmediateMove = (board: TicTacToeBoard, mark: Mark): number | null => {
+	for (const index of getEmptyCells(board)) {
+		if (getWinner(applyMove(board, index, mark)) === mark) return index;
+	}
+
+	return null;
+};
+
+export const getMediumBotMove = (
+	board: TicTacToeBoard,
+	random: () => number = Math.random,
+): number | null => {
+	const winningMove = getImmediateMove(board, 'O');
+	if (winningMove !== null) return winningMove;
+
+	const blockingMove = getImmediateMove(board, 'X');
+	if (blockingMove !== null) return blockingMove;
+	if (board[4] === null) return 4;
+
+	const emptyCorners = [0, 2, 6, 8].filter(index => board[index] === null);
+	if (emptyCorners.length > 0) {
+		return emptyCorners[Math.min(emptyCorners.length - 1, Math.floor(random() * emptyCorners.length))];
+	}
+
+	return getRandomBotMove(board, random);
 };
