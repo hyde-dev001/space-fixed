@@ -102,6 +102,7 @@ const StarIcon = ({ filled, className = "" }: { filled: boolean; className?: str
 export default function CustomerReviews() {
   const { initialReviews = [], initialStats, auth } = usePage().props as any;
   const ownerMode = auth?.erpActor?.ownerMode === true;
+  const reportEndpoint = ownerMode ? "/api/shop-owner/reviews/report" : "/api/crm/reviews/report";
 
   const defaultStats: ReviewStats = { total: 0, average_rating: 0 };
   const [reviews, setReviews] = useState<CustomerReview[]>(initialReviews);
@@ -144,7 +145,7 @@ export default function CustomerReviews() {
   };
 
   const handleReportReview = async () => {
-    if (!selectedReview || ownerMode) return;
+    if (!selectedReview) return;
 
     const confirmation = await Swal.fire({
       title: "Submit this report?",
@@ -163,7 +164,7 @@ export default function CustomerReviews() {
       const reportId = getReportIdentifier(selectedReview);
 
       await axios.post(
-        "/api/crm/reviews/report",
+        reportEndpoint,
         {
           review_id: reportId,
           reason: reportReason,
@@ -361,7 +362,7 @@ export default function CustomerReviews() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">{selectedReview.customerName} • {new Date(selectedReview.createdAt).toLocaleDateString()}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {!ownerMode && (reportedIds.has(getReportIdentifier(selectedReview)) ? (
+                    {reportedIds.has(getReportIdentifier(selectedReview)) ? (
                       <span className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 dark:border-red-700 dark:bg-red-900/20 dark:text-red-400">
                         Reported
                       </span>
@@ -372,7 +373,7 @@ export default function CustomerReviews() {
                       >
                         Report Review
                       </button>
-                    ))}
+                    )}
                     <button
                       onClick={() => {
                         setShowReviewModal(false);
@@ -421,7 +422,7 @@ export default function CustomerReviews() {
           </>
         )}
 
-        {showReportModal && selectedReview && !ownerMode && (
+        {showReportModal && selectedReview && (
           <>
             <div className="fixed inset-0 z-200000 bg-black/60 erp-modal-backdrop" onClick={() => setShowReportModal(false)} />
             <div className="fixed inset-0 z-200001 flex items-center justify-center p-4">

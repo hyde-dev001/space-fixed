@@ -22,4 +22,10 @@ describe("individual repair refund execution contract", () => {
     expect(source).toContain("reason_notes");
     expect(source).not.toContain("#${refund.id}");
   });
+
+  it("hides internal approval badges and humanizes refund reasons", () => {
+    expect(source).not.toContain("F:{financeStatus}");
+    expect(source).not.toContain("O:{ownerStatus}");
+    expect(source).toContain("humanizeRefundReason(refund.reason_code)");
+  });
 });

@@ -275,7 +275,10 @@ class ShopAndCustomerReportFlowTest extends TestCase
 
     public function test_authenticated_shop_owner_can_submit_customer_review_report(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
         $customer = User::factory()->create();
 
         $repairRequest = RepairRequest::factory()->create([
