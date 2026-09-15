@@ -135,6 +135,11 @@ export const purchaseOrderApi = {
         return unwrap(response.data);
     },
 
+    async finalizeReceipt(id: number, receiptId: number): Promise<PurchaseOrderReceipt> {
+        const response = await axios.post(`${BASE_URL}/${id}/receipts/${receiptId}/finalize`);
+        return unwrap(response.data);
+    },
+
     async voidReceipt(id: number, receiptId: number, reason: string): Promise<PurchaseOrderReceipt> {
         const response = await axios.post(`${BASE_URL}/${id}/receipts/${receiptId}/void`, { reason });
         return unwrap(response.data);
@@ -142,6 +147,44 @@ export const purchaseOrderApi = {
 
     async getSupplierAdjustments(): Promise<SupplierAdjustment[]> {
         const response = await axios.get('/api/erp/procurement/supplier-adjustments');
+        return unwrap(response.data);
+    },
+
+    async chooseSupplierAdjustmentResolution(
+        adjustmentId: number,
+        resolution: 'replacement' | 'short_fulfillment',
+        procurement_notes?: string,
+    ): Promise<SupplierAdjustment> {
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/resolution`, {
+            resolution,
+            procurement_notes,
+        });
+        return unwrap(response.data);
+    },
+
+    async updateSupplierReplacement(
+        adjustmentId: number,
+        action: 'sent' | 'accepted' | 'declined' | 'in-transit',
+        data?: { decline_reason?: string; supplier_reference?: string; procurement_notes?: string },
+    ): Promise<SupplierAdjustment> {
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/replacement/${action}`, data ?? {});
+        return unwrap(response.data);
+    },
+
+    async closeShortFulfillment(adjustmentId: number, data?: { supplier_reference?: string; procurement_notes?: string }): Promise<SupplierAdjustment> {
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/short-fulfillment/close`, data ?? {});
+        return unwrap(response.data);
+    },
+
+    async updateSupplierReturn(
+        adjustmentId: number,
+        status: 'required' | 'released' | 'received_by_supplier' | 'waived',
+        return_notes?: string,
+    ): Promise<SupplierAdjustment> {
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/return`, {
+            status,
+            return_notes,
+        });
         return unwrap(response.data);
     },
 

@@ -41,13 +41,14 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->receiver = User::factory()->for($this->owner)->create();
         $this->supplier = Supplier::factory()->create(['shop_owner_id' => $this->owner->id]);
         Permission::findOrCreate('procurement.receive_purchase_orders', 'user');
+        Permission::findOrCreate('procurement.manage_suppliers', 'user');
         Permission::findOrCreate('view-inventory', 'user');
         Permission::findOrCreate('access-finance-expenses', 'user');
         Permission::findOrCreate('access-approval-workflow', 'user');
-        $this->receiver->givePermissionTo(['procurement.receive_purchase_orders', 'view-inventory']);
+        $this->receiver->givePermissionTo(['procurement.receive_purchase_orders', 'view-inventory', 'procurement.manage_suppliers']);
     }
 
-    public function test_partial_receipt_posts_inventory_and_submitted_expense_once(): void
+    public function test_complete_receiving_result_waits_for_one_final_receipt_and_submitted_expense(): void
     {
         $finance = User::factory()->for($this->owner)->create();
         $finance->assignRole([
@@ -56,19 +57,24 @@ class PurchaseOrderReceivingTest extends TestCase
         ]);
         [$po, $item, $inventory] = $this->poItem(5, 100);
         $po->update(['payment_terms' => 'Net 30']);
-        $payload = $this->payload('receive-1', $item->id, 3, 1);
+        $payload = $this->payload('receive-1', $item->id, 5, 0);
 
         $response = $this->postReceiptPayload($po, $payload)
             ->assertCreated();
 		$this->assertSame(['message', 'data'], array_keys($response->json()));
 
-        $response->assertJsonPath('data.items.0.accepted_quantity', 2);
+        $response->assertJsonPath('data.items.0.accepted_quantity', 5);
         $this->assertSame('partially_received', $po->fresh()->status);
-        $this->assertSame(12, $inventory->fresh()->available_quantity);
+        $this->assertSame(15, $inventory->fresh()->available_quantity);
+        $this->assertSame(0, Expense::count());
         $this->assertDatabaseHas('stock_movements', [
             'inventory_item_id' => $inventory->id,
-            'quantity_change' => 2,
+            'quantity_change' => 5,
         ]);
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$response->json('data.id')}/finalize")
+            ->assertCreated();
+
         $expense = Expense::sole();
         $this->assertSame('submitted', $expense->status);
         $this->assertNull($expense->approved_by);
@@ -77,7 +83,7 @@ class PurchaseOrderReceivingTest extends TestCase
             ->where('approvable_id', $expense->id)
             ->count());
         $this->assertSame($this->receiver->id, $expense->created_by);
-        $this->assertSame('200.00', $expense->amount);
+        $this->assertSame('500.00', $expense->amount);
         $this->assertSame(now()->addDays(30)->toDateString(), $expense->due_date->toDateString());
         $this->assertSame($response->json('data.id'), $expense->procurement_receipt_id);
         $this->assertDatabaseHas('notifications', [
@@ -109,15 +115,15 @@ class PurchaseOrderReceivingTest extends TestCase
         $this->actingAs($this->receiver, 'user')->getJson("/api/finance/expenses/{$expense->id}")
             ->assertOk()
             ->assertJsonPath('procurement_details.receipt_id', $response->json('data.id'))
-            ->assertJsonPath('procurement_details.items.0.accepted_quantity', 2);
+            ->assertJsonPath('procurement_details.items.0.accepted_quantity', 5);
 
         $this->postReceiptPayload($po, $payload)
-            ->assertOk();
+            ->assertForbidden();
 
         $this->assertSame(1, PurchaseOrderReceipt::count());
         $this->assertSame(1, StockMovement::count());
         $this->assertSame(1, Expense::count());
-        $this->assertSame(12, $inventory->fresh()->available_quantity);
+        $this->assertSame(15, $inventory->fresh()->available_quantity);
     }
 
     public function test_receipt_expense_is_passed_to_eloquent_as_decimal_text(): void
@@ -139,7 +145,10 @@ class PurchaseOrderReceivingTest extends TestCase
             'line_total' => '0.30',
         ]);
 
-        $this->postReceiptPayload($po, $this->payload('decimal-receipt', $item->id, 3, 0))
+        $receipt = $this->postReceiptPayload($po, $this->payload('decimal-receipt', $item->id, 3, 0))
+            ->assertCreated();
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receipt->json('data.id')}/finalize")
             ->assertCreated();
 
         $this->assertSame('0.30', (string) $capturedAmount);
@@ -156,6 +165,7 @@ class PurchaseOrderReceivingTest extends TestCase
             'shop_owner_id' => $this->owner->id,
             'source' => 'manual',
             'status' => 'posted',
+            'receipt_reference' => 'RCV-2026-9999',
             'idempotency_key' => 'notification-rollback',
             'payload_hash' => hash('sha256', 'notification-rollback'),
             'received_by' => $this->receiver->id,
@@ -188,8 +198,10 @@ class PurchaseOrderReceivingTest extends TestCase
         ]);
         [$po, $item] = $this->poItem(2, 100);
 
+        $receiptResponse = $this->postReceiptPayload($po, $this->payload('legacy-workflow', $item->id, 2, 0))
+            ->assertCreated();
         $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('legacy-workflow', $item->id, 2, 0))
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptResponse->json('data.id')}/finalize")
             ->assertCreated();
 
         $expense = Expense::sole();
@@ -227,11 +239,10 @@ class PurchaseOrderReceivingTest extends TestCase
             [$po, $item] = $this->poItem(1, 100);
             $po->update(['payment_terms' => $terms]);
 
-            $response = $this->actingAs($this->receiver, 'user')
-                ->postJson(
-                    "/api/erp/procurement/purchase-orders/{$po->id}/receipts",
-                    $this->payload('due-date-' . str_replace(' ', '-', strtolower($terms)), $item->id, 1, 0)
-                )
+            $response = $this->postReceiptPayload($po, $this->payload('due-date-' . str_replace(' ', '-', strtolower($terms)), $item->id, 1, 0))
+                ->assertCreated();
+            $this->actingAs($this->receiver, 'user')
+                ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$response->json('data.id')}/finalize")
                 ->assertCreated();
 
             $expense = Expense::query()
@@ -254,8 +265,10 @@ class PurchaseOrderReceivingTest extends TestCase
         $finance->assignRole(Role::firstOrCreate(['name' => 'Finance', 'guard_name' => 'user']));
         [$po, $item] = $this->poItem(2, 100);
 
+        $receiptResponse = $this->postReceiptPayload($po, $this->payload('legacy-rejection', $item->id, 2, 0))
+            ->assertCreated();
         $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('legacy-rejection', $item->id, 2, 0))
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptResponse->json('data.id')}/finalize")
             ->assertCreated();
 
         $expense = Expense::sole();
@@ -277,11 +290,11 @@ class PurchaseOrderReceivingTest extends TestCase
     {
         [$po, $item] = $this->poItem(5, 100);
         $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('same-key', $item->id, 1, 0))
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('same-key', $item->id, 5, 0))
             ->assertCreated();
 
         $this->actingAs($this->receiver, 'user')
-            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('same-key', $item->id, 2, 0))
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('same-key', $item->id, 4, 0))
             ->assertConflict();
 
         $this->assertSame(1, PurchaseOrderReceipt::count());
@@ -295,15 +308,29 @@ class PurchaseOrderReceivingTest extends TestCase
             ->assertCreated();
         $this->assertSame('partially_received', $po->fresh()->status);
 
+        $adjustment = SupplierAdjustment::sole();
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$adjustment->id}/resolution", ['resolution' => 'replacement'])
+            ->assertOk();
+        foreach (['sent', 'accepted', 'in-transit'] as $action) {
+            $this->actingAs($this->receiver, 'user')
+                ->postJson("/api/erp/procurement/supplier-adjustments/{$adjustment->id}/replacement/{$action}")
+                ->assertOk();
+        }
+
         $replacementPayload = $this->payload('replacement', $item->id, 2, 0);
-        $replacementPayload['items'][0]['replacement_for_adjustment_id'] = SupplierAdjustment::sole()->id;
+        $replacementPayload['items'][0]['replacement_for_adjustment_id'] = $adjustment->id;
         $this->actingAs($this->receiver, 'user')
             ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $replacementPayload)
             ->assertCreated();
 
-        $this->assertSame('delivered', $po->fresh()->status);
+        $this->assertSame('partially_received', $po->fresh()->status);
         $this->assertSame(15, $inventory->fresh()->available_quantity);
-        $this->assertEqualsCanonicalizing(['300.00', '200.00'], Expense::pluck('amount')->all());
+        $this->assertSame(0, Expense::count());
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/" . PurchaseOrderReceipt::sole()->id . '/finalize')
+            ->assertCreated();
+        $this->assertSame('500.00', Expense::sole()->amount);
     }
 
     public function test_all_size_receipt_posts_exact_inventory_allocations(): void
@@ -344,7 +371,7 @@ class PurchaseOrderReceivingTest extends TestCase
 
         $this->assertSame(4, $inventory->fresh()->available_quantity);
         $this->assertSame([2, 0, 2], $sizes->map(fn ($size) => $size->fresh()->quantity)->all());
-        $this->assertSame('400.00', Expense::sole()->amount);
+        $this->assertSame(0, Expense::count());
         $this->assertSame('partially_received', $po->fresh()->status);
     }
 
@@ -384,6 +411,10 @@ class PurchaseOrderReceivingTest extends TestCase
                     ])->all(),
                 ]],
             ])
+            ->assertCreated();
+
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$response->json('data.id')}/finalize")
             ->assertCreated();
 
         $this->assertSame('delivered', $po->fresh()->status);
@@ -487,8 +518,12 @@ class PurchaseOrderReceivingTest extends TestCase
             'eligible_size_ids' => [$target->id],
         ]);
 
-        $this->actingAs($this->receiver, 'user')
+        $response = $this->actingAs($this->receiver, 'user')
             ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts", $this->payload('specific', $item->id, 2, 0))
+            ->assertCreated();
+
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$response->json('data.id')}/finalize")
             ->assertCreated();
 
         $this->assertSame('delivered', $po->fresh()->status);

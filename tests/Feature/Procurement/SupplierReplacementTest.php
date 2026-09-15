@@ -40,13 +40,14 @@ class SupplierReplacementTest extends TestCase
             'email' => 'supplier@example.test',
         ]);
 
-        foreach (['procurement.receive_purchase_orders', 'view-inventory', 'procurement.view'] as $permission) {
+        foreach (['procurement.receive_purchase_orders', 'view-inventory', 'procurement.view', 'procurement.manage_suppliers'] as $permission) {
             Permission::findOrCreate($permission, 'user');
         }
         $this->receiver->givePermissionTo([
             'procurement.receive_purchase_orders',
             'view-inventory',
             'procurement.view',
+            'procurement.manage_suppliers',
         ]);
     }
 
@@ -67,6 +68,7 @@ class SupplierReplacementTest extends TestCase
         ])->assertCreated();
 
         $adjustment = SupplierAdjustment::sole();
+        $this->chooseReplacement($adjustment);
         $replacementPayload = [
             'idempotency_key' => 'replacement-receipt',
             'items' => [[
@@ -79,22 +81,27 @@ class SupplierReplacementTest extends TestCase
 
         $replacement = $this->receive($po, $replacementPayload)->assertCreated();
         $replacementReceipt = PurchaseOrderReceipt::findOrFail($replacement->json('data.id'));
-        $replacementItem = $replacementReceipt->items()->sole();
+        $replacementItem = $replacementReceipt->items()->where('replacement_for_adjustment_id', $adjustment->id)->sole();
 
         $this->assertSame($adjustment->id, $replacementItem->replacement_for_adjustment_id);
         $this->assertSame(SupplierAdjustment::RESOLUTION_REPLACEMENT, $adjustment->fresh()->resolution);
         $this->assertSame(SupplierAdjustment::STATUS_RESOLVED, $adjustment->fresh()->status);
-        $this->assertSame('delivered', $po->fresh()->status);
+        $this->assertSame('partially_received', $po->fresh()->status);
         $this->assertSame(15, $inventory->fresh()->available_quantity);
-        $this->assertSame(2, Expense::count());
-        $this->assertEqualsCanonicalizing(['300.00', '200.00'], Expense::pluck('amount')->all());
+        $this->assertSame(0, Expense::count());
 
-        $this->receive($po, $replacementPayload)->assertOk()->assertJsonPath('data.id', $replacementReceipt->id);
-        $this->assertSame(2, PurchaseOrderReceipt::count());
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$replacementReceipt->id}/finalize")
+            ->assertCreated();
+        $this->assertSame(1, Expense::count());
+        $this->assertSame('500.00', Expense::sole()->amount);
+
+        $this->receive($po, $replacementPayload)->assertUnprocessable();
+        $this->assertSame(1, PurchaseOrderReceipt::count());
 
         $this->receive($po, array_replace_recursive($replacementPayload, [
             'items' => [['received_quantity' => 1]],
-        ]))->assertConflict();
+        ]))->assertUnprocessable();
     }
 
     public function test_post_payment_replacement_on_completed_po_adds_inventory_without_a_second_expense(): void
@@ -109,6 +116,9 @@ class SupplierReplacementTest extends TestCase
                 'defective_quantity' => 0,
             ]],
         ])->assertCreated();
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptResponse->json('data.id')}/finalize")
+            ->assertCreated();
         $receipt = PurchaseOrderReceipt::findOrFail($receiptResponse->json('data.id'));
         $expense = Expense::sole();
         $expense->update(['status' => 'posted']);
@@ -168,6 +178,7 @@ class SupplierReplacementTest extends TestCase
             ]],
         ])->assertCreated();
         $adjustment = SupplierAdjustment::sole();
+        $this->chooseReplacement($adjustment);
 
         $this->receive($po, [
             'idempotency_key' => 'overclaim-replacement',
@@ -209,6 +220,7 @@ class SupplierReplacementTest extends TestCase
             ]],
         ])->assertCreated();
         $adjustment = SupplierAdjustment::sole();
+        $this->chooseReplacement($adjustment);
 
         $replacement = $this->receive($po, [
             'idempotency_key' => 'defective-replacement',
@@ -226,7 +238,7 @@ class SupplierReplacementTest extends TestCase
         $this->assertSame(1, SupplierAdjustment::count());
         $this->assertSame(2, $adjustment->fresh()->getMedia('defect_evidence')->count());
         $this->assertNotSame(SupplierAdjustment::STATUS_RESOLVED, $adjustment->fresh()->status);
-        $this->assertSame($adjustment->id, PurchaseOrderReceipt::findOrFail($replacement->json('data.id'))->items()->sole()->replacement_for_adjustment_id);
+        $this->assertSame($adjustment->id, PurchaseOrderReceipt::findOrFail($replacement->json('data.id'))->items()->where('replacement_for_adjustment_id', $adjustment->id)->sole()->replacement_for_adjustment_id);
     }
 
     /** @return array{PurchaseOrder, PurchaseOrderItem, InventoryItem} */
@@ -267,6 +279,18 @@ class SupplierReplacementTest extends TestCase
             $payload,
             ['Accept' => 'application/json'],
         );
+    }
+
+    private function chooseReplacement(SupplierAdjustment $adjustment): void
+    {
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$adjustment->id}/resolution", ['resolution' => 'replacement'])
+            ->assertOk();
+        foreach (['sent', 'accepted', 'in-transit'] as $action) {
+            $this->actingAs($this->receiver, 'user')
+                ->postJson("/api/erp/procurement/supplier-adjustments/{$adjustment->id}/replacement/{$action}")
+                ->assertOk();
+        }
     }
 
     private function fakeImage(string $name): UploadedFile

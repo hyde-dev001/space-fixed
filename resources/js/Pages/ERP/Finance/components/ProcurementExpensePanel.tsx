@@ -164,7 +164,7 @@ export default function ProcurementExpensePanel({
 			<div className="grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2">
 				<DetailRow label="Supplier" value={details.supplier_name || "—"} />
 				<DetailRow label="PO Number" value={details.po_number || "—"} />
-				<DetailRow label="Receipt Number" value={details.receipt_number || (details.receipt_id ? `RCV-${details.receipt_id}` : "—")} />
+				<DetailRow label="Receipt Number" value={details.receipt_number || (details.receipt_id ? `Receipt #${details.receipt_id}` : "—")} />
 				<DetailRow label="Ordered" value={details.ordered_quantity ?? details.quantity ?? "—"} />
 				<DetailRow label="Received" value={details.received_quantity ?? "—"} />
 				<DetailRow label="Accepted" value={details.accepted_quantity ?? "—"} />

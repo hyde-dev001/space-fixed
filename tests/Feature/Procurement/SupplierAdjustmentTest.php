@@ -142,8 +142,12 @@ class SupplierAdjustmentTest extends TestCase
         $receiptItem = $receipt->items()->sole();
         $this->assertSame(1, $receiptItem->accepted_quantity);
         $this->assertSame(11, $inventory->fresh()->available_quantity);
-        $this->assertSame('100.00', (string) Expense::sole()->amount);
+        $this->assertSame(0, Expense::count());
         $this->assertSame(1, StockMovement::count());
+
+        $this->actingAs($this->inventoryUser, 'user')
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receipt->id}/finalize")
+            ->assertUnprocessable();
     }
 
     public function test_receiving_defect_idempotency_replays_and_rejects_changed_payloads(): void
@@ -153,7 +157,7 @@ class SupplierAdjustmentTest extends TestCase
             'idempotency_key' => 'receiving-defect-replay',
             'items' => [[
                 'purchase_order_item_id' => $item->id,
-                'received_quantity' => 1,
+                'received_quantity' => 2,
                 'defective_quantity' => 1,
                 'reason_category' => 'damaged',
                 'inventory_notes' => 'Same report replay.',
@@ -189,7 +193,7 @@ class SupplierAdjustmentTest extends TestCase
     {
         [$po, $item] = $this->poItem();
         $receipt = $this->postReceipt($po, $item, [
-            'received_quantity' => 1,
+            'received_quantity' => 2,
             'defective_quantity' => 1,
             'reason_category' => 'wrong_item',
             'inventory_notes' => 'The label does not match the PO.',
@@ -213,7 +217,7 @@ class SupplierAdjustmentTest extends TestCase
         $this->actingAs($foreignUser, 'user')->get(
             "/api/erp/procurement/supplier-adjustments/{$adjustment->id}/evidence/{$media->id}",
         )->assertNotFound();
-        $this->assertSame('posted', $receipt->fresh()->status);
+        $this->assertSame('receiving', $receipt->fresh()->status);
         $this->assertSame(1, $adjustment->fresh()->getMedia('defect_evidence')->count());
     }
 
@@ -221,13 +225,13 @@ class SupplierAdjustmentTest extends TestCase
     {
         [$po, $item, $inventory] = $this->poItem();
         $receipt = $this->postReceipt($po, $item, [
-            'received_quantity' => 1,
+            'received_quantity' => 2,
             'defective_quantity' => 0,
         ]);
         $expense = Expense::sole();
         $expense->update(['status' => 'posted']);
         app(ExpenseSettlementService::class)->record($expense, $this->owner, [
-            'amount' => '100.00',
+            'amount' => '200.00',
             'payment_method' => 'bank_transfer',
             'reference' => 'BANK-POST-PAYMENT-1',
             'paid_at' => now()->toDateTimeString(),
@@ -255,8 +259,8 @@ class SupplierAdjustmentTest extends TestCase
         $this->assertSame(SupplierAdjustment::STATUS_REPORTED, $response->json('data.status'));
         $this->assertSame('completed', $po->fresh()->status);
         $this->assertSame($originalEffects, $receiptItem->fresh()->inventory_effects);
-        $this->assertSame(1, $receiptItem->fresh()->accepted_quantity);
-        $this->assertSame(11, $inventory->fresh()->available_quantity);
+        $this->assertSame(2, $receiptItem->fresh()->accepted_quantity);
+        $this->assertSame(12, $inventory->fresh()->available_quantity);
         $this->assertSame($originalStockMovements, StockMovement::count());
         $this->assertSame($originalSettlements, ExpenseSettlement::count());
     }
@@ -265,13 +269,13 @@ class SupplierAdjustmentTest extends TestCase
     {
         [$po, $item] = $this->poItem();
         $receipt = $this->postReceipt($po, $item, [
-            'received_quantity' => 1,
+            'received_quantity' => 2,
             'defective_quantity' => 0,
         ]);
         $expense = Expense::sole();
         $expense->update(['status' => 'posted']);
         app(ExpenseSettlementService::class)->record($expense, $this->owner, [
-            'amount' => '100.00',
+            'amount' => '200.00',
             'payment_method' => 'bank_transfer',
             'reference' => 'BANK-POST-PAYMENT-2',
             'idempotency_key' => 'settle-post-payment-2',
@@ -279,7 +283,7 @@ class SupplierAdjustmentTest extends TestCase
         $receiptItem = $receipt->items()->sole();
 
         $payload = [
-            'reported_quantity' => 1,
+            'reported_quantity' => 2,
             'reason_category' => 'damaged',
             'inventory_notes' => 'One paid unit failed.',
             'defect_evidence' => [$this->fakeImage('late-defect.jpg')],
@@ -291,7 +295,9 @@ class SupplierAdjustmentTest extends TestCase
 
         $this->withHeaders(['Accept' => 'application/json'])->actingAs($this->inventoryUser, 'user')->post(
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receipt->id}/items/{$receiptItem->id}/post-payment-issues",
-            ['idempotency_key' => 'late-issue-3'] + $payload,
+            ['idempotency_key' => 'late-issue-3'] + array_replace($payload, [
+                'defect_evidence' => [$this->fakeImage('late-defect-duplicate.jpg')],
+            ]),
         )->assertUnprocessable()->assertJsonValidationErrors('reported_quantity');
 
         $this->assertSame(1, SupplierAdjustment::where('issue_stage', SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT)->count());
@@ -346,11 +352,17 @@ class SupplierAdjustmentTest extends TestCase
                 'idempotency_key' => fake()->uuid(),
                 'items' => [array_merge([
                     'purchase_order_item_id' => $item->id,
-                    'received_quantity' => 1,
+                    'received_quantity' => 2,
                     'defective_quantity' => 0,
                 ], $line)],
             ],
         )->assertCreated();
+
+        if ((int) ($line['defective_quantity'] ?? 0) === 0) {
+            $this->actingAs($this->inventoryUser, 'user')
+                ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$response->json('data.id')}/finalize")
+                ->assertCreated();
+        }
 
         return PurchaseOrderReceipt::findOrFail($response->json('data.id'));
     }

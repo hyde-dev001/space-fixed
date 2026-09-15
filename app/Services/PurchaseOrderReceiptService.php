@@ -11,6 +11,7 @@ use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\StockMovement;
+use App\Models\SupplierAdjustment;
 use App\Models\SupplierPaymentAttempt;
 use App\Models\User;
 use Illuminate\Support\Carbon;
@@ -30,35 +31,8 @@ class PurchaseOrderReceiptService
     {
         return DB::transaction(function () use ($purchaseOrder, $receiver, $data): PurchaseOrderReceipt {
             $purchaseOrder = PurchaseOrder::whereKey($purchaseOrder->id)->lockForUpdate()->firstOrFail();
-            $normalizedItems = collect($data['items'])
-                ->map(function ($item): array {
-                    $sizes = collect($item['size_quantities'] ?? [])->map(fn ($size) => [
-                        'inventory_size_id' => (int) $size['inventory_size_id'],
-                        'received_quantity' => (int) $size['received_quantity'],
-                        'defective_quantity' => (int) $size['defective_quantity'],
-                    ])->sortBy('inventory_size_id')->values();
-
-                    $evidence = array_values($item['defect_evidence'] ?? []);
-
-                    return [
-                        'purchase_order_item_id' => (int) $item['purchase_order_item_id'],
-                        'received_quantity' => $sizes->isEmpty() ? (int) $item['received_quantity'] : $sizes->sum('received_quantity'),
-                        'defective_quantity' => $sizes->isEmpty() ? (int) $item['defective_quantity'] : $sizes->sum('defective_quantity'),
-                        'size_quantities' => $sizes->all(),
-                        'replacement_for_adjustment_id' => filled($item['replacement_for_adjustment_id'] ?? null)
-                            ? (int) $item['replacement_for_adjustment_id']
-                            : null,
-                        'reason_category' => filled($item['reason_category'] ?? null) ? trim((string) $item['reason_category']) : null,
-                        'inventory_notes' => filled($item['inventory_notes'] ?? null) ? trim((string) $item['inventory_notes']) : null,
-                        'defect_evidence' => $evidence,
-                        'defect_evidence_hashes' => $this->evidenceHashes($evidence),
-                    ];
-                })
-                ->sortBy('purchase_order_item_id')->values();
-            $payloadHash = hash('sha256', json_encode(
-                $normalizedItems->map(fn (array $item): array => collect($item)->except('defect_evidence')->all())->all(),
-                JSON_THROW_ON_ERROR,
-            ));
+            $normalizedItems = $this->normalizeItems($data['items']);
+            $payloadHash = $this->payloadHash($normalizedItems->all());
             $existing = PurchaseOrderReceipt::where('purchase_order_id', $purchaseOrder->id)
                 ->where('idempotency_key', $data['idempotency_key'])
                 ->lockForUpdate()
@@ -74,68 +48,25 @@ class PurchaseOrderReceiptService
             $hasReplacement = $normalizedItems->contains(fn (array $item): bool => $item['replacement_for_adjustment_id'] !== null);
             $replacementOnly = $hasReplacement
                 && $normalizedItems->every(fn (array $item): bool => $item['replacement_for_adjustment_id'] !== null);
-            $preserveFulfillmentStatus = $replacementOnly
-                && in_array($purchaseOrder->status, ['delivered', 'completed'], true);
-
-            if (($purchaseOrder->is_historical || ! $purchaseOrder->isReceiving()) && ! $replacementOnly) {
-                throw ValidationException::withMessages(['status' => 'Only a current in-transit purchase order can receive items.']);
-            }
-
-            $itemIds = $normalizedItems->pluck('purchase_order_item_id')->all();
-            $orderItems = PurchaseOrderItem::where('purchase_order_id', $purchaseOrder->id)
-                ->whereIn('id', $itemIds)
-                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-            if ($orderItems->count() !== count($itemIds)) {
+            $orderItems = $purchaseOrder->items()->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            if ($orderItems->count() === 0 || $normalizedItems->contains(fn (array $item): bool => ! $orderItems->has($item['purchase_order_item_id']))) {
                 throw ValidationException::withMessages(['items' => 'A receipt item does not belong to this purchase order.']);
             }
 
-            $replacementAdjustments = [];
-            foreach ($normalizedItems as $input) {
-                $orderItem = $orderItems[$input['purchase_order_item_id']];
-                $replacementAdjustment = $input['replacement_for_adjustment_id']
-                    ? $this->supplierAdjustmentService->validateReplacement(
-                        (int) $input['replacement_for_adjustment_id'],
-                        $purchaseOrder,
-                        $orderItem,
-                        $input['received_quantity'] - $input['defective_quantity'],
-                    )
-                    : null;
-                if ($replacementAdjustment) {
-                    $replacementAdjustments[$orderItem->id] = $replacementAdjustment;
-                }
-                $eligibleSizeIds = array_map('intval', $orderItem->eligible_size_ids ?? []);
-                $submittedSizeIds = array_column($input['size_quantities'], 'inventory_size_id');
-                if (count($eligibleSizeIds) > 1
-                    && array_values(array_diff($eligibleSizeIds, $submittedSizeIds)) !== []) {
-                    throw ValidationException::withMessages(['items' => 'Every snapshotted size requires a receipt allocation.']);
-                }
-                if (array_diff($submittedSizeIds, $eligibleSizeIds) !== []) {
-                    throw ValidationException::withMessages(['items' => 'A size allocation does not belong to this purchase order item.']);
-                }
-                $accepted = $input['received_quantity'] - $input['defective_quantity'];
-                if ($input['defective_quantity'] > $input['received_quantity']) {
-                    throw ValidationException::withMessages(['items' => 'Defective quantity cannot exceed received quantity.']);
-                }
-                $remaining = $orderItem->remainingQuantity();
-                if (! $replacementAdjustment) {
-                    if ($input['received_quantity'] > $remaining) {
-                        throw ValidationException::withMessages(['items' => 'Received quantity exceeds the remaining ordered quantity.']);
-                    }
-                    if ($accepted > $remaining) {
-                        throw ValidationException::withMessages(['items' => 'Accepted quantity exceeds the remaining ordered quantity.']);
-                    }
-                }
-                if (! $replacementAdjustment) {
-                    $this->validatePerSizeQuantities($orderItem, $input['size_quantities']);
-                }
+            if ($replacementOnly) {
+                return $this->postReplacement($purchaseOrder, $receiver, $data, $normalizedItems, $orderItems, $payloadHash);
+            }
+            if ($hasReplacement) {
+                throw ValidationException::withMessages(['items' => 'A receiving result cannot mix original and replacement units.']);
             }
 
+            $this->assertInitialReceiving($purchaseOrder, $normalizedItems, $orderItems);
             $receivedAt = Carbon::parse($data['received_at'] ?? now());
             $receipt = PurchaseOrderReceipt::create([
                 'purchase_order_id' => $purchaseOrder->id,
                 'shop_owner_id' => $purchaseOrder->shop_owner_id,
                 'source' => 'manual',
-                'status' => 'posted',
+                'status' => PurchaseOrderReceipt::STATUS_RECEIVING,
                 'idempotency_key' => $data['idempotency_key'],
                 'payload_hash' => $payloadHash,
                 'received_by' => $receiver->id,
@@ -143,14 +74,15 @@ class PurchaseOrderReceiptService
                 'notes' => $data['notes'] ?? null,
             ]);
 
-            $expenseAmountCents = 0;
             foreach ($normalizedItems as $input) {
                 $orderItem = $orderItems[$input['purchase_order_item_id']];
-                $replacementAdjustment = $replacementAdjustments[$orderItem->id] ?? null;
                 $accepted = $input['received_quantity'] - $input['defective_quantity'];
                 $receiptItem = $receipt->items()->create([
                     'purchase_order_item_id' => $orderItem->id,
-                    'replacement_for_adjustment_id' => $input['replacement_for_adjustment_id'],
+                    'idempotency_key' => $data['idempotency_key'],
+                    'payload_hash' => $payloadHash,
+                    'replacement_attempt' => 0,
+                    'replacement_for_adjustment_id' => null,
                     'received_quantity' => $input['received_quantity'],
                     'defective_quantity' => $input['defective_quantity'],
                     'accepted_quantity' => $accepted,
@@ -161,24 +93,8 @@ class PurchaseOrderReceiptService
                     $receiptItem->update([
                         'inventory_effects' => $this->postInventory($purchaseOrder, $orderItem, $receiptItem, $accepted, $input['size_quantities'], $receiver->id),
                     ]);
-                    if ($input['replacement_for_adjustment_id'] === null
-                        || $replacementAdjustment?->issue_stage === 'receiving_defect') {
-                        $expenseAmountCents += $accepted * $this->toCents($orderItem->unit_cost);
-                    }
                 }
-
-                if ($replacementAdjustment) {
-                    $this->supplierAdjustmentService->recordReplacementReceipt(
-                        $replacementAdjustment,
-                        $receiptItem,
-                        $receiver,
-                        [
-                            'reason_category' => $input['reason_category'],
-                            'inventory_notes' => $input['inventory_notes'],
-                            'defect_evidence' => $input['defect_evidence'],
-                        ],
-                    );
-                } elseif ($input['defective_quantity'] > 0) {
+                if ($input['defective_quantity'] > 0) {
                     $this->supplierAdjustmentService->reportReceivingDefect($receiptItem, $receiver, [
                         'reason_category' => $input['reason_category'],
                         'inventory_notes' => $input['inventory_notes'],
@@ -187,20 +103,321 @@ class PurchaseOrderReceiptService
                 }
             }
 
-            if ($expenseAmountCents > 0) {
-                $this->expenseApprovalService->submitProcurementExpense(
-                    $receipt,
-                    $receiver,
-                    $this->formatCents($expenseAmountCents),
-                );
-            }
-
-            if (! $preserveFulfillmentStatus) {
-                $this->recalculatePurchaseOrder($purchaseOrder, $receiver->id, $receivedAt);
-            }
+            $this->recalculatePendingPurchaseOrder($purchaseOrder, $receipt);
 
             return $receipt;
         });
+    }
+
+    public function finalize(
+        PurchaseOrder $purchaseOrder,
+        PurchaseOrderReceipt $receipt,
+        User $actor,
+    ): PurchaseOrderReceipt {
+        return DB::transaction(function () use ($purchaseOrder, $receipt, $actor): PurchaseOrderReceipt {
+            $purchaseOrder = PurchaseOrder::query()->whereKey($purchaseOrder->id)->lockForUpdate()->firstOrFail();
+            $receipt = PurchaseOrderReceipt::query()
+                ->where('purchase_order_id', $purchaseOrder->id)
+                ->whereKey($receipt->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($receipt->isFinal()) {
+                return $receipt;
+            }
+            if ($receipt->status !== PurchaseOrderReceipt::STATUS_RECEIVING) {
+                throw ValidationException::withMessages(['receipt' => 'Only a submitted receiving result can become the final receipt.']);
+            }
+            if ($purchaseOrder->receipts()
+                ->where('status', PurchaseOrderReceipt::STATUS_POSTED)
+                ->whereNull('voided_at')
+                ->where('id', '<>', $receipt->id)
+                ->exists()) {
+                throw ValidationException::withMessages(['receipt' => 'This purchase order already has its one final receipt.']);
+            }
+            if ($purchaseOrder->is_historical || ! $purchaseOrder->isReceiving()) {
+                throw ValidationException::withMessages(['status' => 'Only a current receiving purchase order can be finalized.']);
+            }
+
+            $initialItems = $receipt->items()
+                ->whereNull('replacement_for_adjustment_id')
+                ->orderBy('id')->lockForUpdate()->get();
+            $orderItems = $purchaseOrder->items()->orderBy('id')->lockForUpdate()->get()->keyBy('id');
+            if ($initialItems->count() !== $orderItems->count()) {
+                throw ValidationException::withMessages(['receipt' => 'Every purchase-order item must be physically accounted for before finalization.']);
+            }
+            foreach ($orderItems as $orderItem) {
+                $received = (int) $initialItems->firstWhere('purchase_order_item_id', $orderItem->id)?->received_quantity;
+                if ($received !== (int) $orderItem->ordered_quantity) {
+                    throw ValidationException::withMessages(['receipt' => 'The complete original supplier delivery is required before finalization.']);
+                }
+            }
+
+            $adjustments = SupplierAdjustment::query()
+                ->where('issue_stage', SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT)
+                ->whereHas('receiptItem', fn ($query) => $query->where('purchase_order_receipt_id', $receipt->id))
+                ->lockForUpdate()->get();
+            foreach ($adjustments as $adjustment) {
+                if ($adjustment->status !== SupplierAdjustment::STATUS_RESOLVED) {
+                    throw ValidationException::withMessages(['receipt' => 'Every supplier adjustment must be resolved before finalization.']);
+                }
+                if (in_array($adjustment->return_status, [SupplierAdjustment::RETURN_REQUIRED, SupplierAdjustment::RETURN_RELEASED], true)) {
+                    throw ValidationException::withMessages(['receipt' => 'A required defective return must be received by the supplier or waived before finalization.']);
+                }
+            }
+
+            $reference = $this->nextReceiptReference((int) $receipt->shop_owner_id, $receipt->received_at);
+            $receipt->update([
+                'status' => PurchaseOrderReceipt::STATUS_POSTED,
+                'receipt_reference' => $reference,
+            ]);
+
+            $this->markPurchaseOrderFinalized($purchaseOrder, $receipt);
+
+            $payableCents = 0;
+            foreach ($receipt->items()->lockForUpdate()->get() as $receiptItem) {
+                $orderItem = $orderItems->get($receiptItem->purchase_order_item_id);
+                $payableCents += (int) $receiptItem->accepted_quantity * $this->toCents($orderItem?->unit_cost);
+            }
+            if ($payableCents > 0) {
+                $this->expenseApprovalService->submitProcurementExpense($receipt, $actor, $this->formatCents($payableCents));
+            }
+
+            return $receipt;
+        }, 3);
+    }
+
+    private function normalizeItems(array $items)
+    {
+        return collect($items)->map(function ($item): array {
+            $sizes = collect($item['size_quantities'] ?? [])->map(fn ($size) => [
+                'inventory_size_id' => (int) $size['inventory_size_id'],
+                'received_quantity' => (int) $size['received_quantity'],
+                'defective_quantity' => (int) $size['defective_quantity'],
+            ])->sortBy('inventory_size_id')->values();
+            $evidence = array_values($item['defect_evidence'] ?? []);
+
+            return [
+                'purchase_order_item_id' => (int) $item['purchase_order_item_id'],
+                'received_quantity' => $sizes->isEmpty() ? (int) $item['received_quantity'] : $sizes->sum('received_quantity'),
+                'defective_quantity' => $sizes->isEmpty() ? (int) $item['defective_quantity'] : $sizes->sum('defective_quantity'),
+                'size_quantities' => $sizes->all(),
+                'replacement_for_adjustment_id' => filled($item['replacement_for_adjustment_id'] ?? null)
+                    ? (int) $item['replacement_for_adjustment_id'] : null,
+                'reason_category' => filled($item['reason_category'] ?? null) ? trim((string) $item['reason_category']) : null,
+                'inventory_notes' => filled($item['inventory_notes'] ?? null) ? trim((string) $item['inventory_notes']) : null,
+                'defect_evidence' => $evidence,
+                'defect_evidence_hashes' => $this->evidenceHashes($evidence),
+            ];
+        })->sortBy('purchase_order_item_id')->values();
+    }
+
+    private function payloadHash(array $items): string
+    {
+        return hash('sha256', json_encode(
+            collect($items)->map(fn (array $item): array => collect($item)->except('defect_evidence')->all())->all(),
+            JSON_THROW_ON_ERROR,
+        ));
+    }
+
+    private function assertInitialReceiving(PurchaseOrder $purchaseOrder, $items, $orderItems): void
+    {
+        if ($purchaseOrder->is_historical || ! $purchaseOrder->isReceiving()) {
+            throw ValidationException::withMessages(['status' => 'Only a current in-transit purchase order can receive items.']);
+        }
+        if ($purchaseOrder->receipts()->whereIn('status', [PurchaseOrderReceipt::STATUS_RECEIVING, PurchaseOrderReceipt::STATUS_POSTED])->exists()) {
+            throw ValidationException::withMessages(['receipt' => 'This purchase order already has its one receiving result or final receipt.']);
+        }
+        if ($items->count() !== $orderItems->count()) {
+            throw ValidationException::withMessages(['items' => 'Every purchase-order item must be physically accounted for in one receiving result.']);
+        }
+
+        foreach ($items as $input) {
+            $orderItem = $orderItems->get($input['purchase_order_item_id']);
+            if ((int) $input['received_quantity'] !== (int) $orderItem->ordered_quantity) {
+                throw ValidationException::withMessages(['items' => 'Partial original supplier deliveries cannot be finalized. Account for the complete ordered quantity.']);
+            }
+            if ((int) $input['defective_quantity'] > (int) $input['received_quantity']) {
+                throw ValidationException::withMessages(['items' => 'Defective quantity cannot exceed received quantity.']);
+            }
+            $this->validateSizeShape($orderItem, $input['size_quantities']);
+            $this->validatePerSizeQuantities($orderItem, $input['size_quantities']);
+        }
+    }
+
+    private function validateSizeShape(PurchaseOrderItem $orderItem, array $sizeQuantities): void
+    {
+        $eligibleSizeIds = array_map('intval', $orderItem->eligible_size_ids ?? []);
+        $submittedSizeIds = array_column($sizeQuantities, 'inventory_size_id');
+        if (count($eligibleSizeIds) > 1 && array_values(array_diff($eligibleSizeIds, $submittedSizeIds)) !== []) {
+            throw ValidationException::withMessages(['items' => 'Every snapshotted size requires a receipt allocation.']);
+        }
+        if (array_diff($submittedSizeIds, $eligibleSizeIds) !== []) {
+            throw ValidationException::withMessages(['items' => 'A size allocation does not belong to this purchase order item.']);
+        }
+    }
+
+    private function postReplacement(PurchaseOrder $purchaseOrder, User $receiver, array $data, $items, $orderItems, string $payloadHash): PurchaseOrderReceipt
+    {
+        $adjustments = [];
+        foreach ($items as $input) {
+            $orderItem = $orderItems->get($input['purchase_order_item_id']);
+            $adjustment = $this->supplierAdjustmentService->validateReplacement(
+                (int) $input['replacement_for_adjustment_id'],
+                $purchaseOrder,
+                $orderItem,
+                $input['received_quantity'] - $input['defective_quantity'],
+                $input['received_quantity'],
+            );
+            $this->validateSizeShape($orderItem, $input['size_quantities']);
+            $adjustments[] = $adjustment;
+        }
+        $issueStages = collect($adjustments)->pluck('issue_stage')->unique()->values();
+        if ($issueStages->count() !== 1) {
+            throw ValidationException::withMessages(['items' => 'Replacement items must belong to one receiving workflow.']);
+        }
+
+        if ($issueStages->first() === SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT) {
+            $receipt = PurchaseOrderReceipt::query()
+                ->where('purchase_order_id', $purchaseOrder->id)
+                ->where('status', PurchaseOrderReceipt::STATUS_RECEIVING)
+                ->lockForUpdate()->first();
+            if (! $receipt) {
+                throw ValidationException::withMessages(['receipt' => 'Receiving replacements must remain on the original pre-final receiving result.']);
+            }
+            $existingItems = $receipt->items()->where('idempotency_key', $data['idempotency_key'])->lockForUpdate()->get();
+            if ($existingItems->isNotEmpty()) {
+                if ($existingItems->count() !== $items->count()
+                    || $existingItems->pluck('payload_hash')->sort()->values()->all() !== collect($items)->map(fn (array $item): string => $this->payloadHash([$item]))->sort()->values()->all()) {
+                    throw new HttpException(409, 'This idempotency key was already used with different replacement quantities.');
+                }
+                return $receipt;
+            }
+
+            foreach ($items as $index => $input) {
+                $orderItem = $orderItems[$input['purchase_order_item_id']];
+                $adjustment = $adjustments[$index];
+                $replacementAttempt = ((int) $receipt->items()
+                    ->where('purchase_order_item_id', $orderItem->id)
+                    ->where('replacement_for_adjustment_id', $adjustment->id)
+                    ->max('replacement_attempt')) + 1;
+                $receiptItem = $receipt->items()->create([
+                    'purchase_order_item_id' => $orderItem->id,
+                    'idempotency_key' => $data['idempotency_key'],
+                    'payload_hash' => $this->payloadHash([$input]),
+                    'replacement_for_adjustment_id' => $adjustment->id,
+                    'replacement_attempt' => $replacementAttempt,
+                    'received_quantity' => $input['received_quantity'],
+                    'defective_quantity' => $input['defective_quantity'],
+                    'accepted_quantity' => $input['received_quantity'] - $input['defective_quantity'],
+                    'inventory_effects' => [],
+                ]);
+                if ($receiptItem->accepted_quantity > 0) {
+                    $receiptItem->update([
+                        'inventory_effects' => $this->postInventory($purchaseOrder, $orderItem, $receiptItem, $receiptItem->accepted_quantity, $input['size_quantities'], $receiver->id),
+                    ]);
+                }
+                $this->supplierAdjustmentService->recordReplacementReceipt($adjustment, $receiptItem, $receiver, [
+                    'reason_category' => $input['reason_category'],
+                    'inventory_notes' => $input['inventory_notes'],
+                    'defect_evidence' => $input['defect_evidence'],
+                ]);
+            }
+
+            $receipt->wasRecentlyCreated = true;
+
+            return $receipt;
+        }
+
+        $receivedAt = Carbon::parse($data['received_at'] ?? now());
+        $receipt = PurchaseOrderReceipt::create([
+            'purchase_order_id' => $purchaseOrder->id,
+            'shop_owner_id' => $purchaseOrder->shop_owner_id,
+            'source' => 'manual',
+            'status' => PurchaseOrderReceipt::STATUS_POSTED,
+            'idempotency_key' => $data['idempotency_key'],
+            'payload_hash' => $payloadHash,
+            'received_by' => $receiver->id,
+            'received_at' => $receivedAt,
+            'notes' => $data['notes'] ?? null,
+        ]);
+        foreach ($items as $index => $input) {
+            $orderItem = $orderItems[$input['purchase_order_item_id']];
+            $adjustment = $adjustments[$index];
+            $receiptItem = $receipt->items()->create([
+                'purchase_order_item_id' => $orderItem->id,
+                'idempotency_key' => $data['idempotency_key'],
+                'payload_hash' => $this->payloadHash([$input]),
+                'replacement_for_adjustment_id' => $adjustment->id,
+                'replacement_attempt' => 1,
+                'received_quantity' => $input['received_quantity'],
+                'defective_quantity' => $input['defective_quantity'],
+                'accepted_quantity' => $input['received_quantity'] - $input['defective_quantity'],
+                'inventory_effects' => [],
+            ]);
+            if ($receiptItem->accepted_quantity > 0) {
+                $receiptItem->update([
+                    'inventory_effects' => $this->postInventory($purchaseOrder, $orderItem, $receiptItem, $receiptItem->accepted_quantity, $input['size_quantities'], $receiver->id),
+                ]);
+            }
+            $this->supplierAdjustmentService->recordReplacementReceipt($adjustment, $receiptItem, $receiver, [
+                'reason_category' => $input['reason_category'],
+                'inventory_notes' => $input['inventory_notes'],
+                'defect_evidence' => $input['defect_evidence'],
+            ]);
+        }
+
+        $receipt->wasRecentlyCreated = true;
+
+        return $receipt;
+    }
+
+    private function recalculatePendingPurchaseOrder(PurchaseOrder $purchaseOrder, PurchaseOrderReceipt $receipt): void
+    {
+        $initialItems = $receipt->items()->whereNull('replacement_for_adjustment_id');
+        $purchaseOrder->update([
+            'received_quantity' => (clone $initialItems)->sum('received_quantity'),
+            'defective_quantity' => (clone $initialItems)->sum('defective_quantity'),
+            'status' => 'partially_received',
+        ]);
+    }
+
+    private function markPurchaseOrderFinalized(PurchaseOrder $purchaseOrder, PurchaseOrderReceipt $receipt): void
+    {
+        $initialItems = $receipt->items()->whereNull('replacement_for_adjustment_id');
+        $purchaseOrder->update([
+            'received_quantity' => (clone $initialItems)->sum('received_quantity'),
+            'defective_quantity' => (clone $initialItems)->sum('defective_quantity'),
+            'status' => 'delivered',
+            'delivered_by' => $receipt->received_by,
+            'delivered_date' => $receipt->received_at,
+            'actual_delivery_date' => $receipt->received_at?->toDateString(),
+        ]);
+    }
+
+    private function nextReceiptReference(int $shopId, Carbon $receivedAt): string
+    {
+        $year = (int) $receivedAt->year;
+        $now = now();
+        DB::table('shop_procurement_receipt_sequences')->insertOrIgnore([
+            'shop_owner_id' => $shopId,
+            'receipt_year' => $year,
+            'next_number' => 1,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ]);
+        $sequence = DB::table('shop_procurement_receipt_sequences')
+            ->where('shop_owner_id', $shopId)
+            ->where('receipt_year', $year)
+            ->lockForUpdate()
+            ->first();
+        $number = (int) $sequence->next_number;
+        DB::table('shop_procurement_receipt_sequences')->where('id', $sequence->id)->update([
+            'next_number' => $number + 1,
+            'updated_at' => now(),
+        ]);
+
+        return sprintf('RCV-%d-%04d', $year, $number);
     }
 
     private function validatePerSizeQuantities(PurchaseOrderItem $orderItem, array $sizeQuantities): void

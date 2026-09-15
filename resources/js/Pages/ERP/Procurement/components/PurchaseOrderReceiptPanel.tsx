@@ -47,10 +47,22 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 		}).catch(() => setReplacementAdjustments([]));
 	}, [mayReceive, order.id]);
 
-	const canReceiveNormally = !order.is_historical && ["in_transit", "partially_received"].includes(order.status);
+	const pendingReceipt = (order.receipts ?? []).find((receipt) => receipt.status === "receiving");
+	const pendingInitialItems = pendingReceipt?.items.filter((item) => !item.replacement_for_adjustment_id) ?? [];
+	const canFinalize = Boolean(pendingReceipt)
+		&& pendingInitialItems.length === (order.items ?? []).length
+		&& (order.items ?? []).every((item) => pendingInitialItems.find((line) => line.purchase_order_item_id === item.id)?.received_quantity === item.ordered_quantity)
+		&& replacementAdjustments.every((adjustment) => adjustment.status === "resolved")
+		&& replacementAdjustments.every((adjustment) => !["required", "released"].includes(adjustment.return_status ?? ""));
+	const finalPayableQuantity = pendingReceipt?.items.reduce((sum, item) => sum + item.accepted_quantity, 0) ?? 0;
+	const canReceiveNormally = !pendingReceipt && !order.is_historical && ["in_transit", "partially_received"].includes(order.status);
 	const canReceiveReplacement = ["delivered", "completed"].includes(order.status) && replacementAdjustments.length > 0;
-	const canReceive = mayReceive && (canReceiveNormally || canReceiveReplacement);
+	const canReceivePendingReplacement = Boolean(pendingReceipt) && replacementAdjustments.some((adjustment) => adjustment.issue_stage === "receiving_defect" && adjustment.replacement_status === "in_transit");
+	const canReceive = mayReceive && (canReceiveNormally || canReceiveReplacement || canReceivePendingReplacement);
 	const showReplacementColumn = canReceive && replacementAdjustments.length > 0;
+	const selectableReplacementAdjustments = pendingReceipt
+		? replacementAdjustments.filter((adjustment) => adjustment.replacement_status === "in_transit")
+		: replacementAdjustments;
 
 	const setQuantity = (itemId: number, field: "received" | "defective", value: string) => {
 		setQuantities((current) => ({
@@ -134,15 +146,24 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 			await Swal.fire("Defect details required", "Choose a category, add notes, and attach at least one image for every defective line.", "warning");
 			return;
 		}
+		const replacementMode = items.some((item) => Boolean(item.replacement_for_adjustment_id));
+		if (!replacementMode && items.length !== (order.items ?? []).length) {
+			await Swal.fire("Complete delivery required", "Account for every purchase-order item in one receiving result.", "warning");
+			return;
+		}
+		if (replacementMode && items.some((item) => !item.replacement_for_adjustment_id)) {
+			await Swal.fire("Choose one receiving mode", "Submit the original delivery or a supplier replacement, not both together.", "warning");
+			return;
+		}
 		const accepted = items.reduce((sum, item) => sum + item.received_quantity - item.defective_quantity, 0);
 		const confirmation = await Swal.fire({
-			title: "Post this receipt?",
+			title: replacementMode ? "Receive this supplier replacement?" : "Submit this receiving result?",
 			text: accepted > 0
-				? `${accepted} accepted unit${accepted === 1 ? "" : "s"} will be added to stock and submitted to Finance as a pending expense.`
-				: "All entered units are defective, so no stock or expense will be posted.",
+				? `${accepted} accepted unit${accepted === 1 ? "" : "s"} will be added to usable stock. Finance remains blocked until the final receipt is posted.`
+				: "All entered units are defective, so no usable stock or Finance expense will be created.",
 			icon: "question",
 			showCancelButton: true,
-			confirmButtonText: "Post receipt",
+			confirmButtonText: replacementMode ? "Receive replacement" : "Submit result",
 		});
 		if (!confirmation.isConfirmed) return;
 
@@ -158,11 +179,22 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 			setNotes("");
 			setIdempotencyKey(null);
 			await onChanged();
-			await Swal.fire("Receipt posted", accepted > 0 ? "Stock was updated and the expense is pending Finance review." : "The defective delivery was recorded without changing stock or Finance.", "success");
+			await Swal.fire(replacementMode ? "Replacement received" : "Receiving result submitted", accepted > 0 ? "Usable stock was updated. Post the one final receipt after every supplier adjustment is resolved." : "The defective delivery was recorded without changing usable stock or Finance.", "success");
 		} catch (error: any) {
 			await Swal.fire("Receipt not posted", error?.response?.data?.message ?? "Check the quantities and try again.", "error");
 		} finally {
 			setSaving(false);
+		}
+	};
+
+	const finalizeReceipt = async () => {
+		if (!pendingReceipt) return;
+		try {
+			await purchaseOrderApi.finalizeReceipt(order.id, pendingReceipt.id);
+			await onChanged();
+			await Swal.fire("Final receipt posted", "The one final receipt was posted and Finance can now review the payable expense.", "success");
+		} catch (error: any) {
+			await Swal.fire("Not ready to finalize", error?.response?.data?.message ?? "Resolve all supplier adjustments and required returns first.", "error");
 		}
 	};
 
@@ -207,7 +239,7 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 										{canReceive && <>
 											<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Received ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.received ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "received", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Received ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
 											<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Defective ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.defective ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Defective ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
-											{showReplacementColumn && <td className="px-2"><select aria-label={`Receipt type ${item.product_name}`} value={replacementByItem[item.id] ?? ""} onChange={(event) => { const value = event.target.value; setReplacementByItem((current) => ({ ...current, [item.id]: value ? Number(value) : "" })); setIdempotencyKey(null); }} className="w-40 rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800"><option value="">Regular receipt</option>{replacementAdjustments.filter((adjustment) => adjustment.purchase_order_item_id === item.id).map((adjustment) => <option key={adjustment.id} value={adjustment.id}>Replacement #{adjustment.id}</option>)}</select></td>}
+										{showReplacementColumn && <td className="px-2"><select aria-label={`Receipt type ${item.product_name}`} value={replacementByItem[item.id] ?? ""} onChange={(event) => { const value = event.target.value; setReplacementByItem((current) => ({ ...current, [item.id]: value ? Number(value) : "" })); setIdempotencyKey(null); }} className="w-40 rounded border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800"><option value="">Regular receipt</option>{selectableReplacementAdjustments.filter((adjustment) => adjustment.purchase_order_item_id === item.id).map((adjustment) => <option key={adjustment.id} value={adjustment.id}>Replacement #{adjustment.id}</option>)}</select></td>}
 										</>}
 									</tr>
 									{canReceive && ((perSize
@@ -238,16 +270,22 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 				</table>
 			</div>
 
+			{pendingReceipt && <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
+				<p className="font-semibold">{canFinalize ? "Ready to finalize" : "Awaiting supplier resolution"}</p>
+				<p className="mt-1">Initial accepted: {pendingInitialItems.reduce((sum, item) => sum + item.accepted_quantity, 0)} · Replacement accepted: {pendingReceipt.items.filter((item) => item.replacement_for_adjustment_id).reduce((sum, item) => sum + item.accepted_quantity, 0)} · Final payable quantity: {finalPayableQuantity}</p>
+				{canFinalize && <button type="button" disabled={saving} onClick={() => void finalizeReceipt()} className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">Post Final Receipt</button>}
+			</div>}
+
 			{canReceive && <div className="flex flex-col sm:flex-row gap-2">
 				<input value={notes} onChange={(event) => { setNotes(event.target.value); setIdempotencyKey(null); }} placeholder="Optional receipt notes" className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm" />
-				<button type="button" disabled={saving} onClick={receive} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? "Posting..." : "Post receipt"}</button>
+				<button type="button" disabled={saving} onClick={receive} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? "Submitting..." : pendingReceipt ? "Receive replacement" : "Submit receiving result"}</button>
 			</div>}
 
 			<div className="space-y-2">
 				<h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Receipt history</h4>
 				{(order.receipts ?? []).length === 0 ? <p className="text-sm text-gray-500">No receipts yet.</p> : (order.receipts ?? []).map((receipt) => (
 					<div key={receipt.id} className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 dark:bg-gray-800/40 p-3">
-						<div><p className="text-sm font-medium">Receipt #{receipt.id} · {receipt.status}</p><p className="text-xs text-gray-500">{new Date(receipt.received_at).toLocaleString()} · {receipt.items.reduce((sum, item) => sum + item.accepted_quantity, 0)} accepted</p></div>
+						<div><p className="text-sm font-medium">{receipt.status === "receiving" ? "Receiving result" : (receipt.receipt_reference ?? `Receipt #${receipt.id}`)} · {receipt.status}</p><p className="text-xs text-gray-500">{new Date(receipt.received_at).toLocaleString()} · {receipt.items.reduce((sum, item) => sum + item.accepted_quantity, 0)} accepted</p></div>
 						{canVoid && receipt.source === "manual" && receipt.status === "posted" && order.status !== "completed" && <button type="button" onClick={() => voidReceipt(receipt.id)} className="text-sm font-medium text-red-600 hover:underline">Void</button>}
 					</div>
 				))}

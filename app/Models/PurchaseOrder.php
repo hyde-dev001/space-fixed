@@ -112,7 +112,12 @@ class PurchaseOrder extends Model
 
     public function activeReceipts(): HasMany
     {
-        return $this->receipts()->where('status', 'posted');
+        return $this->receipts()->where('status', PurchaseOrderReceipt::STATUS_POSTED);
+    }
+
+    public function receivingReceipt(): HasMany
+    {
+        return $this->receipts()->where('status', PurchaseOrderReceipt::STATUS_RECEIVING);
     }
 
     public function orderer(): BelongsTo
@@ -299,7 +304,11 @@ class PurchaseOrder extends Model
     {
         $this->requireStatus('delivered');
         $items = $this->items()->get();
-        if ($items->isEmpty() || $items->contains(fn (PurchaseOrderItem $item) => $item->remainingQuantity() > 0)) {
+        $hasFinalReceipt = $this->receipts()
+            ->where('status', PurchaseOrderReceipt::STATUS_POSTED)
+            ->whereNotNull('receipt_reference')
+            ->exists();
+        if ($items->isEmpty() || (! $hasFinalReceipt && $items->contains(fn (PurchaseOrderItem $item) => $item->remainingQuantity() > 0))) {
             throw ValidationException::withMessages(['status' => 'All purchase-order items must be fully received before completion.']);
         }
 

@@ -11,6 +11,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceiptItem;
 use App\Models\Supplier;
+use App\Models\SupplierAdjustment;
 use App\Enums\ApprovalStatus;
 use App\Enums\NotificationType;
 use App\Support\Finance\FinanceDomainException;
@@ -30,6 +31,9 @@ class ExpenseApprovalService
         User $creator,
         string|int $amount
     ): Expense {
+        if (! $receipt->isFinal()) {
+            throw new FinanceDomainException('A procurement expense requires the one posted final receipt.', 'INVALID_STATE', 422);
+        }
         $purchaseOrder = $receipt->purchaseOrder()->with('supplier')->firstOrFail();
         $dueDate = $this->deriveSupplierDueDate($purchaseOrder->payment_terms, $receipt->received_at);
         $amountText = $this->formatCents($this->toCents($amount));
@@ -37,7 +41,7 @@ class ExpenseApprovalService
         $expense = Expense::firstOrCreate(
             ['procurement_receipt_id' => $receipt->id],
             [
-                'reference' => "PROC-RCV-{$receipt->id}",
+                'reference' => "PROC-{$purchaseOrder->shop_owner_id}-" . ($receipt->receipt_reference ?: "LEGACY-RCV-{$receipt->id}"),
                 'date' => $receipt->received_at->toDateString(),
                 'due_date' => $dueDate,
                 'category' => 'Procurement',
@@ -149,8 +153,19 @@ class ExpenseApprovalService
                 throw new FinanceDomainException('The supplier is not available in this shop.', 'INVALID_STATE', 422);
             }
 
-            if ((string) $receipt->status !== 'posted' || $receipt->voided_at !== null) {
+            if (! $receipt->isFinal() || $receipt->voided_at !== null) {
                 throw new FinanceDomainException('Only a posted, nonvoid procurement receipt can be released.', 'INVALID_STATE', 422);
+            }
+
+            $adjustments = SupplierAdjustment::query()
+                ->where('issue_stage', SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT)
+                ->whereHas('receiptItem', fn ($query) => $query->where('purchase_order_receipt_id', $receipt->id))
+                ->lockForUpdate()->get();
+            foreach ($adjustments as $adjustment) {
+                if ($adjustment->status !== SupplierAdjustment::STATUS_RESOLVED
+                    || in_array($adjustment->return_status, [SupplierAdjustment::RETURN_REQUIRED, SupplierAdjustment::RETURN_RELEASED], true)) {
+                    throw new FinanceDomainException('Supplier adjustments and required returns must be resolved before Finance release.', 'INVALID_STATE', 422);
+                }
             }
 
             $receiptItems = PurchaseOrderReceiptItem::query()

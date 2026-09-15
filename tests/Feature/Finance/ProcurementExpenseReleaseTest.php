@@ -158,7 +158,7 @@ class ProcurementExpenseReleaseTest extends TestCase
         $this->actingAs($finance, 'user')
             ->getJson("/api/finance/expenses/{$expense->id}")
             ->assertOk()
-            ->assertJsonPath('procurement_details.receipt_number', 'RCV-' . $expense->procurement_receipt_id)
+            ->assertJsonPath('procurement_details.receipt_number', 'RCV-2026-0001')
             ->assertJsonPath('procurement_details.ordered_quantity', 5)
             ->assertJsonPath('procurement_details.received_quantity', 3)
             ->assertJsonPath('procurement_details.accepted_quantity', 2)
@@ -217,6 +217,8 @@ class ProcurementExpenseReleaseTest extends TestCase
         $receipt = PurchaseOrderReceipt::factory()->create([
             'purchase_order_id' => $purchaseOrder->id,
             'shop_owner_id' => $shop->id,
+            'status' => PurchaseOrderReceipt::STATUS_POSTED,
+            'receipt_reference' => 'RCV-2026-0001',
             ...$receiptOverrides,
         ]);
         PurchaseOrderReceiptItem::factory()->create([
@@ -227,7 +229,7 @@ class ProcurementExpenseReleaseTest extends TestCase
             'accepted_quantity' => 2,
         ]);
         $expense = Expense::create([
-            'reference' => 'PROC-RCV-' . $receipt->id,
+            'reference' => 'PROC-' . $shop->id . '-' . $receipt->receipt_reference,
             'date' => $receipt->received_at->toDateString(),
             'due_date' => $receipt->received_at->copy()->addDays(30)->toDateString(),
             'category' => 'Procurement',

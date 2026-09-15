@@ -13,14 +13,16 @@ class PurchaseOrderReceiptItem extends Model
     use HasFactory;
 
     protected $fillable = [
-        'purchase_order_receipt_id', 'purchase_order_item_id', 'received_quantity',
+        'purchase_order_receipt_id', 'purchase_order_item_id', 'idempotency_key', 'payload_hash',
         'defective_quantity', 'accepted_quantity', 'inventory_effects', 'replacement_for_adjustment_id',
+        'replacement_attempt', 'received_quantity',
     ];
 
     protected $casts = [
         'received_quantity' => 'integer',
         'defective_quantity' => 'integer',
         'accepted_quantity' => 'integer',
+        'replacement_attempt' => 'integer',
         'inventory_effects' => 'array',
     ];
 

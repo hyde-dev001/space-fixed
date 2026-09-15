@@ -54,6 +54,7 @@ Route::middleware([
         Route::post('/{id}/cancel', [PurchaseOrderController::class, 'cancel'])->name('procurement.purchase-orders.cancel');
         Route::get('/{id}/receipts', [PurchaseOrderReceiptController::class, 'index'])->name('procurement.purchase-orders.receipts.index');
         Route::post('/{id}/receipts', [PurchaseOrderReceiptController::class, 'store'])->name('procurement.purchase-orders.receipts.store');
+        Route::post('/{id}/receipts/{receiptId}/finalize', [PurchaseOrderReceiptController::class, 'finalize'])->name('procurement.purchase-orders.receipts.finalize');
         Route::post('/{id}/receipts/{receiptId}/void', [PurchaseOrderReceiptController::class, 'void'])->name('procurement.purchase-orders.receipts.void');
         Route::post('/{id}/receipts/{receiptId}/items/{receiptItemId}/post-payment-issues', [SupplierAdjustmentController::class, 'postPaymentIssue'])
             ->whereNumber(['id', 'receiptId', 'receiptItemId'])
@@ -63,6 +64,15 @@ Route::middleware([
     Route::prefix('supplier-adjustments')->group(function () {
         Route::get('/', [SupplierAdjustmentController::class, 'index'])->name('procurement.supplier-adjustments.index');
         Route::get('/{adjustmentId}', [SupplierAdjustmentController::class, 'show'])->whereNumber('adjustmentId')->name('procurement.supplier-adjustments.show');
+        Route::post('/{adjustmentId}/resolution', [SupplierAdjustmentController::class, 'resolution'])
+            ->whereNumber('adjustmentId')->name('procurement.supplier-adjustments.resolution');
+        Route::post('/{adjustmentId}/replacement/{action}', [SupplierAdjustmentController::class, 'replacementAction'])
+            ->whereNumber('adjustmentId')->whereIn('action', ['sent', 'accepted', 'declined', 'in-transit'])
+            ->name('procurement.supplier-adjustments.replacement-action');
+        Route::post('/{adjustmentId}/short-fulfillment/close', [SupplierAdjustmentController::class, 'closeShortFulfillment'])
+            ->whereNumber('adjustmentId')->name('procurement.supplier-adjustments.short-fulfillment');
+        Route::post('/{adjustmentId}/return', [SupplierAdjustmentController::class, 'returnAction'])
+            ->whereNumber('adjustmentId')->name('procurement.supplier-adjustments.return');
         Route::post('/{adjustmentId}/supplier-refund-proof', [SupplierAdjustmentController::class, 'supplierRefundProof'])
             ->whereNumber('adjustmentId')
             ->name('procurement.supplier-adjustments.supplier-refund-proof');

@@ -27,6 +27,19 @@ class SupplierAdjustment extends Model implements HasMedia
 
     public const RESOLUTION_REPLACEMENT = 'replacement';
     public const RESOLUTION_REFUND = 'refund';
+    public const RESOLUTION_SHORT_FULFILLMENT = 'short_fulfillment';
+
+    public const REPLACEMENT_REQUESTED = 'requested';
+    public const REPLACEMENT_SENT = 'sent';
+    public const REPLACEMENT_ACCEPTED = 'accepted_by_supplier';
+    public const REPLACEMENT_IN_TRANSIT = 'in_transit';
+    public const REPLACEMENT_RECEIVED = 'received';
+    public const REPLACEMENT_DECLINED = 'declined';
+
+    public const RETURN_REQUIRED = 'required';
+    public const RETURN_RELEASED = 'released';
+    public const RETURN_RECEIVED_BY_SUPPLIER = 'received_by_supplier';
+    public const RETURN_WAIVED = 'waived';
 
     public const REASON_CATEGORIES = [
         'manufacturing_defect',
@@ -42,12 +55,18 @@ class SupplierAdjustment extends Model implements HasMedia
         'idempotency_key',
         'issue_stage',
         'reported_quantity',
+        'short_fulfillment_quantity',
         'unit_cost_snapshot',
         'reason_category',
         'inventory_notes',
         'status',
         'resolution',
+        'replacement_status',
+        'return_status',
         'procurement_notes',
+        'decline_reason',
+        'supplier_reference',
+        'return_notes',
         'expected_refund_amount',
         'supplier_reported_refund_amount',
         'supplier_reported_refund_reference',
@@ -62,6 +81,7 @@ class SupplierAdjustment extends Model implements HasMedia
 
     protected $casts = [
         'reported_quantity' => 'integer',
+        'short_fulfillment_quantity' => 'integer',
         'unit_cost_snapshot' => 'decimal:2',
         'expected_refund_amount' => 'decimal:2',
         'supplier_reported_refund_amount' => 'decimal:2',

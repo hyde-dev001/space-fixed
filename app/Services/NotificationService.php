@@ -1195,6 +1195,53 @@ class NotificationService
         }
     }
 
+    public function notifySupplierReplacementReceived(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Procurement Manager',
+            shopId: $shopId,
+            type: NotificationType::SUPPLIER_ISSUE_REPORTED,
+            title: 'Supplier Replacement Received',
+            message: "A supplier replacement was received for PO {$data['po_number']}.",
+            data: $data,
+            actionUrl: '/erp/procurement/purchase-orders',
+            priority: 'high',
+            groupKey: 'supplier-replacement-received:' . $data['adjustment_id'] . ':' . $data['receipt_item_id'],
+            requiresAction: true,
+        );
+    }
+
+    public function notifySupplierReplacementInTransit(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Inventory Manager',
+            shopId: $shopId,
+            type: NotificationType::SUPPLIER_REPLACEMENT_REQUESTED,
+            title: 'Supplier Replacement In Transit',
+            message: "A supplier replacement for PO {$data['po_number']} is in transit.",
+            data: $data,
+            actionUrl: '/erp/inventory/supplier-order-monitoring',
+            priority: 'high',
+            groupKey: 'supplier-replacement-in-transit:' . $data['adjustment_id'],
+            requiresAction: true,
+        );
+    }
+
+    public function notifySupplierAdjustmentResolved(int $shopId, array $data): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Inventory Manager',
+            shopId: $shopId,
+            type: NotificationType::SUPPLIER_ISSUE_REPORTED,
+            title: 'Supplier Adjustment Resolved',
+            message: "The supplier adjustment for PO {$data['po_number']} is resolved.",
+            data: $data,
+            actionUrl: '/erp/inventory/supplier-order-monitoring',
+            priority: 'medium',
+            groupKey: 'supplier-adjustment-resolved:' . $data['adjustment_id'],
+        );
+    }
+
     public function notifySupplierPaymentAwaitingVerification(int $shopId, array $data): void
     {
         $this->sendToShopOwner(

@@ -47,7 +47,7 @@ describe("PurchaseOrderReceiptPanel", () => {
 
 		fireEvent.change(await screen.findByLabelText("Receipt type Shoe cleaner"), { target: { value: "90" } });
 		fireEvent.change(screen.getByLabelText("Received Shoe cleaner"), { target: { value: "1" } });
-		fireEvent.click(screen.getByRole("button", { name: "Post receipt" }));
+		fireEvent.click(screen.getByRole("button", { name: "Submit receiving result" }));
 
 		await waitFor(() => expect(purchaseOrderApi.receive).toHaveBeenCalledWith(10, expect.objectContaining({
 			items: [expect.objectContaining({ replacement_for_adjustment_id: 90 })],
@@ -57,20 +57,20 @@ describe("PurchaseOrderReceiptPanel", () => {
 	it("posts the line receipt with one idempotency key", async () => {
 		vi.mocked(purchaseOrderApi.receive).mockResolvedValue({} as any);
 		render(<PurchaseOrderReceiptPanel order={order()} onChanged={vi.fn().mockResolvedValue(undefined)} />);
-		fireEvent.change(screen.getByLabelText("Received Shoe cleaner"), { target: { value: "3" } });
-		fireEvent.click(screen.getByRole("button", { name: "Post receipt" }));
+		fireEvent.change(screen.getByLabelText("Received Shoe cleaner"), { target: { value: "5" } });
+		fireEvent.click(screen.getByRole("button", { name: "Submit receiving result" }));
 
 		await waitFor(() => expect(purchaseOrderApi.receive).toHaveBeenCalledWith(10, {
 			idempotency_key: "123e4567-e89b-12d3-a456-426614174000",
 			notes: undefined,
-			items: [{ purchase_order_item_id: 20, received_quantity: 3, defective_quantity: 0 }],
+			items: [{ purchase_order_item_id: 20, received_quantity: 5, defective_quantity: 0 }],
 		}));
 	});
 
 	it("collects category, notes, and private image evidence for defective units", async () => {
 		vi.mocked(purchaseOrderApi.receive).mockResolvedValue({} as any);
 		render(<PurchaseOrderReceiptPanel order={order()} onChanged={vi.fn().mockResolvedValue(undefined)} />);
-		fireEvent.change(screen.getByLabelText("Received Shoe cleaner"), { target: { value: "3" } });
+		fireEvent.change(screen.getByLabelText("Received Shoe cleaner"), { target: { value: "5" } });
 		fireEvent.change(screen.getByLabelText("Defective Shoe cleaner"), { target: { value: "1" } });
 
 		expect(screen.getByLabelText("Defect category Shoe cleaner")).toBeInTheDocument();
@@ -81,14 +81,14 @@ describe("PurchaseOrderReceiptPanel", () => {
 		fireEvent.change(screen.getByLabelText("Defect notes Shoe cleaner"), { target: { value: "Box was crushed." } });
 		const proof = new File(["proof"], "damage.jpg", { type: "image/jpeg" });
 		fireEvent.change(screen.getByLabelText("Defect evidence Shoe cleaner"), { target: { files: [proof] } });
-		fireEvent.click(screen.getByRole("button", { name: "Post receipt" }));
+		fireEvent.click(screen.getByRole("button", { name: "Submit receiving result" }));
 
 		await waitFor(() => expect(purchaseOrderApi.receive).toHaveBeenCalledWith(10, {
 			idempotency_key: "123e4567-e89b-12d3-a456-426614174000",
 			notes: undefined,
 			items: [{
 				purchase_order_item_id: 20,
-				received_quantity: 3,
+				received_quantity: 5,
 				defective_quantity: 1,
 				reason_category: "damaged",
 				inventory_notes: "Box was crushed.",
@@ -101,10 +101,10 @@ describe("PurchaseOrderReceiptPanel", () => {
 		vi.mocked(purchaseOrderApi.receive).mockRejectedValue(new Error("offline"));
 		render(<PurchaseOrderReceiptPanel order={order({ receipts: [{ id: 1, purchase_order_id: 10, source: "migration", status: "posted", received_at: "2026-08-02", items: [] }] })} onChanged={vi.fn().mockResolvedValue(undefined)} />);
 		const input = screen.getByLabelText("Received Shoe cleaner") as HTMLInputElement;
-		fireEvent.change(input, { target: { value: "2" } });
-		fireEvent.click(screen.getByRole("button", { name: "Post receipt" }));
+		fireEvent.change(input, { target: { value: "5" } });
+		fireEvent.click(screen.getByRole("button", { name: "Submit receiving result" }));
 		await waitFor(() => expect(purchaseOrderApi.receive).toHaveBeenCalled());
-		expect(input.value).toBe("2");
+		expect(input.value).toBe("5");
 		expect(screen.queryByRole("button", { name: "Void" })).not.toBeInTheDocument();
 	});
 
@@ -124,7 +124,7 @@ describe("PurchaseOrderReceiptPanel", () => {
 
 		fireEvent.change(screen.getByLabelText("Received Shoe US 7"), { target: { value: "2" } });
 		fireEvent.change(screen.getByLabelText("Received Shoe US 8"), { target: { value: "3" } });
-		fireEvent.click(screen.getByRole("button", { name: "Post receipt" }));
+		fireEvent.click(screen.getByRole("button", { name: "Submit receiving result" }));
 
 		await waitFor(() => expect(purchaseOrderApi.receive).toHaveBeenCalledWith(10, {
 			idempotency_key: "123e4567-e89b-12d3-a456-426614174000",
@@ -162,7 +162,7 @@ describe("PurchaseOrderReceiptPanel", () => {
 		for (const size of sizes) {
 			fireEvent.change(screen.getByLabelText(`Received Shoe US ${size.size}`), { target: { value: "50" } });
 		}
-		fireEvent.click(screen.getByRole("button", { name: "Post receipt" }));
+		fireEvent.click(screen.getByRole("button", { name: "Submit receiving result" }));
 
 		await waitFor(() => expect(purchaseOrderApi.receive).toHaveBeenCalledWith(10, {
 			idempotency_key: "123e4567-e89b-12d3-a456-426614174000",
@@ -188,7 +188,7 @@ describe("PurchaseOrderReceiptPanel", () => {
 			onChanged={vi.fn().mockResolvedValue(undefined)}
 		/>);
 
-		expect(screen.queryByRole("button", { name: "Post receipt" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Submit receiving result" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Void" })).not.toBeInTheDocument();
 	});
 });
