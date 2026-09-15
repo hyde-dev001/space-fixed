@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import Swal from "sweetalert2";
 import { purchaseOrderApi } from "@/services/purchaseOrderApi";
 import type {
 	PurchaseOrder,
@@ -10,6 +11,7 @@ import type {
 type Props = {
 	order: PurchaseOrder;
 	canReport?: boolean;
+	canManage?: boolean;
 	onChanged?: () => Promise<void>;
 };
 
@@ -56,7 +58,7 @@ const emptyRefundForm: RefundForm = {
 const formatStage = (stage: string) => stage === "post_payment_issue" ? "Post-payment issue" : "Receiving defect";
 const formatCategory = (category: string) => category.split("_").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ");
 
-export default function SupplierAdjustmentsPanel({ order, canReport = false, onChanged }: Props) {
+export default function SupplierAdjustmentsPanel({ order, canReport = false, canManage = false, onChanged }: Props) {
 	const [adjustments, setAdjustments] = useState<SupplierAdjustment[]>([]);
 	const [selectedItem, setSelectedItem] = useState<{ receiptId: number; item: PurchaseOrderReceiptItem } | null>(null);
 	const [selectedRefund, setSelectedRefund] = useState<number | null>(null);
@@ -157,6 +159,32 @@ export default function SupplierAdjustmentsPanel({ order, canReport = false, onC
 		}
 	};
 
+	const runWorkflowAction = async (action: () => Promise<SupplierAdjustment>) => {
+		setSaving(true);
+		setError(null);
+		try {
+			await action();
+			await loadAdjustments();
+			await onChanged?.();
+		} catch (requestError: any) {
+			setError(requestError?.response?.data?.message ?? "The supplier adjustment could not be updated.");
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	const declineReplacement = async (adjustment: SupplierAdjustment) => {
+		const result = await Swal.fire({
+			title: "Supplier declined replacement",
+			input: "textarea",
+			inputLabel: "Decline reason",
+			showCancelButton: true,
+			inputValidator: (value) => value?.trim() ? undefined : "A decline reason is required.",
+		});
+		if (!result.isConfirmed) return;
+		await runWorkflowAction(() => purchaseOrderApi.updateSupplierReplacement(adjustment.id, "declined", { decline_reason: result.value.trim() }));
+	};
+
 	return (
 		<section className="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900">
 			<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -209,6 +237,16 @@ export default function SupplierAdjustmentsPanel({ order, canReport = false, onC
 						<span className="rounded-full bg-gray-100 px-2 py-1 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-300">{adjustment.status}</span>
 					</div>
 					<p className="mt-1 text-xs text-gray-500">{formatCategory(adjustment.reason_category)} · {adjustment.inventory_notes}{adjustment.resolution ? ` · Resolution: ${adjustment.resolution}` : ""}</p>
+					{adjustment.issue_stage === "receiving_defect" && adjustment.status !== "resolved" && <div className="mt-3 flex flex-wrap gap-2">
+						{canManage && !adjustment.resolution && <button type="button" disabled={saving} onClick={() => void runWorkflowAction(() => purchaseOrderApi.chooseSupplierAdjustmentResolution(adjustment.id, "replacement"))} className="rounded border border-amber-300 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-50">Choose Replacement</button>}
+						{canManage && adjustment.resolution === "replacement" && ["requested", "received"].includes(adjustment.replacement_status ?? "") && <button type="button" disabled={saving} onClick={() => void runWorkflowAction(() => purchaseOrderApi.updateSupplierReplacement(adjustment.id, "sent"))} className="rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-800 hover:bg-blue-50">Mark as Sent</button>}
+						{canManage && adjustment.resolution === "replacement" && adjustment.replacement_status === "sent" && <><button type="button" disabled={saving} onClick={() => void runWorkflowAction(() => purchaseOrderApi.updateSupplierReplacement(adjustment.id, "accepted"))} className="rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-800 hover:bg-blue-50">Accepted by Supplier</button><button type="button" disabled={saving} onClick={() => void declineReplacement(adjustment)} className="rounded border border-red-300 px-2 py-1 text-xs font-semibold text-red-800 hover:bg-red-50">Supplier Declined</button></>}
+						{canManage && adjustment.resolution === "replacement" && adjustment.replacement_status === "accepted_by_supplier" && <button type="button" disabled={saving} onClick={() => void runWorkflowAction(() => purchaseOrderApi.updateSupplierReplacement(adjustment.id, "in-transit"))} className="rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-800 hover:bg-blue-50">Mark as In Transit</button>}
+						{canManage && adjustment.replacement_status === "declined" && <button type="button" disabled={saving} onClick={() => void runWorkflowAction(() => purchaseOrderApi.closeShortFulfillment(adjustment.id))} className="rounded border border-purple-300 px-2 py-1 text-xs font-semibold text-purple-800 hover:bg-purple-50">Close as Short Fulfillment</button>}
+						{canManage && !adjustment.return_status && <><button type="button" disabled={saving} onClick={() => void runWorkflowAction(() => purchaseOrderApi.updateSupplierReturn(adjustment.id, "required"))} className="rounded border border-orange-300 px-2 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-50">Return Required</button><button type="button" disabled={saving} onClick={() => void runWorkflowAction(() => purchaseOrderApi.updateSupplierReturn(adjustment.id, "waived"))} className="rounded border border-gray-300 px-2 py-1 text-xs font-semibold text-gray-700 hover:bg-gray-50">Return Waived by Supplier</button></>}
+						{canReport && adjustment.return_status === "required" && <button type="button" disabled={saving} onClick={() => void runWorkflowAction(() => purchaseOrderApi.updateSupplierReturn(adjustment.id, "released"))} className="rounded border border-orange-300 px-2 py-1 text-xs font-semibold text-orange-800 hover:bg-orange-50">Confirm Defective Item Released</button>}
+						{canManage && adjustment.return_status === "released" && <button type="button" disabled={saving} onClick={() => void runWorkflowAction(() => purchaseOrderApi.updateSupplierReturn(adjustment.id, "received_by_supplier"))} className="rounded border border-green-300 px-2 py-1 text-xs font-semibold text-green-800 hover:bg-green-50">Confirm Supplier Received Return</button>}
+					</div>}
 					{adjustment.evidence?.length ? <div className="mt-2 flex flex-wrap gap-2">{adjustment.evidence.map((media) => <a key={media.id} href={`/api/erp/procurement/supplier-adjustments/${adjustment.id}/evidence/${media.id}`} target="_blank" rel="noreferrer" className="text-xs font-medium text-blue-600 hover:underline">View {media.file_name}</a>)}</div> : null}
 					{adjustment.resolution === "refund" && <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">Expected refund: <strong>₱{Number(adjustment.expected_refund_amount || 0).toLocaleString()}</strong> · Confirmed: <strong>₱{Number(adjustment.refunded_amount || 0).toLocaleString()}</strong></p>}
 					{canReport && adjustment.issue_stage === "post_payment_issue" && adjustment.status !== "resolved" && adjustment.resolution !== "replacement" && (

@@ -48,6 +48,7 @@ export default function SupplierOrderMonitoring() {
 	const canReportSupplierIssues = !ownerMode
 		&& hasPermission(auth, "procurement.receive_purchase_orders")
 		&& hasPermission(auth, "view-inventory");
+	const canManageSupplierAdjustments = !ownerMode && hasPermission(auth, "procurement.manage_suppliers");
 
 	return (
 		<AppLayoutERP hideHeader={Boolean(viewingOrder)}>
@@ -90,7 +91,7 @@ export default function SupplierOrderMonitoring() {
 				<div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
 					<div className="mb-4 flex items-center justify-between"><div><h2 className="text-xl font-semibold">{viewingOrder.po_number}</h2><p className="text-sm text-gray-500">{viewingOrder.supplier?.name} · {label(viewingOrder.status)}</p></div><button type="button" onClick={() => setViewingOrder(null)} aria-label="Close" className="text-2xl text-gray-500">×</button></div>
 					<PurchaseOrderReceiptPanel order={viewingOrder} canReceive={!ownerMode} canVoid={false} onChanged={refreshViewingOrder} />
-					<SupplierAdjustmentsPanel order={viewingOrder} canReport={canReportSupplierIssues} onChanged={refreshViewingOrder} />
+					<SupplierAdjustmentsPanel order={viewingOrder} canReport={canReportSupplierIssues} canManage={canManageSupplierAdjustments} onChanged={refreshViewingOrder} />
 				</div>
 			</div>}
 		</AppLayoutERP>

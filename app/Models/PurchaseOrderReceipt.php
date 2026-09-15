@@ -13,10 +13,16 @@ class PurchaseOrderReceipt extends Model
 {
     use HasFactory;
 
+    public const STATUS_RECEIVING = 'receiving';
+    public const STATUS_POSTED = 'posted';
+    public const STATUS_VOIDED = 'voided';
+
     protected $fillable = [
-        'purchase_order_id', 'shop_owner_id', 'source', 'status', 'idempotency_key',
+        'purchase_order_id', 'shop_owner_id', 'source', 'status', 'receipt_reference', 'idempotency_key',
         'payload_hash', 'received_by', 'received_at', 'notes', 'voided_by', 'voided_at', 'void_reason',
     ];
+
+    protected $appends = ['display_reference'];
 
     protected $casts = [
         'received_at' => 'datetime',
@@ -51,5 +57,25 @@ class PurchaseOrderReceipt extends Model
     public function expense(): HasOne
     {
         return $this->hasOne(Expense::class, 'procurement_receipt_id');
+    }
+
+    public function getDisplayReferenceAttribute(): string
+    {
+        return $this->receipt_reference ?: "Receipt #{$this->id}";
+    }
+
+    public function isFinal(): bool
+    {
+        return $this->status === self::STATUS_POSTED
+            && $this->voided_at === null
+            && (filled($this->receipt_reference) || $this->isLegacyFinal());
+    }
+
+    public function isLegacyFinal(): bool
+    {
+        return $this->status === self::STATUS_POSTED
+            && $this->voided_at === null
+            && blank($this->receipt_reference)
+            && ! $this->items()->whereNotNull('replacement_for_adjustment_id')->exists();
     }
 }

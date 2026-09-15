@@ -47,7 +47,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
     public function test_void_reverses_inventory_once_and_rejects_submitted_expense(): void
     {
         [$po, $item, $inventory] = $this->poItem(5, 100);
-        $receiptId = $this->postReceipt($po, $item, 3, 1);
+        $receiptId = $this->postReceipt($po, $item, 5, 0);
 
         $response = $this->actingAs($this->receiver, 'user')->postJson(
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
@@ -61,7 +61,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
         $this->assertSame('rejected', Expense::sole()->status);
         $this->assertStringContainsString('voided', strtolower((string) Expense::sole()->approval_notes));
         $this->assertSame(2, StockMovement::count());
-        $this->assertSame(-2, StockMovement::whereNotNull('reversal_of_stock_movement_id')->sole()->quantity_change);
+        $this->assertSame(-5, StockMovement::whereNotNull('reversal_of_stock_movement_id')->sole()->quantity_change);
 
         $this->actingAs($this->receiver, 'user')->postJson(
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
@@ -73,7 +73,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
     public function test_void_reverses_an_unpaid_posted_expense_without_a_payment_attempt(): void
     {
         [$po, $item, $inventory] = $this->poItem(2, 100);
-        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        $receiptId = $this->postReceipt($po, $item, 2, 0);
         Expense::sole()->update(['status' => 'posted']);
 
         $this->actingAs($this->receiver, 'user')->postJson(
@@ -125,6 +125,10 @@ class PurchaseOrderReceiptVoidTest extends TestCase
         )->assertCreated()->json('data.id');
 
         $this->actingAs($this->receiver, 'user')->postJson(
+            "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/finalize",
+        )->assertCreated();
+
+        $this->actingAs($this->receiver, 'user')->postJson(
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/void",
             ['reason' => 'Wrong all-size shipment recorded.']
         )->assertOk();
@@ -137,7 +141,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
     public function test_void_requires_permission_and_reason(): void
     {
         [$po, $item] = $this->poItem(2, 100);
-        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        $receiptId = $this->postReceipt($po, $item, 2, 0);
 
         $this->receiver->revokePermissionTo('procurement.void_purchase_order_receipts');
         $this->actingAs($this->receiver, 'user')->postJson(
@@ -154,7 +158,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
     public function test_approved_expense_completed_po_and_migration_receipt_cannot_be_voided(): void
     {
         [$po, $item] = $this->poItem(2, 100);
-        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        $receiptId = $this->postReceipt($po, $item, 2, 0);
         Expense::sole()->update(['status' => 'approved']);
 
         $this->actingAs($this->receiver, 'user')->postJson(
@@ -196,7 +200,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
     public function test_void_cancels_a_pending_expense_approval(): void
     {
         [$po, $item] = $this->poItem(2, 100);
-        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        $receiptId = $this->postReceipt($po, $item, 2, 0);
         $expense = Expense::sole();
         $approval = Approval::create([
             'shop_owner_id' => $this->receiver->id,
@@ -225,7 +229,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
     public function test_void_is_blocked_while_supplier_payment_awaits_shop_owner_verification(): void
     {
         [$po, $item] = $this->poItem(2, 100);
-        $receiptId = $this->postReceipt($po, $item, 1, 0);
+        $receiptId = $this->postReceipt($po, $item, 2, 0);
         $expense = Expense::sole();
         $profile = SupplierPaymentProfile::create([
             'shop_owner_id' => $this->owner->id,
@@ -242,7 +246,7 @@ class PurchaseOrderReceiptVoidTest extends TestCase
             'expense_id' => $expense->id,
             'supplier_id' => $this->supplier->id,
             'supplier_payment_profile_id' => $profile->id,
-            'amount' => '100.00',
+            'amount' => '200.00',
             'currency' => 'PHP',
             'provider' => 'manual',
             'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_BANK_TRANSFER,
@@ -349,11 +353,17 @@ class PurchaseOrderReceiptVoidTest extends TestCase
             ];
         }
 
-        return (int) $this->actingAs($this->receiver, 'user')->post(
+        $receiptId = (int) $this->actingAs($this->receiver, 'user')->post(
             "/api/erp/procurement/purchase-orders/{$po->id}/receipts",
             $payload,
             ['Accept' => 'application/json'],
         )->assertCreated()->json('data.id');
+
+        $this->actingAs($this->receiver, 'user')->postJson(
+            "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptId}/finalize",
+        )->assertCreated();
+
+        return $receiptId;
     }
 
     /** @return array{PurchaseOrder, PurchaseOrderItem, InventoryItem} */

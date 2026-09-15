@@ -14,12 +14,14 @@ flowchart LR
     E -->|reject| X
     F --> G[One or more same-supplier PRs grouped into a PO]
     G --> H[draft → sent → confirmed → in transit]
-    H --> I[Post receipt per PO item]
-    I --> J[Stock movement]
-    I --> K[Submitted expense for Finance review]
-    I -->|more remains| L[Partially received]
-    I -->|all accepted| M[Delivered]
-    M --> N[Completed]
+    H --> I[Submit one complete receiving result]
+    I --> J[Accepted stock movement]
+    I -->|defects| K[Supplier Adjustment]
+    K --> L[Replacement or short fulfillment]
+    L --> I
+    I -->|all resolved| M[Post one Final Receipt]
+    M --> N[One submitted expense for Finance review]
+    N --> O[Completed]
 ```
 
 ## State rules
@@ -49,12 +51,16 @@ draft → sent → confirmed → in_transit → partially_received → delivered
 
 ## Receiving and Finance
 
-- Record each arrival as a receipt with received and defective quantities per PO item.
+- Record the complete original supplier delivery once with received and defective quantities per PO item. The pre-final receiving result is not a posted receipt.
 - Accepted quantity is `received - defective`. Defective units do not enter usable stock and do not create expense value.
-- Partial receipts are supported. Replacements can be received later until every PO item reaches its ordered accepted quantity.
-- Each receipt uses an idempotency key, so retrying the same submission cannot duplicate stock or expense effects.
+- Partial original deliveries cannot be finalized. Every PO item must be physically accounted for in the original result.
+- Defects create an actionable Supplier Adjustment and block Finance. Replacements remain linked to that adjustment and are recorded on the same pre-final receipt; they do not create another PO, normal receipt, or expense.
+- Supplier decline can close the unresolved quantity as Short Fulfillment. Required defective returns use only `required`, `released`, `received_by_supplier`, and `waived` states; no courier or tracking subsystem is involved.
+- The one Final Receipt is posted only after all adjustments and required returns are resolved. Its payable quantity is initial accepted quantity plus accepted replacements.
+- Each submission uses an idempotency key, and the PO/receipt locks prevent duplicate Final Receipts, expenses, or stock effects.
+- New Final Receipts use a shop-scoped `RCV-YYYY-####` reference. Pending receiving results and replacements do not consume that sequence; historical receipt IDs remain unchanged.
 - Inventory updates use the PO item's frozen parent/color/size targets.
-- Accepted receipt value creates one Finance expense with status `submitted`; it never auto-approves and does not pre-fill final approver fields.
+- Only the Final Receipt creates one Finance expense with status `submitted`; it never auto-approves and does not pre-fill final approver fields.
 
 ## Corrections
 

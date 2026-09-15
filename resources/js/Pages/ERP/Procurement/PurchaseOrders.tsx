@@ -371,6 +371,7 @@ export default function PurchaseOrders() {
 	const canReportSupplierIssues = !ownerMode
 		&& hasPermission(auth, "procurement.receive_purchase_orders")
 		&& hasPermission(auth, "view-inventory");
+	const canManageSupplierAdjustments = !ownerMode && hasPermission(auth, "procurement.manage_suppliers");
 	const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderType[]>(initialData?.data ?? []);
 	const [approvedPRs, setApprovedPRs] = useState<PurchaseRequest[]>(initialApprovedPRs ?? []);
 	const [loading, setLoading] = useState(false);
@@ -1243,6 +1244,7 @@ export default function PurchaseOrders() {
 							<SupplierAdjustmentsPanel
 								order={viewingOrder}
 								canReport={canReportSupplierIssues}
+								canManage={canManageSupplierAdjustments}
 								onChanged={async () => {
 									const refreshed = await purchaseOrderApi.getById(viewingOrder.id);
 									setViewingOrder(refreshed);

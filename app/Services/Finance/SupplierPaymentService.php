@@ -506,7 +506,7 @@ final class SupplierPaymentService
                 externallyPaidAt: $attempt->externally_paid_at,
                 maskedDestination: $attempt->maskedDestination(),
                 shopName: $shopName,
-                receiptNumber: $receipt ? 'RCV-' . $receipt->id : '',
+                receiptNumber: $receipt?->receipt_reference ?: ($receipt ? 'Receipt #' . $receipt->id : ''),
                 paymentStatus: 'Verified / Paid',
             ));
 

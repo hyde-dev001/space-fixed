@@ -43,6 +43,68 @@ final class SupplierAdjustmentController extends Controller
         return response()->json(['data' => $this->adjustmentService->present($adjustment)]);
     }
 
+    public function resolution(Request $request, int $adjustmentId)
+    {
+        abort_unless($request->user()->can('procurement.manage_suppliers'), 403);
+        $adjustment = $this->shopAdjustment($request, $adjustmentId);
+        $data = $request->validate([
+            'resolution' => ['required', 'in:replacement,short_fulfillment'],
+            'procurement_notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        return response()->json([
+            'data' => $this->adjustmentService->chooseResolution($adjustment, $request->user(), $data),
+        ]);
+    }
+
+    public function replacementAction(Request $request, int $adjustmentId, string $action)
+    {
+        abort_unless($request->user()->can('procurement.manage_suppliers'), 403);
+        $adjustment = $this->shopAdjustment($request, $adjustmentId);
+        $data = $request->validate([
+            'decline_reason' => ['nullable', 'string', 'max:2000'],
+            'supplier_reference' => ['nullable', 'string', 'max:160'],
+            'procurement_notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        return response()->json([
+            'data' => $this->adjustmentService->replacementAction($adjustment, $request->user(), $action, $data),
+        ]);
+    }
+
+    public function closeShortFulfillment(Request $request, int $adjustmentId)
+    {
+        abort_unless($request->user()->can('procurement.manage_suppliers'), 403);
+        $adjustment = $this->shopAdjustment($request, $adjustmentId);
+        $data = $request->validate([
+            'procurement_notes' => ['nullable', 'string', 'max:2000'],
+            'supplier_reference' => ['nullable', 'string', 'max:160'],
+        ]);
+
+        return response()->json([
+            'data' => $this->adjustmentService->closeShortFulfillment($adjustment, $request->user(), $data),
+        ]);
+    }
+
+    public function returnAction(Request $request, int $adjustmentId)
+    {
+        $adjustment = $this->shopAdjustment($request, $adjustmentId);
+        $status = (string) $request->input('status');
+        if ($status === SupplierAdjustment::RETURN_RELEASED) {
+            $this->assertInventoryActor($request);
+        } else {
+            abort_unless($request->user()->can('procurement.manage_suppliers'), 403);
+        }
+        $data = $request->validate([
+            'status' => ['required', 'in:required,released,received_by_supplier,waived'],
+            'return_notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        return response()->json([
+            'data' => $this->adjustmentService->setReturnStatus($adjustment, $request->user(), $data['status'], $data),
+        ]);
+    }
+
     public function postPaymentIssue(
         StorePostPaymentIssueRequest $request,
         int $id,
@@ -144,5 +206,21 @@ final class SupplierAdjustmentController extends Controller
         $response->headers->set('X-Content-Type-Options', 'nosniff');
 
         return $response;
+    }
+
+    private function shopAdjustment(Request $request, int $adjustmentId): SupplierAdjustment
+    {
+        return SupplierAdjustment::query()
+            ->where('shop_owner_id', (int) $request->user()->shop_owner_id)
+            ->findOrFail($adjustmentId);
+    }
+
+    private function assertInventoryActor(Request $request): void
+    {
+        abort_unless(
+            $request->user()->can('procurement.receive_purchase_orders')
+                && $request->user()->can('view-inventory'),
+            403,
+        );
     }
 }

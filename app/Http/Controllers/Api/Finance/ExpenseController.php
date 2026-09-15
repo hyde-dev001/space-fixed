@@ -178,7 +178,7 @@ class ExpenseController extends Controller
                 $expense->setAttribute('procurement_details', [
                     'purchase_order_id' => $purchaseOrder->id,
                     'po_number' => $purchaseOrder->po_number,
-                    'receipt_number' => "RCV-{$receipt->id}",
+                    'receipt_number' => $receipt->receipt_reference ?: "Receipt #{$receipt->id}",
                     'supplier_id' => $purchaseOrder->supplier?->id,
                     'supplier_name' => $purchaseOrder->supplier?->name,
                     'payment_profile' => $purchaseOrder->supplier?->paymentProfile?->toMaskedArray(),

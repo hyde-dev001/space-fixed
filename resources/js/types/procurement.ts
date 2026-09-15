@@ -88,11 +88,17 @@ export interface SupplierAdjustment {
     id: number;
     issue_stage: 'receiving_defect' | 'post_payment_issue' | string;
     reported_quantity: number;
+    short_fulfillment_quantity?: number;
     unit_cost_snapshot: number | string;
     reason_category: SupplierAdjustmentReasonCategory | string;
     inventory_notes: string;
     status: string;
     resolution?: 'replacement' | 'refund' | string | null;
+    replacement_status?: 'requested' | 'sent' | 'accepted_by_supplier' | 'in_transit' | 'received' | 'declined' | string | null;
+    return_status?: 'required' | 'released' | 'received_by_supplier' | 'waived' | string | null;
+    decline_reason?: string | null;
+    supplier_reference?: string | null;
+    return_notes?: string | null;
     procurement_notes?: string | null;
     expected_refund_amount?: number | string | null;
     refunded_amount?: number | string | null;
@@ -102,8 +108,10 @@ export interface SupplierAdjustment {
     reported_at?: string | null;
     resolved_at?: string | null;
     reported_by?: { id: number; name: string } | null;
-    purchase_order?: { id: number | null; number: string | null; status: string | null };
-    receipt?: { id: number | null; status: string | null };
+    purchase_order?: { id: number | null; number: string | null; status: string | null; supplier?: { id: number; name: string } | null };
+    item?: { id: number; product_name: string } | null;
+    affected_quantity?: number;
+    receipt?: { id: number | null; status: string | null; reference?: string | null };
     receipt_item_id?: number | null;
     purchase_order_item_id?: number | null;
     evidence?: SupplierAdjustmentEvidence[];
@@ -116,6 +124,7 @@ export interface InventoryItem {
     product_name: string;
     sku_code: string;
     stock_quantity: number;
+    sizes?: Array<{ id: number; size: string; size_system?: string }>;
 }
 
 export interface PurchaseRequest {
@@ -230,7 +239,9 @@ export interface PurchaseOrderReceipt {
     id: number;
     purchase_order_id: number;
     source: 'manual' | 'migration';
-    status: 'posted' | 'voided';
+    status: 'receiving' | 'posted' | 'voided';
+    receipt_reference?: string | null;
+    display_reference?: string;
     received_at: string;
     notes?: string;
     void_reason?: string;
@@ -562,6 +573,10 @@ export interface CreatePurchaseOrderReceiptPayload {
         size_quantities?: Array<{ inventory_size_id: number; received_quantity: number; defective_quantity: number }>;
     }>;
 }
+
+export type SupplierAdjustmentResolution = 'replacement' | 'short_fulfillment';
+export type SupplierReplacementAction = 'sent' | 'accepted' | 'declined' | 'in-transit';
+export type SupplierReturnStatus = 'required' | 'released' | 'received_by_supplier' | 'waived';
 
 export interface CreatePostPaymentIssuePayload {
     idempotency_key: string;
