@@ -7,6 +7,7 @@ use App\Models\Finance\ExpenseSettlement;
 use App\Models\HR\Payroll;
 use App\Models\ShopOwner;
 use App\Models\User;
+use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
@@ -56,6 +57,22 @@ class PayrollDisbursementFinanceSyncTest extends TestCase
         ]);
         $retry->assertStatus(409);
         $this->assertDatabaseCount('finance_expense_settlements', 1);
+    }
+
+    public function test_finance_role_can_disburse_without_a_direct_permission(): void
+    {
+        $this->seed(RolesAndPermissionsSeeder::class);
+        [$shop, $actor, $payroll] = $this->makeReadyPayroll();
+
+        $actor->revokePermissionTo('disburse-payroll');
+        $actor->assignRole('Finance');
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/finance/payslip-approvals/disburse', [
+            'payrollIds' => [$payroll->id],
+        ]);
+
+        $response->assertOk()->assertJsonPath('processed', 1);
+        $this->assertDatabaseHas('payrolls', ['id' => $payroll->id, 'status' => 'paid']);
     }
 
     public function test_old_approval_permission_cannot_disburse_payroll(): void

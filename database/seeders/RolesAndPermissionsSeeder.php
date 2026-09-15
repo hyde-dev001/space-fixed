@@ -208,6 +208,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-finance-expenses',
             'access-finance-invoices',
             'manage-finance-tax',
+            'disburse-payroll',
             'access-purchase-request-approval',
             'access-approval-workflow',
             'access-payslip-approval',
