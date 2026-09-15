@@ -38,6 +38,11 @@ type Expense = {
   receipt_original_name?: string | null;
   receipt_mime_type?: string | null;
   receipt_size?: number | null;
+  created_by?: number | string | null;
+  meta?: {
+    created_by?: number | string | null;
+    [key: string]: unknown;
+  } | null;
   procurement_receipt_id?: number | null;
   procurement_details?: ProcurementExpenseDetails | null;
   settlement_state?: {
@@ -203,6 +208,7 @@ const Expense: React.FC = () => {
   const page = usePage();
   const auth = page.props.auth as any;
   const ownerMode = auth?.erpActor?.ownerMode === true;
+  const currentActorId = Number(auth?.erpActor?.id ?? auth?.user?.id ?? 0);
   const canCreateExpense = !ownerMode;
   const api = useFinanceApi();
   const [showArchived, setShowArchived] = useState(false);
@@ -555,6 +561,12 @@ const Expense: React.FC = () => {
       && details?.payment_profile?.status === "verified"
       && paymentStatus !== "paid"
       && !["initiating", "awaiting_verification"].includes(attemptStatus || paymentStatus);
+  };
+
+  const isCreatedByCurrentActor = (expense: Expense): boolean => {
+    const creatorId = expense.created_by ?? expense.meta?.created_by;
+
+    return currentActorId > 0 && Number(creatorId) === currentActorId;
   };
 
   const procurementStatusLabel = (expense: Expense): string => {
@@ -987,7 +999,7 @@ const Expense: React.FC = () => {
                       >
                         <EyeIcon className="size-5" />
                       </button>
-                      {!showArchived && expense.status === "submitted" && !isProcurementExpense(expense) && (
+                      {!showArchived && expense.status === "submitted" && !isProcurementExpense(expense) && !isCreatedByCurrentActor(expense) && (
                         <>
                           <button
                             disabled={isApprovalActionPending}
@@ -1142,7 +1154,7 @@ const Expense: React.FC = () => {
 
             <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800">
               <div className="flex items-center justify-between gap-3">
-                {activeExpense.status === "submitted" && !showArchived && !isProcurementExpense(activeExpense) ? (
+                {activeExpense.status === "submitted" && !showArchived && !isProcurementExpense(activeExpense) && !isCreatedByCurrentActor(activeExpense) ? (
                   <div className="flex items-center gap-2">
                     <button
                       disabled={isApprovalActionPending}
@@ -1187,7 +1199,7 @@ const Expense: React.FC = () => {
 
       {canCreateExpense && isAddOpen && (
         <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm erp-modal-backdrop sm:py-8">
-          <div className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+          <div className="flex w-full max-w-3xl max-h-[calc(100vh-3rem)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100vh-4rem)]">
             <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">New Expense</p>
@@ -1202,7 +1214,7 @@ const Expense: React.FC = () => {
               </button>
             </div>
 
-            <div className="space-y-2 px-5 py-2">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
                 <input

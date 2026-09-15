@@ -13,11 +13,13 @@ const mocks = vi.hoisted(() => ({
 	paymentStatus: "unpaid" as string,
 	paymentAttempt: null as Record<string, unknown> | null,
 	paymentProfileStatus: "unverified" as "unverified" | "verified" | "disabled",
+	expenseSource: "procurement" as "procurement" | "manual",
+	creatorId: null as number | null,
 	ownerMode: false,
 }));
 
 vi.mock("@inertiajs/react", () => ({
-	usePage: () => ({ props: { auth: { erpActor: { ownerMode: mocks.ownerMode } } } }),
+	usePage: () => ({ props: { auth: { user: { id: 7 }, erpActor: { id: 7, ownerMode: mocks.ownerMode } } } }),
 }));
 vi.mock("react-apexcharts", () => ({ default: () => null }));
 vi.mock("sweetalert2", () => ({ default: { fire: mocks.swalFire } }));
@@ -33,7 +35,8 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 			description: "Receipt for purchase order PO-2026-003",
 			amount: 1020000,
 			status: mocks.status,
-			procurement_details: {
+			meta: mocks.creatorId === null ? undefined : { created_by: mocks.creatorId },
+			procurement_details: mocks.expenseSource === "procurement" ? {
 				receipt_id: 303,
 				po_number: "PO-2026-003",
 				receipt_number: "RCV-303",
@@ -61,7 +64,7 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 					masked_account_number: "******7890",
 					status: mocks.paymentProfileStatus,
 				},
-			},
+			} : undefined,
 		}],
 		isLoading: false,
 		refetch: mocks.refetch,
@@ -78,6 +81,8 @@ beforeEach(() => {
 	mocks.paymentStatus = "unpaid";
 	mocks.paymentAttempt = null;
 	mocks.paymentProfileStatus = "unverified";
+	mocks.expenseSource = "procurement";
+	mocks.creatorId = null;
 	mocks.refetch.mockResolvedValue(undefined);
 	mocks.revealPaymentProfile.mockResolvedValue({ ok: true, status: 200, data: { id: 8, account_number: "1234567890" } });
 	mocks.swalFire.mockResolvedValue({ isConfirmed: true });
@@ -103,6 +108,26 @@ describe("Finance procurement expenses", () => {
 		render(<Expense />);
 
 		expect(screen.getByRole("button", { name: "All" })).toHaveClass("bg-[#111111]", "text-white");
+	});
+
+	it("hides approval actions for an expense created by the current Finance user", () => {
+		mocks.expenseSource = "manual";
+		mocks.creatorId = 7;
+
+		render(<Expense />);
+
+		expect(screen.queryByRole("button", { name: "Approve expense" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Reject expense" })).not.toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+		expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+	});
+
+	it("keeps the Add Expense form scrollable for long receipt previews", () => {
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "Add Expense" }));
+
+		expect(document.querySelector(".erp-modal-backdrop .overflow-y-auto")).toBeInTheDocument();
 	});
 
 	it("shows procurement review details and Review & Release only while submitted", () => {
