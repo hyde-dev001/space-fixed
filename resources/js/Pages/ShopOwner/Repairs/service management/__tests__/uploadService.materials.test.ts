@@ -12,6 +12,15 @@ const packageManagerPath = resolve(
 );
 
 describe("Shop Owner repair service materials contract", () => {
+  it("keeps the service controls together, right aligned, and evenly sized", () => {
+    const source = readFileSync(sourcePath, "utf8");
+
+    expect(source).toContain('className="flex flex-wrap items-center justify-end gap-3"');
+    expect(source).toContain('inline-flex h-10 w-full rounded-xl');
+    expect(source).toContain('h-8 flex-1 rounded-lg px-4 py-0');
+    expect(source).toContain('inline-flex h-10 items-center gap-2');
+  });
+
   it("loads existing repair materials from the canonical owner endpoint", () => {
     const source = readFileSync(sourcePath, "utf8");
 
