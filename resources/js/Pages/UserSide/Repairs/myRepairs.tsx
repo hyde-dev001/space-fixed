@@ -5536,7 +5536,10 @@ const MyRepairs: React.FC = () => {
                                 <input
                                   type="text"
                                   value={refundAccountRef}
-                                  onChange={(e) => setRefundAccountRef(e.target.value)}
+                                  onChange={(e) => setRefundAccountRef(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                                  inputMode="numeric"
+                                  pattern="[0-9]*"
+                                  maxLength={11}
                                   className="w-full border-2 border-gray-200 rounded-lg p-3 text-sm focus:border-gray-400 focus:outline-none"
                                   placeholder="e.g. mobile number or account ref"
                                 />

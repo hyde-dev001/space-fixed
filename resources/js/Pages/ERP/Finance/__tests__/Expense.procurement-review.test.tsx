@@ -110,6 +110,14 @@ describe("Finance procurement expenses", () => {
 		expect(screen.getByRole("button", { name: "All" })).toHaveClass("bg-[#111111]", "text-white");
 	});
 
+	it("shows the shared expense pagination controls", () => {
+		render(<Expense />);
+
+		expect(screen.getByRole("button", { name: "Page 1" })).toHaveAttribute("aria-current", "page");
+		expect(screen.getByRole("button", { name: "Previous page" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
+	});
+
 	it("hides approval actions for an expense created by the current Finance user", () => {
 		mocks.expenseSource = "manual";
 		mocks.creatorId = 7;

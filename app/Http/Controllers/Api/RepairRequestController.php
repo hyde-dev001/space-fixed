@@ -1276,7 +1276,7 @@ class RepairRequestController extends Controller
             'media.*' => ['file', 'mimetypes:image/jpeg,image/png,image/webp,video/mp4,video/quicktime,video/x-msvideo,video/x-matroska,video/webm', 'max:262144'],
             'preferred_return_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
             'preferred_return_account_name' => ['nullable', 'string', 'max:120'],
-            'preferred_return_account_ref' => ['nullable', 'string', 'max:120'],
+            'preferred_return_account_ref' => ['nullable', 'string', 'regex:/^\d{1,11}$/'],
             'customer_payout_consent' => ['nullable', 'boolean'],
         ]);
 

@@ -103,6 +103,18 @@ const SearchIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const ChevronLeftIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+  </svg>
+);
+
+const ChevronRightIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+);
+
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -1048,6 +1060,76 @@ const Expense: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {filteredExpenses.length > 0 && (
+          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-sm text-gray-700 dark:text-gray-300">
+                Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
+                <span className="font-medium">{Math.min(endIndex, filteredExpenses.length)}</span> of{" "}
+                <span className="font-medium">{filteredExpenses.length}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Previous page"
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Previous page"
+                >
+                  <ChevronLeftIcon className="size-5" />
+                </button>
+
+                {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => {
+                  if (
+                    page === 1
+                    || page === totalPages
+                    || (page >= currentPage - 1 && page <= currentPage + 1)
+                  ) {
+                    return (
+                      <button
+                        key={page}
+                        type="button"
+                        aria-label={`Page ${page}`}
+                        aria-current={currentPage === page ? "page" : undefined}
+                        onClick={() => setCurrentPage(page)}
+                        className={`min-w-[40px] px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          currentPage === page
+                            ? "bg-blue-600 text-white"
+                            : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    );
+                  }
+
+                  if (page === currentPage - 2 || page === currentPage + 2) {
+                    return (
+                      <span key={page} className="px-2 text-gray-500 dark:text-gray-400">
+                        ...
+                      </span>
+                    );
+                  }
+
+                  return null;
+                })}
+
+                <button
+                  type="button"
+                  aria-label="Next page"
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Next page"
+                >
+                  <ChevronRightIcon className="size-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
           </>
         )}
