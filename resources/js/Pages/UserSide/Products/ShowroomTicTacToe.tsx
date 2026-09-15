@@ -11,7 +11,6 @@ import {
 interface ShowroomTicTacToeProps {
 	open: boolean;
 	onStandUp: () => void;
-	onClose: () => void;
 	onBoardChange?: (board: TicTacToeBoard, winningLine: number[], result: RoundResult | null) => void;
 }
 
@@ -32,7 +31,7 @@ const ROUND_TRANSITION_MS = 1650;
 
 const createEmptyBoard = (): TicTacToeBoard => [...EMPTY_BOARD] as TicTacToeBoard;
 
-const ShowroomTicTacToe = React.forwardRef<ShowroomTicTacToeHandle, ShowroomTicTacToeProps>(({ open, onStandUp, onClose, onBoardChange }, ref) => {
+const ShowroomTicTacToe = React.forwardRef<ShowroomTicTacToeHandle, ShowroomTicTacToeProps>(({ open, onStandUp, onBoardChange }, ref) => {
 	const [board, setBoard] = useState<TicTacToeBoard>(createEmptyBoard);
 	const [turn, setTurn] = useState<'X' | 'O'>('X');
 	const [result, setResult] = useState<RoundResult | null>(null);
@@ -191,19 +190,11 @@ const ShowroomTicTacToe = React.forwardRef<ShowroomTicTacToeHandle, ShowroomTicT
 					className="pointer-events-auto absolute bottom-4 right-4 w-[min(90vw,300px)] overflow-hidden rounded-xl border border-[#8e6d4b] bg-[#1a1714]/95 text-[#f2e8d8] shadow-[0_20px_55px_rgba(0,0,0,0.5)]"
 				>
 					<div className="pointer-events-none absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-transparent via-[#d7b77d] to-transparent opacity-90" />
-					<div className="flex items-start justify-between gap-4 border-b border-[#46392d] px-5 py-4 sm:px-6">
+					<div className="border-b border-[#46392d] px-5 py-4 sm:px-6">
 						<div>
 							<p className="text-[10px] font-semibold uppercase tracking-[0.28em] text-[#bfa47f]">Lounge table / XOX session</p>
 							<h2 id="showroom-xox-title" className="mt-1 text-base font-semibold tracking-tight">XOX at the lounge table</h2>
 						</div>
-						<button
-							type="button"
-							onClick={onClose}
-							className="min-h-11 min-w-11 rounded-lg border border-[#705943] px-3 text-sm font-medium text-[#f2e8d8] transition-colors hover:bg-[#2a231d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4c486]"
-							aria-label="Close XOX game"
-						>
-							Close
-						</button>
 					</div>
 
 					<div className="grid gap-3 p-4">
