@@ -400,6 +400,17 @@ const getRefundStatusClass = (status: string): string => {
 	}
 };
 
+const humanizeRefundReason = (value: string | null | undefined): string => {
+	const normalized = String(value ?? "").trim();
+	if (!normalized) return "N/A";
+
+	return normalized
+		.replace(/[_-]+/g, " ")
+		.split(/\s+/)
+		.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+		.join(" ");
+};
+
 const SERVICES_PER_PAGE = 6;
 const RETAIL_PRODUCTS_PER_PAGE = 9;
 const VAT_RATE = 12;
@@ -3897,10 +3908,8 @@ const PointOfSalePage = () => {
 									<div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">No repair refunds found.</div>
 								) : (
 									<div className="space-y-3">
-										{refundQueue.map((refund) => {
-											const financeStatus = String(refund.finance_status || 'pending').toLowerCase();
-											const ownerStatus = String(refund.shop_owner_status || 'pending').toLowerCase();
-											const repair = refund.repairRequest;
+						{refundQueue.map((refund) => {
+							const repair = refund.repairRequest;
 											const contact = [repair?.customer_phone, repair?.customer_email].filter(Boolean).join(' / ') || 'N/A';
 											const service = repair?.service_name || repair?.description || 'N/A';
 											const shoe = [repair?.brand, repair?.shoe_type].filter(Boolean).join(' / ') || 'N/A';
@@ -3917,7 +3926,7 @@ const PointOfSalePage = () => {
 																<p>Shoe / brand: <span className="font-semibold text-slate-900">{shoe}</span></p>
 																<p>Service: <span className="font-semibold text-slate-900">{service}</span></p>
 																<p>Amount: <span className="font-semibold text-slate-900">{formatPeso(Number(refund.approved_amount ?? refund.requested_amount ?? 0))}</span></p>
-																<p>Reason: <span className="font-semibold text-slate-900">{refund.reason_code || 'N/A'}</span></p>
+											<p>Reason: <span className="font-semibold text-slate-900">{humanizeRefundReason(refund.reason_code)}</span></p>
 																<p>Requested: <span className="font-semibold text-slate-900">{refund.requested_at ? new Date(refund.requested_at).toLocaleString('en-PH') : 'N/A'}</span></p>
 															</div>
 															{refund.reason_notes && <p className="mt-2 text-xs text-slate-600">Details: {refund.reason_notes}</p>}
@@ -3928,12 +3937,6 @@ const PointOfSalePage = () => {
 														</div>
 														<div className="flex items-center gap-2">
 															<span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${getRefundStatusClass(refund.status)}`}>{refund.status}</span>
-															{financeStatus && (
-																<span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-700">F:{financeStatus}</span>
-															)}
-															{ownerStatus && (
-																<span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-700">O:{ownerStatus}</span>
-															)}
 															{canExecute && (
 																<button
 																	type="button"

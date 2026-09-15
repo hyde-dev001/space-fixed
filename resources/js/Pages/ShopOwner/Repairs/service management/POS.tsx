@@ -2737,6 +2737,17 @@ useEffect(() => {
 		}
 	};
 
+	const humanizeRefundReason = (value: string | null | undefined): string => {
+		const normalized = String(value ?? '').trim();
+		if (!normalized) return 'N/A';
+
+		return normalized
+			.replace(/[_-]+/g, ' ')
+			.split(/\s+/)
+			.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+			.join(' ');
+	};
+
 	const performRefundAction = async (refund: RefundQueueItem, action: 'approve' | 'reject' | 'execute', payload: Record<string, unknown> = {}) => {
 		if (action === 'execute' && repairRefundExecutionFrozen) {
 			await Swal.fire({
@@ -3984,19 +3995,13 @@ useEffect(() => {
 															<p className="text-xs text-slate-600">Shoe: {shoe}</p>
 															<p className="text-xs text-slate-600">Service: {service}</p>
 															<p className="text-xs text-slate-600">Amount: {formatPeso(Number(refund.approved_amount ?? refund.requested_amount ?? 0))}</p>
-															<p className="text-xs text-slate-600">Reason: {refund.reason_code || 'N/A'} · Requested: {refund.requested_at ? new Date(refund.requested_at).toLocaleString('en-PH') : 'N/A'}</p>
+											<p className="text-xs text-slate-600">Reason: {humanizeRefundReason(refund.reason_code)} · Requested: {refund.requested_at ? new Date(refund.requested_at).toLocaleString('en-PH') : 'N/A'}</p>
 															{refund.reason_notes && <p className="text-xs text-slate-600">Refund details: {refund.reason_notes}</p>}
 															{(refund.execution_channel || refund.execution_reference) && <p className="text-xs text-slate-600">Execution: {[refund.execution_channel, refund.execution_reference].filter(Boolean).join(' / ')}</p>}
 															{refund.failure_reason && <p className="text-xs text-red-600">Reason: {refund.failure_reason}</p>}
 														</div>
 														<div className="flex items-center gap-2">
 															<span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${getRefundStatusClass(refund.status)}`}>{refund.status}</span>
-															{financeStatus && (
-																<span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-700">F:{financeStatus}</span>
-															)}
-															{ownerStatus && (
-																<span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-700">O:{ownerStatus}</span>
-															)}
 															{canApprove && (
 																<button
 																	type="button"

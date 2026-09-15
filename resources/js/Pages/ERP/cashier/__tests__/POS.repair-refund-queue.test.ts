@@ -23,4 +23,10 @@ describe("canonical repair refund queue", () => {
 	it("keeps the individual owner execution action on the existing owner endpoint", () => {
 		expect(source).toContain("/api/shop-owner/repair-refunds/${refund.id}/execute");
 	});
+
+	it("hides internal approval badges and humanizes refund reasons", () => {
+		expect(source).not.toContain("F:{financeStatus}");
+		expect(source).not.toContain("O:{ownerStatus}");
+		expect(source).toContain("humanizeRefundReason(refund.reason_code)");
+	});
 });
