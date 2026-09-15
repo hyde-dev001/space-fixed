@@ -125,7 +125,7 @@ final class PrivilegedFailureResponse
         string $correlationId,
         bool $forceJson = false,
     ): Response {
-        if ($forceJson || $request->expectsJson() || $request->ajax()) {
+        if ($forceJson || (! $request->header('X-Inertia') && ($request->expectsJson() || $request->ajax()))) {
             return response()->json([
                 'success' => false,
                 'message' => $message,

@@ -375,6 +375,6 @@ final class SuspensionAppealsController extends Controller
 
     private function usesApiResponse(Request $request): bool
     {
-        return $request->expectsJson() || $request->ajax() || (bool) $request->header('X-Inertia');
+        return ! $request->header('X-Inertia') && ($request->expectsJson() || $request->ajax());
     }
 }
