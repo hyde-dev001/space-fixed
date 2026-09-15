@@ -982,6 +982,7 @@ class RepairRequestController extends Controller
                     'shop_owner_id' => $repair->shop_owner_id,
                     'shop_name' => $repair->shopOwner ? $repair->shopOwner->business_name : 'Unknown Shop',
                     'shop_address' => $repair->shopOwner ? $repair->shopOwner->business_address : '',
+                    'shop_registration_type' => strtolower((string) ($repair->shopOwner?->registration_type ?? '')),
                     'image' => ! empty($images) ? Storage::url($images[0]) : null,
                     'delivery_method' => $repair->delivery_method,
                     'pickup_address' => $repair->pickup_address,
@@ -1185,15 +1186,41 @@ class RepairRequestController extends Controller
             ? (int) $repair->parent_repair_request_id
             : (int) $repair->id;
 
-        $latestWarrantyClaimStatus = RepairWarrantyClaim::query()
-            ->where('original_repair_request_id', $anchorRepairId)
-            ->latest('id')
-            ->value('status');
+        if ($anchorRepairId !== (int) $repair->id) {
+            $repair = RepairRequest::query()
+                ->whereKey($anchorRepairId)
+                ->forCustomer($user->id)
+                ->first();
 
-        if (in_array($latestWarrantyClaimStatus, [
-            RepairWarrantyClaim::STATUS_PENDING_REPAIRER,
-            RepairWarrantyClaim::STATUS_APPROVED,
-        ], true)) {
+            if (! $repair) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Repair request not found',
+                ], 404);
+            }
+        }
+
+        $latestWarrantyClaim = RepairWarrantyClaim::query()
+            ->where('original_repair_request_id', $anchorRepairId)
+            ->with('approvedRepair:id,status')
+            ->latest('id')
+            ->first();
+
+        $latestWarrantyClaimStatus = (string) ($latestWarrantyClaim?->status ?? '');
+        $approvedWarrantyJobStatus = strtolower((string) ($latestWarrantyClaim?->approvedRepair?->status ?? ''));
+        $completedWarrantyStatuses = [
+            'completed',
+            'ready_for_pickup',
+            'ready-for-pickup',
+            'shipped',
+            'picked_up',
+            'received',
+        ];
+        $hasActiveWarrantyClaim = $latestWarrantyClaimStatus === RepairWarrantyClaim::STATUS_PENDING_REPAIRER
+            || ($latestWarrantyClaimStatus === RepairWarrantyClaim::STATUS_APPROVED
+                && ($approvedWarrantyJobStatus === '' || ! in_array($approvedWarrantyJobStatus, $completedWarrantyStatuses, true)));
+
+        if ($hasActiveWarrantyClaim) {
             return response()->json([
                 'success' => false,
                 'message' => 'Refund cannot be requested while a warranty claim is active for this repair.',

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\InventoryItem;
 use App\Models\RepairPackage;
 use App\Models\RepairRequest;
+use App\Models\ShopOwner;
 use App\Services\NotificationService;
 use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\JsonResponse;
@@ -357,7 +358,7 @@ class RepairPackageController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'package_price' => 'required|numeric|min:0',
+            'package_price' => 'required|numeric|min:0.01',
             'status' => 'nullable|in:active,inactive',
             'starts_at' => 'nullable|date',
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
@@ -466,9 +467,11 @@ class RepairPackageController extends Controller
         // Separate validation for price changes vs regular updates
         $isPriceChange = $request->has('package_price') && 
                         ((float)$request->package_price !== (float)$package->package_price);
+        $shopOwner = $package->shopOwner ?: ShopOwner::query()->find($package->shop_owner_id);
+        $isIndividualShop = strtolower(trim((string) ($shopOwner?->registration_type ?? ''))) === 'individual';
 
         // Check for duplicate/pending price change requests
-        if ($isPriceChange && $request->has('reason')) {
+        if ($isPriceChange && $request->has('reason') && ! $isIndividualShop) {
             $existingPending = $package->approval_status && in_array($package->approval_status, [
                 'pending_finance',
                 'finance_approved',
@@ -491,10 +494,10 @@ class RepairPackageController extends Controller
             }
         }
 
-        if ($isPriceChange && $request->has('reason')) {
+        if ($isPriceChange && $request->has('reason') && ! $isIndividualShop) {
             // Price change request - requires reason and enters approval workflow
             $validator = Validator::make($request->all(), [
-                'package_price' => 'required|numeric|min:0',
+                'package_price' => 'required|numeric|min:0.01',
                 'reason' => 'required|string|max:1000',
             ]);
 
@@ -551,7 +554,7 @@ class RepairPackageController extends Controller
         }
 
         // Regular update (name, description, status, services, dates) - no approval needed
-        $validator = Validator::make($request->all(), [
+        $rules = [
             'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'sometimes|in:active,inactive',
@@ -564,7 +567,13 @@ class RepairPackageController extends Controller
             'material_templates.*.default_quantity' => 'required|integer|min:1',
             'material_templates.*.is_critical' => 'sometimes|boolean',
             'material_templates.*.tolerance_percent' => 'nullable|numeric|min:0|max:100',
-        ]);
+        ];
+
+        if ($request->has('package_price') && $isIndividualShop) {
+            $rules['package_price'] = 'required|numeric|min:0.01';
+        }
+
+        $validator = Validator::make($request->all(), $rules);
 
         if ($validator->fails()) {
             return response()->json([
@@ -574,6 +583,23 @@ class RepairPackageController extends Controller
         }
 
         $updateData = $request->only(['name', 'description', 'status', 'starts_at', 'ends_at']);
+        if ($isPriceChange && $isIndividualShop) {
+            $updateData = array_merge($updateData, [
+                'old_package_price' => $package->package_price,
+                'package_price' => round((float) $request->package_price, 2),
+                'change_reason' => null,
+                'approval_status' => 'finalized',
+                'approval_workflow_version' => 'individual_direct',
+                'current_approval_level' => null,
+                'approval_id' => null,
+                'finance_reviewed_by' => null,
+                'finance_reviewed_at' => null,
+                'finance_notes' => null,
+                'owner_reviewed_by' => null,
+                'owner_reviewed_at' => null,
+                'owner_notes' => null,
+            ]);
+        }
         if (Auth::guard('user')->check()) {
             $updateData['updated_by'] = Auth::guard('user')->id();
         }

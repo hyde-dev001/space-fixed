@@ -586,7 +586,9 @@ class RepairPosController extends Controller
             ->when($shopOwnerId > 0, fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
             ->with([
                 'sourceTransaction:id,transaction_no,module_reference_id,paid_amount,paid_at',
-                'repairRequest:id,request_id,customer_name,status,user_id',
+                'repairRequest:id,request_id,customer_name,email,phone,shoe_type,brand,description,status,user_id',
+                'repairRequest.user:id,name,first_name,last_name,email,phone',
+                'repairRequest.services:id,name',
                 'legs:id,pos_refund_id,leg_type,requested_amount,approved_amount',
             ])
             ->orderByDesc('requested_at')
@@ -594,7 +596,54 @@ class RepairPosController extends Controller
             ->get()
             ->map(function (PosRefund $refund) use ($service, $isIndividualShopOwner): PosRefund {
                 $refund = $service->reconcileGatewayProcessingRefund($refund);
+                $refund->loadMissing([
+                    'repairRequest:id,request_id,customer_name,email,phone,shoe_type,brand,description,status,user_id',
+                    'repairRequest.user:id,name,first_name,last_name,email,phone',
+                    'repairRequest.services:id,name',
+                ]);
                 $refund->loadMissing('legs');
+
+                $repair = $refund->repairRequest;
+                if ($repair) {
+                    $linkedUser = $repair->user;
+                    $linkedName = trim(implode(' ', array_filter([
+                        trim((string) ($linkedUser?->first_name ?? '')),
+                        trim((string) ($linkedUser?->last_name ?? '')),
+                    ])));
+                    $linkedName = $linkedName !== ''
+                        ? $linkedName
+                        : trim((string) ($linkedUser?->name ?? ''));
+
+                    $isMissing = static fn ($value): bool => in_array(
+                        strtolower(trim((string) $value)),
+                        ['', 'n/a', 'na', 'null'],
+                        true,
+                    );
+                    $customerName = $isMissing($repair->customer_name)
+                        ? $linkedName
+                        : trim((string) $repair->customer_name);
+                    $customerEmail = $isMissing($repair->email)
+                        ? trim((string) ($linkedUser?->email ?? ''))
+                        : trim((string) $repair->email);
+                    $customerPhone = $isMissing($repair->phone)
+                        ? trim((string) ($linkedUser?->phone ?? ''))
+                        : trim((string) $repair->phone);
+
+                    $repair->setAttribute('customer_name', $customerName !== '' ? $customerName : 'N/A');
+                    $repair->setAttribute('customer_email', $customerEmail !== '' ? $customerEmail : null);
+                    $repair->setAttribute('customer_phone', $customerPhone !== '' ? $customerPhone : null);
+                    $repair->setAttribute(
+                        'service_name',
+                        $repair->services->pluck('name')->filter()->implode(', '),
+                    );
+                    $repair->unsetRelation('user');
+                    $repair->unsetRelation('services');
+                }
+
+                $refund->setAttribute(
+                    'refund_reference',
+                    (string) ($refund->shop_refund_reference ?: $refund->refund_no),
+                );
 
                 $status = strtolower((string) ($refund->status ?? ''));
                 $financeStatus = strtolower((string) ($refund->finance_status ?? 'pending'));
@@ -619,9 +668,16 @@ class RepairPosController extends Controller
             })
             ->values();
 
+        $data = $refunds->map(function (PosRefund $refund): array {
+            $payload = $refund->toArray();
+            $payload['repairRequest'] = $payload['repair_request'] ?? null;
+
+            return $payload;
+        })->values();
+
         return response()->json([
             'success' => true,
-            'data' => $refunds,
+            'data' => $data,
         ]);
     }
 

@@ -135,17 +135,31 @@ type ReceiptSnapshot = {
 
 type RefundQueueItem = {
 	id: number;
+	refund_reference?: string | null;
 	status: string;
+	workflow_source?: string | null;
 	finance_status?: string;
 	shop_owner_status?: string;
+	can_execute_payout?: boolean;
+	has_pos_manual_leg?: boolean;
 	requested_amount: number;
 	approved_amount?: number | null;
 	requested_at?: string | null;
 	reason_code?: string;
+	reason_notes?: string | null;
 	failure_reason?: string | null;
+	execution_channel?: string | null;
+	execution_reference?: string | null;
+	execution_amount?: number | null;
 	repairRequest?: {
 		request_id?: string;
 		customer_name?: string;
+		customer_email?: string | null;
+		customer_phone?: string | null;
+		shoe_type?: string | null;
+		brand?: string | null;
+		description?: string | null;
+		service_name?: string | null;
 	};
 };
 
@@ -786,6 +800,16 @@ const PointOfSalePage = () => {
 	const cashierName = String((props as any)?.auth?.user?.name || "Repairer Cashier");
 	const businessType = resolvePosBusinessType(props as any);
 	const allowedModes = useMemo(() => resolveAllowedModes(businessType), [businessType]);
+	const isShopOwnerRepairContext = Boolean((props as any)?.auth?.shop_owner)
+		|| (typeof window !== "undefined" && window.location.pathname.startsWith("/shop-owner/"));
+	const isIndividualRepairShop = isShopOwnerRepairContext
+		&& String(
+			(props as any)?.auth?.shop_owner?.registration_type
+				?? (props as any)?.auth?.user?.shop_owner?.registration_type
+				?? "",
+		).toLowerCase() === "individual";
+	const repairRefundExecutionFrozen = isRouteFrozen("shop_owner.repair-refunds.execute");
+	const repairOrdersEndpoint = isShopOwnerRepairContext ? "/api/shop-owner/repairs" : "/api/repairer/repairs";
 	const [mode, setMode] = useState<PosMode>(allowedModes[0]);
 	const shopRepairPaymentPolicy: ManualPaymentPolicy = "full_upfront";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
@@ -815,6 +839,7 @@ const PointOfSalePage = () => {
 	const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
 	const [isRefundQueueLoading, setIsRefundQueueLoading] = useState<boolean>(false);
 	const [refundQueue, setRefundQueue] = useState<RefundQueueItem[]>([]);
+	const [processingRefundId, setProcessingRefundId] = useState<number | null>(null);
 	const [historySearch, setHistorySearch] = useState<string>("");
 	const [historyDate, setHistoryDate] = useState<string>("");
 	const [selectedRepairOrder, setSelectedRepairOrder] = useState<RepairOrderOption | null>(null);
@@ -869,7 +894,7 @@ const PointOfSalePage = () => {
 			try {
 					const [servicesResult, ordersResult, packagesResult, manualQueueResult] = await Promise.allSettled([
 					axios.get("/api/repair-services"),
-					axios.get("/api/repairer/repairs", { params: { scope: "pos_checkout" } }),
+					axios.get(repairOrdersEndpoint, { params: { scope: "pos_checkout" } }),
 					axios.get("/api/repair-packages"),
 						axios.get("/api/repair-pos/manual-queue"),
 				]);
@@ -1119,7 +1144,7 @@ const PointOfSalePage = () => {
 		return () => {
 			isMounted = false;
 		};
-	}, [allowedModes]);
+	}, [allowedModes, repairOrdersEndpoint]);
 
 	const fetchRefundQueue = async () => {
 		setIsRefundQueueLoading(true);
@@ -1131,6 +1156,119 @@ const PointOfSalePage = () => {
 			setRefundQueue([]);
 		} finally {
 			setIsRefundQueueLoading(false);
+		}
+	};
+
+	const executeRepairRefundFromQueue = async (refund: RefundQueueItem) => {
+		if (!isIndividualRepairShop || refund.can_execute_payout !== true) {
+			return;
+		}
+
+		if (repairRefundExecutionFrozen) {
+			await Swal.fire({
+				icon: "warning",
+				title: "Maintenance in progress",
+				text: "Refund execution is temporarily paused during maintenance.",
+				confirmButtonColor: "#2563eb",
+			});
+			return;
+		}
+
+		let requestPayload: Record<string, unknown> | FormData = {
+			execution_mode: "manual",
+			execution_note: "Executed from the Repair Refund Queue.",
+		};
+		const requiresManualPayoutDetails = refund.has_pos_manual_leg === true
+			&& String(refund.workflow_source ?? "").toLowerCase() === "shop_pos_repair";
+		const confirmation = requiresManualPayoutDetails
+			? await Swal.fire({
+				icon: "question",
+				title: "Execute refund payout",
+				html: `
+					<div class="text-left space-y-3">
+						<label class="block text-sm font-semibold">Refund channel
+							<select id="repair_refund_execution_channel" class="swal2-input !m-0 !w-full">
+								<option value="">Select channel</option>
+								<option value="gcash">GCash</option>
+								<option value="card">Card</option>
+								<option value="bank_transfer">Bank transfer</option>
+								<option value="manual_cash">Cash</option>
+							</select>
+						</label>
+						<label class="block text-sm font-semibold">Reference
+							<input id="repair_refund_execution_reference" class="swal2-input !m-0 !w-full" placeholder="Transaction/reference number" />
+						</label>
+						<label class="block text-sm font-semibold">Amount
+							<input id="repair_refund_execution_amount" type="number" min="0.01" step="0.01" class="swal2-input !m-0 !w-full" placeholder="Refund amount" />
+						</label>
+						<label class="block text-sm font-semibold">Proof
+							<input id="repair_refund_execution_proof" type="file" accept=".jpg,.jpeg,.png,.webp" multiple class="swal2-file !m-0 !w-full" />
+						</label>
+					</div>
+				`,
+				showCancelButton: true,
+				confirmButtonText: "Execute payout",
+				cancelButtonText: "Cancel",
+				confirmButtonColor: "#059669",
+				preConfirm: () => {
+					const channel = (document.getElementById("repair_refund_execution_channel") as HTMLSelectElement | null)?.value.trim() ?? "";
+					const reference = (document.getElementById("repair_refund_execution_reference") as HTMLInputElement | null)?.value.trim() ?? "";
+					const amount = (document.getElementById("repair_refund_execution_amount") as HTMLInputElement | null)?.value.trim() ?? "";
+					const proofInput = document.getElementById("repair_refund_execution_proof") as HTMLInputElement | null;
+
+					if (!channel || !reference || !amount || !proofInput?.files?.length) {
+						Swal.showValidationMessage("Channel, reference, amount, and at least one proof image are required.");
+						return undefined;
+					}
+
+					return { channel, reference, amount, files: Array.from(proofInput.files) };
+				},
+			})
+			: await Swal.fire({
+				icon: "question",
+				title: "Execute refund payout",
+				text: "This will execute the approved repair refund payout. Continue?",
+				showCancelButton: true,
+				confirmButtonText: "Yes, execute",
+				cancelButtonText: "Cancel",
+				confirmButtonColor: "#059669",
+			});
+
+		if (!confirmation.isConfirmed) {
+			return;
+		}
+
+		if (requiresManualPayoutDetails && confirmation.value) {
+			const formData = new FormData();
+			formData.append("execution_mode", "manual");
+			formData.append("execution_channel", confirmation.value.channel);
+			formData.append("execution_reference", confirmation.value.reference);
+			formData.append("execution_amount", confirmation.value.amount);
+			for (const file of confirmation.value.files) {
+				formData.append("execution_proof_images[]", file);
+			}
+			requestPayload = formData;
+		}
+
+		setProcessingRefundId(refund.id);
+		try {
+			await axios.post(`/api/shop-owner/repair-refunds/${refund.id}/execute`, requestPayload, { withCredentials: true });
+			await fetchRefundQueue();
+			await Swal.fire({
+				icon: "success",
+				title: "Refund executed",
+				text: "The repair refund payout has been recorded.",
+				confirmButtonColor: "#2563eb",
+			});
+		} catch (error: any) {
+			await Swal.fire({
+				icon: "error",
+				title: "Execution failed",
+				text: error?.response?.data?.message || "Unable to execute refund payout.",
+				confirmButtonColor: "#dc2626",
+			});
+		} finally {
+			setProcessingRefundId(null);
 		}
 	};
 
@@ -3351,6 +3489,15 @@ const PointOfSalePage = () => {
 							{mode === "repair" && (
 								<button
 									type="button"
+									onClick={() => setIsRefundQueueOpen(true)}
+									className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+								>
+									Refund Queue
+								</button>
+							)}
+							{mode === "repair" && (
+								<button
+									type="button"
 									onClick={() => setIsOrderModalOpen(true)}
 									className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-500"
 								>
@@ -3753,14 +3900,31 @@ const PointOfSalePage = () => {
 										{refundQueue.map((refund) => {
 											const financeStatus = String(refund.finance_status || 'pending').toLowerCase();
 											const ownerStatus = String(refund.shop_owner_status || 'pending').toLowerCase();
+											const repair = refund.repairRequest;
+											const contact = [repair?.customer_phone, repair?.customer_email].filter(Boolean).join(' / ') || 'N/A';
+											const service = repair?.service_name || repair?.description || 'N/A';
+											const shoe = [repair?.brand, repair?.shoe_type].filter(Boolean).join(' / ') || 'N/A';
+											const canExecute = isIndividualRepairShop && refund.can_execute_payout === true;
 											return (
 												<div key={refund.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
 													<div className="flex flex-wrap items-start justify-between gap-3">
-														<div>
-															<p className="text-sm font-semibold text-slate-900">#{refund.id} {refund.repairRequest?.request_id ? `- ${refund.repairRequest.request_id}` : ''}</p>
-															<p className="text-xs text-slate-600">Customer: {refund.repairRequest?.customer_name || 'N/A'}</p>
-															<p className="text-xs text-slate-600">Amount: {formatPeso(Number(refund.approved_amount ?? refund.requested_amount ?? 0))}</p>
-															{refund.failure_reason && <p className="text-xs text-red-600">Reason: {refund.failure_reason}</p>}
+														<div className="min-w-0 flex-1">
+															<p className="text-sm font-semibold text-slate-900">{refund.refund_reference || 'Repair refund'}</p>
+															<div className="mt-2 grid grid-cols-1 gap-x-6 gap-y-1 text-xs text-slate-600 md:grid-cols-2">
+																<p>Repair request: <span className="font-semibold text-slate-900">{repair?.request_id || 'N/A'}</span></p>
+																<p>Customer: <span className="font-semibold text-slate-900">{repair?.customer_name || 'N/A'}</span></p>
+																<p>Contact: <span className="font-semibold text-slate-900">{contact}</span></p>
+																<p>Shoe / brand: <span className="font-semibold text-slate-900">{shoe}</span></p>
+																<p>Service: <span className="font-semibold text-slate-900">{service}</span></p>
+																<p>Amount: <span className="font-semibold text-slate-900">{formatPeso(Number(refund.approved_amount ?? refund.requested_amount ?? 0))}</span></p>
+																<p>Reason: <span className="font-semibold text-slate-900">{refund.reason_code || 'N/A'}</span></p>
+																<p>Requested: <span className="font-semibold text-slate-900">{refund.requested_at ? new Date(refund.requested_at).toLocaleString('en-PH') : 'N/A'}</span></p>
+															</div>
+															{refund.reason_notes && <p className="mt-2 text-xs text-slate-600">Details: {refund.reason_notes}</p>}
+															{(refund.execution_channel || refund.execution_reference) && (
+																<p className="mt-1 text-xs text-slate-600">Execution: {[refund.execution_channel, refund.execution_reference].filter(Boolean).join(' / ')}</p>
+															)}
+															{refund.failure_reason && <p className="mt-1 text-xs text-red-600">Failure: {refund.failure_reason}</p>}
 														</div>
 														<div className="flex items-center gap-2">
 															<span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${getRefundStatusClass(refund.status)}`}>{refund.status}</span>
@@ -3769,6 +3933,16 @@ const PointOfSalePage = () => {
 															)}
 															{ownerStatus && (
 																<span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-700">O:{ownerStatus}</span>
+															)}
+															{canExecute && (
+																<button
+																	type="button"
+																	onClick={() => executeRepairRefundFromQueue(refund)}
+																	disabled={processingRefundId === refund.id}
+																	className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
+																>
+																	{processingRefundId === refund.id ? 'Executing...' : 'Execute refund payout'}
+																</button>
 															)}
 														</div>
 													</div>

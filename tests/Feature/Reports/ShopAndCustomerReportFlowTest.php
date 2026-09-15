@@ -314,6 +314,46 @@ class ShopAndCustomerReportFlowTest extends TestCase
         ]);
     }
 
+    public function test_shop_owner_can_report_repair_review_when_shop_is_resolved_from_the_repair_request(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create();
+        $legacyShopOwner = ShopOwner::factory()->approved()->create();
+        $customer = User::factory()->create();
+        $repairRequest = RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'status' => 'completed',
+        ]);
+        $review = RepairReview::create([
+            'repair_request_id' => $repairRequest->id,
+            'user_id' => $customer->id,
+            'shop_owner_id' => $legacyShopOwner->id,
+            'rating' => 1,
+            'review_text' => 'This review needs moderation.',
+            'is_verified' => true,
+            'is_visible' => true,
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson('/api/shop-owner/reviews/report', [
+                'review_id' => 'repair_' . $review->id,
+                'reason' => 'inappropriate_content',
+                'notes' => 'Report this review for moderation.',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('review_reports', [
+            'review_type' => 'repair',
+            'review_id' => $review->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'pending_review',
+        ]);
+        $this->assertDatabaseHas('repair_reviews', [
+            'id' => $review->id,
+            'is_visible' => true,
+        ]);
+    }
+
     public function test_authenticated_shop_owner_can_submit_shop_review_report(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create();

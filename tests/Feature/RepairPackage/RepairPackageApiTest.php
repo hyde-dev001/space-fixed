@@ -181,6 +181,54 @@ class RepairPackageApiTest extends TestCase
         ]);
     }
 
+    public function test_individual_repair_shop_owner_can_update_package_price_without_changing_booking_snapshot(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+        $customer = User::factory()->create();
+        $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
+        $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 700]);
+        $material = $this->createRepairMaterial($shopOwner);
+        $package = RepairPackage::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Individual Restore Bundle',
+            'package_price' => 1000,
+            'status' => 'active',
+            'approval_status' => 'none',
+        ]);
+        $package->syncIncludedServices([$s1->id, $s2->id]);
+        $booking = $this->createPackageBooking($customer, $shopOwner, $package, [
+            'package_price' => 1000,
+            'final_total' => 1000,
+            'total' => 1000,
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->putJson("/api/repair-packages/{$package->id}", [
+                'name' => $package->name,
+                'description' => $package->description,
+                'package_price' => 1250,
+                'status' => 'active',
+                'service_ids' => [$s1->id, $s2->id],
+                'material_templates' => [[
+                    'inventory_item_id' => $material->id,
+                    'default_quantity' => 1,
+                ]],
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.package_price', '1250.00');
+
+        $this->assertDatabaseHas('repair_packages', [
+            'id' => $package->id,
+            'package_price' => 1250,
+            'approval_status' => 'finalized',
+        ]);
+        $this->assertSame(1000.0, (float) $booking->fresh()->package_price);
+        $this->assertSame(1000.0, (float) $booking->fresh()->final_total);
+    }
+
     public function test_shop_owner_cannot_access_other_shop_package(): void
     {
         $shopA = ShopOwner::factory()->approved()->create();

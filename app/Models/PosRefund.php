@@ -48,6 +48,7 @@ class PosRefund extends Model
 
     protected $fillable = [
         'refund_no',
+        'shop_refund_reference',
         'shop_owner_id',
         'source_transaction_id',
         'module_type',
