@@ -216,6 +216,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const carriedPlacementRef = useRef<ShowroomPlacement | null>(null);
 	const showroomWallArtRef = useRef<ShowroomWallArt>(showroomWallArt);
 	const wallArtUpdaterRef = useRef<((wallArt: ShowroomWallArt) => void) | null>(null);
+	const wallArtPromptSpritesRef = useRef<Array<{ side: WallArtSide; sprite: THREE.Sprite; baseY: number }>>([]);
+	const nearbyWallArtSideRef = useRef<WallArtSide | null>(null);
+	const wallArtInputRefs = useRef<Record<WallArtSide, HTMLInputElement | null>>({ left: null, right: null });
 	const selectedPlacementProductIdRef = useRef<number | null>(null);
 	const pendingPlacementProductIdRef = useRef<number | null>(null);
 	const layoutRef = useRef<ReturnType<typeof getShowroomLayout> | null>(null);
@@ -260,6 +263,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const [wallArt, setWallArt] = useState<ShowroomWallArt>(showroomWallArt);
 	const [isWallArtPanelOpen, setIsWallArtPanelOpen] = useState(false);
 	const [wallArtStatus, setWallArtStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	const [nearbyWallArtSide, setNearbyWallArtSide] = useState<WallArtSide | null>(null);
 	const updateTableBoard = useCallback((board: TicTacToeBoard, winningLine: number[], result: 'X' | 'O' | 'draw' | null) => {
 		xoxVisualRef.current = { board, winningLine, result };
 		if (xoxTextureRef.current) drawTableBoard(xoxTextureRef.current, board, winningLine, result);
@@ -310,6 +314,16 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				&& key === nearbySeatKey;
 		});
 	}, [isEditMode, isSceneLoading, nearbySeatKey, seatedSeatKey]);
+
+	useEffect(() => {
+		wallArtPromptSpritesRef.current.forEach(({ side, sprite }) => {
+			sprite.visible = canManageShowroomArt
+				&& !isSceneLoading
+				&& seatedSeatKey === null
+				&& carriedPlacement === null
+				&& nearbyWallArtSide === side;
+		});
+	}, [canManageShowroomArt, carriedPlacement, isSceneLoading, nearbyWallArtSide, seatedSeatKey]);
 
 	useEffect(() => {
 		placementAssignmentsRef.current = placementAssignments;
@@ -879,6 +893,34 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		}
 	};
 
+	const getNearbyWallArtSide = () => {
+		const camera = cameraRef.current;
+		if (!camera || !canManageShowroomArt) return null;
+
+		const forward = new THREE.Vector3();
+		camera.getWorldDirection(forward);
+		let best: { side: WallArtSide; score: number } | null = null;
+		for (const { side, sprite } of wallArtPromptSpritesRef.current) {
+			const offset = sprite.position.clone().sub(camera.position);
+			const distance = offset.length();
+			if (distance > 7 || distance < 0.4) continue;
+			const alignment = offset.normalize().dot(forward);
+			if (alignment < 0.45) continue;
+			const score = (1 - alignment) * 4 + distance * 0.12;
+			if (!best || score < best.score) best = { side, score };
+		}
+
+		return best?.side ?? null;
+	};
+
+	const handleWallArtKey = () => {
+		const side = nearbyWallArtSideRef.current;
+		if (!canManageShowroomArt || !side || carriedPlacementRef.current !== null) return false;
+
+		wallArtInputRefs.current[side]?.click();
+		return true;
+	};
+
 	const nearbyPlacementSlot = () => {
 		const camera = cameraRef.current;
 		if (!camera) return null;
@@ -1013,6 +1055,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		wallArtUpdaterRef.current = showroom.updateWallArt;
 		layoutRef.current = layout;
 		seatPromptSpritesRef.current = showroom.seatPromptSprites;
+		wallArtPromptSpritesRef.current = showroom.wallArtPromptSprites;
 		slotTargetsRef.current = showroom.slotTargets;
 		const boardCanvas = document.createElement('canvas');
 		boardCanvas.width = 768;
@@ -1227,6 +1270,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				sprite.position.z = card.position.z;
 				sprite.position.y = card.position.y + offsetY + (reducedMotion ? 0 : Math.sin(promptTime + shoeIdx) * 0.018);
 			});
+			wallArtPromptSpritesRef.current.forEach(({ sprite, baseY }, index) => {
+				sprite.position.y = baseY + (reducedMotion ? 0 : Math.sin(promptTime + index) * 0.045);
+			});
 		};
 		const syncPlacementCards = () => {
 			const nextAssignments = placementAssignmentsRef.current;
@@ -1317,6 +1363,13 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			if (nearbySeatKeyRef.current !== nextNearbySeatKey) {
 				nearbySeatKeyRef.current = nextNearbySeatKey;
 				setNearbySeatKey(nextNearbySeatKey);
+			}
+			const nextNearbyWallArtSide = carriedPlacementRef.current === null
+				? getNearbyWallArtSide()
+				: null;
+			if (nearbyWallArtSideRef.current !== nextNearbyWallArtSide) {
+				nearbyWallArtSideRef.current = nextNearbyWallArtSide;
+				setNearbyWallArtSide(nextNearbyWallArtSide);
 			}
 
 			const lookDistance = 14;
@@ -1490,6 +1543,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			if (focusedShoeIndexRef.current !== null || isTypingTarget(event.target)) {
 				return;
 			}
+			if (event.key.toLowerCase() === 'e' && !event.repeat && seatedSeatKeyRef.current === null && handleWallArtKey()) {
+				event.preventDefault();
+				return;
+			}
 			if (event.key.toLowerCase() === 'e' && !event.repeat && seatedSeatKeyRef.current === null && handlePlacementKey()) {
 				event.preventDefault();
 				return;
@@ -1577,6 +1634,8 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			cameraRef.current = null;
 			shelfCardPickablesRef.current = [];
 			seatPromptSpritesRef.current = [];
+			wallArtPromptSpritesRef.current = [];
+			nearbyWallArtSideRef.current = null;
 			slotTargetsRef.current = [];
 			xoxBoardsRef.current = [];
 			xoxTextureRef.current = null;
@@ -1847,6 +1906,20 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				}}
 			>
 				<div ref={mountRef} className="h-full w-full" />
+				{canManageShowroomArt && (['left', 'right'] as WallArtSide[]).map((side) => (
+					<input
+						key={`showroom-wall-art-${side}`}
+						ref={(element) => { wallArtInputRefs.current[side] = element; }}
+						type="file"
+						accept="image/jpeg,image/png,image/webp"
+						className="hidden"
+						onChange={(event) => {
+							const file = event.currentTarget.files?.[0];
+							if (file) void uploadWallArt(side, file);
+							event.currentTarget.value = '';
+						}}
+					/>
+				))}
 				{!isSceneLoading && focusedShoeIndex === null && (
 					<div className="pointer-events-none absolute left-1/2 top-24 z-20 -translate-x-1/2 rounded-md border border-white/20 bg-stone-950/85 px-4 py-2 text-center text-xs text-stone-100 sm:top-4">
 						<p className="font-medium tracking-[0.16em]">{displayShopName} / THE GALLERY</p>
@@ -2139,7 +2212,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 									onPointerMove={(event) => event.stopPropagation()}
 								>
 									<p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Gallery wall art</p>
-									<p className="mt-1 text-xs text-stone-300">Upload one large 16:9 image for each wall.</p>
+									<p className="mt-1 text-xs text-stone-300">Walk up to a frame and press E to upload, or choose a file here. Use one large 16:9 image for each wall.</p>
 									<div className="mt-3 grid grid-cols-2 gap-3">
 										{(['left', 'right'] as WallArtSide[]).map((side) => (
 											<div key={side} className="space-y-2">
