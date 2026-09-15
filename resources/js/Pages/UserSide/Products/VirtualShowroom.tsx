@@ -756,6 +756,19 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		return shoeIdx;
 	};
 
+	const pickShoeAtViewCenter = () => {
+		const camera = cameraRef.current;
+		if (!camera || shelfCardPickablesRef.current.length === 0) return null;
+
+		pointerVectorRef.current.set(0, 0);
+		raycasterRef.current.setFromCamera(pointerVectorRef.current, camera);
+		const hit = raycasterRef.current.intersectObjects(shelfCardPickablesRef.current, false)[0];
+		if (!hit || hit.distance > 4.2) return null;
+
+		const shoeIdx = hit.object.userData.shoeIdx as number | undefined;
+		return typeof shoeIdx === 'number' ? shoeIdx : null;
+	};
+
 	const highlightSlotTarget = (slotKey: string | null) => {
 		activePlacementTargetRef.current = slotKey;
 		slotTargetsRef.current.forEach((target) => {
@@ -839,14 +852,18 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			void savePlacement(carried.productId, carried.slotKey, targetSlotKey);
 			return true;
 		}
+		const aimedShoeIdx = pickShoeAtViewCenter();
+		const aimedProductId = aimedShoeIdx === null ? null : shoes[aimedShoeIdx]?.id;
 		const selected = placementAssignmentsRef.current.find(
+			(assignment) => assignment.productId === aimedProductId,
+		) ?? placementAssignmentsRef.current.find(
 			(assignment) => assignment.productId === selectedPlacementProductIdRef.current,
 		);
-		const card = shelfCardPickablesRef.current.find(
-			(item) => item.userData.productId === selected?.productId,
-		);
+		const card = shelfCardPickablesRef.current.find(item => item.userData.productId === selected?.productId);
 		const camera = cameraRef.current;
 		if (!selected || !card || !camera || camera.position.distanceTo(card.position) > 4.2) return false;
+		selectedPlacementProductIdRef.current = selected.productId;
+		setSelectedProductId(selected.productId);
 		carriedPlacementRef.current = selected;
 		setCarriedPlacement(selected);
 		setPlacementSaveStatus('idle');
@@ -971,7 +988,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		const movementForward = new THREE.Vector3();
 		const movementRight = new THREE.Vector3();
 		const movementVelocity = new THREE.Vector3();
-		const walkSpeed = 4.8;
+		const walkSpeed = 7.2;
 		const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 		const loader = new THREE.TextureLoader();
@@ -1107,7 +1124,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			card.castShadow = false;
 			scene.add(card);
 			card.visible = !hiddenShelfShoeIndicesRef.current.has(shoeIdx);
-			const clickPrompt = createShowroomPromptSprite(canEditShowroom ? 'CLICK + E' : 'CLICK');
+			const clickPrompt = createShowroomPromptSprite(canEditShowroom ? 'E TO PICK' : 'CLICK');
 			clickPrompt.sprite.position.set(card.position.x, card.position.y + 0.88, card.position.z);
 			clickPrompt.sprite.scale.set(1.08, 0.3, 1);
 			scene.add(clickPrompt.sprite);
@@ -1558,7 +1575,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			return;
 		}
 
-		const sensitivity = 0.004;
+		const sensitivity = 0.007;
 		targetCameraYawRef.current += deltaX * sensitivity;
 		targetCameraPitchRef.current -= deltaY * sensitivity;
 		targetCameraPitchRef.current = Math.max(-1.05, Math.min(1.05, targetCameraPitchRef.current));
@@ -1609,10 +1626,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 						setSelectedProductId(productId);
 						setPlacementSaveStatus('idle');
 					}
-					isDraggingRef.current = false;
-					setIsDragging(false);
-					pointerMoveDistanceRef.current = 0;
-					return;
 				}
 				shoes[pickedShoeIdx]?.frames.forEach((frameSrc) => {
 					void ensureFocusedFrameReady(frameSrc);
@@ -1774,7 +1787,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				{canEditShowroom && seatedSeatKey === null && !isSceneLoading && (
 					<div className="pointer-events-none absolute bottom-6 left-4 z-30 max-w-[min(85vw,320px)] rounded-lg border border-amber-200/60 bg-stone-950/90 px-4 py-3 text-xs text-stone-100 shadow-lg">
 						<p className="font-semibold text-amber-200">{carriedPlacement ? 'Shoe picked up' : selectedProductId ? 'Shoe selected' : 'Arrange your shelves'}</p>
-						<p className="mt-1">{carriedPlacement ? 'Walk to any shelf, aim at a position, then press E to place.' : selectedProductId ? 'Walk near the shoe and press E to pick it up.' : 'Click a shoe, walk near it, then press E to pick it up.'}</p>
+						<p className="mt-1">{carriedPlacement ? 'Walk to any shelf, aim at a position, then press E to place.' : 'Aim at a nearby shoe and press E to pick it up. Click a shoe to inspect its 360 view.'}</p>
 						{placementSaveStatus === 'saving' && <p className="mt-1 text-amber-200">Saving placement…</p>}
 						{placementSaveStatus === 'saved' && <p className="mt-1 text-emerald-300">Placement saved.</p>}
 						{placementSaveStatus === 'error' && <p className="mt-1 text-red-300">Could not save placement. Try again.</p>}
@@ -1796,7 +1809,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				{isStandalonePage && canEditShowroom && isEditMode && (
 					<div className="pointer-events-auto absolute right-3 top-16 z-30 w-[min(92vw,320px)] rounded-xl border border-stone-700 bg-stone-950/95 p-3 text-stone-100 shadow-xl sm:right-4 sm:top-16">
 						<p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Shelf editor</p>
-						<p className="mt-1 text-xs text-stone-300">Click a shoe, press E to pick up, then walk to a shelf and press E to place. You can also use these controls.</p>
+						<p className="mt-1 text-xs text-stone-300">Aim at a shoe and press E to pick it up, then walk to a shelf and press E to place. Click a shoe to inspect its 360 view.</p>
 						<label className="mt-3 block text-xs font-medium text-stone-300" htmlFor="showroom-product-select">Shoe</label>
 						<select
 							id="showroom-product-select"
