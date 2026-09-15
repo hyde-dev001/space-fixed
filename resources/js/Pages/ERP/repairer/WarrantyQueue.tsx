@@ -100,6 +100,16 @@ const humanizeReasonCode = (value: string | null | undefined): string => {
     .join(" ");
 };
 
+const SOURCE_CHANNEL_LABELS: Record<string, string> = {
+  manual_pos_walk_in: "Manual POS Walk-in",
+  customer_portal: "Customer Portal",
+};
+
+const humanizeSourceChannel = (value: string | null | undefined): string => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized ? SOURCE_CHANNEL_LABELS[normalized] ?? humanizeReasonCode(normalized) : "N/A";
+};
+
 const normalizeWarrantyEvidenceUrl = (raw: unknown): string | null => {
   const value = String(raw ?? "").trim();
   if (!value) {
@@ -522,7 +532,7 @@ export default function WarrantyQueue() {
                     </td>
                     <td className="py-4 text-gray-700 dark:text-gray-300">{claim.original_repair.customer_name || "N/A"}</td>
                     <td className="py-4 text-gray-700 dark:text-gray-300">{humanizeReasonCode(claim.reason_code)}</td>
-                    <td className="py-4 text-gray-700 dark:text-gray-300">{claim.source_channel || "N/A"}</td>
+                    <td className="py-4 text-gray-700 dark:text-gray-300">{humanizeSourceChannel(claim.source_channel)}</td>
                     <td className="py-4 text-gray-700 dark:text-gray-300">{formatWarrantyDateTime(claim.created_at)}</td>
                     <td className="py-4">
                       <span className={`rounded-full px-2 py-1 text-xs font-semibold ${getStatusBadgeClass(claim.status)}`}>
@@ -644,7 +654,7 @@ export default function WarrantyQueue() {
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Source</p>
-                    <p className="mt-1 font-semibold text-slate-900">{selectedClaim.source_channel || "N/A"}</p>
+                    <p className="mt-1 font-semibold text-slate-900">{humanizeSourceChannel(selectedClaim.source_channel)}</p>
                   </div>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
                     <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Current Status</p>

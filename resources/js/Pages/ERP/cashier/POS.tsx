@@ -1787,13 +1787,6 @@ const PointOfSalePage = () => {
 						<textarea id="pos_warranty_reason_details" class="swal2-textarea" style="margin:0; width:100%;" placeholder="Describe the issue..."></textarea>
 					</div>
 					<div>
-						<label for="pos_warranty_return_method" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Preferred Return Method</label>
-						<select id="pos_warranty_return_method" class="swal2-input" style="margin:0; width:100%;">
-							<option value="walk_in" selected>Walk-in</option>
-							<option value="customer_delivery">Customer Delivery</option>
-						</select>
-					</div>
-					<div>
 						<label for="pos_warranty_images" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Evidence Images</label>
 						<input id="pos_warranty_images" type="file" accept="image/jpeg,image/jpg,image/png,image/webp" multiple style="display:block; width:100%;" />
 						<p style="margin-top:6px; font-size:11px; color:#6b7280;">Upload 1 to 10 images (JPEG/PNG/WEBP, max 20MB each).</p>
@@ -1808,7 +1801,6 @@ const PointOfSalePage = () => {
 			preConfirm: () => {
 				const reasonCode = (document.getElementById('pos_warranty_reason_code') as HTMLSelectElement | null)?.value?.trim() || '';
 				const reasonDetails = (document.getElementById('pos_warranty_reason_details') as HTMLTextAreaElement | null)?.value?.trim() || '';
-				const preferredReturnMethod = (document.getElementById('pos_warranty_return_method') as HTMLSelectElement | null)?.value?.trim() || 'walk_in';
 				const files = Array.from((document.getElementById('pos_warranty_images') as HTMLInputElement | null)?.files || []);
 
 				if (!reasonCode) {
@@ -1834,7 +1826,6 @@ const PointOfSalePage = () => {
 				return {
 					reasonCode,
 					reasonDetails,
-					preferredReturnMethod: preferredReturnMethod === 'customer_delivery' ? 'customer_delivery' : 'walk_in',
 					files,
 				};
 			},
@@ -1851,7 +1842,7 @@ const PointOfSalePage = () => {
 				walk_in_phone: walkInPhone,
 				reason_code: modal.value.reasonCode,
 				reason_details: modal.value.reasonDetails,
-				preferred_return_method: modal.value.preferredReturnMethod,
+				preferred_return_method: "walk_in",
 				images: modal.value.files,
 			});
 

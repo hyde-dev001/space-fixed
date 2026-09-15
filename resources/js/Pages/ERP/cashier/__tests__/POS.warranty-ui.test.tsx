@@ -205,18 +205,11 @@ describe("Cashier POS warranty UI", () => {
         const reasonDetails = document.createElement("textarea");
         reasonDetails.id = "pos_warranty_reason_details";
 
-        const returnMethod = document.createElement("select");
-        returnMethod.id = "pos_warranty_return_method";
-        const methodOption = document.createElement("option");
-        methodOption.value = "walk_in";
-        methodOption.selected = true;
-        returnMethod.appendChild(methodOption);
-
         const images = document.createElement("input");
         images.id = "pos_warranty_images";
         images.type = "file";
 
-        document.body.append(reasonCode, reasonDetails, returnMethod, images);
+        document.body.append(reasonCode, reasonDetails, images);
 
         await config.preConfirm();
         return { isConfirmed: false };
@@ -235,5 +228,11 @@ describe("Cashier POS warranty UI", () => {
     await waitFor(() => {
       expect(swalShowValidationMessageMock).toHaveBeenCalledWith("Please upload at least one image.");
     });
+
+    const warrantyConfig = swalFireMock.mock.calls.find(
+      ([config]) => config?.title === "File Warranty Claim",
+    )?.[0];
+    expect(warrantyConfig?.html).not.toContain("Preferred Return Method");
+    expect(warrantyConfig?.html).not.toContain("pos_warranty_return_method");
   });
 });

@@ -83,6 +83,13 @@ describe("Repairer Warranty Queue", () => {
     expect(screen.queryByRole("button", { name: "Refresh Queue" })).not.toBeInTheDocument();
   });
 
+  it("shows a readable source label in the queue and claim details", async () => {
+    await openClaimDetails();
+
+    expect(screen.getAllByText("Customer Portal")).toHaveLength(2);
+    expect(screen.queryByText("customer_portal")).not.toBeInTheDocument();
+  });
+
   it("opens a separate rejection reason dialog and does not post when cancelled", async () => {
     await openClaimDetails();
 
