@@ -27,6 +27,14 @@ Route::middleware(['web', 'auth:user,shop_owner', 'throttle:120,1'])
     ->put('/showroom/placements', [\App\Http\Controllers\Api\ShowroomPlacementController::class, 'update'])
     ->name('api.showroom.placements.update');
 
+Route::middleware(['web', 'auth:user,shop_owner', 'throttle:20,1'])->group(function () {
+    Route::post('/showroom/wall-art', [\App\Http\Controllers\Api\ShowroomWallArtController::class, 'store'])
+        ->name('api.showroom.wall-art.store');
+    Route::delete('/showroom/wall-art/{wall}', [\App\Http\Controllers\Api\ShowroomWallArtController::class, 'destroy'])
+        ->whereIn('wall', ['left', 'right'])
+        ->name('api.showroom.wall-art.destroy');
+});
+
 /**
  * PayMongo Webhook - Must be accessible without authentication
  */

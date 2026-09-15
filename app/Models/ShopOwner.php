@@ -52,6 +52,8 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'email',                // Contact email (must be unique)
         'profile_photo',        // Profile photo path
         'cover_photo',          // Cover photo path
+        'showroom_left_wall_art_path',
+        'showroom_right_wall_art_path',
         'bio',                  // Shop/owner bio
         'phone',                // Contact phone number
         'password',             // Hashed password for authentication

@@ -10,6 +10,8 @@ use App\Models\ShowroomProductPlacement;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Http\UploadedFile;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
@@ -169,6 +171,7 @@ class ShowroomPlacementTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('UserSide/Profile/VirtualShowroomPage')
                 ->where('shop.can_edit_showroom', true)
+                ->where('shop.can_manage_showroom_art', true)
                 ->where('shop.showroom_placements.0.product_id', $shoe->id)
                 ->where('shop.showroom_placements.0.slot_key', 'slot-3'));
     }
@@ -184,14 +187,16 @@ class ShowroomPlacementTest extends TestCase
             ->get(route('shop-profile.virtual-showroom', ['id' => $shop->id]))
             ->assertInertia(fn ($page) => $page
                 ->component('UserSide/Profile/VirtualShowroomPage')
-                ->where('shop.can_edit_showroom', true));
+                ->where('shop.can_edit_showroom', true)
+                ->where('shop.can_manage_showroom_art', false));
 
         $customer = User::factory()->create(['shop_owner_id' => null, 'role' => 'CUSTOMER']);
         $this->actingAs($customer, 'user')
             ->get(route('shop-profile.virtual-showroom', ['id' => $shop->id]))
             ->assertInertia(fn ($page) => $page
                 ->component('UserSide/Profile/VirtualShowroomPage')
-                ->where('shop.can_edit_showroom', false));
+                ->where('shop.can_edit_showroom', false)
+                ->where('shop.can_manage_showroom_art', false));
     }
 
     public function test_showroom_page_remains_readable_before_placement_migration_runs(): void
@@ -207,5 +212,48 @@ class ShowroomPlacementTest extends TestCase
                 ->where('shop.showroom_placements', [])
                 ->where('shop.can_edit_showroom', false)
                 ->where('shop.showroom_setup_required', true));
+    }
+
+    public function test_shop_owner_can_upload_and_remove_wall_art(): void
+    {
+        Storage::fake('public');
+        $shop = $this->shopWithSubscription();
+
+        $upload = $this->actingAs($shop, 'shop_owner')
+            ->post('/api/showroom/wall-art', [
+                'wall' => 'left',
+                'image' => UploadedFile::fake()->create('left-wall.jpg', 100, 'image/jpeg'),
+            ])
+            ->assertOk()
+            ->assertJsonPath('wall', 'left');
+
+        $path = $shop->fresh()->showroom_left_wall_art_path;
+        self::assertIsString($path);
+        Storage::disk('public')->assertExists($path);
+        $upload->assertJsonPath('url', asset('storage/' . $path));
+
+        $this->actingAs($shop, 'shop_owner')
+            ->deleteJson('/api/showroom/wall-art/left')
+            ->assertOk()
+            ->assertJsonPath('wall', 'left');
+
+        self::assertNull($shop->fresh()->showroom_left_wall_art_path);
+        Storage::disk('public')->assertMissing($path);
+    }
+
+    public function test_staff_cannot_manage_wall_art(): void
+    {
+        Permission::findOrCreate('access-product-management', 'user');
+        Storage::fake('public');
+        $shop = $this->shopWithSubscription();
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $staff->givePermissionTo('access-product-management');
+
+        $this->actingAs($staff, 'user')
+            ->post('/api/showroom/wall-art', [
+                'wall' => 'left',
+                'image' => UploadedFile::fake()->create('left-wall.jpg', 100, 'image/jpeg'),
+            ])
+            ->assertForbidden();
     }
 }

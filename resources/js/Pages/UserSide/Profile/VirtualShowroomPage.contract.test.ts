@@ -60,7 +60,9 @@ describe('standalone virtual showroom', () => {
 
 	it('passes showroom identity and editing capability through the page', () => {
 		expect(pageSource).toContain('showroom_placements');
+		expect(pageSource).toContain('showroom_wall_art');
 		expect(pageSource).toContain('can_edit_showroom');
+		expect(pageSource).toContain('can_manage_showroom_art');
 		expect(pageSource).toContain('shopName={shop.name}');
 		expect(showroomSource).toContain('shopName');
 		expect(showroomSource).toContain('canEditShowroom');
@@ -71,6 +73,14 @@ describe('standalone virtual showroom', () => {
 		expect(sceneSource).toContain('slotTargets');
 		expect(sceneSource).toContain('displayShopName');
 		expect(sceneSource).not.toContain("sign('SOLESPACE'");
+	});
+
+	it('supports owner wall art and selectable bot difficulty', () => {
+		expect(showroomSource).toContain('Wall art');
+		expect(showroomSource).toContain('/api/showroom/wall-art');
+		expect(xoxSource).toContain('Bot difficulty');
+		expect(xoxSource).toContain("['easy', 'medium', 'hard']");
+		expect(xoxSource).toContain('getMediumBotMove');
 	});
 
 	it('uses drag-look and E placement with world-space interaction cues', () => {

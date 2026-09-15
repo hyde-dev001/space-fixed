@@ -9,10 +9,15 @@ use App\Models\ShowroomProductPlacement;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
+use RuntimeException;
+use Throwable;
 
 final class ShowroomPlacementService
 {
@@ -54,6 +59,69 @@ final class ShowroomPlacementService
             && (int) ($staff->shop_owner_id ?? 0) === $shopOwnerId
             && $staff->hasAnyPermission(self::EDIT_PERMISSIONS)
         );
+    }
+
+    public function canManageWallArt(Request $request, int $shopOwnerId): bool
+    {
+        $owner = $request->user('shop_owner');
+
+        return Schema::hasColumn('shop_owners', 'showroom_left_wall_art_path')
+            && $owner
+            && (int) $owner->getKey() === $shopOwnerId;
+    }
+
+    /** @return array{left: string|null, right: string|null} */
+    public function wallArtPathsForShop(int $shopOwnerId): array
+    {
+        if (!Schema::hasColumn('shop_owners', 'showroom_left_wall_art_path')) {
+            return ['left' => null, 'right' => null];
+        }
+
+        $shop = ShopOwner::query()
+            ->select(['showroom_left_wall_art_path', 'showroom_right_wall_art_path'])
+            ->whereKey($shopOwnerId)
+            ->first();
+
+        return [
+            'left' => $shop?->showroom_left_wall_art_path,
+            'right' => $shop?->showroom_right_wall_art_path,
+        ];
+    }
+
+    public function replaceWallArt(int $shopOwnerId, string $wall, UploadedFile $image): string
+    {
+        $column = $this->wallArtColumn($wall);
+        $shop = ShopOwner::query()->whereKey($shopOwnerId)->firstOrFail();
+        $path = $image->store("showroom/wall-art/{$shopOwnerId}", 'public');
+        if (!is_string($path) || $path === '') {
+            throw new RuntimeException('Unable to store wall art.');
+        }
+
+        $previousPath = $shop->{$column};
+        try {
+            $shop->forceFill([$column => $path])->saveOrFail();
+        } catch (Throwable $exception) {
+            Storage::disk('public')->delete($path);
+            throw $exception;
+        }
+
+        if (is_string($previousPath) && $previousPath !== '') {
+            Storage::disk('public')->delete($previousPath);
+        }
+
+        return $path;
+    }
+
+    public function removeWallArt(int $shopOwnerId, string $wall): void
+    {
+        $column = $this->wallArtColumn($wall);
+        $shop = ShopOwner::query()->whereKey($shopOwnerId)->firstOrFail();
+        $previousPath = $shop->{$column};
+        $shop->forceFill([$column => null])->saveOrFail();
+
+        if (is_string($previousPath) && $previousPath !== '') {
+            Storage::disk('public')->delete($previousPath);
+        }
     }
 
     public function placementsForShop(int $shopOwnerId): Collection
@@ -179,6 +247,15 @@ final class ShowroomPlacementService
         if ((int) $matches[1] >= $limit) {
             throw ValidationException::withMessages(['slot_key' => 'The shelf slot is outside your showroom plan.']);
         }
+    }
+
+    private function wallArtColumn(string $wall): string
+    {
+        return match ($wall) {
+            'left' => 'showroom_left_wall_art_path',
+            'right' => 'showroom_right_wall_art_path',
+            default => throw new InvalidArgumentException('The wall art side is invalid.'),
+        };
     }
 
     private function isRetailCapable(?string $businessType): bool

@@ -2,9 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
 	applyMove,
 	getBestBotMove,
+	getMediumBotMove,
+	getRandomBotMove,
 	getWinner,
 	getWinningLine,
 	isDraw,
+	type BotDifficulty,
 	type TicTacToeBoard,
 } from './showroomTicTacToeRules';
 
@@ -37,8 +40,15 @@ const ShowroomTicTacToe = React.forwardRef<ShowroomTicTacToeHandle, ShowroomTicT
 	const [result, setResult] = useState<RoundResult | null>(null);
 	const [winningLine, setWinningLine] = useState<number[]>([]);
 	const [sessionScore, setSessionScore] = useState<SessionScore>({ wins: 0, losses: 0, draws: 0 });
+	const [difficulty, setDifficulty] = useState<BotDifficulty>('medium');
+	const difficultyRef = useRef<BotDifficulty>('medium');
+	const activeDifficultyRef = useRef<BotDifficulty>('medium');
 	const botTimeoutRef = useRef<number | null>(null);
 	const roundTimeoutRef = useRef<number | null>(null);
+
+	useEffect(() => {
+		difficultyRef.current = difficulty;
+	}, [difficulty]);
 
 	const clearBotTimeout = () => {
 		if (botTimeoutRef.current !== null) {
@@ -67,6 +77,7 @@ const ShowroomTicTacToe = React.forwardRef<ShowroomTicTacToeHandle, ShowroomTicT
 
 	const startNextRound = () => {
 		clearRoundTimeout();
+		activeDifficultyRef.current = difficultyRef.current;
 		setBoard(createEmptyBoard());
 		setWinningLine([]);
 		setResult(null);
@@ -115,7 +126,11 @@ const ShowroomTicTacToe = React.forwardRef<ShowroomTicTacToeHandle, ShowroomTicT
 
 		clearBotTimeout();
 		botTimeoutRef.current = window.setTimeout(() => {
-			const botMove = getBestBotMove(board);
+			const botMove = activeDifficultyRef.current === 'easy'
+				? getRandomBotMove(board)
+				: activeDifficultyRef.current === 'hard'
+					? getBestBotMove(board)
+					: getMediumBotMove(board);
 			if (botMove === null) {
 				finishRound(board, 'draw');
 				return;
@@ -150,6 +165,12 @@ const ShowroomTicTacToe = React.forwardRef<ShowroomTicTacToeHandle, ShowroomTicT
 	const status = resultLabel
 		? `${resultLabel}. Next round starts automatically.`
 		: turn === 'X' ? 'Your turn — choose a square.' : 'The showroom bot is thinking…';
+
+	const difficultyLabels: Record<BotDifficulty, string> = {
+		easy: 'Easy',
+		medium: 'Medium',
+		hard: 'Hard',
+	};
 
 	return (
 		<>
@@ -238,6 +259,23 @@ const ShowroomTicTacToe = React.forwardRef<ShowroomTicTacToeHandle, ShowroomTicT
 							</div>
 
 							<p className="mt-2 text-xs text-[#bfa47f]">Click a square on the table. Rounds continue while seated.</p>
+							<fieldset className="mt-3">
+								<legend className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[#bfa47f]">Bot difficulty</legend>
+								<div className="mt-2 grid grid-cols-3 gap-1.5">
+									{(['easy', 'medium', 'hard'] as BotDifficulty[]).map((level) => (
+										<button
+											key={level}
+											type="button"
+											onClick={() => setDifficulty(level)}
+											aria-pressed={difficulty === level}
+											className={`min-h-9 rounded-md border px-2 text-[11px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e4c486] ${difficulty === level ? 'border-[#e4c486] bg-[#e4c486] text-[#1c1712]' : 'border-[#554332] bg-[#211b17] text-[#d8c7b0] hover:border-[#8e6d4b]'}`}
+										>
+											{difficultyLabels[level]}
+										</button>
+									))}
+								</div>
+								<p className="mt-1 text-[10px] text-[#8f7960]">Applies on the next round.</p>
+							</fieldset>
 							{resultLabel && <p className="xox-result-enter mt-2 text-lg font-bold text-[#e4c486]" aria-live="assertive">{resultLabel}</p>}
 						</div>
 
