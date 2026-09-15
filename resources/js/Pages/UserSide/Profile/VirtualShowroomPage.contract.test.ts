@@ -93,7 +93,22 @@ describe('standalone virtual showroom', () => {
 		expect(xoxSource).toContain('sessionScore');
 		expect(xoxSource).toContain('xox-result');
 		expect(xoxSource).not.toContain('New game');
+		expect(xoxSource).not.toContain('onClose: () => void;');
+		expect(xoxSource).not.toContain('aria-label="Close XOX game"');
 		expect(showroomSource).toContain('drawTableBoard');
 		expect(showroomSource).toContain('xoxGameRef.current?.playAt');
+		expect(showroomSource).not.toContain("You&apos;re seated in the lounge.");
+		expect(showroomSource).not.toContain('Open XOX');
+		expect(showroomSource).not.toContain('const closeGame');
+		expect(showroomSource).not.toContain('onClose={closeGame}');
+	});
+
+	it('keeps placement feedback in the top-right without rebuilding the scene', () => {
+		expect(showroomSource).not.toContain("isEditMode ? 'Done editing' : 'Edit showroom'");
+		expect(showroomSource).not.toContain('absolute bottom-6 left-4 z-30 max-w-[min(85vw,320px)]');
+		expect(showroomSource).toContain('absolute right-3 top-16 z-30 max-w-[min(85vw,320px)]');
+		expect(showroomSource).not.toContain('}, [shoes, placementAssignments, shopName');
+		expect(showroomSource).toContain('let renderedPlacementAssignments');
+		expect(showroomSource).toContain('card.position.x +=');
 	});
 });

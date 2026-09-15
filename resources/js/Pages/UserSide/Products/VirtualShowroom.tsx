@@ -903,8 +903,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		savedWalkingPositionRef.current = null;
 	};
 
-	const closeGame = () => setIsGameOpen(false);
-
 	useEffect(() => {
 		if (swipeHintTimerRef.current !== null) {
 			window.clearTimeout(swipeHintTimerRef.current);
@@ -1083,9 +1081,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			position: new THREE.Vector3(...slot.position),
 			rotationY: slot.rotationY,
 		}]));
+		let renderedPlacementAssignments = placementAssignmentsRef.current;
 		const cardGeometry = new THREE.PlaneGeometry(1.65, 1.05);
 
-		placementAssignments.forEach((assignment) => {
+		placementAssignmentsRef.current.forEach((assignment) => {
 			const shoeIdx = shoes.findIndex(shoe => shoe.id === assignment.productId);
 			const slot = slotDefinitions.get(assignment.slotKey);
 			if (shoeIdx < 0 || !slot) return;
@@ -1164,6 +1163,23 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				sprite.position.x = card.position.x;
 				sprite.position.z = card.position.z;
 				sprite.position.y = card.position.y + 0.88 + (reducedMotion ? 0 : Math.sin(promptTime + shoeIdx) * 0.025);
+			});
+		};
+		const syncPlacementCards = () => {
+			const nextAssignments = placementAssignmentsRef.current;
+			if (nextAssignments === renderedPlacementAssignments) return;
+			renderedPlacementAssignments = nextAssignments;
+			nextAssignments.forEach((assignment) => {
+				const slot = slotDefinitions.get(assignment.slotKey);
+				const card = shelfCards.find((item) => item.userData.productId === assignment.productId);
+				if (!slot || !card) return;
+				const basePosition = slot.position.clone();
+				basePosition.x -= Math.sin(slot.rotationY) * 0.08;
+				basePosition.z -= Math.cos(slot.rotationY) * 0.08;
+				card.userData.basePosition = basePosition;
+				card.userData.baseRotationY = slot.rotationY;
+				card.userData.baseY = slot.position.y;
+				card.userData.slotKey = assignment.slotKey;
 			});
 		};
 
@@ -1248,6 +1264,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 			const pickupAnimation = pickupAnimationRef.current;
 			const activePickupShoeIdx = pickupAnimation?.shoeIdx ?? null;
+			syncPlacementCards();
 
 			if (pickupAnimation) {
 				const elapsedMs = performance.now() - pickupAnimation.startTimeMs;
@@ -1353,6 +1370,11 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 					return;
 				}
 				const baseY = (card.userData.baseY as number) ?? card.position.y;
+				const basePosition = card.userData.basePosition as THREE.Vector3 | undefined;
+				if (basePosition) {
+					card.position.x += (basePosition.x - card.position.x) * 0.18;
+					card.position.z += (basePosition.z - card.position.z) * 0.18;
+				}
 				card.position.y += (baseY - card.position.y) * 0.08;
 				card.rotation.x += ((((card.userData.baseRotationX as number) ?? 0) - card.rotation.x) * 0.18);
 				card.rotation.y += ((((card.userData.baseRotationY as number) ?? 0) - card.rotation.y) * 0.18);
@@ -1522,7 +1544,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				container.removeChild(renderer.domElement);
 			}
 		};
-	}, [shoes, placementAssignments, shopName, canEditShowroom, isNightMode, showroomDisplayCapacity, isTouchScreenDevice]);
+	}, [shoes, shopName, canEditShowroom, isNightMode, showroomDisplayCapacity, isTouchScreenDevice]);
 
 	const goToPreviousShoe = () => {
 		if (shoes.length === 0) return;
@@ -1785,7 +1807,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 					</div>
 				)}
 				{canEditShowroom && seatedSeatKey === null && !isSceneLoading && (
-					<div className="pointer-events-none absolute bottom-6 left-4 z-30 max-w-[min(85vw,320px)] rounded-lg border border-amber-200/60 bg-stone-950/90 px-4 py-3 text-xs text-stone-100 shadow-lg">
+					<div className="pointer-events-none absolute right-3 top-16 z-30 max-w-[min(85vw,320px)] rounded-lg border border-amber-200/60 bg-stone-950/90 px-4 py-3 text-xs text-stone-100 shadow-lg sm:right-4">
 						<p className="font-semibold text-amber-200">{carriedPlacement ? 'Shoe picked up' : selectedProductId ? 'Shoe selected' : 'Arrange your shelves'}</p>
 						<p className="mt-1">{carriedPlacement ? 'Walk to any shelf, aim at a position, then press E to place.' : 'Aim at a nearby shoe and press E to pick it up. Click a shoe to inspect its 360 view.'}</p>
 						{placementSaveStatus === 'saving' && <p className="mt-1 text-amber-200">Saving placement…</p>}
@@ -1798,14 +1820,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 						Showroom editing needs the latest database migration. Ask the deployer to run <code>php artisan migrate --force</code>.
 					</p>
 				)}
-				{seatedSeatKey !== null && !isGameOpen && (
-					<div className="pointer-events-auto absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-md border border-white/20 bg-stone-950/90 px-3 py-2 text-center text-xs text-stone-100 shadow-lg">
-						<span className="mr-1">You&apos;re seated in the lounge.</span>
-						<button type="button" onClick={() => setIsGameOpen(true)} className="min-h-11 rounded-md bg-amber-200 px-3 font-semibold text-stone-950 hover:bg-amber-100">Open XOX</button>
-						<button type="button" onClick={standUp} className="min-h-11 rounded-md border border-stone-600 px-3 hover:bg-stone-800">Stand up</button>
-					</div>
-				)}
-
 				{isStandalonePage && canEditShowroom && isEditMode && (
 					<div className="pointer-events-auto absolute right-3 top-16 z-30 w-[min(92vw,320px)] rounded-xl border border-stone-700 bg-stone-950/95 p-3 text-stone-100 shadow-xl sm:right-4 sm:top-16">
 						<p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Shelf editor</p>
@@ -2040,21 +2054,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 							>
 								{isNightMode ? 'Day Mode' : 'Night Mode'}
 							</button>
-							{canEditShowroom && (
-								<button
-									type="button"
-									onPointerDown={(event) => event.stopPropagation()}
-									onPointerMove={(event) => event.stopPropagation()}
-									onPointerUp={(event) => event.stopPropagation()}
-									onClick={(event) => {
-										event.stopPropagation();
-										setIsEditMode((prev) => !prev);
-									}}
-									className={`min-h-11 rounded-md border px-4 py-2 text-sm font-medium shadow-sm ${isEditMode ? 'border-amber-200 bg-amber-200 text-stone-950 hover:bg-amber-100' : 'border-white/20 bg-stone-950/85 text-stone-100 hover:bg-stone-800'}`}
-								>
-									{isEditMode ? 'Done editing' : 'Edit showroom'}
-								</button>
-							)}
 						</div>
 					</>
 				)}
@@ -2093,7 +2092,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 					ref={xoxGameRef}
 					open={isGameOpen && seatedSeatKey !== null}
 					onStandUp={standUp}
-					onClose={closeGame}
 					onBoardChange={updateTableBoard}
 				/>
 			</div>
