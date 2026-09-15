@@ -262,16 +262,27 @@ class ShowroomPlacementTest extends TestCase
         Storage::disk('public')->assertExists("showroom/wall-art/{$shop->id}/left.jpg");
 
         $this->actingAs($shop, 'shop_owner')
+            ->post('/api/showroom/wall-art', [
+                'wall' => 'left',
+                'image' => UploadedFile::fake()->create('replacement.png', 100, 'image/png'),
+            ])
+            ->assertOk()
+            ->assertJsonPath('url', asset("storage/showroom/wall-art/{$shop->id}/left.png"));
+
+        Storage::disk('public')->assertMissing("showroom/wall-art/{$shop->id}/left.jpg");
+        Storage::disk('public')->assertExists("showroom/wall-art/{$shop->id}/left.png");
+
+        $this->actingAs($shop, 'shop_owner')
             ->get(route('shop-profile.virtual-showroom', ['id' => $shop->id]))
             ->assertInertia(fn ($page) => $page
                 ->where('shop.can_manage_showroom_art', true)
-                ->where('shop.showroom_wall_art.left', asset("storage/showroom/wall-art/{$shop->id}/left.jpg")));
+                ->where('shop.showroom_wall_art.left', asset("storage/showroom/wall-art/{$shop->id}/left.png")));
 
         $this->actingAs($shop, 'shop_owner')
             ->deleteJson('/api/showroom/wall-art/left')
             ->assertOk();
 
-        Storage::disk('public')->assertMissing("showroom/wall-art/{$shop->id}/left.jpg");
+        Storage::disk('public')->assertMissing("showroom/wall-art/{$shop->id}/left.png");
     }
 
     public function test_staff_cannot_manage_wall_art(): void
