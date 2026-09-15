@@ -47,6 +47,15 @@ return new class extends Migration
         Schema::dropIfExists('shop_procurement_receipt_sequences');
 
         if (Schema::hasTable('purchase_order_receipt_items')) {
+            if (! Schema::hasIndex('purchase_order_receipt_items', 'po_receipt_item_unique')) {
+                Schema::table('purchase_order_receipt_items', function (Blueprint $table): void {
+                    $table->unique(
+                        ['purchase_order_receipt_id', 'purchase_order_item_id'],
+                        'po_receipt_item_unique',
+                    );
+                });
+            }
+
             if (Schema::hasIndex('purchase_order_receipt_items', 'po_receipt_item_line_unique')) {
                 Schema::table('purchase_order_receipt_items', function (Blueprint $table): void {
                     $table->dropUnique('po_receipt_item_line_unique');
@@ -69,15 +78,6 @@ return new class extends Migration
                     $table->dropColumn($columns);
                 }
             });
-
-            if (! Schema::hasIndex('purchase_order_receipt_items', 'po_receipt_item_unique')) {
-                Schema::table('purchase_order_receipt_items', function (Blueprint $table): void {
-                    $table->unique(
-                        ['purchase_order_receipt_id', 'purchase_order_item_id'],
-                        'po_receipt_item_unique',
-                    );
-                });
-            }
         }
 
         if (Schema::hasTable('purchase_order_receipts')) {
@@ -142,12 +142,6 @@ return new class extends Migration
             }
         });
 
-        if (Schema::hasIndex('purchase_order_receipt_items', 'po_receipt_item_unique')) {
-            Schema::table('purchase_order_receipt_items', function (Blueprint $table): void {
-                $table->dropUnique('po_receipt_item_unique');
-            });
-        }
-
         if (! $this->hasIndex(
             'purchase_order_receipt_items',
             'po_receipt_item_line_unique',
@@ -159,6 +153,12 @@ return new class extends Migration
                     ['purchase_order_receipt_id', 'purchase_order_item_id', 'replacement_for_adjustment_id', 'replacement_attempt'],
                     'po_receipt_item_line_unique',
                 );
+            });
+        }
+
+        if (Schema::hasIndex('purchase_order_receipt_items', 'po_receipt_item_unique')) {
+            Schema::table('purchase_order_receipt_items', function (Blueprint $table): void {
+                $table->dropUnique('po_receipt_item_unique');
             });
         }
 
