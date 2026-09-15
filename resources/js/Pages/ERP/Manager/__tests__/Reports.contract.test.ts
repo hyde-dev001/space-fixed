@@ -18,6 +18,11 @@ describe('Manager Reports page contract', () => {
     expect(source).not.toContain('complaints');
   });
 
+  it('removes the redundant Reports page heading and subtitle', () => {
+    expect(source).not.toContain('Reports &amp; Analytics');
+    expect(source).not.toContain('Review operational reports for your authorized shop.');
+  });
+
   it('protects report mutations with the shared CSRF request helper', () => {
     expect(source).toContain('import { fetchWithCsrf } from "@/utils/fetch-with-csrf";');
     expect(source).toContain('fetchWithCsrf("/api/manager/reports/generate"');
