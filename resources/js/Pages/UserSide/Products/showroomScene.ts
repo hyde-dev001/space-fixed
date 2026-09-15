@@ -131,6 +131,7 @@ export function createShowroomScene(
 	const loader = new THREE.TextureLoader(manager);
 	const wallArtTextures = new Map<WallArtSide, THREE.Texture>();
 	const wallArtMaterials = new Map<WallArtSide, THREE.MeshBasicMaterial>();
+	const wallArtPromptSprites: Array<{ side: WallArtSide; sprite: THREE.Sprite; baseY: number }> = [];
 	const wallArtImageGeometry = new THREE.PlaneGeometry(10.4, 5.85);
 	geometries.add(wallArtImageGeometry);
 
@@ -276,6 +277,14 @@ export function createShowroomScene(
 		image.castShadow = false;
 		image.receiveShadow = false;
 		scene.add(image);
+		const uploadPrompt = createShowroomPromptSprite('E', 'UPLOAD PICTURE');
+		uploadPrompt.sprite.position.set(x, 1.08, 23.24);
+		uploadPrompt.sprite.scale.set(2.75, 0.76, 1);
+		uploadPrompt.sprite.visible = false;
+		scene.add(uploadPrompt.sprite);
+		textures.push(uploadPrompt.texture);
+		materials.add(uploadPrompt.material);
+		wallArtPromptSprites.push({ side: key, sprite: uploadPrompt.sprite, baseY: uploadPrompt.sprite.position.y });
 	}
 	const sign = (title: string, subtitle: string, x: number, y: number, z: number, width: number, rotation = 0) => {
 		const canvas = document.createElement('canvas');
@@ -325,11 +334,19 @@ export function createShowroomScene(
 		box(walnut, 0, 6.39, z, 10, 0.4, 0.22, 0, false);
 	}
 	for (const x of [-3.5, 3.5]) box(brass, x, 0.006, 2, 0.025, 0.009, 35);
-	box(black, 0, 3.2, 23.8, 11, 6.4, 0.12);
 	box(walnut, 0, 5.5, -25.65, 28, 1.7, 0.25);
 	const displayShopName = shopName.trim().slice(0, 36) || 'The Gallery';
 	sign(displayShopName, 'THE SNEAKER GALLERY', 0, 5.55, -25.45, 7);
-	sign('WELCOME TO ' + displayShopName, 'EXPLORE / DISCOVER / COLLECT', 0, 4.8, 23.7, 8, Math.PI);
+	// The center wall is a branded entrance: warm double doors and a clear discount invitation.
+	box(black, 0, 3.2, 23.8, 11.8, 6.35, 0.2, 0, false);
+	box(walnut, -2.3, 3.05, 23.45, 4.35, 5.8, 0.24, 0, false);
+	box(walnut, 2.3, 3.05, 23.45, 4.35, 5.8, 0.24, 0, false);
+	box(brass, 0, 6.05, 23.25, 9.75, 0.16, 0.24, 0, false);
+	box(brass, -4.72, 3.12, 23.25, 0.16, 5.95, 0.24, 0, false);
+	box(brass, 4.72, 3.12, 23.25, 0.16, 5.95, 0.24, 0, false);
+	box(brass, -0.34, 2.95, 23.2, 0.12, 0.48, 0.12, 0, false);
+	box(brass, 0.34, 2.95, 23.2, 0.12, 0.48, 0.12, 0, false);
+	sign('WELCOME TO ' + displayShopName, 'DISCOUNTS INSIDE • ENTER THE GALLERY', 0, 5.05, 23.12, 8.9, Math.PI);
 	sign('01 / MAIN GALLERY', 'CURATED EVERYDAY ICONS', -21.7, 5.65, 2, 5, Math.PI / 2);
 	sign('02 / THE ARCHIVE', 'CRAFT / CULTURE / COLLECTORS', 21.7, 5.65, -8, 5, -Math.PI / 2);
 
@@ -531,6 +548,7 @@ export function createShowroomScene(
 		ready,
 		slotTargets,
 		seatPromptSprites,
+		wallArtPromptSprites,
 		updateWallArt: (next: ShowroomWallArt) => {
 			for (const side of ['left', 'right'] as const) {
 				const material = wallArtMaterials.get(side);

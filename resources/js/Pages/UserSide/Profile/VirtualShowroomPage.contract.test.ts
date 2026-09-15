@@ -82,6 +82,15 @@ describe('standalone virtual showroom', () => {
 		expect(sceneSource).toContain("sign('WELCOME TO ' + displayShopName");
 	});
 
+	it('offers contextual owner uploads and a branded discount entrance', () => {
+		expect(sceneSource).toContain("createShowroomPromptSprite('E', 'UPLOAD PICTURE')");
+		expect(sceneSource).toContain('wallArtPromptSprites');
+		expect(sceneSource).toContain('DISCOUNTS INSIDE');
+		expect(showroomSource).toContain('handleWallArtKey()');
+		expect(showroomSource).toContain('wallArtInputRefs');
+		expect(showroomSource).toContain('Walk up to a frame and press E to upload');
+	});
+
 	it('supports owner wall art and selectable bot difficulty', () => {
 		expect(showroomSource).toContain('Wall art');
 		expect(showroomSource).toContain('/api/showroom/wall-art');
