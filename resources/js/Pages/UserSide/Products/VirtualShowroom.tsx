@@ -1,9 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { canWalkTo, getNearbyShowroomSeat, getShowroomLayout, SHOWROOM_ENTRANCE } from './showroomLayout';
 import { resolveShowroomPlacements, swapShowroomPlacements, type ShowroomPlacement } from './showroomPlacement';
 import { createShowroomPromptSprite, createShowroomScene } from './showroomScene';
-import ShowroomTicTacToe from './ShowroomTicTacToe';
+import ShowroomTicTacToe, { type ShowroomTicTacToeHandle } from './ShowroomTicTacToe';
+import type { TicTacToeBoard } from './showroomTicTacToeRules';
 import { fetchWithCsrf } from '@/utils/fetch-with-csrf';
 
 interface Product {
@@ -28,6 +29,7 @@ interface VirtualShowroomProps {
 	shopName?: string;
 	showroomPlacements?: ShowroomPlacement[];
 	canEditShowroom?: boolean;
+	showroomSetupRequired?: boolean;
 }
 
 interface ShoeViewSet {
@@ -76,9 +78,56 @@ const buildProductFrames = (product: Product): string[] => {
 const MAX_SHOWROOM_SLOTS = 150;
 const JOYSTICK_RADIUS_PX = 62;
 const JOYSTICK_DEADZONE = 0.16;
-const DEFAULT_CAMERA_YAW = -0.3;
-const MAX_CURSOR_YAW = 0.82;
-const MAX_CURSOR_PITCH = 0.46;
+
+const drawTableBoard = (
+	texture: THREE.CanvasTexture,
+	board: TicTacToeBoard,
+	winningLine: number[],
+	result: 'X' | 'O' | 'draw' | null,
+) => {
+	const canvas = texture.image as HTMLCanvasElement;
+	const context = canvas.getContext('2d');
+	if (!context) return;
+	context.fillStyle = '#1a1511';
+	context.fillRect(0, 0, 768, 768);
+	context.fillStyle = '#2a2119';
+	context.fillRect(30, 30, 708, 708);
+	context.strokeStyle = '#d4ae73';
+	context.lineWidth = 10;
+	context.strokeRect(30, 30, 708, 708);
+	for (let line = 1; line < 3; line++) {
+		const position = 30 + line * 236;
+		context.beginPath();
+		context.moveTo(position, 30);
+		context.lineTo(position, 738);
+		context.moveTo(30, position);
+		context.lineTo(738, position);
+		context.stroke();
+	}
+	board.forEach((mark, index) => {
+		const x = 148 + (index % 3) * 236;
+		const y = 148 + Math.floor(index / 3) * 236;
+		if (winningLine.includes(index)) {
+			context.fillStyle = '#5f482b';
+			context.fillRect(x - 109, y - 109, 218, 218);
+		}
+		if (!mark) return;
+		context.fillStyle = mark === 'X' ? '#f3e9d8' : '#d4ae73';
+		context.font = 'bold 162px sans-serif';
+		context.textAlign = 'center';
+		context.textBaseline = 'middle';
+		context.fillText(mark, x, y + 8);
+	});
+	if (result) {
+		context.fillStyle = 'rgba(12, 10, 8, 0.88)';
+		context.fillRect(100, 315, 568, 138);
+		context.fillStyle = '#f0d39b';
+		context.font = 'bold 64px sans-serif';
+		context.textAlign = 'center';
+		context.fillText(result === 'X' ? 'YOU WIN' : result === 'O' ? 'BOT WINS' : 'DRAW', 384, 390);
+	}
+	texture.needsUpdate = true;
+};
 
 interface JoystickVector {
 	x: number;
@@ -112,6 +161,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	shopName = '',
 	showroomPlacements = [],
 	canEditShowroom = false,
+	showroomSetupRequired = false,
 }) => {
 	const mountRef = useRef<HTMLDivElement | null>(null);
 	const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -155,11 +205,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const joystickVectorRef = useRef<JoystickVector>({ x: 0, y: 0, active: false });
 	const immersiveModeAttemptedRef = useRef(false);
 	const appEnteredFullscreenRef = useRef(false);
-	const editModeRef = useRef(false);
 	const placementAssignmentsRef = useRef<ShowroomPlacement[]>([]);
-	const placementDragProductIdRef = useRef<number | null>(null);
-	const placementDragSourceSlotKeyRef = useRef<string | null>(null);
-	const placementDragTargetSlotKeyRef = useRef<string | null>(null);
+	const activePlacementTargetRef = useRef<string | null>(null);
+	const carriedPlacementRef = useRef<ShowroomPlacement | null>(null);
+	const selectedPlacementProductIdRef = useRef<number | null>(null);
 	const pendingPlacementProductIdRef = useRef<number | null>(null);
 	const layoutRef = useRef<ReturnType<typeof getShowroomLayout> | null>(null);
 	const nearbySeatKeyRef = useRef<string | null>(null);
@@ -167,6 +216,12 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const savedWalkingPositionRef = useRef<THREE.Vector3 | null>(null);
 	const clearMovementRef = useRef<() => void>(() => undefined);
 	const seatPromptSpritesRef = useRef<Array<{ key: string; sprite: THREE.Sprite; baseY: number }>>([]);
+	const xoxGameRef = useRef<ShowroomTicTacToeHandle | null>(null);
+	const xoxBoardsRef = useRef<THREE.Mesh[]>([]);
+	const xoxTextureRef = useRef<THREE.CanvasTexture | null>(null);
+	const xoxVisualRef = useRef<{ board: TicTacToeBoard; winningLine: number[]; result: 'X' | 'O' | 'draw' | null }>({
+		board: [null, null, null, null, null, null, null, null, null], winningLine: [], result: null,
+	});
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [isDragging, setIsDragging] = useState(false);
 	const [isSceneLoading, setIsSceneLoading] = useState(true);
@@ -189,10 +244,15 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 	const [selectedTargetSlotKey, setSelectedTargetSlotKey] = useState('');
 	const [placementSaveStatus, setPlacementSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+	const [carriedPlacement, setCarriedPlacement] = useState<ShowroomPlacement | null>(null);
 	const [nearbySeatKey, setNearbySeatKey] = useState<string | null>(null);
 	const [seatedSeatKey, setSeatedSeatKey] = useState<string | null>(null);
 	const [isGameOpen, setIsGameOpen] = useState(false);
 	const [gameSessionKey, setGameSessionKey] = useState(0);
+	const updateTableBoard = useCallback((board: TicTacToeBoard, winningLine: number[], result: 'X' | 'O' | 'draw' | null) => {
+		xoxVisualRef.current = { board, winningLine, result };
+		if (xoxTextureRef.current) drawTableBoard(xoxTextureRef.current, board, winningLine, result);
+	}, []);
 	const walkingPositionRef = useRef<THREE.Vector3 | null>(null);
 	const parsedSlotLimit = Number(showroomSlotLimit);
 	const showroomDisplayCapacity = Number.isFinite(parsedSlotLimit)
@@ -243,16 +303,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	useEffect(() => {
 		placementAssignmentsRef.current = placementAssignments;
 	}, [placementAssignments]);
-
-	useEffect(() => {
-		editModeRef.current = isEditMode;
-		if (!isEditMode) {
-			placementDragProductIdRef.current = null;
-			placementDragSourceSlotKeyRef.current = null;
-			placementDragTargetSlotKeyRef.current = null;
-			setHighlightedSlotKey(null);
-		}
-	}, [isEditMode]);
 
 	useEffect(() => {
 		slotTargetsRef.current.forEach((target) => {
@@ -706,21 +756,8 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		return shoeIdx;
 	};
 
-	const pickShowroomSlotAtPointer = (clientX: number, clientY: number) => {
-		const container = mountRef.current;
-		const camera = cameraRef.current;
-		if (!container || !camera || slotTargetsRef.current.length === 0) return null;
-
-		const rect = container.getBoundingClientRect();
-		pointerVectorRef.current.x = ((clientX - rect.left) / rect.width) * 2 - 1;
-		pointerVectorRef.current.y = -((clientY - rect.top) / rect.height) * 2 + 1;
-		raycasterRef.current.setFromCamera(pointerVectorRef.current, camera);
-		const intersects = raycasterRef.current.intersectObjects(slotTargetsRef.current, false);
-		const slotKey = intersects[0]?.object.userData.slotKey;
-		return typeof slotKey === 'string' ? slotKey : null;
-	};
-
 	const highlightSlotTarget = (slotKey: string | null) => {
+		activePlacementTargetRef.current = slotKey;
 		slotTargetsRef.current.forEach((target) => {
 			const material = target.material as THREE.MeshBasicMaterial;
 			material.opacity = slotKey && target.userData.slotKey === slotKey ? 0.2 : 0;
@@ -770,6 +807,50 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		} finally {
 			pendingPlacementProductIdRef.current = null;
 		}
+	};
+
+	const nearbyPlacementSlot = () => {
+		const camera = cameraRef.current;
+		if (!camera) return null;
+		const forward = new THREE.Vector3();
+		camera.getWorldDirection(forward);
+		let best: { key: string; score: number } | null = null;
+		for (const target of slotTargetsRef.current) {
+			const offset = target.position.clone().sub(camera.position);
+			const distance = offset.length();
+			if (distance > 4.2 || distance < 0.3) continue;
+			const alignment = offset.normalize().dot(forward);
+			if (alignment < 0.55) continue;
+			const score = (1 - alignment) * 4 + distance * 0.12;
+			if (!best || score < best.score) best = { key: target.userData.slotKey as string, score };
+		}
+		return best?.key ?? null;
+	};
+
+	const handlePlacementKey = () => {
+		if (!canEditShowroom || pendingPlacementProductIdRef.current !== null) return false;
+		const carried = carriedPlacementRef.current;
+		if (carried) {
+			const targetSlotKey = nearbyPlacementSlot();
+			if (!targetSlotKey) return true;
+			carriedPlacementRef.current = null;
+			setCarriedPlacement(null);
+			highlightSlotTarget(null);
+			void savePlacement(carried.productId, carried.slotKey, targetSlotKey);
+			return true;
+		}
+		const selected = placementAssignmentsRef.current.find(
+			(assignment) => assignment.productId === selectedPlacementProductIdRef.current,
+		);
+		const card = shelfCardPickablesRef.current.find(
+			(item) => item.userData.productId === selected?.productId,
+		);
+		const camera = cameraRef.current;
+		if (!selected || !card || !camera || camera.position.distanceTo(card.position) > 4.2) return false;
+		carriedPlacementRef.current = selected;
+		setCarriedPlacement(selected);
+		setPlacementSaveStatus('idle');
+		return true;
 	};
 
 	const sitOnSeat = (seatKey: string) => {
@@ -859,6 +940,24 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		layoutRef.current = layout;
 		seatPromptSpritesRef.current = showroom.seatPromptSprites;
 		slotTargetsRef.current = showroom.slotTargets;
+		const boardCanvas = document.createElement('canvas');
+		boardCanvas.width = 768;
+		boardCanvas.height = 768;
+		const boardTexture = new THREE.CanvasTexture(boardCanvas);
+		boardTexture.colorSpace = THREE.SRGBColorSpace;
+		xoxTextureRef.current = boardTexture;
+		const boardGeometry = new THREE.PlaneGeometry(2.12, 2.12);
+		const boardMaterial = new THREE.MeshBasicMaterial({ map: boardTexture, side: THREE.DoubleSide });
+		xoxBoardsRef.current = layout.seats.map((seat, index) => {
+			const lounge = layout.lounges[index];
+			const board = new THREE.Mesh(boardGeometry, boardMaterial);
+			board.position.set(lounge.x, 0.84, lounge.z - 0.4);
+			board.rotation.x = -Math.PI / 2;
+			board.userData.seatKey = seat.key;
+			scene.add(board);
+			return board;
+		});
+		drawTableBoard(boardTexture, xoxVisualRef.current.board, xoxVisualRef.current.winningLine, xoxVisualRef.current.result);
 		container.replaceChildren(renderer.domElement);
 		renderer.domElement.setAttribute('aria-label', 'Walkable SoleSpace sneaker showroom');
 
@@ -1008,7 +1107,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			card.castShadow = false;
 			scene.add(card);
 			card.visible = !hiddenShelfShoeIndicesRef.current.has(shoeIdx);
-			const clickPrompt = createShowroomPromptSprite('CLICK');
+			const clickPrompt = createShowroomPromptSprite(canEditShowroom ? 'CLICK + E' : 'CLICK');
 			clickPrompt.sprite.position.set(card.position.x, card.position.y + 0.88, card.position.z);
 			clickPrompt.sprite.scale.set(1.08, 0.3, 1);
 			scene.add(clickPrompt.sprite);
@@ -1044,7 +1143,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				sprite.position.y = baseY + (reducedMotion ? 0 : Math.sin(promptTime + index) * 0.07);
 			});
 			shoePromptSprites.forEach(({ shoeIdx, sprite, card }) => {
-				sprite.visible = card.visible && activePickupShoeIdx !== shoeIdx;
+				sprite.visible = card.visible && activePickupShoeIdx !== shoeIdx && carriedPlacementRef.current?.productId !== card.userData.productId;
 				sprite.position.x = card.position.x;
 				sprite.position.z = card.position.z;
 				sprite.position.y = card.position.y + 0.88 + (reducedMotion ? 0 : Math.sin(promptTime + shoeIdx) * 0.025);
@@ -1248,6 +1347,19 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				card.scale.y += (baseScaleY - card.scale.y) * 0.18;
 				card.scale.z += (baseScaleZ - card.scale.z) * 0.18;
 			});
+			const carried = carriedPlacementRef.current;
+			if (carried) {
+				const targetSlotKey = nearbyPlacementSlot();
+				if (targetSlotKey !== activePlacementTargetRef.current) highlightSlotTarget(targetSlotKey);
+				const card = shelfCards.find((item) => item.userData.productId === carried.productId);
+				if (card) {
+					const direction = new THREE.Vector3();
+					camera.getWorldDirection(direction);
+					card.position.copy(camera.position).addScaledVector(direction, 2.1);
+					card.position.y -= 0.35;
+					card.quaternion.copy(camera.quaternion);
+				}
+			}
 
 
 			renderer.render(scene, camera);
@@ -1274,6 +1386,10 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 		const handleKeyDown = (event: KeyboardEvent) => {
 			if (focusedShoeIndexRef.current !== null || isTypingTarget(event.target)) {
+				return;
+			}
+			if (event.key.toLowerCase() === 'e' && !event.repeat && seatedSeatKeyRef.current === null && handlePlacementKey()) {
+				event.preventDefault();
 				return;
 			}
 			if (event.key.toLowerCase() === 'escape' && seatedSeatKeyRef.current !== null) {
@@ -1359,6 +1475,8 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			shelfCardPickablesRef.current = [];
 			seatPromptSpritesRef.current = [];
 			slotTargetsRef.current = [];
+			xoxBoardsRef.current = [];
+			xoxTextureRef.current = null;
 			layoutRef.current = null;
 			clearMovementRef.current = () => undefined;
 			window.removeEventListener('resize', handleResize);
@@ -1369,6 +1487,9 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			cancelAnimationFrame(rafId);
 
 			showroom.dispose();
+			boardGeometry.dispose();
+			boardMaterial.dispose();
+			boardTexture.dispose();
 			cardGeometry.dispose();
 			shelfCardMaterials.forEach((material) => material.dispose());
 			shoePromptSprites.forEach(({ sprite, material, texture }) => {
@@ -1396,51 +1517,15 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		setCurrentIndex((prev) => (prev + 1) % shoes.length);
 	};
 
-	const updateCameraTargetFromPointer = (clientX: number, clientY: number) => {
-		if (
-			isTouchScreenDevice
-			|| editModeRef.current
-			|| seatedSeatKeyRef.current !== null
-			|| focusedShoeIndexRef.current !== null
-			|| isPickupAnimatingRef.current
-		) return;
-
-		const container = viewportRef.current;
-		if (!container) return;
-		const rect = container.getBoundingClientRect();
-		if (rect.width <= 0 || rect.height <= 0) return;
-
-		const normalizedX = Math.max(-1, Math.min(1, ((clientX - rect.left) / rect.width) * 2 - 1));
-		const normalizedY = Math.max(-1, Math.min(1, ((clientY - rect.top) / rect.height) * 2 - 1));
-		targetCameraYawRef.current = DEFAULT_CAMERA_YAW + normalizedX * MAX_CURSOR_YAW;
-		targetCameraPitchRef.current = -normalizedY * MAX_CURSOR_PITCH;
-	};
-
-	const resetCameraTargetFromPointer = () => {
-		if (isTouchScreenDevice || editModeRef.current || seatedSeatKeyRef.current !== null) return;
-		targetCameraYawRef.current = DEFAULT_CAMERA_YAW;
-		targetCameraPitchRef.current = 0;
-	};
-
 	const handlePointerDown = (clientX: number, clientY: number) => {
 		if (isPickupAnimatingRef.current) return;
 		void requestMobileLandscape();
-		if (seatedSeatKeyRef.current !== null) return;
-		if (editModeRef.current) {
-			const pickedShoeIdx = pickShoeAtPointer(clientX, clientY);
-			const pickedCard = pickedShoeIdx === null
-				? null
-				: shelfCardPickablesRef.current.find(card => card.userData.shoeIdx === pickedShoeIdx);
-			const productId = pickedCard?.userData.productId;
-			const sourceSlotKey = pickedCard?.userData.slotKey;
-			if (typeof productId === 'number' && typeof sourceSlotKey === 'string') {
-				placementDragProductIdRef.current = productId;
-				placementDragSourceSlotKeyRef.current = sourceSlotKey;
-				placementDragTargetSlotKeyRef.current = sourceSlotKey;
-				setSelectedProductId(productId);
-				setSelectedTargetSlotKey(sourceSlotKey);
-				setPlacementSaveStatus('idle');
-			}
+		if (seatedSeatKeyRef.current !== null) {
+			dragStartXRef.current = clientX;
+			dragStartYRef.current = clientY;
+			pointerMoveDistanceRef.current = 0;
+			isDraggingRef.current = true;
+			return;
 		}
 		dragStartXRef.current = clientX;
 		dragStartYRef.current = clientY;
@@ -1452,15 +1537,12 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 	const handlePointerMove = (clientX: number, clientY: number) => {
 		if (isPickupAnimatingRef.current) return;
 		if (!isDraggingRef.current) return;
-		if (placementDragProductIdRef.current !== null) {
-			const targetSlotKey = pickShowroomSlotAtPointer(clientX, clientY);
-			if (targetSlotKey) {
-				placementDragTargetSlotKeyRef.current = targetSlotKey;
-				highlightSlotTarget(targetSlotKey);
-			}
+		if (seatedSeatKeyRef.current !== null) {
+			pointerMoveDistanceRef.current += Math.abs(clientX - dragStartXRef.current) + Math.abs(clientY - dragStartYRef.current);
+			dragStartXRef.current = clientX;
+			dragStartYRef.current = clientY;
 			return;
 		}
-		if (seatedSeatKeyRef.current !== null) return;
 
 		const deltaX = clientX - dragStartXRef.current;
 		const deltaY = clientY - dragStartYRef.current;
@@ -1476,31 +1558,13 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			return;
 		}
 
-		if (isTouchScreenDevice) {
-			const sensitivity = 0.004;
-			targetCameraYawRef.current += deltaX * sensitivity;
-			targetCameraPitchRef.current -= deltaY * sensitivity;
-			targetCameraPitchRef.current = Math.max(-1.05, Math.min(1.05, targetCameraPitchRef.current));
-		}
+		const sensitivity = 0.004;
+		targetCameraYawRef.current += deltaX * sensitivity;
+		targetCameraPitchRef.current -= deltaY * sensitivity;
+		targetCameraPitchRef.current = Math.max(-1.05, Math.min(1.05, targetCameraPitchRef.current));
 	};
 
 	const handlePointerUp = (clientX?: number, clientY?: number) => {
-		if (placementDragProductIdRef.current !== null) {
-			const productId = placementDragProductIdRef.current;
-			const sourceSlotKey = placementDragSourceSlotKeyRef.current;
-			const targetSlotKey = placementDragTargetSlotKeyRef.current;
-			placementDragProductIdRef.current = null;
-			placementDragSourceSlotKeyRef.current = null;
-			placementDragTargetSlotKeyRef.current = null;
-			highlightSlotTarget(null);
-			isDraggingRef.current = false;
-			setIsDragging(false);
-			pointerMoveDistanceRef.current = 0;
-			if (sourceSlotKey && targetSlotKey && sourceSlotKey !== targetSlotKey) {
-				void savePlacement(productId, sourceSlotKey, targetSlotKey);
-			}
-			return;
-		}
 		if (isPickupAnimatingRef.current) {
 			isDraggingRef.current = false;
 			setIsDragging(false);
@@ -1508,6 +1572,22 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 			return;
 		}
 		if (seatedSeatKeyRef.current !== null) {
+			if (pointerMoveDistanceRef.current < 8 && typeof clientX === 'number' && typeof clientY === 'number') {
+				const container = mountRef.current;
+				const camera = cameraRef.current;
+				if (container && camera) {
+					const rect = container.getBoundingClientRect();
+					pointerVectorRef.current.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+					raycasterRef.current.setFromCamera(pointerVectorRef.current, camera);
+					const board = xoxBoardsRef.current.find((item) => item.userData.seatKey === seatedSeatKeyRef.current);
+					const hit = board && raycasterRef.current.intersectObject(board, false)[0];
+					if (hit?.uv) {
+						const column = Math.min(2, Math.floor(hit.uv.x * 3));
+						const row = Math.min(2, Math.floor((1 - hit.uv.y) * 3));
+						xoxGameRef.current?.playAt(row * 3 + column);
+					}
+				}
+			}
 			isDraggingRef.current = false;
 			setIsDragging(false);
 			pointerMoveDistanceRef.current = 0;
@@ -1522,6 +1602,18 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 		) {
 			const pickedShoeIdx = pickShoeAtPointer(clientX, clientY);
 			if (pickedShoeIdx !== null) {
+				if (canEditShowroom) {
+					const productId = shoes[pickedShoeIdx]?.id;
+					if (productId) {
+						selectedPlacementProductIdRef.current = productId;
+						setSelectedProductId(productId);
+						setPlacementSaveStatus('idle');
+					}
+					isDraggingRef.current = false;
+					setIsDragging(false);
+					pointerMoveDistanceRef.current = 0;
+					return;
+				}
 				shoes[pickedShoeIdx]?.frames.forEach((frameSrc) => {
 					void ensureFocusedFrameReady(frameSrc);
 				});
@@ -1594,7 +1686,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				<div className="mb-4 flex flex-col gap-2 px-4 md:flex-row md:items-center md:justify-between md:px-8">
 					<div>
 						<h3 className="text-xl font-semibold text-gray-900">Virtual Showroom</h3>
-						<p className="text-sm text-gray-500">Move your cursor to look around and view top or bottom angles.</p>
+						<p className="text-sm text-gray-500">Click and drag to look around and view top or bottom angles.</p>
 						<p className="text-xs text-gray-500">Walk controls: W forward, A left, S backward, D right.</p>
 						<p className="text-xs text-gray-500">Display capacity: {showroomDisplayCapacity} shoe slots</p>
 					</div>
@@ -1634,7 +1726,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 					handlePointerDown(event.clientX, event.clientY);
 				}}
 				onPointerMove={(event) => {
-					updateCameraTargetFromPointer(event.clientX, event.clientY);
 					if (activePointerIdRef.current !== event.pointerId) return;
 					handlePointerMove(event.clientX, event.clientY);
 				}}
@@ -1654,7 +1745,6 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 					if (activePointerIdRef.current !== null && activePointerIdRef.current === event.pointerId) {
 						handlePointerMove(event.clientX, event.clientY);
 					}
-					resetCameraTargetFromPointer();
 				}}
 			>
 				<div ref={mountRef} className="h-full w-full" />
@@ -1666,7 +1756,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				)}
 				{showSwipeHint && focusedShoeIndex === null && !isSceneLoading && (
 					<p className="pointer-events-none absolute bottom-44 left-1/2 z-20 max-w-[50%] -translate-x-1/2 rounded-md bg-stone-950/85 px-4 py-2 text-center text-xs text-stone-100 sm:bottom-6">
-						{isTouchScreenDevice ? 'Joystick to walk / drag to look' : 'Move cursor to look / WASD to walk'}<br />Select a sneaker to inspect
+						{isTouchScreenDevice ? 'Joystick to walk / drag to look' : 'Click and drag to look / WASD to walk'}<br />Select a sneaker to inspect
 					</p>
 				)}
 				{showLandscapeTip && shouldShowMobileJoystick && (
@@ -1681,6 +1771,20 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 						<p className="mt-1 text-xs text-stone-300">Play a quick XOX game against the showroom bot.</p>
 					</div>
 				)}
+				{canEditShowroom && seatedSeatKey === null && !isSceneLoading && (
+					<div className="pointer-events-none absolute bottom-6 left-4 z-30 max-w-[min(85vw,320px)] rounded-lg border border-amber-200/60 bg-stone-950/90 px-4 py-3 text-xs text-stone-100 shadow-lg">
+						<p className="font-semibold text-amber-200">{carriedPlacement ? 'Shoe picked up' : selectedProductId ? 'Shoe selected' : 'Arrange your shelves'}</p>
+						<p className="mt-1">{carriedPlacement ? 'Walk to any shelf, aim at a position, then press E to place.' : selectedProductId ? 'Walk near the shoe and press E to pick it up.' : 'Click a shoe, walk near it, then press E to pick it up.'}</p>
+						{placementSaveStatus === 'saving' && <p className="mt-1 text-amber-200">Saving placement…</p>}
+						{placementSaveStatus === 'saved' && <p className="mt-1 text-emerald-300">Placement saved.</p>}
+						{placementSaveStatus === 'error' && <p className="mt-1 text-red-300">Could not save placement. Try again.</p>}
+					</div>
+				)}
+				{showroomSetupRequired && !isSceneLoading && (
+					<p className="pointer-events-none absolute bottom-5 left-4 z-30 max-w-sm rounded-lg border border-amber-300 bg-stone-950/95 px-4 py-3 text-xs text-amber-100 shadow-lg">
+						Showroom editing needs the latest database migration. Ask the deployer to run <code>php artisan migrate --force</code>.
+					</p>
+				)}
 				{seatedSeatKey !== null && !isGameOpen && (
 					<div className="pointer-events-auto absolute bottom-6 left-1/2 z-30 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-md border border-white/20 bg-stone-950/90 px-3 py-2 text-center text-xs text-stone-100 shadow-lg">
 						<span className="mr-1">You&apos;re seated in the lounge.</span>
@@ -1692,7 +1796,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 				{isStandalonePage && canEditShowroom && isEditMode && (
 					<div className="pointer-events-auto absolute right-3 top-16 z-30 w-[min(92vw,320px)] rounded-xl border border-stone-700 bg-stone-950/95 p-3 text-stone-100 shadow-xl sm:right-4 sm:top-16">
 						<p className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">Shelf editor</p>
-						<p className="mt-1 text-xs text-stone-300">Drag a shoe to a shelf, or move it with the controls.</p>
+						<p className="mt-1 text-xs text-stone-300">Click a shoe, press E to pick up, then walk to a shelf and press E to place. You can also use these controls.</p>
 						<label className="mt-3 block text-xs font-medium text-stone-300" htmlFor="showroom-product-select">Shoe</label>
 						<select
 							id="showroom-product-select"
@@ -1973,14 +2077,16 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 				<ShowroomTicTacToe
 					key={gameSessionKey}
+					ref={xoxGameRef}
 					open={isGameOpen && seatedSeatKey !== null}
 					onStandUp={standUp}
 					onClose={closeGame}
+					onBoardChange={updateTableBoard}
 				/>
 			</div>
 
 			{!isStandalonePage && (
-				<div className="mt-4 px-4 text-xs text-gray-500 md:px-8">Walk with WASD or the joystick. Move the cursor to look around. Select a shoe to inspect its uploaded views.</div>
+				<div className="mt-4 px-4 text-xs text-gray-500 md:px-8">Walk with WASD or the joystick. Click and drag to look around. Select a shoe to inspect its uploaded views.</div>
 			)}
 		</section>
 		</>

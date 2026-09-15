@@ -70,8 +70,8 @@ export const getShowroomLayout = (capacity: number) => {
 		return {
 			key: 'lounge-seat-' + index,
 			interactionPosition: [lounge.x + side * 3.25, lounge.z + 1.8],
-			cameraPosition: [lounge.x + side * 3.5, 2.05, lounge.z + 1.8],
-			lookAt: [lounge.x, 1.25, lounge.z + 1.8],
+			cameraPosition: [lounge.x, 1.45, lounge.z + 1.85],
+			lookAt: [lounge.x, 0.8, lounge.z - 0.4],
 		};
 	});
 	for (const lounge of lounges) {

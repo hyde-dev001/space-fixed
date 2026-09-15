@@ -205,6 +205,7 @@ class ShowroomPlacementTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('UserSide/Profile/VirtualShowroomPage')
                 ->where('shop.showroom_placements', [])
-                ->where('shop.can_edit_showroom', false));
+                ->where('shop.can_edit_showroom', false)
+                ->where('shop.showroom_setup_required', true));
     }
 }
