@@ -5,10 +5,11 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\SuspensionRequest;
 use App\Models\Employee;
+use App\Models\HR\AuditLog;
 use App\Enums\EmployeeStatus;
 use App\Enums\NotificationType;
 use App\Enums\SuspensionStatus;
-use App\Models\User;
+use App\Services\HR\EmployeeLinkedUserSynchronizer;
 use App\Services\NotificationService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
@@ -19,6 +20,7 @@ class SuspensionFinalApprovalController extends Controller
 {
     public function __construct(
         private readonly NotificationService $notificationService,
+        private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
     ) {}
 
     private function shopOwnerId(): int
@@ -105,11 +107,14 @@ class SuspensionFinalApprovalController extends Controller
                 'data' => $transformedData,
             ]);
         } catch (\Exception $e) {
-            Log::error('Error fetching suspension requests: ' . $e->getMessage());
+            Log::error('Error fetching suspension requests.', [
+                'shop_owner_id' => $this->shopOwnerId(),
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch suspension requests',
-                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -152,12 +157,15 @@ class SuspensionFinalApprovalController extends Controller
                 'message' => 'Suspension request not found',
             ], 404);
         } catch (\Exception $e) {
-            Log::error('Error fetching suspension request: ' . $e->getMessage());
+            Log::error('Error fetching suspension request.', [
+                'shop_owner_id' => $this->shopOwnerId(),
+                'request_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to fetch suspension request',
-                'error' => $e->getMessage(),
             ], 500);
         }
     }
@@ -167,65 +175,113 @@ class SuspensionFinalApprovalController extends Controller
      */
     public function review(Request $request, $id)
     {
-        $request->validate([
+        $validated = $request->validate([
             'action' => 'required|in:approve,reject',
             'note' => 'nullable|string|max:1000',
         ]);
+        $note = trim((string) ($validated['note'] ?? ''));
 
-        DB::beginTransaction();
+        if ($validated['action'] === 'reject' && mb_strlen($note) < 3) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A meaningful rejection reason is required.',
+                'code' => 'SUSPENSION_REJECTION_REASON_REQUIRED',
+            ], 422);
+        }
+
+        $shopOwnerId = $this->shopOwnerId();
+
         try {
-            $suspensionRequest = $this->shopScopedRequestQuery()
-                ->with(['employee.user', 'requester'])
-                ->findOrFail($id);
+            $result = DB::transaction(function () use ($validated, $note, $id, $shopOwnerId): array {
+                $suspensionRequest = SuspensionRequest::query()
+                    ->whereKey($id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
 
-            if (in_array($suspensionRequest->status, [SuspensionStatus::APPROVED, SuspensionStatus::REJECTED_OWNER])) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This request has already been reviewed',
-                ], 400);
-            }
+                $employee = Employee::query()
+                    ->whereKey($suspensionRequest->employee_id)
+                    ->where('shop_owner_id', $shopOwnerId)
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($suspensionRequest->manager_status !== 'approved') {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'This request has not been approved by the manager',
-                ], 400);
-            }
+                if (! $employee) {
+                    throw (new ModelNotFoundException())->setModel(Employee::class, [$suspensionRequest->employee_id]);
+                }
 
-            $action = $request->input('action');
-            $note = $request->input('note');
-            $newStatus = $action === 'approve' ? SuspensionStatus::APPROVED : SuspensionStatus::REJECTED_OWNER;
+                if ($suspensionRequest->status !== SuspensionStatus::PENDING_OWNER) {
+                    throw new \RuntimeException('This request has already reached its final review state.', 409);
+                }
 
-            $suspensionRequest->update([
-                'status' => $newStatus,
-                'owner_id' => auth('shop_owner')->id(),
-                'owner_status' => $action === 'approve' ? 'approved' : 'rejected',
-                'owner_note' => $note,
-                'owner_reviewed_at' => now(),
-            ]);
+                if ($suspensionRequest->manager_status !== 'approved') {
+                    throw new \RuntimeException('This request is not ready for Shop Owner review.', 409);
+                }
 
-            $employee = $suspensionRequest->employee;
-            if ($employee) {
-                if ($action === 'approve') {
-                    $employee->update([
+                if ($employee->status === EmployeeStatus::TERMINATED) {
+                    throw new \LogicException('Terminated employees must use the Rehire / Reinstate Employee workflow.');
+                }
+
+                $approved = $validated['action'] === 'approve';
+                $newStatus = $approved ? SuspensionStatus::APPROVED : SuspensionStatus::REJECTED_OWNER;
+                $oldValues = [
+                    'status' => $suspensionRequest->status->value,
+                    'owner_status' => $suspensionRequest->owner_status,
+                    'owner_id' => $suspensionRequest->owner_id,
+                ];
+
+                $suspensionRequest->forceFill([
+                    'status' => $newStatus,
+                    'owner_id' => $shopOwnerId,
+                    'owner_status' => $approved ? 'approved' : 'rejected',
+                    'owner_note' => $note !== '' ? $note : null,
+                    'owner_reviewed_at' => now(),
+                ])->save();
+
+                if ($approved) {
+                    $employee->forceFill([
                         'status' => EmployeeStatus::SUSPENDED,
                         'suspension_reason' => $suspensionRequest->reason,
-                    ]);
-                } else {
-                    $employee->update([
-                        'status' => EmployeeStatus::ACTIVE,
-                        'suspension_reason' => null,
-                    ]);
+                        'privileged_suspension_id' => null,
+                    ])->save();
+
+                    $this->linkedUserSynchronizer->sync($employee);
                 }
-            }
 
-            DB::commit();
+                AuditLog::createLog([
+                    'shop_owner_id' => $shopOwnerId,
+                    'user_id' => null,
+                    'employee_id' => $employee->getKey(),
+                    'module' => AuditLog::MODULE_SUSPENSION,
+                    'action' => $approved ? AuditLog::ACTION_APPROVED : AuditLog::ACTION_REJECTED,
+                    'entity_type' => SuspensionRequest::class,
+                    'entity_id' => $suspensionRequest->getKey(),
+                    'description' => $approved
+                        ? 'Shop Owner approved an employee suspension request.'
+                        : "Shop Owner rejected an employee suspension request: {$note}",
+                    'old_values' => $oldValues,
+                    'new_values' => [
+                        'status' => $newStatus->value,
+                        'owner_status' => $suspensionRequest->owner_status,
+                        'owner_id' => $shopOwnerId,
+                        'reason' => $note !== '' ? $note : null,
+                    ],
+                    'severity' => $approved ? AuditLog::SEVERITY_CRITICAL : AuditLog::SEVERITY_WARNING,
+                    'tags' => ['suspension', 'workflow', 'owner-review', 'actor_type:shop_owner'],
+                ]);
 
-            $shopOwnerId = (int) (auth('shop_owner')->id() ?? 0);
+                $suspensionRequest->setRelation('employee', $employee->load('user'));
+
+                return [
+                    'request' => $suspensionRequest->fresh(['employee.user', 'requester', 'manager']),
+                    'employee_id' => (int) $employee->getKey(),
+                    'approved' => $approved,
+                ];
+            });
+
+            $suspensionRequest = $result['request'];
             $employeeName = (string) ($suspensionRequest->employee?->name ?? 'Employee');
-            $decisionText = $action === 'approve' ? 'approved' : 'rejected';
+            $decisionText = $result['approved'] ? 'approved' : 'rejected';
 
-            if ($shopOwnerId > 0) {
+            try {
                 $this->notificationService->notifyEmployeeSuspensionRequest($shopOwnerId, [
                     'suspension_request_id' => (int) $suspensionRequest->id,
                     'employee_id' => (int) $suspensionRequest->employee_id,
@@ -233,69 +289,74 @@ class SuspensionFinalApprovalController extends Controller
                     'requested_by' => (string) ($suspensionRequest->requester?->name ?? 'HR'),
                     'owner_decision' => $decisionText,
                 ]);
-            }
+                $recipientUserIds = collect([
+                    (int) ($suspensionRequest->requested_by ?? 0),
+                    (int) ($suspensionRequest->employee?->user?->id ?? 0),
+                ])->filter(fn (int $userId): bool => $userId > 0)->unique()->values();
 
-            $recipientUserIds = collect([
-                (int) ($suspensionRequest->requested_by ?? 0),
-                (int) ($suspensionRequest->employee?->user?->id ?? 0),
-            ])->filter(fn (int $id): bool => $id > 0)->unique()->values();
-
-            $hrDashboardPermissions = [
-                'access-hr-dashboard',
-                'access-employee-directory',
-                'access-attendance-records',
-                'access-leave-approvals',
-                'access-overtime-approvals',
-                'access-payslip-generation',
-                'access-view-payslip',
-            ];
-
-            foreach ($recipientUserIds as $recipientUserId) {
-                $recipientUser = User::find((int) $recipientUserId);
-                $canOpenHrSuspensions = $recipientUser
-                    ? $recipientUser->hasAnyPermission($hrDashboardPermissions)
-                    : false;
-
-                $this->notificationService->sendToUser(
-                    userId: (int) $recipientUserId,
-                    type: NotificationType::TASK_ASSIGNED,
-                    title: 'Suspension Request Reviewed',
-                    message: "Suspension request for {$employeeName} was {$decisionText} by the shop owner.",
-                    data: [
-                        'suspension_request_id' => (int) $suspensionRequest->id,
-                        'employee_id' => (int) $suspensionRequest->employee_id,
-                        'employee_name' => $employeeName,
-                        'decision' => $decisionText,
-                        'note' => $note,
-                    ],
-                    actionUrl: $canOpenHrSuspensions ? '/erp/hr?section=suspensions' : '/erp/notifications',
-                    shopId: $shopOwnerId > 0 ? $shopOwnerId : null,
-                    priority: 'high'
-                );
+                foreach ($recipientUserIds as $recipientUserId) {
+                    $this->notificationService->sendToUser(
+                        userId: (int) $recipientUserId,
+                        type: NotificationType::TASK_ASSIGNED,
+                        title: 'Suspension Request Reviewed',
+                        message: "Suspension request for {$employeeName} was {$decisionText} by the shop owner.",
+                        data: [
+                            'suspension_request_id' => (int) $suspensionRequest->id,
+                            'employee_id' => (int) $suspensionRequest->employee_id,
+                            'employee_name' => $employeeName,
+                            'decision' => $decisionText,
+                            'note' => $note,
+                        ],
+                        actionUrl: '/erp/notifications',
+                        shopId: $shopOwnerId > 0 ? $shopOwnerId : null,
+                        priority: 'high'
+                    );
+                }
+            } catch (\Throwable $notificationException) {
+                Log::warning('Suspension owner decision notifications failed.', [
+                    'request_id' => $id,
+                    'error' => $notificationException->getMessage(),
+                ]);
             }
 
             return response()->json([
                 'success' => true,
-                'message' => $action === 'approve'
+                'message' => $result['approved']
                     ? 'Suspension request approved successfully'
                     : 'Suspension request rejected successfully',
-                'data' => $suspensionRequest,
+            'data' => $suspensionRequest,
             ]);
         } catch (ModelNotFoundException $e) {
-            DB::rollBack();
-
             return response()->json([
                 'success' => false,
                 'message' => 'Suspension request not found',
             ], 404);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Error reviewing suspension request: ' . $e->getMessage());
+        } catch (\LogicException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
+            ], 409);
+        } catch (\RuntimeException $e) {
+            if ($e->getCode() === 409) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                    'code' => 'SUSPENSION_REQUEST_ALREADY_DECIDED',
+                ], 409);
+            }
+
+            Log::error('Error reviewing suspension request.', ['request_id' => $id, 'error' => $e->getMessage()]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to review suspension request',
+            ], 500);
+        } catch (\Throwable $e) {
+            Log::error('Error reviewing suspension request.', ['request_id' => $id, 'error' => $e->getMessage()]);
 
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to review suspension request',
-                'error' => $e->getMessage(),
             ], 500);
         }
     }

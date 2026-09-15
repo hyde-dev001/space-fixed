@@ -1,0 +1,54 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const discountSource = readFileSync(
+  join(process.cwd(), 'resources/js/Pages/ShopOwner/Orders/order management/discount.tsx'),
+  'utf8',
+);
+
+describe('shop-owner logistics voucher integration', () => {
+  it('keeps the vouchers page identity visible above the campaign metrics', () => {
+    expect(discountSource).toContain('Promo Management');
+    expect(discountSource).toContain('Create product-based vouchers and discounts');
+    expect(discountSource).toContain('text-3xl font-bold tracking-tight text-slate-900');
+    expect(discountSource).not.toContain('<h1 className="sr-only">Vouchers &amp; Discount</h1>');
+  });
+
+  it('maps the logistics capability and target on the campaign contract', () => {
+    expect(discountSource).toContain('discount_target');
+    expect(discountSource).toContain('data?.logistics');
+    expect(discountSource).toContain("discountTarget: 'items' | 'shipping'");
+    expect(discountSource).toContain('shippingVouchersAvailable');
+  });
+
+  it('lets an eligible owner choose shipping and keeps the campaign shop-wide', () => {
+    expect(discountSource).toContain('Shipping voucher');
+    expect(discountSource).toContain('Shop-owned Logistics');
+    expect(discountSource).toContain('discountTarget === "shipping"');
+    expect(discountSource).toContain('next.productId = ""');
+    expect(discountSource).toContain('discount_target: form.discountTarget');
+    expect(discountSource).toContain('scope: form.discountTarget === "shipping" ? "shop_wide"');
+  });
+
+  it('does not expose an unusable shipping target when logistics is unavailable', () => {
+    expect(discountSource).toContain('Shipping vouchers are unavailable');
+    expect(discountSource).toContain('disabled={!shippingVouchersAvailable}');
+    expect(discountSource).toContain('Shipping voucher requires accessible Shop-owned Logistics');
+    expect(discountSource).toContain('discountTarget: "items"');
+  });
+
+  it('uses the dedicated sale endpoint for company shop owners', () => {
+    expect(discountSource).toContain('`/api/shop-owner/promos/products/${productId}/sale`');
+    expect(discountSource).toContain('`/api/shop-owner/promos/products/${selectedProduct.id}/sale`');
+    expect(discountSource).toContain('mode: "apply"');
+    expect(discountSource).toContain('mode: "restore"');
+  });
+
+  it('keeps the promo preview readable under the ERP palette overrides', () => {
+    expect(discountSource).toContain('bg-gray-100 p-5 text-gray-900');
+    expect(discountSource).toContain('border-gray-200 bg-white p-4');
+    expect(discountSource).toContain('font-semibold text-gray-900 dark:text-white">{previewDurationLabel}</p>');
+    expect(discountSource).not.toContain('bg-slate-950 p-5 text-white');
+  });
+});

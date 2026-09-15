@@ -57,7 +57,7 @@ class ReportShopController extends Controller
 
         // Rule 2: Must have a completed transaction with the shop
         $completedOrder = Order::where('shop_owner_id', $shopId)
-            ->whereIn('status', ['delivered', 'completed'])
+            ->terminalFulfillment()
             ->where(function ($query) use ($user, $normalizedEmail) {
                 $query->where('customer_id', $user->id);
 

@@ -1,9 +1,23 @@
-import React, { useEffect, useMemo, useState } from "react";
+import MonochromeSelect from "@/components/form/Select";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
+import { X } from "lucide-react";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../components/common/ErrorModal";
+import { Modal } from "../../../components/ui/modal";
+import { calculateRetailRevenue } from "../../../utils/deliveryRevenue";
+import { MoneyIcon } from "../../../components/common/MoneyIcon";
+import {
+  ORDER_STATUS_PRESENTATION,
+  getOrderStatusPresentation,
+  parseOrderActions,
+  type OrderAction,
+  type OrderStatus,
+} from "../../../utils/orderStatusPresentation";
 import axios from "axios";
+
+const SHOP_OWNED_LOGISTICS = "Shop-owned logistics";
 
 type OrderItem = {
   id: number;
@@ -16,6 +30,27 @@ type OrderItem = {
   subtotal: string;
   size: string | null;
   color: string | null;
+};
+
+type LogisticsProof = {
+  id: number;
+  handoff_type: string;
+  proof_type: string;
+  file_url: string;
+};
+
+type LogisticsSummary = {
+  shipment_id: number | null;
+  shipment_status: string | null;
+  leg_id?: number | null;
+  leg_type?: string | null;
+  leg_status?: string | null;
+  carrier?: string | null;
+  rider_name?: string | null;
+  rider_phone?: string | null;
+  tracking_number?: string | null;
+  tracking_url?: string | null;
+  proofs: LogisticsProof[];
 };
 
 type Order = {
@@ -38,10 +73,28 @@ type Order = {
   grand_total: number;
   paymentStatus: string;
   paymentMethod?: string;
-  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refund";
+  status: OrderStatus;
+  isPosOrder?: boolean;
+  customerReceiptStatus?: 'pending' | 'confirmed' | 'disputed' | string;
+  customerReceivedAt?: string | null;
+  customerReceiptDisputedAt?: string | null;
+  activeDeliveryDispute?: {
+    id: number;
+    status: string;
+    reason: string;
+    notes?: string | null;
+    reported_at?: string | null;
+  } | null;
+  availableActions?: OrderAction[];
+  ownerProjection?: {
+    fulfillment_status: OrderStatus;
+    business_closed: boolean;
+    blockers: string[];
+  };
   cancellation_reason?: string | null;
   cancellation_note?: string | null;
   cancellation_other_reason_note?: string | null;
+  delivery_cancellation?: { status: "cancelled"; message: string | null } | null;
   eta?: string;
   orderedAt: string;
   processedAt?: string;
@@ -51,6 +104,13 @@ type Order = {
   carrierPhone?: string;
   trackingNumber?: string;
   trackingLink?: string;
+  logistics?: LogisticsSummary | null;
+  shopOwnedCoverage?: {
+    available: boolean;
+    reason: string | null;
+    distance_km: number | null;
+    coverage_radius_km: number | null;
+  };
   items: OrderItem[];
   quantity: number;
   shopName?: string;
@@ -78,6 +138,8 @@ type Order = {
     finance_status: string;
     return_status: string;
     return_source?: string;
+    is_shop_owned_return?: boolean;
+    return_delivery_method?: 'shop_owned' | 'third_party' | string | null;
     customer_return_tracking_number?: string | null;
     customer_return_carrier?: string | null;
     customer_return_rider_name?: string | null;
@@ -96,6 +158,16 @@ type Order = {
     rejected_at?: string | null;
     rejection_reason?: string | null;
     flow_type?: string;
+    payout_amount_value?: number;
+    evidence_media?: string[];
+    customer_dispute_evidence?: Array<{
+      id: string;
+      kind: 'image' | 'video';
+      mime_type?: string | null;
+      original_name?: string | null;
+      url: string;
+    }>;
+    return_logistics?: Partial<LogisticsSummary> | null;
     items?: Array<{
       order_item_id: number;
       product_name: string;
@@ -105,6 +177,39 @@ type Order = {
       line_amount?: number;
     }>;
   } | null;
+};
+
+const getShopOwnedCoverageMessage = (coverage: Order['shopOwnedCoverage']): string => {
+  if (coverage?.available) return 'Shop-owned delivery is available for this address.';
+  if (coverage?.reason === 'outside_coverage') {
+    if (
+      coverage.distance_km !== null
+      && coverage.coverage_radius_km !== null
+      && Number.isFinite(coverage.distance_km)
+      && Number.isFinite(coverage.coverage_radius_km)
+    ) {
+      return `Outside shop-owned coverage: ${coverage.distance_km} km away; coverage radius is ${coverage.coverage_radius_km} km.`;
+    }
+    return 'Outside shop-owned coverage.';
+  }
+  if (coverage?.reason === 'address_needs_pin') {
+    return 'Customer address must be pinned before shop-owned delivery can be used.';
+  }
+  if (coverage?.reason === 'shop_needs_pin') {
+    return 'Shop location needs configuration before shop-owned delivery can be used.';
+  }
+  if (coverage?.reason === 'logistics_unavailable') {
+    return 'Shop-owned logistics is currently unavailable.';
+  }
+  return 'Shop-owned logistics is unavailable for this order.';
+};
+
+const formatLogisticsStatus = (status: string | null | undefined): string => {
+  if (!status) return 'Not available';
+
+  if (status === 'proof_correction_required') return 'Proof correction required';
+
+  return status.replaceAll('_', ' ').replace(/^./, (character) => character.toUpperCase());
 };
 
 const parseAmount = (value: unknown): number => {
@@ -202,8 +307,6 @@ const buildPickupAddressHtml = (order: Order): string => {
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -228,12 +331,6 @@ const CheckCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const CurrencyDollarIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
 const CalendarIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -243,18 +340,6 @@ const CalendarIcon: React.FC<{ className?: string }> = ({ className }) => (
 const MagnifyingGlassIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-  </svg>
-);
-
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
   </svg>
 );
 
@@ -305,8 +390,6 @@ const ChevronRightIcon: React.FC<{ className?: string }> = ({ className }) => (
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
@@ -325,20 +408,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -350,6 +423,107 @@ const MetricCard: React.FC<MetricCardProps> = ({
       </div>
     </div>
   );
+};
+
+type ReturnDeliveryMethod = 'shop_owned' | 'third_party';
+
+const getReturnDeliveryMethod = (refund: Order['latest_refund']): ReturnDeliveryMethod | null => {
+  const explicitMethod = String(refund?.return_delivery_method || '').toLowerCase();
+  if (explicitMethod === 'shop_owned' || explicitMethod === 'third_party') {
+    return explicitMethod;
+  }
+
+  if (refund?.is_shop_owned_return === true) {
+    return 'shop_owned';
+  }
+
+  const source = String(refund?.return_source || '').toLowerCase();
+  const staffCarrier = String(refund?.staff_return_carrier || '').trim().toLowerCase();
+  const returnStatus = String(refund?.return_status || '').toLowerCase();
+  const hasCustomerReturnDetails = Boolean(
+    String(refund?.customer_return_tracking_number || '').trim()
+      || String(refund?.customer_return_carrier || '').trim()
+      || String(refund?.customer_return_tracking_link || '').trim(),
+  );
+  const hasStaffReturnDetails = Boolean(
+    String(refund?.staff_return_tracking_number || '').trim()
+      || String(refund?.staff_return_carrier || '').trim()
+      || String(refund?.staff_return_tracking_link || '').trim(),
+  );
+
+  if (source === 'customer' && hasCustomerReturnDetails) {
+    return 'third_party';
+  }
+  if (source === 'customer' && staffCarrier === SHOP_OWNED_LOGISTICS.toLowerCase()) {
+    return 'shop_owned';
+  }
+  if (source === 'customer' && ['pending_customer_shipment', 'in_transit'].includes(returnStatus)) {
+    return 'third_party';
+  }
+  if (hasCustomerReturnDetails) {
+    return 'third_party';
+  }
+  if (staffCarrier === SHOP_OWNED_LOGISTICS.toLowerCase()) {
+    return 'shop_owned';
+  }
+  if (source === 'staff' && hasStaffReturnDetails) {
+    return 'third_party';
+  }
+  if (hasStaffReturnDetails) {
+    return 'third_party';
+  }
+
+  return null;
+};
+
+export const isPosOrder = (order: Pick<Order, "isPosOrder">) => order.isPosOrder === true;
+
+export const canSelectShopOwnedReturn = (coverage?: Order['shopOwnedCoverage']) => coverage?.available === true;
+
+export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund">) => {
+  const latestRefund = order.latest_refund;
+  if (!latestRefund || String(latestRefund.reason_code || '').toLowerCase() === 'delivery_attempts_exhausted') return false;
+  if (String(latestRefund.flow_type || '').toLowerCase() !== 'request_approval'
+    || ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase())) {
+    return false;
+  }
+
+  const returnStatus = String(latestRefund.return_status || '').toLowerCase();
+  const returnMethod = getReturnDeliveryMethod(latestRefund);
+  if (returnMethod === 'shop_owned') {
+    return returnStatus === 'in_transit'
+      && String(latestRefund.return_logistics?.leg_status || '').toLowerCase() === 'delivered';
+  }
+  if (returnMethod === 'third_party') {
+    return returnStatus === 'in_transit';
+  }
+
+  return returnStatus === 'in_transit'
+    || (String(latestRefund.return_source || '').toLowerCase() === 'staff'
+      && returnStatus === 'pending_staff_pickup');
+};
+
+export const canStaffReviewRefund = (order: Pick<Order, "latest_refund">) => {
+  const refund = order.latest_refund;
+  if (!refund || String(refund.flow_type || '').toLowerCase() !== 'request_approval') return false;
+
+  return String(refund.shop_owner_status || '').toLowerCase() === 'pending'
+    && !['rejected', 'failed', 'succeeded'].includes(String(refund.status || '').toLowerCase());
+};
+
+export const canArrangeReturnPickup = (order: Pick<Order, "latest_refund">) => {
+  const refund = order.latest_refund;
+  if (!refund || String(refund.flow_type || '').toLowerCase() !== 'request_approval') return false;
+
+  const returnMethod = getReturnDeliveryMethod(refund);
+  const returnStatus = String(refund.return_status || '').toLowerCase();
+  const canSwitchUnstartedShopOwnedReturn = returnMethod === 'shop_owned'
+    && returnStatus === 'pending_staff_pickup';
+
+  return String(refund.shop_owner_status || '').toLowerCase() === 'approved'
+    && String(refund.finance_status || '').toLowerCase() === 'approved'
+    && (returnStatus === 'pending_customer_shipment' || canSwitchUnstartedShopOwnedReturn)
+    && !['rejected', 'failed', 'succeeded'].includes(String(refund.status || '').toLowerCase());
 };
 
 export default function JobOrdersPage() {
@@ -375,6 +549,7 @@ export default function JobOrdersPage() {
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [viewOrder, setViewOrder] = useState<Order | null>(null);
+  const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
   const [eta, setEta] = useState("");
   const [etaPreset, setEtaPreset] = useState("");
   const [carrierCompany, setCarrierCompany] = useState("");
@@ -383,7 +558,12 @@ export default function JobOrdersPage() {
   const [trackingNumber, setTrackingNumber] = useState("");
   const [trackingLink, setTrackingLink] = useState("");
   const [isConfirmingShipping, setIsConfirmingShipping] = useState(false);
+  const [isConfirmingReturn, setIsConfirmingReturn] = useState(false);
   const [isActivatingReceive, setIsActivatingReceive] = useState(false);
+  const shippingRequestTokenRef = useRef(0);
+  const activeShippingOrderIdRef = useRef<number | null>(null);
+  const proofTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const proofCloseButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const mapApiOrder = (order: any): Order => {
     const itemSubtotal = parseAmount(order.total_amount);
@@ -420,10 +600,18 @@ export default function JobOrdersPage() {
       grand_total: grandTotal,
       paymentStatus: order.payment_status || 'pending',
       paymentMethod: order.payment_method || '',
-      status: order.status as any,
+      status: order.status as Order['status'],
+      isPosOrder: order.is_pos_order === true,
+      customerReceiptStatus: order.customer_receipt_status || 'pending',
+      customerReceivedAt: order.customer_received_at || null,
+      customerReceiptDisputedAt: order.customer_receipt_disputed_at || null,
+      activeDeliveryDispute: order.active_delivery_dispute || null,
+      availableActions: parseOrderActions(order.available_actions),
+      ownerProjection: order.owner_projection || undefined,
       cancellation_reason: order.cancellation_reason || null,
       cancellation_note: order.cancellation_note || null,
       cancellation_other_reason_note: order.cancellation_other_reason_note || null,
+      delivery_cancellation: order.delivery_cancellation || null,
       eta: order.eta || undefined,
       orderedAt: new Date(order.created_at).toLocaleString(),
       carrierCompany: order.carrier_company || undefined,
@@ -431,6 +619,8 @@ export default function JobOrdersPage() {
       carrierPhone: order.carrier_phone || undefined,
       trackingNumber: order.tracking_number || undefined,
       trackingLink: order.tracking_link || undefined,
+      logistics: order.logistics || null,
+      shopOwnedCoverage: order.shop_owned_coverage || undefined,
       items: order.items || [],
       quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
       shopName: order.shop?.shop_name || undefined,
@@ -467,17 +657,27 @@ export default function JobOrdersPage() {
 
   useEffect(() => {
     void refreshOrders();
+
+    const refreshOnFocus = () => void refreshOrders();
+    window.addEventListener('focus', refreshOnFocus);
+
+    return () => window.removeEventListener('focus', refreshOnFocus);
   }, []);
 
   const getShippingMessage = () => {
     if (!selectedOrder) return "";
     const etaText = etaPreset || "(ETA not set)";
+    if (carrierCompany === SHOP_OWNED_LOGISTICS) {
+      return `Thank you for your purchase! We are arranging delivery through our shop-owned logistics and you will receive the item by ${etaText}.`;
+    }
     const carrierText = carrierCompany ? `${carrierCompany}${carrierName ? ` - ${carrierName}` : ""}` : "(carrier not set)";
     const base = `Thank you for your purchase! We already shipped your item via ${carrierText} and you will receive the item by ${etaText}.`;
     const trackingPart = trackingNumber ? ` Tracking Number: ${trackingNumber}.` : "";
     const linkPart = trackingLink ? ` Track here: ${trackingLink}` : "";
     return `${base}${trackingPart}${linkPart}`;
   };
+
+  const shopOwnedEligible = selectedOrder?.shopOwnedCoverage?.available === true;
 
   if (!canAccessStaffModule) {
     return (
@@ -513,6 +713,7 @@ export default function JobOrdersPage() {
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
   const paginatedOrders = filteredOrders.slice(startIndex, endIndex);
+  const processableOrders = paginatedOrders.filter((order) => order.availableActions?.includes('processing'));
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -521,6 +722,7 @@ export default function JobOrdersPage() {
     const processing = orders.filter(o => o.status === "processing").length;
     const shipped = orders.filter(o => o.status === "shipped").length;
     const delivered = orders.filter(o => o.status === "delivered").length;
+    const completed = orders.filter(o => o.status === "completed").length;
     const refund = orders.filter((o) =>
       o.status === "refund"
       || String(o.paymentStatus || '').toLowerCase() === 'refunded'
@@ -528,21 +730,26 @@ export default function JobOrdersPage() {
       || String(o.latest_refund?.flow_type || '').toLowerCase() === 'request_approval'
     ).length;
 
-    // Net revenue = order amount minus succeeded refunds (POS + online), clamped at zero.
     const totalRevenue = orders
       .filter((o) => o.status !== "cancelled")
       .reduce((sum, o) => {
-        const grossAmount = Math.max(0, parseAmount(o.total_amount));
-        const refundedAmount = getCombinedSucceededRefundAmount(o, grossAmount);
-        return sum + Math.max(0, grossAmount - refundedAmount);
+        const orderGrandTotal = Math.max(0, parseAmount(o.grand_total));
+        return sum + calculateRetailRevenue({
+          productRevenueExVat: Math.max(0, parseAmount(o.total_amount)),
+          shippingFee: Math.max(0, parseAmount(o.shipping_fee)),
+          refundedAmount: getCombinedSucceededRefundAmount(o, orderGrandTotal),
+          orderGrandTotal,
+          paymentStatus: o.paymentStatus,
+          carrierCompany: o.carrierCompany,
+        });
       }, 0);
 
-    return { total, pending, processing, shipped, delivered, refund, totalRevenue };
+    return { total, pending, processing, shipped, delivered, completed, refund, totalRevenue };
   }, [orders]);
 
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) {
-      setSelectedOrders(paginatedOrders.map((order) => order.id));
+      setSelectedOrders(processableOrders.map((order) => order.id));
     } else {
       setSelectedOrders([]);
     }
@@ -566,46 +773,55 @@ export default function JobOrdersPage() {
     });
     if (!result.isConfirmed) return;
     try {
+      const orderIds = selectedOrders.filter((id) =>
+        orders.some((order) => order.id === id && order.availableActions?.includes('processing'))
+      );
+      if (orderIds.length === 0) {
+        setSelectedOrders([]);
+        return;
+      }
+
       const csrfResponse = await fetch('/api/csrf-token', {
         credentials: 'include',
         headers: { 'Accept': 'application/json' },
       });
       const csrfData = await csrfResponse.json();
       const csrfToken = csrfData.csrf_token;
-      await Promise.all(
-        selectedOrders.map(id =>
+      const responses = await Promise.all(
+        orderIds.map(id =>
           fetch(`/api/staff/orders/${id}/status`, {
             method: 'PATCH',
             credentials: 'include',
-            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': csrfToken },
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'X-CSRF-TOKEN': csrfToken,
+            },
             body: JSON.stringify({ status: 'processing' }),
           })
         )
       );
+      const failedResponse = responses.find((response) => !response.ok);
+      if (failedResponse) {
+        const errorData = await failedResponse.json().catch(() => null);
+        throw new Error(errorData?.message || 'Some orders could not be updated. Please try again.');
+      }
+
       setOrders(prev =>
-        prev.map(o => selectedOrders.includes(o.id) ? { ...o, status: 'processing' as any } : o)
+        prev.map(o => orderIds.includes(o.id)
+          ? { ...o, status: 'processing', availableActions: ['shipped'] as OrderAction[] }
+          : o)
       );
       setSelectedOrders([]);
-      Swal.fire('Done', `${selectedOrders.length} order(s) marked as Processing.`, 'success');
-    } catch {
-      Swal.fire('Error', 'Some orders could not be updated. Please try again.', 'error');
+      Swal.fire('Done', `${orderIds.length} order(s) marked as Processing.`, 'success');
+    } catch (error) {
+      await refreshOrders();
+      Swal.fire(
+        'Error',
+        error instanceof Error ? error.message : 'Some orders could not be updated. Please try again.',
+        'error',
+      );
     }
-  };
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      "pending": "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-700/40",
-      "processing": "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40",
-      "shipped": "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-700/40",
-      "delivered": "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40",
-      "cancelled": "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-700/40",
-      "refund": "bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40",
-    };
-    return colors[status] || "bg-gray-100 text-gray-800 ring-1 ring-inset ring-gray-200";
-  };
-
-  const formatStatusLabel = (status: string) => {
-    return status.charAt(0).toUpperCase() + status.slice(1);
   };
 
   const formatOrderTotal = (total: string | number) => {
@@ -707,11 +923,12 @@ export default function JobOrdersPage() {
       const financeStatus = String(latestRefund.finance_status || '').toLowerCase();
       const returnStatus = String(latestRefund.return_status || '').toLowerCase();
       const onlineRefundedAmount = getOnlineSucceededRefundLineAmount(order);
+      const payoutAmount = parseAmount(latestRefund.payout_amount_value);
       const hasOnlineRefundSucceeded = refundStatus === 'succeeded' || paymentStatus === 'refunded';
 
       if (hasOnlineRefundSucceeded) {
-        if (onlineRefundedAmount > 0 && orderGrandTotal > 0) {
-          const isFullyRefunded = onlineRefundedAmount >= orderGrandTotal - 0.01;
+        if (onlineRefundedAmount > 0 && payoutAmount > 0) {
+          const isFullyRefunded = onlineRefundedAmount >= payoutAmount - 0.01;
           return {
             label: isFullyRefunded ? 'Refunded' : 'Partially Refunded',
             className: isFullyRefunded
@@ -768,9 +985,16 @@ export default function JobOrdersPage() {
         };
       }
 
-      if (shopOwnerStatus !== 'approved' || financeStatus !== 'approved') {
+      if (shopOwnerStatus !== 'approved') {
         return {
-          label: 'Awaiting Approval',
+          label: 'Awaiting Staff Review',
+          className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
+        };
+      }
+
+      if (financeStatus !== 'approved') {
+        return {
+          label: 'Awaiting Finance',
           className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
         };
       }
@@ -803,26 +1027,48 @@ export default function JobOrdersPage() {
     };
   };
 
-  const canConfirmReturnReceived = (order: Order) => {
-    const latestRefund = order.latest_refund;
-    if (!latestRefund) return false;
+  const handleStaffRefundReview = async (order: Order, approve: boolean) => {
+    const decision = approve
+      ? await Swal.fire({
+          title: 'Approve Refund Eligibility?',
+          text: 'Confirm that the request and customer evidence qualify. Finance will authorize the refund next; no money is released yet.',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonText: 'Approve eligibility',
+          confirmButtonColor: '#16a34a',
+        })
+      : await Swal.fire({
+          title: 'Reject Refund Request',
+          text: 'Explain why the item or evidence does not qualify.',
+          input: 'textarea',
+          inputLabel: 'Rejection reason',
+          inputValidator: (value) => value.trim() ? undefined : 'A rejection reason is required.',
+          showCancelButton: true,
+          confirmButtonText: 'Reject request',
+          confirmButtonColor: '#dc2626',
+        });
 
-    return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
-      && ['pending_staff_pickup', 'in_transit'].includes(String(latestRefund.return_status || '').toLowerCase())
-      && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
-  };
+    if (!decision.isConfirmed) return;
 
-  const canArrangeReturnPickup = (order: Order) => {
-    const latestRefund = order.latest_refund;
-    if (!latestRefund) return false;
+    try {
+      const csrfResponse = await fetch('/api/csrf-token', { credentials: 'include', headers: { Accept: 'application/json' } });
+      const csrfData = await csrfResponse.json();
+      const response = await fetch(`/api/staff/orders/${order.id}/refund/${approve ? 'approve' : 'reject'}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfData.csrf_token },
+        body: JSON.stringify(approve ? {} : { rejection_reason: String(decision.value || '').trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.message || 'Unable to review the refund request.');
 
-    const returnStatus = String(latestRefund.return_status || '').toLowerCase();
-    const flowType = String(latestRefund.flow_type || '').toLowerCase();
-    const isBlocked = ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
-
-    return flowType === 'request_approval'
-      && ['pending_customer_shipment', 'pending_staff_pickup'].includes(returnStatus)
-      && !isBlocked;
+      await refreshOrders();
+      setIsViewModalOpen(false);
+      setViewOrder(null);
+      await Swal.fire(approve ? 'Eligibility approved' : 'Refund rejected', data?.message || 'Refund review saved.', 'success');
+    } catch (reviewError) {
+      await Swal.fire('Review failed', reviewError instanceof Error ? reviewError.message : 'Unable to review the refund request.', 'error');
+    }
   };
 
   const handleArrangeReturnPickup = async (order: Order) => {
@@ -830,11 +1076,36 @@ export default function JobOrdersPage() {
     const customerName = String(order.customer || 'Customer').trim() || 'Customer';
     const customerPhone = String(order.phone || '').trim() || 'No phone provided';
     const existingPickup = order.latest_refund || null;
-    const defaultCarrier = String(existingPickup?.staff_return_carrier || '').trim();
-    const defaultRiderName = String(existingPickup?.staff_return_rider_name || '').trim();
-    const defaultRiderPhone = String(existingPickup?.staff_return_rider_phone || '').trim();
-    const defaultTrackingNumber = String(existingPickup?.staff_return_tracking_number || '').trim();
-    const defaultTrackingLink = String(existingPickup?.staff_return_tracking_link || '').trim();
+    const shopOwnedEligible = canSelectShopOwnedReturn(order.shopOwnedCoverage);
+    const existingReturnMethod = getReturnDeliveryMethod(existingPickup);
+    const defaultCarrier = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_carrier || existingPickup?.staff_return_carrier || '')
+        : (existingPickup?.staff_return_carrier || ''),
+    ).trim();
+    const defaultRiderName = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_rider_name || existingPickup?.staff_return_rider_name || '')
+        : (existingPickup?.staff_return_rider_name || ''),
+    ).trim();
+    const defaultRiderPhone = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_rider_phone || existingPickup?.staff_return_rider_phone || '')
+        : (existingPickup?.staff_return_rider_phone || ''),
+    ).trim();
+    const defaultTrackingNumber = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_tracking_number || existingPickup?.staff_return_tracking_number || '')
+        : (existingPickup?.staff_return_tracking_number || ''),
+    ).trim();
+    const defaultTrackingLink = String(
+      existingReturnMethod === 'third_party'
+        ? (existingPickup?.customer_return_tracking_link || existingPickup?.staff_return_tracking_link || '')
+        : (existingPickup?.staff_return_tracking_link || ''),
+    ).trim();
+    const shopOwnedOptionLabel = shopOwnedEligible
+      ? 'Shop-owned logistics'
+      : 'Shop-owned logistics — unavailable (' + getShopOwnedCoverageMessage(order.shopOwnedCoverage) + ')';
 
     const shipmentInput = await Swal.fire({
       title: 'Arrange Return Pickup',
@@ -865,36 +1136,44 @@ export default function JobOrdersPage() {
             </div>
           </div>
 
-          <div style="display:grid;gap:10px;">
-            <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Courier Assignment</p>
+           <div style="display:grid;gap:10px;">
+             <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Courier Assignment</p>
 
-            <div style="display:grid;gap:6px;">
+             <div style="display:grid;gap:6px;">
+               <label style="font-size:13px;font-weight:600;color:#334155;">Delivery Method</label>
+               <select id="swal-delivery-method" style="border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;">
+                 <option value="third_party">Third-party courier</option>
+                 <option value="shop_owned" ${shopOwnedEligible ? '' : 'disabled'}>${escapeHtml(shopOwnedOptionLabel)}</option>
+               </select>
+             </div>
+
+             <div class="swal-third-party-field" style="display:grid;gap:10px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Carrier Company</label>
               <input id="swal-carrier-company" class="swal2-input" placeholder="e.g. J&T, LBC, Ninja Van" value="${escapeHtml(defaultCarrier)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Rider Name</label>
               <input id="swal-rider-name" class="swal2-input" placeholder="Rider full name" value="${escapeHtml(defaultRiderName)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Rider Number</label>
               <input id="swal-rider-phone" class="swal2-input" placeholder="09XXXXXXXXX" value="${escapeHtml(defaultRiderPhone)}" inputmode="numeric" pattern="[0-9]*" maxlength="11" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Number</label>
               <input id="swal-tracking-number" class="swal2-input" placeholder="Tracking number" value="${escapeHtml(defaultTrackingNumber)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-            <div style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Link</label>
               <input id="swal-tracking-link" class="swal2-input" placeholder="https://..." value="${escapeHtml(defaultTrackingLink)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
           </div>
 
-          <p style="margin:0;font-size:12px;color:#64748b;">Tip: You can save initial rider details now, then update later with final tracking status.</p>
+          <p id="swal-pickup-tip" style="margin:0;font-size:12px;color:#64748b;">Tip: You can save initial rider details now, then update later with final tracking status.</p>
         </div>
       `,
       showCancelButton: true,
@@ -905,6 +1184,19 @@ export default function JobOrdersPage() {
       cancelButtonColor: '#6b7280',
       focusConfirm: false,
       didOpen: () => {
+        const deliveryMethodInput = document.getElementById('swal-delivery-method') as HTMLSelectElement | null;
+        const thirdPartyFields = document.querySelectorAll<HTMLElement>('.swal-third-party-field');
+        const pickupTip = document.getElementById('swal-pickup-tip');
+        const toggleThirdPartyFields = () => {
+          const isThirdParty = deliveryMethodInput?.value === 'third_party';
+          thirdPartyFields.forEach((field) => { field.style.display = isThirdParty ? 'grid' : 'none'; });
+          if (pickupTip) pickupTip.textContent = isThirdParty
+            ? 'Valid courier and tracking details will mark the third-party return in transit immediately.'
+            : 'Dispatcher assigns a rider from Logistics after you save.';
+        };
+        deliveryMethodInput?.addEventListener('change', toggleThirdPartyFields);
+        toggleThirdPartyFields();
+
         const riderPhoneInput = document.getElementById('swal-rider-phone') as HTMLInputElement | null;
         if (!riderPhoneInput) return;
 
@@ -918,6 +1210,16 @@ export default function JobOrdersPage() {
         }
       },
       preConfirm: () => {
+        const deliveryMethod = (document.getElementById('swal-delivery-method') as HTMLSelectElement | null)?.value || 'third_party';
+        if (deliveryMethod === 'shop_owned') {
+          if (!canSelectShopOwnedReturn(order.shopOwnedCoverage)) {
+            Swal.showValidationMessage(getShopOwnedCoverageMessage(order.shopOwnedCoverage));
+            return null;
+          }
+
+          return { deliveryMethod };
+        }
+
         const carrierCompany = (document.getElementById('swal-carrier-company') as HTMLInputElement | null)?.value?.trim() || '';
         const riderName = (document.getElementById('swal-rider-name') as HTMLInputElement | null)?.value?.trim() || '';
         const riderPhone = (document.getElementById('swal-rider-phone') as HTMLInputElement | null)?.value?.trim() || '';
@@ -942,6 +1244,7 @@ export default function JobOrdersPage() {
         }
 
         return {
+          deliveryMethod,
           carrierCompany,
           riderName,
           riderPhone,
@@ -969,6 +1272,7 @@ export default function JobOrdersPage() {
           'X-CSRF-TOKEN': csrfData.csrf_token,
         },
         body: JSON.stringify({
+          delivery_method: shipmentInput.value.deliveryMethod,
           tracking_number: shipmentInput.value.trackingNumber,
           carrier_company: shipmentInput.value.carrierCompany,
           rider_name: shipmentInput.value.riderName,
@@ -1039,8 +1343,15 @@ export default function JobOrdersPage() {
 
       // Update local state
       setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, status: "processing", processedAt: new Date().toLocaleString() } : o))
+        prev.map((o) => (o.id === order.id ? {
+          ...o,
+          status: "processing",
+          availableActions: ['shipped'] as OrderAction[],
+          processedAt: new Date().toLocaleString(),
+        } : o))
       );
+      setIsViewModalOpen(false);
+      setViewOrder(null);
 
       await Swal.fire({
         title: "Order processed",
@@ -1060,12 +1371,34 @@ export default function JobOrdersPage() {
     }
   };
 
+  const closeShippingModal = () => {
+    shippingRequestTokenRef.current += 1;
+    activeShippingOrderIdRef.current = null;
+    setIsShippingModalOpen(false);
+    setSelectedOrder(null);
+    setEta("");
+    setEtaPreset("");
+    setCarrierCompany("");
+    setCarrierName("");
+    setCarrierPhone("");
+    setTrackingNumber("");
+    setTrackingLink("");
+    setIsConfirmingShipping(false);
+  };
+
   const handleShipOrder = (order: Order) => {
+    shippingRequestTokenRef.current += 1;
+    activeShippingOrderIdRef.current = order.id;
+    const shopOwnedEligible = order.shopOwnedCoverage?.available === true;
+    const existingCarrier = order.carrierCompany || "";
+    setIsConfirmingShipping(false);
     setSelectedOrder(order);
     setEta("");
     setEtaPreset(order.eta || "1-2 business days");
     // Prepopulate if values already exist (view-only for shipped orders)
-    setCarrierCompany(order.carrierCompany || "");
+    setCarrierCompany(existingCarrier === SHOP_OWNED_LOGISTICS && !shopOwnedEligible
+      ? ""
+      : existingCarrier || (shopOwnedEligible ? SHOP_OWNED_LOGISTICS : ""));
     setCarrierName(order.carrierName || "");
     setCarrierPhone(order.carrierPhone || "");
     setTrackingNumber(order.trackingNumber || "");
@@ -1074,31 +1407,52 @@ export default function JobOrdersPage() {
   };
 
   const handleViewOrder = (order: Order) => {
+    setSelectedProofUrl(null);
     setViewOrder(order);
     setIsViewModalOpen(true);
   };
 
-  const handleConfirmReturnReceived = async (order: Order) => {
-    const latestRefund = order.latest_refund;
-    const isStaffArrangedReturn = String(latestRefund?.return_source || '').toLowerCase() === 'staff'
-      || String(latestRefund?.return_status || '').toLowerCase() === 'pending_staff_pickup';
+  const openProof = (url: string, trigger: HTMLButtonElement) => {
+    proofTriggerRef.current = trigger;
+    setSelectedProofUrl(url);
+  };
 
-    const returnCarrier = (isStaffArrangedReturn
+  const closeProof = () => {
+    const trigger = proofTriggerRef.current;
+    setSelectedProofUrl(null);
+    window.requestAnimationFrame(() => trigger?.focus());
+  };
+
+  useEffect(() => {
+    if (selectedProofUrl === null) return;
+
+    const frame = window.requestAnimationFrame(() => proofCloseButtonRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [selectedProofUrl]);
+
+  const handleConfirmReturnReceived = async (order: Order) => {
+    if (isConfirmingReturn) return;
+    const latestRefund = order.latest_refund;
+    const returnMethod = getReturnDeliveryMethod(latestRefund);
+    const returnSource = String(latestRefund?.return_source || '').toLowerCase();
+    const useStaffReturnFields = returnMethod === 'shop_owned'
+      || (returnSource === 'staff' && returnMethod !== 'third_party');
+    const returnCarrier = (useStaffReturnFields
       ? latestRefund?.staff_return_carrier
       : latestRefund?.customer_return_carrier) || '-';
-    const returnRiderName = (isStaffArrangedReturn
+    const returnRiderName = (useStaffReturnFields
       ? latestRefund?.staff_return_rider_name
       : latestRefund?.customer_return_rider_name) || '-';
-    const returnRiderPhone = (isStaffArrangedReturn
+    const returnRiderPhone = (useStaffReturnFields
       ? latestRefund?.staff_return_rider_phone
       : latestRefund?.customer_return_rider_phone) || '-';
-    const returnTrackingNumber = (isStaffArrangedReturn
+    const returnTrackingNumber = (useStaffReturnFields
       ? latestRefund?.staff_return_tracking_number
       : latestRefund?.customer_return_tracking_number) || '-';
-    const returnTrackingLink = (isStaffArrangedReturn
+    const returnTrackingLink = (useStaffReturnFields
       ? latestRefund?.staff_return_tracking_link
       : latestRefund?.customer_return_tracking_link) || '-';
-    const shippedAt = isStaffArrangedReturn
+    const shippedAt = useStaffReturnFields
       ? latestRefund?.staff_return_shipped_at
       : latestRefund?.customer_return_shipped_at;
     const returnShippedAt = shippedAt ? new Date(shippedAt).toLocaleString() : '-';
@@ -1143,7 +1497,7 @@ export default function JobOrdersPage() {
           <p><strong>Rider Number:</strong> ${returnRiderPhone}</p>
           <p><strong>Tracking Number:</strong> ${returnTrackingNumber}</p>
           <p><strong>Tracking Link:</strong> ${returnTrackingLink}</p>
-          <p><strong>Customer Marked Shipped At:</strong> ${returnShippedAt}</p>
+          <p><strong>Return Transport Started At:</strong> ${returnShippedAt}</p>
           <p style="margin-top: 0.75rem; color: #6b7280;">Confirm this after staff has physically received and verified the returned defective item.</p>
         </div>
         ${refundLines.length > 0 ? `
@@ -1180,7 +1534,7 @@ export default function JobOrdersPage() {
           return { line_dispositions: [] };
         }
 
-        const lineDispositions: Array<{ order_item_id: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
+        const lineDispositions: Array<{ order_item_id: number; approved_qty: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
 
         for (let index = 0; index < refundLines.length; index += 1) {
           const line = refundLines[index];
@@ -1194,6 +1548,7 @@ export default function JobOrdersPage() {
 
           lineDispositions.push({
             order_item_id: line.order_item_id,
+            approved_qty: Number(line.approved_qty ?? line.requested_qty ?? 0),
             inspection_disposition: disposition,
           });
         }
@@ -1208,6 +1563,7 @@ export default function JobOrdersPage() {
       ? result.value.line_dispositions
       : [];
 
+    setIsConfirmingReturn(true);
     try {
       const csrfResponse = await fetch('/api/csrf-token', {
         credentials: 'include',
@@ -1237,6 +1593,8 @@ export default function JobOrdersPage() {
       }
 
       await refreshOrders();
+      setIsViewModalOpen(false);
+      setViewOrder(null);
       await Swal.fire('Confirmed', data?.message || 'Returned item marked as received.', 'success');
     } catch (error) {
       await Swal.fire({
@@ -1245,6 +1603,8 @@ export default function JobOrdersPage() {
         icon: 'error',
         confirmButtonColor: '#2563eb',
       });
+    } finally {
+      setIsConfirmingReturn(false);
     }
   };
 
@@ -1265,27 +1625,39 @@ export default function JobOrdersPage() {
     if (!carrierCompany) {
       await Swal.fire({
         title: "Missing Information",
-        text: "Please select a Carrier Business",
+        text: "Please select a Shipping Business",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
       return;
     }
 
-    if (!carrierName) {
+    const usesShopOwnedLogistics = carrierCompany === SHOP_OWNED_LOGISTICS;
+
+    if (usesShopOwnedLogistics && selectedOrder.shopOwnedCoverage?.available !== true) {
       await Swal.fire({
-        title: "Missing Information",
-        text: "Please enter the Carrier Name",
+        title: "Shop-owned logistics unavailable",
+        text: getShopOwnedCoverageMessage(selectedOrder.shopOwnedCoverage),
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
       return;
     }
 
-    if (!carrierPhone) {
+    if (!usesShopOwnedLogistics && !carrierName) {
       await Swal.fire({
         title: "Missing Information",
-        text: "Please enter the Carrier Phone Number",
+        text: "Please enter the Rider Name",
+        icon: "warning",
+        confirmButtonColor: "#2563eb",
+      });
+      return;
+    }
+
+    if (!usesShopOwnedLogistics && !carrierPhone) {
+      await Swal.fire({
+        title: "Missing Information",
+        text: "Please enter the Rider Phone",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -1293,10 +1665,10 @@ export default function JobOrdersPage() {
     }
 
     const normalizedCarrierPhone = carrierPhone.trim();
-    if (!/^\d{11}$/.test(normalizedCarrierPhone)) {
+    if (!usesShopOwnedLogistics && !/^\d{11}$/.test(normalizedCarrierPhone)) {
       await Swal.fire({
-        title: "Invalid Carrier Phone",
-        text: "Carrier phone number must be exactly 11 digits.",
+        title: "Invalid Rider Phone",
+        text: "Rider phone number must be exactly 11 digits.",
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -1305,7 +1677,7 @@ export default function JobOrdersPage() {
 
     const normalizedTrackingNumber = trackingNumber.trim();
 
-    if (!normalizedTrackingNumber) {
+    if (!usesShopOwnedLogistics && !normalizedTrackingNumber) {
       await Swal.fire({
         title: "Missing Information",
         text: "Please enter a Tracking Number",
@@ -1315,7 +1687,7 @@ export default function JobOrdersPage() {
       return;
     }
 
-    if (!/^\d+$/.test(normalizedTrackingNumber)) {
+    if (!usesShopOwnedLogistics && !/^\d+$/.test(normalizedTrackingNumber)) {
       await Swal.fire({
         title: "Invalid Tracking Number",
         text: "Tracking Number must contain numbers only.",
@@ -1327,7 +1699,7 @@ export default function JobOrdersPage() {
 
     const trackingLinkValue = trackingLink.trim();
 
-    if (!trackingLinkValue) {
+    if (!usesShopOwnedLogistics && !trackingLinkValue) {
       await Swal.fire({
         title: "Missing Information",
         text: "Please enter a Tracking Link",
@@ -1337,17 +1709,24 @@ export default function JobOrdersPage() {
       return;
     }
 
-    try {
-      new URL(trackingLinkValue);
-    } catch {
-      await Swal.fire({
-        title: "Invalid Tracking Link",
-        text: "Please enter a valid URL (include https://)",
-        icon: "warning",
-        confirmButtonColor: "#2563eb",
-      });
-      return;
+    if (!usesShopOwnedLogistics) {
+      try {
+        new URL(trackingLinkValue);
+      } catch {
+        await Swal.fire({
+          title: "Invalid Tracking Link",
+          text: "Please enter a valid URL (include https://)",
+          icon: "warning",
+          confirmButtonColor: "#2563eb",
+        });
+        return;
+      }
     }
+
+    const requestToken = ++shippingRequestTokenRef.current;
+    const requestOrderId = selectedOrder.id;
+    const requestIsCurrent = () => requestToken === shippingRequestTokenRef.current
+      && requestOrderId === activeShippingOrderIdRef.current;
 
     try {
       setIsConfirmingShipping(true);
@@ -1357,31 +1736,82 @@ export default function JobOrdersPage() {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       });
+      if (!requestIsCurrent()) return;
       const csrfData = await csrfResponse.json();
+      if (!requestIsCurrent()) return;
       const csrfToken = csrfData.csrf_token;
 
       // Call API to update order status with shipping info
-      const response = await fetch(`/api/staff/orders/${selectedOrder.id}/status`, {
+      const response = await fetch(`/api/staff/orders/${requestOrderId}/status`, {
         method: 'PATCH',
         credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json',
           'X-CSRF-TOKEN': csrfToken,
         },
         body: JSON.stringify({
           status: 'shipped',
-          tracking_number: normalizedTrackingNumber,
+          tracking_number: usesShopOwnedLogistics ? null : normalizedTrackingNumber,
           carrier_company: carrierCompany,
-          carrier_name: carrierName,
-          carrier_phone: carrierPhone,
-          tracking_link: trackingLinkValue,
+          carrier_name: usesShopOwnedLogistics ? null : carrierName,
+          carrier_phone: usesShopOwnedLogistics ? null : carrierPhone,
+          tracking_link: usesShopOwnedLogistics ? null : trackingLinkValue,
           eta: etaPreset,
         })
       });
+      if (!requestIsCurrent()) return;
 
+      const errorData = response.ok ? null : await response.json().catch(() => null);
+      if (!requestIsCurrent()) return;
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to update order shipping information');
+        const coverageErrors = errorData?.errors?.carrier_company;
+        if (
+          response.status === 422
+          && Array.isArray(coverageErrors)
+          && typeof coverageErrors[0] === 'string'
+          && errorData?.shop_owned_coverage
+        ) {
+          const coverageError = coverageErrors[0];
+          setSelectedOrder((current) => current?.id === requestOrderId
+            ? { ...current, shopOwnedCoverage: errorData.shop_owned_coverage }
+            : current);
+          setCarrierCompany("");
+
+          try {
+            const ordersResponse = await fetch('/api/staff/orders', {
+              credentials: 'include',
+              headers: { 'Accept': 'application/json' },
+            });
+            if (!requestIsCurrent()) return;
+            const ordersData = ordersResponse.ok
+              ? await ordersResponse.json().catch(() => null)
+              : null;
+            if (!requestIsCurrent()) return;
+            if (Array.isArray(ordersData)) {
+              const mappedOrders: Order[] = ordersData.map(mapApiOrder);
+              setOrders(mappedOrders);
+              const refreshedOrder = mappedOrders.find((order) => order.id === requestOrderId);
+              if (refreshedOrder) {
+                setSelectedOrder(refreshedOrder);
+                if (refreshedOrder.shopOwnedCoverage?.available !== true) setCarrierCompany("");
+              }
+            }
+          } catch (refreshError) {
+            console.error('Error refreshing coverage after shipping validation:', refreshError);
+          }
+
+          if (!requestIsCurrent()) return;
+          await Swal.fire({
+            title: "Shop-owned logistics unavailable",
+            text: coverageError,
+            icon: "error",
+            confirmButtonText: "OK",
+            confirmButtonColor: "#2563eb",
+          });
+          return;
+        }
+        throw new Error(errorData?.message || 'Failed to update order shipping information');
       }
 
       // Refresh orders list from server to ensure we have the latest data
@@ -1392,27 +1822,30 @@ export default function JobOrdersPage() {
             'Accept': 'application/json',
           }
         });
+        if (!requestIsCurrent()) return;
         
         if (ordersResponse.ok) {
           const ordersData = await ordersResponse.json();
+          if (!requestIsCurrent()) return;
           const mappedOrders: Order[] = ordersData.map(mapApiOrder);
           setOrders(mappedOrders);
         }
       } catch (fetchError) {
         console.error('Error refreshing orders:', fetchError);
+        if (!requestIsCurrent()) return;
         // Still update local state even if refresh fails
         setOrders((prev) =>
           prev.map((o) =>
-            o.id === selectedOrder.id
+            o.id === requestOrderId
               ? {
                   ...o,
                   status: "shipped",
                   shippedAt: new Date().toLocaleString(),
                   carrierCompany,
-                  carrierName,
-                  carrierPhone,
-                  trackingNumber: normalizedTrackingNumber,
-                  trackingLink,
+                  carrierName: usesShopOwnedLogistics ? undefined : carrierName,
+                  carrierPhone: usesShopOwnedLogistics ? undefined : carrierPhone,
+                  trackingNumber: usesShopOwnedLogistics ? undefined : normalizedTrackingNumber,
+                  trackingLink: usesShopOwnedLogistics ? undefined : trackingLink,
                   eta: etaPreset,
                 }
               : o
@@ -1420,16 +1853,8 @@ export default function JobOrdersPage() {
         );
       }
 
-      // Close modal
-      setIsShippingModalOpen(false);
-      setSelectedOrder(null);
-      setEta("");
-      setEtaPreset("");
-      setCarrierCompany("");
-      setCarrierName("");
-      setCarrierPhone("");
-      setTrackingNumber("");
-      setTrackingLink("");
+      if (!requestIsCurrent()) return;
+      closeShippingModal();
 
       await Swal.fire({
         title: "Success",
@@ -1439,6 +1864,7 @@ export default function JobOrdersPage() {
         confirmButtonColor: "#2563eb",
       });
     } catch (error) {
+      if (!requestIsCurrent()) return;
       console.error('Error confirming shipping:', error);
       await Swal.fire({
         title: "Error",
@@ -1448,7 +1874,7 @@ export default function JobOrdersPage() {
         confirmButtonColor: "#2563eb",
       });
     } finally {
-      setIsConfirmingShipping(false);
+      if (requestIsCurrent()) setIsConfirmingShipping(false);
     }
   };
 
@@ -1516,6 +1942,27 @@ export default function JobOrdersPage() {
     }
   };
 
+  const legacyCustomerDeliverySummary = viewOrder && !viewOrder.logistics && (
+    viewOrder.eta
+    || viewOrder.carrierCompany
+    || viewOrder.carrierName
+    || viewOrder.carrierPhone
+    || viewOrder.trackingNumber
+    || viewOrder.trackingLink
+  ) ? {
+    shipment_id: null,
+    shipment_status: null,
+    leg_id: null,
+    leg_type: null,
+    leg_status: null,
+    carrier: viewOrder.carrierCompany || null,
+    rider_name: viewOrder.carrierName || null,
+    rider_phone: viewOrder.carrierPhone || null,
+    tracking_number: viewOrder.trackingNumber || null,
+    tracking_url: viewOrder.trackingLink || null,
+    proofs: [],
+  } : null;
+
   return (
     <AppLayoutERP>
       <Head title="Job Orders - Solespace ERP" />
@@ -1530,23 +1977,7 @@ export default function JobOrdersPage() {
         </div>
       ) : (
         <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Customer Orders</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">Process and manage customer shoe orders</p>
-          </div>
-          <button
-            onClick={refreshOrders}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            Refresh
-          </button>
-        </div>
+          <h1 className="sr-only">Customer Orders</h1>
 
         {/* Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -1574,9 +2005,9 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Net Revenue (Excl. VAT)"
             value={`₱${stats.totalRevenue.toLocaleString()}`}
-            icon={CurrencyDollarIcon}
+            icon={MoneyIcon}
             color="success"
-            description="From all orders before VAT"
+            description="Products + paid shop-owned delivery, excl. VAT"
           />
         </div>
 
@@ -1586,13 +2017,13 @@ export default function JobOrdersPage() {
           <div className="p-6 border-b border-gray-200 dark:border-gray-800">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               {/* Tabs */}
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   onClick={() => setSelectedTab("all")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "all"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   All Orders ({stats.total})
@@ -1601,51 +2032,61 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("pending")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "pending"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Pending ({stats.pending})
+                  {ORDER_STATUS_PRESENTATION.pending.label} ({stats.pending})
                 </button>
                 <button
                   onClick={() => setSelectedTab("processing")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "processing"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Processing ({stats.processing})
+                  {ORDER_STATUS_PRESENTATION.processing.label} ({stats.processing})
                 </button>
                 <button
                   onClick={() => setSelectedTab("shipped")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "shipped"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Shipped ({stats.shipped})
+                  {ORDER_STATUS_PRESENTATION.shipped.label} ({stats.shipped})
                 </button>
                 <button
                   onClick={() => setSelectedTab("delivered")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "delivered"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Delivered ({stats.delivered})
+                  {ORDER_STATUS_PRESENTATION.delivered.label} ({stats.delivered})
+                </button>
+                <button
+                  onClick={() => setSelectedTab("completed")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedTab === "completed"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  {ORDER_STATUS_PRESENTATION.completed.label} ({stats.completed})
                 </button>
                 <button
                   onClick={() => setSelectedTab("refund")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "refund"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Refund ({stats.refund})
+                  {ORDER_STATUS_PRESENTATION.refund.label} ({stats.refund})
                 </button>
               </div>
 
@@ -1690,59 +2131,60 @@ export default function JobOrdersPage() {
 
           {/* Table */}
           <div className="h-135 overflow-y-auto overflow-x-auto">
-            <table className="w-full min-w-270 table-fixed">
+            <table className="w-full min-w-[1180px] table-fixed">
               <colgroup>
-                <col className="w-[5%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
-                <col className="w-[11.875%]" />
+                <col className="w-12" />
+                <col className="w-[17rem]" />
+                <col className="w-40" />
+                <col className="w-32" />
+                <col className="w-20" />
+                <col className="w-56" />
+                <col className="w-44" />
+                <col className="w-40" />
+                <col className="w-20" />
+                <col className="w-32" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
                 <tr>
-                  <th className="box-border px-4 py-4 text-left">
+                  <th className="box-border px-5 py-4 text-left">
                     <input
                       type="checkbox"
                       title="Select all orders on this page"
                       aria-label="Select all orders on this page"
                       checked={
-                        paginatedOrders.length > 0 &&
-                        selectedOrders.length === paginatedOrders.length
+                        processableOrders.length > 0 &&
+                        processableOrders.every((order) => selectedOrders.includes(order.id))
                       }
                       onChange={handleSelectAll}
-                      className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
+                      disabled={processableOrders.length === 0}
+                      className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </th>
-                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Customer
                   </th>
-                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Product
                   </th>
-                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Size / Color
                   </th>
-                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Quantity
                   </th>
-                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Amount Breakdown
                   </th>
-                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Status
                   </th>
-                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Refunded/Return
                   </th>
-                  <th className="box-border px-4 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     ETA
                   </th>
-                  <th className="box-border px-4 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Actions
                   </th>
                 </tr>
@@ -1752,122 +2194,143 @@ export default function JobOrdersPage() {
                   paginatedOrders.map((order) => (
                     <tr
                       key={order.id}
-                      className="hover:bg-gray-50 dark:hover:bg-gray-900/50 transition-colors"
+                      className="align-top transition-colors hover:bg-gray-50 dark:hover:bg-gray-900/50"
                     >
-                      <td className="box-border px-4 py-4 align-top">
+                      <td className="box-border px-5 py-5 align-top">
                         <input
                           type="checkbox"
                           title={`Select order ${order.order_number}`}
                           aria-label={`Select order ${order.order_number}`}
                           checked={selectedOrders.includes(order.id)}
                           onChange={() => handleSelectOrder(order.id)}
-                          className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500"
+                          disabled={!order.availableActions?.includes('processing')}
+                          className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       </td>
-                      <td className="box-border px-4 py-4 align-top">
-                        <div>
-                          <div className="text-sm font-medium text-gray-900 dark:text-white truncate">{order.customer}</div>
-                          <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{order.email}</div>
+                      <td className="box-border px-5 py-5 align-top">
+                        <div className="min-w-0 space-y-1">
+                          <div className="truncate text-sm font-medium text-gray-900 dark:text-white">{order.customer}</div>
+                          <div className="truncate text-xs text-gray-500 dark:text-gray-400">{order.email}</div>
                         </div>
                       </td>
-                      <td className="box-border px-4 py-4 align-top">
-                        <span className="text-sm text-gray-700 dark:text-gray-300 block truncate">{order.product}</span>
+                      <td className="box-border px-5 py-5 align-top">
+                        <span className="block truncate text-sm text-gray-700 dark:text-gray-300">{order.product}</span>
                       </td>
-                      <td className="box-border px-4 py-4 text-center align-top">
-                        <span className="text-sm text-gray-700 dark:text-gray-300">
+                      <td className="box-border px-5 py-5 text-center align-top">
+                        <span className="inline-flex max-w-full rounded-lg bg-gray-50 px-2.5 py-1 text-left text-xs font-semibold text-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
                           {formatOrderSizeColor(order)}
                         </span>
                       </td>
-                      <td className="box-border px-4 py-4 text-center align-top">
-                        <span className="text-sm text-gray-700 dark:text-gray-300">{order.quantity}</span>
+                      <td className="box-border px-5 py-5 text-center align-top">
+                        <span className="inline-flex min-w-10 justify-center rounded-lg bg-gray-50 px-2.5 py-1 text-sm font-semibold text-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
+                          {order.quantity}
+                        </span>
                       </td>
-                      <td className="box-border px-4 py-4 text-left align-top">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
-                            <span>Item Subtotal</span>
-                            <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.total_amount)}</span>
-                          </div>
-                          <div className="flex items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
-                            <span>Shipping Fee</span>
-                            <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.shipping_fee)}</span>
-                          </div>
-                          <div className="flex items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
-                            <span>{order.vat_rate != null ? `VAT (${order.vat_rate}%)` : 'VAT'}</span>
-                            <span className="font-medium text-gray-800 dark:text-gray-200">{order.vat_amount != null ? formatOrderTotal(order.vat_amount) : 'N/A'}</span>
-                          </div>
-                          <div className={`flex items-center justify-between gap-2 text-sm font-semibold ${
-                            order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
-                              ? 'text-red-600 dark:text-red-400'
-                              : 'text-emerald-600 dark:text-emerald-400'
-                          }`}>
-                            <span>Grand Total</span>
-                            <span className="inline-flex items-center gap-1">
-                              <span className={`inline-flex items-center justify-center rounded-full ${
-                                order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
-                                  ? 'bg-red-100 p-0.5 dark:bg-red-900/30'
-                                  : 'bg-emerald-100 p-0.5 dark:bg-emerald-900/30'
-                              }`}>
-                                {order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded' ? (
-                                  <MinusIcon className="size-3" />
-                                ) : (
-                                  <PlusIcon className="size-3" />
-                                )}
+                      <td className="box-border px-5 py-5 text-left align-top">
+                        <div className="rounded-xl bg-gray-50/80 p-3 dark:bg-gray-900/50">
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
+                              <span>Item Subtotal</span>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.total_amount)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
+                              <span>Shipping Fee</span>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.shipping_fee)}</span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
+                              <span>{order.vat_rate != null ? `VAT (${order.vat_rate}%)` : 'VAT'}</span>
+                              <span className="font-medium text-gray-800 dark:text-gray-200">{order.vat_amount != null ? formatOrderTotal(order.vat_amount) : 'N/A'}</span>
+                            </div>
+                            <div className={`flex items-center justify-between gap-4 border-t border-gray-200 pt-2 text-sm font-semibold dark:border-gray-700 ${
+                              order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+                                ? 'text-red-600 dark:text-red-400'
+                                : 'text-emerald-600 dark:text-emerald-400'
+                            }`}>
+                              <span>Grand Total</span>
+                              <span className="inline-flex items-center gap-1">
+                                <span className={`inline-flex items-center justify-center rounded-full ${
+                                  order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+                                    ? 'bg-red-100 p-0.5 dark:bg-red-900/30'
+                                    : 'bg-emerald-100 p-0.5 dark:bg-emerald-900/30'
+                                }`}>
+                                  {order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded' ? (
+                                    <MinusIcon className="size-3" />
+                                  ) : (
+                                    <PlusIcon className="size-3" />
+                                  )}
+                                </span>
+                                {formatOrderTotal(order.grand_total)}
                               </span>
-                              {formatOrderTotal(order.grand_total)}
-                            </span>
+                            </div>
                           </div>
                         </div>
                       </td>
-                      <td className="box-border px-4 py-4 align-top">
-                        <div className="flex flex-col items-start gap-2 min-h-12">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getStatusColor(order.status)}`}>
-                            <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
-                            {formatStatusLabel(order.status)}
+                      <td className="box-border px-5 py-5 align-top">
+                        <div className="space-y-2">
+                          <span className="inline-flex items-center text-xs font-semibold whitespace-nowrap text-gray-900 dark:text-gray-100">
+                            {getOrderStatusPresentation(order.status).label}
                           </span>
+                          {!isPosOrder(order) && (order.customerReceiptStatus === 'disputed' ? (
+                            <span className="inline-flex w-fit items-center whitespace-nowrap text-xs font-semibold text-gray-900 dark:text-gray-100">
+                              Customer Dispute
+                            </span>
+                          ) : order.customerReceiptStatus === 'confirmed' ? (
+                            <span className="inline-flex w-fit items-center whitespace-nowrap text-xs font-semibold text-gray-900 dark:text-gray-100">
+                              Receipt Confirmed
+                            </span>
+                          ) : order.status === 'delivered' ? (
+                            <span className="inline-flex w-fit items-center whitespace-nowrap text-xs font-semibold text-gray-900 dark:text-gray-100">
+                              Receipt Pending
+                            </span>
+                          ) : null)}
                         </div>
                       </td>
-                      <td className="box-border px-4 py-4 align-top">
+                      <td className="box-border px-5 py-5 align-top">
                         {(() => {
                           const refundReturn = getRefundReturnDisplay(order);
                           if (refundReturn.label === '-') {
-                            return <span className={refundReturn.className}>-</span>;
+                            return <span className="text-gray-900 dark:text-gray-100">-</span>;
                           }
 
                           return (
-                            <span className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${refundReturn.className}`}>
+                            <span className="inline-flex max-w-full flex-wrap items-center justify-start text-left text-xs font-semibold leading-tight whitespace-normal break-words text-gray-900 dark:text-gray-100">
                               {refundReturn.label}
                             </span>
                           );
                         })()}
                       </td>
-                      <td className="box-border px-4 py-4 align-top">
-                        <span className="text-sm text-gray-700 dark:text-gray-300">{order.eta || '-'}</span>
+                      <td className="box-border px-5 py-5 align-top">
+                        <span className="inline-flex rounded-lg bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
+                          {order.eta || '-'}
+                        </span>
                       </td>
-                      <td className="box-border px-4 py-4 text-center align-top">
-                        <div className="flex flex-wrap items-center justify-center gap-2">
+                      <td className="box-border px-5 py-5 align-top">
+                        <div className="flex flex-nowrap items-center justify-start gap-2">
                           <button
+                            type="button"
                             onClick={() => handleViewOrder(order)}
-                            className="p-2 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-blue-600 transition-colors hover:bg-blue-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:text-blue-400 dark:hover:bg-blue-900/20"
                             title="View order details"
+                            aria-label="View order details"
                           >
                             <EyeIcon className="size-5" />
                           </button>
-                          {order.status === "pending" && (
+                          {order.availableActions?.includes('processing') && (
                             <button
                               type="button"
-                              onClick={() => handleProcessOrder(order)}
-                              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              onClick={() => handleViewOrder(order)}
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-emerald-600 transition-colors hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
                               title="Start processing"
                               aria-label="Start processing"
                             >
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
-                          {order.status === "processing" && (
+                          {order.availableActions?.includes('shipped') && (
                             <button
                               type="button"
                               onClick={() => handleShipOrder(order)}
-                              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-emerald-600 transition-colors hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 dark:text-emerald-400 dark:hover:bg-emerald-900/20"
                               title="Mark as shipped"
                               aria-label="Mark as shipped"
                             >
@@ -1878,7 +2341,7 @@ export default function JobOrdersPage() {
                             <button
                               type="button"
                               onClick={() => handleConfirmReturnReceived(order)}
-                              className="p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
                               title="Confirm returned item received"
                               aria-label="Confirm returned item received"
                             >
@@ -1889,7 +2352,7 @@ export default function JobOrdersPage() {
                             <button
                               type="button"
                               onClick={() => handleArrangeReturnPickup(order)}
-                              className="p-2 text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors"
+                              className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-amber-600 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:text-amber-400 dark:hover:bg-amber-900/20"
                               title="Arrange return pickup"
                               aria-label="Arrange return pickup"
                             >
@@ -1921,7 +2384,7 @@ export default function JobOrdersPage() {
                   <span className="font-medium">{Math.min(endIndex, filteredOrders.length)}</span> of{" "}
                   <span className="font-medium">{filteredOrders.length}</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div data-pagination="job-orders" className="flex items-center gap-2">
                   <button
                     onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
                     disabled={currentPage === 1}
@@ -1941,6 +2404,7 @@ export default function JobOrdersPage() {
                         <button
                           key={page}
                           onClick={() => setCurrentPage(page)}
+                          aria-current={page === currentPage ? "page" : undefined}
                           className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                             page === currentPage
                               ? "bg-blue-600 text-white"
@@ -1976,7 +2440,7 @@ export default function JobOrdersPage() {
 
         {/* Shipping Modal */}
         {isShippingModalOpen && selectedOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ship Order</h2>
@@ -2010,7 +2474,7 @@ export default function JobOrdersPage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Estimated Delivery Date *
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={etaPreset}
                       onChange={(e) => setEtaPreset(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2019,81 +2483,103 @@ export default function JobOrdersPage() {
                       <option value="1-3 business days">1-3 business days</option>
                       <option value="2-4 business days">2-4 business days</option>
                       <option value="3-6 business days">3-6 business days</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Shipping Business *
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={carrierCompany}
                       onChange={(e) => setCarrierCompany(e.target.value)}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="">Select shipping</option>
+                      <option value={SHOP_OWNED_LOGISTICS} disabled={!shopOwnedEligible}>Shop-owned logistics</option>
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
-                    </select>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Rider Name *
-                      </label>
-                      <input
-                        type="text"
-                        value={carrierName}
-                        onChange={(e) => setCarrierName(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                        Rider Phone *
-                      </label>
-                      <input
-                        type="tel"
-                        value={carrierPhone}
-                        onChange={(e) => {
-                          // Allow digits only and limit to 10 characters
-                          const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
-                          setCarrierPhone(digits);
-                        }}
-                        maxLength={11}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
+                    </MonochromeSelect>
+                    <div
+                      role="status"
+                      aria-live="polite"
+                      className="mt-2 flex items-start gap-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs leading-relaxed text-gray-700 dark:border-gray-700 dark:bg-gray-900/30 dark:text-gray-300"
+                    >
+                      <svg className="mt-0.5 size-4 shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                        {shopOwnedEligible ? (
+                          <path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-4-4a1 1 0 011.4-1.4L8 12.6l7.3-7.3a1 1 0 011.4 0z" clipRule="evenodd" />
+                        ) : (
+                          <path fillRule="evenodd" d="M8.3 2.9a2 2 0 013.4 0l6.1 10.7a2 2 0 01-1.7 3H3.9a2 2 0 01-1.7-3L8.3 2.9zM10 7a1 1 0 00-1 1v3a1 1 0 002 0V8a1 1 0 00-1-1zm0 7a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+                        )}
+                      </svg>
+                      <span>{getShopOwnedCoverageMessage(selectedOrder.shopOwnedCoverage)}</span>
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Number *</label>
-                    <input
-                      type="text"
-                      value={trackingNumber}
-                      onChange={(e) => setTrackingNumber(e.target.value.replace(/\D/g, ''))}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      disabled={selectedOrder.status === 'shipped'}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Record tracking number from the courier. This field is required before confirming shipping.</p>
-                  </div>
+                  {carrierCompany === SHOP_OWNED_LOGISTICS ? (
+                    <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800 dark:border-blue-900/40 dark:bg-blue-900/20 dark:text-blue-300">
+                      A logistics shipment will be created for this order. Assign the rider from Logistics &gt; Shipments.
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Rider Name *
+                          </label>
+                          <input
+                            type="text"
+                            value={carrierName}
+                            onChange={(e) => setCarrierName(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Rider Phone *
+                          </label>
+                          <input
+                            type="tel"
+                            value={carrierPhone}
+                            onChange={(e) => {
+                              const digits = e.target.value.replace(/\D/g, '').slice(0, 11);
+                              setCarrierPhone(digits);
+                            }}
+                            maxLength={11}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                      </div>
 
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Link *</label>
-                    <input
-                      type="url"
-                      value={trackingLink}
-                      onChange={(e) => setTrackingLink(e.target.value)}
-                      required
-                      disabled={selectedOrder.status === 'shipped'}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
-                    <p className="text-xs text-gray-500 mt-1">Provide the tracking link so customers can track delivery in real time.</p>
-                  </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Number *</label>
+                        <input
+                          type="text"
+                          value={trackingNumber}
+                          onChange={(e) => setTrackingNumber(e.target.value.replace(/\D/g, ''))}
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          disabled={selectedOrder.status === 'shipped'}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Record tracking number from the courier. This field is required before confirming shipping.</p>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tracking Link *</label>
+                        <input
+                          type="url"
+                          value={trackingLink}
+                          onChange={(e) => setTrackingLink(e.target.value)}
+                          required
+                          disabled={selectedOrder.status === 'shipped'}
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">Provide the tracking link so customers can track delivery in real time.</p>
+                      </div>
+                    </>
+                  )}
 
                   <div>
                     <div className="flex items-center justify-between mb-2">
@@ -2141,18 +2627,9 @@ export default function JobOrdersPage() {
                   )}
                 </button>
                 <button
-                  onClick={() => {
-                    setIsShippingModalOpen(false);
-                    setSelectedOrder(null);
-                    setEta("");
-                    setEtaPreset("");
-                    setCarrierCompany("");
-                    setCarrierName("");
-                    setCarrierPhone("");
-                    setTrackingNumber("");
-                    setTrackingLink("");
-                  }}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors"
+                  onClick={closeShippingModal}
+                  disabled={isConfirmingShipping}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors"
                 >
                   Cancel
                 </button>
@@ -2163,7 +2640,7 @@ export default function JobOrdersPage() {
 
         {/* View Order Modal */}
         {isViewModalOpen && viewOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
               <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                 <div>
@@ -2214,6 +2691,55 @@ export default function JobOrdersPage() {
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Address</p>
                     <p className="text-sm text-gray-900 dark:text-white">{viewOrder.shippingAddress}</p>
                   </div>
+                </div>
+
+                <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/30">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Delivery awareness</p>
+                      <p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">Official status: {formatLogisticsStatus(viewOrder.status)}</p>
+                    </div>
+                    {!isPosOrder(viewOrder) && (viewOrder.customerReceiptStatus === 'disputed' ? (
+                      <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Customer Dispute</span>
+                    ) : viewOrder.customerReceiptStatus === 'confirmed' ? (
+                      <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Receipt Confirmed</span>
+                    ) : viewOrder.status === 'delivered' ? (
+                      <span className="text-xs font-semibold text-gray-900 dark:text-gray-100">Receipt Pending</span>
+                    ) : null)}
+                  </div>
+                  {viewOrder.activeDeliveryDispute && (
+                    <section className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-100" aria-label="Customer Dispute">
+                      <h3 className="font-semibold">Customer Dispute</h3>
+                      <dl className="mt-3 grid gap-2 sm:grid-cols-2">
+                        <div>
+                          <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Reason</dt>
+                          <dd className="mt-1 capitalize">{viewOrder.activeDeliveryDispute.reason.replace(/_/g, ' ')}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Status</dt>
+                          <dd className="mt-1 capitalize">{viewOrder.activeDeliveryDispute.status.replace(/_/g, ' ')}</dd>
+                        </div>
+                        {viewOrder.activeDeliveryDispute.reported_at && (
+                          <div>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Reported</dt>
+                            <dd className="mt-1">{new Date(viewOrder.activeDeliveryDispute.reported_at).toLocaleString()}</dd>
+                          </div>
+                        )}
+                        {viewOrder.latest_refund && (
+                          <div>
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Related Refund</dt>
+                            <dd className="mt-1 capitalize">{String(viewOrder.latest_refund.status || '').replace(/_/g, ' ')}</dd>
+                          </div>
+                        )}
+                        {viewOrder.activeDeliveryDispute.notes && (
+                          <div className="sm:col-span-2">
+                            <dt className="text-xs font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-300">Customer Explanation</dt>
+                            <dd className="mt-1 whitespace-pre-wrap">{viewOrder.activeDeliveryDispute.notes}</dd>
+                          </div>
+                        )}
+                      </dl>
+                    </section>
+                  )}
                 </div>
 
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
@@ -2307,43 +2833,152 @@ export default function JobOrdersPage() {
                     })()}
                   </div>
                 )}
-                {(viewOrder.trackingNumber || viewOrder.trackingLink || viewOrder.eta) && (
+                {Array.isArray(viewOrder.latest_refund?.evidence_media) && viewOrder.latest_refund.evidence_media.length > 0 && (
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Shipping & Tracking</p>
-                    <div className="bg-gray-50 dark:bg-gray-900/30 rounded-lg p-4 space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">ETA</span>
-                        <span className="font-medium">{viewOrder.eta || '-'}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-600">Carrier</span>
-                        <span className="font-medium">{viewOrder.carrierCompany || '-'}</span>
-                      </div>
-                      {viewOrder.trackingNumber && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-600">Tracking #</span>
-                          <span className="font-medium">{viewOrder.trackingNumber}</span>
-                        </div>
-                      )}
-                      {viewOrder.trackingLink && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-gray-600">Tracking Link</span>
-                          <a className="font-medium text-blue-600 hover:underline" href={viewOrder.trackingLink} target="_blank" rel="noreferrer">View tracking</a>
-                        </div>
-                      )}
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Refund Evidence</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {viewOrder.latest_refund.evidence_media.map((mediaUrl, index) => (
+                        <a key={`${mediaUrl}-${index}`} href={mediaUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
+                          <img src={mediaUrl} alt={`Refund evidence ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
+                        </a>
+                      ))}
                     </div>
+                  </div>
+                )}
+                {Array.isArray(viewOrder.latest_refund?.customer_dispute_evidence) && viewOrder.latest_refund.customer_dispute_evidence.length > 0 && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Customer Report Proof</p>
+                    <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">Proof submitted with the Shop-owned delivery report before refund/return approval.</p>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {viewOrder.latest_refund.customer_dispute_evidence.map((media) => media.kind === 'video' ? (
+                        <video
+                          key={media.id}
+                          controls
+                          preload="metadata"
+                          src={media.url}
+                          aria-label={media.original_name || 'Customer opening-parcel video'}
+                          className="h-28 w-full rounded-lg border border-gray-200 bg-black object-contain dark:border-gray-700"
+                        />
+                      ) : (
+                        <button
+                          key={media.id}
+                          type="button"
+                          aria-label={`View customer report proof ${media.original_name || media.id}`}
+                          aria-haspopup="dialog"
+                          onClick={(event) => openProof(media.url, event.currentTarget)}
+                          className="block w-full overflow-hidden rounded-lg border border-gray-200 text-left dark:border-gray-700"
+                        >
+                          <img src={media.url} alt={media.original_name || 'Customer delivery report proof'} loading="lazy" className="h-28 w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Logistics</p>
+                  {!viewOrder.logistics && !legacyCustomerDeliverySummary && !viewOrder.latest_refund?.return_logistics ? (
+                    <div className="rounded-lg border border-dashed border-gray-300 dark:border-gray-700 p-4 text-sm text-gray-500 dark:text-gray-400">
+                      No logistics shipment yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {[
+                        { label: 'Customer delivery', summary: viewOrder.logistics || legacyCustomerDeliverySummary, proofLabel: 'Delivery proof', returnStatus: null },
+                        {
+                          label: 'Return to shop',
+                          summary: viewOrder.latest_refund?.return_logistics,
+                          proofLabel: 'Return delivery proof',
+                          returnStatus: viewOrder.latest_refund?.return_status || null,
+                        },
+                      ].filter((card) => card.summary).map((card) => {
+                        const summary = card.summary as LogisticsSummary;
+                        const rows = [
+                          ...(card.label === 'Customer delivery' ? [['ETA', viewOrder.eta || 'Not available']] : []),
+                          ['Shipment ID', summary.shipment_id ?? 'Not available'],
+                          ['Shipment status', formatLogisticsStatus(summary.shipment_status)],
+                          ...(card.returnStatus ? [['Return status', formatLogisticsStatus(card.returnStatus)]] : []),
+                          ['Leg status', summary.leg_status
+                            ? formatLogisticsStatus(summary.leg_status)
+                            : summary.shipment_id
+                              ? 'Leg not created yet'
+                              : 'Not available'],
+                          ['Carrier', summary.carrier || 'Not available'],
+                          ['Rider', summary.rider_name || 'Not assigned'],
+                          ['Rider phone', summary.rider_phone || 'Not available'],
+                        ];
+
+                        return (
+                          <section key={card.label} aria-label={card.label} className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/30 dark:text-gray-300">
+                            <h4 className="mb-3 font-semibold text-gray-900 dark:text-white">{card.label}</h4>
+                            <dl className="space-y-2">
+                              {rows.map(([label, value]) => (
+                                <div key={label} className="flex items-start justify-between gap-4">
+                                  <dt className="text-gray-600 dark:text-gray-400">{label}</dt>
+                                  <dd className="text-right font-medium">{value}</dd>
+                                </div>
+                              ))}
+                              <div className="flex items-start justify-between gap-4">
+                                <dt className="text-gray-600 dark:text-gray-400">Tracking</dt>
+                                <dd className="text-right font-medium">
+                                  {summary.tracking_url ? (
+                                    <a href={summary.tracking_url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline dark:text-blue-400">
+                                      {summary.tracking_number || 'Open tracking'}
+                                    </a>
+                                  ) : summary.tracking_number || 'Not available'}
+                                </dd>
+                              </div>
+                            </dl>
+                            {summary.proofs.length > 0 ? (
+                              <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                                {summary.proofs.map((proof, index) => (
+                                  <button
+                                    key={proof.id}
+                                    type="button"
+                                    onClick={(event) => openProof(proof.file_url, event.currentTarget)}
+                                    aria-label={`${card.proofLabel} ${index + 1}`}
+                                    aria-haspopup="dialog"
+                                    className="block w-full overflow-hidden rounded-lg border border-gray-200 text-left dark:border-gray-700"
+                                  >
+                                    <img src={proof.file_url} alt={`${card.proofLabel} ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
+                                  </button>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">No proof submitted yet.</p>
+                            )}
+                          </section>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+                {viewOrder.delivery_cancellation && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
+                    <p className="font-semibold">Delivery cancelled</p>
+                    <p>{viewOrder.delivery_cancellation.message || 'The delivery was cancelled. Coordinate with Logistics to reassign it if needed.'}</p>
                   </div>
                 )}
               </div>
 
               <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3">
+                {viewOrder.status === "pending" && (
+                  <button
+                    type="button"
+                    onClick={() => handleProcessOrder(viewOrder)}
+                    aria-label="Process Order"
+                    className="px-4 py-2 border border-blue-600 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    Process Order
+                  </button>
+                )}
                 {canConfirmReturnReceived(viewOrder) && (
                   <button
                     onClick={() => handleConfirmReturnReceived(viewOrder)}
-                    className="px-4 py-2 border border-indigo-600 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors"
+                    disabled={isConfirmingReturn}
+                    className="px-4 py-2 border border-indigo-600 bg-indigo-600 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 text-white rounded-lg font-medium transition-colors"
                     title="Confirm returned item received"
                   >
-                    Confirm Return Received
+                    {isConfirmingReturn ? 'Confirming...' : 'Confirm Return Received'}
                   </button>
                 )}
                 {canArrangeReturnPickup(viewOrder) && (
@@ -2355,7 +2990,7 @@ export default function JobOrdersPage() {
                     Arrange Return Pickup
                   </button>
                 )}
-                {viewOrder.status === "shipped" && (
+                {viewOrder.status === "shipped" && !isPosOrder(viewOrder) && viewOrder.carrierCompany !== SHOP_OWNED_LOGISTICS && !canConfirmReturnReceived(viewOrder) && (
                   <button
                     onClick={() => handleActivatePickup(viewOrder.id)}
                     disabled={isActivatingReceive || Boolean(viewOrder.pickup_enabled)}
@@ -2369,8 +3004,31 @@ export default function JobOrdersPage() {
                     {viewOrder.pickup_enabled ? 'Activated' : isActivatingReceive ? 'Activating...' : 'Activate Receive'}
                   </button>
                 )}
+                {canStaffReviewRefund(viewOrder) && (
+                  <>
+                    <button
+                      type='button'
+                      onClick={() => handleStaffRefundReview(viewOrder, true)}
+                      className='px-4 py-2 border border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors'
+                      aria-label='Approve refund eligibility'
+                      title='Approve refund eligibility (no payout yet)'
+                    >
+                      Approve Refund Eligibility
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => handleStaffRefundReview(viewOrder, false)}
+                      className='px-4 py-2 border border-rose-600 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-medium transition-colors'
+                      aria-label='Reject refund eligibility'
+                      title='Reject refund eligibility'
+                    >
+                      Reject Refund
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => {
+                    setSelectedProofUrl(null);
                     setIsViewModalOpen(false);
                     setViewOrder(null);
                   }}
@@ -2382,6 +3040,27 @@ export default function JobOrdersPage() {
             </div>
           </div>
         )}
+        <Modal isOpen={selectedProofUrl !== null} onClose={closeProof} showCloseButton={false} size="7xl" zIndex={1000000} className="bg-gray-950 p-4 sm:p-6">
+          {selectedProofUrl && (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Delivery proof image"
+              className="relative flex h-[min(88dvh,56rem)] items-center justify-center overflow-hidden"
+            >
+              <button
+                ref={proofCloseButtonRef}
+                type="button"
+                aria-label="Close delivery proof image"
+                onClick={closeProof}
+                className="absolute right-0 top-0 z-10 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-600 bg-gray-800 text-gray-200 transition-colors hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                <X aria-hidden="true" size={20} />
+              </button>
+              <img src={selectedProofUrl} alt="Enlarged delivery proof" className="max-h-full max-w-full object-contain" />
+            </div>
+          )}
+        </Modal>
       </div>
     )}
     </AppLayoutERP>

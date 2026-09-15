@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { createContext, useState, useContext, useEffect } from "react";
+import { applyThemeClass } from "../utils/pageTheme";
 
 type Theme = "light" | "dark";
 
@@ -38,11 +39,7 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!isClient || !isInitialized) return;
 
     localStorage.setItem("theme", theme);
-    if (theme === "dark") {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    applyThemeClass(theme);
   }, [theme, isInitialized, isClient]);
 
   const toggleTheme = () => {

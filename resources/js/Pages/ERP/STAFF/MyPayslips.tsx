@@ -207,7 +207,7 @@ const PayslipDetail: React.FC<PayslipDetailProps> = ({ slip, employeeName, shopN
 			<div className="flex justify-end mb-4 no-print">
 				<button
 					onClick={handlePrint}
-					className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+					className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gray-950 rounded-lg hover:bg-black dark:bg-gray-950 dark:hover:bg-black transition-colors"
 				>
 					<PrintIcon />
 					Print Payslip
@@ -442,21 +442,10 @@ export default function MyPayslips() {
 		<AppLayoutERP>
 			<Head title="My Payslips" />
 
-			<div className="min-h-screen bg-gray-50 dark:bg-gray-950 px-4 py-8">
+			<div className="min-h-screen bg-white dark:bg-gray-950 px-4 py-8">
 				<div className="max-w-3xl mx-auto">
 
-					{/* Page header */}
-					<div className="mb-6">
-						<div className="flex items-center gap-3 mb-1">
-							<div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg text-blue-600 dark:text-blue-400">
-								<DocumentIcon />
-							</div>
-							<h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Payslips</h1>
-						</div>
-						<p className="text-sm text-gray-500 dark:text-gray-400 ml-11">
-							View and print your salary payslips.
-						</p>
-					</div>
+					<h1 className="sr-only">My Payslips</h1>
 
 					{/* Search */}
 					<form onSubmit={handleSearch} className="flex gap-2 mb-6">
@@ -465,11 +454,11 @@ export default function MyPayslips() {
 							value={searchPeriod}
 							onChange={e => setSearchPeriod(e.target.value)}
 							placeholder="Search by period (e.g. February 2026)…"
-							className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+							className="flex-1 px-4 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-950"
 						/>
 						<button
 							type="submit"
-							className="px-4 py-2.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
+							className="px-4 py-2.5 text-sm font-medium text-white bg-gray-950 rounded-lg hover:bg-black dark:bg-gray-950 dark:hover:bg-black transition-colors"
 						>
 							Search
 						</button>

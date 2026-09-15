@@ -4,19 +4,50 @@ namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
 use App\Models\Supplier;
+use App\Models\SupplierPaymentProfile;
+use App\Models\SupplierAdjustment;
+use App\Models\SupplierPaymentAttempt;
+use App\Models\Finance\Expense;
+use App\Models\Finance\ExpenseSettlement;
+use App\Http\Requests\StoreSupplierPaymentProfileRequest;
 use Illuminate\Http\Request;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rule;
+use App\Support\Erp\ErpActorContext;
+use App\Models\PurchaseOrder;
 
 class SupplierController extends Controller
 {
+    use AuthorizesRequests;
+
     /**
      * Display a listing of suppliers
      */
     public function index(Request $request)
     {
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $context = request()->attributes->get('erp.actor_context');
+        $ownerMode = $context instanceof ErpActorContext && $context->isOwnerMode();
+        if (!$ownerMode) {
+            $this->authorize('viewAny', Supplier::class);
+        }
+
+        $shopOwnerId = $ownerMode
+            ? (int) $context->tenantOwner()->getKey()
+            : $request->user()?->shop_owner_id;
+        if (!$shopOwnerId) {
+            return response()->json(['message' => 'Shop context is missing for this account.'], 403);
+        }
         $showArchived = $request->boolean('archived');
         
         $suppliers = Supplier::where('shop_owner_id', $shopOwnerId)
+            ->addSelect([
+                'payment_profile_status' => SupplierPaymentProfile::query()
+                    ->select('status')
+                    ->whereColumn('supplier_id', 'suppliers.id')
+                    ->limit(1),
+            ])
             ->when($showArchived, function ($query) {
                 $query->onlyTrashed();
             })
@@ -52,30 +83,56 @@ class SupplierController extends Controller
      */
     public function store(Request $request)
     {
+        $this->authorize('create', Supplier::class);
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'contact_person' => 'nullable|string|max:255',
             'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:50',
+            'phone' => 'nullable|digits_between:1,11',
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
             'country' => 'nullable|string|max:100',
-            'payment_terms' => 'nullable|string|max:255',
+            'payment_terms' => ['nullable', 'string', Rule::in(PurchaseOrder::supportedPaymentTerms())],
             'lead_time_days' => 'nullable|integer|min:0',
             'products_supplied' => 'nullable|string',
-            'notes' => 'nullable|string'
+            'notes' => 'nullable|string',
+            'payment_profile' => 'nullable|array',
         ]);
         
         $shopOwnerId = $request->user()->shop_owner_id;
-        
-        $supplier = Supplier::create(array_merge($validated, [
-            'shop_owner_id' => $shopOwnerId,
-            'is_active' => true
-        ]));
+
+        $profileData = null;
+        if (array_key_exists('payment_profile', $validated)) {
+            $profileData = Validator::make(
+                $validated['payment_profile'],
+                StoreSupplierPaymentProfileRequest::profileRules(
+                    destinationType: $validated['payment_profile']['destination_type'] ?? null,
+                ),
+            )->validate();
+            unset($validated['payment_profile']);
+        }
+
+        $supplier = DB::transaction(function () use ($validated, $profileData, $shopOwnerId): Supplier {
+            $supplier = Supplier::create(array_merge($validated, [
+                'shop_owner_id' => $shopOwnerId,
+                'is_active' => true,
+            ]));
+
+            if ($profileData !== null) {
+                SupplierPaymentProfile::create(array_merge($profileData, [
+                    'shop_owner_id' => $shopOwnerId,
+                    'supplier_id' => $supplier->id,
+                    'status' => SupplierPaymentProfile::STATUS_UNVERIFIED,
+                ]));
+            }
+
+            return $supplier;
+        });
         
         return response()->json([
             'message' => 'Supplier created successfully',
-            'supplier' => $supplier
+            'data' => $supplier
         ], 201);
     }
 
@@ -91,6 +148,8 @@ class SupplierController extends Controller
             }])
             ->where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorize('view', $supplier);
         
         return response()->json($supplier);
     }
@@ -100,31 +159,30 @@ class SupplierController extends Controller
      */
     public function update(Request $request, $id)
     {
+        $supplier = Supplier::where('shop_owner_id', $request->user()->shop_owner_id)
+            ->findOrFail($id);
+        $this->authorize('update', $supplier);
+
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'contact_person' => 'nullable|string|max:255',
             'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:50',
+            'phone' => 'nullable|digits_between:1,11',
             'address' => 'nullable|string',
             'city' => 'nullable|string|max:100',
             'country' => 'nullable|string|max:100',
-            'payment_terms' => 'nullable|string|max:255',
+            'payment_terms' => ['nullable', 'string', Rule::in(PurchaseOrder::supportedPaymentTerms())],
             'lead_time_days' => 'nullable|integer|min:0',
             'is_active' => 'nullable|boolean',
             'products_supplied' => 'nullable|string',
             'notes' => 'nullable|string'
         ]);
         
-        $shopOwnerId = $request->user()->shop_owner_id;
-        
-        $supplier = Supplier::where('shop_owner_id', $shopOwnerId)
-            ->findOrFail($id);
-        
         $supplier->update($validated);
         
         return response()->json([
             'message' => 'Supplier updated successfully',
-            'supplier' => $supplier
+            'data' => $supplier
         ]);
     }
 
@@ -137,10 +195,12 @@ class SupplierController extends Controller
         
         $supplier = Supplier::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorize('delete', $supplier);
         
         // Check if supplier has active orders
         $activeOrders = $supplier->purchaseOrders()
-            ->whereIn('status', ['sent', 'confirmed', 'in_transit'])
+            ->active()
             ->count();
         
         if ($activeOrders > 0) {
@@ -149,12 +209,63 @@ class SupplierController extends Controller
                 'active_orders' => $activeOrders
             ], 422);
         }
+
+        $hasUnresolvedAdjustment = SupplierAdjustment::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('status', '<>', SupplierAdjustment::STATUS_RESOLVED)
+            ->whereHas('receiptItem.receipt.purchaseOrder', fn ($query) => $query->where('supplier_id', $supplier->id))
+            ->exists();
+        if ($hasUnresolvedAdjustment) {
+            return response()->json([
+                'message' => 'Cannot archive supplier with unresolved adjustments',
+            ], 422);
+        }
+
+        $hasUnpaidReleasedExpense = Expense::query()
+            ->where('shop_id', $shopOwnerId)
+            ->where('status', 'posted')
+            ->whereHas('procurementReceipt.purchaseOrder', fn ($query) => $query->where('supplier_id', $supplier->id))
+            ->get(['id', 'amount'])
+            ->contains(fn (Expense $expense): bool => $this->moneyCents($expense->amount)
+                > $this->moneyCents(ExpenseSettlement::validSettledAmountForExpense((int) $expense->id)));
+        if ($hasUnpaidReleasedExpense) {
+            return response()->json([
+                'message' => 'Cannot archive supplier with unpaid released expenses',
+            ], 422);
+        }
+
+        $hasActivePayment = SupplierPaymentAttempt::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('supplier_id', $supplier->id)
+            ->whereIn('status', [
+                SupplierPaymentAttempt::STATUS_INITIATING,
+                SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+            ])
+            ->exists();
+        if ($hasActivePayment) {
+            return response()->json([
+                'message' => 'Cannot archive supplier with an active payment attempt',
+            ], 422);
+        }
         
         $supplier->delete();
         
         return response()->json([
-            'message' => 'Supplier archived successfully'
+            'message' => 'Supplier archived successfully',
+            'data' => $supplier
         ]);
+    }
+
+    private function moneyCents(mixed $amount): int
+    {
+        $text = trim((string) $amount);
+        if (! preg_match('/^\d+(?:\.\d{1,2})?$/', $text)) {
+            return 0;
+        }
+
+        [$whole, $fraction] = array_pad(explode('.', $text, 2), 2, '0');
+
+        return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
     }
 
     /**
@@ -168,10 +279,99 @@ class SupplierController extends Controller
             ->where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
 
+        $this->authorize('restore', $supplier);
+
         $supplier->restore();
 
         return response()->json([
-            'message' => 'Supplier restored successfully'
+            'message' => 'Supplier restored successfully',
+            'data' => $supplier->fresh()
+        ]);
+    }
+
+    public function showPaymentProfile(Request $request, int $id)
+    {
+        $supplier = Supplier::query()
+            ->where('shop_owner_id', $request->user()->shop_owner_id)
+            ->findOrFail($id);
+
+        $this->authorize('view', $supplier);
+
+        return response()->json([
+            'data' => $supplier->paymentProfile?->toMaskedArray(),
+        ]);
+    }
+
+    public function upsertPaymentProfile(StoreSupplierPaymentProfileRequest $request, int $id)
+    {
+        $supplier = Supplier::query()
+            ->where('shop_owner_id', $request->user()->shop_owner_id)
+            ->findOrFail($id);
+
+        $this->authorize('update', $supplier);
+
+        $profile = DB::transaction(function () use ($request, $supplier): SupplierPaymentProfile {
+            $lockedSupplier = Supplier::query()
+                ->where('shop_owner_id', $supplier->shop_owner_id)
+                ->lockForUpdate()
+                ->findOrFail($supplier->id);
+
+            $profile = SupplierPaymentProfile::query()
+                ->where('shop_owner_id', $lockedSupplier->shop_owner_id)
+                ->where('supplier_id', $lockedSupplier->id)
+                ->lockForUpdate()
+                ->first();
+            $data = $request->validated();
+            $destinationType = (string) $data['destination_type'];
+            $isBankAccount = $destinationType === SupplierPaymentProfile::DESTINATION_BANK_ACCOUNT;
+            $accountNumber = $isBankAccount
+                ? (filled($data['account_number'] ?? null) ? $data['account_number'] : $profile?->account_number)
+                : null;
+            $accountIdentifier = ! $isBankAccount
+                ? (filled($data['account_identifier'] ?? null) ? $data['account_identifier'] : $profile?->account_identifier)
+                : null;
+
+            if ($isBankAccount && $accountNumber === null) {
+                abort(422, 'An account number is required for a new bank payment profile.');
+            }
+            if (! $isBankAccount && $accountIdentifier === null) {
+                abort(422, 'An account identifier is required for a new e-wallet payment profile.');
+            }
+
+            $destination = [
+                'destination_type' => $destinationType,
+                'wallet_provider' => $isBankAccount ? null : $data['wallet_provider'],
+                'bank_name' => $isBankAccount ? $data['bank_name'] : null,
+                'bank_code' => $isBankAccount ? $data['bank_code'] : null,
+                'account_name' => $data['account_name'],
+                'account_number' => $isBankAccount ? $accountNumber : null,
+                'account_identifier' => $isBankAccount ? null : $accountIdentifier,
+            ];
+            $changed = ! $profile || collect($destination)->some(
+                fn ($value, $key): bool => (string) $profile->getAttribute($key) !== (string) $value
+            );
+
+            if (! $profile) {
+                $profile = new SupplierPaymentProfile([
+                    'shop_owner_id' => $lockedSupplier->shop_owner_id,
+                    'supplier_id' => $lockedSupplier->id,
+                ]);
+            }
+
+            $profile->fill($destination);
+            if ($changed) {
+                $profile->status = SupplierPaymentProfile::STATUS_UNVERIFIED;
+                $profile->verified_by = null;
+                $profile->verified_at = null;
+            }
+            $profile->save();
+
+            return $profile->fresh();
+        }, 3);
+
+        return response()->json([
+            'message' => 'Supplier payment profile saved successfully.',
+            'data' => $profile->toMaskedArray(),
         ]);
     }
 }

@@ -17,6 +17,7 @@ class PremiumPlan extends Model
         'price',
         'duration_days',
         'showroom_slot_limit',
+        'benefits',
         'status',
     ];
 
@@ -24,6 +25,7 @@ class PremiumPlan extends Model
         'price' => 'decimal:2',
         'duration_days' => 'integer',
         'showroom_slot_limit' => 'integer',
+        'benefits' => 'array',
     ];
 
     public function subscriptions(): HasMany

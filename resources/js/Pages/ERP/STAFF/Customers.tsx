@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useMemo } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
@@ -13,18 +14,6 @@ const UserCircleIcon = ({ className = "" }) => (
 const CheckCircleIcon = ({ className = "" }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
-const ArrowUpIcon = ({ className = "" }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className = "" }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
   </svg>
 );
 
@@ -63,8 +52,6 @@ interface Customer {
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -74,8 +61,6 @@ interface MetricData {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -94,17 +79,9 @@ const MetricCard: React.FC<MetricData> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-            changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
         <div className="space-y-2">
@@ -137,6 +114,7 @@ export default function CustomersPage() {
   const itemsPerPage = 10;
 
   const { auth, initialCustomers = [], initialStats } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
   const userRole = String(auth?.user?.role || '').toUpperCase();
   const userRoles = Array.isArray(auth?.user?.roles)
     ? auth.user.roles.map((role: string) => String(role).toUpperCase())
@@ -146,6 +124,7 @@ export default function CustomersPage() {
     : [];
 
   const canAccessStaffModule =
+    ownerMode ||
     userPermissions.includes('access-staff-dashboard') ||
     userPermissions.includes('access-staff-customers') ||
     userRole === 'STAFF' ||
@@ -156,13 +135,9 @@ export default function CustomersPage() {
   const customers = initialCustomers as Customer[];
   const stats = initialStats || {
     totalCustomers: 0,
-    totalCustomersChange: 0,
     activeCustomers: 0,
-    activeCustomersChange: 0,
     totalOrders: 0,
-    totalOrdersChange: 0,
     totalRevenue: 0,
-    totalRevenueChange: 0,
   };
 
   const filteredCustomers = useMemo(() => {
@@ -201,25 +176,15 @@ export default function CustomersPage() {
       <Head title="Customers - Solespace ERP" />
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
 
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-              Customer Management
-            </h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              View and manage customer information and activities
-            </p>
-          </div>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="w-full">
+          <h1 className="sr-only">Customer Management</h1>
 
           {/* Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <MetricCard
               title="Total Customers"
               value={stats.totalCustomers}
-              change={stats.totalCustomersChange}
-              changeType={stats.totalCustomersChange >= 0 ? 'increase' : 'decrease'}
               icon={UserCircleIcon}
               color="info"
               description="All customers with orders"
@@ -227,8 +192,6 @@ export default function CustomersPage() {
             <MetricCard
               title="Active Customers"
               value={stats.activeCustomers}
-              change={stats.activeCustomersChange}
-              changeType={stats.activeCustomersChange >= 0 ? 'increase' : 'decrease'}
               icon={CheckCircleIcon}
               color="success"
               description="Currently active customers"
@@ -236,8 +199,6 @@ export default function CustomersPage() {
             <MetricCard
               title="Total Orders"
               value={stats.totalOrders}
-              change={stats.totalOrdersChange}
-              changeType={stats.totalOrdersChange >= 0 ? 'increase' : 'decrease'}
               icon={ShoppingBagIcon}
               color="warning"
               description="All customer orders"
@@ -245,8 +206,6 @@ export default function CustomersPage() {
             <MetricCard
               title="Total Revenue"
               value={stats.totalRevenue}
-              change={stats.totalRevenueChange}
-              changeType={stats.totalRevenueChange >= 0 ? 'increase' : 'decrease'}
               icon={CurrencyIcon}
               color="info"
               description="Total customer spending"
@@ -272,7 +231,7 @@ export default function CustomersPage() {
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Filter by Status
                 </label>
-                <select
+                <MonochromeSelect
                   value={filterStatus}
                   onChange={(e) => { setFilterStatus(e.target.value as 'all' | 'active' | 'inactive'); setCurrentPage(1); }}
                   className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
@@ -280,7 +239,7 @@ export default function CustomersPage() {
                   <option value="all">All Customers</option>
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </MonochromeSelect>
               </div>
             </div>
           </div>
@@ -317,7 +276,7 @@ export default function CustomersPage() {
                       <tr key={customer.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                         <td className="px-6 py-4 whitespace-nowrap">
                           <div className="flex items-center">
-                            <div className="h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-semibold">
+                            <div className="h-10 w-10 rounded-full bg-gray-950 dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-white font-semibold">
                               {getInitials(customer.name)}
                             </div>
                             <div className="ml-4">
@@ -373,6 +332,7 @@ export default function CustomersPage() {
                   </div>
                   <div className="flex gap-2">
                     <button
+                      aria-label="Previous page"
                       onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                       disabled={currentPage === 1}
                       className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -380,6 +340,7 @@ export default function CustomersPage() {
                       Previous
                     </button>
                     <button
+                      aria-label="Next page"
                       onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                       disabled={currentPage === totalPages}
                       className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -397,7 +358,7 @@ export default function CustomersPage() {
       {/* Customer Details Modal */}
       {showDetailsModal && selectedCustomer && (
         <>
-          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto" />
+          <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100000] pointer-events-auto erp-modal-backdrop" />
           <div className="fixed inset-0 flex items-center justify-center z-[100001] p-4 pointer-events-auto">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -417,7 +378,7 @@ export default function CustomersPage() {
               <div className="p-6 space-y-6">
                 {/* Customer Info */}
                 <div className="flex items-center space-x-4">
-                  <div className="h-20 w-20 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-bold">
+                  <div className="h-20 w-20 rounded-full bg-gray-950 dark:bg-gradient-to-br dark:from-blue-500 dark:to-indigo-600 flex items-center justify-center text-white font-bold">
                     <span className="text-2xl">{getInitials(selectedCustomer.name)}</span>
                   </div>
                   <div>

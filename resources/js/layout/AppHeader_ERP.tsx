@@ -1,15 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
+import { route } from "ziggy-js";
 import { useSidebar } from "../context/SidebarContext";
 import { ThemeToggleButton } from "../components/common/ThemeToggleButton";
 import UserDropdown from "../components/header/UserDropdown";
 import SuperAdminDropdown from "../components/header/SuperAdminDropdown";
-import NotificationBell from "../Components/common/NotificationBell";
+import ShopOwnerDropdown from "../components/header/ShopOwnerDropdown";
+import NotificationBell from "../components/common/NotificationBell";
+import ErpCommandSearch from "../components/header/ErpCommandSearch";
+import type { ErpActor, ErpUrls } from "../types/erp";
 
 const AppHeader_ERP: React.FC = () => {
   const page = usePage();
   const { auth } = page.props as any;
+  const erpActor = auth?.erpActor as ErpActor | undefined;
+  const erpUrls = (page.props as any).erpUrls as Partial<ErpUrls> | undefined;
+  const ownerMode = erpActor?.type === "shop_owner" && erpActor.ownerMode === true;
+  const homeHref = ownerMode
+    ? (typeof erpUrls?.portal === "string" ? erpUrls.portal : route("shop-owner.dashboard"))
+    : erpActor?.type === "employee"
+      ? route("erp.time-in")
+      : route("landing");
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
+  const [isMobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const applicationMenuRef = useRef<HTMLDivElement>(null);
+  const applicationMenuTriggerRef = useRef<HTMLButtonElement>(null);
 
   const { isMobileOpen, toggleSidebar, toggleMobileSidebar } = useSidebar();
 
@@ -22,27 +37,85 @@ const AppHeader_ERP: React.FC = () => {
   const isRepairerRole = userRole === 'REPAIRER' || userRoles.includes('REPAIRER');
   const isStaffRoute = String(page.url || '').includes('/erp/staff/');
   const isStaffScopedNotifications = isRepairerRole || isStaffRole || isStaffRoute;
-  const notificationBasePath = isStaffScopedNotifications ? '/api/staff/notifications' : '/api/hr/notifications';
+  const notificationBasePath = ownerMode
+    ? '/api/shop-owner/notifications'
+    : isStaffScopedNotifications
+      ? '/api/staff/notifications'
+      : '/api/hr/notifications';
+
+  const renderAccountMenu = (inline = false) => ownerMode ? (
+    <ShopOwnerDropdown actor={erpActor} urls={erpUrls} inline={inline} businessStyle />
+  ) : auth?.super_admin ? (
+    <SuperAdminDropdown inline={inline} />
+  ) : auth?.user ? (
+    <UserDropdown inline={inline} businessStyle />
+  ) : null;
 
   const handleToggle = () => {
-    if (window.innerWidth >= 1024) {
+    if (window.innerWidth >= 1280) {
       toggleSidebar();
     } else {
       toggleMobileSidebar();
     }
   };
 
-  const toggleApplicationMenu = () => {
-    setApplicationMenuOpen(!isApplicationMenuOpen);
+  const closeApplicationMenu = (restoreFocus = false) => {
+    setApplicationMenuOpen(false);
+    if (restoreFocus) {
+      window.requestAnimationFrame(() => applicationMenuTriggerRef.current?.focus());
+    }
   };
 
+  const toggleApplicationMenu = () => {
+    if (isApplicationMenuOpen) {
+      closeApplicationMenu(true);
+      return;
+    }
+
+    setApplicationMenuOpen(true);
+  };
+
+  useEffect(() => {
+    if (!isApplicationMenuOpen) return;
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeApplicationMenu(true);
+      }
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) return;
+      if (applicationMenuRef.current?.contains(event.target) || applicationMenuTriggerRef.current?.contains(event.target)) return;
+      closeApplicationMenu();
+    };
+
+    document.addEventListener("keydown", handleEscape);
+    document.addEventListener("pointerdown", handlePointerDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleEscape);
+      document.removeEventListener("pointerdown", handlePointerDown);
+    };
+  }, [isApplicationMenuOpen]);
+
   const inputRef = useRef<HTMLInputElement>(null);
+  const mobileInputRef = useRef<HTMLInputElement>(null);
+
+  const openMobileSearch = () => {
+    setMobileSearchOpen(true);
+    window.requestAnimationFrame(() => mobileInputRef.current?.focus());
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key === "k") {
         event.preventDefault();
-        inputRef.current?.focus();
+        if (window.innerWidth >= 1280) {
+          inputRef.current?.focus();
+        } else {
+          openMobileSearch();
+        }
       }
     };
 
@@ -54,11 +127,11 @@ const AppHeader_ERP: React.FC = () => {
   }, []);
 
   return (
-    <header className="sticky top-0 flex w-full bg-white/80 dark:bg-gray-900/80 backdrop-blur-md border-gray-200 z-99999 dark:border-gray-800 lg:border-b">
-      <div className="flex flex-col items-center justify-between grow lg:flex-row lg:px-6">
-        <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 sm:gap-4 lg:justify-normal lg:border-b-0 lg:px-0 lg:py-4">
+    <header className="relative sticky top-0 z-40 flex w-full bg-white/80 backdrop-blur-md dark:bg-gray-900/80 xl:border-b xl:border-gray-200 xl:dark:border-gray-800">
+      <div className="flex flex-col items-center justify-between grow xl:flex-row xl:px-6">
+        <div className="flex items-center justify-between w-full gap-2 px-3 py-3 border-b border-gray-200 dark:border-gray-800 sm:gap-4 xl:justify-normal xl:border-b-0 xl:px-0 xl:py-4">
           <button
-            className="items-center justify-center w-10 h-10 text-gray-500 border-gray-200 rounded-lg z-99999 dark:border-gray-800 lg:flex dark:text-gray-400 lg:h-11 lg:w-11 lg:border"
+            className="items-center justify-center w-10 h-10 text-gray-500 border-gray-200 rounded-lg dark:border-gray-800 xl:flex dark:text-gray-400 xl:h-11 xl:w-11 xl:border"
             onClick={handleToggle}
             aria-label="Toggle Sidebar"
           >
@@ -95,88 +168,123 @@ const AppHeader_ERP: React.FC = () => {
             )}
           </button>
 
-          <Link href={route("landing")} className="lg:hidden">
-            <img
-              className="dark:hidden"
-              src="/images/logo/logo.svg"
-              alt="Logo"
-            />
-            <img
-              className="hidden dark:block"
-              src="/images/logo/logo-dark.svg"
-              alt="Logo"
-            />
+          <Link href={homeHref} className="inline-flex items-center gap-2 xl:hidden" aria-label="SoleSpace">
+            <span className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">SoleSpace</span>
           </Link>
 
-          <button
-            onClick={toggleApplicationMenu}
-            className="flex items-center justify-center w-10 h-10 text-gray-700 rounded-lg z-99999 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 lg:hidden"
-            aria-label="Toggle Application Menu"
-          >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
+          <div className="flex items-center gap-1 xl:hidden">
+            <button
+              type="button"
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-700 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-400 dark:hover:bg-gray-800"
+              aria-label="Toggle Search"
+              aria-expanded={isMobileSearchOpen}
+              onClick={() => {
+                if (isMobileSearchOpen) {
+                  setMobileSearchOpen(false);
+                } else {
+                  openMobileSearch();
+                }
+              }}
             >
-              <path
-                d="M8 12H16M8 6H16M8 18H16"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-
-          <div className="hidden lg:block">
-            <form>
-              <div className="relative">
-                <span className="absolute -translate-y-1/2 pointer-events-none left-4 top-1/2">
-                  <svg
-                    className="fill-gray-500 dark:fill-gray-400"
-                    width="20"
-                    height="20"
-                    viewBox="0 0 20 20"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      clipRule="evenodd"
-                      d="M3.04175 9.37363C3.04175 5.87693 5.87711 3.04199 9.37508 3.04199C12.8731 3.04199 15.7084 5.87693 15.7084 9.37363C15.7084 12.8703 12.8731 15.7053 9.37508 15.7053C5.87711 15.7053 3.04175 12.8703 3.04175 9.37363ZM9.37508 1.54199C5.04902 1.54199 1.54175 5.04817 1.54175 9.37363C1.54175 13.6991 5.04902 17.2053 9.37508 17.2053C11.2674 17.2053 13.003 16.5344 14.357 15.4176L17.177 18.238C17.4699 18.5309 17.9448 18.5309 18.2377 18.238C18.5306 17.9451 18.5306 17.4703 18.2377 17.1774L15.418 14.3573C16.5365 13.0033 17.2084 11.2669 17.2084 9.37363C17.2084 5.04817 13.7011 1.54199 9.37508 1.54199Z"
-                      fill=""
-                    />
-                  </svg>
-                </span>
-                <input
-                  ref={inputRef}
-                  type="text"
-                  placeholder="Search or type command..."
-                  className="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-12 pr-14 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10 dark:border-gray-800 dark:bg-gray-900 dark:bg-white/[0.03] dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-brand-800 xl:w-[430px]"
+              <svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="m17.5 17.5-3.75-3.75m1.667-4.583a6.25 6.25 0 1 1-12.5 0 6.25 6.25 0 0 1 12.5 0Z" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+            </button>
+            <NotificationBell
+              basePath={notificationBasePath}
+              iconSize={24}
+              className="rounded-full border border-gray-200 bg-white text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+            />
+            <button
+              ref={applicationMenuTriggerRef}
+              onClick={toggleApplicationMenu}
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-gray-700 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-400 dark:hover:bg-gray-800"
+              aria-label="Toggle Application Menu"
+              aria-expanded={isApplicationMenuOpen}
+              aria-controls="application-menu"
+              aria-haspopup="true"
+            >
+              <svg
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  d="M8 12H16M8 6H16M8 18H16"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
                 />
+              </svg>
+            </button>
+          </div>
 
-                <button className="absolute right-2.5 top-1/2 inline-flex -translate-y-1/2 items-center gap-0.5 rounded-lg border border-gray-200 bg-gray-50 px-[7px] py-[4.5px] text-xs -tracking-[0.2px] text-gray-500 dark:border-gray-800 dark:bg-white/[0.03] dark:text-gray-400">
-                  <span> ⌘ </span>
-                  <span> K </span>
-                </button>
-              </div>
-            </form>
+          <div className="hidden xl:block">
+            <ErpCommandSearch inputRef={inputRef} />
+
           </div>
         </div>
 
-        <div
-          className={`${isApplicationMenuOpen ? "flex" : "hidden"} items-center justify-between w-full gap-4 px-5 py-4 lg:flex lg:justify-end lg:px-0 lg:shadow-none`}
-        >
-          {/* Right Side Actions */}
-          <div className="flex items-center gap-2 2xsm:gap-3">
-            <NotificationBell 
-              basePath={notificationBasePath}
-              iconSize={24}
+        {isMobileSearchOpen && (
+          <div className="w-full border-b border-gray-200 px-3 pb-3 dark:border-gray-800 xl:hidden">
+            <ErpCommandSearch
+              id="erp-command-search-mobile"
+              inputRef={mobileInputRef}
+              inputClassName="dark:bg-dark-900 h-11 w-full rounded-lg border border-gray-200 bg-transparent py-2.5 pl-12 pr-14 text-sm text-gray-800 shadow-theme-xs placeholder:text-gray-400 focus:border-gray-950 focus:outline-hidden focus:ring-3 focus:ring-gray-950/10 dark:border-gray-800 dark:bg-gray-900 dark:bg-white/[0.03] dark:text-white/90 dark:placeholder:text-white/30 dark:focus:border-gray-300"
             />
-            <ThemeToggleButton />
           </div>
-          {auth?.super_admin ? <SuperAdminDropdown /> : auth?.user ? <UserDropdown /> : null}
+        )}
+
+        <div
+          ref={applicationMenuRef}
+          id="application-menu"
+          role={isApplicationMenuOpen ? "region" : undefined}
+          aria-labelledby={isApplicationMenuOpen ? "application-menu-title" : undefined}
+          aria-describedby={isApplicationMenuOpen ? "application-menu-description" : undefined}
+          className={`${isApplicationMenuOpen
+            ? "absolute right-3 top-[calc(100%+0.5rem)] z-50 flex max-h-[calc(100dvh-5.5rem)] w-[min(22rem,calc(100vw-1.5rem))] flex-col overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-xl ring-1 ring-black/5 dark:border-gray-700 dark:bg-gray-900 dark:ring-white/10 sm:right-4 sm:w-[min(24rem,calc(100vw-2rem))] sm:max-h-[calc(100dvh-6.5rem)]"
+            : "hidden"} items-center justify-between gap-0 xl:static xl:flex xl:max-h-none xl:w-auto xl:max-w-none xl:flex-row xl:gap-4 xl:overflow-visible xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none xl:ring-0`}
+        >
+          {isApplicationMenuOpen && (
+            <div className="w-full shrink-0 border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-900 sm:px-5 sm:py-4 xl:hidden">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 id="application-menu-title" className="text-base font-semibold text-gray-900 dark:text-white">Application menu</h2>
+                  <p id="application-menu-description" className="mt-1 text-sm leading-5 text-gray-500 dark:text-gray-400">Appearance and account settings.</p>
+                </div>
+                <div className="xl:hidden">
+                  <ThemeToggleButton />
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="flex min-h-0 w-full flex-1 flex-col gap-0 overflow-y-auto bg-gray-50/70 p-0 dark:bg-gray-950/30 sm:gap-0 sm:p-0 xl:w-auto xl:flex-none xl:flex-row xl:items-center xl:gap-4 xl:overflow-visible xl:bg-transparent xl:p-0">
+            {/* Right Side Actions */}
+            <div className="grid w-full grid-cols-1 gap-0 xl:flex xl:w-auto xl:items-center xl:gap-4">
+              <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
+                <div className="min-w-0 xl:hidden">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white">Alerts &amp; notifications</p>
+                  <p className="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Review recent activity</p>
+                </div>
+                <NotificationBell
+                  basePath={notificationBasePath}
+                  iconSize={24}
+                  className="rounded-full border border-gray-200 bg-white text-gray-900 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
+                />
+              </div>
+              <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
+                <ThemeToggleButton />
+              </div>
+              <div className="w-full overflow-hidden rounded-none border-0 bg-white dark:bg-gray-900 xl:hidden">
+                {renderAccountMenu(true)}
+              </div>
+              <div className="hidden items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-3 shadow-sm sm:col-span-2 dark:border-gray-800 dark:bg-gray-900 dark:shadow-none xl:contents">
+                {renderAccountMenu()}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </header>

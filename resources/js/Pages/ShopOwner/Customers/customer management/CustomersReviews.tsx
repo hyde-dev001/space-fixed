@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import axios from "axios";
 import { useEffect, useMemo, useState } from "react";
@@ -20,29 +21,14 @@ interface CustomerReview {
 }
 
 type MetricColor = "success" | "warning" | "info" | "error";
-type ChangeType = "increase" | "decrease";
 
 interface MetricCardProps {
   title: string;
   value: string;
-  change: number;
-  changeType: ChangeType;
   icon: ComponentType<{ className?: string }>;
   color: MetricColor;
   description: string;
 }
-
-const ArrowUpIcon = ({ className = "" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className = "" }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
 
 const ReviewIcon = ({ className = "" }: { className?: string }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
@@ -63,7 +49,7 @@ const EyeIcon = ({ className = "" }: { className?: string }) => (
   </svg>
 );
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
   const getColorClasses = () => {
     switch (color) {
       case "success":
@@ -84,20 +70,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
       <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center">
           <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br ${getColorClasses()} shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="size-7 text-white drop-shadow-sm" />
-          </div>
-
-          <div
-            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -273,20 +248,12 @@ export default function CustomerReviews() {
       <Head title="Customer Reviews - Shop Owner" />
 
       <div className="space-y-6 p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="mb-1 text-2xl font-semibold text-gray-900 dark:text-white">Customer Reviews</h1>
-            <p className="text-gray-600 dark:text-gray-400">Collect customer satisfaction data and track follow-up response status.</p>
-          </div>
-          <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">Shop Owner Feedback</div>
-        </div>
+        <h1 className="sr-only">Customer Reviews</h1>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <MetricCard
             title="Total Reviews"
             value={reviews.length.toString()}
-            change={12}
-            changeType="increase"
             icon={ReviewIcon}
             color="info"
             description="Collected customer feedback entries"
@@ -294,8 +261,6 @@ export default function CustomerReviews() {
           <MetricCard
             title="Average Rating"
             value={`${averageRating.toFixed(1)} / 5`}
-            change={6}
-            changeType="increase"
             icon={RatingIcon}
             color="warning"
             description="Overall satisfaction score"
@@ -325,7 +290,7 @@ export default function CustomerReviews() {
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
               />
 
-              <select
+              <MonochromeSelect
                 value={orderTypeFilter}
                 onChange={(event) => {
                   setOrderTypeFilter(event.target.value as "all" | OrderType);
@@ -337,7 +302,7 @@ export default function CustomerReviews() {
                 <option value="all">All order types</option>
                 {allowedOrderTypes.includes("product") && <option value="product">Product</option>}
                 {allowedOrderTypes.includes("repair") && <option value="repair">Repair</option>}
-              </select>
+              </MonochromeSelect>
 
             </div>
           </div>
@@ -398,6 +363,7 @@ export default function CustomerReviews() {
               </p>
               <div className="flex items-center gap-2">
                 <button
+                  aria-label="Previous page"
                   onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                   disabled={safeCurrentPage === 1}
                   className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -405,6 +371,7 @@ export default function CustomerReviews() {
                   Previous
                 </button>
                 <button
+                  aria-label="Next page"
                   onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
                   disabled={safeCurrentPage === totalPages}
                   className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -420,7 +387,7 @@ export default function CustomerReviews() {
 
         {showReviewModal && selectedReview && (
           <>
-            <div className="fixed inset-0 z-100000 bg-black/50" />
+            <div className="fixed inset-0 z-100000 bg-black/50 erp-modal-backdrop" />
             <div className="fixed inset-0 z-100001 flex items-center justify-center p-4">
               <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900">
                 <div className="mb-4 flex items-center justify-between border-b border-gray-200 pb-4 dark:border-gray-800">
@@ -491,7 +458,7 @@ export default function CustomerReviews() {
         {/* Report Review Modal */}
         {showReportModal && selectedReview && (
           <>
-            <div className="fixed inset-0 z-200000 bg-black/60" onClick={() => setShowReportModal(false)} />
+            <div className="fixed inset-0 z-200000 bg-black/60 erp-modal-backdrop" onClick={() => setShowReportModal(false)} />
             <div className="fixed inset-0 z-200001 flex items-center justify-center p-4">
               <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-900">
                 <div className="mb-5">
@@ -507,7 +474,7 @@ export default function CustomerReviews() {
                     <label className="mb-1.5 block text-sm font-medium text-gray-700 dark:text-gray-300">
                       Reason <span className="text-red-500">*</span>
                     </label>
-                    <select
+                    <MonochromeSelect
                       value={reportReason}
                       onChange={(e) => setReportReason(e.target.value)}
                       title="Select report reason"
@@ -518,7 +485,7 @@ export default function CustomerReviews() {
                       <option value="spam">Spam</option>
                       <option value="inappropriate_content">Inappropriate Content</option>
                       <option value="other">Other</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div>
@@ -565,7 +532,7 @@ export default function CustomerReviews() {
 
         {selectedImage && (          <>
             <div
-              className="fixed inset-0 z-100002 bg-black/80"
+              className="fixed inset-0 z-100002 bg-black/80 erp-modal-backdrop"
               onClick={() => setSelectedImage(null)}
             />
             <div className="fixed inset-0 z-100003 flex items-center justify-center p-4">

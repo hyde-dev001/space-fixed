@@ -15,6 +15,7 @@ use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Models\User;
 use App\Models\VoucherClaim;
+use App\Services\ShowroomPlacementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -24,6 +25,10 @@ use Inertia\Response;
 
 class LandingPageController extends Controller
 {
+    public function __construct(private readonly ShowroomPlacementService $showroomPlacements)
+    {
+    }
+
     /**
      * Display the landing page.
      */
@@ -169,30 +174,25 @@ class LandingPageController extends Controller
         $repairQualifier = trim((string) preg_replace('/\brepair(?:er|ers)?\b/i', '', $query));
         $retailQualifier = trim((string) preg_replace('/\bretail\b/i', '', $query));
 
-        if ($query === '') {
-            return response()->json([
-                'query' => $query,
-                'products' => [],
-                'shops' => [],
-                'categories' => [],
-            ]);
-        }
-
-        $products = Product::query()
+        $productsQuery = Product::query()
             ->where('is_active', true)
-            ->where(function ($q) use ($query, $matchedCategoryFromKeyword) {
-                $q->where('name', 'like', "%{$query}%")
-                    ->orWhere('brand', 'like', "%{$query}%")
-                    ->orWhere('description', 'like', "%{$query}%")
-                    ->orWhere('category', 'like', "%{$query}%");
-
-                if ($matchedCategoryFromKeyword !== null) {
-                    $q->orWhereRaw('LOWER(category) = ?', [$matchedCategoryFromKeyword]);
-                }
-            })
             ->whereHas('shopOwner', function ($q) {
                 $q->where('status', 'approved');
             })
+            ->when($query !== '', function ($queryBuilder) use ($query, $matchedCategoryFromKeyword) {
+                $queryBuilder->where(function ($q) use ($query, $matchedCategoryFromKeyword) {
+                    $q->where('name', 'like', "%{$query}%")
+                        ->orWhere('brand', 'like', "%{$query}%")
+                        ->orWhere('description', 'like', "%{$query}%")
+                        ->orWhere('category', 'like', "%{$query}%");
+
+                    if ($matchedCategoryFromKeyword !== null) {
+                        $q->orWhereRaw('LOWER(category) = ?', [$matchedCategoryFromKeyword]);
+                    }
+                });
+            });
+
+        $products = $productsQuery
             ->with('shopOwner:id,business_name')
             ->orderByDesc('created_at')
             ->limit(6)
@@ -206,9 +206,20 @@ class LandingPageController extends Controller
                     'main_image' => $product->main_image_url,
                     'shop_name' => $product->shopOwner?->business_name,
                     'url' => route('products.show', ['slug' => $product->slug]),
+                    'price' => $product->price,
+                    'compare_at_price' => $product->compare_at_price,
                 ];
             })
             ->values();
+
+        if ($query === '') {
+            return response()->json([
+                'query' => $query,
+                'products' => $products,
+                'shops' => [],
+                'categories' => [],
+            ]);
+        }
 
         $searchableCategories = $this->getSearchableStorefrontCategories();
 
@@ -377,7 +388,12 @@ class LandingPageController extends Controller
             ->first();
 
         // Get all product images with full URLs using accessor
-        $images = $product->image_urls;
+        $images = collect($product->image_urls)
+            ->map(fn ($image) => is_array($image) ? ($image['url'] ?? null) : $image)
+            ->filter(fn ($image) => is_string($image) && $image !== '')
+            ->unique()
+            ->values()
+            ->all();
 
         $showroom360Frames = collect($product->colorVariants ?? [])
             ->flatMap(function ($variant) {
@@ -454,6 +470,54 @@ class LandingPageController extends Controller
             ->sum('quantity');
 
         $displaySalesCount = max((int) $product->sales_count, $computedSalesCount);
+
+        $relatedProducts = Product::query()
+            ->select([
+                'id',
+                'name',
+                'slug',
+                'price',
+                'compare_at_price',
+                'brand',
+                'category',
+                'main_image',
+                'created_at',
+            ])
+            ->with('media')
+            ->where('is_active', true)
+            ->whereKeyNot($product->getKey())
+            ->whereIn('shop_owner_id', ShopOwner::query()
+                ->where('status', 'approved')
+                ->select('id'))
+            ->when($product->category, fn ($query, $category) => $query
+                ->orderByRaw('CASE WHEN category = ? THEN 0 ELSE 1 END', [$category]))
+            ->when($product->brand, fn ($query, $brand) => $query
+                ->orderByRaw('CASE WHEN brand = ? THEN 0 ELSE 1 END', [$brand]))
+            ->latest()
+            ->latest('id')
+            ->limit(8)
+            ->get()
+            ->map(fn (Product $relatedProduct) => [
+                'id' => $relatedProduct->id,
+                'name' => $relatedProduct->name,
+                'url' => route('products.show', ['slug' => $relatedProduct->slug]),
+                'image' => $relatedProduct->main_image_url,
+                'price' => '₱' . number_format($relatedProduct->price, 0),
+                'compare_at_price' => $relatedProduct->compare_at_price
+                    ? '₱' . number_format($relatedProduct->compare_at_price, 0)
+                    : null,
+                'brand' => $relatedProduct->brand,
+                'category' => $relatedProduct->category,
+            ])
+            ->values()
+            ->all();
+
+        $availableProductSlugs = Product::query()
+            ->where('is_active', true)
+            ->pluck('slug')
+            ->filter(fn ($slug) => is_string($slug) && trim($slug) !== '')
+            ->values()
+            ->all();
 
         $promoTablesReady = Schema::hasTable('promo_campaigns')
             && Schema::hasTable('promo_campaign_products')
@@ -640,6 +704,8 @@ class LandingPageController extends Controller
                     'claimed_campaign_ids' => $claimedCampaignIds,
                 ],
             ],
+            'relatedProducts' => $relatedProducts,
+            'availableProductSlugs' => $availableProductSlugs,
         ]);
     }
 
@@ -924,6 +990,15 @@ class LandingPageController extends Controller
                 ];
             });
 
+        $showroomWallArt = ['left' => null, 'right' => null];
+        if ($forVirtualShowroom) {
+            foreach ($this->showroomPlacements->wallArtPathsForShop((int) $shopOwner->id) as $side => $path) {
+                $showroomWallArt[$side] = $path
+                    ? asset('storage/' . ltrim($path, '/'))
+                    : null;
+            }
+        }
+
         $shop = [
             'id' => $shopOwner->id,
             'name' => $shopOwner->business_name ?? $shopOwner->name,
@@ -965,6 +1040,21 @@ class LandingPageController extends Controller
             'showroom_slot_limit' => $forVirtualShowroom ? $showroomSlotLimit : null,
             'showroom_plan_code' => $forVirtualShowroom ? ($activePremiumSubscription?->plan_code ?? null) : null,
             'showroom_plan_name' => $forVirtualShowroom ? ($activePremiumSubscription?->premiumPlan?->name ?? null) : null,
+            'showroom_placements' => $forVirtualShowroom
+                ? $this->showroomPlacements->placementsForShop((int) $shopOwner->id)
+                    ->map(fn ($placement) => [
+                        'product_id' => (int) $placement->product_id,
+                        'slot_key' => $placement->slot_key,
+                    ])->values()->all()
+                : [],
+            'showroom_wall_art' => $showroomWallArt,
+            'can_edit_showroom' => $forVirtualShowroom
+                && $this->showroomPlacements->canEdit(request(), (int) $shopOwner->id),
+            'can_manage_showroom_art' => $forVirtualShowroom
+                && $this->showroomPlacements->canManageWallArt(request(), (int) $shopOwner->id),
+            'showroom_setup_required' => $forVirtualShowroom
+                && $this->showroomPlacements->canManage(request(), (int) $shopOwner->id)
+                && !Schema::hasTable('showroom_product_placements'),
         ];
 
         $isRepairCapableShop = in_array($normalizedBusinessType, ['repair', 'both'], true);
@@ -1230,7 +1320,7 @@ class LandingPageController extends Controller
      */
     private function normalizeRepairPaymentPolicy(?string $value): string
     {
-        return (string) $value === 'full_upfront' ? 'full_upfront' : 'deposit_50';
+        return 'full_upfront';
     }
 
     private function resolveEffectivePackagePrice(RepairPackage $package): float
@@ -1269,6 +1359,16 @@ class LandingPageController extends Controller
             return 60;
         }
 
+        $planLimit = (int) ($subscription->premiumPlan?->showroom_slot_limit ?? 0);
+        if ($planLimit > 0) {
+            return $planLimit;
+        }
+
+        $subscriptionLimit = (int) ($subscription->showroom_slot_limit ?? 0);
+        if ($subscriptionLimit > 0) {
+            return $subscriptionLimit;
+        }
+
         $planCode = strtolower(trim((string) $subscription->plan_code));
         if (str_contains($planCode, 'basic')) {
             return 48;
@@ -1289,16 +1389,6 @@ class LandingPageController extends Controller
         }
         if (str_contains($planName, 'pro')) {
             return 60;
-        }
-
-        $planLimit = (int) ($subscription->premiumPlan?->showroom_slot_limit ?? 0);
-        if ($planLimit > 0) {
-            return $planLimit;
-        }
-
-        $subscriptionLimit = (int) ($subscription->showroom_slot_limit ?? 0);
-        if ($subscriptionLimit > 0) {
-            return $subscriptionLimit;
         }
 
         return 60;

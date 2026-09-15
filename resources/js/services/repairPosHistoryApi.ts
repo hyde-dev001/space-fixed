@@ -9,6 +9,11 @@ export type RepairPosRefundRequestPayload = {
   receipt_no?: string;
 };
 
+export type ManualRejectedNoAccountRefundPayload = {
+  source_transaction_id: number;
+  receipt_no: string;
+};
+
 export type RepairPosWarrantyClaimPayload = {
   repair_request_id: number;
   receipt_no: string;
@@ -37,6 +42,14 @@ export const repairPosHistoryApi = {
 
   requestRefund(payload: RepairPosRefundRequestPayload) {
     return axios.post("/api/repair-pos/refunds", payload, { withCredentials: true });
+  },
+
+  manualRefundRejectedNoAccount(payload: ManualRejectedNoAccountRefundPayload) {
+    return axios.post(
+      "/api/repair-pos/refunds/manual-rejected-no-account",
+      payload,
+      { withCredentials: true },
+    );
   },
 
   requestWarrantyClaim(payload: RepairPosWarrantyClaimPayload) {

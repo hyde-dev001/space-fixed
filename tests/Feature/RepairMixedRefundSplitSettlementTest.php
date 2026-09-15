@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\PosPaymentLine;
 use App\Models\PosRefund;
 use App\Models\PosTransaction;
+use App\Models\RepairPaymentSession;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -12,6 +13,7 @@ use App\Enums\NotificationType;
 use App\Services\PaymongoRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
@@ -808,7 +810,6 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
                 'execution_mode' => 'manual',
                 'execution_channel' => 'gcash',
                 'execution_reference' => 'AUTH-IMG-001',
-                'execution_amount' => 300,
                 'execution_proof_images' => [
                     UploadedFile::fake()->create('proof-001.png', 80, 'image/png'),
                 ],
@@ -819,6 +820,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         $updated = $refund->fresh();
         $this->assertSame('succeeded', (string) $updated->status);
         $this->assertSame('manual', (string) $updated->execution_mode);
+        $this->assertEqualsWithDelta(300.00, (float) $updated->execution_amount, 0.01);
 
         $proofUrls = is_array($updated->execution_proof_urls) ? $updated->execution_proof_urls : [];
         $this->assertNotEmpty($proofUrls);
@@ -829,6 +831,87 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         }
 
         $this->assertTrue(Storage::disk('public')->exists($firstProofPath));
+    }
+
+    #[Test]
+    public function individual_owner_can_execute_legacy_pos_manual_refund_with_uploaded_proof(): void
+    {
+        Storage::fake('public');
+
+        User::factory()->count(2)->create();
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+        $ownerUser = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-LEGACY-MANUAL-EXEC-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 9992,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Legacy POS Customer',
+            'walk_in_phone' => '09170000113',
+            'due_type' => 'full',
+            'subtotal' => 300,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 300,
+            'paid_amount' => 300,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-LEGACY-MANUAL-EXEC-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => 9992,
+            'workflow_source' => 'pos',
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'request_type' => 'full',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'reason_code' => 'manual_pos_refund',
+            'requested_at' => now(),
+        ]);
+
+        $refund->legs()->create([
+            'leg_type' => 'pos_manual',
+            'requested_amount' => 300,
+            'approved_amount' => 300,
+            'status' => 'approved',
+        ]);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->post("/api/shop-owner/repair-refunds/{$refund->id}/execute", [
+                'execution_mode' => 'manual',
+                'execution_channel' => 'manual_cash',
+                'execution_reference' => 'LEGACY-POS-REFUND-001',
+                'execution_proof_images' => [
+                    UploadedFile::fake()->create('legacy-pos-refund-proof.png', 80, 'image/png'),
+                ],
+            ]);
+
+        $response->assertOk()->assertJsonPath('data.status', 'succeeded');
+        $this->assertDatabaseHas('pos_refunds', [
+            'id' => $refund->id,
+            'status' => 'succeeded',
+            'execution_mode' => 'manual',
+            'execution_channel' => 'manual_cash',
+            'execution_reference' => 'LEGACY-POS-REFUND-001',
+            'executed_by' => $ownerUser->id,
+        ]);
+
+        $proofUrls = is_array($refund->fresh()->execution_proof_urls)
+            ? $refund->fresh()->execution_proof_urls
+            : [];
+        $this->assertNotEmpty($proofUrls);
     }
 
     #[Test]
@@ -1172,6 +1255,237 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         $updated = $refund->fresh();
         $this->assertSame('succeeded', (string) $updated->status);
         $this->assertEqualsWithDelta(475.00, (float) $updated->approved_amount, 0.01);
+    }
+
+    #[Test]
+    public function paymongo_refund_service_exposes_provider_confirmed_amount(): void
+    {
+        Http::fake([
+            'https://api.paymongo.com/v1/refunds' => Http::response([
+                'data' => [
+                    'id' => 're_provider_amount_001',
+                    'attributes' => [
+                        'status' => 'succeeded',
+                        'amount' => 30000,
+                    ],
+                ],
+            ]),
+            'https://api.paymongo.com/v1/refunds/re_provider_amount_001' => Http::response([
+                'data' => [
+                    'id' => 're_provider_amount_001',
+                    'attributes' => [
+                        'status' => 'succeeded',
+                        'amount' => 30000,
+                    ],
+                ],
+            ]),
+        ]);
+
+        $service = app(PaymongoRefundService::class);
+        $created = $service->createRefund('sk_test_provider_amount', 'pay_provider_amount_001', 30000);
+        $status = $service->getRefundStatus('sk_test_provider_amount', 're_provider_amount_001');
+
+        $this->assertSame(30000, $created['amount_in_centavos']);
+        $this->assertSame(30000, $status['amount_in_centavos']);
+    }
+
+    #[Test]
+    public function repair_refund_excludes_pickup_and_return_shipping_from_provider_and_finance_amounts(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'paymongo_secret_key' => 'sk_test_repair_service_only',
+        ]);
+        /** @var User $finance */
+        $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+
+        Permission::findOrCreate('access-refund-approval', 'user');
+        $finance->givePermissionTo('access-refund-approval');
+
+        $repair = $this->createRepairRequest($shopOwner, $finance, [
+            'total' => 300,
+            'final_total' => 300,
+            'payment_status' => 'paid',
+            'payment_status_derived' => 'paid',
+            'total_paid_amount' => 398,
+            'intake_delivery_method' => 'shop_pickup',
+            'return_delivery_method' => 'shop_delivery',
+            'intake_delivery_fee' => 98,
+            'return_delivery_fee' => 98,
+            'intake_logistics_locked_at' => now(),
+            'return_logistics_locked_at' => null,
+            'paymongo_payment_id' => 'pay_repair_service_only_001',
+        ]);
+
+        $source = PosTransaction::create([
+            'transaction_no' => 'POS-REPAIR-SERVICE-ONLY-001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'registered',
+            'customer_id' => $finance->id,
+            'due_type' => 'full',
+            'subtotal' => 398,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 398,
+            'paid_amount' => 398,
+            'status' => 'paid',
+            'paid_at' => now(),
+            'metadata' => [
+                'tax_mode' => 'vat_inclusive',
+                'phase' => 'initial',
+                'leg' => 'intake',
+                'service_amount' => 300,
+                'delivery_amount' => 98,
+                'delivery_method' => 'shop_pickup',
+            ],
+        ]);
+
+        PosPaymentLine::create([
+            'pos_transaction_id' => $source->id,
+            'tender_type' => 'paymongo_wallet',
+            'provider_reference' => 'pay_repair_service_only_001',
+            'amount' => 398,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+
+        $refund = PosRefund::create([
+            'refund_no' => 'RFD-REPAIR-SERVICE-ONLY-001',
+            'shop_owner_id' => $shopOwner->id,
+            'source_transaction_id' => $source->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'workflow_source' => 'online_myrepair',
+            'status' => 'approved',
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'skipped',
+            'repairer_status' => 'approved',
+            'request_type' => 'full',
+            'requested_amount' => 398,
+            'approved_amount' => 398,
+            'reason_code' => 'repair_refund',
+            'paymongo_payment_id' => 'pay_repair_service_only_001',
+            'requested_at' => now(),
+        ]);
+
+        $capturedAmount = null;
+        app()->instance(PaymongoRefundService::class, new class($capturedAmount) extends PaymongoRefundService {
+            public ?int $captured = null;
+
+            public function __construct(?int &$captured)
+            {
+                $this->captured = null;
+            }
+
+            public function getPaymentAmountInCentavos(string $secretKey, string $paymentId): ?int
+            {
+                return 39800;
+            }
+
+            public function createRefund(string $secretKey, string $paymentId, int $amountInCentavos, string $reason = 'requested_by_customer'): array
+            {
+                $this->captured = $amountInCentavos;
+
+                return [
+                    'success' => true,
+                    'message' => 'ok',
+                    'status' => 'succeeded',
+                    'refund_id' => 're_repair_service_only_001',
+                    'amount_in_centavos' => 30000,
+                ];
+            }
+        });
+
+        $this->assertEqualsWithDelta(300.00, app(\App\Services\RepairPosRefundService::class)
+            ->computeRepairRefundableAmount($repair->id), 0.01);
+
+        $response = $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/repair-refunds/{$refund->id}/execute", [
+                'execution_mode' => 'gateway',
+            ]);
+
+        $response->assertStatus(200)->assertJsonPath('success', true);
+
+        $updated = $refund->fresh();
+        $this->assertSame('succeeded', (string) $updated->status);
+        $this->assertEqualsWithDelta(300.00, (float) $updated->approved_amount, 0.01);
+        $this->assertEqualsWithDelta(300.00, (float) $updated->execution_amount, 0.01);
+        $this->assertSame(30000, app(PaymongoRefundService::class)->captured);
+
+        $list = $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/repair-refunds?status=all')
+            ->assertOk()
+            ->json('data');
+        $row = collect($list)->firstWhere('id', $refund->id);
+
+        $this->assertSame('₱300.00', $row['refundAmount']);
+        $this->assertEqualsWithDelta(300.00, (float) ($row['refundAmountValue'] ?? 0), 0.01);
+        $this->assertEqualsWithDelta(300.00, (float) data_get($row, 'refundComponents.repair_service.refunded_amount'), 0.01);
+        $this->assertEqualsWithDelta(0.00, (float) data_get($row, 'refundComponents.pickup_intake.refunded_amount'), 0.01);
+        $this->assertEqualsWithDelta(0.00, (float) data_get($row, 'refundComponents.return_delivery.refunded_amount'), 0.01);
+    }
+
+    #[Test]
+    public function repair_refund_request_uses_paid_session_service_amount_and_rejects_shipping(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'total' => 300,
+            'final_total' => 300,
+            'payment_status' => 'completed',
+            'payment_status_derived' => 'completed',
+            'total_paid_amount' => 398,
+            'intake_delivery_method' => 'shop_pickup',
+            'return_delivery_method' => 'shop_delivery',
+            'intake_delivery_fee' => 98,
+            'return_delivery_fee' => 98,
+            'paymongo_payment_id' => 'pay_repair_session_service_001',
+        ]);
+
+        RepairPaymentSession::create([
+            'repair_request_id' => $repair->id,
+            'provider' => 'paymongo',
+            'provider_link_id' => 'plink_repair_session_service_001',
+            'phase' => 'initial',
+            'status' => 'paid',
+            'snapshot_version' => 'snapshot-1',
+            'delivery_method' => 'shop_pickup',
+            'service_amount' => 300,
+            'delivery_amount' => 98,
+            'quote' => ['service_base_amount' => 300],
+        ]);
+
+        $payload = [
+            'request_type' => 'partial',
+            'requested_amount' => 398,
+            'reason_code' => 'online_payment_refund_request',
+            'reason_notes' => 'Refund service only.',
+            'evidence' => [['type' => 'photo', 'url' => 'https://evidence.local/session-service-only.jpg']],
+        ];
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/refunds", $payload)
+            ->assertStatus(422);
+
+        $payload['requested_amount'] = 300;
+        $response = $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/refunds", $payload)
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $refund = PosRefund::query()->latest('id')->firstOrFail();
+        $source = PosTransaction::query()->findOrFail((int) $refund->source_transaction_id);
+
+        $this->assertEqualsWithDelta(300.00, (float) $refund->requested_amount, 0.01);
+        $this->assertEqualsWithDelta(300.00, (float) data_get($source->metadata, 'service_amount'), 0.01);
+        $this->assertEqualsWithDelta(98.00, (float) data_get($source->metadata, 'delivery_amount'), 0.01);
+        $this->assertSame(
+            'pay_repair_session_service_001',
+            (string) $source->paymentLines()->latest('id')->value('provider_reference'),
+        );
     }
 
     #[Test]

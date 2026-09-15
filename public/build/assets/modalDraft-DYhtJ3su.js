@@ -1,1 +1,0 @@
-const r=t=>{if(typeof window>"u")return null;try{const e=window.localStorage.getItem(t);return e?JSON.parse(e):null}catch{return null}},n=(t,e)=>{if(!(typeof window>"u"))try{window.localStorage.setItem(t,JSON.stringify(e))}catch{}},o=t=>{if(!(typeof window>"u"))try{window.localStorage.removeItem(t)}catch{}};export{o as c,r as l,n as s};

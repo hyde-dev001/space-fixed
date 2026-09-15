@@ -1,8 +1,18 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../../components/common/ErrorModal";
+import { MoneyIcon } from "../../../../components/common/MoneyIcon";
+import {
+  ORDER_STATUS_PRESENTATION,
+  getOrderStatusPresentation,
+  parseOrderActions,
+  type OrderAction,
+  type OrderStatus,
+} from "../../../../utils/orderStatusPresentation";
 import axios from "axios";
 
 type OrderItem = {
@@ -32,7 +42,13 @@ type Order = {
   grand_total: number;
   paymentStatus: string;
   paymentMethod?: string;
-  status: "pending" | "processing" | "shipped" | "delivered" | "cancelled" | "refund";
+  status: OrderStatus;
+  availableActions?: OrderAction[];
+  ownerProjection?: {
+    fulfillment_status: OrderStatus;
+    business_closed: boolean;
+    blockers: string[];
+  };
   cancellation_reason?: string | null;
   cancellation_note?: string | null;
   cancellation_other_reason_note?: string | null;
@@ -45,6 +61,9 @@ type Order = {
   carrierPhone?: string;
   trackingNumber?: string;
   trackingLink?: string;
+  deliveryMethod?: 'shop_owned' | 'third_party' | string;
+  thirdPartyDeliveryStatus?: string | null;
+  thirdPartyProviderStatus?: string | null;
   items: OrderItem[];
   quantity: number;
   shopName?: string;
@@ -71,7 +90,9 @@ type Order = {
     shop_owner_status: string;
     finance_status: string;
     return_status: string;
+    can_execute_payout?: boolean;
     return_source?: string;
+    return_delivery_method?: 'shop_owned' | 'third_party' | null;
     customer_return_tracking_number?: string | null;
     customer_return_carrier?: string | null;
     customer_return_rider_name?: string | null;
@@ -86,6 +107,7 @@ type Order = {
     staff_return_shipped_at?: string | null;
     return_arranged_by_staff_at?: string | null;
     return_confirmed_at?: string | null;
+    return_logistics?: { leg_status?: string | null } | null;
     refund_executed_at?: string | null;
     rejection_reason?: string | null;
     flow_type?: string;
@@ -172,8 +194,6 @@ const escapeHtml = (value: string): string =>
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -198,12 +218,6 @@ const CheckCircleIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const CurrencyDollarIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
-
 const CalendarIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -213,18 +227,6 @@ const CalendarIcon: React.FC<{ className?: string }> = ({ className }) => (
 const MagnifyingGlassIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-  </svg>
-);
-
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
   </svg>
 );
 
@@ -275,8 +277,6 @@ const ChevronRightIcon: React.FC<{ className?: string }> = ({ className }) => (
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
@@ -295,20 +295,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -323,9 +313,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function JobOrdersPage() {
-  const { auth } = usePage().props as any;
+  const { auth, erpMode } = usePage().props as any;
+  const Layout = erpMode === true ? AppLayoutERP : AppLayoutShopOwner;
   const shopOwnerRegistrationType = String(auth?.shop_owner?.registration_type || auth?.registration_type || '').toLowerCase();
-  const isIndividualRegistration = shopOwnerRegistrationType !== 'company';
+  const isIndividualRegistration = shopOwnerRegistrationType === 'individual';
 
   const [error, setError] = useState<string | null>(null);
   const [selectedTab, setSelectedTab] = useState<string>("pending");
@@ -409,7 +400,9 @@ export default function JobOrdersPage() {
             grand_total: grandTotal,
             paymentStatus: order.payment_status || 'pending',
             paymentMethod: order.payment_method || '',
-            status: order.status as any,
+            status: order.status as OrderStatus,
+            availableActions: parseOrderActions(order.available_actions),
+            ownerProjection: order.owner_projection || undefined,
             cancellation_reason: order.cancellation_reason || null,
             cancellation_note: order.cancellation_note || null,
             cancellation_other_reason_note: order.cancellation_other_reason_note || null,
@@ -420,6 +413,9 @@ export default function JobOrdersPage() {
             carrierPhone: order.carrier_phone || undefined,
             trackingNumber: order.tracking_number || undefined,
             trackingLink: order.tracking_link || undefined,
+            deliveryMethod: order.delivery_method || undefined,
+            thirdPartyDeliveryStatus: order.third_party_delivery_status || null,
+            thirdPartyProviderStatus: order.third_party_provider_status || null,
             items: order.items || [],
             quantity: order.items ? order.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0) : 0,
             shopName: order.shop?.shop_name || undefined,
@@ -524,6 +520,7 @@ export default function JobOrdersPage() {
     const processing = orders.filter(o => o.status === "processing").length;
     const shipped = orders.filter(o => o.status === "shipped").length;
     const delivered = orders.filter(o => o.status === "delivered").length;
+    const completed = orders.filter(o => o.status === "completed").length;
     const refund = orders.filter((o) =>
       o.status === "refund"
       || String(o.paymentStatus || '').toLowerCase() === 'refunded'
@@ -543,24 +540,8 @@ export default function JobOrdersPage() {
         return sum + Math.max(0, vatExcludedAmount - refundedAmount);
       }, 0);
 
-    return { total, pending, processing, shipped, delivered, refund, totalRevenue };
+    return { total, pending, processing, shipped, delivered, completed, refund, totalRevenue };
   }, [orders]);
-
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      "pending": "bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-700/40",
-      "processing": "bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40",
-      "shipped": "bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-700/40",
-      "delivered": "bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40",
-      "cancelled": "bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-700/40",
-      "refund": "bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40",
-    };
-    return colors[status] || "bg-gray-100 text-gray-800 ring-1 ring-inset ring-gray-200";
-  };
-
-  const formatStatusLabel = (status: string) => {
-    return status.charAt(0).toUpperCase() + status.slice(1);
-  };
 
   const formatOrderTotal = (total: string | number) => {
     if (typeof total === 'number' && Number.isFinite(total)) {
@@ -701,6 +682,13 @@ export default function JobOrdersPage() {
         };
       }
 
+      if (refundStatus === 'processing') {
+        return {
+          label: 'Refund Processing',
+          className: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40',
+        };
+      }
+
       if (returnStatus === 'received' && financeStatus === 'approved') {
         return {
           label: isIndividualRegistration ? 'Ready for Refund Payout' : 'Ready for Finance Refund',
@@ -722,12 +710,6 @@ export default function JobOrdersPage() {
         };
       }
 
-      if (refundStatus === 'processing') {
-        return {
-          label: 'Refund Processing',
-          className: 'bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:ring-blue-700/40',
-        };
-      }
     }
 
     if (paymentStatus === 'refunded') {
@@ -791,6 +773,8 @@ export default function JobOrdersPage() {
       setOrders((prev) =>
         prev.map((o) => (o.id === order.id ? { ...o, status: "processing", processedAt: new Date().toLocaleString() } : o))
       );
+      setIsViewModalOpen(false);
+      setViewOrder(null);
 
       await Swal.fire({
         title: "Order processed",
@@ -834,9 +818,21 @@ export default function JobOrdersPage() {
     const latestRefund = order.latest_refund;
     if (!latestRefund) return false;
 
-    return String(latestRefund.flow_type || '').toLowerCase() === 'request_approval'
-      && ['pending_staff_pickup', 'in_transit'].includes(String(latestRefund.return_status || '').toLowerCase())
-      && !['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase());
+    if (String(latestRefund.flow_type || '').toLowerCase() !== 'request_approval'
+      || ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase())) {
+      return false;
+    }
+
+    const returnStatus = String(latestRefund.return_status || '').toLowerCase();
+    const returnMethod = String(latestRefund.return_delivery_method || '').toLowerCase();
+    const isStaffPendingPickup = String(latestRefund.return_source || '').toLowerCase() === 'staff'
+      && returnStatus === 'pending_staff_pickup';
+    if (returnMethod === 'shop_owned') {
+      return returnStatus === 'in_transit'
+        && String(latestRefund.return_logistics?.leg_status || '').toLowerCase() === 'delivered';
+    }
+
+    return returnStatus === 'in_transit' || isStaffPendingPickup;
   };
 
   const canArrangeReturnPickup = (order: Order) => {
@@ -941,6 +937,7 @@ export default function JobOrdersPage() {
           'X-CSRF-TOKEN': csrfData.csrf_token,
         },
         body: JSON.stringify({
+          delivery_method: 'third_party',
           tracking_number: trackingNumber,
           carrier_company: carrierCompany,
           rider_name: riderName,
@@ -1003,6 +1000,9 @@ export default function JobOrdersPage() {
             carrierPhone: item.carrier_phone || undefined,
             trackingNumber: item.tracking_number || undefined,
             trackingLink: item.tracking_link || undefined,
+            deliveryMethod: item.delivery_method || undefined,
+            thirdPartyDeliveryStatus: item.third_party_delivery_status || null,
+            thirdPartyProviderStatus: item.third_party_provider_status || null,
             eta: item.eta || undefined,
             pickup_enabled: item.pickup_enabled || false,
             pickup_enabled_at: item.pickup_enabled_at || null,
@@ -1064,7 +1064,7 @@ export default function JobOrdersPage() {
               .filter((line) => line.order_item_id > 0 && line.approved_qty > 0)
           : []);
 
-    let lineDispositionsPayload: Array<{ order_item_id: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
+    let lineDispositionsPayload: Array<{ order_item_id: number; approved_qty: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
 
     if (refundLines.length > 0) {
       const result = await Swal.fire({
@@ -1098,7 +1098,7 @@ export default function JobOrdersPage() {
         confirmButtonColor: '#2563eb',
         focusConfirm: false,
         preConfirm: () => {
-          const lineDispositions: Array<{ order_item_id: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
+          const lineDispositions: Array<{ order_item_id: number; approved_qty: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
 
           for (let index = 0; index < refundLines.length; index += 1) {
             const line = refundLines[index];
@@ -1112,6 +1112,7 @@ export default function JobOrdersPage() {
 
             lineDispositions.push({
               order_item_id: line.order_item_id,
+              approved_qty: line.approved_qty,
               inspection_disposition: disposition,
             });
           }
@@ -1213,10 +1214,13 @@ export default function JobOrdersPage() {
             product: item.items?.[0]?.product_name || '',
             carrierCompany: item.carrier_company || undefined,
             carrierName: item.carrier_name || undefined,
-            carrierPhone: item.carrier_phone || undefined,
-            trackingNumber: item.tracking_number || undefined,
-            trackingLink: item.tracking_link || undefined,
-            eta: item.eta || undefined,
+              carrierPhone: item.carrier_phone || undefined,
+              trackingNumber: item.tracking_number || undefined,
+              trackingLink: item.tracking_link || undefined,
+              deliveryMethod: item.delivery_method || undefined,
+              thirdPartyDeliveryStatus: item.third_party_delivery_status || null,
+              thirdPartyProviderStatus: item.third_party_provider_status || null,
+              eta: item.eta || undefined,
             pickup_enabled: item.pickup_enabled || false,
             pickup_enabled_at: item.pickup_enabled_at || null,
             retail_pos_refund: item.retail_pos_refund || null,
@@ -1229,13 +1233,76 @@ export default function JobOrdersPage() {
 
       await Swal.fire('Confirmed', data?.message || 'Returned item marked as received.', 'success');
       window.location.assign(
-        `/shop-owner/refund-approvals?status=Approved&focus_order=${encodeURIComponent(order.order_number)}`,
+        `/shop-owner/erp/retail/orders?tab=refund&focus_order=${encodeURIComponent(order.order_number)}`,
       );
       return;
     } catch (error) {
       await Swal.fire({
         title: 'Failed',
         text: error instanceof Error ? error.message : 'Unable to confirm returned item.',
+        icon: 'error',
+        confirmButtonColor: '#2563eb',
+      });
+    }
+  };
+
+  const canExecuteRefundPayout = (order: Order): boolean => (
+    isIndividualRegistration
+      && String(order.latest_refund?.flow_type || '').toLowerCase() === 'request_approval'
+      && order.latest_refund?.can_execute_payout === true
+  );
+
+  const handleExecuteRefundPayout = async (order: Order) => {
+    const refund = order.latest_refund;
+    if (!refund || !canExecuteRefundPayout(order)) return;
+
+    const result = await Swal.fire({
+      title: 'Execute Refund Payout?',
+      text: `Release the refund for order ${order.order_number} to the customer's original payment method?`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Execute Refund',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#059669',
+    });
+
+    if (!result.isConfirmed) return;
+
+    try {
+      const csrfResponse = await fetch('/api/csrf-token', {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      const csrfData = await csrfResponse.json();
+
+      const response = await fetch(`/api/shop-owner/refunds/${refund.id}/execute-gateway-refund`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          'X-CSRF-TOKEN': csrfData.csrf_token,
+        },
+        body: JSON.stringify({}),
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.message || 'Unable to execute refund payout.');
+      }
+
+      await Swal.fire(
+        'Refund Payout Started',
+        data?.message || 'The refund payout has been submitted successfully.',
+        'success',
+      );
+      setIsViewModalOpen(false);
+      setViewOrder(null);
+      window.location.reload();
+    } catch (error) {
+      await Swal.fire({
+        title: 'Failed',
+        text: error instanceof Error ? error.message : 'Unable to execute refund payout.',
         icon: 'error',
         confirmButtonColor: '#2563eb',
       });
@@ -1480,6 +1547,9 @@ export default function JobOrdersPage() {
               carrierPhone: order.carrier_phone || undefined,
               trackingNumber: order.tracking_number || undefined,
               trackingLink: order.tracking_link || undefined,
+              deliveryMethod: order.delivery_method || undefined,
+              thirdPartyDeliveryStatus: order.third_party_delivery_status || null,
+              thirdPartyProviderStatus: order.third_party_provider_status || null,
               eta: order.eta || undefined,
               pickup_enabled: order.pickup_enabled || false,
               pickup_enabled_at: order.pickup_enabled_at || null,
@@ -1616,8 +1686,90 @@ export default function JobOrdersPage() {
     }
   };
 
+  const handleThirdPartyDelivery = async (
+    order: Order,
+    action: 'update' | 'in_transit' | 'delivered',
+  ) => {
+    let trackingNumberValue = order.trackingNumber || '';
+    if (action === 'update') {
+      const result = await Swal.fire({
+        title: 'Update courier tracking',
+        input: 'text',
+        inputValue: trackingNumberValue,
+        inputLabel: 'Tracking number',
+        inputPlaceholder: 'Enter the courier tracking number',
+        showCancelButton: true,
+        confirmButtonText: 'Save',
+        confirmButtonColor: '#2563eb',
+        inputValidator: (value) => value.trim() ? undefined : 'Tracking number is required.',
+      });
+      if (!result.isConfirmed) return;
+      trackingNumberValue = String(result.value || '').trim();
+    } else {
+      const label = action === 'in_transit' ? 'confirm the courier handoff' : 'mark this delivery as delivered';
+      const result = await Swal.fire({
+        title: 'Confirm courier update?',
+        text: 'This will ' + label + '.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonText: 'Confirm',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#2563eb',
+      });
+      if (!result.isConfirmed) return;
+    }
+
+    try {
+      const csrfResponse = await fetch('/api/csrf-token', {
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      if (!csrfResponse.ok) throw new Error('Failed to get CSRF token');
+      const { csrf_token: csrfToken } = await csrfResponse.json();
+      const response = await axios.post(
+        '/api/shop-owner/orders/' + order.id + '/third-party-delivery',
+        {
+          action,
+          carrier_company: order.carrierCompany,
+          carrier_name: order.carrierName,
+          carrier_phone: order.carrierPhone,
+          tracking_number: trackingNumberValue || undefined,
+          tracking_link: order.trackingLink,
+        },
+        {
+          headers: { 'X-CSRF-TOKEN': csrfToken },
+          withCredentials: true,
+        },
+      );
+      const nextLegStatus = response.data.leg?.status || order.thirdPartyDeliveryStatus;
+      const nextProviderStatus = response.data.leg?.provider_status || order.thirdPartyProviderStatus;
+      const nextOrder = {
+        ...order,
+        status: action === 'delivered' ? 'delivered' as OrderStatus : order.status,
+        trackingNumber: trackingNumberValue || order.trackingNumber,
+        thirdPartyDeliveryStatus: nextLegStatus,
+        thirdPartyProviderStatus: nextProviderStatus,
+      };
+      setOrders((previous) => previous.map((item) => item.id === order.id ? nextOrder : item));
+      setViewOrder((previous) => previous?.id === order.id ? nextOrder : previous);
+      await Swal.fire({
+        title: 'Updated',
+        text: action === 'update' ? 'Courier tracking was updated.' : 'Third-party delivery status was updated.',
+        icon: 'success',
+        confirmButtonColor: '#2563eb',
+      });
+    } catch (error: any) {
+      await Swal.fire({
+        title: 'Unable to update delivery',
+        text: error.response?.data?.message || 'The third-party delivery update was not completed.',
+        icon: 'error',
+        confirmButtonColor: '#2563eb',
+      });
+    }
+  };
+
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Job Orders Retail" />
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
       
@@ -1630,21 +1782,13 @@ export default function JobOrdersPage() {
         </div>
       ) : (
         <div className="space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Customer Orders</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">Process and manage customer shoe orders</p>
-          </div>
-        </div>
+          <h1 className="sr-only">Customer Orders</h1>
 
         {/* Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard
             title="Pending Orders"
             value={stats.pending}
-            change={12}
-            changeType="increase"
             icon={ClipboardListIcon}
             color="warning"
             description="Awaiting processing"
@@ -1652,8 +1796,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Processing"
             value={stats.processing}
-            change={8}
-            changeType="increase"
             icon={ClockIcon}
             color="info"
             description="Currently being prepared"
@@ -1661,8 +1803,6 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Shipped"
             value={stats.shipped}
-            change={15}
-            changeType="increase"
             icon={CheckCircleIcon}
             color="success"
             description="Out for delivery"
@@ -1670,9 +1810,7 @@ export default function JobOrdersPage() {
           <MetricCard
             title="Total Revenue"
             value={`₱${stats.totalRevenue.toLocaleString()}`}
-            change={20}
-            changeType="increase"
-            icon={CurrencyDollarIcon}
+            icon={MoneyIcon}
             color="success"
             description="From all orders"
           />
@@ -1689,8 +1827,8 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("all")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "all"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
                   All Orders ({stats.total})
@@ -1699,51 +1837,61 @@ export default function JobOrdersPage() {
                   onClick={() => setSelectedTab("pending")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "pending"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Pending ({stats.pending})
+                  {ORDER_STATUS_PRESENTATION.pending.label} ({stats.pending})
                 </button>
                 <button
                   onClick={() => setSelectedTab("processing")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "processing"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Processing ({stats.processing})
+                  {ORDER_STATUS_PRESENTATION.processing.label} ({stats.processing})
                 </button>
                 <button
                   onClick={() => setSelectedTab("shipped")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "shipped"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Shipped ({stats.shipped})
+                  {ORDER_STATUS_PRESENTATION.shipped.label} ({stats.shipped})
                 </button>
                 <button
                   onClick={() => setSelectedTab("delivered")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "delivered"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Delivered ({stats.delivered})
+                  {ORDER_STATUS_PRESENTATION.delivered.label} ({stats.delivered})
+                </button>
+                <button
+                  onClick={() => setSelectedTab("completed")}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    selectedTab === "completed"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
+                  }`}
+                >
+                  {ORDER_STATUS_PRESENTATION.completed.label} ({stats.completed})
                 </button>
                 <button
                   onClick={() => setSelectedTab("refund")}
                   className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                     selectedTab === "refund"
-                      ? "bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400"
-                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/50"
+                      ? "bg-[#111111] text-white hover:bg-gray-800 dark:bg-[#111111] dark:text-white dark:hover:bg-gray-800"
+                      : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                   }`}
                 >
-                  Refund ({stats.refund})
+                  {ORDER_STATUS_PRESENTATION.refund.label} ({stats.refund})
                 </button>
               </div>
 
@@ -1873,9 +2021,8 @@ export default function JobOrdersPage() {
                       </td>
                       <td className="box-border px-4 py-4 align-top">
                         <div className="flex flex-col items-start gap-2 min-h-12">
-                          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${getStatusColor(order.status)}`}>
-                            <span className="size-1.5 rounded-full bg-current opacity-70" aria-hidden="true" />
-                            {formatStatusLabel(order.status)}
+                          <span className="inline-flex items-center text-xs font-semibold whitespace-nowrap text-gray-900 dark:text-gray-100">
+                            {getOrderStatusPresentation(order.status).label}
                           </span>
                         </div>
                       </td>
@@ -1883,11 +2030,11 @@ export default function JobOrdersPage() {
                         {(() => {
                           const refundReturn = getRefundReturnDisplay(order);
                           if (refundReturn.label === '-') {
-                            return <span className={refundReturn.className}>-</span>;
+                            return <span className="text-gray-900 dark:text-gray-100">-</span>;
                           }
 
                           return (
-                            <span className={`inline-flex items-center px-2.5 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${refundReturn.className}`}>
+                            <span className="inline-flex items-center text-xs font-semibold whitespace-nowrap text-gray-900 dark:text-gray-100">
                               {refundReturn.label}
                             </span>
                           );
@@ -1908,22 +2055,26 @@ export default function JobOrdersPage() {
                           >
                             <EyeIcon className="size-5" />
                           </button>
-                          {order.status === "pending" && (
+                          {isIndividualRegistration && order.availableActions?.includes('processing') && (
                             <button
                               type="button"
-                              onClick={() => handleProcessOrder(order)}
+                              onClick={() => handleViewOrder(order)}
                               className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              data-erp-icon-action="true"
+                              data-semantic-color="success"
                               title="Start processing"
                               aria-label="Start processing"
                             >
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
-                          {order.status === "processing" && (
+                          {isIndividualRegistration && order.availableActions?.includes('shipped') && (
                             <button
                               type="button"
                               onClick={() => handleShipOrder(order)}
                               className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              data-erp-icon-action="true"
+                              data-semantic-color="success"
                               title="Mark as shipped"
                               aria-label="Mark as shipped"
                             >
@@ -1934,11 +2085,26 @@ export default function JobOrdersPage() {
                             <button
                               type="button"
                               onClick={() => handleConfirmReturnReceived(order)}
-                              className="p-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              data-erp-icon-action="true"
+                              data-semantic-color="success"
                               title="Confirm returned item received"
                               aria-label="Confirm returned item received"
                             >
                               <CheckCircleIcon className="size-5" />
+                            </button>
+                          )}
+                          {canExecuteRefundPayout(order) && (
+                            <button
+                              type="button"
+                              onClick={() => handleExecuteRefundPayout(order)}
+                              className="p-2 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 rounded-lg transition-colors"
+                              data-erp-icon-action="true"
+                              data-semantic-color="success"
+                              title="Execute refund payout"
+                              aria-label="Execute refund payout"
+                            >
+                              <MoneyIcon className="size-5" />
                             </button>
                           )}
                           {canArrangeReturnPickup(order) && (
@@ -2032,7 +2198,7 @@ export default function JobOrdersPage() {
 
         {/* Arrange Return Pickup Modal */}
         {isReturnPickupModalOpen && returnPickupOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-3xl w-full max-h-[85vh] flex flex-col">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 shrink-0 flex items-center justify-between">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Arrange Return Pickup</h2>
@@ -2104,7 +2270,7 @@ export default function JobOrdersPage() {
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Carrier Company *</label>
-                    <select
+                    <MonochromeSelect
                       title="Carrier company"
                       value={returnCarrierCompany}
                       onChange={(e) => setReturnCarrierCompany(e.target.value)}
@@ -2113,7 +2279,7 @@ export default function JobOrdersPage() {
                       {returnCarrierCompanyOptions.map((option) => (
                         <option key={option} value={option}>{option}</option>
                       ))}
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2194,7 +2360,7 @@ export default function JobOrdersPage() {
 
         {/* Shipping Modal */}
         {isShippingModalOpen && selectedOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ship Order</h2>
@@ -2228,7 +2394,7 @@ export default function JobOrdersPage() {
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Estimated Delivery Date *
                     </label>
-                    <select
+                    <MonochromeSelect
                       title="Estimated delivery date"
                       value={etaPreset}
                       onChange={(e) => setEtaPreset(e.target.value)}
@@ -2238,14 +2404,14 @@ export default function JobOrdersPage() {
                       <option value="1-3 business days">1-3 business days</option>
                       <option value="2-4 business days">2-4 business days</option>
                       <option value="3-6 business days">3-6 business days</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                       Shipping Business *
                     </label>
-                    <select
+                    <MonochromeSelect
                       title="Shipping business"
                       value={carrierCompany}
                       onChange={(e) => setCarrierCompany(e.target.value)}
@@ -2254,7 +2420,7 @@ export default function JobOrdersPage() {
                       <option value="Lalamove">Lalamove</option>
                       <option value="J&T">J&amp;T</option>
                       <option value="Express Padala">Express Padala</option>
-                    </select>
+                    </MonochromeSelect>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2388,7 +2554,7 @@ export default function JobOrdersPage() {
 
         {/* View Order Modal */}
         {isViewModalOpen && viewOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
               <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between flex-shrink-0">
                 <div>
@@ -2618,6 +2784,16 @@ export default function JobOrdersPage() {
               </div>
 
               <div className="mt-6 px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 flex-shrink-0">
+                {isIndividualRegistration && viewOrder.status === "pending" && (
+                  <button
+                    type="button"
+                    onClick={() => handleProcessOrder(viewOrder)}
+                    aria-label="Process Order"
+                    className="px-4 py-2 border border-blue-600 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                  >
+                    Process Order
+                  </button>
+                )}
                 {canConfirmReturnReceived(viewOrder) && (
                   <button
                     type="button"
@@ -2626,6 +2802,16 @@ export default function JobOrdersPage() {
                     title="Confirm returned item received"
                   >
                     Confirm Return Received
+                  </button>
+                )}
+                {canExecuteRefundPayout(viewOrder) && (
+                  <button
+                    type="button"
+                    onClick={() => handleExecuteRefundPayout(viewOrder)}
+                    className="px-4 py-2 border border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors"
+                    title="Execute refund payout"
+                  >
+                    Execute Refund Payout
                   </button>
                 )}
                 {canArrangeReturnPickup(viewOrder) && (
@@ -2638,7 +2824,38 @@ export default function JobOrdersPage() {
                     Arrange Return Pickup
                   </button>
                 )}
-                {viewOrder.status === "shipped" && (
+                {isIndividualRegistration && viewOrder.status === 'shipped' && viewOrder.deliveryMethod === 'third_party' && (
+                  <>
+                    {viewOrder.thirdPartyDeliveryStatus !== 'delivered' && (
+                      <button
+                        type="button"
+                        onClick={() => handleThirdPartyDelivery(viewOrder, 'update')}
+                        className="px-4 py-2 border border-slate-600 bg-white hover:bg-slate-50 text-slate-900 rounded-lg font-medium transition-colors"
+                      >
+                        Update Tracking
+                      </button>
+                    )}
+                    {(!viewOrder.thirdPartyDeliveryStatus || viewOrder.thirdPartyDeliveryStatus === 'pending') && (
+                      <button
+                        type="button"
+                        onClick={() => handleThirdPartyDelivery(viewOrder, 'in_transit')}
+                        className="px-4 py-2 border border-blue-600 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
+                      >
+                        Confirm Courier Handoff
+                      </button>
+                    )}
+                    {viewOrder.thirdPartyDeliveryStatus === 'in_transit' && (
+                      <button
+                        type="button"
+                        onClick={() => handleThirdPartyDelivery(viewOrder, 'delivered')}
+                        className="px-4 py-2 border border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors"
+                      >
+                        Mark Delivered
+                      </button>
+                    )}
+                  </>
+                )}
+                {isIndividualRegistration && viewOrder.status === "shipped" && (
                   <button
                     type="button"
                     onClick={() => handleActivatePickup(viewOrder.id)}
@@ -2669,6 +2886,6 @@ export default function JobOrdersPage() {
         )}
       </div>
     )}
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

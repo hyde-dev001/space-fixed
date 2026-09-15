@@ -15,11 +15,14 @@ const Placeholder: React.FC<{ title: string; description?: string }> = ({ title,
 
 export default function HRPage() {
   const [error, setError] = useState<string | null>(null);
-  const { auth, url } = usePage().props as any;
+  const { auth, url, initialSection, initialEmployees } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
   const permissions = auth?.permissions || [];
 
   // Check if user has any HR permissions
   const hasHRAccess = () => {
+    if (ownerMode) return true;
+
     const hrPermissions = [
       'access-hr-dashboard',
       'access-employee-directory',
@@ -42,12 +45,12 @@ export default function HRPage() {
     // Extract section from the full URL including query parameters
     const fullUrl = typeof window !== 'undefined' ? window.location.href : url || "";
     const urlObj = new URL(fullUrl, 'http://localhost');
-    const value = urlObj.searchParams.get("section") || "dashboard";
+    const value = urlObj.searchParams.get("section") || initialSection || "dashboard";
     if (["dashboard", "employees", "attendance", "leaves", "overtime", "payroll-generate", "payroll-view", "salary-changes"].includes(value)) {
       return value as Section;
     }
     return "dashboard";
-  }, [url]);
+  }, [initialSection, url]);
 
   const headTitle = useMemo(() => {
     if (section === "employees") return "Employee Directory - Solespace ERP";
@@ -64,7 +67,7 @@ export default function HRPage() {
     try {
       switch (section) {
         case "employees":
-          return <EmployeeDirectory />;
+          return <EmployeeDirectory employees={initialEmployees} />;
         case "attendance":
           return <AttendanceRecords />;
         case "leaves":

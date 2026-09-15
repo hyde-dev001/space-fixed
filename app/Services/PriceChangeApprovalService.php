@@ -212,8 +212,9 @@ class PriceChangeApprovalService
             title: 'New Price Change Request',
             message: "{$payload['product_name']}: ₱{$payload['old_price']} → ₱{$payload['new_price']} needs Finance review.",
             data: $payload,
-            actionUrl: '/erp/finance',
-            priority: 'medium'
+            actionUrl: $this->financePriceChangeActionUrl($priceChange->id),
+            priority: 'medium',
+            requiresAction: true,
         );
     }
 
@@ -236,21 +237,8 @@ class PriceChangeApprovalService
                     title: 'Price Change Approved and Applied',
                     message: "{$payload['product_name']} price was updated from ₱{$payload['old_price']} to ₱{$payload['new_price']}.",
                     data: $payload,
-                    actionUrl: '/erp/finance',
+                    actionUrl: $this->financePriceChangeActionUrl($priceChange->id),
                     shopId: $shopOwnerId
-                );
-            }
-
-            // Owner-approval bypass flow: keep shop owner informed when Finance finalizes directly.
-            if ($approval->total_levels === 1 && $previousLevel === 1) {
-                $this->notificationService->sendToShopOwner(
-                    shopOwnerId: $shopOwnerId,
-                    type: NotificationType::PRICE_CHANGE_REQUEST,
-                    title: 'Price Change Finalized by Finance',
-                    message: "{$payload['product_name']} was approved and applied directly by Finance (owner approval disabled).",
-                    data: $payload,
-                    actionUrl: '/shop-owner/price-approvals',
-                    priority: 'medium'
                 );
             }
 
@@ -264,8 +252,9 @@ class PriceChangeApprovalService
                 title: 'Price Change Awaiting Your Approval',
                 message: "{$payload['product_name']}: ₱{$payload['old_price']} → ₱{$payload['new_price']} now needs shop owner approval.",
                 data: $payload,
-                actionUrl: '/shop-owner/price-approvals',
-                priority: 'medium'
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('product_price_change', $priceChange->id),
+                priority: 'medium',
+                requiresAction: true,
             );
 
             return;
@@ -279,8 +268,9 @@ class PriceChangeApprovalService
                 title: 'Price Change Returned to Finance',
                 message: "{$payload['product_name']} was approved by shop owner and now needs final Finance approval.",
                 data: $payload,
-                actionUrl: '/erp/finance',
-                priority: 'medium'
+                actionUrl: $this->financePriceChangeActionUrl($priceChange->id),
+                priority: 'medium',
+                requiresAction: true,
             );
         }
     }
@@ -301,10 +291,15 @@ class PriceChangeApprovalService
                 title: 'Price Change Request Rejected',
                 message: "{$payload['product_name']} price change was rejected. Reason: {$comments}",
                 data: $payload,
-                actionUrl: '/erp/finance',
+                actionUrl: $this->financePriceChangeActionUrl($priceChange->id),
                 shopId: $shopOwnerId
             );
         }
+    }
+
+    private function financePriceChangeActionUrl(int|string $priceChangeId): string
+    {
+        return "/finance?section=shoe-pricing&price_change=" . urlencode((string) $priceChangeId);
     }
 
     private function buildPriceChangeNotificationData(

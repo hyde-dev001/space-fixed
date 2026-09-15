@@ -13,19 +13,15 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        if (!app()->environment('production')) {
+        if (! app()->environment('production')) {
             User::factory(120)->create();
         }
 
         $this->call([
             ShopOwnerSeeder::class,
             RolesAndPermissionsSeeder::class,
-            RepairMaterialSeeder::class,
-            RepairServiceSeeder::class,
-            RepairPackageSeeder::class,
             EmployeeSeeder::class,
             PayrollMasterDataSeeder::class,
-            CustomerSeeder::class,
             PremiumPlanSeeder::class,
             TaxRateSeeder::class,
             PayrollStatutoryTaxRateSeeder::class,

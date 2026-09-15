@@ -6,14 +6,21 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\ShopOwner;
+use App\Models\Approval;
 use App\Models\Employee;
 use App\Models\HR\Payroll;
 use App\Models\HR\AttendanceRecord;
 use App\Models\HR\LeaveRequest;
+use App\Models\HR\PayrollComponent;
+use App\Models\HR\ThirteenthMonthAccrual;
+use App\Services\HR\PayrollService;
+use App\Services\OwnerActionCenter\Adapters\PayslipAttentionAdapter;
+use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Carbon\Carbon;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class PayrollControllerTest extends TestCase
 {
@@ -107,6 +114,7 @@ class PayrollControllerTest extends TestCase
         ]);
 
         Permission::findOrCreate('access-payslip-generation', 'user');
+        Permission::findOrCreate('access-payslip-approval', 'user');
         $this->hrUser->givePermissionTo('access-payslip-generation');
 
         $this->employee = Employee::factory()->create([
@@ -138,6 +146,77 @@ class PayrollControllerTest extends TestCase
             'payroll_period' => $period,
             'status' => 'pending',
         ]);
+    }
+
+    #[Test]
+    public function test_generated_payroll_enters_owner_approval_workflow_and_notifies_owner(): void
+    {
+        Role::findOrCreate('shop-owner', 'user');
+        Role::findOrCreate('finance', 'user');
+        $ownerUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'role' => 'Shop Owner',
+        ]);
+        $ownerUser->assignRole('shop-owner');
+        $financeUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'role' => 'Finance',
+        ]);
+        $financeUser->assignRole('finance');
+        $financeUser->givePermissionTo('access-payslip-approval');
+
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll', $this->payrollPayload([
+                'payrollPeriod' => now()->addMonth()->format('Y-m'),
+            ]));
+
+        $response->assertCreated();
+
+        $payroll = Payroll::query()->latest('id')->firstOrFail();
+
+        $this->assertNotNull($payroll->approval_id);
+        $this->assertSame('v4_multi_level', $payroll->approval_workflow_version);
+        $this->assertSame('pending', $payroll->approval_status);
+        $this->assertDatabaseHas('approvals', [
+            'id' => $payroll->approval_id,
+            'approvable_type' => Payroll::class,
+            'approvable_id' => $payroll->id,
+            'shop_owner_id' => $ownerUser->id,
+            'current_approver_role' => 'finance',
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($financeUser, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payroll->id}/approve", [
+                'notes' => 'Finance review complete',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $this->shopOwner->id,
+            'title' => 'Payslip Awaiting Shop Owner Approval',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=payslip:{$payroll->id}",
+        ]);
+
+        $ownerQueue = app(PayslipAttentionAdapter::class)->read(
+            $this->shopOwner,
+            new OwnerAttentionQuery(perPage: 20),
+        );
+
+        $this->assertCount(1, $ownerQueue->items);
+        $this->assertSame($payroll->id, $ownerQueue->items[0]->sourceId);
+    }
+
+    #[Test]
+    public function test_routine_payroll_rejects_inactive_employee_with_policy_error(): void
+    {
+        $this->employee->update(['status' => 'inactive']);
+
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll', $this->payrollPayload());
+
+        $response->assertStatus(422)
+            ->assertJsonPath('code', 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL');
     }
 
     #[Test]
@@ -356,6 +435,13 @@ class PayrollControllerTest extends TestCase
         $this->assertEquals(780.0, (float) $previewCalculation['performance_bonus']);
         $this->assertEquals(750.0, (float) $previewCalculation['other_allowances']);
 
+        Role::findOrCreate('shop-owner', 'user');
+        $ownerUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'role' => 'Shop Owner',
+        ]);
+        $ownerUser->assignRole('shop-owner');
+
         $generateResponse = $this->actingAs($this->hrUser, 'user')
             ->postJson('/api/hr/payroll/batch/generate', [
                 'payrollPeriod' => $period,
@@ -376,6 +462,8 @@ class PayrollControllerTest extends TestCase
         $this->assertTrue($payroll->components->contains('component_name', 'Sales Commission'));
         $this->assertTrue($payroll->components->contains('component_name', 'Performance Bonus'));
         $this->assertTrue($payroll->components->contains('component_name', 'Other Allowances'));
+        $this->assertNotNull($payroll->approval_id);
+        $this->assertSame('v4_multi_level', $payroll->approval_workflow_version);
     }
 
     #[Test]
@@ -511,6 +599,50 @@ class PayrollControllerTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    #[Test]
+    public function test_explicit_thirteenth_month_release_can_include_inactive_employee_with_owed_balance(): void
+    {
+        $year = 2025;
+        $this->employee->update(['status' => 'inactive']);
+        $otherApprover = User::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
+
+        $payroll = $this->createPayroll([
+            'payroll_period' => "{$year}-12",
+            'pay_period_start' => "{$year}-12-01",
+            'pay_period_end' => "{$year}-12-31",
+            'status' => 'approved',
+            'approval_status' => 'approved',
+            'approved_by' => $this->hrUser->id,
+            'final_approved_by' => $otherApprover->id,
+        ]);
+
+        ThirteenthMonthAccrual::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'employee_id' => $this->employee->id,
+            'payroll_id' => $payroll->id,
+            'accrual_year' => $year,
+            'accrual_month' => 11,
+            'accrual_amount' => 1000,
+            'release_amount' => 0,
+            'status' => 'accrued',
+        ]);
+
+        $result = app(PayrollService::class)->releaseThirteenthMonth(
+            $this->shopOwner->id,
+            $year,
+            $this->hrUser->id,
+            [$this->employee->id],
+            ['release_date' => "{$year}-12-31"],
+        );
+
+        $this->assertSame(1, $result['processed_count']);
+        $this->assertSame('released', $result['items'][0]['status']);
+        $this->assertDatabaseHas('hr_payroll_components', [
+            'payroll_id' => $payroll->id,
+            'component_code' => PayrollComponent::CODE_13TH_RELEASE,
+        ]);
     }
 
     #[Test]

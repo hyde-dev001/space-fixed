@@ -1,5 +1,6 @@
 // SVG icons - using string paths instead of React components for better compatibility
 import React from "react";
+import { MoneyIcon } from "../components/common/MoneyIcon";
 
 export const IconPaths = {
   plus: "./plus.svg",
@@ -117,7 +118,8 @@ export const ChatIcon = DummyIcon;
 export const MoreDotIcon = DummyIcon;
 export const AlertHexaIcon = DummyIcon;
 export const ErrorHexaIcon = DummyIcon;
-export const CurrencyDollarIcon = DummyIcon;
+export { MoneyIcon };
+export const CurrencyDollarIcon = MoneyIcon;
 export const TableIcon = DummyIcon;
 
 // Add Google Icon component

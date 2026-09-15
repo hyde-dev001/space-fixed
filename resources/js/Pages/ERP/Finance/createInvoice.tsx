@@ -1,4 +1,5 @@
-import { Head, router } from "@inertiajs/react";
+import MonochromeSelect from "@/components/form/Select";
+import { Head, router, usePage } from "@inertiajs/react";
 import React, { useMemo, useState, useEffect } from "react";
 import Swal from "sweetalert2";
 import { useTaxRates } from "../../../hooks/useFinanceQueries";
@@ -52,6 +53,16 @@ type ProductRow = {
 	discount: number;
 };
 
+// derived due date rules
+const deriveDueDate = (date: string, condition: string): string => {
+	let days = 0;
+	if (condition === 'Net 7') days = 7;
+	if (condition === 'Net 15') days = 15;
+	if (condition === 'Net 30') days = 30;
+	const value = new Date(date + 'T00:00:00Z');
+	value.setUTCDate(value.getUTCDate() + days);
+	return value.toISOString().slice(0, 10);
+};
 const paymentConditions = [
 	"Net 7",
 	"Net 15",
@@ -60,6 +71,9 @@ const paymentConditions = [
 ];
 
 export default function FinanceCreateInvoice() {
+	const { auth, ownerMode: pageOwnerMode } = usePage().props as any;
+	const ownerMode = pageOwnerMode === true || auth?.erpActor?.ownerMode === true;
+	const invoicesUrl = ownerMode ? '/shop-owner/erp/finance/invoices' : '/finance?section=invoice-generation';
 	const api = useFinanceApi();
 	const [rows, setRows] = useState<ProductRow[]>([]);
 	const [editingRow, setEditingRow] = useState<ProductRow | null>(null);
@@ -73,7 +87,7 @@ export default function FinanceCreateInvoice() {
 	const [loading, setLoading] = useState(false);
 
 	// React Query hooks - automatically handle loading, caching, refetching
-	const { data: taxRates = [], isLoading: isLoadingTaxRates } = useTaxRates();
+	const { data: taxRates = [], isLoading: isLoadingTaxRates, isError: isTaxRatesError } = useTaxRates();
 
 	const [invoiceNumber, setInvoiceNumber] = useState("INV-" + Date.now());
 	const [customerName, setCustomerName] = useState("");
@@ -95,6 +109,10 @@ export default function FinanceCreateInvoice() {
 			}
 		}
 	}, [taxRates, selectedTaxId]);
+
+	useEffect(() => {
+		setDueDate(deriveDueDate(issueDate, paymentCondition));
+	}, [issueDate, paymentCondition]);
 
 	const totals = useMemo(() => {
 		const subtotal = rows.reduce((sum, row) => {
@@ -141,7 +159,6 @@ export default function FinanceCreateInvoice() {
 			showCancelButton: true,
 			confirmButtonText: "Add Product",
 			cancelButtonText: "Cancel",
-			confirmButtonColor: "#2563eb",
 			reverseButtons: true,
 		});
 		if (!confirm.isConfirmed) return;
@@ -305,11 +322,12 @@ export default function FinanceCreateInvoice() {
 				customer_email: customerEmail || null,
 				date: issueDate,
 				due_date: dueDate || null,
+				payment_condition: paymentCondition,
 				notes: additionalInfo || null,
 				items: items,
 			};
 
-			const response = await api.post("/api/finance/session/invoices", invoiceData);
+			const response = await api.post("/api/finance/invoices", invoiceData);
 			if (!response.ok) {
 				throw new Error(response.error || "Failed to create invoice");
 			}
@@ -321,7 +339,7 @@ export default function FinanceCreateInvoice() {
 				confirmButtonColor: "#2563eb",
 			});
 
-		router.visit('/finance?section=invoice-generation');
+			router.visit(invoicesUrl);
 		} catch (error) {
 			await Swal.fire({
 				title: "Error",
@@ -337,27 +355,22 @@ export default function FinanceCreateInvoice() {
 	return (
 		<>
 			<Head title="Create Invoice - Solespace ERP" />
-			<div className="min-h-screen bg-gray-50 dark:bg-gray-900 py-6 px-4 sm:px-6 lg:px-8">
-				<div className="max-w-7xl mx-auto space-y-6 pb-20">
-					<div>
+			<div className="min-h-screen bg-white dark:bg-gray-900 py-6 px-4 sm:px-6 lg:px-8">
+				<div className="w-full space-y-6 pb-20">
+					<div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 						<a
-							href="/finance?section=invoice-generation"
+							href={invoicesUrl}
 							className="inline-flex items-center gap-2 text-sm font-semibold text-gray-600 hover:text-gray-700"
 						>
 							<ArrowLeftIcon className="w-4 h-4" />
 							Back to invoice page
 						</a>
-					</div>
-					<div className="flex items-center justify-between">
-						<div>
-							<h1 className="text-2xl font-bold text-gray-900 dark:text-white">Create Invoice</h1>
-							<p className="text-sm text-gray-600 dark:text-gray-400">Generate a new invoice and add line items.</p>
-						</div>
-						<div className="flex items-center gap-3">
+						<div className="flex items-center gap-3 sm:ml-auto">
+							<h1 className="sr-only">Create Invoice</h1>
 							<button
 								onClick={handleSaveInvoice}
 								disabled={loading}
-								className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 shadow-sm inline-flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+								className="inline-flex items-center gap-2 rounded-lg bg-gray-950 px-4 py-2 text-white shadow-sm hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
 							>
 								<PlusIcon className="w-4 h-4" />
 								{loading ? "Saving..." : "Save Invoice"}
@@ -420,7 +433,7 @@ export default function FinanceCreateInvoice() {
 						<div className="grid grid-cols-1 md:grid-cols-1 gap-4">
 							<div className="flex flex-col gap-2">
 								<label className="text-sm text-gray-700 dark:text-gray-300">Payment Condition</label>
-								<select
+								<MonochromeSelect
 									value={paymentCondition}
 									onChange={(e) => {
 										setPaymentCondition(e.target.value);
@@ -433,7 +446,7 @@ export default function FinanceCreateInvoice() {
 											{pc}
 										</option>
 									))}
-								</select>
+								</MonochromeSelect>
 							</div>
 						</div>
 
@@ -455,6 +468,7 @@ export default function FinanceCreateInvoice() {
 								<input
 									type="date"
 									value={dueDate}
+									readOnly
 									onChange={(e) => {
 										setDueDate(e.target.value);
 										if (fieldErrors.dueDate) setFieldErrors((prev) => ({ ...prev, dueDate: false }));
@@ -476,7 +490,7 @@ export default function FinanceCreateInvoice() {
 						</div>
 					</div>
 
-					<div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+					<div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-visible">
 						<div className="overflow-x-auto">
 							<table className="min-w-full text-sm">
 								<thead className="bg-gray-50 dark:bg-gray-900/40 text-gray-600 dark:text-gray-300">
@@ -580,10 +594,13 @@ export default function FinanceCreateInvoice() {
 								</div>
 							</div>
 
+							{isTaxRatesError && (
+								<p className="text-xs text-red-600 dark:text-red-400">Tax rates could not be loaded. Check your Finance tax access.</p>
+							)}
 							{taxRates.length > 0 && (
 								<div className="col-span-full mt-3">
 									<label className="text-xs text-gray-600 dark:text-gray-400">Tax Rate</label>
-									<select
+									<MonochromeSelect
 										value={selectedTaxId}
 										onChange={(e) => setSelectedTaxId(e.target.value)}
 										className="w-full rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm text-gray-900 dark:text-white mt-1"
@@ -607,14 +624,14 @@ export default function FinanceCreateInvoice() {
 														</option>
 													);
 												})}
-									</select>
+									</MonochromeSelect>
 								</div>
 							)}
 						</div>
 					</div>
 
 					{isEditModalOpen && editingRow && (
-						<div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4">
+						<div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 erp-modal-backdrop">
 							<div className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 shadow-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
 								<div className="flex items-center justify-between">
 									<h3 className="text-lg font-semibold text-gray-900 dark:text-white">Edit Product</h3>

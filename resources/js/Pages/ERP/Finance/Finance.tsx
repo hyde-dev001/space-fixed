@@ -30,7 +30,8 @@ type Section =
   | "refund-approvals";
 
 export default function FinancePage() {
-  const { auth, url, purchaseRequests } = usePage().props as any;
+  const { auth, url, purchaseRequests, ownerMode: ownerModeProp, initialSection } = usePage().props as any;
+  const ownerMode = ownerModeProp === true || auth?.erpActor?.ownerMode === true;
   const userRole = auth?.user?.role;
   const [error, setError] = useState<string | null>(null);
   const [isPurchaseRequestModalOpen, setIsPurchaseRequestModalOpen] = useState(false);
@@ -58,16 +59,18 @@ export default function FinancePage() {
 
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
-      const value = urlParams.get("section") || "invoice-generation";
+      const value = initialSection || urlParams.get("section") || "invoice-generation";
       const allowed = allowedSectionsByBusiness[businessScope];
       if (allowed.includes(value as Section)) return value as Section;
       return "invoice-generation";
     }
-    return "invoice-generation";
-  }, [normalizedBusinessType]);
+    return initialSection && allowedSectionsByBusiness.unknown.includes(initialSection as Section)
+      ? initialSection as Section
+      : "invoice-generation";
+  }, [initialSection, normalizedBusinessType]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (typeof window === 'undefined' || ownerMode) return;
 
     const urlParams = new URLSearchParams(window.location.search);
     const currentSection = urlParams.get('section') as Section | null;
@@ -81,7 +84,7 @@ export default function FinancePage() {
       const nextUrl = `${window.location.pathname}?${urlParams.toString()}`;
       window.history.replaceState({}, '', nextUrl);
     }
-  }, [normalizedBusinessType]);
+  }, [normalizedBusinessType, ownerMode]);
 
   const headTitle = useMemo(() => {
     if (section === "invoice-generation") return "Invoices - Solespace ERP";
@@ -100,7 +103,7 @@ export default function FinancePage() {
       switch (section) {
         case "invoice-generation":
           // Check invoice permissions
-          if (!hasAnyPermission(auth, ['access-finance-invoices'])) {
+          if (!ownerMode && !hasAnyPermission(auth, ['access-finance-invoices'])) {
             return (
               <div className="flex items-center justify-center h-96">
                 <div className="text-center">
@@ -115,7 +118,7 @@ export default function FinancePage() {
           
         case "create-invoice":
           // Check create invoice permission
-          if (!hasPermission(auth, 'access-finance-invoices')) {
+          if (!ownerMode && !hasPermission(auth, 'access-finance-invoices')) {
             return (
               <div className="flex items-center justify-center h-96">
                 <div className="text-center">
@@ -130,7 +133,7 @@ export default function FinancePage() {
           
         case "expense-tracking":
           // Check expense permissions
-          if (!hasAnyPermission(auth, ['access-finance-expenses'])) {
+          if (!ownerMode && !hasAnyPermission(auth, ['access-finance-expenses'])) {
             return (
               <div className="flex items-center justify-center h-96">
                 <div className="text-center">

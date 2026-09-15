@@ -55,6 +55,7 @@ class PaymongoRefundService
                 'message' => 'Refund request accepted by PayMongo',
                 'status' => strtolower((string) ($attributes['status'] ?? 'processing')),
                 'refund_id' => $data['id'] ?? null,
+                'amount_in_centavos' => (int) ($attributes['amount'] ?? 0) ?: null,
                 'raw' => $response->json(),
             ];
         } catch (\Throwable $e) {
@@ -103,6 +104,7 @@ class PaymongoRefundService
                 'message' => 'Refund status fetched',
                 'status' => strtolower((string) ($attributes['status'] ?? 'processing')),
                 'refund_id' => (string) ($data['id'] ?? $refundId),
+                'amount_in_centavos' => (int) ($attributes['amount'] ?? 0) ?: null,
                 'raw' => $response->json(),
             ];
         } catch (\Throwable $e) {

@@ -16,6 +16,7 @@ class PurchaseRequest extends Model
     protected $fillable = [
         'pr_number',
         'shop_owner_id',
+        'stock_request_id',
         'supplier_id',
         'product_name',
         'inventory_item_id',
@@ -27,20 +28,29 @@ class PurchaseRequest extends Model
         'priority',
         'justification',
         'status',
+        'requires_owner_approval',
         'rejection_reason',
         'requested_by',
         'requested_date',
         'reviewed_by',
         'reviewed_date',
+        'approved_by_shop_owner_id',
+        'shop_owner_approved_at',
         'approved_by',
         'approved_date',
+        'rejected_by_user_id',
+        'rejected_by_shop_owner_id',
+        'rejected_at',
         'notes',
     ];
 
     protected $casts = [
         'requested_date' => 'datetime',
+        'requires_owner_approval' => 'boolean',
         'reviewed_date' => 'datetime',
+        'shop_owner_approved_at' => 'datetime',
         'approved_date' => 'datetime',
+        'rejected_at' => 'datetime',
         'unit_cost' => 'decimal:2',
         'total_cost' => 'decimal:2',
         'quantity' => 'integer',
@@ -64,6 +74,11 @@ class PurchaseRequest extends Model
         return $this->belongsTo(Supplier::class);
     }
 
+    public function stockRequest(): BelongsTo
+    {
+        return $this->belongsTo(StockRequestApproval::class, 'stock_request_id');
+    }
+
     public function inventoryItem(): BelongsTo
     {
         return $this->belongsTo(InventoryItem::class);
@@ -84,9 +99,29 @@ class PurchaseRequest extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    public function shopOwnerApprover(): BelongsTo
+    {
+        return $this->belongsTo(ShopOwner::class, 'approved_by_shop_owner_id');
+    }
+
+    public function rejectedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'rejected_by_user_id');
+    }
+
+    public function rejectedByShopOwner(): BelongsTo
+    {
+        return $this->belongsTo(ShopOwner::class, 'rejected_by_shop_owner_id');
+    }
+
     public function purchaseOrders(): HasMany
     {
         return $this->hasMany(PurchaseOrder::class, 'pr_id');
+    }
+
+    public function purchaseOrderItems(): HasMany
+    {
+        return $this->hasMany(PurchaseOrderItem::class);
     }
 
     // Scopes
@@ -177,66 +212,94 @@ class PurchaseRequest extends Model
         return $this->save();
     }
 
-    public function approve(int $userId, ?string $notes = null, ?string $role = null, bool $requiresOwnerApproval = true): bool
+    public function reviewByFinance(User $actor, ?string $notes = null): bool
     {
-        // Finance initial approval
-        if ($this->status === 'pending_finance') {
-            $this->status = $requiresOwnerApproval ? 'pending_shop_owner' : 'approved';
-            $this->reviewed_by = $userId;
-            $this->reviewed_date = now();
-
-            if (!$requiresOwnerApproval) {
-                $this->approved_by = $userId;
-                $this->approved_date = now();
-            }
-            
-            if ($notes) {
-                $financePrefix = $requiresOwnerApproval ? 'Finance Initial: ' : 'Finance Final: ';
-                $this->notes = ($this->notes ? $this->notes . "\n\n" : '') . $financePrefix . $notes;
-            }
-
-            return $this->save();
-        }
-
-        // Shop Owner approval - forward back to Finance Final
-        if ($this->status === 'pending_shop_owner') {
-            $this->status = 'pending_finance_final';
-            
-            if ($notes) {
-                $this->notes = ($this->notes ? $this->notes . "\n\n" : '') . "Shop Owner: " . $notes;
-            }
-
-            return $this->save();
-        }
-
-        // Finance final approval
-        if ($this->status === 'pending_finance_final') {
-            $this->status = 'approved';
-            $this->approved_by = $userId;
-            $this->approved_date = now();
-
-            if ($notes) {
-                $this->notes = ($this->notes ? $this->notes . "\n\n" : '') . "Finance Final: " . $notes;
-            }
-
-            return $this->save();
-        }
-
-        return false;
-    }
-
-    public function reject(int $userId, string $reason): bool
-    {
-        if (!in_array($this->status, ['draft', 'pending_finance', 'pending_shop_owner', 'pending_finance_final'])) {
+        if ($this->status !== 'pending_finance'
+            || $actor->shop_owner_id !== $this->shop_owner_id
+            || $actor->id === $this->requested_by) {
             return false;
         }
 
-        $this->status = 'rejected';
-        $this->reviewed_by = $userId;
+        $this->status = $this->requires_owner_approval === false
+            ? 'pending_finance_final'
+            : 'pending_shop_owner';
+        $this->reviewed_by = $actor->id;
         $this->reviewed_date = now();
-        $this->rejection_reason = $reason;
+        $this->appendApprovalNote('Finance Initial', $notes);
 
         return $this->save();
+    }
+
+    public function approveByShopOwner(ShopOwner $actor, ?string $notes = null): bool
+    {
+        if ($this->status !== 'pending_shop_owner'
+            || $this->requires_owner_approval === false
+            || $actor->id !== $this->shop_owner_id) {
+            return false;
+        }
+
+        $this->status = 'pending_finance_final';
+        $this->approved_by_shop_owner_id = $actor->id;
+        $this->shop_owner_approved_at = now();
+        $this->appendApprovalNote('Shop Owner', $notes);
+
+        return $this->save();
+    }
+
+    public function releaseByFinance(User $actor, ?string $notes = null): bool
+    {
+        if ($this->status !== 'pending_finance_final'
+            || $actor->shop_owner_id !== $this->shop_owner_id
+            || $actor->id === $this->requested_by) {
+            return false;
+        }
+
+        $this->status = 'approved';
+        $this->approved_by = $actor->id;
+        $this->approved_date = now();
+        $this->appendApprovalNote('Finance Final', $notes);
+
+        return $this->save();
+    }
+
+    public function rejectByFinance(User $actor, string $reason): bool
+    {
+        if (!in_array($this->status, ['pending_finance', 'pending_finance_final'], true)
+            || $actor->shop_owner_id !== $this->shop_owner_id
+            || $actor->id === $this->requested_by) {
+            return false;
+        }
+
+        return $this->recordRejection($reason, $actor->id, null);
+    }
+
+    public function rejectByShopOwner(ShopOwner $actor, string $reason): bool
+    {
+        if ($this->status !== 'pending_shop_owner'
+            || $this->requires_owner_approval === false
+            || $actor->id !== $this->shop_owner_id) {
+            return false;
+        }
+
+        return $this->recordRejection($reason, null, $actor->id);
+    }
+
+    private function recordRejection(string $reason, ?int $userId, ?int $shopOwnerId): bool
+    {
+        $this->status = 'rejected';
+        $this->rejection_reason = $reason;
+        $this->rejected_by_user_id = $userId;
+        $this->rejected_by_shop_owner_id = $shopOwnerId;
+        $this->rejected_at = now();
+
+        return $this->save();
+    }
+
+    private function appendApprovalNote(string $stage, ?string $notes): void
+    {
+        if ($notes) {
+            $this->notes = ($this->notes ? $this->notes . "\n\n" : '') . "{$stage}: {$notes}";
+        }
     }
 
     public function convertToPurchaseOrder(array $data): ?PurchaseOrder

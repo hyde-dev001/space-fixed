@@ -42,6 +42,7 @@ enum OrderStatus: string
     public function label(): string
     {
         return match($this) {
+            self::SHIPPED => 'Shipped',
             self::PENDING => '⏳ Pending',
             self::PROCESSING => '⚙️ Processing',
             self::COMPLETED => '✅ Completed',
@@ -57,6 +58,7 @@ enum OrderStatus: string
     public function badgeClass(): string
     {
         return match($this) {
+            self::SHIPPED => 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200',
             self::PENDING => 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
             self::PROCESSING => 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
             self::COMPLETED => 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',

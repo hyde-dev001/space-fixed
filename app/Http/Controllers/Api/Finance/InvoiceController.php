@@ -8,31 +8,45 @@ use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
+use App\Services\Finance\InvoicePaymentService;
+use App\Support\Finance\FinanceDomainException;
+use App\Support\Finance\FinanceShopContext;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
+use Illuminate\Database\QueryException;
+use Carbon\CarbonImmutable;
 
 class InvoiceController extends Controller
 {
+    private const PAYMENT_CONDITIONS = ['Net 7', 'Net 15', 'Net 30', 'Due on receipt'];
     protected NotificationService $notificationService;
+    protected FinanceShopContext $shopContext;
 
-    public function __construct(NotificationService $notificationService)
+    public function __construct(
+        NotificationService $notificationService,
+        FinanceShopContext $shopContext,
+        InvoicePaymentService $paymentService,
+    )
     {
         $this->notificationService = $notificationService;
+        $this->shopContext = $shopContext;
+        $this->paymentService = $paymentService;
     }
+    protected InvoicePaymentService $paymentService;
     /**
      * List invoices with filtering
      */
     public function index(Request $request)
     {
         try {
-            $user = Auth::guard('user')->user();
-            
-            if (!$user) {
+            $shopOwnerId = $this->shopOwnerId();
+
+            if (!$shopOwnerId) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
-            
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
             
             if (!$shopOwnerId) {
                 return response()->json(['error' => 'No shop association found'], 403);
@@ -88,10 +102,14 @@ class InvoiceController extends Controller
             ->orderBy('date', 'desc')
             ->paginate($request->get('per_page', 15));
 
+        $invoices->setCollection($invoices->getCollection()->map(function (Invoice $invoice) use ($shopOwnerId) {
+            $invoice->setAttribute('payment_state', $this->paymentService->state($invoice, (int) $shopOwnerId));
+            return $invoice;
+        }));
+
         return response()->json($invoices);
         } catch (\Exception $e) {
-            Log::error('Error fetching invoices: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to load invoices', 'message' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'invoice.index');
         }
     }
 
@@ -100,21 +118,25 @@ class InvoiceController extends Controller
      */
     public function show($id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        $shopOwnerId = $this->shopOwnerId();
+        if (! $shopOwnerId) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
         
         // Include job order data when fetching single invoice
         $invoice = Invoice::withTrashed()
             ->where('shop_id', $shopOwnerId)
             ->with([
                 'items', 
-                'journalEntry.lines',
                 'jobOrder' => function($query) {
                     $query->select('id', 'order_number', 'customer_id', 'status', 'payment_status', 'total_amount', 'shipping_fee', 'vat_amount', 'vat_rate', 'created_at', 'updated_at');
                 }
             ])
             ->findOrFail($id);
-        return response()->json($invoice);
+        $payload = $invoice->toArray();
+        $payload['payment_state'] = $this->paymentService->state($invoice, (int) $shopOwnerId);
+
+        return response()->json($payload);
     }
 
     /**
@@ -128,6 +150,7 @@ class InvoiceController extends Controller
             'customer_email' => 'nullable|email',
             'date' => 'required|date',
             'due_date' => 'nullable|date|after_or_equal:date',
+            'payment_condition' => ['nullable', 'string', Rule::in(self::PAYMENT_CONDITIONS)],
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.description' => 'required|string',
@@ -136,9 +159,13 @@ class InvoiceController extends Controller
             'items.*.tax_rate' => 'nullable|numeric|min:0|max:100',
         ]);
 
+        $paymentCondition = $data['payment_condition'] ?? null;
+        if ($paymentCondition) {
+            $data['due_date'] = $this->dueDateForCondition($data['date'], $paymentCondition);
+        }
+
         try {
-            $user = Auth::guard('user')->user();
-            $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+            $shopOwnerId = $this->shopOwnerId();
             
             if (!$shopOwnerId) {
                 return response()->json(['error' => 'No shop association found'], 403);
@@ -170,7 +197,8 @@ class InvoiceController extends Controller
                 'notes' => $data['notes'] ?? null,
                 'shop_id' => $shopOwnerId,
                 'meta' => [
-                    'created_by' => $user->id,
+                    'created_by' => $this->actorUserId(),
+                    'payment_condition' => $paymentCondition,
                 ],
             ]);
 
@@ -186,12 +214,11 @@ class InvoiceController extends Controller
                     'unit_price' => $item['unit_price'],
                     'tax_rate' => $item['tax_rate'] ?? 0,
                     'amount' => $itemAmount + $itemTax,
-                    'account_id' => null,
                 ]);
             }
 
             // Audit log
-            $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+            $actorUserId = $this->actorUserId();
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $actorUserId,
@@ -217,8 +244,7 @@ class InvoiceController extends Controller
             return response()->json($invoice->load('items'), 201);
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Invoice creation failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to create invoice', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'invoice.create', 500, ['shop_id' => $shopOwnerId ?? null]);
         }
     }
 
@@ -227,8 +253,7 @@ class InvoiceController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        $shopOwnerId = $this->shopOwnerId();
         if (! $shopOwnerId) {
             return response()->json(['error' => 'No shop association found'], 403);
         }
@@ -242,7 +267,9 @@ class InvoiceController extends Controller
         $data = $request->validate([
             'customer_name' => 'sometimes|string|max:255',
             'customer_email' => 'sometimes|nullable|email',
+            'date' => 'sometimes|date',
             'due_date' => 'sometimes|nullable|date',
+            'payment_condition' => ['sometimes', 'nullable', 'string', Rule::in(self::PAYMENT_CONDITIONS)],
             'notes' => 'sometimes|nullable|string',
             'items' => 'sometimes|array|min:1',
             'items.*.description' => 'required_with:items|string',
@@ -254,8 +281,25 @@ class InvoiceController extends Controller
         try {
             DB::beginTransaction();
 
+            $hasPaymentCondition = array_key_exists('payment_condition', $data);
+            $paymentCondition = $hasPaymentCondition
+                ? $data['payment_condition']
+                : data_get($invoice->meta, 'payment_condition');
+            if ($paymentCondition) {
+                $data['due_date'] = $this->dueDateForCondition(
+                    $data['date'] ?? $invoice->date->toDateString(),
+                    $paymentCondition
+                );
+            }
+            unset($data['payment_condition']);
+
             // Update header
             $invoice->update(array_filter($data, fn($k) => !in_array($k, ['items']), ARRAY_FILTER_USE_KEY));
+            if ($hasPaymentCondition) {
+                $meta = $invoice->meta ?? [];
+                $meta['payment_condition'] = $paymentCondition;
+                $invoice->update(['meta' => $meta]);
+            }
 
             // Update items if provided
             if (!empty($data['items'])) {
@@ -277,7 +321,6 @@ class InvoiceController extends Controller
                         'unit_price' => $item['unit_price'],
                         'tax_rate' => $item['tax_rate'] ?? 0,
                         'amount' => $itemAmount + $itemTax,
-                        'account_id' => null,
                     ]);
                 }
 
@@ -285,7 +328,7 @@ class InvoiceController extends Controller
             }
 
             // Audit log
-            $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+            $actorUserId = $this->actorUserId();
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $actorUserId,
@@ -300,68 +343,18 @@ class InvoiceController extends Controller
             return response()->json($invoice->load('items'));
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error('Invoice update failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to update invoice', 'error' => $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'invoice.update', 500, ['record_id' => $id]);
         }
     }
 
-    /**
-     * Post invoice to ledger (creates journal entry and transitions status)
-     */
+    /** Compatibility endpoint retained during the Finance API consolidation. */
     public function post(Request $request, $id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
-        if (! $shopOwnerId) {
-            return response()->json(['error' => 'No shop association found'], 403);
-        }
-
-        $invoice = Invoice::where('shop_id', $shopOwnerId)->findOrFail($id);
-
-        if ($invoice->status === 'posted') {
-            return response()->json(['message' => 'Invoice already posted'], 422);
-        }
-
-        try {
-            DB::beginTransaction();
-
-            // Lightweight posting: mark invoice as posted without account/journal dependency
-            try {
-                $invoice->update(['status' => 'posted']);
-            } catch (\Throwable $statusError) {
-                // Backward-compat: some DBs may not include `posted` in enum yet
-                $meta = is_array($invoice->meta) ? $invoice->meta : [];
-                $meta['ledger_posted'] = true;
-                $meta['ledger_posted_at'] = now()->toDateTimeString();
-                $meta['ledger_posted_by'] = Auth::id();
-                DB::table('finance_invoices')
-                    ->where('id', $invoice->id)
-                    ->update([
-                        'meta' => json_encode($meta),
-                        'updated_at' => now(),
-                    ]);
-                $invoice->refresh();
-            }
-
-            // Audit log
-            $actorUserId = Auth::guard('user')->id() ?? Auth::id();
-            AuditLog::create([
-                'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $actorUserId,
-                'action' => 'post_invoice',
-                'target_type' => 'invoice',
-                'target_id' => $invoice->id,
-                'metadata' => ['status' => 'posted'],
-            ]);
-
-            DB::commit();
-
-            return response()->json($invoice->load('items'));
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Invoice posting failed: ' . $e->getMessage(), ['exception' => $e]);
-            return response()->json(['message' => 'Failed to post invoice', 'error' => $e->getMessage()], 500);
-        }
+        return response()->json([
+            'message' => 'Ledger posting is not part of the SME Finance workflow.',
+            'code' => 'FINANCE_ROUTE_MOVED',
+            'replacement' => '/api/finance/invoices/{id}',
+        ], 410);
     }
 
     /**
@@ -369,8 +362,7 @@ class InvoiceController extends Controller
      */
     public function destroy($id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        $shopOwnerId = $this->shopOwnerId();
         if (! $shopOwnerId) {
             return response()->json(['error' => 'No shop association found'], 403);
         }
@@ -378,7 +370,7 @@ class InvoiceController extends Controller
         $invoice = Invoice::where('shop_id', $shopOwnerId)->findOrFail($id);
 
         // Audit log
-        $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+        $actorUserId = $this->actorUserId();
         AuditLog::create([
             'shop_owner_id' => $shopOwnerId,
             'actor_user_id' => $actorUserId,
@@ -397,8 +389,7 @@ class InvoiceController extends Controller
      */
     public function restore($id)
     {
-        $user = Auth::guard('user')->user();
-        $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
+        $shopOwnerId = $this->shopOwnerId();
         if (! $shopOwnerId) {
             return response()->json(['error' => 'No shop association found'], 403);
         }
@@ -410,7 +401,7 @@ class InvoiceController extends Controller
 
         $invoice->restore();
 
-        $actorUserId = Auth::guard('user')->id() ?? Auth::id();
+        $actorUserId = $this->actorUserId();
         AuditLog::create([
             'shop_owner_id' => $shopOwnerId,
             'actor_user_id' => $actorUserId,
@@ -437,161 +428,145 @@ class InvoiceController extends Controller
         
         try {
             $user = Auth::guard('user')->user();
-            
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
             
-            $shopOwnerId = $user->hasRole('Shop Owner') ? $user->id : $user->shop_owner_id;
-            
-            if (!$shopOwnerId) {
-                return response()->json(['error' => 'No shop association found'], 403);
-            }
-            
-            DB::beginTransaction();
-            
-            // Get job details with customer information
-            $job = DB::table('orders')
-                ->leftJoin('users as customers', 'orders.customer_id', '=', 'customers.id')
-                ->where('orders.id', $validated['job_id'])
-                ->where('orders.shop_owner_id', $shopOwnerId)
-                ->select([
-                    'orders.*',
-                    'customers.name as customer_name',
-                    'customers.email as customer_email'
-                ])
-                ->first();
-                
-            if (!$job) {
-                return response()->json(['error' => 'Job not found'], 404);
-            }
-            
-            // Check if invoice already exists
-            $existing = Invoice::where('job_order_id', $job->id)->first();
-            if ($existing) {
-                return response()->json([
-                    'error' => 'Invoice already exists for this job',
-                    'invoice' => $existing
-                ], 400);
-            }
-            
-            // Generate invoice reference
-            $reference = 'INV-' . now()->format('YmdHis');
-            
-            $itemSubtotal = isset($job->total_amount) ? max(0.0, floatval($job->total_amount)) : 0.0;
-            $shippingFee = isset($job->shipping_fee) ? max(0.0, floatval($job->shipping_fee)) : 0.0;
-            $vatAmount = isset($job->vat_amount) && $job->vat_amount !== null
-                ? max(0.0, floatval($job->vat_amount))
-                : round($itemSubtotal * 0.12, 2);
-            $total = $itemSubtotal + $shippingFee + $vatAmount;
-            
-            if ($total <= 0) {
-                return response()->json(['error' => 'Job must have a valid total amount'], 400);
-            }
-            
-            // Create invoice
-            $invoice = Invoice::create([
-                'reference' => $reference,
-                'job_order_id' => $job->id,
-                'job_reference' => $job->order_number,
-                'customer_name' => $job->customer_name ?? 'Unknown Customer',
-                'customer_email' => $job->customer_email ?? null,
-                'date' => now(),
-                'due_date' => now()->addDays(30),
-                'total' => $total,
-                'tax_amount' => $vatAmount,
-                'status' => 'draft',
-                'shop_id' => $shopOwnerId,
-                'notes' => 'Auto-generated from Job Order #' . $job->order_number,
-                'meta' => [
-                    'created_by' => $user->id,
-                    'source' => 'job_order',
-                    'job_order_id' => $job->id,
-                    'subtotal_amount' => $itemSubtotal,
-                    'shipping_fee' => $shippingFee,
-                    'vat_amount' => $vatAmount,
-                    'grand_total' => $total,
-                ]
-            ]);
-            
-            InvoiceItem::create([
-                'invoice_id' => $invoice->id,
-                'description' => 'Order #' . $job->order_number . (isset($job->status) ? ' - ' . ucfirst($job->status) : ''),
-                'quantity' => 1,
-                'unit_price' => $itemSubtotal,
-                'tax_rate' => $itemSubtotal > 0 && $vatAmount > 0 ? round(($vatAmount / $itemSubtotal) * 100, 2) : 0,
-                'amount' => $itemSubtotal + $vatAmount,
-                'account_id' => null,
-            ]);
+            $shopOwnerId = $this->shopContext->id($request);
+            return DB::transaction(function () use ($validated, $user, $shopOwnerId): \Illuminate\Http\JsonResponse {
+                // Lock the tenant-scoped job before checking/creating its
+                // invoice. The database uniqueness constraint is the final
+                // guard for a concurrent request.
+                $job = DB::table('orders')
+                    ->leftJoin('users as customers', 'orders.customer_id', '=', 'customers.id')
+                    ->where('orders.id', $validated['job_id'])
+                    ->where('orders.shop_owner_id', $shopOwnerId)
+                    ->select([
+                        'orders.*',
+                        'customers.name as customer_name',
+                        'customers.email as customer_email',
+                    ])
+                    ->lockForUpdate()
+                    ->first();
 
-            if ($shippingFee > 0) {
+                if (! $job) {
+                    return response()->json(['error' => 'Job not found'], 404);
+                }
+
+                $existing = Invoice::withTrashed()
+                    ->where('shop_id', $shopOwnerId)
+                    ->where('job_order_id', $job->id)
+                    ->first();
+                if ($existing) {
+                    return response()->json($existing->load('items'), 200);
+                }
+
+                $reference = 'INV-' . now()->format('YmdHis');
+                $itemSubtotal = isset($job->total_amount) ? max(0.0, (float) $job->total_amount) : 0.0;
+                $shippingFee = isset($job->shipping_fee) ? max(0.0, (float) $job->shipping_fee) : 0.0;
+                $vatAmount = isset($job->vat_amount) && $job->vat_amount !== null
+                    ? max(0.0, (float) $job->vat_amount)
+                    : round($itemSubtotal * 0.12, 2);
+                $total = $itemSubtotal + $shippingFee + $vatAmount;
+
+                if ($total <= 0) {
+                    return response()->json(['error' => 'Job must have a valid total amount'], 400);
+                }
+
+                $invoice = Invoice::create([
+                    'reference' => $reference,
+                    'job_order_id' => $job->id,
+                    'job_reference' => $job->order_number,
+                    'customer_name' => $job->customer_name ?? 'Unknown Customer',
+                    'customer_email' => $job->customer_email ?? null,
+                    'date' => now(),
+                    'due_date' => now()->addDays(30),
+                    'total' => $total,
+                    'tax_amount' => $vatAmount,
+                    'status' => 'draft',
+                    'shop_id' => $shopOwnerId,
+                    'notes' => 'Auto-generated from Job Order #' . $job->order_number,
+                    'meta' => [
+                        'created_by' => $user->id,
+                        'source' => 'job_order',
+                        'job_order_id' => $job->id,
+                        'subtotal_amount' => $itemSubtotal,
+                        'shipping_fee' => $shippingFee,
+                        'vat_amount' => $vatAmount,
+                        'grand_total' => $total,
+                    ],
+                ]);
+
                 InvoiceItem::create([
                     'invoice_id' => $invoice->id,
-                    'description' => 'Shipping Fee',
+                    'description' => 'Order #' . $job->order_number . (isset($job->status) ? ' - ' . ucfirst($job->status) : ''),
                     'quantity' => 1,
-                    'unit_price' => $shippingFee,
-                    'tax_rate' => 0,
-                    'amount' => $shippingFee,
-                    'account_id' => null,
+                    'unit_price' => $itemSubtotal,
+                    'tax_rate' => $itemSubtotal > 0 && $vatAmount > 0 ? round(($vatAmount / $itemSubtotal) * 100, 2) : 0,
+                    'amount' => $itemSubtotal + $vatAmount,
                 ]);
+
+                if ($shippingFee > 0) {
+                    InvoiceItem::create([
+                        'invoice_id' => $invoice->id,
+                        'description' => 'Shipping Fee',
+                        'quantity' => 1,
+                        'unit_price' => $shippingFee,
+                        'tax_rate' => 0,
+                        'amount' => $shippingFee,
+                    ]);
+                }
+
+                AuditLog::create([
+                    'shop_owner_id' => $shopOwnerId,
+                    'actor_user_id' => $user->id,
+                    'action' => 'create_invoice_from_job',
+                    'target_type' => 'invoice',
+                    'target_id' => $invoice->id,
+                    'metadata' => [
+                        'job_id' => $job->id,
+                        'order_number' => $job->order_number,
+                        'invoice_reference' => $reference,
+                        'auto_generated' => $validated['auto_generate'] ?? false,
+                    ],
+                ]);
+
+                return response()->json($invoice->load('items'), 201);
+            });
+        } catch (QueryException $e) {
+            $existing = Invoice::withTrashed()
+                ->where('shop_id', $shopOwnerId)
+                ->where('job_order_id', $validated['job_id'])
+                ->first();
+            if ($existing) {
+                return response()->json($existing->load('items'), 200);
             }
-            
-            // Note: orders table doesn't have invoice_generated or invoice_id columns
-            // If you want to track this, add migration to add these columns
-            // For now, skip the update
-            
-            // Audit log
-            AuditLog::create([
-                'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $user->id,
-                'action' => 'create_invoice_from_job',
-                'target_type' => 'invoice',
-                'target_id' => $invoice->id,
-                'metadata' => [
-                    'job_id' => $job->id,
-                    'order_number' => $job->order_number,
-                    'invoice_reference' => $reference,
-                    'auto_generated' => $validated['auto_generate'] ?? false
-                ]
-            ]);
-            
-            DB::commit();
-            
-            return response()->json($invoice->load('items'), 201);
-            
+            return FinanceErrorResponse::json($e, 'invoice.create_from_job');
         } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Failed to create invoice from job: ' . $e->getMessage(), [
-                'exception' => $e,
-                'trace' => $e->getTraceAsString()
-            ]);
-            return response()->json([
-                'error' => 'Failed to create invoice',
-                'message' => $e->getMessage()
-            ], 500);
+            return FinanceErrorResponse::json($e, 'invoice.create_from_job');
         }
     }
 
     /**
-     * Send invoice (change status from draft to sent)
+     * Record an internal lifecycle transition from draft to sent.
+     * This does not send email or notify the customer.
      */
-    public function send($id)
+    public function markSent($id)
     {
         try {
             $user = Auth::guard('user')->user();
-            
-            if (!$user) {
+            if (! $user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
-            
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
+
+            $shopOwnerId = $this->shopContext->id(request());
             
             $invoice = Invoice::where('shop_id', $shopOwnerId)
                 ->where('id', $id)
                 ->firstOrFail();
 
             if ($invoice->status !== 'draft') {
-                return response()->json(['error' => 'Only draft invoices can be sent'], 422);
+                return response()->json(['error' => 'Only draft invoices can be marked as sent'], 422);
             }
 
             $invoice->update(['status' => 'sent']);
@@ -600,26 +575,21 @@ class InvoiceController extends Controller
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $user->id,
-                'action' => 'send_invoice',
+                'action' => 'mark_invoice_sent',
                 'target_type' => 'invoice',
                 'target_id' => $invoice->id,
                 'metadata' => [
                     'reference' => $invoice->reference,
-                    'customer' => $invoice->customer_name,
-                    'amount' => $invoice->total
+                    'status' => 'sent',
                 ]
             ]);
 
             return response()->json([
-                'message' => 'Invoice sent successfully',
+                'message' => 'Invoice marked as sent.',
                 'invoice' => $invoice->fresh()
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to send invoice: ' . $e->getMessage());
-            return response()->json([
-                'error' => 'Failed to send invoice',
-                'message' => $e->getMessage()
-            ], 500);
+            return FinanceErrorResponse::json($e, 'invoice.mark_sent', 500, ['record_id' => $id]);
         }
     }
 
@@ -629,13 +599,11 @@ class InvoiceController extends Controller
     public function void($id)
     {
         try {
-            $user = Auth::guard('user')->user();
+            $shopOwnerId = $this->shopOwnerId();
 
-            if (!$user) {
+            if (!$shopOwnerId) {
                 return response()->json(['error' => 'Unauthorized'], 401);
             }
-
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
 
             $invoice = Invoice::where('shop_id', $shopOwnerId)
                 ->where('id', $id)
@@ -650,7 +618,7 @@ class InvoiceController extends Controller
 
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
-                'actor_user_id' => $user->id,
+                'actor_user_id' => $this->actorUserId(),
                 'action' => 'void_invoice',
                 'target_type' => 'invoice',
                 'target_id' => $invoice->id,
@@ -665,73 +633,134 @@ class InvoiceController extends Controller
                 'invoice' => $invoice->fresh(),
             ]);
         } catch (\Exception $e) {
-            Log::error('Failed to void invoice: ' . $e->getMessage());
-            return response()->json([
-                'error' => 'Failed to void invoice',
-                'message' => $e->getMessage(),
-            ], 500);
+            return FinanceErrorResponse::json($e, 'invoice.void', 500, ['record_id' => $id]);
         }
     }
 
-    /**
-     * Mark invoice as paid
-     */
-    public function markAsPaid(Request $request, $id)
+    public function recordPayment(Request $request, $id)
     {
         $validated = $request->validate([
-            'payment_date' => 'required|date',
-            'payment_method' => 'required|string|in:cash,bank_transfer,check,gcash,maya,paypal,other',
+            'amount' => ['required', 'numeric', 'min:0.01'],
+            'payment_method' => ['required', 'string', Rule::in(InvoicePaymentService::PAYMENT_METHODS)],
+            'reference' => ['nullable', 'string', 'max:191'],
+            'received_at' => ['required', 'date'],
+            'idempotency_key' => ['nullable', 'string', 'max:191'],
         ]);
 
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized', 'code' => 'FORBIDDEN'], 401);
+        }
+
+        $shopOwnerId = $this->shopContext->id($request);
+        $invoice = Invoice::query()->where('shop_id', $shopOwnerId)->findOrFail($id);
+
         try {
-            $user = Auth::guard('user')->user();
-            
-            if (!$user) {
-                return response()->json(['error' => 'Unauthorized'], 401);
-            }
-            
-            $shopOwnerId = $user->role === 'shop_owner' ? $user->id : $user->shop_owner_id;
-            
-            $invoice = Invoice::where('shop_id', $shopOwnerId)
-                ->where('id', $id)
-                ->firstOrFail();
+            $result = $this->paymentService->record($invoice, $user, $validated);
 
-            if (!in_array($invoice->status, ['sent', 'overdue'])) {
-                return response()->json(['error' => 'Only sent or overdue invoices can be marked as paid'], 422);
-            }
-
-            $invoice->update([
-                'status' => 'paid',
-                'payment_date' => $validated['payment_date'],
-                'payment_method' => $validated['payment_method'],
-            ]);
-
-            // Audit log
             AuditLog::create([
                 'shop_owner_id' => $shopOwnerId,
                 'actor_user_id' => $user->id,
-                'action' => 'mark_invoice_paid',
+                'action' => 'record_invoice_payment',
                 'target_type' => 'invoice',
                 'target_id' => $invoice->id,
                 'metadata' => [
-                    'reference' => $invoice->reference,
-                    'customer' => $invoice->customer_name,
-                    'amount' => $invoice->total,
-                    'payment_date' => $validated['payment_date'],
-                    'payment_method' => $validated['payment_method']
-                ]
+                    'payment_id' => $result['payment']->id,
+                    'amount' => $result['payment']->amount,
+                    'replayed' => $result['replayed'],
+                ],
             ]);
 
             return response()->json([
-                'message' => 'Invoice marked as paid successfully',
-                'invoice' => $invoice->fresh()
+                'message' => $result['replayed'] ? 'Payment request already recorded.' : 'Payment recorded successfully.',
+                'payment' => $result['payment'],
+                'invoice' => $result['invoice'],
+                'replayed' => $result['replayed'],
+            ], $result['replayed'] ? 200 : 201);
+        } catch (FinanceDomainException $exception) {
+            return FinanceErrorResponse::json($exception, 'invoice.payment.create', $exception->httpStatus, [
+                'record_id' => $id,
+                'shop_id' => $shopOwnerId,
             ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to mark invoice as paid: ' . $e->getMessage());
-            return response()->json([
-                'error' => 'Failed to mark invoice as paid',
-                'message' => $e->getMessage()
-            ], 500);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'invoice.payment.create', 500, [
+                'record_id' => $id,
+                'shop_id' => $shopOwnerId,
+            ]);
         }
+    }
+
+    public function listPayments(Request $request, $id)
+    {
+        $shopOwnerId = $this->shopContext->id($request);
+        $invoice = Invoice::query()->where('shop_id', $shopOwnerId)->findOrFail($id);
+
+        return response()->json($this->paymentService->state($invoice, $shopOwnerId));
+    }
+
+    public function reversePayment(Request $request, $id, $paymentId)
+    {
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'min:3', 'max:1000'],
+        ]);
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized', 'code' => 'FORBIDDEN'], 401);
+        }
+
+        $shopOwnerId = $this->shopContext->id($request);
+        $invoice = Invoice::query()->where('shop_id', $shopOwnerId)->findOrFail($id);
+        $payment = $invoice->payments()->where('shop_owner_id', $shopOwnerId)->findOrFail($paymentId);
+
+        try {
+            $reversal = $this->paymentService->reverse($payment, $user, $validated['reason']);
+
+            return response()->json([
+                'message' => 'Payment reversal recorded successfully.',
+                'payment' => $reversal,
+                'invoice' => $this->paymentService->state($invoice->fresh(), $shopOwnerId),
+            ], 201);
+        } catch (FinanceDomainException $exception) {
+            return FinanceErrorResponse::json($exception, 'invoice.payment.reverse', $exception->httpStatus, [
+                'record_id' => $paymentId,
+                'shop_id' => $shopOwnerId,
+            ]);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'invoice.payment.reverse', 500, [
+                'record_id' => $paymentId,
+                'shop_id' => $shopOwnerId,
+            ]);
+        }
+    }
+
+    /** Compatibility endpoint retained during the route migration. */
+    public function markAsPaid(Request $request, $id)
+    {
+        return response()->json([
+            'message' => 'Use the record payment endpoint instead.',
+            'code' => 'PAYMENT_ROUTE_MOVED',
+        ], 410);
+    }
+
+    private function dueDateForCondition(string $issueDate, string $condition): string
+    {
+        $days = match ($condition) {
+            'Net 7' => 7,
+            'Net 15' => 15,
+            'Net 30' => 30,
+            'Due on receipt' => 0,
+        };
+
+        return CarbonImmutable::parse($issueDate, config('app.timezone'))->startOfDay()->addDays($days)->toDateString();
+    }
+
+    private function shopOwnerId(): ?int
+    {
+        return $this->shopContext->id(request());
+    }
+
+    private function actorUserId(): ?int
+    {
+        return Auth::guard('user')->id();
     }
 }

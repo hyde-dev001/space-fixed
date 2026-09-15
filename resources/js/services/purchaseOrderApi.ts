@@ -15,9 +15,14 @@ import {
     CancelPurchaseOrderPayload,
     PaginatedResponse,
     ApiResponse,
+    PurchaseOrderReceipt,
+    CreatePurchaseOrderReceiptPayload,
+    CreatePostPaymentIssuePayload,
+    SupplierAdjustment,
 } from '@/types/procurement';
 
 const BASE_URL = '/api/erp/procurement/purchase-orders';
+const unwrap = <T>(payload: { data: T } | T): T => (payload as { data?: T }).data ?? payload as T;
 
 export const purchaseOrderApi = {
     /**
@@ -35,7 +40,7 @@ export const purchaseOrderApi = {
      */
     async getById(id: number): Promise<PurchaseOrder> {
         const response: AxiosResponse<PurchaseOrder> = await axios.get(`${BASE_URL}/${id}`);
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -43,7 +48,7 @@ export const purchaseOrderApi = {
      */
     async create(data: CreatePurchaseOrderPayload): Promise<PurchaseOrder> {
         const response: AxiosResponse<PurchaseOrder> = await axios.post(BASE_URL, data);
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -51,7 +56,7 @@ export const purchaseOrderApi = {
      */
     async update(id: number, data: UpdatePurchaseOrderPayload): Promise<PurchaseOrder> {
         const response: AxiosResponse<PurchaseOrder> = await axios.put(`${BASE_URL}/${id}`, data);
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -70,7 +75,7 @@ export const purchaseOrderApi = {
             `${BASE_URL}/${id}/update-status`,
             data
         );
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -80,23 +85,7 @@ export const purchaseOrderApi = {
         const response: AxiosResponse<PurchaseOrder> = await axios.post(
             `${BASE_URL}/${id}/send-to-supplier`
         );
-        return response.data;
-    },
-
-    /**
-     * Mark purchase order as delivered with goods receipt verification
-     */
-    async markAsDelivered(id: number, data: {
-        actual_delivery_date: string;
-        received_quantity: number;
-        defective_quantity: number;
-        notes?: string;
-    }): Promise<PurchaseOrder> {
-        const response: AxiosResponse<PurchaseOrder> = await axios.post(
-            `${BASE_URL}/${id}/mark-delivered`,
-            data
-        );
-        return response.data;
+        return unwrap(response.data);
     },
 
     /**
@@ -107,7 +96,138 @@ export const purchaseOrderApi = {
             `${BASE_URL}/${id}/cancel`,
             data
         );
-        return response.data;
+        return unwrap(response.data);
+    },
+
+    async getReceipts(id: number): Promise<PurchaseOrderReceipt[]> {
+        const response = await axios.get(`${BASE_URL}/${id}/receipts`);
+        return unwrap(response.data);
+    },
+
+    async receive(id: number, data: CreatePurchaseOrderReceiptPayload): Promise<PurchaseOrderReceipt> {
+        const hasEvidence = data.items.some((item) => (item.defect_evidence?.length ?? 0) > 0);
+        const payload = hasEvidence ? new FormData() : data;
+
+        if (payload instanceof FormData) {
+            payload.append('idempotency_key', data.idempotency_key);
+            if (data.received_at) payload.append('received_at', data.received_at);
+            if (data.notes) payload.append('notes', data.notes);
+            data.items.forEach((item, index) => {
+                const prefix = `items[${index}]`;
+                payload.append(`${prefix}[purchase_order_item_id]`, String(item.purchase_order_item_id));
+                payload.append(`${prefix}[received_quantity]`, String(item.received_quantity));
+                payload.append(`${prefix}[defective_quantity]`, String(item.defective_quantity));
+                if (item.replacement_for_adjustment_id) {
+                    payload.append(`${prefix}[replacement_for_adjustment_id]`, String(item.replacement_for_adjustment_id));
+                }
+                if (item.reason_category) payload.append(`${prefix}[reason_category]`, item.reason_category);
+                if (item.inventory_notes) payload.append(`${prefix}[inventory_notes]`, item.inventory_notes);
+                item.size_quantities?.forEach((size, sizeIndex) => {
+                    payload.append(`${prefix}[size_quantities][${sizeIndex}][inventory_size_id]`, String(size.inventory_size_id));
+                    payload.append(`${prefix}[size_quantities][${sizeIndex}][received_quantity]`, String(size.received_quantity));
+                    payload.append(`${prefix}[size_quantities][${sizeIndex}][defective_quantity]`, String(size.defective_quantity));
+                });
+                item.defect_evidence?.forEach((file) => payload.append(`${prefix}[defect_evidence][]`, file, file.name));
+            });
+        }
+
+        const response = await axios.post(`${BASE_URL}/${id}/receipts`, payload);
+        return unwrap(response.data);
+    },
+
+    async finalizeReceipt(id: number, receiptId: number): Promise<PurchaseOrderReceipt> {
+        const response = await axios.post(`${BASE_URL}/${id}/receipts/${receiptId}/finalize`);
+        return unwrap(response.data);
+    },
+
+    async voidReceipt(id: number, receiptId: number, reason: string): Promise<PurchaseOrderReceipt> {
+        const response = await axios.post(`${BASE_URL}/${id}/receipts/${receiptId}/void`, { reason });
+        return unwrap(response.data);
+    },
+
+    async getSupplierAdjustments(): Promise<SupplierAdjustment[]> {
+        const response = await axios.get('/api/erp/procurement/supplier-adjustments');
+        return unwrap(response.data);
+    },
+
+    async chooseSupplierAdjustmentResolution(
+        adjustmentId: number,
+        resolution: 'replacement' | 'short_fulfillment',
+        procurement_notes?: string,
+    ): Promise<SupplierAdjustment> {
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/resolution`, {
+            resolution,
+            procurement_notes,
+        });
+        return unwrap(response.data);
+    },
+
+    async updateSupplierReplacement(
+        adjustmentId: number,
+        action: 'sent' | 'accepted' | 'declined' | 'in-transit',
+        data?: { decline_reason?: string; supplier_reference?: string; procurement_notes?: string },
+    ): Promise<SupplierAdjustment> {
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/replacement/${action}`, data ?? {});
+        return unwrap(response.data);
+    },
+
+    async closeShortFulfillment(adjustmentId: number, data?: { supplier_reference?: string; procurement_notes?: string }): Promise<SupplierAdjustment> {
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/short-fulfillment/close`, data ?? {});
+        return unwrap(response.data);
+    },
+
+    async updateSupplierReturn(
+        adjustmentId: number,
+        status: 'required' | 'released' | 'received_by_supplier' | 'waived',
+        return_notes?: string,
+    ): Promise<SupplierAdjustment> {
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/return`, {
+            status,
+            return_notes,
+        });
+        return unwrap(response.data);
+    },
+
+    async reportPostPaymentIssue(
+        purchaseOrderId: number,
+        receiptId: number,
+        receiptItemId: number,
+        data: CreatePostPaymentIssuePayload,
+    ): Promise<SupplierAdjustment> {
+        const formData = new FormData();
+        formData.append('idempotency_key', data.idempotency_key);
+        formData.append('reported_quantity', String(data.reported_quantity));
+        formData.append('reason_category', data.reason_category);
+        formData.append('inventory_notes', data.inventory_notes);
+        data.defect_evidence.forEach((file) => formData.append('defect_evidence[]', file, file.name));
+        const response = await axios.post(
+            `${BASE_URL}/${purchaseOrderId}/receipts/${receiptId}/items/${receiptItemId}/post-payment-issues`,
+            formData,
+        );
+        return unwrap(response.data);
+    },
+
+    async submitSupplierRefundProof(
+        adjustmentId: number,
+        data: {
+            expected_refund_amount: string;
+            supplier_reported_refund_amount?: string;
+            supplier_reported_refund_reference?: string;
+            supplier_reported_refund_date?: string;
+            procurement_notes?: string;
+            supplier_refund_proof?: File;
+        },
+    ): Promise<SupplierAdjustment> {
+        const formData = new FormData();
+        formData.append('expected_refund_amount', data.expected_refund_amount);
+        if (data.supplier_reported_refund_amount) formData.append('supplier_reported_refund_amount', data.supplier_reported_refund_amount);
+        if (data.supplier_reported_refund_reference) formData.append('supplier_reported_refund_reference', data.supplier_reported_refund_reference);
+        if (data.supplier_reported_refund_date) formData.append('supplier_reported_refund_date', data.supplier_reported_refund_date);
+        if (data.procurement_notes) formData.append('procurement_notes', data.procurement_notes);
+        if (data.supplier_refund_proof) formData.append('supplier_refund_proof', data.supplier_refund_proof, data.supplier_refund_proof.name);
+
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/supplier-refund-proof`, formData);
+        return unwrap(response.data);
     },
 
     /**
