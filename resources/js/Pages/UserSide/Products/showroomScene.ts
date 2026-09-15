@@ -255,16 +255,15 @@ export function createShowroomScene(
 		scene.add(object);
 		return object;
 	};
-	const wallArtCenter: [number, number, number] = [0, 3.45, 19.65];
-	for (const side of [-1, 1] as const) {
-		const key = side === -1 ? 'left' : 'right';
-		const x = side * 21.4;
-		const frameX = side * 21.32;
-		box(black, side * 21.62, wallArtCenter[1], wallArtCenter[2], 0.32, 6.25, 10.8, 0, false);
-		box(brass, frameX, wallArtCenter[1] + 3.02, wallArtCenter[2], 0.18, 0.14, 10.85, 0, false);
-		box(brass, frameX, wallArtCenter[1] - 3.02, wallArtCenter[2], 0.18, 0.14, 10.85, 0, false);
-		box(brass, frameX, wallArtCenter[1], wallArtCenter[2] - 5.36, 0.18, 6.18, 0.14, 0, false);
-		box(brass, frameX, wallArtCenter[1], wallArtCenter[2] + 5.36, 0.18, 6.18, 0.14, 0, false);
+	const wallArtCenter: [number, number, number] = [0, 3.45, 23.62];
+	const wallArtPositions: Record<WallArtSide, number> = { left: -12.5, right: 12.5 };
+	for (const key of ['left', 'right'] as const) {
+		const x = wallArtPositions[key];
+		box(black, x, wallArtCenter[1], 23.8, 10.8, 6.25, 0.32, 0, false);
+		box(brass, x, wallArtCenter[1] + 3.02, wallArtCenter[2], 10.85, 0.14, 0.18, 0, false);
+		box(brass, x, wallArtCenter[1] - 3.02, wallArtCenter[2], 10.85, 0.14, 0.18, 0, false);
+		box(brass, x - 5.36, wallArtCenter[1], wallArtCenter[2], 0.14, 6.18, 0.18, 0, false);
+		box(brass, x + 5.36, wallArtCenter[1], wallArtCenter[2], 0.14, 6.18, 0.18, 0, false);
 		const imageMaterial = new THREE.MeshBasicMaterial({
 			map: createWallArtTexture(key, wallArt[key]),
 			side: THREE.DoubleSide,
@@ -273,7 +272,7 @@ export function createShowroomScene(
 		wallArtMaterials.set(key, imageMaterial);
 		const image = new THREE.Mesh(wallArtImageGeometry, imageMaterial);
 		image.position.set(x, wallArtCenter[1], wallArtCenter[2]);
-		image.rotation.y = side === -1 ? Math.PI / 2 : -Math.PI / 2;
+		image.rotation.y = Math.PI;
 		image.castShadow = false;
 		image.receiveShadow = false;
 		scene.add(image);

@@ -75,6 +75,13 @@ describe('standalone virtual showroom', () => {
 		expect(sceneSource).not.toContain("sign('SOLESPACE'");
 	});
 
+	it('places uploaded wall art beside the centered welcome sign', () => {
+		expect(sceneSource).toContain("const wallArtPositions: Record<WallArtSide, number> = { left: -12.5, right: 12.5 };");
+		expect(sceneSource).toContain('box(black, x, wallArtCenter[1], 23.8, 10.8, 6.25, 0.32, 0, false);');
+		expect(sceneSource).toContain('image.rotation.y = Math.PI;');
+		expect(sceneSource).toContain("sign('WELCOME TO ' + displayShopName");
+	});
+
 	it('supports owner wall art and selectable bot difficulty', () => {
 		expect(showroomSource).toContain('Wall art');
 		expect(showroomSource).toContain('/api/showroom/wall-art');
