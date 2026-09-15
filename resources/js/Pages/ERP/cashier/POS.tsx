@@ -1185,6 +1185,7 @@ const PointOfSalePage = () => {
 			return;
 		}
 
+		const fixedRefundAmount = Number(refund.approved_amount ?? refund.requested_amount ?? 0);
 		let requestPayload: Record<string, unknown> | FormData = {
 			execution_mode: "manual",
 			execution_note: "Executed from the Repair Refund Queue.",
@@ -1208,9 +1209,11 @@ const PointOfSalePage = () => {
 						<label class="block text-sm font-semibold">Reference
 							<input id="repair_refund_execution_reference" class="swal2-input !m-0 !w-full" placeholder="Transaction/reference number" />
 						</label>
-						<label class="block text-sm font-semibold">Amount
-							<input id="repair_refund_execution_amount" type="number" min="0.01" step="0.01" class="swal2-input !m-0 !w-full" placeholder="Refund amount" />
-						</label>
+						<div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+							<div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Refund amount (fixed)</div>
+							<div class="mt-1 text-lg font-bold text-emerald-900">${formatPeso(fixedRefundAmount)}</div>
+							<div class="mt-1 text-xs text-emerald-700">Based on the approved repair refund. This amount cannot be changed.</div>
+						</div>
 						<label class="block text-sm font-semibold">Proof
 							<input id="repair_refund_execution_proof" type="file" accept=".jpg,.jpeg,.png,.webp" multiple class="swal2-file !m-0 !w-full" />
 						</label>
@@ -1223,15 +1226,14 @@ const PointOfSalePage = () => {
 				preConfirm: () => {
 					const channel = (document.getElementById("repair_refund_execution_channel") as HTMLSelectElement | null)?.value.trim() ?? "";
 					const reference = (document.getElementById("repair_refund_execution_reference") as HTMLInputElement | null)?.value.trim() ?? "";
-					const amount = (document.getElementById("repair_refund_execution_amount") as HTMLInputElement | null)?.value.trim() ?? "";
 					const proofInput = document.getElementById("repair_refund_execution_proof") as HTMLInputElement | null;
 
-					if (!channel || !reference || !amount || !proofInput?.files?.length) {
-						Swal.showValidationMessage("Channel, reference, amount, and at least one proof image are required.");
+					if (!channel || !reference || !proofInput?.files?.length) {
+						Swal.showValidationMessage("Channel, reference, and at least one proof image are required.");
 						return undefined;
 					}
 
-					return { channel, reference, amount, files: Array.from(proofInput.files) };
+					return { channel, reference, files: Array.from(proofInput.files) };
 				},
 			})
 			: await Swal.fire({
@@ -1253,7 +1255,6 @@ const PointOfSalePage = () => {
 			formData.append("execution_mode", "manual");
 			formData.append("execution_channel", confirmation.value.channel);
 			formData.append("execution_reference", confirmation.value.reference);
-			formData.append("execution_amount", confirmation.value.amount);
 			for (const file of confirmation.value.files) {
 				formData.append("execution_proof_images[]", file);
 			}

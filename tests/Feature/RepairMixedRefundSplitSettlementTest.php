@@ -810,7 +810,6 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
                 'execution_mode' => 'manual',
                 'execution_channel' => 'gcash',
                 'execution_reference' => 'AUTH-IMG-001',
-                'execution_amount' => 300,
                 'execution_proof_images' => [
                     UploadedFile::fake()->create('proof-001.png', 80, 'image/png'),
                 ],
@@ -821,6 +820,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
         $updated = $refund->fresh();
         $this->assertSame('succeeded', (string) $updated->status);
         $this->assertSame('manual', (string) $updated->execution_mode);
+        $this->assertEqualsWithDelta(300.00, (float) $updated->execution_amount, 0.01);
 
         $proofUrls = is_array($updated->execution_proof_urls) ? $updated->execution_proof_urls : [];
         $this->assertNotEmpty($proofUrls);
@@ -893,7 +893,6 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
                 'execution_mode' => 'manual',
                 'execution_channel' => 'manual_cash',
                 'execution_reference' => 'LEGACY-POS-REFUND-001',
-                'execution_amount' => 300,
                 'execution_proof_images' => [
                     UploadedFile::fake()->create('legacy-pos-refund-proof.png', 80, 'image/png'),
                 ],

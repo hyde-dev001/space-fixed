@@ -286,7 +286,6 @@ class RepairRefundWorkflowController extends Controller
             'execution_note' => ['nullable', 'string', 'max:1000'],
             'execution_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
             'execution_reference' => ['nullable', 'string', 'max:150'],
-            'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
             'execution_proof_images' => ['nullable', 'array'],
             'execution_proof_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ];
@@ -294,7 +293,6 @@ class RepairRefundWorkflowController extends Controller
         if ($executionMode === 'manual' && $hasPosManualLeg) {
             $rules['execution_channel'] = ['required', 'in:gcash,card,bank_transfer,manual_cash'];
             $rules['execution_reference'] = ['required', 'string', 'max:150'];
-            $rules['execution_amount'] = ['required', 'numeric', 'min:0.01'];
             $rules['execution_proof_images'] = ['required', 'array', 'min:1'];
         }
 
@@ -315,7 +313,6 @@ class RepairRefundWorkflowController extends Controller
             executionContext: [
                 'execution_channel' => $validated['execution_channel'] ?? null,
                 'execution_reference' => $validated['execution_reference'] ?? null,
-                'execution_amount' => isset($validated['execution_amount']) ? (float) $validated['execution_amount'] : null,
                 'execution_proof_urls' => $executionProofUrls,
             ],
         );
@@ -379,7 +376,6 @@ class RepairRefundWorkflowController extends Controller
             'execution_note' => ['nullable', 'string', 'max:1000'],
             'execution_channel' => ['nullable', 'in:gcash,card,bank_transfer,manual_cash'],
             'execution_reference' => ['nullable', 'string', 'max:150'],
-            'execution_amount' => ['nullable', 'numeric', 'min:0.01'],
             'execution_proof_images' => ['nullable', 'array'],
             'execution_proof_images.*' => ['file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
         ];
@@ -387,7 +383,6 @@ class RepairRefundWorkflowController extends Controller
         if ($executionMode === 'manual' && $hasPosManualLeg) {
             $rules['execution_channel'] = ['required', 'in:gcash,card,bank_transfer,manual_cash'];
             $rules['execution_reference'] = ['required', 'string', 'max:150'];
-            $rules['execution_amount'] = ['required', 'numeric', 'min:0.01'];
             $rules['execution_proof_images'] = ['required', 'array', 'min:1'];
         }
 
@@ -408,7 +403,6 @@ class RepairRefundWorkflowController extends Controller
             executionContext: [
                 'execution_channel' => $validated['execution_channel'] ?? null,
                 'execution_reference' => $validated['execution_reference'] ?? null,
-                'execution_amount' => isset($validated['execution_amount']) ? (float) $validated['execution_amount'] : null,
                 'execution_proof_urls' => $executionProofUrls,
             ],
         );

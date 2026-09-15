@@ -29,6 +29,13 @@ describe("canonical repair refund queue", () => {
 		expect(source).not.toContain("&& String(refund.workflow_source ?? \"\").toLowerCase() === \"shop_pos_repair\"");
 	});
 
+	it("uses the approved refund amount instead of accepting a typed payout amount", () => {
+		expect(source).toContain("refund.approved_amount ?? refund.requested_amount");
+		expect(source).toContain("Refund amount (fixed)");
+		expect(source).not.toContain('id="repair_refund_execution_amount"');
+		expect(source).not.toContain('formData.append("execution_amount"');
+	});
+
 	it("hides internal approval badges and humanizes refund reasons", () => {
 		expect(source).not.toContain("F:{financeStatus}");
 		expect(source).not.toContain("O:{ownerStatus}");
