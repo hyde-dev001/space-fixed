@@ -39,4 +39,18 @@ describe("Shop Owner operations monitoring surfaces", () => {
     expect(source).not.toContain("Reassign Repairer");
     expect(source).not.toContain("Final Reject");
   });
+
+  it("keeps the repair snapshot in the filter action row", () => {
+    const source = readPage("RepairJobs");
+    const filterSection = source.indexOf('aria-labelledby="owner-repair-filters-title"');
+    const tableSection = source.indexOf('aria-labelledby="owner-repair-table-title"');
+    const applyFilters = source.indexOf(">Apply filters</button>");
+    const repairSnapshot = source.indexOf("repairs in view");
+
+    expect(repairSnapshot).toBeGreaterThan(filterSection);
+    expect(repairSnapshot).toBeLessThan(tableSection);
+    expect(repairSnapshot).toBeGreaterThan(applyFilters);
+    expect(source).toContain("justify-between gap-4 md:col-span-2 xl:col-span-6");
+    expect(source).toContain("ml-auto rounded-xl");
+  });
 });
