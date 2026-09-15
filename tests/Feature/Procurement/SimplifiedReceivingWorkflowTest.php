@@ -124,6 +124,19 @@ class SimplifiedReceivingWorkflowTest extends TestCase
         $this->assertTrue(Schema::hasColumn('supplier_adjustments', 'replacement_status'));
     }
 
+    public function test_receipt_item_migration_replaces_the_foreign_key_supporting_index_safely(): void
+    {
+        // SQLite permits dropping child FK indexes; MySQL requires one to remain in place.
+        $migration = file_get_contents(database_path('migrations/2026_09_15_000001_add_simplified_procurement_receiving_workflow.php'));
+        $newIndex = strpos($migration, "                    'po_receipt_item_line_unique',");
+        $oldIndexDrop = strpos($migration, "                \$table->dropUnique('po_receipt_item_unique');");
+
+        $this->assertIsString($migration);
+        $this->assertNotFalse($newIndex);
+        $this->assertNotFalse($oldIndexDrop);
+        $this->assertLessThan($oldIndexDrop, $newIndex);
+    }
+
     public function test_replacement_uses_the_same_receipt_and_finalizes_once(): void
     {
         [$po, $item, $inventory] = $this->poItem($this->owner, $this->inventoryUser, $this->supplier, 5, 100);
