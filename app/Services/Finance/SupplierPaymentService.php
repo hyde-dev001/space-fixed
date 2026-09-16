@@ -1018,22 +1018,35 @@ final class SupplierPaymentService
     /** @return array<string, mixed> */
     private function destinationSnapshot(SupplierPaymentProfile $profile): array
     {
+        $recipient = [
+            'recipient_type' => $profile->recipient_type,
+            'business_name' => $profile->business_name,
+            'given_name' => $profile->given_name,
+            'surname' => $profile->surname,
+            'recipient_country' => $profile->recipient_country,
+            'recipient_province_state' => $profile->recipient_province_state,
+            'recipient_city' => $profile->recipient_city,
+            'recipient_street_line_1' => $profile->recipient_street_line_1,
+            'recipient_street_line_2' => $profile->recipient_street_line_2,
+            'recipient_postal_code' => $profile->recipient_postal_code,
+        ];
+
         if ($profile->destination_type === SupplierPaymentProfile::DESTINATION_E_WALLET) {
-            return [
+            return array_merge($recipient, [
                 'destination_type' => SupplierPaymentProfile::DESTINATION_E_WALLET,
                 'wallet_provider' => $profile->wallet_provider,
                 'account_name' => $profile->account_name,
                 'account_identifier' => $profile->account_identifier,
-            ];
+            ]);
         }
 
-        return [
+        return array_merge($recipient, [
             'destination_type' => SupplierPaymentProfile::DESTINATION_BANK_ACCOUNT,
             'bank_name' => $profile->bank_name,
             'bank_code' => $profile->bank_code,
             'account_name' => $profile->account_name,
             'account_number' => $profile->account_number,
-        ];
+        ]);
     }
 
     private function outstandingAmount(Expense $expense): string

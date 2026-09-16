@@ -12,9 +12,20 @@ export interface User {
 
 export type PaymentTerms = 'Net 7' | 'Net 15' | 'Net 30' | 'Net 45' | 'Net 60';
 export type SupplierPaymentDestinationType = 'bank_account' | 'e_wallet';
+export type SupplierRecipientType = 'business' | 'individual';
 
 export interface SupplierPaymentProfile {
     id: number;
+    recipient_type: SupplierRecipientType;
+    business_name?: string | null;
+    given_name?: string | null;
+    surname?: string | null;
+    recipient_country: string;
+    recipient_province_state: string;
+    recipient_city: string;
+    recipient_street_line_1: string;
+    recipient_street_line_2?: string | null;
+    recipient_postal_code: string;
     destination_type: SupplierPaymentDestinationType | string;
     wallet_provider?: string | null;
     bank_name?: string | null;
@@ -33,6 +44,16 @@ export type RevealedSupplierPaymentProfile = SupplierPaymentProfile & {
 };
 
 export interface UpsertSupplierPaymentProfilePayload {
+    recipient_type: SupplierRecipientType;
+    business_name?: string;
+    given_name?: string;
+    surname?: string;
+    recipient_country: string;
+    recipient_province_state: string;
+    recipient_city: string;
+    recipient_street_line_1: string;
+    recipient_street_line_2?: string;
+    recipient_postal_code: string;
     destination_type: SupplierPaymentDestinationType;
     wallet_provider?: string;
     bank_name?: string;

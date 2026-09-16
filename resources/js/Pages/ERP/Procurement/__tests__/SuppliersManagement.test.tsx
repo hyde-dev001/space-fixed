@@ -74,12 +74,14 @@ describe("SuppliersManagement payment-term fields", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Add Supplier" }));
 
 		await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-			payment_profile: {
+			payment_profile: expect.objectContaining({
+				recipient_type: "business",
+				business_name: "Wallet Supplier",
 				destination_type: "e_wallet",
 				wallet_provider: "GCash",
 				account_name: "Wallet Supplier",
 				account_identifier: "09171234567",
-			},
+			}),
 		})));
 	});
 
@@ -96,6 +98,20 @@ describe("SuppliersManagement payment-term fields", () => {
 		expect(screen.queryByRole("option", { name: "50% down, 50% on delivery" })).not.toBeInTheDocument();
 		expect(screen.getAllByRole("option", { name: "Net 60" }).length).toBeGreaterThan(0);
 		expect(screen.queryByRole("option", { name: "Net 90" })).not.toBeInTheDocument();
+	});
+
+	it("defaults a new payout recipient to Business and swaps individual identity fields", async () => {
+		render(<SuppliersManagement />);
+		fireEvent.click(await screen.findByRole("button", { name: "+ Add Supplier" }));
+
+		expect(screen.getByLabelText("Recipient Type")).toHaveValue("business");
+		expect(screen.getByLabelText("Business Name")).toBeInTheDocument();
+		fireEvent.change(screen.getByLabelText("Recipient Type"), { target: { value: "individual" } });
+		expect(screen.queryByLabelText("Business Name")).not.toBeInTheDocument();
+		expect(screen.getByLabelText("Given Name")).toBeInTheDocument();
+		expect(screen.getByLabelText("Surname")).toBeInTheDocument();
+		expect(screen.getByLabelText("Province / State")).toBeInTheDocument();
+		expect(screen.getByLabelText("Postal Code")).toBeInTheDocument();
 	});
 
 	it("shows and submits the canonical supplier fields when editing", async () => {
@@ -201,5 +217,22 @@ describe("SuppliersManagement payment-term fields", () => {
 		await waitFor(() => expect(mocks.update).toHaveBeenCalledWith(9, expect.objectContaining({
 			payment_terms: "",
 		})));
+	});
+
+	it("keeps view and edit dialogs inside the viewport with one scrollable body", async () => {
+		mocks.suppliers = [{ id: 31, name: "Tall Supplier", is_active: true, purchase_order_count: 0 }];
+		mocks.getAll.mockResolvedValue({ data: mocks.suppliers });
+		render(<SuppliersManagement />);
+
+		fireEvent.click(await screen.findByRole("button", { name: "View details for Tall Supplier" }));
+		let dialog = screen.getByRole("dialog", { name: "Supplier Details" });
+		expect(dialog).toHaveClass("max-h-[calc(100dvh-2rem)]", "overflow-hidden");
+		expect(dialog.querySelector(".min-h-0.flex-1.overflow-y-auto")).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Close view supplier modal" }));
+
+		fireEvent.click(screen.getByRole("button", { name: "Edit Tall Supplier" }));
+		dialog = await screen.findByRole("dialog", { name: "Edit Supplier" });
+		expect(dialog).toHaveClass("max-h-[calc(100dvh-2rem)]", "overflow-hidden");
+		expect(dialog.querySelector(".min-h-0.flex-1.overflow-y-auto")).toBeInTheDocument();
 	});
 });

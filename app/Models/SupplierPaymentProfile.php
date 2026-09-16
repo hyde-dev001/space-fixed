@@ -14,6 +14,12 @@ class SupplierPaymentProfile extends Model
     public const STATUS_UNVERIFIED = 'unverified';
     public const STATUS_VERIFIED = 'verified';
     public const STATUS_DISABLED = 'disabled';
+    public const RECIPIENT_BUSINESS = 'business';
+    public const RECIPIENT_INDIVIDUAL = 'individual';
+    public const RECIPIENT_TYPES = [
+        self::RECIPIENT_BUSINESS,
+        self::RECIPIENT_INDIVIDUAL,
+    ];
     public const DESTINATION_BANK_ACCOUNT = 'bank_account';
     public const DESTINATION_E_WALLET = 'e_wallet';
     public const DESTINATION_TYPES = [
@@ -24,6 +30,16 @@ class SupplierPaymentProfile extends Model
     protected $fillable = [
         'shop_owner_id',
         'supplier_id',
+        'recipient_type',
+        'business_name',
+        'given_name',
+        'surname',
+        'recipient_country',
+        'recipient_province_state',
+        'recipient_city',
+        'recipient_street_line_1',
+        'recipient_street_line_2',
+        'recipient_postal_code',
         'destination_type',
         'wallet_provider',
         'bank_name',
@@ -45,6 +61,10 @@ class SupplierPaymentProfile extends Model
         'account_number' => 'encrypted',
         'account_identifier' => 'encrypted',
         'verified_at' => 'datetime',
+    ];
+
+    protected $attributes = [
+        'recipient_type' => self::RECIPIENT_BUSINESS,
     ];
 
     public function shopOwner(): BelongsTo
@@ -93,6 +113,29 @@ class SupplierPaymentProfile extends Model
         return self::maskAccountIdentifier($this->account_identifier);
     }
 
+    public function hasCompleteRecipientDetails(): bool
+    {
+        $identity = $this->recipient_type === self::RECIPIENT_BUSINESS
+            ? [$this->business_name]
+            : ($this->recipient_type === self::RECIPIENT_INDIVIDUAL
+                ? [$this->given_name, $this->surname]
+                : []);
+
+        $required = array_merge($identity, [
+            $this->recipient_country,
+            $this->recipient_province_state,
+            $this->recipient_city,
+            $this->recipient_street_line_1,
+            $this->recipient_postal_code,
+            $this->account_name,
+            $this->destination_type === self::DESTINATION_BANK_ACCOUNT ? $this->bank_name : $this->wallet_provider,
+            $this->destination_type === self::DESTINATION_BANK_ACCOUNT ? $this->bank_code : $this->account_identifier,
+            $this->destination_type === self::DESTINATION_BANK_ACCOUNT ? $this->account_number : $this->account_identifier,
+        ]);
+
+        return $identity !== [] && collect($required)->every(fn ($value): bool => filled($value));
+    }
+
     /** @return array<string, mixed> */
     public function toRevealedArray(): array
     {
@@ -112,6 +155,16 @@ class SupplierPaymentProfile extends Model
     {
         return [
             'id' => $this->getKey(),
+            'recipient_type' => $this->recipient_type,
+            'business_name' => $this->recipient_type === self::RECIPIENT_BUSINESS ? $this->business_name : null,
+            'given_name' => $this->recipient_type === self::RECIPIENT_INDIVIDUAL ? $this->given_name : null,
+            'surname' => $this->recipient_type === self::RECIPIENT_INDIVIDUAL ? $this->surname : null,
+            'recipient_country' => $this->recipient_country,
+            'recipient_province_state' => $this->recipient_province_state,
+            'recipient_city' => $this->recipient_city,
+            'recipient_street_line_1' => $this->recipient_street_line_1,
+            'recipient_street_line_2' => $this->recipient_street_line_2,
+            'recipient_postal_code' => $this->recipient_postal_code,
             'destination_type' => $this->destination_type,
             'wallet_provider' => $this->wallet_provider,
             'bank_name' => $this->destination_type === self::DESTINATION_BANK_ACCOUNT ? $this->bank_name : null,

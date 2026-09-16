@@ -18,11 +18,15 @@ class StoreSupplierPaymentProfileRequest extends FormRequest
     {
         $supplierId = $this->route('id') ? (int) $this->route('id') : null;
 
-        return self::profileRules($supplierId, $this->input('destination_type'));
+        return self::profileRules($supplierId, $this->input('destination_type'), $this->input('recipient_type'));
     }
 
     /** @return array<string, mixed> */
-    public static function profileRules(?int $supplierId = null, ?string $destinationType = null): array
+    public static function profileRules(
+        ?int $supplierId = null,
+        ?string $destinationType = null,
+        ?string $recipientType = null,
+    ): array
     {
         $profileExists = SupplierPaymentProfile::query()
             ->when($supplierId, fn ($query) => $query->where('supplier_id', $supplierId))
@@ -30,6 +34,34 @@ class StoreSupplierPaymentProfileRequest extends FormRequest
             ->exists();
 
         return [
+            'recipient_type' => ['required', 'string', Rule::in(SupplierPaymentProfile::RECIPIENT_TYPES)],
+            'business_name' => [
+                'nullable',
+                'string',
+                'max:50',
+                'required_if:recipient_type,' . SupplierPaymentProfile::RECIPIENT_BUSINESS,
+                'prohibited_if:recipient_type,' . SupplierPaymentProfile::RECIPIENT_INDIVIDUAL,
+            ],
+            'given_name' => [
+                'nullable',
+                'string',
+                'max:50',
+                'required_if:recipient_type,' . SupplierPaymentProfile::RECIPIENT_INDIVIDUAL,
+                'prohibited_if:recipient_type,' . SupplierPaymentProfile::RECIPIENT_BUSINESS,
+            ],
+            'surname' => [
+                'nullable',
+                'string',
+                'max:50',
+                'required_if:recipient_type,' . SupplierPaymentProfile::RECIPIENT_INDIVIDUAL,
+                'prohibited_if:recipient_type,' . SupplierPaymentProfile::RECIPIENT_BUSINESS,
+            ],
+            'recipient_country' => ['required', 'string', 'size:2', 'regex:/^[A-Za-z]{2}$/'],
+            'recipient_province_state' => ['required', 'string', 'max:255'],
+            'recipient_city' => ['required', 'string', 'max:255'],
+            'recipient_street_line_1' => ['required', 'string', 'max:255'],
+            'recipient_street_line_2' => ['nullable', 'string', 'max:255'],
+            'recipient_postal_code' => ['required', 'string', 'max:32'],
             'destination_type' => ['required', 'string', Rule::in(SupplierPaymentProfile::supportedDestinationTypes())],
             'wallet_provider' => [
                 'nullable',

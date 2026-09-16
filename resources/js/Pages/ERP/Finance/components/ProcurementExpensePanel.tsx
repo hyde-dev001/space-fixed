@@ -254,6 +254,15 @@ export default function ProcurementExpensePanel({
 				<div className="space-y-1 border-t border-gray-200 pt-1 dark:border-gray-700">
 					<p className="text-xs font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-300">Supplier Payment Profile</p>
 					<div className="grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2">
+						<DetailRow label="Recipient Type" value={details.payment_profile.recipient_type === "individual" ? "Individual" : "Business"} />
+						<DetailRow label="Recipient Name" value={details.payment_profile.recipient_type === "individual" ? [details.payment_profile.given_name, details.payment_profile.surname].filter(Boolean).join(" ") : details.payment_profile.business_name || "â€”"} />
+						<DetailRow label="Recipient Address" value={[
+							details.payment_profile.recipient_street_line_1,
+							details.payment_profile.recipient_street_line_2,
+							details.payment_profile.recipient_city,
+							[details.payment_profile.recipient_province_state, details.payment_profile.recipient_postal_code].filter(Boolean).join(" "),
+							details.payment_profile.recipient_country,
+						].filter(Boolean).join(", ")} />
 						<DetailRow label="Destination" value={details.payment_profile.destination_type === "e_wallet" ? "E-wallet" : "Bank Account"} />
 						<DetailRow label={details.payment_profile.destination_type === "e_wallet" ? "Wallet Provider" : "Bank"} value={details.payment_profile.wallet_provider || details.payment_profile.bank_name || "—"} />
 						<DetailRow label="Account Name" value={details.payment_profile.account_name || "—"} />

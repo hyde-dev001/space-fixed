@@ -322,6 +322,9 @@ final class ProcurementExpenseController extends Controller
                     && $profile->status === SupplierPaymentProfile::STATUS_DISABLED) {
                     throw new FinanceDomainException('A disabled payment profile must be updated before verification.', 'INVALID_STATE', 422);
                 }
+                if ($status === SupplierPaymentProfile::STATUS_VERIFIED && ! $profile->hasCompleteRecipientDetails()) {
+                    throw new FinanceDomainException('Complete the supplier recipient and payout details before verification.', 'INVALID_STATE', 422);
+                }
 
                 $previousStatus = (string) $profile->status;
                 $profile->status = $status;
