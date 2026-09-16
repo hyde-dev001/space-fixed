@@ -256,7 +256,10 @@ const SupplierFormFields = ({ formData, onChange, idPrefix, countries }: Supplie
 				</div>
 				{input("contact_person", "Contact Person")}
 				{input("email", "Email", false, "email")}
-				{input("phone", "Phone", false, "tel")}
+				<div>
+					<label htmlFor={fieldId("phone")} className={supplierLabelClass}>Phone</label>
+					<input id={fieldId("phone")} aria-label="Phone" type="tel" name="phone" value={formData.phone} onChange={onChange} maxLength={11} className={supplierFieldClass} />
+				</div>
 				{input("notes", "Notes")}
 			</div>
 		</fieldset>

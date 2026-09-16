@@ -2261,7 +2261,7 @@ const VirtualShowroom: React.FC<VirtualShowroomProps> = ({
 
 				{wallArtStatus === 'saving' && (
 					<div
-						className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-stone-950/80 px-6 backdrop-blur-md"
+						className="pointer-events-auto fixed inset-0 z-[100] flex items-center justify-center bg-stone-950/80 px-6 backdrop-blur-md erp-modal-backdrop"
 						role="status"
 						aria-live="polite"
 					>
