@@ -1,12 +1,19 @@
 import { Head, usePage } from "@inertiajs/react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import IconButton from "../../../components/ui/icon-button/IconButton";
 import { supplierApi, type Supplier } from "@/services/procurementApi";
-import type { SupplierPaymentDestinationType, SupplierPaymentProfile, UpsertSupplierPaymentProfilePayload } from "@/types/procurement";
-import SupplierPaymentProfileFields, { type SupplierPaymentProfileFormState } from "./components/SupplierPaymentProfileFields";
+import type {
+	SupplierPaymentDestinationType,
+	SupplierPaymentProfile,
+	SupplierPayoutChannelOptions,
+	SupplierPayoutCountryOption,
+	SupplierRecipientType,
+	UpsertSupplierPaymentProfilePayload,
+} from "@/types/procurement";
+import SupplierPaymentProfileFields, { type SupplierPaymentDestinationFormState } from "./components/SupplierPaymentProfileFields";
 import { erpUrl } from "@/utils/erpCapabilities";
 import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
@@ -52,12 +59,18 @@ const paymentProfileStatusPresentation = (status?: string | null) => {
 };
 
 interface FormState {
-	name: string;
+	recipient_type: SupplierRecipientType;
+	business_name: string;
+	given_name: string;
+	surname: string;
 	contact_person: string;
 	email: string;
 	phone: string;
 	address: string;
+	address_line_2: string;
 	city: string;
+	province_state: string;
+	postal_code: string;
 	country: string;
 	payment_terms: string;
 	lead_time_days: string;
@@ -66,30 +79,26 @@ interface FormState {
 }
 
 const initialFormState: FormState = {
-	name: "",
+	recipient_type: "business",
+	business_name: "",
+	given_name: "",
+	surname: "",
 	contact_person: "",
 	email: "",
 	phone: "",
 	address: "",
+	address_line_2: "",
 	city: "",
-	country: "",
+	province_state: "",
+	postal_code: "",
+	country: "Philippines",
 	payment_terms: "",
 	lead_time_days: "",
 	products_supplied: "",
 	notes: "",
 };
 
-const initialPaymentProfileFormState: SupplierPaymentProfileFormState = {
-	recipient_type: "business",
-	business_name: "",
-	given_name: "",
-	surname: "",
-	recipient_country: "PH",
-	recipient_province_state: "",
-	recipient_city: "",
-	recipient_street_line_1: "",
-	recipient_street_line_2: "",
-	recipient_postal_code: "",
+const initialPaymentProfileFormState: SupplierPaymentDestinationFormState = {
 	destination_type: "bank_account",
 	wallet_provider: "",
 	bank_name: "",
@@ -99,88 +108,158 @@ const initialPaymentProfileFormState: SupplierPaymentProfileFormState = {
 	account_identifier: "",
 };
 
-const buildPaymentProfilePayload = (form: SupplierPaymentProfileFormState): UpsertSupplierPaymentProfilePayload => ({
+const DEFAULT_PAYOUT_CHANNEL_OPTIONS: SupplierPayoutChannelOptions = {
+	countries: [{ code: "PH", name: "Philippines", currency: "PHP" }],
+	banks: [],
+	e_wallets: [],
+};
+
+const supplierDisplayName = (form: FormState): string => form.recipient_type === "business"
+	? form.business_name.trim()
+	: [form.given_name.trim(), form.surname.trim()].filter(Boolean).join(" ");
+
+const splitIndividualName = (name: string): Pick<FormState, "given_name" | "surname"> => {
+	const parts = name.trim().split(/\s+/).filter(Boolean);
+	return { given_name: parts.shift() || "", surname: parts.join(" ") };
+};
+
+const displayRecipientCountry = (country?: string | null): string => {
+	const value = country?.trim() || "Philippines";
+	return value.toUpperCase() === "PH" ? "Philippines" : value;
+};
+
+const recipientCountryCode = (country: string, countries: SupplierPayoutCountryOption[]): string => {
+	const value = country.trim();
+	const match = countries.find((option) =>
+		option.name.toLowerCase() === value.toLowerCase() || option.code.toUpperCase() === value.toUpperCase(),
+	);
+	return match?.code.toUpperCase() || "";
+};
+
+const buildPaymentProfilePayload = (
+	form: FormState,
+	destination: SupplierPaymentDestinationFormState,
+	countries: SupplierPayoutCountryOption[],
+): UpsertSupplierPaymentProfilePayload => ({
 	recipient_type: form.recipient_type,
 	...(form.recipient_type === "business" ? { business_name: form.business_name } : { given_name: form.given_name, surname: form.surname }),
-	recipient_country: form.recipient_country.toUpperCase(),
-	recipient_province_state: form.recipient_province_state,
-	recipient_city: form.recipient_city,
-	recipient_street_line_1: form.recipient_street_line_1,
-	recipient_street_line_2: form.recipient_street_line_2 || undefined,
-	recipient_postal_code: form.recipient_postal_code,
-	destination_type: form.destination_type,
-	...(form.destination_type === "e_wallet"
-		? { wallet_provider: form.wallet_provider, account_name: form.account_name, account_identifier: form.account_identifier || undefined }
-		: { bank_name: form.bank_name, bank_code: form.bank_code, account_name: form.account_name, account_number: form.account_number || undefined }),
+	recipient_country: recipientCountryCode(form.country, countries),
+	recipient_province_state: form.province_state,
+	recipient_city: form.city,
+	recipient_street_line_1: form.address,
+	recipient_street_line_2: form.address_line_2 || undefined,
+	recipient_postal_code: form.postal_code,
+	destination_type: destination.destination_type,
+	...(destination.destination_type === "e_wallet"
+		? { wallet_provider: destination.wallet_provider, account_name: destination.account_name, account_identifier: destination.account_identifier || undefined }
+		: { bank_name: destination.bank_name, bank_code: destination.bank_code, account_name: destination.account_name, account_number: destination.account_number || undefined }),
 });
+
+const hasPaymentDestinationInput = (destination: SupplierPaymentDestinationFormState): boolean => [
+	destination.wallet_provider,
+	destination.bank_name,
+	destination.bank_code,
+	destination.account_name,
+	destination.account_number,
+	destination.account_identifier,
+].some((value) => value.trim() !== "");
+
+const missingRecipientDetail = (form: FormState): string | null => {
+	const identityMissing = form.recipient_type === "business"
+		? !form.business_name.trim() ? "Business Name" : null
+		: !form.given_name.trim() ? "Given Name" : !form.surname.trim() ? "Surname" : null;
+	if (identityMissing) return identityMissing;
+	if (!form.address.trim()) return "Street Address";
+	if (!form.city.trim()) return "City / Municipality";
+	if (!form.province_state.trim()) return "Province / State";
+	if (!form.postal_code.trim()) return "Postal Code";
+	if (!form.country.trim()) return "Country";
+	return null;
+};
 
 interface SupplierFormFieldsProps {
 	formData: FormState;
 	onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
 	idPrefix: string;
+	countries: SupplierPayoutCountryOption[];
 }
 
 const supplierFieldClass = "w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white";
 const supplierLabelClass = "mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300";
 
-const SupplierFormFields = ({ formData, onChange, idPrefix }: SupplierFormFieldsProps) => {
+const SupplierFormFields = ({ formData, onChange, idPrefix, countries }: SupplierFormFieldsProps) => {
+	const countryIsAvailable = countries.some((country) => country.name === formData.country);
 	const fieldId = (name: string) => `${idPrefix}-supplier-${name}`;
+	const input = (name: keyof FormState, label: string, required = false, type = "text") => (
+		<div>
+			<label htmlFor={fieldId(name)} className={supplierLabelClass}>{label}{required ? " *" : ""}</label>
+			<input id={fieldId(name)} aria-label={label} type={type} name={name} value={formData[name]} onChange={onChange} required={required} className={supplierFieldClass} />
+		</div>
+	);
 
 	return (
-		<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-			<div className="sm:col-span-2">
-				<label htmlFor={fieldId("name")} className={supplierLabelClass}>Supplier Name *</label>
-				<input id={fieldId("name")} type="text" name="name" value={formData.name} onChange={onChange} placeholder="e.g., Metro Footwear Trading" className={supplierFieldClass} />
+		<fieldset aria-labelledby={`${idPrefix}-supplier-details-title`} className="space-y-3">
+			<legend id={`${idPrefix}-supplier-details-title`} className="text-sm font-semibold text-gray-900 dark:text-white">Supplier Details</legend>
+			<p className="text-xs text-gray-500 dark:text-gray-400">Who is the supplier? These details are also used for the supplier payout recipient.</p>
+
+			<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<div>
+					<label htmlFor={fieldId("recipient_type")} className={supplierLabelClass}>Recipient Type</label>
+					<select id={fieldId("recipient_type")} aria-label="Recipient Type" name="recipient_type" value={formData.recipient_type} onChange={onChange} className={supplierFieldClass}>
+						<option value="business">Business</option>
+						<option value="individual">Individual</option>
+					</select>
+				</div>
+				{formData.recipient_type === "business" ? (
+					input("business_name", "Business Name", true)
+				) : (
+					<>
+						{input("given_name", "Given Name", true)}
+						{input("surname", "Surname", true)}
+					</>
+				)}
 			</div>
 
-			<div className="sm:col-span-2">
-				<label htmlFor={fieldId("address")} className={supplierLabelClass}>Address</label>
-				<input id={fieldId("address")} type="text" name="address" value={formData.address} onChange={onChange} placeholder="e.g., 123 Main Street" className={supplierFieldClass} />
+			<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<div className="sm:col-span-2">{input("address", "Street Address", true)}</div>
+				<div className="sm:col-span-2">{input("address_line_2", "Address Line 2")}</div>
+				{input("city", "City / Municipality", true)}
+				{input("province_state", "Province / State", true)}
+				{input("postal_code", "Postal Code", true)}
+				<div>
+					<label htmlFor={fieldId("country")} className={supplierLabelClass}>Country *</label>
+					<select id={fieldId("country")} aria-label="Country" name="country" value={formData.country} onChange={onChange} required className={supplierFieldClass}>
+						<option value="">Select country</option>
+						{countries.map((country) => (
+							<option key={country.code} value={country.name}>{country.name} ({country.code} · {country.currency})</option>
+						))}
+						{formData.country && !countryIsAvailable && <option value={formData.country}>{formData.country} (saved; verify)</option>}
+					</select>
+				</div>
 			</div>
 
-			<div>
-				<label htmlFor={fieldId("city")} className={supplierLabelClass}>City</label>
-				<input id={fieldId("city")} type="text" name="city" value={formData.city} onChange={onChange} className={supplierFieldClass} />
-			</div>
-			<div>
-				<label htmlFor={fieldId("country")} className={supplierLabelClass}>Country</label>
-				<input id={fieldId("country")} type="text" name="country" value={formData.country} onChange={onChange} className={supplierFieldClass} />
-			</div>
-
-			<div>
-				<label htmlFor={fieldId("payment-terms")} className={supplierLabelClass}>Payment Terms</label>
-				<select id={fieldId("payment-terms")} name="payment_terms" value={formData.payment_terms} onChange={onChange} className={supplierFieldClass}>
-					<option value="">Use procurement default</option>
-					{PAYMENT_TERMS.map((terms) => <option key={terms} value={terms}>{terms}</option>)}
-				</select>
-			</div>
-			<div>
-				<label htmlFor={fieldId("lead-time-days")} className={supplierLabelClass}>Lead Time (days)</label>
-				<input id={fieldId("lead-time-days")} type="number" min="0" name="lead_time_days" value={formData.lead_time_days} onChange={onChange} className={supplierFieldClass} />
+			<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<div>
+					<label htmlFor={fieldId("payment-terms")} className={supplierLabelClass}>Payment Terms</label>
+					<select id={fieldId("payment-terms")} name="payment_terms" value={formData.payment_terms} onChange={onChange} className={supplierFieldClass}>
+						<option value="">Use procurement default</option>
+						{PAYMENT_TERMS.map((terms) => <option key={terms} value={terms}>{terms}</option>)}
+					</select>
+				</div>
+				{input("lead_time_days", "Lead Time (days)", false, "number")}
 			</div>
 
-			<div className="sm:col-span-2">
-				<label htmlFor={fieldId("products-supplied")} className={supplierLabelClass}>Products Supplied</label>
-				<input id={fieldId("products-supplied")} type="text" name="products_supplied" value={formData.products_supplied} onChange={onChange} placeholder="e.g., running shoes, laces" className={supplierFieldClass} />
+			<div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<div className="sm:col-span-2">
+					<label htmlFor={fieldId("products-supplied")} className={supplierLabelClass}>Products Supplied</label>
+					<input id={fieldId("products-supplied")} type="text" name="products_supplied" value={formData.products_supplied} onChange={onChange} placeholder="e.g., running shoes, laces" className={supplierFieldClass} />
+				</div>
+				{input("contact_person", "Contact Person")}
+				{input("email", "Email", false, "email")}
+				{input("phone", "Phone", false, "tel")}
+				{input("notes", "Notes")}
 			</div>
-
-			<div>
-				<label htmlFor={fieldId("contact-person")} className={supplierLabelClass}>Contact Person</label>
-				<input id={fieldId("contact-person")} type="text" name="contact_person" value={formData.contact_person} onChange={onChange} placeholder="e.g., Juan Dela Cruz" className={supplierFieldClass} />
-			</div>
-			<div>
-				<label htmlFor={fieldId("email")} className={supplierLabelClass}>Email</label>
-				<input id={fieldId("email")} type="email" name="email" value={formData.email} onChange={onChange} placeholder="e.g., contact@email.com" className={supplierFieldClass} />
-			</div>
-			<div>
-				<label htmlFor={fieldId("phone")} className={supplierLabelClass}>Phone</label>
-				<input id={fieldId("phone")} type="tel" name="phone" value={formData.phone} onChange={onChange} inputMode="numeric" maxLength={11} pattern="[0-9]{1,11}" placeholder="e.g., 09174561188" className={supplierFieldClass} />
-			</div>
-			<div>
-				<label htmlFor={fieldId("notes")} className={supplierLabelClass}>Notes</label>
-				<input id={fieldId("notes")} type="text" name="notes" value={formData.notes} onChange={onChange} placeholder="e.g., Preferred payment: bank transfer. Lead time: 7 days." className={supplierFieldClass} />
-			</div>
-		</div>
+		</fieldset>
 	);
 };
 
@@ -197,9 +276,13 @@ export default function SuppliersManagement() {
 	const [viewingSupplier, setViewingSupplier] = useState<Supplier | null>(null);
 	const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
 	const [paymentProfile, setPaymentProfile] = useState<SupplierPaymentProfile | null>(null);
-	const [paymentProfileForm, setPaymentProfileForm] = useState<PaymentProfileFormState>(initialPaymentProfileFormState);
+	const [paymentProfileForm, setPaymentProfileForm] = useState<SupplierPaymentDestinationFormState>(initialPaymentProfileFormState);
 	const [paymentProfileLoading, setPaymentProfileLoading] = useState(false);
 	const [showPaymentAccount, setShowPaymentAccount] = useState(false);
+	const [payoutOptions, setPayoutOptions] = useState<SupplierPayoutChannelOptions>(DEFAULT_PAYOUT_CHANNEL_OPTIONS);
+	const [payoutOptionsLoading, setPayoutOptionsLoading] = useState(false);
+	const [payoutOptionsError, setPayoutOptionsError] = useState<string | null>(null);
+	const payoutOptionsRequested = useRef(false);
 
 	const getApiErrorMessage = (error: unknown, fallback: string) => {
 		if (!axios.isAxiosError(error)) return fallback;
@@ -216,6 +299,28 @@ export default function SuppliersManagement() {
 			: undefined;
 
 		return firstValidationError || responseData?.message || fallback;
+	};
+
+	const loadPayoutOptions = async () => {
+		if (payoutOptionsRequested.current) return;
+
+		payoutOptionsRequested.current = true;
+		setPayoutOptionsLoading(true);
+		setPayoutOptionsError(null);
+		try {
+			const channelsUrl = erpUrl(erpCapabilities, "GET:procurement.suppliers.payment-channels");
+			const response = await supplierApi.getPaymentChannels(channelsUrl ?? undefined);
+			setPayoutOptions({
+				countries: response.countries?.length ? response.countries : DEFAULT_PAYOUT_CHANNEL_OPTIONS.countries,
+				banks: response.banks ?? [],
+				e_wallets: response.e_wallets ?? [],
+			});
+		} catch (error) {
+			payoutOptionsRequested.current = false;
+			setPayoutOptionsError(getApiErrorMessage(error, "Xendit supported payout channels could not be loaded. Connect Xendit and try again."));
+		} finally {
+			setPayoutOptionsLoading(false);
+		}
 	};
 
 	const fetchSuppliers = async () => {
@@ -264,30 +369,34 @@ export default function SuppliersManagement() {
 		setViewingSupplier(supplier);
 	};
 
-	const loadPaymentProfile = async (supplierId: number) => {
+	const loadPaymentProfile = async (supplier: Supplier) => {
 		setPaymentProfileLoading(true);
 		try {
-			const profile = await supplierApi.getPaymentProfile(supplierId);
+			const profile = await supplierApi.getPaymentProfile(supplier.id);
 			setPaymentProfile(profile);
-				setPaymentProfileForm({
-					recipient_type: profile?.recipient_type || "business",
-					business_name: profile?.business_name || "",
-					given_name: profile?.given_name || "",
-					surname: profile?.surname || "",
-					recipient_country: profile?.recipient_country || "PH",
-					recipient_province_state: profile?.recipient_province_state || "",
-					recipient_city: profile?.recipient_city || "",
-					recipient_street_line_1: profile?.recipient_street_line_1 || "",
-					recipient_street_line_2: profile?.recipient_street_line_2 || "",
-					recipient_postal_code: profile?.recipient_postal_code || "",
-					destination_type: (profile?.destination_type as SupplierPaymentDestinationType) || "bank_account",
-					wallet_provider: profile?.wallet_provider || "",
-					bank_name: profile?.bank_name || "",
-					bank_code: profile?.bank_code || "",
-					account_name: profile?.account_name || "",
-					account_number: "",
-					account_identifier: "",
-				});
+			const nameParts = splitIndividualName(supplier.name);
+			setFormData((current) => ({
+				...current,
+				recipient_type: profile?.recipient_type || current.recipient_type,
+				business_name: profile?.business_name || current.business_name,
+				given_name: profile?.given_name || nameParts.given_name,
+				surname: profile?.surname || nameParts.surname,
+				address: profile?.recipient_street_line_1 || current.address,
+				address_line_2: profile?.recipient_street_line_2 || current.address_line_2,
+				city: profile?.recipient_city || current.city,
+				province_state: profile?.recipient_province_state || current.province_state,
+				postal_code: profile?.recipient_postal_code || current.postal_code,
+				country: displayRecipientCountry(profile?.recipient_country || current.country),
+			}));
+			setPaymentProfileForm({
+				destination_type: (profile?.destination_type as SupplierPaymentDestinationType) || "bank_account",
+				wallet_provider: profile?.wallet_provider || "",
+				bank_name: profile?.bank_name || "",
+				bank_code: profile?.bank_code || "",
+				account_name: profile?.account_name || "",
+				account_number: "",
+				account_identifier: "",
+			});
 		} catch (error) {
 			console.error("Failed to load supplier payment profile:", error);
 			setPaymentProfile(null);
@@ -309,18 +418,25 @@ export default function SuppliersManagement() {
 	const handleEdit = (supplier: Supplier) => {
 		if (ownerMode) return;
 
+		void loadPayoutOptions();
 		setEditingSupplier(supplier);
 		setPaymentProfile(null);
 		setPaymentProfileForm(initialPaymentProfileFormState);
-		void loadPaymentProfile(supplier.id);
+		void loadPaymentProfile(supplier);
 		setFormData({
-			name: supplier.name,
+			recipient_type: "business",
+			business_name: supplier.name,
+			given_name: "",
+			surname: "",
 			contact_person: supplier.contact_person || "",
 			email: supplier.email || "",
 			phone: supplier.phone || "",
 			address: supplier.address || "",
+			address_line_2: "",
 			city: supplier.city || "",
-			country: supplier.country || "",
+			province_state: "",
+			postal_code: "",
+			country: displayRecipientCountry(supplier.country),
 			payment_terms: PAYMENT_TERMS.includes(supplier.payment_terms as typeof PAYMENT_TERMS[number])
 				? supplier.payment_terms
 				: "",
@@ -395,8 +511,9 @@ export default function SuppliersManagement() {
 	const handleSaveEdit = async () => {
 		if (ownerMode) return;
 
-		if (!formData.name.trim()) {
-			await Swal.fire("Warning", "Please fill required field (Supplier Name)", "warning");
+		const displayName = supplierDisplayName(formData);
+		if (!displayName) {
+			await Swal.fire("Warning", formData.recipient_type === "business" ? "Please fill required field (Business Name)" : "Please fill Given Name and Surname", "warning");
 			return;
 		}
 
@@ -407,9 +524,18 @@ export default function SuppliersManagement() {
 
 		if (!editingSupplier) return;
 
+		const shouldSyncPaymentProfile = paymentProfile !== null || hasPaymentDestinationInput(paymentProfileForm);
+		if (shouldSyncPaymentProfile) {
+			const missingField = missingRecipientDetail(formData);
+			if (missingField) {
+				await Swal.fire("Warning", `Please complete Supplier Details before saving the payment profile (${missingField}).`, "warning");
+				return;
+			}
+		}
+
 		try {
 			await supplierApi.update(editingSupplier.id, {
-				name: formData.name,
+				name: displayName,
 				contact_person: formData.contact_person,
 				email: formData.email,
 				phone: formData.phone,
@@ -421,9 +547,9 @@ export default function SuppliersManagement() {
 				products_supplied: formData.products_supplied,
 				notes: formData.notes,
 			});
-				if (paymentProfileForm.wallet_provider.trim() || paymentProfileForm.bank_name.trim() || paymentProfileForm.bank_code.trim() || paymentProfileForm.account_name.trim() || paymentProfileForm.account_number.trim() || paymentProfileForm.account_identifier.trim()) {
-					await supplierApi.upsertPaymentProfile(editingSupplier.id, buildPaymentProfilePayload(paymentProfileForm));
-				}
+			if (shouldSyncPaymentProfile) {
+				await supplierApi.upsertPaymentProfile(editingSupplier.id, buildPaymentProfilePayload(formData, paymentProfileForm, payoutOptions.countries));
+			}
 
 			await Swal.fire("Success", "Supplier updated successfully", "success");
 			closeEditModal();
@@ -437,6 +563,7 @@ export default function SuppliersManagement() {
 	const handleOpenModal = () => {
 		if (ownerMode) return;
 
+		void loadPayoutOptions();
 			setFormData(initialFormState);
 			setPaymentProfileForm(initialPaymentProfileFormState);
 			setShowPaymentAccount(false);
@@ -452,32 +579,50 @@ export default function SuppliersManagement() {
 
 	const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
 		const { name, value } = e.target;
-		setFormData((prev) => ({
-			...prev,
-			[name]: name === "phone" ? value.replace(/\D/g, "").slice(0, 11) : value,
-		}));
-		const recipientField = { name: "business_name", address: "recipient_street_line_1", city: "recipient_city" }[name];
-		if (recipientField) setPaymentProfileForm((prev) => ({ ...prev, [recipientField]: value }));
-		if (name === "country") setPaymentProfileForm((prev) => ({ ...prev, recipient_country: value.toUpperCase() === "PHILIPPINES" ? "PH" : value.toUpperCase().slice(0, 2) }));
+		setFormData((prev) => name === "recipient_type"
+			? {
+				...prev,
+				recipient_type: value as SupplierRecipientType,
+				business_name: "",
+				given_name: "",
+				surname: "",
+			}
+			: {
+				...prev,
+				[name]: name === "phone" ? value.replace(/\D/g, "").slice(0, 11) : value,
+			});
 	};
 
 	const handlePaymentProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
 			const { name, value } = e.target;
-			setPaymentProfileForm((prev) => name === "destination_type"
-				? {
+			if (name === "destination_type") {
+				setPaymentProfileForm((prev) => ({
 					...prev,
 					destination_type: value as SupplierPaymentDestinationType,
 					wallet_provider: "", bank_name: "", bank_code: "", account_number: "", account_identifier: "",
-				}
-				: name === "recipient_type" ? { ...prev, recipient_type: value as "business" | "individual", business_name: "", given_name: "", surname: "" }
-				: { ...prev, [name]: value });
+				}));
+				return;
+			}
+
+			if (name === "bank_name") {
+				const selectedBank = payoutOptions.banks.find((bank) => bank.channel_name === value);
+				setPaymentProfileForm((prev) => ({
+					...prev,
+					bank_name: value,
+					bank_code: selectedBank?.channel_code === "PH_BDO" ? "BNORPHMM" : "",
+				}));
+				return;
+			}
+
+			setPaymentProfileForm((prev) => ({ ...prev, [name]: value }));
 	};
 
 	const handleAddSupplier = async () => {
 		if (ownerMode) return;
 
-		if (!formData.name.trim()) {
-			await Swal.fire("Warning", "Please fill required field (Supplier Name)", "warning");
+		const displayName = supplierDisplayName(formData);
+		if (!displayName) {
+			await Swal.fire("Warning", formData.recipient_type === "business" ? "Please fill required field (Business Name)" : "Please fill Given Name and Surname", "warning");
 			return;
 		}
 
@@ -486,13 +631,21 @@ export default function SuppliersManagement() {
 			return;
 		}
 
+		const hasPaymentProfileInput = hasPaymentDestinationInput(paymentProfileForm);
+		if (hasPaymentProfileInput) {
+			const missingField = missingRecipientDetail(formData);
+			if (missingField) {
+				await Swal.fire("Warning", `Please complete Supplier Details before saving the payment profile (${missingField}).`, "warning");
+				return;
+			}
+		}
+
 		try {
-				const hasPaymentProfileInput = paymentProfileForm.wallet_provider.trim() || paymentProfileForm.bank_name.trim() || paymentProfileForm.bank_code.trim() || paymentProfileForm.account_name.trim() || paymentProfileForm.account_number.trim() || paymentProfileForm.account_identifier.trim();
 				const paymentProfilePayload: UpsertSupplierPaymentProfilePayload | undefined = hasPaymentProfileInput
-					? buildPaymentProfilePayload(paymentProfileForm)
+					? buildPaymentProfilePayload(formData, paymentProfileForm, payoutOptions.countries)
 					: undefined;
 				await supplierApi.create({
-					name: formData.name,
+					name: displayName,
 				contact_person: formData.contact_person,
 				email: formData.email,
 				phone: formData.phone,
@@ -711,14 +864,11 @@ export default function SuppliersManagement() {
 						</div>
 
 						<div className="min-h-0 flex-1 overflow-y-auto p-5 space-y-5 sm:p-6">
-							<SupplierFormFields formData={formData} onChange={handleFormChange} idPrefix="add" />
+							<SupplierFormFields formData={formData} onChange={handleFormChange} idPrefix="add" countries={payoutOptions.countries} />
 
 							<div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2 dark:border-blue-900/60 dark:bg-blue-950/20 sm:col-span-2">
-								<div>
-									<h3 className="text-sm font-semibold text-gray-900 dark:text-white">Payment Profile (optional)</h3>
-									<p className="text-xs text-gray-500 dark:text-gray-400">Save a verified destination for later Finance payment review.</p>
-								</div>
-				<SupplierPaymentProfileFields form={paymentProfileForm} onChange={handlePaymentProfileChange} idPrefix="add" showAccount={showPaymentAccount} onToggleAccount={() => setShowPaymentAccount((visible) => !visible)} />
+								<p className="text-xs text-gray-500 dark:text-gray-400">Optional: save a payout destination for later Finance payment review.</p>
+								<SupplierPaymentProfileFields form={paymentProfileForm} onChange={handlePaymentProfileChange} idPrefix="add" showAccount={showPaymentAccount} onToggleAccount={() => setShowPaymentAccount((visible) => !visible)} banks={payoutOptions.banks} wallets={payoutOptions.e_wallets} optionsLoading={payoutOptionsLoading} optionsError={payoutOptionsError} />
 							</div>
 
 						</div>
@@ -862,12 +1012,11 @@ export default function SuppliersManagement() {
 							</button>
 						</div>
 
-						<div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
-							<SupplierFormFields formData={formData} onChange={handleFormChange} idPrefix="edit" />
+						<div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-3">
+							<SupplierFormFields formData={formData} onChange={handleFormChange} idPrefix="edit" countries={payoutOptions.countries} />
 
-						<div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2 dark:border-blue-900/60 dark:bg-blue-950/20">
+						<div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2 dark:border-blue-900/60 dark:bg-blue-950/20">
 							<div>
-								<h3 className="text-sm font-semibold text-gray-900 dark:text-white">Payment Profile</h3>
 								<p className="text-xs text-gray-500 dark:text-gray-400">
 									{paymentProfile ? `Status: ${paymentProfile.status}. Account: ${paymentProfile.masked_account_identifier || paymentProfile.masked_account_number || "—"}` : "No payment profile saved yet."}
 								</p>
@@ -877,7 +1026,7 @@ export default function SuppliersManagement() {
 								<p className="text-sm text-gray-500 dark:text-gray-400">Loading payment profile…</p>
 							) : (
 								<>
-									<SupplierPaymentProfileFields form={paymentProfileForm} onChange={handlePaymentProfileChange} idPrefix="edit" showAccount={showPaymentAccount} onToggleAccount={() => setShowPaymentAccount((visible) => !visible)} keepSavedAccount={!!paymentProfile} />
+									<SupplierPaymentProfileFields form={paymentProfileForm} onChange={handlePaymentProfileChange} idPrefix="edit" showAccount={showPaymentAccount} onToggleAccount={() => setShowPaymentAccount((visible) => !visible)} keepSavedAccount={!!paymentProfile} banks={payoutOptions.banks} wallets={payoutOptions.e_wallets} optionsLoading={payoutOptionsLoading} optionsError={payoutOptionsError} />
 									<p className="text-xs text-gray-500 dark:text-gray-400">
 										{paymentProfile?.status === "disabled"
 											? "Disabled by Finance. Replace the destination here; Finance must verify it before it can be used for a supplier payment."

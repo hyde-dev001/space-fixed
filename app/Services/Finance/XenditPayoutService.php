@@ -42,6 +42,86 @@ final class XenditPayoutService
         }
     }
 
+    /** @return array{countries: array<int, array{code: string, name: string, currency: string}>, banks: array<int, array{channel_code: string, channel_name: string, channel_category: string, currency: string}>, e_wallets: array<int, array{channel_code: string, channel_name: string, channel_category: string, currency: string}>} */
+    public function getPayoutChannels(string $secretKey, ?int $shopId = null): array
+    {
+        if (trim($secretKey) === '') {
+            throw new FinanceDomainException(
+                'Xendit supplier payouts are not configured for this shop.',
+                'XENDIT_NOT_CONFIGURED',
+                422,
+            );
+        }
+
+        try {
+            $response = $this->client($secretKey)
+                ->retry(2, 200)
+                ->get($this->endpoint('/payouts_channels'), ['currency' => 'PHP']);
+        } catch (Throwable) {
+            $this->logFailure('list_payout_channels', $shopId, null, null);
+
+            throw new FinanceDomainException(
+                'SoleSpace could not load Xendit payout channels. Check the connection and try again.',
+                'XENDIT_CHANNELS_UNAVAILABLE',
+                502,
+            );
+        }
+
+        if (! $response->successful()) {
+            $this->logFailure('list_payout_channels', $shopId, null, $response);
+
+            throw new FinanceDomainException(
+                $response->status() === 401
+                    ? 'Xendit rejected this secret key. Check the Test/Live key and try again.'
+                    : 'Xendit could not load payout channels. Check the key permissions and try again.',
+                $response->status() === 401 ? 'XENDIT_KEY_REJECTED' : 'XENDIT_CHANNELS_UNAVAILABLE',
+                422,
+            );
+        }
+
+        $body = $response->json();
+        $rawChannels = is_array($body) && is_array($body['data'] ?? null)
+            ? $body['data']
+            : $body;
+        $channels = [];
+
+        foreach (is_array($rawChannels) ? $rawChannels : [] as $channel) {
+            if (! is_array($channel)) {
+                continue;
+            }
+
+            $code = strtoupper(trim((string) ($channel['channel_code'] ?? '')));
+            $name = trim((string) ($channel['channel_name'] ?? $channel['name'] ?? ''));
+            $currency = strtoupper(trim((string) ($channel['currency'] ?? '')));
+            $category = strtoupper(str_replace(['-', ' '], '_', trim((string) ($channel['channel_category'] ?? ''))));
+            $category = $category === 'E_WALLET' ? 'EWALLET' : $category;
+
+            if (! str_starts_with($code, 'PH_') || $name === '' || $currency !== 'PHP' || ! in_array($category, ['BANK', 'EWALLET'], true)) {
+                continue;
+            }
+
+            $channels[$code] = [
+                'channel_code' => $code,
+                'channel_name' => $name,
+                'channel_category' => $category,
+                'currency' => $currency,
+            ];
+        }
+
+        $channels = array_values($channels);
+        usort($channels, fn (array $left, array $right): int => strcasecmp($left['channel_name'], $right['channel_name']));
+
+        return [
+            'countries' => [[
+                'code' => 'PH',
+                'name' => 'Philippines',
+                'currency' => 'PHP',
+            ]],
+            'banks' => array_values(array_filter($channels, fn (array $channel): bool => $channel['channel_category'] === 'BANK')),
+            'e_wallets' => array_values(array_filter($channels, fn (array $channel): bool => $channel['channel_category'] === 'EWALLET')),
+        ];
+    }
+
     /** @return array{payout_id: string, status: string, reference_id: string|null} */
     public function createPayout(ShopPaymentIntegration $integration, SupplierPaymentAttempt $attempt): array
     {

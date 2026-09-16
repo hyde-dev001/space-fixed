@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SuppliersManagement from "../SuppliersManagement";
 
@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 	update: vi.fn(),
 	getPaymentProfile: vi.fn(),
 	upsertPaymentProfile: vi.fn(),
+	getPaymentChannels: vi.fn(),
 	suppliers: [] as Array<Record<string, unknown>>,
 }));
 
@@ -34,6 +35,7 @@ vi.mock("@/services/procurementApi", () => ({
 		update: mocks.update,
 		getPaymentProfile: mocks.getPaymentProfile,
 		upsertPaymentProfile: mocks.upsertPaymentProfile,
+		getPaymentChannels: mocks.getPaymentChannels,
 	},
 }));
 
@@ -48,6 +50,16 @@ describe("SuppliersManagement payment-term fields", () => {
 		mocks.update.mockResolvedValue({ data: {} });
 		mocks.getPaymentProfile.mockResolvedValue(null);
 		mocks.upsertPaymentProfile.mockResolvedValue({});
+		mocks.getPaymentChannels.mockResolvedValue({
+			countries: [{ code: "PH", name: "Philippines", currency: "PHP" }],
+			banks: [
+				{ channel_code: "PH_BDO", channel_name: "Banco De Oro Unibank, Inc.", channel_category: "BANK", currency: "PHP" },
+				{ channel_code: "PH_BPI", channel_name: "Bank of the Philippine Islands (BPI)", channel_category: "BANK", currency: "PHP" },
+			],
+			e_wallets: [
+				{ channel_code: "PH_GCASH", channel_name: "GCash", channel_category: "EWALLET", currency: "PHP" },
+			],
+		});
 	});
 
 	it("submits an explicit e-wallet profile when adding a supplier", async () => {
@@ -57,10 +69,15 @@ describe("SuppliersManagement payment-term fields", () => {
 		expect(document.querySelector(".erp-modal-backdrop .overflow-y-auto")).not.toBeInTheDocument();
 		expect(document.querySelector(".fixed.inset-0.z-50")).toHaveClass("py-6");
 		expect(document.querySelector(".erp-modal-backdrop")?.nextElementSibling).toHaveClass("max-w-5xl");
-		fireEvent.change(screen.getByLabelText("Supplier Name *"), { target: { value: "Wallet Supplier" } });
+		fireEvent.change(screen.getByLabelText("Business Name"), { target: { value: "Wallet Supplier" } });
+		fireEvent.change(screen.getByLabelText("Street Address"), { target: { value: "123 Main Street" } });
+		fireEvent.change(screen.getByLabelText("City / Municipality"), { target: { value: "Manila" } });
+		fireEvent.change(screen.getByLabelText("Province / State"), { target: { value: "Metro Manila" } });
+		fireEvent.change(screen.getByLabelText("Postal Code"), { target: { value: "1000" } });
 		fireEvent.change(screen.getByLabelText("Destination Type"), { target: { value: "e_wallet" } });
+		await screen.findByRole("option", { name: /GCash \(PH_GCASH\)/ });
 		fireEvent.change(screen.getByLabelText("Wallet Provider"), { target: { value: "GCash" } });
-		fireEvent.change(screen.getByLabelText("Account Name"), { target: { value: "Wallet Supplier" } });
+		fireEvent.change(screen.getByLabelText("Account Holder Name"), { target: { value: "Wallet Supplier" } });
 		fireEvent.change(screen.getByLabelText("Mobile / Account Number"), { target: { value: "09171234567" } });
 		const showAccountButton = screen.getByRole("button", { name: "Show account number" });
 		expect(showAccountButton).toHaveAttribute("title", "Show account number");
@@ -89,11 +106,12 @@ describe("SuppliersManagement payment-term fields", () => {
 		render(<SuppliersManagement />);
 
 		fireEvent.click(await screen.findByRole("button", { name: "+ Add Supplier" }));
+		await screen.findByRole("dialog", { name: "Add New Supplier" });
 
-		expect(screen.getAllByText("City")).toHaveLength(1);
-		expect(screen.getAllByText("Country")).toHaveLength(1);
-		expect(screen.getAllByText("Lead Time (days)")).toHaveLength(1);
-		expect(screen.getAllByText("Products Supplied")).toHaveLength(1);
+		expect(screen.getAllByLabelText("City / Municipality")).toHaveLength(1);
+		expect(screen.getAllByLabelText("Country")).toHaveLength(1);
+		expect(screen.getAllByLabelText("Lead Time (days)")).toHaveLength(1);
+		expect(screen.getAllByLabelText("Products Supplied")).toHaveLength(1);
 		expect(screen.queryByRole("option", { name: "COD" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("option", { name: "50% down, 50% on delivery" })).not.toBeInTheDocument();
 		expect(screen.getAllByRole("option", { name: "Net 60" }).length).toBeGreaterThan(0);
@@ -103,6 +121,15 @@ describe("SuppliersManagement payment-term fields", () => {
 	it("defaults a new payout recipient to Business and swaps individual identity fields", async () => {
 		render(<SuppliersManagement />);
 		fireEvent.click(await screen.findByRole("button", { name: "+ Add Supplier" }));
+		await screen.findByRole("option", { name: /Banco De Oro Unibank, Inc\. \(PH_BDO\)/ });
+
+		const supplierDetails = screen.getByRole("group", { name: "Supplier Details" });
+		const paymentProfile = screen.getByRole("group", { name: "Payment Profile" });
+		expect(within(supplierDetails).getByLabelText("Recipient Type")).toHaveValue("business");
+		expect(within(supplierDetails).getByLabelText("Business Name")).toBeInTheDocument();
+		expect(within(paymentProfile).queryByLabelText("Recipient Type")).not.toBeInTheDocument();
+		expect(within(paymentProfile).queryByLabelText("Business Name")).not.toBeInTheDocument();
+		expect(within(paymentProfile).queryByLabelText("Province / State")).not.toBeInTheDocument();
 
 		expect(screen.getByLabelText("Recipient Type")).toHaveValue("business");
 		expect(screen.getByLabelText("Business Name")).toBeInTheDocument();
@@ -110,8 +137,39 @@ describe("SuppliersManagement payment-term fields", () => {
 		expect(screen.queryByLabelText("Business Name")).not.toBeInTheDocument();
 		expect(screen.getByLabelText("Given Name")).toBeInTheDocument();
 		expect(screen.getByLabelText("Surname")).toBeInTheDocument();
-		expect(screen.getByLabelText("Province / State")).toBeInTheDocument();
-		expect(screen.getByLabelText("Postal Code")).toBeInTheDocument();
+		expect(within(supplierDetails).getByLabelText("Province / State")).toBeInTheDocument();
+		expect(within(supplierDetails).getByLabelText("Postal Code")).toBeInTheDocument();
+	});
+
+	it("derives an Individual supplier name and sends only individual recipient fields", async () => {
+		render(<SuppliersManagement />);
+		fireEvent.click(await screen.findByRole("button", { name: "+ Add Supplier" }));
+		fireEvent.change(screen.getByLabelText("Recipient Type"), { target: { value: "individual" } });
+		fireEvent.change(screen.getByLabelText("Given Name"), { target: { value: "Juanito" } });
+		fireEvent.change(screen.getByLabelText("Surname"), { target: { value: "Dimaguiba" } });
+		fireEvent.change(screen.getByLabelText("Street Address"), { target: { value: "123 Main Street" } });
+		fireEvent.change(screen.getByLabelText("City / Municipality"), { target: { value: "Manila" } });
+		fireEvent.change(screen.getByLabelText("Province / State"), { target: { value: "Metro Manila" } });
+		fireEvent.change(screen.getByLabelText("Postal Code"), { target: { value: "1000" } });
+		await screen.findByRole("option", { name: /Banco De Oro Unibank, Inc\. \(PH_BDO\)/ });
+		fireEvent.change(screen.getByLabelText("Bank"), { target: { value: "Banco De Oro Unibank, Inc." } });
+		expect(screen.getByLabelText("Bank Code / SWIFT")).toHaveValue("BNORPHMM");
+		fireEvent.change(screen.getByLabelText("Account Holder Name"), { target: { value: "Juanito Dimaguiba" } });
+		fireEvent.change(screen.getByLabelText("Account Number"), { target: { value: "1234567890" } });
+		fireEvent.click(screen.getByRole("button", { name: "Add Supplier" }));
+
+		await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+			name: "Juanito Dimaguiba",
+			payment_profile: expect.objectContaining({
+				recipient_type: "individual",
+				given_name: "Juanito",
+				surname: "Dimaguiba",
+				bank_name: "Banco De Oro Unibank, Inc.",
+				bank_code: "BNORPHMM",
+			}),
+		})),
+		);
+		expect(mocks.create.mock.calls.at(-1)?.[0].payment_profile).not.toHaveProperty("business_name");
 	});
 
 	it("shows and submits the canonical supplier fields when editing", async () => {
@@ -136,13 +194,13 @@ describe("SuppliersManagement payment-term fields", () => {
 		render(<SuppliersManagement />);
 		fireEvent.click(await screen.findByRole("button", { name: "Edit Editable Supplier" }));
 
-		expect(screen.getByLabelText("City")).toHaveValue("Manila");
+		expect(screen.getByLabelText("City / Municipality")).toHaveValue("Manila");
 		expect(screen.getByLabelText("Country")).toHaveValue("Philippines");
 		expect(screen.getByLabelText("Payment Terms")).toHaveValue("Net 30");
 		expect(screen.getByLabelText("Lead Time (days)")).toHaveValue(7);
 		expect(screen.getByLabelText("Products Supplied")).toHaveValue("Running shoes");
 
-		fireEvent.change(screen.getByLabelText("City"), { target: { value: "Cebu" } });
+		fireEvent.change(screen.getByLabelText("City / Municipality"), { target: { value: "Cebu" } });
 		fireEvent.change(screen.getByLabelText("Payment Terms"), { target: { value: "Net 60" } });
 		fireEvent.change(screen.getByLabelText("Lead Time (days)"), { target: { value: "14" } });
 		fireEvent.change(screen.getByLabelText("Products Supplied"), { target: { value: "Boots" } });
@@ -197,6 +255,7 @@ describe("SuppliersManagement payment-term fields", () => {
 		expect(await screen.findByText(/Account: \*{6}7890/)).toBeInTheDocument();
 		expect(screen.getByLabelText("Account Number")).toHaveValue("");
 		expect(screen.queryByDisplayValue("1234567890")).not.toBeInTheDocument();
+		expect(screen.getByLabelText("Bank")).toHaveValue("Test Bank");
 		expect(document.querySelector(".erp-modal-backdrop .overflow-y-auto")).not.toBeInTheDocument();
 	});
 

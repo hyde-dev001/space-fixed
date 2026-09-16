@@ -115,6 +115,7 @@ Route::middleware([
     Route::prefix('suppliers')->group(function () {
         Route::get('/', [SupplierController::class, 'index'])->name('procurement.suppliers.index');
         Route::post('/', [SupplierController::class, 'store'])->name('procurement.suppliers.store');
+        Route::get('/payment-channels', [SupplierController::class, 'paymentChannels'])->name('procurement.suppliers.payment-channels');
         Route::get('/{id}', [SupplierController::class, 'show'])->name('procurement.suppliers.show');
         Route::put('/{id}', [SupplierController::class, 'update'])->name('procurement.suppliers.update');
         Route::get('/{id}/payment-profile', [SupplierController::class, 'showPaymentProfile'])->whereNumber('id')->name('procurement.suppliers.payment-profile.show');

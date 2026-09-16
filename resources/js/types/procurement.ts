@@ -14,6 +14,25 @@ export type PaymentTerms = 'Net 7' | 'Net 15' | 'Net 30' | 'Net 45' | 'Net 60';
 export type SupplierPaymentDestinationType = 'bank_account' | 'e_wallet';
 export type SupplierRecipientType = 'business' | 'individual';
 
+export interface SupplierPayoutCountryOption {
+    code: string;
+    name: string;
+    currency: string;
+}
+
+export interface SupplierPayoutChannelOption {
+    channel_code: string;
+    channel_name: string;
+    channel_category: 'BANK' | 'EWALLET' | string;
+    currency: string;
+}
+
+export interface SupplierPayoutChannelOptions {
+    countries: SupplierPayoutCountryOption[];
+    banks: SupplierPayoutChannelOption[];
+    e_wallets: SupplierPayoutChannelOption[];
+}
+
 export interface SupplierPaymentProfile {
     id: number;
     recipient_type: SupplierRecipientType;
