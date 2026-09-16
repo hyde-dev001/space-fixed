@@ -125,6 +125,56 @@ class XenditSupplierPayoutTest extends TestCase
         $this->assertDatabaseCount('finance_expense_settlements', 0);
     }
 
+    public function test_xendit_permission_rejection_is_actionable_instead_of_being_reported_as_a_gateway_error(): void
+    {
+        Http::fake([
+            'https://api.xendit.co/v3/payouts' => Http::response([
+                'error_code' => 'REQUEST_FORBIDDEN_ERROR',
+            ], 403),
+        ]);
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $this->connect($shop);
+
+        $response = $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/expenses/{$expense->id}/supplier-payment-attempts",
+            [
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT,
+                'idempotency_key' => 'xendit-attempt-permission-denied',
+            ],
+        );
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('code', 'XENDIT_PERMISSION_DENIED')
+            ->assertJsonPath('message', 'Xendit rejected this payout because the shop API key does not have Money-Out Write permission. Update the key permissions, then start a new payment attempt.');
+        $this->assertSame(SupplierPaymentAttempt::STATUS_FAILED, SupplierPaymentAttempt::query()->sole()->status);
+        $this->assertDatabaseCount('finance_expense_settlements', 0);
+    }
+
+    public function test_xendit_validation_rejection_exposes_a_safe_provider_code_instead_of_being_reported_as_a_gateway_error(): void
+    {
+        Http::fake([
+            'https://api.xendit.co/v3/payouts' => Http::response([
+                'error_code' => 'API_VALIDATION_ERROR',
+            ], 400),
+        ]);
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $this->connect($shop);
+
+        $response = $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/expenses/{$expense->id}/supplier-payment-attempts",
+            [
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT,
+                'idempotency_key' => 'xendit-attempt-invalid-payout',
+            ],
+        );
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('code', 'XENDIT_PAYOUT_INVALID')
+            ->assertJsonPath('message', 'Xendit rejected the payout details (API_VALIDATION_ERROR). Check the supplier bank code, account number, and payout destination, then start a new payment attempt.');
+        $this->assertSame(SupplierPaymentAttempt::STATUS_FAILED, SupplierPaymentAttempt::query()->sole()->status);
+        $this->assertDatabaseCount('finance_expense_settlements', 0);
+    }
+
     public function test_xendit_webhook_requires_the_shop_callback_token_and_settles_success_once(): void
     {
         Http::fake([

@@ -90,11 +90,7 @@ final class XenditPayoutService
                 );
             }
 
-            throw new FinanceDomainException(
-                'Xendit could not accept the supplier payout. No payment was recorded.',
-                'XENDIT_PAYOUT_FAILED',
-                502,
-            );
+            throw $this->payoutFailure($response);
         }
 
         $payoutId = trim((string) $response->json('payout_id'));
@@ -239,14 +235,62 @@ final class XenditPayoutService
 
     private function logFailure(string $operation, ?int $shopId, ?int $attemptId, ?Response $response): void
     {
-        $providerCode = $response?->json('error_code') ?? $response?->json('code');
         Log::warning('Xendit supplier payout request failed.', [
             'operation' => $operation,
             'shop_id' => $shopId,
             'attempt_id' => $attemptId,
             'http_status' => $response?->status(),
-            'provider_code' => is_scalar($providerCode) ? Str::limit((string) $providerCode, 100, '') : null,
+            'provider_code' => $response ? $this->providerErrorCode($response) : null,
         ]);
+    }
+
+    private function payoutFailure(Response $response): FinanceDomainException
+    {
+        $providerCode = $this->providerErrorCode($response);
+
+        if ($response->status() === 401) {
+            return new FinanceDomainException(
+                'Xendit rejected the secret key. Check that the Test/Live key is correct and has not been revoked, then start a new payment attempt.',
+                'XENDIT_KEY_REJECTED',
+                422,
+            );
+        }
+
+        if ($response->status() === 403 || $providerCode === 'REQUEST_FORBIDDEN_ERROR') {
+            return new FinanceDomainException(
+                'Xendit rejected this payout because the shop API key does not have Money-Out Write permission. Update the key permissions, then start a new payment attempt.',
+                'XENDIT_PERMISSION_DENIED',
+                422,
+            );
+        }
+
+        if ($response->clientError()) {
+            $providerCodeLabel = $providerCode ? " ({$providerCode})" : '';
+
+            return new FinanceDomainException(
+                "Xendit rejected the payout details{$providerCodeLabel}. Check the supplier bank code, account number, and payout destination, then start a new payment attempt.",
+                'XENDIT_PAYOUT_INVALID',
+                422,
+            );
+        }
+
+        return new FinanceDomainException(
+            'Xendit could not accept the supplier payout. No payment was recorded.',
+            'XENDIT_PAYOUT_FAILED',
+            502,
+        );
+    }
+
+    private function providerErrorCode(Response $response): ?string
+    {
+        $code = $response->json('error_code') ?? $response->json('code');
+        if (! is_scalar($code)) {
+            return null;
+        }
+
+        $code = preg_replace('/[^A-Z0-9_.-]/', '_', strtoupper(trim((string) $code)));
+
+        return $code !== '' ? Str::limit($code, 100, '') : null;
     }
 
     private function verificationFailureMessage(Response $response): string

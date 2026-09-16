@@ -83,6 +83,13 @@ export default function ProcurementExpensePanel({
 	const isReadyForPayment = expenseStatus === "posted"
 		&& paymentStatus !== "paid"
 		&& !["initiating", "awaiting_verification", "processing", "pending_compliance"].includes(paymentStatus);
+	const supplierPayoutBlocker = !details.payment_profile
+		? "Procurement must add the supplier's bank or e-wallet details, then Finance must verify the profile before paying."
+		: details.payment_profile.status === "disabled"
+			? "Procurement must update this supplier payment profile, then Finance must verify it before paying."
+			: details.payment_profile.status !== "verified"
+				? "Finance must verify this supplier payment profile before paying."
+				: null;
 	const refundAdjustments = (details.adjustments ?? []).filter((adjustment) => adjustment.resolution === "refund" && ["awaiting_verification", "partially_refunded"].includes(adjustment.status));
 	const hasPaymentProof = (details.payment_attempt?.proof_media?.length ?? 0) > 0;
 	const canReviewSupplierPayment = Boolean(onReviewSupplierPayment) && !isXenditAttempt && (ownerMode || hasPaymentProof);
@@ -311,6 +318,7 @@ export default function ProcurementExpensePanel({
 				<div className="pt-2 space-y-2 border-t border-gray-200 dark:border-gray-700">
 					<p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">READY FOR PAYMENT</p>
 					{requiresXendit && !details.xendit_configured && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Connect and verify this shop&apos;s Xendit supplier-payout account in Shop Settings before paying.</p>}
+					{supplierPayoutBlocker && <p role="status" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800"><strong className="font-semibold">Supplier payout account not ready.</strong> <span>{supplierPayoutBlocker}</span></p>}
 					<button
 						type="button"
 						disabled={!canPaySupplier}

@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
 	paymentStatus: "unpaid" as string,
 	paymentAttempt: null as Record<string, unknown> | null,
 	adjustments: [] as Array<Record<string, unknown>>,
+	xenditConfigured: true,
+	hasPaymentProfile: true,
 	paymentProfileStatus: "unverified" as "unverified" | "verified" | "disabled",
 	expenseSource: "procurement" as "procurement" | "manual",
 	creatorId: null as number | null,
@@ -57,7 +59,7 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 				adjustments: mocks.adjustments,
 				payment_timing: "Overdue",
 				supplier_id: 4,
-				payment_profile: {
+				payment_profile: mocks.hasPaymentProfile ? {
 					id: 8,
 					destination_type: "bank_account",
 					bank_name: "Test Bank",
@@ -65,7 +67,8 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 					account_name: "Supplier",
 					masked_account_number: "******7890",
 					status: mocks.paymentProfileStatus,
-				},
+				} : null,
+				xendit_configured: mocks.xenditConfigured,
 			} : undefined,
 		}],
 		isLoading: false,
@@ -83,6 +86,8 @@ beforeEach(() => {
 	mocks.paymentStatus = "unpaid";
 	mocks.paymentAttempt = null;
 	mocks.adjustments = [];
+	mocks.xenditConfigured = true;
+	mocks.hasPaymentProfile = true;
 	mocks.paymentProfileStatus = "unverified";
 	mocks.expenseSource = "procurement";
 	mocks.creatorId = null;
@@ -209,6 +214,29 @@ describe("Finance procurement expenses", () => {
 		expect(screen.getByText("READY FOR PAYMENT")).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Pay Supplier" })).toBeDisabled();
 		expect(screen.queryByRole("button", { name: "Review & Release" })).not.toBeInTheDocument();
+	});
+
+	it("explains when Xendit is connected but the supplier payout destination is missing", () => {
+		mocks.status = "posted";
+		mocks.hasPaymentProfile = false;
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByRole("status")).toHaveTextContent("Supplier payout account not ready");
+		expect(screen.getByText(/Procurement must add the supplier's bank or e-wallet details/i)).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Pay Supplier" })).toBeDisabled();
+	});
+
+	it("enables Pay Supplier after the receipt, destination, and Xendit connection are ready", () => {
+		mocks.status = "posted";
+		mocks.paymentProfileStatus = "verified";
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByRole("button", { name: "Pay Supplier" })).toBeEnabled();
+		expect(screen.queryByText("Supplier payout account not ready")).not.toBeInTheDocument();
 	});
 
 	it("shows the backend procurement payment state in the open expense", () => {
