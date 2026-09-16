@@ -10,6 +10,7 @@ final class FinanceDomainException extends RuntimeException
         string $message,
         public readonly string $errorCode,
         public readonly int $httpStatus = 422,
+        public readonly ?array $diagnostics = null,
     ) {
         parent::__construct($message);
     }
