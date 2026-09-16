@@ -9,7 +9,10 @@ use App\Models\SupplierAdjustment;
 use App\Models\SupplierPaymentAttempt;
 use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
+use App\Models\ShopPaymentIntegration;
 use App\Http\Requests\StoreSupplierPaymentProfileRequest;
+use App\Services\Finance\XenditPayoutService;
+use App\Support\Finance\FinanceDomainException;
 use Illuminate\Http\Request;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Support\Facades\DB;
@@ -302,6 +305,44 @@ class SupplierController extends Controller
         return response()->json([
             'data' => $supplier->paymentProfile?->toMaskedArray(),
         ]);
+    }
+
+    public function paymentChannels(Request $request, XenditPayoutService $payouts)
+    {
+        $context = request()->attributes->get('erp.actor_context');
+        $ownerMode = $context instanceof ErpActorContext && $context->isOwnerMode();
+        if (! $ownerMode) {
+            $this->authorize('viewAny', Supplier::class);
+        }
+
+        $shopOwnerId = $ownerMode
+            ? (int) $context->tenantOwner()->getKey()
+            : $request->user()?->shop_owner_id;
+        if (! $shopOwnerId) {
+            return response()->json(['message' => 'Shop context is missing for this account.'], 403);
+        }
+
+        $integration = ShopPaymentIntegration::query()
+            ->forSupplierPayouts((int) $shopOwnerId)
+            ->first();
+        if (! $integration || ! $integration->isConnected()) {
+            return response()->json([
+                'message' => 'Connect Xendit supplier payouts before loading supported payout channels.',
+                'code' => 'XENDIT_NOT_CONFIGURED',
+            ], 422);
+        }
+
+        try {
+            return response()->json($payouts->getPayoutChannels(
+                (string) $integration->secret_key,
+                (int) $shopOwnerId,
+            ));
+        } catch (FinanceDomainException $exception) {
+            return response()->json([
+                'message' => $exception->getMessage(),
+                'code' => $exception->errorCode,
+            ], $exception->httpStatus);
+        }
     }
 
     public function upsertPaymentProfile(StoreSupplierPaymentProfileRequest $request, int $id)

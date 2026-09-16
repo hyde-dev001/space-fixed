@@ -12,6 +12,7 @@ import {
     UpdateSupplierPayload,
     SupplierPaymentProfile,
     UpsertSupplierPaymentProfilePayload,
+    SupplierPayoutChannelOptions,
     PaginatedResponse,
     ApiResponse,
 } from '@/types/procurement';
@@ -78,6 +79,11 @@ export const supplierApi = {
     async upsertPaymentProfile(id: number, data: UpsertSupplierPaymentProfilePayload): Promise<SupplierPaymentProfile> {
         const response: AxiosResponse<ApiResponse<SupplierPaymentProfile>> = await axios.put(`${BASE_URL}/${id}/payment-profile`, data);
         return response.data.data;
+    },
+
+    async getPaymentChannels(url = BASE_URL + '/payment-channels'): Promise<SupplierPayoutChannelOptions> {
+        const response: AxiosResponse<SupplierPayoutChannelOptions> = await axios.get(url);
+        return unwrap(response.data);
     },
 
 };

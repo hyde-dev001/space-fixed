@@ -891,6 +891,7 @@ $routeBuckets = [
         'procurement.replenishment-requests.update',
         'procurement.suppliers.destroy',
         'procurement.suppliers.index',
+        'procurement.suppliers.payment-channels',
         'procurement.suppliers.payment-profile.show',
         'procurement.suppliers.payment-profile.upsert',
         'procurement.suppliers.restore',

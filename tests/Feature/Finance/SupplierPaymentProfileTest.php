@@ -3,12 +3,14 @@
 namespace Tests\Feature\Finance;
 
 use App\Models\ShopOwner;
+use App\Models\ShopPaymentIntegration;
 use App\Models\Notification;
 use App\Models\Supplier;
 use App\Models\SupplierPaymentProfile;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
@@ -56,6 +58,67 @@ class SupplierPaymentProfileTest extends TestCase
         $profile = SupplierPaymentProfile::query()->where('supplier_id', $supplier->id)->firstOrFail();
         $this->assertSame('1234567890', $profile->account_number);
         $this->assertNotSame('1234567890', DB::table('supplier_payment_profiles')->whereKey($profile->id)->value('account_number'));
+    }
+
+    public function test_procurement_can_load_only_php_xendit_payout_channels(): void
+    {
+        [$shop, $procurement] = $this->procurementActor();
+        ShopPaymentIntegration::create([
+            'shop_owner_id' => $shop->id,
+            'provider' => ShopPaymentIntegration::PROVIDER_XENDIT,
+            'purpose' => ShopPaymentIntegration::PURPOSE_SUPPLIER_PAYOUT,
+            'environment' => 'test',
+            'secret_key' => 'xnd_test_supplier_channels',
+            'webhook_callback_token' => 'callback-token',
+            'status' => ShopPaymentIntegration::STATUS_CONNECTED,
+            'connected_at' => now(),
+            'last_verified_at' => now(),
+        ]);
+        Http::fake([
+            'https://api.xendit.co/payouts_channels*' => Http::response([
+                'data' => [
+                    [
+                        'channel_code' => 'PH_BDO',
+                        'channel_name' => 'Banco De Oro Unibank, Inc.',
+                        'channel_category' => 'BANK',
+                        'currency' => 'PHP',
+                        'amount_limits' => ['max' => 5000000],
+                    ],
+                    [
+                        'channel_code' => 'PH_GCASH',
+                        'channel_name' => 'GCash',
+                        'channel_category' => 'EWALLET',
+                        'currency' => 'PHP',
+                    ],
+                    [
+                        'channel_code' => 'PH_USD_BANK',
+                        'channel_name' => 'Foreign Bank',
+                        'channel_category' => 'BANK',
+                        'currency' => 'USD',
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($procurement, 'user')
+            ->getJson('/api/erp/procurement/suppliers/payment-channels');
+
+        $response->assertOk()->assertExactJson([
+            'countries' => [['code' => 'PH', 'name' => 'Philippines', 'currency' => 'PHP']],
+            'banks' => [[
+                'channel_code' => 'PH_BDO',
+                'channel_name' => 'Banco De Oro Unibank, Inc.',
+                'channel_category' => 'BANK',
+                'currency' => 'PHP',
+            ]],
+            'e_wallets' => [[
+                'channel_code' => 'PH_GCASH',
+                'channel_name' => 'GCash',
+                'channel_category' => 'EWALLET',
+                'currency' => 'PHP',
+            ]],
+        ]);
+        Http::assertSent(fn (\Illuminate\Http\Client\Request $request): bool => str_contains($request->url(), 'currency=PHP'));
     }
 
     public function test_recipient_profiles_expose_identity_and_address_without_account_details(): void
