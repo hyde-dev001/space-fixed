@@ -367,6 +367,29 @@ describe("MyRepairs loading performance", () => {
     expect(reload).toHaveBeenCalledTimes(1);
     expect(window.location.search).toBe("");
   });
+
+  it("loads repairs when a handled payment return URL is opened again", async () => {
+    window.history.replaceState({}, "", "/my-repairs?paymongo_success=1&pending_repair_id=77&return_ts=123&return_sig=test-signature");
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      value: {
+        getItem: vi.fn((key: string) => key === "repairPaymentReturnHandled:77" ? "1" : null),
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+        clear: vi.fn(),
+      },
+    });
+
+    render(<MyRepairs />);
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith(
+      "/api/customer/repairs",
+      { params: undefined },
+    ));
+    expect(screen.queryByText("Loading your repairs...")).not.toBeInTheDocument();
+    fireEvent.click((await screen.findAllByRole("button", { name: /Ready for Pickup/i }))[0]);
+    expect((await screen.findAllByText("Scuffed sneakers")).length).toBeGreaterThan(0);
+  });
 });
 
 describe('MyRepairs paid shipping breakdown', () => {

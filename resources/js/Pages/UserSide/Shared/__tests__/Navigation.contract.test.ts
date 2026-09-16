@@ -7,10 +7,6 @@ const navigationSource = readFileSync(
   'utf8',
 );
 const appCssSource = readFileSync(resolve('resources/css/app.css'), 'utf8');
-const notificationBellSource = readFileSync(
-  resolve('resources/js/components/common/NotificationBell.tsx'),
-  'utf8',
-);
 const landingPageSource = readFileSync(
   resolve('resources/js/Pages/UserSide/Products/LandingPage.tsx'),
   'utf8',
@@ -114,21 +110,20 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).toContain('max-h-[55vh] overflow-y-auto no-scrollbar px-5 py-5 sm:px-7');
   });
 
-  it('uses pixel-adaptive blending for landing navigation artwork only', () => {
+  it('switches landing navigation and logo colors with the underlying section', () => {
     expect(navigationSource).toContain(
       'const isAdaptiveLandingNav = isLandingPage && landingSidebar;',
     );
     expect(navigationSource).toContain(
-      "const adaptiveLandingIconClass = isAdaptiveLandingNav ? 'mix-blend-difference' : '';",
+      'const [isLandingNavOnDarkSurface, setIsLandingNavOnDarkSurface] = useState(true);',
     );
-    expect(navigationSource).toContain(
-      'const headerIconSvgClasses = `block h-6 w-6 shrink-0 ${adaptiveLandingIconClass}`;',
-    );
-    expect(navigationSource).toContain('iconClassName={adaptiveLandingIconClass}');
-    expect(notificationBellSource).toContain('iconClassName?: string;');
-    expect(notificationBellSource).toContain(
-      'className={`block h-5 w-5 shrink-0 ${iconClassName}`}',
-    );
+    expect(navigationSource).toContain('data-landing-nav');
+    expect(navigationSource).toContain('data-nav-tone');
+    expect(landingPageSource).toContain('data-nav-tone="dark"');
+    expect(landingPageSource).toContain('data-nav-tone="light"');
+    expect(navigationSource).not.toContain('mix-blend-difference');
+    expect(appCssSource).not.toContain('.landing-adaptive-ink');
+    expect(navigationSource).not.toContain('text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]');
   });
 
   it('keeps customer drawers above Leaflet map stacking levels', () => {

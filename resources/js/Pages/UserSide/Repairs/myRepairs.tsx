@@ -2365,6 +2365,7 @@ const MyRepairs: React.FC = () => {
       }
 
       if (paymentReturnAlreadyHandled) {
+        void fetchRepairs();
         return;
       }
 

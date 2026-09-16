@@ -329,6 +329,10 @@ describe('JobOrdersRepair intake logistics', () => {
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
       '/api/repairer/repairs/77/activate-pickup',
     ));
+    expect(mocks.swal).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Confirm courier handoff?',
+      confirmButtonText: 'Confirm',
+    }));
   });
 
   it('keeps the current table visible and prevents overlapping background refreshes', async () => {

@@ -147,7 +147,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
        <main>
        <div>
       {/* Hero Section - Full-bleed Background Carousel */}
-      <section className="relative flex min-h-[84svh] w-full items-center overflow-hidden sm:min-h-svh">
+      <section data-nav-tone="dark" className="relative flex min-h-[84svh] w-full items-center overflow-hidden sm:min-h-svh">
         <div className="absolute inset-0 z-0">
           {heroSlides.map((slide, index) => (
             <img
@@ -212,7 +212,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       </section>
       </div>
 
-      <section id="landing-new-releases" data-scroll-reveal className="scroll-reveal w-full bg-white py-16 text-black sm:py-24 lg:py-32">
+      <section id="landing-new-releases" data-nav-tone="light" data-scroll-reveal className="scroll-reveal w-full bg-white py-16 text-black sm:py-24 lg:py-32">
         <div className={sectionContainerClass}>
           <div data-scroll-reveal className="scroll-reveal mb-10 flex flex-col gap-6 sm:mb-16 sm:flex-row sm:items-end sm:justify-between">
             <h2 className="text-5xl font-normal tracking-[-0.06em] sm:text-7xl lg:text-8xl">New releases</h2>
@@ -285,7 +285,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
         </div>
       </section>
 
-      <section id="landing-categories" data-scroll-reveal className="scroll-reveal w-full bg-white pb-16 text-black sm:pb-24 lg:pb-32">
+      <section id="landing-categories" data-nav-tone="light" data-scroll-reveal className="scroll-reveal w-full bg-white pb-16 text-black sm:pb-24 lg:pb-32">
         <div className={sectionContainerClass}>
           <div data-scroll-reveal className="scroll-reveal mb-10 flex flex-col gap-5 sm:mb-16 sm:flex-row sm:items-end sm:justify-between">
             <h2 className="text-5xl font-normal tracking-[-0.06em] sm:text-7xl lg:text-8xl">Shop by category</h2>
@@ -323,7 +323,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
       </section>
 
 
-      <section id="landing-story" data-scroll-reveal className="scroll-reveal w-full bg-black text-white">
+      <section id="landing-story" data-nav-tone="dark" data-scroll-reveal className="scroll-reveal w-full bg-black text-white">
         <div className="relative min-h-[34rem] overflow-hidden sm:min-h-[44rem]">
           <img src="/images/shop/p4.jpg" alt="SoleSpace craftsmanship in motion" className="absolute inset-0 h-full w-full object-cover opacity-75" loading="lazy" decoding="async" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/35 to-black/25" />
@@ -340,7 +340,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
         </div>
       </section>
 
-      <section id="landing-benefits" data-scroll-reveal className="scroll-reveal w-full bg-white py-20 text-black sm:py-28 lg:py-36">
+      <section id="landing-benefits" data-nav-tone="light" data-scroll-reveal className="scroll-reveal w-full bg-white py-20 text-black sm:py-28 lg:py-36">
         <div className={sectionContainerClass}>
           <div className="grid grid-cols-1 gap-14 text-center sm:grid-cols-3 sm:gap-8 lg:gap-20">
             <div data-scroll-reveal data-scroll-delay="0" className="scroll-reveal">
@@ -374,7 +374,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
         </div>
       </section>
 
-      <section id="landing-community" data-scroll-reveal className="scroll-reveal w-full bg-black text-white">
+      <section id="landing-community" data-nav-tone="dark" data-scroll-reveal className="scroll-reveal w-full bg-black text-white">
         <div className={`${sectionContainerClass} grid min-h-[34rem] grid-cols-1 gap-10 py-12 sm:min-h-[42rem] sm:py-16 lg:grid-cols-[minmax(0,1.25fr)_minmax(18rem,0.75fr)] lg:gap-16 lg:py-20`}>
           <div className="flex flex-col justify-between">
             <div data-scroll-reveal className="scroll-reveal">
@@ -412,6 +412,7 @@ const LandingPage: React.FC<Props> = ({ products = [] }) => {
            ref={footerRef}
            id="landing-footer"
            aria-hidden={!footerIsInteractive}
+           data-nav-tone="light"
            className={`landing-footer fixed inset-x-0 bottom-0 z-0 w-full max-h-[100svh] min-h-[min(30rem,100svh)] overflow-x-hidden overflow-y-auto overscroll-auto bg-white text-black sm:min-h-[min(34rem,100svh)] ${footerIsInteractive ? 'pointer-events-auto' : 'pointer-events-none'}`}
          >
           <div className={`${sectionContainerClass} relative z-10 pt-8 sm:pt-10`}>

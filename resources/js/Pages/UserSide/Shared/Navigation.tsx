@@ -118,6 +118,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [isHovering, setIsHovering] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isLandingNavOnDarkSurface, setIsLandingNavOnDarkSurface] = useState(true);
   const [isPromoTickerAtTop, setIsPromoTickerAtTop] = useState(true);
   const page = usePage();
   const { url } = page;
@@ -365,15 +366,18 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const isLandingPage = cleanUrl === '/';
   const isTransparentNav = isLandingPage && !isScrolled;
   const isAdaptiveLandingNav = isLandingPage && landingSidebar;
-  const adaptiveLandingIconClass = isAdaptiveLandingNav ? 'mix-blend-difference' : '';
+  const landingNavTextClass = isLandingNavOnDarkSurface ? 'text-white' : 'text-gray-900';
+  const landingNavButtonClass = isLandingNavOnDarkSurface
+    ? 'text-white hover:opacity-70'
+    : 'text-gray-900 rounded-full hover:bg-gray-100 hover:opacity-100';
   const headerIconButtonClasses = `relative inline-flex h-10 w-10 shrink-0 items-center justify-center p-0 leading-none transition-all ${
     isAdaptiveLandingNav
-      ? 'text-white hover:opacity-70'
+      ? landingNavButtonClass
       : isTransparentNav
         ? 'text-white hover:opacity-70'
         : 'text-gray-900 rounded-full hover:bg-gray-100 hover:opacity-100'
   }`;
-  const headerIconSvgClasses = `block h-6 w-6 shrink-0 ${adaptiveLandingIconClass}`;
+  const headerIconSvgClasses = 'block h-6 w-6 shrink-0';
   const searchIconClasses = isTransparentNav ? 'text-white/70' : 'text-gray-500';
   const desktopSearchInputClasses = `w-full rounded-full border py-2.5 pl-10 pr-4 text-sm shadow-lg backdrop-blur-xl transition-all duration-300 focus:outline-none focus:ring-2 ${
     isTransparentNav
@@ -654,14 +658,38 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   };
 
   useEffect(() => {
+    const updateLandingNavSurface = () => {
+      if (!isAdaptiveLandingNav) {
+        return;
+      }
+
+      const nav = document.querySelector<HTMLElement>('nav[data-landing-nav]');
+      const probeY = (nav?.getBoundingClientRect().top ?? 0) + 48;
+      const activeSurface = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-nav-tone]'),
+      ).find((section) => {
+        const rect = section.getBoundingClientRect();
+        return rect.top <= probeY && rect.bottom > probeY;
+      });
+
+      setIsLandingNavOnDarkSurface(activeSurface?.dataset.navTone === 'dark');
+    };
+
     const onScroll = () => {
       setIsScrolled(window.scrollY > 80);
       setIsPromoTickerAtTop(window.scrollY < 40);
+      updateLandingNavSurface();
     };
+    const onResize = () => updateLandingNavSurface();
+
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+    window.addEventListener('resize', onResize, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [isAdaptiveLandingNav]);
 
   useEffect(() => {
     if (!mobileMenuOpen) return;
@@ -713,6 +741,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
         </div>
       </div>
       <nav
+        data-landing-nav
         className={`fixed left-0 right-0 z-50 w-full transition-[top,background-color,border-color] duration-300 ${isPromoTickerAtTop ? 'top-10' : 'top-0'} ${
           landingSidebar || isTransparentNav
             ? 'bg-transparent'
@@ -726,7 +755,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             className={`absolute top-3 text-xl font-bold leading-none tracking-tight transition-opacity hover:opacity-70 sm:top-5 sm:text-2xl ${
               landingSidebar ? 'left-1/2 -translate-x-1/2' : 'left-0'
             } ${
-              isTransparentNav ? 'text-white' : 'text-gray-900'
+              isAdaptiveLandingNav ? landingNavTextClass : isTransparentNav ? 'text-white' : 'text-gray-900'
             }`}
           >
             SoleSpace
@@ -738,7 +767,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               onClick={() => {
                 setLandingSidebarOpen((open) => !open);
               }}
-              className={`absolute left-0 top-3 inline-flex h-10 w-10 -translate-y-px items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 sm:top-5 ${isAdaptiveLandingNav || isTransparentNav ? 'text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)] focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
+              className={`absolute left-0 top-3 inline-flex h-10 w-10 items-center justify-center p-0 transition-opacity hover:opacity-70 focus-visible:outline-none focus-visible:ring-2 sm:top-5 ${isAdaptiveLandingNav ? `${landingNavTextClass} focus-visible:ring-white` : isTransparentNav ? 'text-white focus-visible:ring-white' : 'text-gray-900 focus-visible:ring-gray-900'}`}
               aria-label={landingSidebarOpen ? 'Close menu' : 'Toggle menu'}
             >
               <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -782,8 +811,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               <NotificationBell
                 basePath="/api/notifications"
                 iconSize={24}
-                iconClassName={adaptiveLandingIconClass}
-                className={`${isAdaptiveLandingNav || isTransparentNav ? 'text-white hover:opacity-70' : 'text-gray-900 hover:opacity-70'} ${landingSidebar ? 'order-2' : ''}`}
+                className={`${isAdaptiveLandingNav ? landingNavButtonClass : isTransparentNav ? 'text-white hover:opacity-70' : 'text-gray-900 hover:opacity-70'} ${landingSidebar ? 'order-2' : ''}`}
               />
             )}
             {!landingSidebar && (
@@ -1198,10 +1226,11 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
               <NotificationBell 
                 basePath="/api/notifications"
                 iconSize={24}
-                iconClassName={adaptiveLandingIconClass}
-                className={isAdaptiveLandingNav || isTransparentNav
-                  ? 'text-white hover:opacity-70'
-                  : 'text-gray-900 hover:opacity-70'
+                className={isAdaptiveLandingNav
+                  ? landingNavButtonClass
+                  : isTransparentNav
+                    ? 'text-white hover:opacity-70'
+                    : 'text-gray-900 hover:opacity-70'
                 }
               />
             )}
