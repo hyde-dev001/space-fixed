@@ -13,13 +13,15 @@ interface NotificationBellProps {
   className?: string;
   iconSize?: number;
   badgeClassName?: string;
+  iconClassName?: string;
 }
 
 const NotificationBell: React.FC<NotificationBellProps> = ({ 
   basePath = '/api/notifications',
   className = '',
   iconSize = 24,
-  badgeClassName = ''
+  badgeClassName = '',
+  iconClassName = '',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const { data: unreadCount = 0, isLoading } = useUnreadCount(basePath);
@@ -31,7 +33,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
         className={`relative inline-flex h-10 w-10 shrink-0 items-center justify-center p-0 leading-none text-black transition-opacity hover:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-200 ${className}`}
         aria-label="Notifications"
       >
-        <Bell size={iconSize} className="block h-5 w-5 shrink-0" />
+        <Bell size={iconSize} className={`block h-5 w-5 shrink-0 ${iconClassName}`} />
         
         {!isLoading && unreadCount > 0 && (
           <span
