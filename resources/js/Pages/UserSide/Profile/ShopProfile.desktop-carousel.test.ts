@@ -43,4 +43,14 @@ describe('ShopProfile desktop product rails', () => {
     expect(desktopActionMenuIndex).toBeLessThan(productsSectionStart);
     expect(desktopActionMenuIndex).toBeGreaterThan(desktopActionsIndex);
   });
+
+  it('places the desktop overflow trigger beside Follow without a trigger surface', () => {
+    const actionRowIndex = shopProfileSource.indexOf('data-testid="shop-profile-desktop-primary-actions"');
+    const desktopActionMenuIndex = shopProfileSource.indexOf('data-testid="shop-profile-desktop-action-menu"');
+
+    expect(actionRowIndex).toBeGreaterThan(-1);
+    expect(desktopActionMenuIndex).toBeGreaterThan(actionRowIndex);
+    expect(shopProfileSource).toContain('bg-transparent text-gray-700');
+    expect(shopProfileSource).not.toContain('bg-white text-gray-700 shadow-lg ring-1 ring-black/10 transition hover:bg-gray-50');
+  });
 });
