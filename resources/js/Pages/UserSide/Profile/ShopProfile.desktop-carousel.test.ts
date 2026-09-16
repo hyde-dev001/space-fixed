@@ -31,4 +31,16 @@ describe('ShopProfile desktop product rails', () => {
     expect(shopProfileSource).toContain('filteredRepairServices');
     expect(shopProfileSource).toContain('virtual-showroom');
   });
+
+  it('keeps the desktop report action with the profile actions', () => {
+    const profileSectionStart = shopProfileSource.indexOf('{/* Shop Profile Section */}');
+    const productsSectionStart = shopProfileSource.indexOf('{/* Products Section */}');
+    const desktopActionMenuIndex = shopProfileSource.indexOf('data-testid="shop-profile-desktop-action-menu"');
+    const desktopActionsIndex = shopProfileSource.indexOf('data-testid="shop-profile-desktop-actions"');
+
+    expect(shopProfileSource).not.toContain('className="absolute right-4 top-24 z-70 xl:top-28"');
+    expect(desktopActionMenuIndex).toBeGreaterThan(profileSectionStart);
+    expect(desktopActionMenuIndex).toBeLessThan(productsSectionStart);
+    expect(desktopActionMenuIndex).toBeGreaterThan(desktopActionsIndex);
+  });
 });
