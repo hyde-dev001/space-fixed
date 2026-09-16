@@ -81,7 +81,23 @@ const AppLayoutERP: React.FC<AppLayoutERPProps> = ({ children, hideHeader, fullB
   const page = usePage();
   const pageProps = page.props as Record<string, unknown>;
   const ownerShell = readCanonicalOwnerShell(pageProps.ownerShell);
-  const activeModule = isOwnerModeErpContext(pageProps) ? readOwnerActiveModule(pageProps.activeModule) : null;
+  const ownerMode = isOwnerModeErpContext(pageProps);
+  const auth = typeof pageProps.auth === "object" && pageProps.auth !== null
+    ? pageProps.auth as Record<string, unknown>
+    : {};
+  const user = typeof auth.user === "object" && auth.user !== null
+    ? auth.user as Record<string, unknown>
+    : null;
+  const attendance = typeof pageProps.employeeAttendance === "object" && pageProps.employeeAttendance !== null
+    ? pageProps.employeeAttendance as Record<string, unknown>
+    : null;
+  const isEmployee = user?.shop_owner_id !== null
+    && user?.shop_owner_id !== undefined
+    && attendance?.is_employee === true;
+  const currentPath = page.url.split("?")[0];
+  const isTimeInPage = currentPath === "/erp/time-in" || currentPath === "/erp/staff/attendance";
+  const showEmployeeReadOnlyNotice = !ownerMode && isEmployee && attendance?.is_clocked_in !== true && !isTimeInPage;
+  const activeModule = ownerMode ? readOwnerActiveModule(pageProps.activeModule) : null;
   const content = (
     <>
       {activeModule && (
@@ -91,11 +107,25 @@ const AppLayoutERP: React.FC<AppLayoutERPProps> = ({ children, hideHeader, fullB
           currentUrl={page.url}
         />
       )}
+      {showEmployeeReadOnlyNotice && (
+        <div
+          role="status"
+          className="mb-4 flex flex-col gap-2 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-300 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <span>Read-only mode. Clock in before processing business actions.</span>
+          <a
+            className="font-semibold text-gray-900 underline underline-offset-4 dark:text-white"
+            href="/erp/time-in"
+          >
+            Go to Time In
+          </a>
+        </div>
+      )}
       {children}
     </>
   );
 
-  if (ownerShell && isOwnerModeErpContext(pageProps)) {
+  if (ownerShell && ownerMode) {
     return (
       <CanonicalOwnerLayout metadata={ownerShell} fullBleed={fullBleed} hideHeader={hideHeader}>
         {content}

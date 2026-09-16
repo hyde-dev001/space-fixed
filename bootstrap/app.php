@@ -146,6 +146,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\CheckEmployeeSuspension::class,
             \App\Http\Middleware\EnsureEmployeeSecurity::class,
             \App\Http\Middleware\EnsureCustomerEmailIsVerified::class,
+            \App\Http\Middleware\EnsureEmployeeClockedIn::class,
         ]);
         $middleware->api([
             \App\Http\Middleware\EnforcePlatformMaintenance::class,
@@ -153,6 +154,7 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\CheckEmployeeSuspension::class,
             \App\Http\Middleware\EnsureEmployeeSecurity::class,
             \App\Http\Middleware\EnsureCustomerEmailIsVerified::class,
+            \App\Http\Middleware\EnsureEmployeeClockedIn::class,
             'throttle:60,1',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
             \Illuminate\Http\Middleware\HandleCors::class

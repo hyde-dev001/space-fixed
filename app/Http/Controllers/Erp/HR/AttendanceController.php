@@ -613,6 +613,11 @@ class AttendanceController extends Controller
         if ($shopCloseTime->lessThanOrEqualTo($shopOpenTime)) {
             $shopCloseTime->addDay();
         }
+
+        $clockInMinute = $now->copy()->startOfMinute();
+        $shopOpenMinute = $shopOpenTime->copy()->startOfMinute();
+        $shopCloseMinute = $shopCloseTime->copy()->startOfMinute();
+        $earliestAllowedMinute = $shopOpenMinute->copy()->subMinutes(30);
         
         $isEarly = false;
         $minutesEarly = 0;
@@ -627,8 +632,8 @@ class AttendanceController extends Controller
             
             // Calculate if checking in too early (more than 30 minutes before opening)
             // Only block if current time is BEFORE the earliest allowed time
-            if ($now->lt($earliestAllowedTime)) {
-                $minutesTooEarly = ceil($now->diffInMinutes($earliestAllowedTime, true));
+            if ($clockInMinute->lt($earliestAllowedMinute)) {
+                $minutesTooEarly = ceil($clockInMinute->diffInMinutes($earliestAllowedMinute, true));
                 return response()->json([
                     'error' => 'Too early to check in',
                     'message' => "Shop opens at {$expectedCheckIn}. You can check in starting from {$earliestAllowedTime->format('H:i')}.",
@@ -639,7 +644,7 @@ class AttendanceController extends Controller
             }
 
             // Do not allow check-in after shop closing time
-            if ($now->gt($shopCloseTime)) {
+            if ($clockInMinute->gt($shopCloseMinute)) {
                 return response()->json([
                     'error' => 'Outside shop hours',
                     'message' => "Shop hours for today are {$shopOpenTime->format('H:i')} to {$shopCloseTime->format('H:i')}. You can no longer clock in.",
@@ -650,9 +655,9 @@ class AttendanceController extends Controller
             
             // Check if early (within 30 minute grace period but before opening)
             // Only mark as early if BEFORE shop open time AND after earliest allowed
-            if ($now->lt($shopOpenTime) && $now->gte($earliestAllowedTime)) {
+            if ($clockInMinute->lt($shopOpenMinute) && $clockInMinute->gte($earliestAllowedMinute)) {
                 $isEarly = true;
-                $minutesEarly = $now->diffInMinutes($shopOpenTime);
+                $minutesEarly = $clockInMinute->diffInMinutes($shopOpenMinute);
             }
         }
         

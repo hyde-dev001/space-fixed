@@ -219,3 +219,27 @@ it('blocks clock in outside the shop clock-in window', () => {
     expect(isClockInAllowedAtTime(new Date(2026, 8, 7, 9, 30), shopHours)).toBe(true);
     expect(isClockInAllowedAtTime(new Date(2026, 8, 7, 20, 1), shopHours)).toBe(false);
 });
+
+it('allows the configured closing minute through second 59', () => {
+    const shopHours = { open: '10:00', close: '20:00', is_open: true };
+
+    expect(isClockInAllowedAtTime(new Date(2026, 8, 7, 20, 0, 59), shopHours)).toBe(true);
+    expect(isClockInAllowedAtTime(new Date(2026, 8, 7, 20, 1, 0), shopHours)).toBe(false);
+});
+
+it('refreshes shop hours when the attendance tab regains focus', async () => {
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    const initialShopHoursCalls = fetchMock.mock.calls.filter(
+        ([url]) => url === '/api/staff/shop-hours/today',
+    ).length;
+
+    fireEvent(window, new Event('focus'));
+
+    await waitFor(() => {
+        expect(
+            fetchMock.mock.calls.filter(([url]) => url === '/api/staff/shop-hours/today'),
+        ).toHaveLength(initialShopHoursCalls + 1);
+    });
+});
