@@ -251,38 +251,44 @@ class ShowroomPlacementTest extends TestCase
             'showroom_right_wall_art_path',
         ]));
 
-        $this->actingAs($shop, 'shop_owner')
-            ->post('/api/showroom/wall-art', [
-                'wall' => 'left',
-                'image' => UploadedFile::fake()->create('left-wall.jpg', 100, 'image/jpeg'),
-            ])
-            ->assertOk()
-            ->assertJsonPath('url', asset("storage/showroom/wall-art/{$shop->id}/left.jpg"));
+        $previousPath = "showroom/wall-art/{$shop->id}/left.jpg";
+        $rightPath = "showroom/wall-art/{$shop->id}/right.jpg";
+        Storage::disk('public')->put($previousPath, 'old left picture');
+        Storage::disk('public')->put($rightPath, 'right picture');
+        $previousUrl = asset('storage/' . $previousPath);
 
-        Storage::disk('public')->assertExists("showroom/wall-art/{$shop->id}/left.jpg");
+        foreach (['jpg', 'jpg', 'png', 'png'] as $extension) {
+            $upload = $this->actingAs($shop, 'shop_owner')
+                ->post('/api/showroom/wall-art', [
+                    'wall' => 'left',
+                    'image' => UploadedFile::fake()->create('replacement.' . $extension, 100, $extension === 'jpg' ? 'image/jpeg' : 'image/png'),
+                ])
+                ->assertOk();
 
-        $this->actingAs($shop, 'shop_owner')
-            ->post('/api/showroom/wall-art', [
-                'wall' => 'left',
-                'image' => UploadedFile::fake()->create('replacement.png', 100, 'image/png'),
-            ])
-            ->assertOk()
-            ->assertJsonPath('url', asset("storage/showroom/wall-art/{$shop->id}/left.png"));
-
-        Storage::disk('public')->assertMissing("showroom/wall-art/{$shop->id}/left.jpg");
-        Storage::disk('public')->assertExists("showroom/wall-art/{$shop->id}/left.png");
+            $url = $upload->json('url');
+            self::assertNotSame($previousUrl, $url, 'Replacement pictures must have a new URL to avoid cached images.');
+            $path = app(\App\Services\ShowroomPlacementService::class)->wallArtPathsForShop($shop->id)['left'];
+            self::assertIsString($path);
+            $upload->assertJsonPath('url', asset('storage/' . $path));
+            Storage::disk('public')->assertExists($path);
+            Storage::disk('public')->assertMissing($previousPath);
+            Storage::disk('public')->assertExists($rightPath);
+            $previousPath = $path;
+            $previousUrl = $url;
+        }
 
         $this->actingAs($shop, 'shop_owner')
             ->get(route('shop-profile.virtual-showroom', ['id' => $shop->id]))
             ->assertInertia(fn ($page) => $page
                 ->where('shop.can_manage_showroom_art', true)
-                ->where('shop.showroom_wall_art.left', asset("storage/showroom/wall-art/{$shop->id}/left.png")));
+                ->where('shop.showroom_wall_art.left', $url));
 
         $this->actingAs($shop, 'shop_owner')
             ->deleteJson('/api/showroom/wall-art/left')
             ->assertOk();
 
-        Storage::disk('public')->assertMissing("showroom/wall-art/{$shop->id}/left.png");
+        Storage::disk('public')->assertMissing($path);
+        Storage::disk('public')->assertExists($rightPath);
     }
 
     public function test_staff_cannot_manage_wall_art(): void
