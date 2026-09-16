@@ -17,7 +17,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -108,16 +108,33 @@ class XenditSupplierPayoutTest extends TestCase
 
         Http::assertSent(function (\Illuminate\Http\Client\Request $request): bool {
             $payload = $request->data();
+            $headers = $request->headers();
 
             return $request->url() === 'https://api.xendit.co/v3/payouts'
-                && $request->header('idempotency-key')[0] === 'xendit-attempt-001'
+                && ($headers['Idempotency-key'][0] ?? null) === 'xendit-attempt-001'
+                && ($headers['Api-version'][0] ?? null) === '2025-09-01'
+                && array_keys($payload) === [
+                    'reference_id',
+                    'recipient',
+                    'payout_details',
+                    'source_of_fund',
+                    'purpose_code',
+                    'description',
+                ]
                 && ($payload['payout_details']['source_amount'] ?? null) === 10000
                 && ($payload['payout_details']['source_currency'] ?? null) === 'PHP'
+                && ! array_key_exists('destination_amount', $payload['payout_details'] ?? [])
                 && ($payload['recipient']['type'] ?? null) === 'BUSINESS'
                 && ($payload['recipient']['business_name'] ?? null) === 'Supplier Trading'
                 && ($payload['recipient']['relationship'] ?? null) === 'SUPPLIER'
                 && ($payload['recipient']['address']['province_state'] ?? null) === 'Cavite'
-                && ($payload['recipient']['address']['postal_code'] ?? null) === '4117';
+                && ($payload['recipient']['address']['postal_code'] ?? null) === '4117'
+                && ! array_key_exists('street_line_2', $payload['recipient']['address'] ?? [])
+                && ($payload['recipient']['account_details']['routing_type_1'] ?? null) === 'SWIFT'
+                && ($payload['recipient']['account_details']['routing_value_1'] ?? null) === 'BNORPHMM'
+                && ! array_key_exists('bank_code', $payload['recipient']['account_details'] ?? [])
+                && ! array_key_exists('sender', $payload)
+                && ! array_key_exists('underlying_documents', $payload);
         });
 
         $this->assertDatabaseHas('supplier_payment_attempts', [
@@ -198,7 +215,7 @@ class XenditSupplierPayoutTest extends TestCase
                 'error_code' => 'API_VALIDATION_ERROR',
                 'errors' => [[
                     'path' => 'recipient.address.postal_code',
-                    'message' => 'Rejected account 1234567890 with secret xnd_test_do_not_expose',
+                    'message' => 'Rejected account 12345678 with secret xnd_test_do_not_expose',
                 ]],
             ], 400),
         ]);
@@ -216,10 +233,92 @@ class XenditSupplierPayoutTest extends TestCase
         $response->assertUnprocessable()
             ->assertJsonPath('code', 'XENDIT_PAYOUT_INVALID')
             ->assertJsonPath('message', 'Xendit rejected the payout details (API_VALIDATION_ERROR, field: recipient.address.postal_code). Check the supplier bank code, account number, and payout destination, then start a new payment attempt.');
-        $this->assertStringNotContainsString('1234567890', $response->getContent());
+        $this->assertStringNotContainsString('12345678', $response->getContent());
         $this->assertStringNotContainsString('xnd_test_do_not_expose', $response->getContent());
         $this->assertSame(SupplierPaymentAttempt::STATUS_FAILED, SupplierPaymentAttempt::query()->sole()->status);
         $this->assertDatabaseCount('finance_expense_settlements', 0);
+    }
+
+    public function test_test_mode_validation_rejection_returns_complete_sanitized_provider_diagnostics(): void
+    {
+        Log::spy();
+        Http::fake([
+            'https://api.xendit.co/v3/payouts' => Http::response([
+                'error_code' => 'API_VALIDATION_ERROR',
+                'message' => 'Payout recipient validation failed for 12345678',
+                'errors' => [
+                    [
+                        'path' => 'recipient.account_details.account_number',
+                        'message' => 'Account 12345678 is invalid; key xnd_test_do_not_expose',
+                    ],
+                    [
+                        'path' => 'recipient.account_details.routing_value_1',
+                        'message' => 'Bank routing value is invalid',
+                    ],
+                ],
+            ], 400),
+        ]);
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $this->connect($shop);
+
+        $response = $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/expenses/{$expense->id}/supplier-payment-attempts",
+            [
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT,
+                'idempotency_key' => 'xendit-attempt-diagnostics',
+            ],
+        );
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('xendit_diagnostics.http_status', 400)
+            ->assertJsonPath('xendit_diagnostics.error_code', 'API_VALIDATION_ERROR')
+            ->assertJsonPath('xendit_diagnostics.message', 'Payout recipient validation failed for ****5678')
+            ->assertJsonCount(2, 'xendit_diagnostics.errors')
+            ->assertJsonPath('xendit_diagnostics.errors.0.path', 'recipient.account_details.account_number')
+            ->assertJsonPath('xendit_diagnostics.errors.1.path', 'recipient.account_details.routing_value_1')
+            ->assertJsonPath('xendit_diagnostics.request_payload.recipient.address.country', 'PH')
+            ->assertJsonPath('xendit_diagnostics.request_payload.recipient.account_details.account_number', '****5678');
+        $this->assertStringNotContainsString('12345678', $response->getContent());
+        $this->assertStringNotContainsString('xnd_test_do_not_expose', $response->getContent());
+        Http::assertSentCount(1);
+
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(function (string $message, array $context): bool {
+                return $message === 'Xendit supplier payout request failed.'
+                    && ($context['xendit_diagnostics']['http_status'] ?? null) === 400
+                    && count($context['xendit_diagnostics']['errors'] ?? []) === 2
+                    && ! str_contains(json_encode($context), '12345678')
+                    && ! str_contains(json_encode($context), 'xnd_test_do_not_expose');
+            });
+    }
+
+    public function test_live_mode_validation_rejection_does_not_expose_provider_diagnostics(): void
+    {
+        Http::fake([
+            'https://api.xendit.co/v3/payouts' => Http::response([
+                'error_code' => 'API_VALIDATION_ERROR',
+                'message' => 'Payout validation failed',
+                'errors' => [[
+                    'path' => 'recipient.account_details.account_number',
+                    'message' => 'Invalid account',
+                ]],
+            ], 400),
+        ]);
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $this->connect($shop, 'live');
+
+        $response = $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/expenses/{$expense->id}/supplier-payment-attempts",
+            [
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT,
+                'idempotency_key' => 'xendit-attempt-live-validation',
+            ],
+        );
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('code', 'XENDIT_PAYOUT_INVALID')
+            ->assertJsonMissingPath('xendit_diagnostics');
     }
 
     public function test_xendit_webhook_requires_the_shop_callback_token_and_settles_success_once(): void
@@ -264,7 +363,7 @@ class XenditSupplierPayoutTest extends TestCase
         $this->assertDatabaseHas('finance_expense_settlements', [
             'expense_id' => $expense->id,
             'source' => ExpenseSettlement::SOURCE_SUPPLIER_XENDIT_PAYOUT,
-            'source_reference' => 'supplier-xendit-payout:' . SupplierPaymentAttempt::query()->sole()->id,
+            'source_reference' => 'supplier-xendit-payout:'.SupplierPaymentAttempt::query()->sole()->id,
         ]);
         $this->assertDatabaseCount('finance_expense_settlements', 1);
     }
@@ -391,13 +490,13 @@ class XenditSupplierPayoutTest extends TestCase
         $this->assertSame('connected', ShopPaymentIntegration::query()->sole()->status);
     }
 
-    private function connect(ShopOwner $shop): void
+    private function connect(ShopOwner $shop, string $environment = 'test'): void
     {
         ShopPaymentIntegration::create([
             'shop_owner_id' => $shop->id,
             'provider' => ShopPaymentIntegration::PROVIDER_XENDIT,
             'purpose' => ShopPaymentIntegration::PURPOSE_SUPPLIER_PAYOUT,
-            'environment' => 'test',
+            'environment' => $environment,
             'secret_key' => 'xnd_test_secret_key_123456789',
             'webhook_callback_token' => 'xendit-callback-token',
             'status' => ShopPaymentIntegration::STATUS_CONNECTED,
@@ -445,10 +544,10 @@ class XenditSupplierPayoutTest extends TestCase
             'recipient_street_line_1' => '123 Test Street',
             'recipient_postal_code' => '4117',
             'destination_type' => SupplierPaymentProfile::DESTINATION_BANK_ACCOUNT,
-            'bank_name' => 'Test Bank',
-            'bank_code' => 'TBK',
-            'account_name' => 'Supplier Trading',
-            'account_number' => '1234567890',
+            'bank_name' => 'BDO Unibank',
+            'bank_code' => 'BNORPHMM',
+            'account_name' => 'Juanito Dimaguiba',
+            'account_number' => '12345678',
             'status' => SupplierPaymentProfile::STATUS_VERIFIED,
             'verified_by' => $finance->id,
             'verified_at' => now(),
@@ -479,7 +578,7 @@ class XenditSupplierPayoutTest extends TestCase
             'accepted_quantity' => 1,
         ]);
         $expense = Expense::create([
-            'reference' => 'EXP-XENDIT-' . uniqid(),
+            'reference' => 'EXP-XENDIT-'.uniqid(),
             'date' => now()->toDateString(),
             'category' => 'Supplies',
             'amount' => '100.00',

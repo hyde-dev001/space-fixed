@@ -21,10 +21,20 @@ final class FinanceErrorResponse
         ]);
 
         if ($exception instanceof FinanceDomainException) {
-            return response()->json([
+            $payload = [
                 'message' => $exception->getMessage(),
                 'code' => $exception->errorCode,
-            ], $exception->httpStatus);
+            ];
+
+            $diagnostics = $exception->diagnostics;
+            if (is_array($diagnostics) && ($diagnostics['expose'] ?? false) === true) {
+                $payload['xendit_diagnostics'] = array_diff_key(
+                    $diagnostics,
+                    ['expose' => true],
+                );
+            }
+
+            return response()->json($payload, $exception->httpStatus);
         }
 
         return response()->json([

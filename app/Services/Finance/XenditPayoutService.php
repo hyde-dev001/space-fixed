@@ -5,6 +5,7 @@ namespace App\Services\Finance;
 use App\Models\ShopPaymentIntegration;
 use App\Models\Supplier;
 use App\Models\SupplierPaymentAttempt;
+use App\Models\SupplierPaymentProfile;
 use App\Support\Finance\FinanceDomainException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -134,20 +135,18 @@ final class XenditPayoutService
             );
         }
 
-        $attempt->loadMissing([
-            'supplier',
-            'expense.procurementReceipt.purchaseOrder',
-        ]);
+        $attempt->loadMissing(['supplier']);
         $supplier = $attempt->supplier;
         if (! $supplier instanceof Supplier) {
             throw new FinanceDomainException('The supplier payment destination is unavailable.', 'INVALID_STATE', 422);
         }
 
         $payload = $this->payload($attempt);
+        $testMode = strtolower(trim((string) $integration->environment)) === 'test';
 
         try {
             $response = $this->client($secretKey)
-                ->withHeaders(['idempotency-key' => (string) $attempt->idempotency_key])
+                ->withHeaders(['Idempotency-key' => (string) $attempt->idempotency_key])
                 ->post($this->endpoint('/v3/payouts'), $payload);
         } catch (Throwable) {
             $this->logFailure('create_payout', (int) $integration->shop_owner_id, (int) $attempt->id, null);
@@ -160,7 +159,14 @@ final class XenditPayoutService
         }
 
         if (! $response->successful()) {
-            $this->logFailure('create_payout', (int) $integration->shop_owner_id, (int) $attempt->id, $response);
+            $diagnostics = $this->validationDiagnostics(
+                $response,
+                $payload,
+                $secretKey,
+                $testMode,
+                (string) $attempt->idempotency_key,
+            );
+            $this->logFailure('create_payout', (int) $integration->shop_owner_id, (int) $attempt->id, $response, $diagnostics);
 
             if ($response->serverError() || $response->status() === 429) {
                 throw new FinanceDomainException(
@@ -170,7 +176,7 @@ final class XenditPayoutService
                 );
             }
 
-            throw $this->payoutFailure($response);
+            throw $this->payoutFailure($response, $diagnostics);
         }
 
         $payoutId = trim((string) $response->json('payout_id'));
@@ -250,7 +256,25 @@ final class XenditPayoutService
             );
         }
 
-        $purchaseOrder = $attempt->expense?->procurementReceipt?->purchaseOrder;
+        $address = [
+            'country' => 'PH',
+            'province_state' => Str::limit(trim((string) ($destination['recipient_province_state'] ?? '')), 255, ''),
+            'city' => Str::limit(trim((string) ($destination['recipient_city'] ?? '')), 255, ''),
+            'street_line_1' => Str::limit(trim((string) ($destination['recipient_street_line_1'] ?? '')), 255, ''),
+            'postal_code' => Str::limit(trim((string) ($destination['recipient_postal_code'] ?? '')), 32, ''),
+        ];
+        if (collect($address)->contains(fn (mixed $value): bool => $value === '')) {
+            throw new FinanceDomainException(
+                'The supplier payment profile is missing Xendit recipient details.',
+                'XENDIT_DESTINATION_INVALID',
+                422,
+            );
+        }
+
+        $streetLine2 = Str::limit(trim((string) ($destination['recipient_street_line_2'] ?? '')), 255, '');
+        if ($streetLine2 !== '') {
+            $address['street_line_2'] = $streetLine2;
+        }
 
         return [
             'reference_id' => (string) $attempt->internal_reference,
@@ -258,14 +282,7 @@ final class XenditPayoutService
                 'type' => strtoupper($recipientType),
                 ...$identity,
                 'relationship' => 'SUPPLIER',
-                'address' => [
-                    'country' => 'PH',
-                    'province_state' => Str::limit(trim((string) ($destination['recipient_province_state'] ?? '')), 255, ''),
-                    'city' => Str::limit(trim((string) ($destination['recipient_city'] ?? '')), 255, ''),
-                    'street_line_1' => Str::limit(trim((string) ($destination['recipient_street_line_1'] ?? '')), 255, ''),
-                    'street_line_2' => Str::limit(trim((string) ($destination['recipient_street_line_2'] ?? '')), 255, ''),
-                    'postal_code' => Str::limit(trim((string) ($destination['recipient_postal_code'] ?? '')), 32, ''),
-                ],
+                'address' => $address,
                 'account_details' => [
                     'currency' => 'PHP',
                     'account_country' => 'PH',
@@ -282,11 +299,7 @@ final class XenditPayoutService
             ],
             'source_of_fund' => 'BUSINESS_REVENUE',
             'purpose_code' => 'TRADES',
-            'description' => Str::limit('Supplier payment ' . $attempt->internal_reference, 100, ''),
-            'underlying_documents' => $purchaseOrder ? [[
-                'type' => 'PURCHASE_ORDER',
-                'reference_no' => Str::limit((string) $purchaseOrder->po_number, 100, ''),
-            ]] : [],
+            'description' => Str::limit('Supplier payment '.$attempt->internal_reference, 100, ''),
         ];
     }
 
@@ -294,14 +307,14 @@ final class XenditPayoutService
     {
         return Http::withBasicAuth($secretKey, '')
             ->acceptJson()
-            ->withHeaders(['api-version' => (string) config('services.xendit.api_version', '2025-09-01')])
+            ->withHeaders(['Api-version' => (string) config('services.xendit.api_version', '2025-09-01')])
             ->connectTimeout(5)
             ->timeout(15);
     }
 
     private function endpoint(string $path): string
     {
-        return rtrim((string) config('services.xendit.base_url', 'https://api.xendit.co'), '/') . $path;
+        return rtrim((string) config('services.xendit.base_url', 'https://api.xendit.co'), '/').$path;
     }
 
     private function walletRoutingValue(string $provider): string
@@ -314,7 +327,7 @@ final class XenditPayoutService
         return match (strtolower(trim($provider))) {
             'gcash' => 'PH_GCASH',
             'maya', 'paymaya' => 'PH_MAYA',
-            default => 'PH_' . preg_replace('/[^A-Z0-9]+/i', '_', strtoupper(trim($provider))),
+            default => 'PH_'.preg_replace('/[^A-Z0-9]+/i', '_', strtoupper(trim($provider))),
         };
     }
 
@@ -330,19 +343,61 @@ final class XenditPayoutService
         return ((int) $whole * 100) + (int) str_pad($fraction, 2, '0');
     }
 
-    private function logFailure(string $operation, ?int $shopId, ?int $attemptId, ?Response $response): void
-    {
-        Log::warning('Xendit supplier payout request failed.', [
+    /** @return array<string, mixed>|null */
+    private function validationDiagnostics(
+        Response $response,
+        array $payload,
+        string $secretKey,
+        bool $testMode,
+        string $idempotencyKey,
+    ): ?array {
+        $providerCode = $this->providerErrorCode($response);
+        if (! $testMode || $providerCode !== 'API_VALIDATION_ERROR') {
+            return null;
+        }
+
+        $body = $response->json();
+        $body = is_array($body) ? $body : [];
+        $redactions = $this->diagnosticRedactions($payload, $secretKey);
+        $errors = is_array($body['errors'] ?? null) ? $body['errors'] : [];
+
+        return [
+            'expose' => true,
+            'http_status' => $response->status(),
+            'error_code' => $providerCode,
+            'message' => $this->sanitizeProviderValue($body['message'] ?? null, $redactions),
+            'errors' => $this->sanitizeProviderValue($errors, $redactions),
+            'request_payload' => $this->sanitizeProviderValue($payload, $redactions),
+            'request_headers' => [
+                'api-version' => (string) config('services.xendit.api_version', '2025-09-01'),
+                'idempotency-key_present' => trim($idempotencyKey) !== '',
+            ],
+        ];
+    }
+
+    private function logFailure(
+        string $operation,
+        ?int $shopId,
+        ?int $attemptId,
+        ?Response $response,
+        ?array $diagnostics = null,
+    ): void {
+        $context = [
             'operation' => $operation,
             'shop_id' => $shopId,
             'attempt_id' => $attemptId,
             'http_status' => $response?->status(),
             'provider_code' => $response ? $this->providerErrorCode($response) : null,
             'provider_field' => $response ? $this->providerErrorPath($response) : null,
-        ]);
+        ];
+        if ($diagnostics !== null) {
+            $context['xendit_diagnostics'] = $diagnostics;
+        }
+
+        Log::warning('Xendit supplier payout request failed.', $context);
     }
 
-    private function payoutFailure(Response $response): FinanceDomainException
+    private function payoutFailure(Response $response, ?array $diagnostics = null): FinanceDomainException
     {
         $providerCode = $this->providerErrorCode($response);
 
@@ -364,12 +419,13 @@ final class XenditPayoutService
 
         if ($response->clientError()) {
             $labels = array_filter([$providerCode, ($path = $this->providerErrorPath($response)) ? "field: {$path}" : null]);
-            $providerCodeLabel = $labels !== [] ? ' (' . implode(', ', $labels) . ')' : '';
+            $providerCodeLabel = $labels !== [] ? ' ('.implode(', ', $labels).')' : '';
 
             return new FinanceDomainException(
                 "Xendit rejected the payout details{$providerCodeLabel}. Check the supplier bank code, account number, and payout destination, then start a new payment attempt.",
                 'XENDIT_PAYOUT_INVALID',
                 422,
+                $diagnostics,
             );
         }
 
@@ -378,6 +434,101 @@ final class XenditPayoutService
             'XENDIT_PAYOUT_FAILED',
             502,
         );
+    }
+
+    /** @return array<string, string> */
+    private function diagnosticRedactions(array $payload, string $secretKey): array
+    {
+        $accountNumber = (string) ($payload['recipient']['account_details']['account_number'] ?? '');
+        $redactions = [];
+        if ($secretKey !== '') {
+            $redactions[$secretKey] = '[REDACTED_SECRET_KEY]';
+        }
+        if ($accountNumber !== '') {
+            $redactions[$accountNumber] = SupplierPaymentProfile::maskAccountNumber($accountNumber);
+        }
+
+        foreach ([
+            'business_name',
+            'given_name',
+            'surname',
+            'account_holder_name',
+            'province_state',
+            'city',
+            'street_line_1',
+            'street_line_2',
+            'postal_code',
+        ] as $field) {
+            $value = match ($field) {
+                'account_holder_name' => $payload['recipient']['account_details'][$field] ?? null,
+                'province_state', 'city', 'street_line_1', 'street_line_2', 'postal_code' => $payload['recipient']['address'][$field] ?? null,
+                default => $payload['recipient'][$field] ?? null,
+            };
+            if (is_string($value) && strlen(trim($value)) >= 4) {
+                $redactions[$value] = '[REDACTED]';
+            }
+        }
+
+        return $redactions;
+    }
+
+    private function sanitizeProviderValue(mixed $value, array $redactions): mixed
+    {
+        if (is_array($value)) {
+            $sanitized = [];
+            foreach ($value as $key => $entry) {
+                $field = strtolower(str_replace(['-', ' '], '_', (string) $key));
+                $sanitized[$key] = $this->isSensitiveField($field)
+                    ? $this->maskedSensitiveValue($entry, $field)
+                    : $this->sanitizeProviderValue($entry, $redactions);
+            }
+
+            return $sanitized;
+        }
+
+        if (! is_string($value)) {
+            return $value;
+        }
+
+        $safe = $value;
+        foreach ($redactions as $sensitiveValue => $replacement) {
+            $safe = str_replace($sensitiveValue, $replacement, $safe);
+        }
+        $safe = preg_replace('/\bxnd_[A-Za-z0-9_-]+\b/', '[REDACTED_SECRET_KEY]', $safe) ?? $safe;
+
+        return preg_replace('/(?<!\d)\d{8,}(?!\d)/', '[REDACTED_NUMBER]', $safe) ?? $safe;
+    }
+
+    private function isSensitiveField(string $field): bool
+    {
+        return in_array($field, [
+            'account_number',
+            'account_identifier',
+            'account_holder_name',
+            'authorization',
+            'api_key',
+            'callback_token',
+            'business_name',
+            'city',
+            'password',
+            'province_state',
+            'secret_key',
+            'street_line_1',
+            'street_line_2',
+            'surname',
+            'given_name',
+            'postal_code',
+            'webhook_token',
+        ], true) || str_contains($field, 'token');
+    }
+
+    private function maskedSensitiveValue(mixed $value, string $field): string
+    {
+        if (str_contains($field, 'account')) {
+            return SupplierPaymentProfile::maskAccountNumber((string) $value) ?? '';
+        }
+
+        return '[REDACTED]';
     }
 
     private function providerErrorCode(Response $response): ?string
