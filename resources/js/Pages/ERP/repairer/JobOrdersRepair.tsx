@@ -1949,7 +1949,7 @@ export default function JobOrdersRepair() {
         : 'Confirm that the repaired shoes were handed to the customer-arranged courier.',
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: actionLabel,
+      confirmButtonText: returnMethod === 'walk_in' ? actionLabel : 'Confirm',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
     });
