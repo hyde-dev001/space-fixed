@@ -88,6 +88,23 @@ Finance continues to see only the data needed to review the destination. Full
 account identifiers remain hidden by default and existing authorization rules
 continue to govern any reveal action.
 
+### Supplier Modal Viewport Behavior
+
+The Add, Edit, and View Supplier modals must remain usable at 100% browser zoom
+without extending beyond the visible browser viewport.
+
+- Each modal uses a viewport-relative maximum height with safe outer margins.
+- The header and action footer remain visible.
+- Only the modal content body scrolls vertically.
+- Mobile layouts remain single-column while existing desktop two-column layouts
+  are preserved.
+- The close control and primary and secondary actions remain keyboard reachable
+  and keep their existing accessible labels.
+
+The existing viewport-safe Add Supplier structure is reused for Edit and View
+instead of introducing another modal abstraction. This keeps the fix scoped to
+the affected page while the longer recipient form is added.
+
 ## Xendit Payload
 
 `XenditPayoutService` builds the recipient object from the payment-attempt
@@ -140,5 +157,7 @@ Backend coverage will verify:
 
 Frontend coverage will verify the default Business selection, conditional
 identity fields, required address fields, edit prefill behavior, and submitted
-payload for both recipient types. The focused Finance payout tests and a fresh
-production build must pass before deployment.
+payload for both recipient types. It will also verify that Add, Edit, and View
+Supplier dialogs expose a bounded scrollable body with persistent header and
+footer actions. The focused Finance payout tests and a fresh production build
+must pass before deployment.
