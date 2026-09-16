@@ -306,7 +306,7 @@ final class ShowroomPlacementService
         $extension = strtolower((string) $image->extension());
         $extension = in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true) ? $extension : 'jpg';
         $directory = "showroom/wall-art/{$shopOwnerId}";
-        $path = $image->storeAs($directory, "{$wall}.{$extension}", 'public');
+        $path = $image->storeAs($directory, $wall . '.' . Str::uuid() . '.' . $extension, 'public');
         if (!is_string($path) || $path === '') {
             throw new RuntimeException('Unable to store wall art.');
         }
