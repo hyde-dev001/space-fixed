@@ -142,7 +142,7 @@ it('shows Staff Articles for an eligible retail Staff viewer and keeps it active
   expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveClass('menu-item-active');
 });
 
-it('shows Staff a link to their linked shop showroom', () => {
+it('does not add a duplicate showroom link to the Staff sidebar', () => {
   state.url = '/erp/staff/dashboard';
   state.role = 'STAFF';
   state.roles = ['Staff'];
@@ -151,10 +151,7 @@ it('shows Staff a link to their linked shop showroom', () => {
 
   render(<AppSidebarERP />);
 
-  expect(screen.getByRole('link', { name: /virtual showroom/i })).toHaveAttribute(
-    'href',
-    '/shop-profile/17/virtual-showroom',
-  );
+  expect(screen.queryByRole('link', { name: /virtual showroom/i })).not.toBeInTheDocument();
 });
 
 it.each([

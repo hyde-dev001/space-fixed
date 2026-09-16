@@ -37,11 +37,23 @@ interface Props {
 
 const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const showroomOrigin =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('from')
+      : null;
+  const fromStaffProducts = showroomOrigin === 'staff-products';
   const fromShopOwnerPremium =
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('from') === 'shop-owner-premium';
-  const backHref = fromShopOwnerPremium ? '/shop-owner/premium-benefits' : `/shop-profile/${shop.id}`;
-  const backLabel = fromShopOwnerPremium ? 'Back to Premium Benefits' : 'Back to Shop Profile';
+    showroomOrigin === 'shop-owner-premium';
+  const backHref = fromStaffProducts
+    ? '/erp/staff/products'
+    : fromShopOwnerPremium
+      ? '/shop-owner/premium-benefits'
+      : `/shop-profile/${shop.id}`;
+  const backLabel = fromStaffProducts
+    ? 'Back to Product Management'
+    : fromShopOwnerPremium
+      ? 'Back to Premium Benefits'
+      : 'Back to Shop Profile';
 
   return (
     <div className="h-dvh overflow-hidden bg-white">

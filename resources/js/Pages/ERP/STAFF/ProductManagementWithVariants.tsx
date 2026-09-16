@@ -1609,7 +1609,7 @@ export default function ProductManagement() {
             <div className="flex items-center justify-end gap-3">
               {staffShopOwnerId > 0 && (
                 <Link
-                  href={`/shop-profile/${staffShopOwnerId}/virtual-showroom`}
+                  href={`/shop-profile/${staffShopOwnerId}/virtual-showroom?from=staff-products`}
                   className="inline-flex h-10 items-center rounded-lg border border-[#16233b] px-4 text-sm font-semibold text-[#16233b] transition-colors hover:bg-[#16233b] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]"
                 >
                   Virtual Showroom
