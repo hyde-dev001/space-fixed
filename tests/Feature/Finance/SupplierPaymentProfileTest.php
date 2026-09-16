@@ -58,6 +58,62 @@ class SupplierPaymentProfileTest extends TestCase
         $this->assertNotSame('1234567890', DB::table('supplier_payment_profiles')->whereKey($profile->id)->value('account_number'));
     }
 
+    public function test_recipient_profiles_expose_identity_and_address_without_account_details(): void
+    {
+        [$shop] = $this->procurementActor();
+        $businessSupplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $individualSupplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+
+        $business = SupplierPaymentProfile::create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $businessSupplier->id,
+            'recipient_type' => 'business',
+            'business_name' => 'Test Supplier PH',
+            'recipient_country' => 'PH',
+            'recipient_province_state' => 'Cavite',
+            'recipient_city' => 'General Mariano Alvarez',
+            'recipient_street_line_1' => '123 Test Street',
+            'recipient_postal_code' => '4117',
+            'destination_type' => 'bank_account',
+            'bank_name' => 'BDO Unibank',
+            'bank_code' => 'BNORPHMM',
+            'account_name' => 'Test Supplier PH',
+            'account_number' => '12345678',
+            'status' => SupplierPaymentProfile::STATUS_UNVERIFIED,
+        ]);
+        $individual = SupplierPaymentProfile::create([
+            'shop_owner_id' => $shop->id,
+            'supplier_id' => $individualSupplier->id,
+            'recipient_type' => 'individual',
+            'given_name' => 'Juanito',
+            'surname' => 'Dimaguiba',
+            'recipient_country' => 'PH',
+            'recipient_province_state' => 'Cavite',
+            'recipient_city' => 'General Mariano Alvarez',
+            'recipient_street_line_1' => '456 Sample Road',
+            'recipient_street_line_2' => 'Barangay Sample',
+            'recipient_postal_code' => '4117',
+            'destination_type' => 'bank_account',
+            'bank_name' => 'BDO Unibank',
+            'bank_code' => 'BNORPHMM',
+            'account_name' => 'Juanito Dimaguiba',
+            'account_number' => '87654321',
+            'status' => SupplierPaymentProfile::STATUS_UNVERIFIED,
+        ]);
+
+        $this->assertSame('business', $business->toMaskedArray()['recipient_type']);
+        $this->assertSame('Test Supplier PH', $business->toMaskedArray()['business_name']);
+        $this->assertNull($business->toMaskedArray()['given_name']);
+        $this->assertSame('PH', $business->toMaskedArray()['recipient_country']);
+        $this->assertArrayNotHasKey('account_number', $business->toMaskedArray());
+
+        $this->assertSame('individual', $individual->toMaskedArray()['recipient_type']);
+        $this->assertSame('Juanito', $individual->toMaskedArray()['given_name']);
+        $this->assertSame('Dimaguiba', $individual->toMaskedArray()['surname']);
+        $this->assertSame('Barangay Sample', $individual->toMaskedArray()['recipient_street_line_2']);
+        $this->assertArrayNotHasKey('account_number', $individual->toMaskedArray());
+    }
+
     public function test_reusable_e_wallet_profiles_use_explicit_wallet_fields(): void
     {
         [$shop, $procurement] = $this->procurementActor();
