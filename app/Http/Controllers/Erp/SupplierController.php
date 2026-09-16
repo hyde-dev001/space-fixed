@@ -108,8 +108,10 @@ class SupplierController extends Controller
                 $validated['payment_profile'],
                 StoreSupplierPaymentProfileRequest::profileRules(
                     destinationType: $validated['payment_profile']['destination_type'] ?? null,
+                    recipientType: $validated['payment_profile']['recipient_type'] ?? null,
                 ),
             )->validate();
+            $profileData['recipient_country'] = strtoupper($profileData['recipient_country']);
             unset($validated['payment_profile']);
         }
 
@@ -322,6 +324,7 @@ class SupplierController extends Controller
                 ->lockForUpdate()
                 ->first();
             $data = $request->validated();
+            $data['recipient_country'] = strtoupper($data['recipient_country']);
             $destinationType = (string) $data['destination_type'];
             $isBankAccount = $destinationType === SupplierPaymentProfile::DESTINATION_BANK_ACCOUNT;
             $accountNumber = $isBankAccount
@@ -339,6 +342,16 @@ class SupplierController extends Controller
             }
 
             $destination = [
+                'recipient_type' => $data['recipient_type'],
+                'business_name' => $data['recipient_type'] === SupplierPaymentProfile::RECIPIENT_BUSINESS ? $data['business_name'] : null,
+                'given_name' => $data['recipient_type'] === SupplierPaymentProfile::RECIPIENT_INDIVIDUAL ? $data['given_name'] : null,
+                'surname' => $data['recipient_type'] === SupplierPaymentProfile::RECIPIENT_INDIVIDUAL ? $data['surname'] : null,
+                'recipient_country' => $data['recipient_country'],
+                'recipient_province_state' => $data['recipient_province_state'],
+                'recipient_city' => $data['recipient_city'],
+                'recipient_street_line_1' => $data['recipient_street_line_1'],
+                'recipient_street_line_2' => $data['recipient_street_line_2'] ?? null,
+                'recipient_postal_code' => $data['recipient_postal_code'],
                 'destination_type' => $destinationType,
                 'wallet_provider' => $isBankAccount ? null : $data['wallet_provider'],
                 'bank_name' => $isBankAccount ? $data['bank_name'] : null,

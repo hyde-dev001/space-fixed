@@ -113,6 +113,29 @@ class SupplierPaymentProfile extends Model
         return self::maskAccountIdentifier($this->account_identifier);
     }
 
+    public function hasCompleteRecipientDetails(): bool
+    {
+        $identity = $this->recipient_type === self::RECIPIENT_BUSINESS
+            ? [$this->business_name]
+            : ($this->recipient_type === self::RECIPIENT_INDIVIDUAL
+                ? [$this->given_name, $this->surname]
+                : []);
+
+        $required = array_merge($identity, [
+            $this->recipient_country,
+            $this->recipient_province_state,
+            $this->recipient_city,
+            $this->recipient_street_line_1,
+            $this->recipient_postal_code,
+            $this->account_name,
+            $this->destination_type === self::DESTINATION_BANK_ACCOUNT ? $this->bank_name : $this->wallet_provider,
+            $this->destination_type === self::DESTINATION_BANK_ACCOUNT ? $this->bank_code : $this->account_identifier,
+            $this->destination_type === self::DESTINATION_BANK_ACCOUNT ? $this->account_number : $this->account_identifier,
+        ]);
+
+        return $identity !== [] && collect($required)->every(fn ($value): bool => filled($value));
+    }
+
     /** @return array<string, mixed> */
     public function toRevealedArray(): array
     {
