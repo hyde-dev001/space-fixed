@@ -61,6 +61,14 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 				supplier_id: 4,
 				payment_profile: mocks.hasPaymentProfile ? {
 					id: 8,
+					recipient_type: "business",
+					business_name: "Supplier Trading",
+					recipient_country: "PH",
+					recipient_province_state: "Cavite",
+					recipient_city: "General Mariano Alvarez",
+					recipient_street_line_1: "123 Test Street",
+					recipient_street_line_2: null,
+					recipient_postal_code: "4117",
 					destination_type: "bank_account",
 					bank_name: "Test Bank",
 					bank_code: "TBK",
@@ -164,6 +172,9 @@ describe("Finance procurement expenses", () => {
 		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
 
 		expect(screen.getByText("******7890")).toBeInTheDocument();
+		expect(screen.getByText("Business")).toBeInTheDocument();
+		expect(screen.getByText("Supplier Trading")).toBeInTheDocument();
+		expect(screen.getByText(/123 Test Street, General Mariano Alvarez, Cavite 4117, PH/)).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: "Verify Payment Profile" })).toBeInTheDocument();
 		expect(screen.queryByDisplayValue("1234567890")).not.toBeInTheDocument();
 	});

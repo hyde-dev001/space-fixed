@@ -6,6 +6,7 @@ import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import IconButton from "../../../components/ui/icon-button/IconButton";
 import { supplierApi, type Supplier } from "@/services/procurementApi";
 import type { SupplierPaymentDestinationType, SupplierPaymentProfile, UpsertSupplierPaymentProfilePayload } from "@/types/procurement";
+import SupplierPaymentProfileFields, { type SupplierPaymentProfileFormState } from "./components/SupplierPaymentProfileFields";
 import { erpUrl } from "@/utils/erpCapabilities";
 import { withSweetAlertSemantic } from "@/utils/semanticSweetAlert";
 
@@ -40,14 +41,6 @@ const ChevronLeftIcon = ({ className }: { className?: string }) => (
 const ChevronRightIcon = ({ className }: { className?: string }) => (
 	<svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
 		<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-	</svg>
-);
-
-const EyeIcon = ({ crossed = false }: { crossed?: boolean }) => (
-	<svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} aria-hidden="true">
-		<path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.27 2.943 9.542 7-1.272 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-		<circle cx="12" cy="12" r="3" />
-		{crossed && <path strokeLinecap="round" d="m4 4 16 16" />}
 	</svg>
 );
 
@@ -86,17 +79,17 @@ const initialFormState: FormState = {
 	notes: "",
 };
 
-interface PaymentProfileFormState {
-	destination_type: SupplierPaymentDestinationType;
-	wallet_provider: string;
-	bank_name: string;
-	bank_code: string;
-	account_name: string;
-	account_number: string;
-	account_identifier: string;
-}
-
-const initialPaymentProfileFormState: PaymentProfileFormState = {
+const initialPaymentProfileFormState: SupplierPaymentProfileFormState = {
+	recipient_type: "business",
+	business_name: "",
+	given_name: "",
+	surname: "",
+	recipient_country: "PH",
+	recipient_province_state: "",
+	recipient_city: "",
+	recipient_street_line_1: "",
+	recipient_street_line_2: "",
+	recipient_postal_code: "",
 	destination_type: "bank_account",
 	wallet_provider: "",
 	bank_name: "",
@@ -105,6 +98,21 @@ const initialPaymentProfileFormState: PaymentProfileFormState = {
 	account_number: "",
 	account_identifier: "",
 };
+
+const buildPaymentProfilePayload = (form: SupplierPaymentProfileFormState): UpsertSupplierPaymentProfilePayload => ({
+	recipient_type: form.recipient_type,
+	...(form.recipient_type === "business" ? { business_name: form.business_name } : { given_name: form.given_name, surname: form.surname }),
+	recipient_country: form.recipient_country.toUpperCase(),
+	recipient_province_state: form.recipient_province_state,
+	recipient_city: form.recipient_city,
+	recipient_street_line_1: form.recipient_street_line_1,
+	recipient_street_line_2: form.recipient_street_line_2 || undefined,
+	recipient_postal_code: form.recipient_postal_code,
+	destination_type: form.destination_type,
+	...(form.destination_type === "e_wallet"
+		? { wallet_provider: form.wallet_provider, account_name: form.account_name, account_identifier: form.account_identifier || undefined }
+		: { bank_name: form.bank_name, bank_code: form.bank_code, account_name: form.account_name, account_number: form.account_number || undefined }),
+});
 
 interface SupplierFormFieldsProps {
 	formData: FormState;
@@ -262,6 +270,16 @@ export default function SuppliersManagement() {
 			const profile = await supplierApi.getPaymentProfile(supplierId);
 			setPaymentProfile(profile);
 				setPaymentProfileForm({
+					recipient_type: profile?.recipient_type || "business",
+					business_name: profile?.business_name || "",
+					given_name: profile?.given_name || "",
+					surname: profile?.surname || "",
+					recipient_country: profile?.recipient_country || "PH",
+					recipient_province_state: profile?.recipient_province_state || "",
+					recipient_city: profile?.recipient_city || "",
+					recipient_street_line_1: profile?.recipient_street_line_1 || "",
+					recipient_street_line_2: profile?.recipient_street_line_2 || "",
+					recipient_postal_code: profile?.recipient_postal_code || "",
 					destination_type: (profile?.destination_type as SupplierPaymentDestinationType) || "bank_account",
 					wallet_provider: profile?.wallet_provider || "",
 					bank_name: profile?.bank_name || "",
@@ -403,25 +421,8 @@ export default function SuppliersManagement() {
 				products_supplied: formData.products_supplied,
 				notes: formData.notes,
 			});
-				const isWallet = paymentProfileForm.destination_type === "e_wallet";
 				if (paymentProfileForm.wallet_provider.trim() || paymentProfileForm.bank_name.trim() || paymentProfileForm.bank_code.trim() || paymentProfileForm.account_name.trim() || paymentProfileForm.account_number.trim() || paymentProfileForm.account_identifier.trim()) {
-					const paymentProfilePayload: UpsertSupplierPaymentProfilePayload = isWallet
-						? {
-							destination_type: "e_wallet",
-							wallet_provider: paymentProfileForm.wallet_provider,
-							account_name: paymentProfileForm.account_name,
-							account_identifier: paymentProfileForm.account_identifier || undefined,
-						}
-						: {
-							destination_type: "bank_account",
-							bank_name: paymentProfileForm.bank_name,
-							bank_code: paymentProfileForm.bank_code,
-							account_name: paymentProfileForm.account_name,
-							account_number: paymentProfileForm.account_number || undefined,
-						};
-					await supplierApi.upsertPaymentProfile(editingSupplier.id, {
-						...paymentProfilePayload,
-					});
+					await supplierApi.upsertPaymentProfile(editingSupplier.id, buildPaymentProfilePayload(paymentProfileForm));
 				}
 
 			await Swal.fire("Success", "Supplier updated successfully", "success");
@@ -455,16 +456,20 @@ export default function SuppliersManagement() {
 			...prev,
 			[name]: name === "phone" ? value.replace(/\D/g, "").slice(0, 11) : value,
 		}));
+		const recipientField = { name: "business_name", address: "recipient_street_line_1", city: "recipient_city" }[name];
+		if (recipientField) setPaymentProfileForm((prev) => ({ ...prev, [recipientField]: value }));
+		if (name === "country") setPaymentProfileForm((prev) => ({ ...prev, recipient_country: value.toUpperCase() === "PHILIPPINES" ? "PH" : value.toUpperCase().slice(0, 2) }));
 	};
 
 	const handlePaymentProfileChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
 			const { name, value } = e.target;
 			setPaymentProfileForm((prev) => name === "destination_type"
 				? {
-					...initialPaymentProfileFormState,
+					...prev,
 					destination_type: value as SupplierPaymentDestinationType,
-					account_name: prev.account_name,
+					wallet_provider: "", bank_name: "", bank_code: "", account_number: "", account_identifier: "",
 				}
+				: name === "recipient_type" ? { ...prev, recipient_type: value as "business" | "individual", business_name: "", given_name: "", surname: "" }
 				: { ...prev, [name]: value });
 	};
 
@@ -482,23 +487,9 @@ export default function SuppliersManagement() {
 		}
 
 		try {
-				const isWallet = paymentProfileForm.destination_type === "e_wallet";
 				const hasPaymentProfileInput = paymentProfileForm.wallet_provider.trim() || paymentProfileForm.bank_name.trim() || paymentProfileForm.bank_code.trim() || paymentProfileForm.account_name.trim() || paymentProfileForm.account_number.trim() || paymentProfileForm.account_identifier.trim();
 				const paymentProfilePayload: UpsertSupplierPaymentProfilePayload | undefined = hasPaymentProfileInput
-					? isWallet
-						? {
-							destination_type: "e_wallet",
-							wallet_provider: paymentProfileForm.wallet_provider,
-							account_name: paymentProfileForm.account_name,
-							account_identifier: paymentProfileForm.account_identifier,
-						}
-						: {
-							destination_type: "bank_account",
-							bank_name: paymentProfileForm.bank_name,
-							bank_code: paymentProfileForm.bank_code,
-							account_name: paymentProfileForm.account_name,
-							account_number: paymentProfileForm.account_number,
-						}
+					? buildPaymentProfilePayload(paymentProfileForm)
 					: undefined;
 				await supplierApi.create({
 					name: formData.name,
@@ -525,8 +516,6 @@ export default function SuppliersManagement() {
 	};
 
 	const isAnyModalOpen = isModalOpen || !!viewingSupplier || !!editingSupplier;
-	const paymentDestinationIsWallet = paymentProfileForm.destination_type === "e_wallet";
-
 	return (
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
 			<Head title="Suppliers Management - Solespace" />
@@ -708,9 +697,9 @@ export default function SuppliersManagement() {
 			{isModalOpen && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto px-4 py-6 sm:py-8">
 					<button type="button" aria-label="Close add supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={handleCloseModal} />
-					<div className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100dvh-3rem)]">
+					<div role="dialog" aria-modal="true" aria-labelledby="add-supplier-title" className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100dvh-3rem)]">
 						<div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800 sm:px-6">
-							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add New Supplier</h2>
+							<h2 id="add-supplier-title" className="text-xl font-semibold text-gray-900 dark:text-white">Add New Supplier</h2>
 							<button
 								type="button"
 								aria-label="Close add supplier modal"
@@ -729,45 +718,7 @@ export default function SuppliersManagement() {
 									<h3 className="text-sm font-semibold text-gray-900 dark:text-white">Payment Profile (optional)</h3>
 									<p className="text-xs text-gray-500 dark:text-gray-400">Save a verified destination for later Finance payment review.</p>
 								</div>
-								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-									<div>
-										<label htmlFor="add-payment-destination-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Destination Type</label>
-										<select id="add-payment-destination-type" name="destination_type" value={paymentProfileForm.destination_type} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-											<option value="bank_account">Bank Account</option>
-											<option value="e_wallet">E-wallet</option>
-										</select>
-									</div>
-									<div>
-										<label htmlFor="add-payment-provider" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{paymentDestinationIsWallet ? "Wallet Provider" : "Bank Name"}</label>
-										<input id="add-payment-provider" name={paymentDestinationIsWallet ? "wallet_provider" : "bank_name"} value={paymentDestinationIsWallet ? paymentProfileForm.wallet_provider : paymentProfileForm.bank_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-									</div>
-								</div>
-								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-									{paymentDestinationIsWallet ? (
-										<div>
-											<label htmlFor="add-payment-account-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Account Name</label>
-											<input id="add-payment-account-name" name="account_name" value={paymentProfileForm.account_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-										</div>
-									) : (
-										<div>
-											<label htmlFor="add-payment-bank-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bank Code</label>
-											<input id="add-payment-bank-code" name="bank_code" value={paymentProfileForm.bank_code} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-										</div>
-									)}
-									{!paymentDestinationIsWallet && (
-										<div>
-											<label htmlFor="add-payment-account-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Account Name</label>
-											<input id="add-payment-account-name" name="account_name" value={paymentProfileForm.account_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-										</div>
-									)}
-								</div>
-								<div>
-									<label htmlFor="add-payment-account" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{paymentDestinationIsWallet ? "Mobile / Account Number" : "Account Number"}</label>
-									<div className="flex gap-2">
-										<input id="add-payment-account" name={paymentDestinationIsWallet ? "account_identifier" : "account_number"} value={paymentDestinationIsWallet ? paymentProfileForm.account_identifier : paymentProfileForm.account_number} onChange={handlePaymentProfileChange} autoComplete="off" type={showPaymentAccount ? "text" : "password"} placeholder={paymentDestinationIsWallet ? "Enter wallet mobile/account identifier" : "Enter supplier account number"} className="min-w-0 flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-										<button type="button" onClick={() => setShowPaymentAccount((visible) => !visible)} aria-label={showPaymentAccount ? "Hide account number" : "Show account number"} title={showPaymentAccount ? "Hide account number" : "Show account number"} aria-pressed={showPaymentAccount} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"><EyeIcon crossed={showPaymentAccount} /></button>
-									</div>
-								</div>
+				<SupplierPaymentProfileFields form={paymentProfileForm} onChange={handlePaymentProfileChange} idPrefix="add" showAccount={showPaymentAccount} onToggleAccount={() => setShowPaymentAccount((visible) => !visible)} />
 							</div>
 
 						</div>
@@ -796,9 +747,9 @@ export default function SuppliersManagement() {
 			{viewingSupplier && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:py-8">
 					<button type="button" aria-label="Close view supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={() => setViewingSupplier(null)} />
-					<div className="relative w-full max-w-3xl rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
-						<div className="flex items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
-							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Supplier Details</h2>
+					<div role="dialog" aria-modal="true" aria-labelledby="view-supplier-title" className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100dvh-3rem)]">
+						<div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
+							<h2 id="view-supplier-title" className="text-xl font-semibold text-gray-900 dark:text-white">Supplier Details</h2>
 							<button
 								onClick={() => setViewingSupplier(null)}
 								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
@@ -807,7 +758,7 @@ export default function SuppliersManagement() {
 							</button>
 						</div>
 
-						<div className="space-y-3 p-5">
+						<div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-5">
 							<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 								<div className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-800 dark:bg-gray-800/40">
 									<p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Supplier Name</p>
@@ -884,7 +835,7 @@ export default function SuppliersManagement() {
 							</div>
 						</div>
 
-						<div className="flex gap-3 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800/50">
+						<div className="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800/50">
 							<button
 								onClick={() => setViewingSupplier(null)}
 								className="flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
@@ -900,9 +851,9 @@ export default function SuppliersManagement() {
 			{editingSupplier && (
 				<div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6 sm:py-8">
 					<button type="button" aria-label="Close edit supplier modal" className="absolute inset-0 bg-black/50 erp-modal-backdrop" onClick={closeEditModal} />
-					<div className="relative flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900">
+					<div role="dialog" aria-modal="true" aria-labelledby="edit-supplier-title" className="relative flex max-h-[calc(100dvh-2rem)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100dvh-3rem)]">
 						<div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
-							<h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Supplier</h2>
+							<h2 id="edit-supplier-title" className="text-xl font-semibold text-gray-900 dark:text-white">Edit Supplier</h2>
 							<button
 								onClick={closeEditModal}
 								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl leading-none"
@@ -911,11 +862,10 @@ export default function SuppliersManagement() {
 							</button>
 						</div>
 
-						<div className="px-5 py-3">
+						<div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
 							<SupplierFormFields formData={formData} onChange={handleFormChange} idPrefix="edit" />
-						</div>
 
-						<div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2 dark:border-blue-900/60 dark:bg-blue-950/20">
+						<div className="mt-3 rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-2 dark:border-blue-900/60 dark:bg-blue-950/20">
 							<div>
 								<h3 className="text-sm font-semibold text-gray-900 dark:text-white">Payment Profile</h3>
 								<p className="text-xs text-gray-500 dark:text-gray-400">
@@ -927,40 +877,7 @@ export default function SuppliersManagement() {
 								<p className="text-sm text-gray-500 dark:text-gray-400">Loading payment profile…</p>
 							) : (
 								<>
-									<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-										<div>
-											<label htmlFor="payment-destination-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Destination Type</label>
-											<select id="payment-destination-type" name="destination_type" value={paymentProfileForm.destination_type} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white">
-												<option value="bank_account">Bank Account</option>
-												<option value="e_wallet">E-wallet</option>
-											</select>
-										</div>
-										<div>
-											<label htmlFor="payment-provider" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{paymentDestinationIsWallet ? "Wallet Provider" : "Bank Name"}</label>
-											<input id="payment-provider" aria-label={paymentDestinationIsWallet ? "Wallet Provider" : "Bank Name"} type="text" name={paymentDestinationIsWallet ? "wallet_provider" : "bank_name"} value={paymentDestinationIsWallet ? paymentProfileForm.wallet_provider : paymentProfileForm.bank_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-										</div>
-									</div>
-
-									<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-										{!paymentDestinationIsWallet && (
-											<div>
-												<label htmlFor="payment-bank-code" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Bank Code</label>
-												<input id="payment-bank-code" aria-label="Bank Code" type="text" name="bank_code" value={paymentProfileForm.bank_code} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-											</div>
-										)}
-										<div>
-											<label htmlFor="payment-account-name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Account Name</label>
-											<input id="payment-account-name" aria-label="Account Name" type="text" name="account_name" value={paymentProfileForm.account_name} onChange={handlePaymentProfileChange} className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-										</div>
-									</div>
-
-									<div>
-										<label htmlFor="payment-account" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">{paymentDestinationIsWallet ? "Mobile / Account Number" : "Account Number"}</label>
-										<div className="flex gap-2">
-											<input id="payment-account" aria-label={paymentDestinationIsWallet ? "Mobile / Account Number" : "Account Number"} autoComplete="off" type={showPaymentAccount ? "text" : "password"} name={paymentDestinationIsWallet ? "account_identifier" : "account_number"} value={paymentDestinationIsWallet ? paymentProfileForm.account_identifier : paymentProfileForm.account_number} onChange={handlePaymentProfileChange} placeholder={paymentProfile ? "Leave blank to keep the saved account" : paymentDestinationIsWallet ? "Enter wallet mobile/account identifier" : "Enter supplier account number"} className="min-w-0 flex-1 px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white" />
-											<button type="button" onClick={() => setShowPaymentAccount((visible) => !visible)} aria-label={showPaymentAccount ? "Hide account number" : "Show account number"} title={showPaymentAccount ? "Hide account number" : "Show account number"} aria-pressed={showPaymentAccount} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 text-gray-700 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"><EyeIcon crossed={showPaymentAccount} /></button>
-										</div>
-									</div>
+									<SupplierPaymentProfileFields form={paymentProfileForm} onChange={handlePaymentProfileChange} idPrefix="edit" showAccount={showPaymentAccount} onToggleAccount={() => setShowPaymentAccount((visible) => !visible)} keepSavedAccount={!!paymentProfile} />
 									<p className="text-xs text-gray-500 dark:text-gray-400">
 										{paymentProfile?.status === "disabled"
 											? "Disabled by Finance. Replace the destination here; Finance must verify it before it can be used for a supplier payment."
@@ -968,6 +885,7 @@ export default function SuppliersManagement() {
 									</p>
 								</>
 							)}
+						</div>
 						</div>
 
 						<div className="flex shrink-0 gap-3 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800/50">
