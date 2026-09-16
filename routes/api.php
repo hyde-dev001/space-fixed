@@ -41,6 +41,9 @@ Route::middleware(['web', 'auth:user,shop_owner', 'throttle:20,1'])->group(funct
 Route::post('/webhooks/paymongo', [\App\Http\Controllers\PaymongoWebhookController::class, 'handle'])
     ->name('webhooks.paymongo');
 
+Route::post('/webhooks/xendit/payout', [\App\Http\Controllers\XenditPayoutWebhookController::class, 'handle'])
+    ->name('webhooks.xendit.payout');
+
 /**
  * PayMongo Proxy - Frontend calls this to avoid CORS
  * Uses payment links API (the one that was working for you last week)

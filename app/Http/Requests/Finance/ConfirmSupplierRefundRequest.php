@@ -18,7 +18,7 @@ class ConfirmSupplierRefundRequest extends FormRequest
     {
         return [
             'amount' => ['required', 'string', 'regex:/^\d+(?:\.\d{1,2})?$/'],
-            'payment_method' => ['required', Rule::in(SupplierPaymentAttempt::PAYMENT_METHODS)],
+            'payment_method' => ['required', Rule::in(SupplierPaymentAttempt::MANUAL_PAYMENT_METHODS)],
             'external_transaction_reference' => ['required', 'string', 'max:160'],
             'received_at' => ['required', 'date'],
             'idempotency_key' => ['required', 'string', 'max:100'],

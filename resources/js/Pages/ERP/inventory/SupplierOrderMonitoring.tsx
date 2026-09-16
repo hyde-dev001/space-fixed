@@ -1,11 +1,12 @@
 import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import type { PurchaseOrder } from "@/types/procurement";
 import { purchaseOrderApi } from "@/services/purchaseOrderApi";
 import PurchaseOrderReceiptPanel from "../Procurement/components/PurchaseOrderReceiptPanel";
 import SupplierAdjustmentsPanel from "../Procurement/components/SupplierAdjustmentsPanel";
+import SupplierAdjustmentQueue from "../Procurement/components/SupplierAdjustmentQueue";
 import { DashboardMetricCard } from "../../../components/dashboard";
 import { Eye, PackageCheck, ShoppingCart, Truck, CheckCircle2 } from "lucide-react";
 import { hasPermission } from "@/utils/permissions";
@@ -45,9 +46,17 @@ export default function SupplierOrderMonitoring() {
 		setViewingOrder(refreshed);
 		setOrders((current) => current.map((order) => order.id === refreshed.id ? refreshed : order));
 	};
-	const canReportSupplierIssues = !ownerMode
+	useEffect(() => {
+		if (ownerMode) return;
+		const id = Number(new URLSearchParams(window.location.search).get("purchase_order"));
+		if (id > 0) void openOrder(id).catch((error) => {
+			console.error("Failed to open linked purchase order:", error);
+		});
+	}, [ownerMode]);
+	const canReceivePurchaseOrders = !ownerMode
 		&& hasPermission(auth, "procurement.receive_purchase_orders")
 		&& hasPermission(auth, "view-inventory");
+	const canReportSupplierIssues = canReceivePurchaseOrders;
 	const canManageSupplierAdjustments = !ownerMode && hasPermission(auth, "procurement.manage_suppliers");
 
 	return (
@@ -55,6 +64,7 @@ export default function SupplierOrderMonitoring() {
 			<Head title="Supplier Order Monitoring - Solespace" />
 			<div className="p-6 space-y-6">
 				<h1 className="sr-only">Supplier Order Monitoring</h1>
+				{!ownerMode && <SupplierAdjustmentQueue currentOwner="inventory" onOpen={(id) => void openOrder(id)} />}
 
 				<div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
 					<DashboardMetricCard label="Total Supplier Orders" value={orders.length.toLocaleString()} description="Orders in the loaded view" context="Procurement" icon={ShoppingCart} />
@@ -79,7 +89,7 @@ export default function SupplierOrderMonitoring() {
 						<table className="min-w-full text-sm">
 							<thead><tr className="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-gray-700"><th className="px-3 py-3">PO</th><th className="px-3 py-3">Supplier / Product</th><th className="px-3 py-3">Expected</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Action</th></tr></thead>
 							<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-								{filtered.map((order) => { const canReceive = !ownerMode && ["in_transit", "partially_received"].includes(order.status); return <tr key={order.id}><td className="px-3 py-3 font-medium">{order.po_number}</td><td className="px-3 py-3"><p>{order.supplier?.name ?? "Unknown supplier"}</p><p className="text-xs text-gray-500">{order.product_name}</p></td><td className="px-3 py-3">{formatDate(order.expected_delivery_date)}</td><td className="px-3 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs dark:bg-gray-800">{label(order.status)}</span></td><td className="px-3 py-3"><div className="flex items-center gap-2"><button type="button" onClick={() => void openOrder(order.id)} title="View" aria-label="View" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Eye className="h-4 w-4" aria-hidden="true" /></button>{canReceive && <button type="button" onClick={() => void openOrder(order.id)} title="Receive" aria-label="Receive" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><PackageCheck className="h-4 w-4" aria-hidden="true" /></button>}</div></td></tr>; })}
+								{filtered.map((order) => { const canReceive = canReceivePurchaseOrders && ["in_transit", "partially_received"].includes(order.status); return <tr key={order.id}><td className="px-3 py-3 font-medium">{order.po_number}</td><td className="px-3 py-3"><p>{order.supplier?.name ?? "Unknown supplier"}</p><p className="text-xs text-gray-500">{order.product_name}</p></td><td className="px-3 py-3">{formatDate(order.expected_delivery_date)}</td><td className="px-3 py-3"><span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs dark:bg-gray-800">{label(order.status)}</span></td><td className="px-3 py-3"><div className="flex items-center gap-2"><button type="button" onClick={() => void openOrder(order.id)} title="View" aria-label="View" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><Eye className="h-4 w-4" aria-hidden="true" /></button>{canReceive && <button type="button" onClick={() => void openOrder(order.id)} title="Receive" aria-label="Receive" className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-700 transition-colors hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"><PackageCheck className="h-4 w-4" aria-hidden="true" /></button>}</div></td></tr>; })}
 								{filtered.length === 0 && <tr><td colSpan={5} className="px-3 py-10 text-center text-gray-500">No supplier orders found.</td></tr>}
 							</tbody>
 						</table>
@@ -90,7 +100,7 @@ export default function SupplierOrderMonitoring() {
 			{viewingOrder && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 erp-modal-backdrop">
 				<div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
 					<div className="mb-4 flex items-center justify-between"><div><h2 className="text-xl font-semibold">{viewingOrder.po_number}</h2><p className="text-sm text-gray-500">{viewingOrder.supplier?.name} · {label(viewingOrder.status)}</p></div><button type="button" onClick={() => setViewingOrder(null)} aria-label="Close" className="text-2xl text-gray-500">×</button></div>
-					<PurchaseOrderReceiptPanel order={viewingOrder} canReceive={!ownerMode} canVoid={false} onChanged={refreshViewingOrder} />
+					<PurchaseOrderReceiptPanel order={viewingOrder} canReceive={canReceivePurchaseOrders} canVoid={false} onChanged={refreshViewingOrder} />
 					<SupplierAdjustmentsPanel order={viewingOrder} canReport={canReportSupplierIssues} canManage={canManageSupplierAdjustments} onChanged={refreshViewingOrder} />
 				</div>
 			</div>}

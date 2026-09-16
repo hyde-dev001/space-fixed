@@ -89,3 +89,8 @@
 
 - Native `<select>` option highlight colors belong to the browser/OS; consistent monochrome selection requires shared custom trigger/listbox rendering across pages, while retaining a hidden native control only when a real form contract (`name`, `required`, `form`, or `multiple`) needs it.
 - SweetAlert selects are injected after React renders, so they need a document observer and DOM enhancer to receive the same selected, hover, and focus treatments; the enhancer must skip SweetAlert2's hidden template select when no real input was configured.
+
+## 2026-09-15 - Procurement receipt authority
+
+- Completion and payable projections must identify the authoritative Final Receipt by domain meaning, not by the latest posted receipt, because later supporting replacement receipts must not create another payable or replace the original accounting source.
+- Payment-dependent UI actions must consume backend eligibility projections and repeat the same guard at mutation time; receipt status alone cannot prove that its expense is fully settled.

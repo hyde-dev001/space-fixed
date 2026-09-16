@@ -135,35 +135,10 @@ class PurchaseOrderReceiptService
                 ->exists()) {
                 throw ValidationException::withMessages(['receipt' => 'This purchase order already has its one final receipt.']);
             }
-            if ($purchaseOrder->is_historical || ! $purchaseOrder->isReceiving()) {
-                throw ValidationException::withMessages(['status' => 'Only a current receiving purchase order can be finalized.']);
-            }
-
-            $initialItems = $receipt->items()
-                ->whereNull('replacement_for_adjustment_id')
-                ->orderBy('id')->lockForUpdate()->get();
             $orderItems = $purchaseOrder->items()->orderBy('id')->lockForUpdate()->get()->keyBy('id');
-            if ($initialItems->count() !== $orderItems->count()) {
-                throw ValidationException::withMessages(['receipt' => 'Every purchase-order item must be physically accounted for before finalization.']);
-            }
-            foreach ($orderItems as $orderItem) {
-                $received = (int) $initialItems->firstWhere('purchase_order_item_id', $orderItem->id)?->received_quantity;
-                if ($received !== (int) $orderItem->ordered_quantity) {
-                    throw ValidationException::withMessages(['receipt' => 'The complete original supplier delivery is required before finalization.']);
-                }
-            }
-
-            $adjustments = SupplierAdjustment::query()
-                ->where('issue_stage', SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT)
-                ->whereHas('receiptItem', fn ($query) => $query->where('purchase_order_receipt_id', $receipt->id))
-                ->lockForUpdate()->get();
-            foreach ($adjustments as $adjustment) {
-                if ($adjustment->status !== SupplierAdjustment::STATUS_RESOLVED) {
-                    throw ValidationException::withMessages(['receipt' => 'Every supplier adjustment must be resolved before finalization.']);
-                }
-                if (in_array($adjustment->return_status, [SupplierAdjustment::RETURN_REQUIRED, SupplierAdjustment::RETURN_RELEASED], true)) {
-                    throw ValidationException::withMessages(['receipt' => 'A required defective return must be received by the supplier or waived before finalization.']);
-                }
+            $readiness = $this->receivingState($purchaseOrder, $receipt, true);
+            if (! $readiness['can_finalize']) {
+                throw ValidationException::withMessages(['receipt' => $readiness['finalization_blockers'][0]]);
             }
 
             $reference = $this->nextReceiptReference((int) $receipt->shop_owner_id, $receipt->received_at);
@@ -185,6 +160,103 @@ class PurchaseOrderReceiptService
 
             return $receipt;
         }, 3);
+    }
+
+    /** @return array<string, mixed> */
+    public function receivingState(PurchaseOrder $purchaseOrder, ?PurchaseOrderReceipt $receipt = null, bool $lock = false): array
+    {
+        if (! $receipt) {
+            $receipt = $purchaseOrder->receipts()
+                ->whereNull('voided_at')
+                ->where('status', PurchaseOrderReceipt::STATUS_RECEIVING)
+                ->latest('id')
+                ->first();
+
+            $receipt ??= $purchaseOrder->receipts()
+                ->whereNull('voided_at')
+                ->where('status', PurchaseOrderReceipt::STATUS_POSTED)
+                ->latest('id')
+                ->get()
+                ->first(fn (PurchaseOrderReceipt $candidate): bool => $candidate->isFinal());
+        }
+
+        $orderQuery = $purchaseOrder->items()->orderBy('id');
+        $itemQuery = $receipt?->items()->orderBy('id');
+        if ($lock) {
+            $orderQuery->lockForUpdate();
+            $itemQuery?->lockForUpdate();
+        }
+        $orderItems = $orderQuery->get()->keyBy('id');
+        $receiptItems = $itemQuery?->get() ?? collect();
+        $initialItems = $receiptItems->whereNull('replacement_for_adjustment_id');
+        $replacementItems = $receiptItems->whereNotNull('replacement_for_adjustment_id');
+        $adjustmentQuery = SupplierAdjustment::query()
+            ->where('issue_stage', SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT)
+            ->when($receipt, fn ($query) => $query->whereHas('receiptItem', fn ($itemQuery) => $itemQuery->where('purchase_order_receipt_id', $receipt->id)), fn ($query) => $query->whereRaw('1 = 0'));
+        if ($lock) {
+            $adjustmentQuery->lockForUpdate();
+        }
+        $adjustments = $adjustmentQuery->get();
+
+        $blockers = [];
+        if (! $receipt) {
+            $blockers[] = 'Submit the complete original receiving result first.';
+        } elseif ($receipt->status === PurchaseOrderReceipt::STATUS_RECEIVING) {
+            if ($purchaseOrder->is_historical || ! $purchaseOrder->isReceiving()) {
+                $blockers[] = 'Only a current receiving purchase order can be finalized.';
+            }
+            if ($initialItems->count() !== $orderItems->count()) {
+                $blockers[] = 'Every purchase-order item must be physically accounted for before finalization.';
+            } elseif ($orderItems->contains(fn ($orderItem) => (int) $initialItems->firstWhere('purchase_order_item_id', $orderItem->id)?->received_quantity !== (int) $orderItem->ordered_quantity)) {
+                $blockers[] = 'The complete original supplier delivery is required before finalization.';
+            }
+            if ($adjustments->contains(fn ($adjustment) => $adjustment->status !== SupplierAdjustment::STATUS_RESOLVED)) {
+                $blockers[] = 'Every supplier adjustment must be resolved before finalization.';
+            }
+            if ($adjustments->contains(fn ($adjustment) => in_array($adjustment->return_status, [SupplierAdjustment::RETURN_REQUIRED, SupplierAdjustment::RETURN_RELEASED], true))) {
+                $blockers[] = 'A required defective return must be received by the supplier or waived before finalization.';
+            }
+        }
+
+        $replacementAccepted = (int) $replacementItems->sum('accepted_quantity');
+        $shortFulfillment = (int) $adjustments->sum('short_fulfillment_quantity');
+
+        return [
+            'ordered_quantity' => (int) $orderItems->sum('ordered_quantity'),
+            'accounted_quantity' => (int) $initialItems->sum('received_quantity'),
+            'initial_accepted_quantity' => (int) $initialItems->sum('accepted_quantity'),
+            'defective_quantity' => (int) $initialItems->sum('defective_quantity'),
+            'replacement_accepted_quantity' => $replacementAccepted,
+            'short_fulfillment_quantity' => $shortFulfillment,
+            'still_unresolved_quantity' => (int) $adjustments->sum(fn ($adjustment) => max(
+                0,
+                (int) $adjustment->reported_quantity
+                    - (int) $replacementItems->where('replacement_for_adjustment_id', $adjustment->id)->sum('accepted_quantity')
+                    - (int) $adjustment->short_fulfillment_quantity,
+            )),
+            'final_payable_quantity' => (int) $receiptItems->sum('accepted_quantity'),
+            'receiving_items' => $orderItems->map(function ($orderItem) use ($initialItems, $replacementItems, $adjustments): array {
+                $initial = $initialItems->firstWhere('purchase_order_item_id', $orderItem->id);
+                $replacementAccepted = (int) $replacementItems->where('purchase_order_item_id', $orderItem->id)->sum('accepted_quantity');
+                $shortFulfillment = (int) $adjustments
+                    ->where('purchase_order_receipt_item_id', $initial?->id)
+                    ->sum('short_fulfillment_quantity');
+
+                return [
+                    'purchase_order_item_id' => (int) $orderItem->id,
+                    'ordered_quantity' => (int) $orderItem->ordered_quantity,
+                    'accounted_quantity' => (int) ($initial?->received_quantity ?? 0),
+                    'initial_accepted_quantity' => (int) ($initial?->accepted_quantity ?? 0),
+                    'defective_quantity' => (int) ($initial?->defective_quantity ?? 0),
+                    'replacement_accepted_quantity' => $replacementAccepted,
+                    'short_fulfillment_quantity' => $shortFulfillment,
+                    'final_payable_quantity' => (int) ($initial?->accepted_quantity ?? 0) + $replacementAccepted,
+                    'still_unresolved_quantity' => max(0, (int) ($initial?->defective_quantity ?? 0) - $replacementAccepted - $shortFulfillment),
+                ];
+            })->values()->all(),
+            'can_finalize' => $receipt?->status === PurchaseOrderReceipt::STATUS_RECEIVING && $blockers === [],
+            'finalization_blockers' => array_values(array_unique($blockers)),
+        ];
     }
 
     private function normalizeItems(array $items)

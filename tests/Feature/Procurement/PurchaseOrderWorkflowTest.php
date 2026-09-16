@@ -591,6 +591,172 @@ class PurchaseOrderWorkflowTest extends TestCase
         $this->assertSame('delivered', $po->fresh()->status);
     }
 
+    public function test_resolved_short_fulfillment_can_complete_after_the_final_payable_is_settled(): void
+    {
+        [$po, $item, $receipt, $receiptItem] = $this->completionReceipt(10, 8, 'RCV-2026-0001');
+        $adjustment = SupplierAdjustment::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'purchase_order_receipt_item_id' => $receiptItem->id,
+            'idempotency_key' => 'completion-short-adjustment',
+            'issue_stage' => SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT,
+            'reported_quantity' => 2,
+            'short_fulfillment_quantity' => 2,
+            'unit_cost_snapshot' => '100.00',
+            'reason_category' => 'damaged',
+            'inventory_notes' => 'Two units were not payable.',
+            'resolution' => SupplierAdjustment::RESOLUTION_SHORT_FULFILLMENT,
+            'status' => SupplierAdjustment::STATUS_RESOLVED,
+            'reported_by' => $this->user->id,
+            'reported_at' => now(),
+            'resolved_by' => $this->user->id,
+            'resolved_at' => now(),
+        ]);
+        $this->settleFinalReceipt($receipt, '800.00', 'SHORT');
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", ['status' => 'completed'])
+            ->assertOk();
+
+        $this->assertSame(SupplierAdjustment::STATUS_RESOLVED, $adjustment->fresh()->status);
+        $this->assertSame('completed', $po->fresh()->status);
+    }
+
+    public function test_zero_payable_final_receipt_can_complete_without_a_fake_expense(): void
+    {
+        [$po, , $receipt, $receiptItem] = $this->completionReceipt(10, 0, 'RCV-2026-0002');
+        SupplierAdjustment::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'purchase_order_receipt_item_id' => $receiptItem->id,
+            'idempotency_key' => 'completion-zero-adjustment',
+            'issue_stage' => SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT,
+            'reported_quantity' => 10,
+            'short_fulfillment_quantity' => 10,
+            'unit_cost_snapshot' => '100.00',
+            'reason_category' => 'damaged',
+            'inventory_notes' => 'No units were payable.',
+            'resolution' => SupplierAdjustment::RESOLUTION_SHORT_FULFILLMENT,
+            'status' => SupplierAdjustment::STATUS_RESOLVED,
+            'reported_by' => $this->user->id,
+            'reported_at' => now(),
+            'resolved_by' => $this->user->id,
+            'resolved_at' => now(),
+        ]);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", ['status' => 'completed'])
+            ->assertOk();
+
+        $this->assertSame(0, Expense::where('procurement_receipt_id', $receipt->id)->count());
+        $this->assertSame('completed', $po->fresh()->status);
+    }
+
+    public function test_supporting_replacement_receipt_does_not_require_another_expense(): void
+    {
+        [$po, $item, $finalReceipt] = $this->completionReceipt(1, 1, 'RCV-2026-0003');
+        $this->settleFinalReceipt($finalReceipt, '100.00', 'SUPPORT');
+        $adjustment = SupplierAdjustment::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'purchase_order_receipt_item_id' => $finalReceipt->items()->sole()->id,
+            'idempotency_key' => 'completion-support-adjustment',
+            'issue_stage' => SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT,
+            'reported_quantity' => 1,
+            'unit_cost_snapshot' => '100.00',
+            'reason_category' => 'damaged',
+            'inventory_notes' => 'Resolved after payment.',
+            'resolution' => SupplierAdjustment::RESOLUTION_REPLACEMENT,
+            'replacement_status' => SupplierAdjustment::REPLACEMENT_RECEIVED,
+            'status' => SupplierAdjustment::STATUS_RESOLVED,
+            'reported_by' => $this->user->id,
+            'reported_at' => now(),
+            'resolved_by' => $this->user->id,
+            'resolved_at' => now(),
+        ]);
+        $supportingReceipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => PurchaseOrderReceipt::STATUS_POSTED,
+            'receipt_reference' => null,
+        ]);
+        PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $supportingReceipt->id,
+            'purchase_order_item_id' => $item->id,
+            'replacement_for_adjustment_id' => $adjustment->id,
+            'received_quantity' => 1,
+            'accepted_quantity' => 1,
+        ]);
+
+        $this->actingAs($this->user)
+            ->getJson("/api/erp/procurement/purchase-orders/{$po->id}")
+            ->assertOk()
+            ->assertJsonPath('final_payable_quantity', 1);
+
+        $this->actingAs($this->user)
+            ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/update-status", ['status' => 'completed'])
+            ->assertOk();
+
+        $this->assertSame(1, Expense::count());
+        $this->assertSame('completed', $po->fresh()->status);
+    }
+
+    /** @return array{PurchaseOrder, PurchaseOrderItem, PurchaseOrderReceipt, PurchaseOrderReceiptItem} */
+    private function completionReceipt(int $ordered, int $accepted, string $reference): array
+    {
+        $po = PurchaseOrder::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'status' => 'delivered',
+        ]);
+        $item = PurchaseOrderItem::factory()->create([
+            'purchase_order_id' => $po->id,
+            'ordered_quantity' => $ordered,
+            'unit_cost' => '100.00',
+        ]);
+        $receipt = PurchaseOrderReceipt::factory()->create([
+            'purchase_order_id' => $po->id,
+            'shop_owner_id' => $this->shopOwner->id,
+            'received_by' => $this->user->id,
+            'status' => PurchaseOrderReceipt::STATUS_POSTED,
+            'receipt_reference' => $reference,
+        ]);
+        $receiptItem = PurchaseOrderReceiptItem::factory()->create([
+            'purchase_order_receipt_id' => $receipt->id,
+            'purchase_order_item_id' => $item->id,
+            'received_quantity' => $ordered,
+            'defective_quantity' => $ordered - $accepted,
+            'accepted_quantity' => $accepted,
+        ]);
+
+        return [$po, $item, $receipt, $receiptItem];
+    }
+
+    private function settleFinalReceipt(PurchaseOrderReceipt $receipt, string $amount, string $suffix): void
+    {
+        $expense = Expense::create([
+            'reference' => "EXP-COMPLETE-{$suffix}",
+            'date' => now()->toDateString(),
+            'category' => 'Supplies',
+            'amount' => $amount,
+            'tax_amount' => '0.00',
+            'status' => 'posted',
+            'shop_id' => $this->shopOwner->id,
+            'procurement_receipt_id' => $receipt->id,
+        ]);
+        ExpenseSettlement::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT,
+            'amount' => $amount,
+            'payment_method' => 'manual_bank_transfer',
+            'reference' => "SUPPLIER-PAID-{$suffix}",
+            'paid_at' => now(),
+            'recorded_by_user_id' => $this->user->id,
+            'idempotency_key' => "completion-settlement-{$suffix}",
+            'source' => ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            'source_reference' => "supplier-manual-payment:{$suffix}",
+        ]);
+    }
+
     /** @test */
     public function complete_manual_po_workflow_stops_at_in_transit()
     {

@@ -10,20 +10,25 @@ use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\ShopPolicyVersion;
+use App\Models\ShopPaymentIntegration;
+use App\Models\SupplierPaymentAttempt;
 use App\Services\CaviteLocationPolicyService;
 use App\Services\ShopModuleAccessService;
 use App\Services\ShopOwnerDocumentRequirementService;
 use App\Services\ShopDocumentValidityService;
 use App\Services\ShopPolicyTemplateService;
 use App\Services\ShopPolicyVersionService;
+use App\Services\Finance\XenditPayoutService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -51,6 +56,7 @@ class ShopSettingsController extends Controller
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
         private readonly ShopDocumentValidityService $documentValidity,
         private readonly ShopModuleAccessService $shopModuleAccess,
+        private readonly XenditPayoutService $xenditPayoutService,
     ) {}
 
     /**
@@ -110,6 +116,7 @@ class ShopSettingsController extends Controller
                 'order_refund_deadline_days' => (int) ($shopOwner->order_refund_deadline_days ?? 7),
                 'totp_enabled'          => $shopOwner->hasTotpEnabled(),
                 'has_paymongo_key'       => !empty($shopOwner->paymongo_secret_key),
+                'xendit_supplier_payouts' => $this->xenditIntegrationPayload((int) $shopOwner->id),
                 'pay_cycle'              => $branchPayrollSetting?->pay_cycle ?? 'monthly',
                 'pay_day_first'          => (int) ($branchPayrollSetting?->pay_day_first ?? 15),
                 'pay_day_second'         => (int) ($branchPayrollSetting?->pay_day_second ?? 30),
@@ -784,6 +791,203 @@ class ShopSettingsController extends Controller
             'success' => true,
             'message' => 'PayMongo key removed. Online payments are now disabled for your shop.',
         ]);
+    }
+
+    public function updateXenditKey(Request $request): JsonResponse
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        $validated = $request->validate([
+            'environment' => ['required', Rule::in(['test', 'live'])],
+            'secret_key' => ['required', 'string', 'min:20', 'max:255'],
+            'callback_token' => ['required', 'string', 'min:16', 'max:255'],
+        ]);
+
+        try {
+            $secretKey = trim((string) $validated['secret_key']);
+            $callbackToken = trim((string) $validated['callback_token']);
+            $this->xenditPayoutService->verifyCredentials($secretKey, (int) $shopOwner->id);
+
+            $integration = DB::transaction(function () use ($shopOwner, $validated, $secretKey, $callbackToken): ShopPaymentIntegration {
+                $integration = ShopPaymentIntegration::query()
+                    ->forSupplierPayouts((int) $shopOwner->id)
+                    ->lockForUpdate()
+                    ->first();
+                $this->assertNoXenditInFlight((int) $shopOwner->id);
+
+                $integration ??= new ShopPaymentIntegration([
+                    'shop_owner_id' => (int) $shopOwner->id,
+                    'provider' => ShopPaymentIntegration::PROVIDER_XENDIT,
+                    'purpose' => ShopPaymentIntegration::PURPOSE_SUPPLIER_PAYOUT,
+                ]);
+                $integration->fill([
+                    'environment' => $validated['environment'],
+                    'secret_key' => $secretKey,
+                    'webhook_callback_token' => $callbackToken,
+                    'status' => ShopPaymentIntegration::STATUS_CONNECTED,
+                    'connected_at' => $integration->connected_at ?: now(),
+                    'last_verified_at' => now(),
+                ])->save();
+
+                return $integration->fresh();
+            }, 3);
+
+            activity('payment_integrations')
+                ->causedBy($shopOwner)
+                ->performedOn($integration)
+                ->withProperties([
+                    'provider' => ShopPaymentIntegration::PROVIDER_XENDIT,
+                    'purpose' => ShopPaymentIntegration::PURPOSE_SUPPLIER_PAYOUT,
+                    'environment' => (string) $integration->environment,
+                    'action' => 'connected_or_rotated',
+                ])
+                ->log('payment_integration_updated');
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Xendit supplier payouts connected successfully.',
+                'data' => $integration->fresh()->toSafeArray(),
+            ]);
+        } catch (\App\Support\Finance\FinanceDomainException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'code' => $exception->errorCode,
+            ], $exception->httpStatus);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Xendit could not be connected. Please try again later.',
+                'code' => 'XENDIT_CONNECTION_FAILED',
+            ], 500);
+        }
+    }
+
+    public function testXenditKey(): JsonResponse
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        $integration = ShopPaymentIntegration::query()
+            ->forSupplierPayouts((int) $shopOwner->id)
+            ->first();
+
+        if (! $integration || ! $integration->isConnected()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Xendit supplier payouts are not configured for this shop.',
+                'code' => 'XENDIT_NOT_CONFIGURED',
+            ], 422);
+        }
+
+        try {
+            $this->xenditPayoutService->verifyCredentials((string) $integration->secret_key, (int) $shopOwner->id);
+            $integration->forceFill(['last_verified_at' => now()])->save();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Xendit connection verified.',
+                'data' => $integration->fresh()->toSafeArray(),
+            ]);
+        } catch (\App\Support\Finance\FinanceDomainException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'code' => $exception->errorCode,
+            ], $exception->httpStatus);
+        }
+    }
+
+    public function removeXenditKey(): JsonResponse
+    {
+        $shopOwner = Auth::guard('shop_owner')->user();
+
+        try {
+            $integration = DB::transaction(function () use ($shopOwner): ?ShopPaymentIntegration {
+                $integration = ShopPaymentIntegration::query()
+                    ->forSupplierPayouts((int) $shopOwner->id)
+                    ->lockForUpdate()
+                    ->first();
+                if (! $integration) {
+                    return null;
+                }
+                $this->assertNoXenditInFlight((int) $shopOwner->id);
+                activity('payment_integrations')
+                    ->causedBy($shopOwner)
+                    ->performedOn($integration)
+                    ->withProperties([
+                        'provider' => ShopPaymentIntegration::PROVIDER_XENDIT,
+                        'purpose' => ShopPaymentIntegration::PURPOSE_SUPPLIER_PAYOUT,
+                        'environment' => (string) $integration->environment,
+                        'action' => 'disconnected',
+                    ])
+                    ->log('payment_integration_removed');
+
+                $integration->forceFill([
+                    'secret_key' => null,
+                    'webhook_callback_token' => null,
+                    'status' => ShopPaymentIntegration::STATUS_DISCONNECTED,
+                    'connected_at' => null,
+                ])->save();
+
+                return $integration->fresh();
+            }, 3);
+
+            if (! $integration) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Xendit supplier payouts are already disconnected.',
+                ]);
+            }
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Xendit supplier payouts disconnected. Existing payout history was preserved.',
+                'data' => $integration->fresh()->toSafeArray(),
+            ]);
+        } catch (\App\Support\Finance\FinanceDomainException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'code' => $exception->errorCode,
+            ], $exception->httpStatus);
+        }
+    }
+
+    /** @return array<string, mixed> */
+    private function xenditIntegrationPayload(int $shopId): array
+    {
+        $integration = ShopPaymentIntegration::query()->forSupplierPayouts($shopId)->first();
+
+        return $integration?->toSafeArray() ?? [
+            'provider' => ShopPaymentIntegration::PROVIDER_XENDIT,
+            'purpose' => ShopPaymentIntegration::PURPOSE_SUPPLIER_PAYOUT,
+            'environment' => 'test',
+            'status' => ShopPaymentIntegration::STATUS_DISCONNECTED,
+            'connected' => false,
+            'secret_key_masked' => null,
+            'callback_token_configured' => false,
+            'connected_at' => null,
+            'last_verified_at' => null,
+        ];
+    }
+
+    private function assertNoXenditInFlight(int $shopId): void
+    {
+        if (SupplierPaymentAttempt::query()
+            ->where('shop_owner_id', $shopId)
+            ->where('provider', ShopPaymentIntegration::PROVIDER_XENDIT)
+            ->whereIn('status', [
+                SupplierPaymentAttempt::STATUS_INITIATING,
+                SupplierPaymentAttempt::STATUS_PROCESSING,
+                SupplierPaymentAttempt::STATUS_PENDING_COMPLIANCE,
+            ])
+            ->exists()) {
+            throw new \App\Support\Finance\FinanceDomainException(
+                'Xendit credentials cannot be changed while a supplier payout is in progress.',
+                'XENDIT_IN_FLIGHT',
+                422,
+            );
+        }
     }
 
     /**

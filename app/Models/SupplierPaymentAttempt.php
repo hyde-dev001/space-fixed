@@ -23,16 +23,23 @@ class SupplierPaymentAttempt extends Model implements HasMedia
     public const STATUS_INITIATING = 'initiating';
     public const STATUS_AWAITING_VERIFICATION = 'awaiting_verification';
     public const STATUS_PROCESSING = 'processing';
+    public const STATUS_PENDING_COMPLIANCE = 'pending_compliance';
     public const STATUS_SUCCEEDED = 'succeeded';
     public const STATUS_FAILED = 'failed';
     public const STATUS_REJECTED = 'rejected';
+    public const STATUS_REVERSED = 'reversed';
     public const STATUS_CANCELLED = 'cancelled';
 
     public const PAYMENT_METHOD_BANK_TRANSFER = 'manual_bank_transfer';
     public const PAYMENT_METHOD_E_WALLET = 'manual_e_wallet';
-    public const PAYMENT_METHODS = [
+    public const PAYMENT_METHOD_XENDIT = 'xendit';
+    public const MANUAL_PAYMENT_METHODS = [
         self::PAYMENT_METHOD_BANK_TRANSFER,
         self::PAYMENT_METHOD_E_WALLET,
+    ];
+    public const PAYMENT_METHODS = [
+        ...self::MANUAL_PAYMENT_METHODS,
+        self::PAYMENT_METHOD_XENDIT,
     ];
 
     protected $fillable = [
@@ -67,6 +74,7 @@ class SupplierPaymentAttempt extends Model implements HasMedia
         'processing_at',
         'succeeded_at',
         'failed_at',
+        'reversed_at',
         'settled_at',
         'settlement_id',
         'supplier_email_to',
@@ -98,6 +106,7 @@ class SupplierPaymentAttempt extends Model implements HasMedia
         'processing_at' => 'datetime',
         'succeeded_at' => 'datetime',
         'failed_at' => 'datetime',
+        'reversed_at' => 'datetime',
         'settled_at' => 'datetime',
         'supplier_email_sent_at' => 'datetime',
         'supplier_email_failed_at' => 'datetime',
@@ -155,7 +164,9 @@ class SupplierPaymentAttempt extends Model implements HasMedia
 
     public function externalTransactionReference(): ?string
     {
-        return $this->provider === 'manual' ? $this->provider_reference : null;
+        return in_array((string) $this->provider, ['manual', 'xendit'], true)
+            ? $this->provider_reference
+            : null;
     }
 
     public function maskedSupplierEmail(): ?string

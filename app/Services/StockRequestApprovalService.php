@@ -325,7 +325,7 @@ class StockRequestApprovalService
         DB::beginTransaction();
 
         try {
-            $stockRequest = StockRequestApproval::findOrFail($requestId);
+            $stockRequest = StockRequestApproval::query()->lockForUpdate()->findOrFail($requestId);
             $this->assertActorShop($stockRequest, $userId);
 
             if (!$stockRequest->canBeApproved()) {
@@ -365,7 +365,7 @@ class StockRequestApprovalService
         DB::beginTransaction();
 
         try {
-            $stockRequest = StockRequestApproval::findOrFail($requestId);
+            $stockRequest = StockRequestApproval::query()->lockForUpdate()->findOrFail($requestId);
             $this->assertActorShop($stockRequest, $userId);
 
             if (!$stockRequest->canBeRejected()) {
@@ -406,7 +406,7 @@ class StockRequestApprovalService
         DB::beginTransaction();
 
         try {
-            $stockRequest = StockRequestApproval::findOrFail($requestId);
+            $stockRequest = StockRequestApproval::query()->lockForUpdate()->findOrFail($requestId);
             $this->assertActorShop($stockRequest, $userId);
 
             $stockRequest->requestDetails($userId, $notes);
@@ -471,7 +471,7 @@ class StockRequestApprovalService
         DB::beginTransaction();
 
         try {
-            $stockRequest = StockRequestApproval::findOrFail($requestId);
+            $stockRequest = StockRequestApproval::query()->lockForUpdate()->findOrFail($requestId);
 
             if ($stockRequest->status !== 'accepted') {
                 throw new \Exception('Only accepted stock requests can be converted to purchase requests.');

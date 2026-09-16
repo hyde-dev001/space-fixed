@@ -145,20 +145,28 @@ export const purchaseOrderApi = {
         return unwrap(response.data);
     },
 
-    async getSupplierAdjustments(): Promise<SupplierAdjustment[]> {
-        const response = await axios.get('/api/erp/procurement/supplier-adjustments');
+    async getSupplierAdjustments(filters?: { purchase_order_id?: number; status?: string; current_owner?: string }): Promise<SupplierAdjustment[]> {
+        const response = await axios.get('/api/erp/procurement/supplier-adjustments', { params: filters });
         return unwrap(response.data);
     },
 
     async chooseSupplierAdjustmentResolution(
         adjustmentId: number,
-        resolution: 'replacement' | 'short_fulfillment',
+        resolution: 'replacement' | 'refund' | 'short_fulfillment',
         procurement_notes?: string,
     ): Promise<SupplierAdjustment> {
         const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/resolution`, {
             resolution,
             procurement_notes,
         });
+        return unwrap(response.data);
+    },
+
+    async declineSupplierRefund(
+        adjustmentId: number,
+        data: { decline_reason: string; supplier_reference?: string; procurement_notes?: string },
+    ): Promise<SupplierAdjustment> {
+        const response = await axios.post(`/api/erp/procurement/supplier-adjustments/${adjustmentId}/refund/declined`, data);
         return unwrap(response.data);
     },
 

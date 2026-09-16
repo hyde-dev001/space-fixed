@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Swal from "sweetalert2";
 import { useFinanceApi } from "../../../../hooks/useFinanceApi";
 import type { ProcurementExpenseDetails, RevealedSupplierPaymentProfile, SupplierAdjustment, SupplierPaymentMethod } from "@/types/procurement";
 
@@ -77,12 +78,14 @@ export default function ProcurementExpensePanel({
 	const isSubmitted = expenseStatus === "submitted";
 	const paymentStatus = details.payment_status || "unpaid";
 	const isAwaitingVerification = paymentStatus === "awaiting_verification";
+	const isXenditAttempt = details.payment_attempt?.provider === "xendit" || details.payment_attempt?.payment_method === "xendit";
+	const requiresXendit = !details.payment_attempt || isXenditAttempt;
 	const isReadyForPayment = expenseStatus === "posted"
 		&& paymentStatus !== "paid"
-		&& !["initiating", "awaiting_verification"].includes(paymentStatus);
+		&& !["initiating", "awaiting_verification", "processing", "pending_compliance"].includes(paymentStatus);
 	const refundAdjustments = (details.adjustments ?? []).filter((adjustment) => adjustment.resolution === "refund" && ["awaiting_verification", "partially_refunded"].includes(adjustment.status));
 	const hasPaymentProof = (details.payment_attempt?.proof_media?.length ?? 0) > 0;
-	const canReviewSupplierPayment = Boolean(onReviewSupplierPayment) && (ownerMode || hasPaymentProof);
+	const canReviewSupplierPayment = Boolean(onReviewSupplierPayment) && !isXenditAttempt && (ownerMode || hasPaymentProof);
 	const isPaymentProfileRevealed = Boolean(details.payment_profile && revealedPaymentProfile && revealedPaymentProfile.id === details.payment_profile.id);
 	const revealedAccount = details.payment_profile?.destination_type === "e_wallet"
 		? revealedPaymentProfile?.account_identifier
@@ -102,6 +105,15 @@ export default function ProcurementExpensePanel({
 			setRefundError("Refund amount, reference, and Finance confirmation proof are required.");
 			return;
 		}
+		const confirmation = await Swal.fire({
+			title: "Confirm incoming supplier refund?",
+			text: `${formatCurrency(refundAmount)} with reference ${refundReference.trim()} will be recorded against this supplier adjustment.`,
+			icon: "question",
+			showCancelButton: true,
+			confirmButtonText: "Confirm refund",
+			cancelButtonText: "Review details",
+		});
+		if (!confirmation.isConfirmed) return;
 
 		setRefundBusy(true);
 		setRefundError(null);
@@ -122,8 +134,11 @@ export default function ProcurementExpensePanel({
 			setRefundReference("");
 			setRefundNotes("");
 			await onRefundChanged?.();
+			await Swal.fire("Supplier refund confirmed", "The Finance settlement and supplier adjustment were updated.", "success");
 		} catch (error) {
-			setRefundError(error instanceof Error ? error.message : "The supplier refund could not be confirmed.");
+			const message = error instanceof Error ? error.message : "The supplier refund could not be confirmed.";
+			setRefundError(message);
+			await Swal.fire("Refund not confirmed", message, "error");
 		} finally {
 			setRefundBusy(false);
 		}
@@ -179,6 +194,8 @@ export default function ProcurementExpensePanel({
 				<DetailRow label="Payment Timing" value={details.payment_timing || "Not Due"} />
 			</div>
 			{paymentStatus === "initiating" && <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold uppercase text-blue-800">PAYMENT INITIATED</p>}
+			{paymentStatus === "processing" && <p className="rounded-lg bg-blue-50 p-3 text-sm font-semibold uppercase text-blue-800" role="status">XENDIT PAYOUT PROCESSING · WAITING FOR CONFIRMATION</p>}
+			{paymentStatus === "pending_compliance" && <p className="rounded-lg bg-amber-50 p-3 text-sm font-semibold uppercase text-amber-800" role="status">XENDIT PAYOUT PENDING COMPLIANCE REVIEW</p>}
 			{isAwaitingVerification && (
 				<div className="rounded-lg bg-amber-50 p-3 text-sm font-semibold uppercase text-amber-800">
 					<p>AWAITING SHOP OWNER VERIFICATION</p>
@@ -187,9 +204,12 @@ export default function ProcurementExpensePanel({
 			)}
 			{paymentStatus === "rejected" && <p className="rounded-lg bg-rose-50 p-3 text-sm font-semibold uppercase text-rose-800">PAYMENT REJECTED · NEW ATTEMPT AVAILABLE</p>}
 			{paymentStatus === "cancelled" && <p className="rounded-lg bg-gray-100 p-3 text-sm font-semibold uppercase text-gray-700">PAYMENT CANCELLED · NEW ATTEMPT AVAILABLE</p>}
+			{paymentStatus === "failed" && <p className="rounded-lg bg-rose-50 p-3 text-sm font-semibold uppercase text-rose-800">XENDIT PAYOUT FAILED · NEW ATTEMPT AVAILABLE</p>}
+			{paymentStatus === "reversed" && <p className="rounded-lg bg-rose-50 p-3 text-sm font-semibold uppercase text-rose-800">XENDIT PAYOUT REVERSED · RECONCILIATION REQUIRED</p>}
 			{paymentStatus === "paid" && (
 				<div className="space-y-2 rounded-lg bg-emerald-50 p-2.5 text-sm font-semibold uppercase text-emerald-800">
 					<p>PAID · PAYMENT VERIFIED</p>
+					{isXenditAttempt && <p className="text-xs font-medium normal-case">Xendit confirmed the payout and finalized the settlement. No Shop Owner review is required.</p>}
 					{details.payment_attempt?.status === "succeeded" && canReviewSupplierPayment && (
 						<button type="button" onClick={onReviewSupplierPayment} className="min-h-10 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold normal-case text-white hover:bg-emerald-800">View Payment Proof</button>
 					)}
@@ -206,6 +226,7 @@ export default function ProcurementExpensePanel({
 						<div className="flex justify-between gap-3"><span>Expected</span><strong>{formatCurrency(adjustment.expected_refund_amount)}</strong></div>
 						<div className="flex justify-between gap-3"><span>Confirmed</span><strong>{formatCurrency(adjustment.refunded_amount)}</strong></div>
 						<p className="mt-1 text-xs uppercase text-amber-800 dark:text-amber-300">{adjustment.status === "awaiting_verification" ? "Supplier proof received · Finance confirmation required" : "Partially refunded"}</p>
+						{(adjustment.supplier_refund_proof?.length ?? 0) > 0 && <div className="mt-2 flex flex-wrap gap-2">{adjustment.supplier_refund_proof?.map((media) => <a key={media.id} href={`/api/finance/supplier-adjustments/${adjustment.id}/refund-proof/${media.id}`} target="_blank" rel="noreferrer" className="min-h-10 rounded-lg border border-amber-300 px-3 py-2 text-xs font-semibold text-amber-800 hover:bg-amber-100 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-950">View {media.file_name}</a>)}</div>}
 						{!ownerMode && <>
 							{selectedRefund !== adjustment.id ? <button type="button" onClick={() => { setSelectedRefund(adjustment.id); setRefundAmount(""); setRefundReference(""); setRefundError(null); }} className="mt-3 min-h-10 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">Confirm incoming refund</button> : <div className="mt-3 space-y-2">
 								{refundError && <p role="alert" className="rounded bg-rose-50 p-2 text-xs text-rose-700">{refundError}</p>}
@@ -289,6 +310,7 @@ export default function ProcurementExpensePanel({
 			{isReadyForPayment && !ownerMode && (
 				<div className="pt-2 space-y-2 border-t border-gray-200 dark:border-gray-700">
 					<p className="text-xs font-semibold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">READY FOR PAYMENT</p>
+					{requiresXendit && !details.xendit_configured && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Connect and verify this shop&apos;s Xendit supplier-payout account in Shop Settings before paying.</p>}
 					<button
 						type="button"
 						disabled={!canPaySupplier}

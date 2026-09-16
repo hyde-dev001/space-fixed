@@ -10,8 +10,10 @@ use App\Models\PurchaseOrderReceiptItem;
 use App\Models\SupplierAdjustment;
 use App\Services\SupplierAdjustmentService;
 use App\Support\Finance\FinanceDomainException;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 final class SupplierAdjustmentController extends Controller
 {
@@ -22,9 +24,29 @@ final class SupplierAdjustmentController extends Controller
     public function index(Request $request)
     {
         $shopId = (int) $request->user()->shop_owner_id;
-        $adjustments = SupplierAdjustment::query()
+        $filters = $request->validate([
+            'purchase_order_id' => ['nullable', 'integer', 'min:1'],
+            'status' => ['nullable', Rule::in([
+                SupplierAdjustment::STATUS_REPORTED,
+                SupplierAdjustment::STATUS_UNDER_REVIEW,
+                SupplierAdjustment::STATUS_AWAITING_SUPPLIER,
+                SupplierAdjustment::STATUS_RESOLUTION_IN_PROGRESS,
+                SupplierAdjustment::STATUS_AWAITING_VERIFICATION,
+                SupplierAdjustment::STATUS_PARTIALLY_REFUNDED,
+                SupplierAdjustment::STATUS_RESOLVED,
+            ])],
+            'current_owner' => ['nullable', Rule::in(['procurement', 'inventory', 'finance', 'none'])],
+        ]);
+        $query = SupplierAdjustment::query()
             ->where('shop_owner_id', $shopId)
-            ->with(['receiptItem.receipt.purchaseOrder', 'receiptItem.purchaseOrderItem'])
+            ->with(['receiptItem.receipt.purchaseOrder.supplier', 'receiptItem.purchaseOrderItem']);
+
+        $query->when($filters['purchase_order_id'] ?? null, fn ($query, $purchaseOrderId) => $query
+            ->whereHas('receiptItem.receipt', fn ($receiptQuery) => $receiptQuery->where('purchase_order_id', $purchaseOrderId)));
+        $query->when($filters['status'] ?? null, fn ($query, $status) => $query->where('status', $status));
+        $this->filterCurrentOwner($query, $filters['current_owner'] ?? null);
+
+        $adjustments = $query
             ->latest('id')
             ->get()
             ->map(fn (SupplierAdjustment $adjustment): array => $this->adjustmentService->present($adjustment))
@@ -32,6 +54,45 @@ final class SupplierAdjustmentController extends Controller
             ->all();
 
         return response()->json(['data' => $adjustments]);
+    }
+
+    private function filterCurrentOwner(Builder $query, ?string $owner): void
+    {
+        if ($owner === null) {
+            return;
+        }
+        if ($owner === 'none') {
+            $query->where('status', SupplierAdjustment::STATUS_RESOLVED);
+            return;
+        }
+
+        $query->where('status', '<>', SupplierAdjustment::STATUS_RESOLVED);
+        if ($owner === 'inventory') {
+            $query->where('issue_stage', SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT)
+                ->where(fn ($query) => $query
+                    ->where('return_status', SupplierAdjustment::RETURN_REQUIRED)
+                    ->orWhere(fn ($query) => $query
+                        ->where('replacement_status', SupplierAdjustment::REPLACEMENT_IN_TRANSIT)
+                        ->where(fn ($query) => $query->whereNull('return_status')->orWhere('return_status', '<>', SupplierAdjustment::RETURN_REQUIRED))));
+            return;
+        }
+        if ($owner === 'finance') {
+            $query->where('issue_stage', SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT)
+                ->whereIn('status', [SupplierAdjustment::STATUS_AWAITING_VERIFICATION, SupplierAdjustment::STATUS_PARTIALLY_REFUNDED]);
+            return;
+        }
+
+        $query->where(fn ($query) => $query
+            ->where(fn ($query) => $query
+                ->where('issue_stage', SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT)
+                ->where(fn ($query) => $query
+                    ->where('return_status', SupplierAdjustment::RETURN_RELEASED)
+                    ->orWhere(fn ($query) => $query
+                        ->where(fn ($query) => $query->whereNull('return_status')->orWhere('return_status', '<>', SupplierAdjustment::RETURN_REQUIRED))
+                        ->where(fn ($query) => $query->whereNull('replacement_status')->orWhere('replacement_status', '<>', SupplierAdjustment::REPLACEMENT_IN_TRANSIT)))))
+            ->orWhere(fn ($query) => $query
+                ->where('issue_stage', SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT)
+                ->whereNotIn('status', [SupplierAdjustment::STATUS_AWAITING_VERIFICATION, SupplierAdjustment::STATUS_PARTIALLY_REFUNDED])));
     }
 
     public function show(Request $request, int $adjustmentId)
@@ -48,7 +109,7 @@ final class SupplierAdjustmentController extends Controller
         abort_unless($request->user()->can('procurement.manage_suppliers'), 403);
         $adjustment = $this->shopAdjustment($request, $adjustmentId);
         $data = $request->validate([
-            'resolution' => ['required', 'in:replacement,short_fulfillment'],
+            'resolution' => ['required', 'in:replacement,refund,short_fulfillment'],
             'procurement_notes' => ['nullable', 'string', 'max:2000'],
         ]);
 
@@ -69,6 +130,21 @@ final class SupplierAdjustmentController extends Controller
 
         return response()->json([
             'data' => $this->adjustmentService->replacementAction($adjustment, $request->user(), $action, $data),
+        ]);
+    }
+
+    public function refundDeclined(Request $request, int $adjustmentId)
+    {
+        abort_unless($request->user()->can('procurement.manage_suppliers'), 403);
+        $adjustment = $this->shopAdjustment($request, $adjustmentId);
+        $data = $request->validate([
+            'decline_reason' => ['required', 'string', 'max:2000'],
+            'supplier_reference' => ['nullable', 'string', 'max:160'],
+            'procurement_notes' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        return response()->json([
+            'data' => $this->adjustmentService->refundDeclined($adjustment, $request->user(), $data),
         ]);
     }
 
@@ -145,8 +221,9 @@ final class SupplierAdjustmentController extends Controller
         $media = $adjustment->getMedia('defect_evidence')->firstWhere('id', $mediaId);
         abort_unless($media, 404);
 
-        $response = response()->download($media->getPath(), $media->file_name, [
+        $response = response()->file($media->getPath(), [
             'Content-Type' => $media->mime_type,
+            'Content-Disposition' => 'inline',
         ]);
         $response->headers->set('Cache-Control', 'private, no-store');
         $response->headers->set('X-Content-Type-Options', 'nosniff');

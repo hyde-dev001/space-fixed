@@ -1011,6 +1011,9 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     Route::post('/settings/policies/publish', [ShopSettingsController::class, 'publishPolicy'])->name('settings.policies.publish');
     Route::post('/settings/paymongo-key', [ShopSettingsController::class, 'updatePaymongoKey'])->name('settings.paymongo-key');
     Route::delete('/settings/paymongo-key', [ShopSettingsController::class, 'removePaymongoKey'])->name('settings.paymongo-key.remove');
+    Route::post('/settings/xendit-key', [ShopSettingsController::class, 'updateXenditKey'])->name('settings.xendit-key');
+    Route::post('/settings/xendit-key/test', [ShopSettingsController::class, 'testXenditKey'])->name('settings.xendit-key.test');
+    Route::delete('/settings/xendit-key', [ShopSettingsController::class, 'removeXenditKey'])->name('settings.xendit-key.remove');
     Route::post('/settings/geofence', [ShopSettingsController::class, 'updateGeofence'])->name('settings.geofence');
 
     // PREMIUM BENEFITS - Retail-capable shops only

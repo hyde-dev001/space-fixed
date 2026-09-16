@@ -54,33 +54,33 @@ export const stockRequestApi = {
      * Approve a stock request
      */
     async approve(id: number, data?: ApproveStockRequestPayload): Promise<StockRequestApproval> {
-        const response: AxiosResponse<StockRequestApproval> = await axios.post(
+        const response: AxiosResponse<{ stock_request: StockRequestApproval }> = await axios.post(
             `${BASE_URL}/${id}/approve`,
             data || {}
         );
-        return response.data;
+        return response.data.stock_request;
     },
 
     /**
      * Reject a stock request
      */
     async reject(id: number, data: RejectStockRequestPayload): Promise<StockRequestApproval> {
-        const response: AxiosResponse<StockRequestApproval> = await axios.post(
+        const response: AxiosResponse<{ stock_request: StockRequestApproval }> = await axios.post(
             `${BASE_URL}/${id}/reject`,
             data
         );
-        return response.data;
+        return response.data.stock_request;
     },
 
     /**
      * Request additional details for a stock request
      */
     async requestDetails(id: number, data: RequestStockDetailsPayload): Promise<StockRequestApproval> {
-        const response: AxiosResponse<StockRequestApproval> = await axios.post(
+        const response: AxiosResponse<{ stock_request: StockRequestApproval }> = await axios.post(
             `${BASE_URL}/${id}/request-details`,
             data
         );
-        return response.data;
+        return response.data.stock_request;
     },
 
     /**

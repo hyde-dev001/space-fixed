@@ -221,10 +221,14 @@ class PurchaseRequest extends Model
         }
 
         $this->status = $this->requires_owner_approval === false
-            ? 'pending_finance_final'
+            ? 'approved'
             : 'pending_shop_owner';
         $this->reviewed_by = $actor->id;
         $this->reviewed_date = now();
+        if ($this->status === 'approved') {
+            $this->approved_by = $actor->id;
+            $this->approved_date = now();
+        }
         $this->appendApprovalNote('Finance Initial', $notes);
 
         return $this->save();
@@ -238,9 +242,10 @@ class PurchaseRequest extends Model
             return false;
         }
 
-        $this->status = 'pending_finance_final';
+        $this->status = 'approved';
         $this->approved_by_shop_owner_id = $actor->id;
         $this->shop_owner_approved_at = now();
+        $this->approved_date = now();
         $this->appendApprovalNote('Shop Owner', $notes);
 
         return $this->save();

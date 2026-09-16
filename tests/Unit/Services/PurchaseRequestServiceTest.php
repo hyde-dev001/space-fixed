@@ -10,6 +10,7 @@ use App\Models\Supplier;
 use App\Models\ShopOwner;
 use App\Models\ProcurementSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 
 class PurchaseRequestServiceTest extends TestCase
 {
@@ -145,8 +146,9 @@ class PurchaseRequestServiceTest extends TestCase
 
         $reviewed = $this->service->reviewByFinance($pr->id, $this->user, 'Budget approved');
 
-        $this->assertSame('pending_finance_final', $reviewed->status);
+        $this->assertSame('approved', $reviewed->status);
         $this->assertSame($this->user->id, $reviewed->reviewed_by);
+        $this->assertSame($this->user->id, $reviewed->approved_by);
     }
 
     /** @test */
@@ -182,9 +184,8 @@ class PurchaseRequestServiceTest extends TestCase
     }
 
     /** @test */
-    public function owner_approval_then_finance_release_preserves_each_stage_actor()
+    public function owner_approval_is_final_and_preserves_each_stage_actor()
     {
-        $finalFinance = User::factory()->for($this->shopOwner)->create();
         $pr = PurchaseRequest::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
             'supplier_id' => $this->supplier->id,
@@ -194,13 +195,17 @@ class PurchaseRequestServiceTest extends TestCase
         ]);
 
         $ownerApproved = $this->service->approveByShopOwner($pr->id, $this->shopOwner, 'Proceed');
-        $this->assertSame('pending_finance_final', $ownerApproved->status);
+        $this->assertSame('approved', $ownerApproved->status);
+        $this->assertSame($this->user->id, $ownerApproved->reviewed_by);
+        $this->assertSame($this->shopOwner->id, $ownerApproved->approved_by_shop_owner_id);
+        $this->assertNull($ownerApproved->approved_by);
+    }
 
-        $approved = $this->service->releaseByFinance($pr->id, $finalFinance, 'Funds released');
-        $this->assertSame('approved', $approved->status);
-        $this->assertSame($this->user->id, $approved->reviewed_by);
-        $this->assertSame($this->shopOwner->id, $approved->approved_by_shop_owner_id);
-        $this->assertSame($finalFinance->id, $approved->approved_by);
+    public function test_total_calculation_rejects_more_than_two_decimal_places(): void
+    {
+        $this->expectException(ValidationException::class);
+
+        $this->service->calculateTotal(3, '19.999');
     }
 
     /** @test */

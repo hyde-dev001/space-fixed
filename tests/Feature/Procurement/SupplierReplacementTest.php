@@ -69,6 +69,11 @@ class SupplierReplacementTest extends TestCase
 
         $adjustment = SupplierAdjustment::sole();
         $this->chooseReplacement($adjustment);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->receiver->id,
+            'title' => 'Supplier Replacement In Transit',
+            'action_url' => "/erp/inventory/supplier-order-monitoring?purchase_order={$po->id}&adjustment={$adjustment->id}",
+        ]);
         $replacementPayload = [
             'idempotency_key' => 'replacement-receipt',
             'items' => [[
@@ -86,6 +91,11 @@ class SupplierReplacementTest extends TestCase
         $this->assertSame($adjustment->id, $replacementItem->replacement_for_adjustment_id);
         $this->assertSame(SupplierAdjustment::RESOLUTION_REPLACEMENT, $adjustment->fresh()->resolution);
         $this->assertSame(SupplierAdjustment::STATUS_RESOLVED, $adjustment->fresh()->status);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->receiver->id,
+            'title' => 'Supplier Adjustment Resolved',
+            'action_url' => "/erp/inventory/supplier-order-monitoring?purchase_order={$po->id}&adjustment={$adjustment->id}",
+        ]);
         $this->assertSame('partially_received', $po->fresh()->status);
         $this->assertSame(15, $inventory->fresh()->available_quantity);
         $this->assertSame(0, Expense::count());
@@ -117,6 +127,11 @@ class SupplierReplacementTest extends TestCase
             ]],
         ])->assertCreated();
         $this->actingAs($this->receiver, 'user')
+            ->getJson("/api/erp/procurement/purchase-orders/{$po->id}")
+            ->assertOk()
+            ->assertJsonPath('can_finalize', true)
+            ->assertJsonPath('finalization_blockers', []);
+        $this->actingAs($this->receiver, 'user')
             ->postJson("/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receiptResponse->json('data.id')}/finalize")
             ->assertCreated();
         $receipt = PurchaseOrderReceipt::findOrFail($receiptResponse->json('data.id'));
@@ -142,6 +157,21 @@ class SupplierReplacementTest extends TestCase
             ['Accept' => 'application/json'],
         )->assertCreated();
         $adjustment = SupplierAdjustment::findOrFail($issueResponse->json('data.id'));
+
+        $this->receive($po, [
+            'idempotency_key' => 'paid-replacement-too-early',
+            'items' => [[
+                'purchase_order_item_id' => $item->id,
+                'received_quantity' => 1,
+                'defective_quantity' => 0,
+                'replacement_for_adjustment_id' => $adjustment->id,
+            ]],
+        ])->assertUnprocessable()->assertJsonValidationErrors('items');
+
+        $this->chooseReplacement($adjustment);
+        $this->actingAs($this->receiver, 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$adjustment->id}/return", ['status' => 'waived'])
+            ->assertOk();
 
         $replacement = $this->receive($po, [
             'idempotency_key' => 'paid-replacement',

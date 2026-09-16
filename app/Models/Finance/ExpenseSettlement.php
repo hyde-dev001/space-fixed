@@ -18,6 +18,8 @@ class ExpenseSettlement extends Model
     public const SOURCE_PAYROLL = 'payroll';
     public const SOURCE_LEGACY_MIGRATION = 'legacy_migration';
     public const SOURCE_SUPPLIER_MANUAL_PAYMENT = 'supplier_manual_payment';
+    public const SOURCE_SUPPLIER_XENDIT_PAYOUT = 'supplier_xendit_payout';
+    public const SOURCE_SUPPLIER_XENDIT_REVERSAL = 'supplier_xendit_reversal';
     public const SOURCE_SUPPLIER_REFUND = 'supplier_refund';
 
     protected $table = 'finance_expense_settlements';

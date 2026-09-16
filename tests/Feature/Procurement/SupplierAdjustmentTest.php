@@ -221,6 +221,50 @@ class SupplierAdjustmentTest extends TestCase
         $this->assertSame(1, $adjustment->fresh()->getMedia('defect_evidence')->count());
     }
 
+    public function test_supplier_adjustment_queue_is_server_filtered_and_human_readable(): void
+    {
+        [$po, $item] = $this->poItem();
+        $this->postReceipt($po, $item, [
+            'received_quantity' => 2,
+            'defective_quantity' => 1,
+            'reason_category' => 'manufacturing_defect',
+            'inventory_notes' => 'One unit failed inspection.',
+            'defect_evidence' => [$this->fakeImage('queue-defect.jpg')],
+        ]);
+        $adjustment = SupplierAdjustment::sole();
+
+        $response = $this->actingAs($this->inventoryUser, 'user')->getJson(
+            "/api/erp/procurement/supplier-adjustments?purchase_order_id={$po->id}&current_owner=procurement&status=reported",
+        )->assertOk();
+
+        $response->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $adjustment->id)
+            ->assertJsonPath('data.0.status_label', 'Reported')
+            ->assertJsonPath('data.0.issue_stage_label', 'Receiving Defect')
+            ->assertJsonPath('data.0.current_owner', 'procurement')
+            ->assertJsonPath('data.0.current_owner_label', 'Procurement')
+            ->assertJsonPath('data.0.next_action', 'Choose a supplier resolution')
+            ->assertJsonPath('data.0.initially_accepted_quantity', 1)
+            ->assertJsonPath('data.0.still_unresolved_quantity', 1);
+
+        $this->actingAs($this->inventoryUser, 'user')
+            ->getJson("/api/erp/procurement/supplier-adjustments?purchase_order_id={$po->id}&current_owner=inventory")
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $this->actingAs($this->inventoryUser, 'user')
+            ->getJson("/api/erp/procurement/purchase-orders/{$po->id}")
+            ->assertOk()
+            ->assertJsonPath('ordered_quantity', 2)
+            ->assertJsonPath('accounted_quantity', 2)
+            ->assertJsonPath('initial_accepted_quantity', 1)
+            ->assertJsonPath('defective_quantity', 1)
+            ->assertJsonPath('still_unresolved_quantity', 1)
+            ->assertJsonPath('final_payable_quantity', 1)
+            ->assertJsonPath('can_finalize', false)
+            ->assertJsonPath('finalization_blockers.0', 'Every supplier adjustment must be resolved before finalization.');
+    }
+
     public function test_post_payment_issue_preserves_original_receipt_inventory_and_settlement(): void
     {
         [$po, $item, $inventory] = $this->poItem();
@@ -301,6 +345,55 @@ class SupplierAdjustmentTest extends TestCase
         )->assertUnprocessable()->assertJsonValidationErrors('reported_quantity');
 
         $this->assertSame(1, SupplierAdjustment::where('issue_stage', SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT)->count());
+    }
+
+    public function test_post_payment_issue_requires_the_receipt_expense_to_be_fully_paid(): void
+    {
+        [$po, $item] = $this->poItem();
+        $receipt = $this->postReceipt($po, $item, [
+            'received_quantity' => 2,
+            'defective_quantity' => 0,
+        ]);
+        $expense = Expense::sole();
+        $expense->update(['status' => 'posted']);
+        app(ExpenseSettlementService::class)->record($expense, $this->owner, [
+            'amount' => '100.00',
+            'payment_method' => 'bank_transfer',
+            'reference' => 'BANK-PARTIAL-PAYMENT',
+            'idempotency_key' => 'settle-partial-payment',
+        ]);
+        $receiptItem = $receipt->items()->sole();
+
+        $this->actingAs($this->inventoryUser, 'user')
+            ->getJson("/api/erp/procurement/purchase-orders/{$po->id}")
+            ->assertOk()
+            ->assertJsonPath('post_payment_issue_items', []);
+
+        $this->actingAs($this->inventoryUser, 'user')->post(
+            "/api/erp/procurement/purchase-orders/{$po->id}/receipts/{$receipt->id}/items/{$receiptItem->id}/post-payment-issues",
+            [
+                'idempotency_key' => 'partial-payment-issue',
+                'reported_quantity' => 1,
+                'reason_category' => 'damaged',
+                'inventory_notes' => 'Found after partial payment.',
+                'defect_evidence' => [$this->fakeImage('partial-payment.jpg')],
+            ],
+            ['Accept' => 'application/json'],
+        )->assertUnprocessable()->assertJsonValidationErrors('receipt');
+
+        app(ExpenseSettlementService::class)->record($expense, $this->owner, [
+            'amount' => '100.00',
+            'payment_method' => 'bank_transfer',
+            'reference' => 'BANK-FINAL-PAYMENT',
+            'idempotency_key' => 'settle-final-payment',
+        ]);
+
+        $this->actingAs($this->inventoryUser, 'user')
+            ->getJson("/api/erp/procurement/purchase-orders/{$po->id}")
+            ->assertOk()
+            ->assertJsonPath('post_payment_issue_items.0.receipt_id', $receipt->id)
+            ->assertJsonPath('post_payment_issue_items.0.receipt_item_id', $receiptItem->id)
+            ->assertJsonPath('post_payment_issue_items.0.remaining_quantity', 2);
     }
 
     /** @return array{PurchaseOrder, PurchaseOrderItem, InventoryItem} */

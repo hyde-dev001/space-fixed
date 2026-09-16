@@ -48,8 +48,7 @@ class PurchaseRequestService
                 ? (string) $data['pr_number']
                 : $this->generatePRNumber($shopOwnerId);
 
-            // Calculate total cost
-            $data['total_cost'] = $data['total_cost'] ?? $data['quantity'] * $data['unit_cost'];
+            $data['total_cost'] = $this->calculateTotal((int) $data['quantity'], $data['unit_cost']);
 
             // Align with DB not-null constraint for service-driven PR creation.
             $data['requested_date'] = $data['requested_date'] ?? now();
@@ -151,6 +150,23 @@ class PurchaseRequestService
         $sequence = (int) $matches[2] + 1;
 
         return sprintf('PR-%d-%03d', $year, $sequence);
+    }
+
+    public function calculateTotal(int $quantity, mixed $unitCost): string
+    {
+        $normalized = trim((string) $unitCost);
+        if ($quantity < 1 || preg_match('/^\d+(?:\.(\d{1,2}))?$/', $normalized, $matches) !== 1) {
+            throw ValidationException::withMessages([
+                'unit_cost' => 'Quantity must be positive and unit cost must use at most two decimal places.',
+            ]);
+        }
+
+        $whole = strstr($normalized, '.', true);
+        $whole = $whole === false ? $normalized : $whole;
+        $fraction = str_pad($matches[1] ?? '', 2, '0');
+        $totalCents = $quantity * (((int) $whole * 100) + (int) $fraction);
+
+        return sprintf('%d.%02d', intdiv($totalCents, 100), $totalCents % 100);
     }
 
     private function isPrNumberDuplicateException(QueryException $exception): bool
@@ -373,38 +389,6 @@ class PurchaseRequestService
                 message: "{$payload['reference']} ({$payload['product_name']}) now requires shop owner approval.",
                 data: $payload,
                 actionUrl: $this->notificationService->ownerApprovalActionUrl('purchase_request', $purchaseRequest->id),
-                priority: 'medium',
-                requiresAction: true,
-            );
-
-            return;
-        }
-
-        if ($purchaseRequest->status === 'pending_finance_final' && $previousStatus === 'pending_shop_owner') {
-            $this->notificationService->sendToErpRole(
-                roleName: 'Finance',
-                shopId: $shopOwnerId,
-                type: NotificationType::PURCHASE_REQUEST_SUBMITTED,
-                title: 'Purchase Request Returned To Finance',
-                message: "{$payload['reference']} was approved by shop owner and requires final Finance review.",
-                data: $payload,
-                actionUrl: "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
-                priority: 'medium',
-                requiresAction: true,
-            );
-
-            return;
-        }
-
-        if ($purchaseRequest->status === 'pending_finance_final' && $previousStatus === 'pending_finance') {
-            $this->notificationService->sendToErpRole(
-                roleName: 'Finance',
-                shopId: $shopOwnerId,
-                type: NotificationType::PURCHASE_REQUEST_SUBMITTED,
-                title: 'Purchase Request Ready For Final Release',
-                message: "{$payload['reference']} was reviewed by Finance and requires final Finance release.",
-                data: $payload,
-                actionUrl: "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
                 priority: 'medium',
                 requiresAction: true,
             );

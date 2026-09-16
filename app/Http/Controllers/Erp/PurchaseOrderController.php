@@ -15,12 +15,18 @@ use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use App\Services\PurchaseOrderService;
+use App\Services\PurchaseOrderReceiptService;
+use App\Services\SupplierAdjustmentService;
 
 class PurchaseOrderController extends Controller
 {
     use AuthorizesRequests;
 
-    public function __construct(private PurchaseOrderService $purchaseOrderService) {}
+    public function __construct(
+        private PurchaseOrderService $purchaseOrderService,
+        private PurchaseOrderReceiptService $purchaseOrderReceiptService,
+        private SupplierAdjustmentService $supplierAdjustmentService,
+    ) {}
 
     /**
      * Display a listing of purchase orders with filters.
@@ -137,7 +143,9 @@ class PurchaseOrderController extends Controller
 
         return response()->json([
             ...$purchaseOrder->toArray(),
+            ...$this->purchaseOrderReceiptService->receivingState($purchaseOrder),
             ...$this->purchaseOrderService->completionState($purchaseOrder),
+            'post_payment_issue_items' => $this->supplierAdjustmentService->postPaymentIssueItems($purchaseOrder),
         ]);
     }
 

@@ -11,6 +11,7 @@ import type { PurchaseOrder as PurchaseOrderType, PurchaseRequest } from "@/type
 import { hasPermission } from "@/utils/permissions";
 import PurchaseOrderReceiptPanel from "./components/PurchaseOrderReceiptPanel";
 import SupplierAdjustmentsPanel from "./components/SupplierAdjustmentsPanel";
+import SupplierAdjustmentQueue from "./components/SupplierAdjustmentQueue";
 
 type PurchaseOrderStatus = "draft" | "sent" | "confirmed" | "in_transit" | "partially_received" | "delivered" | "completed" | "cancelled";
 type MetricColor = "success" | "warning" | "info" | "danger";
@@ -462,6 +463,14 @@ export default function PurchaseOrders() {
 
 	useEffect(() => {
 		if (ownerMode) return;
+		const id = Number(new URLSearchParams(window.location.search).get("purchase_order"));
+		if (id > 0) void purchaseOrderApi.getById(id).then(setViewingOrder).catch((error) => {
+			console.error("Failed to open linked purchase order:", error);
+		});
+	}, [ownerMode]);
+
+	useEffect(() => {
+		if (ownerMode) return;
 
 		const refreshWhenVisible = () => {
 			if (document.visibilityState !== "visible") return;
@@ -769,6 +778,7 @@ export default function PurchaseOrders() {
 		<AppLayoutERP hideHeader={isAnyModalOpen}>
 			<Head title="Purchase Orders - Solespace" />
 			<div className="p-6 space-y-6">
+				{canManageSupplierAdjustments && <SupplierAdjustmentQueue currentOwner="procurement" onOpen={(id) => void purchaseOrderApi.getById(id).then(setViewingOrder)} />}
 				<div className="flex flex-col items-end lg:flex-row lg:items-center lg:justify-end gap-4">
 					<h1 className="sr-only">Purchase Orders</h1>
 					{canCreate && <button

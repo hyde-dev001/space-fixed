@@ -55,6 +55,7 @@ type ShopSettingsPayload = {
 	order_refund_deadline_days: number;
 	totp_enabled: boolean;
 	has_paymongo_key: boolean;
+	xendit_supplier_payouts?: XenditSupplierPayoutSettings;
 	// Geofence
 	attendance_geofence_enabled: boolean;
 	shop_latitude: number | null;
@@ -73,6 +74,30 @@ type ShopSettingsPayload = {
 		starts_at: string | null;
 		ends_at: string | null;
 	};
+};
+
+type XenditSupplierPayoutSettings = {
+	provider: string;
+	purpose: string;
+	environment: 'test' | 'live' | string;
+	status: string;
+	connected: boolean;
+	secret_key_masked: string | null;
+	callback_token_configured: boolean;
+	connected_at: string | null;
+	last_verified_at: string | null;
+};
+
+const DEFAULT_XENDIT_SETTINGS: XenditSupplierPayoutSettings = {
+	provider: 'xendit',
+	purpose: 'supplier_payout',
+	environment: 'test',
+	status: 'disconnected',
+	connected: false,
+	secret_key_masked: null,
+	callback_token_configured: false,
+	connected_at: null,
+	last_verified_at: null,
 };
 
 type ShopSettingsPageProps = {
@@ -331,6 +356,22 @@ const ShopSetting: React.FC = () => {
 	const [keyError, setKeyError] = useState<string | null>(null);
 	const [removingKey, setRemovingKey] = useState(false);
 	const [showRevokeConfirm, setShowRevokeConfirm] = useState(false);
+	const [xenditSettings, setXenditSettings] = useState<XenditSupplierPayoutSettings>(
+		() => shop_settings.xendit_supplier_payouts ?? DEFAULT_XENDIT_SETTINGS,
+	);
+	const [xenditEnvironment, setXenditEnvironment] = useState<'test' | 'live'>(
+		() => shop_settings.xendit_supplier_payouts?.environment === 'live' ? 'live' : 'test',
+	);
+	const [xenditSecretKey, setXenditSecretKey] = useState('');
+	const [xenditCallbackToken, setXenditCallbackToken] = useState('');
+	const [showXenditKey, setShowXenditKey] = useState(false);
+	const [showXenditToken, setShowXenditToken] = useState(false);
+	const [savingXendit, setSavingXendit] = useState(false);
+	const [testingXendit, setTestingXendit] = useState(false);
+	const [removingXendit, setRemovingXendit] = useState(false);
+	const [xenditSuccess, setXenditSuccess] = useState(false);
+	const [xenditError, setXenditError] = useState<string | null>(null);
+	const [showXenditDisconnectConfirm, setShowXenditDisconnectConfirm] = useState(false);
 	const [autoRenewalEnabled, setAutoRenewalEnabled] = useState(
 		Boolean(shop_settings.premium?.auto_renew ?? shop_settings.premium?.has_active ?? false),
 	);
@@ -468,6 +509,93 @@ const ShopSetting: React.FC = () => {
 			setShowRevokeConfirm(false);
 		} finally {
 			setRemovingKey(false);
+		}
+	};
+
+	const saveXenditIntegration = async () => {
+		if (!xenditSecretKey.trim() || !xenditCallbackToken.trim()) return;
+		setSavingXendit(true);
+		setXenditError(null);
+		setXenditSuccess(false);
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+			const response = await axios.post(
+				'/shop-owner/settings/xendit-key',
+				{
+					environment: xenditEnvironment,
+					secret_key: xenditSecretKey.trim(),
+					callback_token: xenditCallbackToken.trim(),
+				},
+				{ headers: { 'X-CSRF-TOKEN': csrfToken || '' } },
+			);
+			const persisted = response?.data?.data as XenditSupplierPayoutSettings | undefined;
+			if (persisted) setXenditSettings(persisted);
+			setXenditSecretKey('');
+			setXenditCallbackToken('');
+			setXenditSuccess(true);
+			window.setTimeout(() => setXenditSuccess(false), 3000);
+			await UserSwal.fire({
+				icon: 'success',
+				title: xenditSettings.connected ? 'Xendit credentials rotated' : 'Xendit connected',
+				text: 'Supplier payouts will use this shop\'s Xendit account.',
+				timer: 1800,
+				showConfirmButton: false,
+			});
+		} catch (err: any) {
+			setXenditError(err?.response?.data?.message || 'Xendit could not be connected. Please check the key permissions and try again.');
+		} finally {
+			setSavingXendit(false);
+		}
+	};
+
+	const testXenditConnection = async () => {
+		setTestingXendit(true);
+		setXenditError(null);
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+			const response = await axios.post('/shop-owner/settings/xendit-key/test', {}, {
+				headers: { 'X-CSRF-TOKEN': csrfToken || '' },
+			});
+			const persisted = response?.data?.data as XenditSupplierPayoutSettings | undefined;
+			if (persisted) setXenditSettings(persisted);
+			await UserSwal.fire({
+				icon: 'success',
+				title: 'Xendit connection verified',
+				timer: 1600,
+				showConfirmButton: false,
+			});
+		} catch (err: any) {
+			setXenditError(err?.response?.data?.message || 'Xendit connection could not be verified.');
+		} finally {
+			setTestingXendit(false);
+		}
+	};
+
+	const removeXenditIntegration = async () => {
+		setRemovingXendit(true);
+		setXenditError(null);
+		try {
+			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+			const response = await axios.delete('/shop-owner/settings/xendit-key', {
+				headers: { 'X-CSRF-TOKEN': csrfToken || '' },
+			});
+			const persisted = response?.data?.data as XenditSupplierPayoutSettings | undefined;
+			setXenditSettings(persisted ?? DEFAULT_XENDIT_SETTINGS);
+			setShowXenditDisconnectConfirm(false);
+			setXenditSecretKey('');
+			setXenditCallbackToken('');
+			await UserSwal.fire({
+				icon: 'success',
+				title: 'Xendit disconnected',
+				text: 'Existing supplier payout history was preserved.',
+				timer: 1800,
+				showConfirmButton: false,
+			});
+		} catch (err: any) {
+			setXenditError(err?.response?.data?.message || 'Xendit could not be disconnected.');
+			setShowXenditDisconnectConfirm(false);
+		} finally {
+			setRemovingXendit(false);
 		}
 	};
 
@@ -2206,6 +2334,102 @@ const ShopSetting: React.FC = () => {
 							</div>
 						</div>
 					</div>
+
+					{/* Xendit Supplier Payout Gateway */}
+					{!isIndividual && (
+						<div data-testid="xendit-supplier-payouts-card" className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-6 xl:order-7 xl:shadow-none">
+							<div className="border-b border-gray-200 p-6">
+								<h2 className="text-xl font-semibold text-gray-900">Xendit - Supplier Payouts</h2>
+								<p className="mt-1 text-sm text-gray-600">
+									Connect your shop&apos;s Xendit account for supplier payouts. Customer payments continue to use PayMongo.
+								</p>
+							</div>
+							<div className="space-y-4 p-6">
+								<div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+									<p className="font-semibold text-gray-900">Phase 1 setup</p>
+									<ul className="mt-2 list-disc space-y-1 pl-5">
+										<li>Use a standalone Xendit Secret API Key with Money-Out Read for balance verification and Money-Out Write for payouts.</li>
+										<li>Set the same callback token in Xendit&apos;s PAYOUT webhook configuration and below.</li>
+									</ul>
+									<p className="mt-3 text-xs text-gray-500">
+										Webhook URL: <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px]">{typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/xendit/payout` : '/api/webhooks/xendit/payout'}</code>
+									</p>
+									<a href="https://docs.xendit.co/docs/payouts-creating-an-api-key" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black">
+										Open Xendit API key guide
+									</a>
+								</div>
+
+								{xenditSettings.connected ? (
+									<div className="rounded-lg border border-green-200 bg-green-50 px-4 py-3">
+										<div className="flex flex-wrap items-center justify-between gap-3">
+											<div className="flex items-center gap-2 text-sm font-medium text-green-800">
+												<CheckCircle2 size={16} className="shrink-0 text-green-600" />
+												<span>Xendit is connected ({xenditSettings.environment.toUpperCase()}) - {xenditSettings.secret_key_masked}</span>
+											</div>
+											<div className="flex flex-wrap gap-2">
+												<button type="button" onClick={() => void testXenditConnection()} disabled={testingXendit || removingXendit} className="rounded-md border border-green-700 px-3 py-1.5 text-xs font-semibold text-green-800 hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-50">
+													{testingXendit ? 'Testing...' : 'Test connection'}
+												</button>
+												{!showXenditDisconnectConfirm && <button type="button" onClick={() => setShowXenditDisconnectConfirm(true)} disabled={testingXendit || removingXendit} className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Disconnect</button>}
+											</div>
+										</div>
+										{showXenditDisconnectConfirm && (
+											<div className="mt-3 flex flex-wrap items-center gap-3 border-t border-green-200 pt-3">
+												<AlertTriangle size={15} className="shrink-0 text-red-500" />
+												<p className="flex-1 text-xs text-red-700">Disconnecting blocks new supplier payouts. Existing payout history stays available.</p>
+												<button type="button" onClick={() => void removeXenditIntegration()} disabled={removingXendit} className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">{removingXendit ? 'Disconnecting...' : 'Yes, disconnect'}</button>
+												<button type="button" onClick={() => setShowXenditDisconnectConfirm(false)} disabled={removingXendit} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+											</div>
+										)}
+									</div>
+								) : (
+									<div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
+										<AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
+										<div>
+											<p className="text-sm font-semibold text-red-800">Supplier payouts not configured</p>
+											<p className="mt-0.5 text-sm text-red-700">Finance cannot send money to suppliers until this shop connection is verified.</p>
+										</div>
+									</div>
+								)}
+
+								<div className="grid gap-4 md:grid-cols-3">
+									<div>
+										<label htmlFor="xendit-environment" className="mb-1.5 block text-sm font-medium text-gray-700">Environment</label>
+										<select id="xendit-environment" value={xenditEnvironment} onChange={(event) => setXenditEnvironment(event.target.value as 'test' | 'live')} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500">
+											<option value="test">Test</option>
+											<option value="live">Live</option>
+										</select>
+									</div>
+									<div className="md:col-span-2">
+										<label htmlFor="xendit-secret-key" className="mb-1.5 block text-sm font-medium text-gray-700">Xendit Secret API Key</label>
+										<div className="relative">
+											<input id="xendit-secret-key" type={showXenditKey ? 'text' : 'password'} value={xenditSecretKey} onChange={(event) => setXenditSecretKey(event.target.value)} placeholder="Paste the server-side secret key" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
+											<button type="button" onClick={() => setShowXenditKey((value) => !value)} aria-label={showXenditKey ? 'Hide Xendit secret key' : 'Show Xendit secret key'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">{showXenditKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+										</div>
+										<p className="mt-1 text-xs text-gray-500">The key is encrypted and never shown again. Balance verification may require Money-Out Read; payouts require Money-Out Write.</p>
+									</div>
+								</div>
+
+								<div>
+									<label htmlFor="xendit-callback-token" className="mb-1.5 block text-sm font-medium text-gray-700">Payout callback token</label>
+									<div className="relative">
+										<input id="xendit-callback-token" type={showXenditToken ? 'text' : 'password'} value={xenditCallbackToken} onChange={(event) => setXenditCallbackToken(event.target.value)} placeholder="Create or paste a private token" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
+										<button type="button" onClick={() => setShowXenditToken((value) => !value)} aria-label={showXenditToken ? 'Hide Xendit callback token' : 'Show Xendit callback token'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">{showXenditToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+									</div>
+									<p className="mt-1 text-xs text-gray-500">Required to authenticate payout webhooks. Keep it private.</p>
+								</div>
+
+								<div className="flex flex-wrap items-center gap-3">
+									<button type="button" onClick={() => void saveXenditIntegration()} disabled={savingXendit || !xenditSecretKey.trim() || !xenditCallbackToken.trim()} className="min-h-11 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50">
+										{savingXendit ? 'Verifying and saving...' : xenditSettings.connected ? 'Rotate credentials' : 'Connect Xendit'}
+									</button>
+									{!xenditSettings.connected && <span className="text-xs text-gray-500">Connection verification reads the account balance only; it does not send money.</span>}
+								</div>
+								{xenditError && <p role="alert" className="text-sm text-red-700">{xenditError}</p>}
+								{xenditSuccess && <p className="flex items-center gap-1 text-sm font-medium text-green-700"><Check size={14} /> Xendit supplier payout settings saved.</p>}
+							</div>
+						</div>
+					)}
 
 					{/* Shop Location / Attendance Geofence */}
 					<div

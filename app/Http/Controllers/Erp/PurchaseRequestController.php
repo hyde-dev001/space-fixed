@@ -403,7 +403,9 @@ class PurchaseRequestController extends Controller
         return response()->json([
             'message' => $isFinanceFinalStage
                 ? 'Purchase request released by Finance successfully.'
-                : 'Purchase request sent to the Shop Owner successfully.',
+                : ($freshRequest->status === 'approved'
+                    ? 'Purchase request approved successfully.'
+                    : 'Purchase request sent to the Shop Owner successfully.'),
             'data' => $freshRequest,
         ]);
     }
@@ -429,12 +431,12 @@ class PurchaseRequestController extends Controller
         ]);
     }
 
-    private function calculatePurchaseRequestTotalCost(array $data, int $shopOwnerId): float
+    private function calculatePurchaseRequestTotalCost(array $data, int $shopOwnerId): string
     {
-        $quantity = (int) ($data['quantity'] ?? 0);
-        $unitCost = (float) ($data['unit_cost'] ?? 0);
-
-        return $quantity > 0 && $unitCost >= 0 ? round($quantity * $unitCost, 2) : 0;
+        return $this->purchaseRequestService->calculateTotal(
+            (int) ($data['quantity'] ?? 0),
+            $data['unit_cost'] ?? 0,
+        );
     }
 
     private function isAllSizesRequest(?string $requestedSize): bool

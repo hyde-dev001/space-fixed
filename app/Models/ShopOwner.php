@@ -179,6 +179,11 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         return $this->hasMany(ShopOwnerModule::class, 'shop_owner_id');
     }
 
+    public function paymentIntegrations(): HasMany
+    {
+        return $this->hasMany(ShopPaymentIntegration::class, 'shop_owner_id');
+    }
+
     /**
      * Get repair packages created under this shop.
      */
