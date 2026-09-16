@@ -6,6 +6,10 @@ const pageSource = readFileSync(
 	resolve('resources/js/Pages/UserSide/Profile/VirtualShowroomPage.tsx'),
 	'utf8',
 );
+const productManagementSource = readFileSync(
+	resolve('resources/js/Pages/ERP/STAFF/ProductManagementWithVariants.tsx'),
+	'utf8',
+);
 const showroomSource = readFileSync(
 	resolve('resources/js/Pages/UserSide/Products/VirtualShowroom.tsx'),
 	'utf8',
@@ -24,6 +28,10 @@ describe('standalone virtual showroom', () => {
 		expect(pageSource).not.toContain("import Navigation from '../Shared/Navigation';");
 		expect(pageSource).not.toContain('{!isFocusMode && <Navigation />}');
 		expect(pageSource).toContain('Back to Shop Profile');
+		expect(pageSource).toContain("new URLSearchParams(window.location.search).get('from')");
+		expect(pageSource).toContain("'/erp/staff/products'");
+		expect(pageSource).toContain('Back to Product Management');
+		expect(productManagementSource).toContain('virtual-showroom?from=staff-products');
 	});
 
 	it('uses dynamic viewport height for the standalone layout', () => {
