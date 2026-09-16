@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import axios from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import UploadStockMaterial from "../uploadStockMaterial";
@@ -77,5 +77,24 @@ describe("individual repair material inventory loading", () => {
         }),
       }),
     );
+  });
+
+  it("uses a unit dropdown in the material modal", async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: { data: [], last_page: 1 },
+    } as never);
+
+    render(<UploadStockMaterial />);
+
+    await waitFor(() => expect(axios.get).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Add Material" }));
+
+    const unitSelect = screen.getByRole("combobox", { name: "Unit" });
+    expect(unitSelect).toHaveAttribute("id", "material-unit");
+
+    fireEvent.click(unitSelect);
+
+    expect(screen.getByRole("option", { name: "pcs (pieces)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "bottles" })).toBeInTheDocument();
   });
 });

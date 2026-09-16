@@ -18,4 +18,15 @@ describe('shop owner order processing flow', () => {
     expect(source).toContain('onClick={() => handleProcessOrder(viewOrder)}');
     expect(source).toContain("/api/shop-owner/orders/${order.id}/status");
   });
+
+  it('refreshes the next action after processing so the check opens shipping', () => {
+    expect(source).toMatch(
+      /status:\s*"processing"[\s\S]{0,100}availableActions:\s*\["shipped"\]\s+as\s+OrderAction\[\]/,
+    );
+  });
+
+  it('does not expose a shop-owner mark delivered action', () => {
+    expect(source).not.toContain('Mark Delivered');
+    expect(source).not.toContain("handleThirdPartyDelivery(viewOrder, 'delivered')");
+  });
 });

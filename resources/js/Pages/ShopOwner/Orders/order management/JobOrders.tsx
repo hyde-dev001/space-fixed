@@ -771,7 +771,14 @@ export default function JobOrdersPage() {
 
       // Update local state
       setOrders((prev) =>
-        prev.map((o) => (o.id === order.id ? { ...o, status: "processing", processedAt: new Date().toLocaleString() } : o))
+        prev.map((o) => (o.id === order.id
+          ? {
+              ...o,
+              status: "processing",
+              availableActions: ["shipped"] as OrderAction[],
+              processedAt: new Date().toLocaleString(),
+            }
+          : o))
       );
       setIsViewModalOpen(false);
       setViewOrder(null);
@@ -1688,7 +1695,7 @@ export default function JobOrdersPage() {
 
   const handleThirdPartyDelivery = async (
     order: Order,
-    action: 'update' | 'in_transit' | 'delivered',
+    action: 'update' | 'in_transit',
   ) => {
     let trackingNumberValue = order.trackingNumber || '';
     if (action === 'update') {
@@ -1706,10 +1713,9 @@ export default function JobOrdersPage() {
       if (!result.isConfirmed) return;
       trackingNumberValue = String(result.value || '').trim();
     } else {
-      const label = action === 'in_transit' ? 'confirm the courier handoff' : 'mark this delivery as delivered';
       const result = await Swal.fire({
         title: 'Confirm courier update?',
-        text: 'This will ' + label + '.',
+        text: 'This will confirm the courier handoff.',
         icon: 'question',
         showCancelButton: true,
         confirmButtonText: 'Confirm',
@@ -1745,7 +1751,6 @@ export default function JobOrdersPage() {
       const nextProviderStatus = response.data.leg?.provider_status || order.thirdPartyProviderStatus;
       const nextOrder = {
         ...order,
-        status: action === 'delivered' ? 'delivered' as OrderStatus : order.status,
         trackingNumber: trackingNumberValue || order.trackingNumber,
         thirdPartyDeliveryStatus: nextLegStatus,
         thirdPartyProviderStatus: nextProviderStatus,
@@ -2842,15 +2847,6 @@ export default function JobOrdersPage() {
                         className="px-4 py-2 border border-blue-600 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors"
                       >
                         Confirm Courier Handoff
-                      </button>
-                    )}
-                    {viewOrder.thirdPartyDeliveryStatus === 'in_transit' && (
-                      <button
-                        type="button"
-                        onClick={() => handleThirdPartyDelivery(viewOrder, 'delivered')}
-                        className="px-4 py-2 border border-emerald-600 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors"
-                      >
-                        Mark Delivered
                       </button>
                     )}
                   </>

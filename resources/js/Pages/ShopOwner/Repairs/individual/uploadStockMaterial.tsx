@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ComponentType } from 'react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import MonochromeSelect from '@/components/form/Select';
 import AppLayoutShopOwner from '../../../../layout/AppLayout_shopOwner';
 import AppLayoutERP from '../../../../layout/AppLayout_ERP';
 
@@ -559,14 +560,28 @@ export default function UploadStockMaterial() {
 
               <div>
                 <label htmlFor="material-unit" className="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-300">Unit</label>
-                <input
+                <MonochromeSelect
                   id="material-unit"
-                  type="text"
-                  title="Unit"
+                  title="Unit of measurement"
                   value={form.unit}
                   onChange={(event) => setForm((prev) => ({ ...prev, unit: event.target.value }))}
                   className="w-full rounded-lg border border-gray-300 bg-white px-4 py-2 text-gray-900 outline-none ring-blue-500 transition focus:ring-2 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-                />
+                >
+                  <option value="pcs">pcs (pieces)</option>
+                  <option value="bottles">bottles</option>
+                  <option value="sets">sets</option>
+                  <option value="liters">liters</option>
+                  <option value="kg">kg</option>
+                  <option value="rolls">rolls</option>
+                  <option value="meters">meters</option>
+                  <option value="tubes">tubes</option>
+                  <option value="boxes">boxes</option>
+                  <option value="pairs">pairs</option>
+                  <option value="bottle">bottle</option>
+                  <option value="roll">roll</option>
+                  <option value="sheet">sheet</option>
+                  <option value="tube">tube</option>
+                </MonochromeSelect>
               </div>
 
               <div>
