@@ -19,6 +19,13 @@ const defectCategories: Array<{ value: SupplierAdjustmentReasonCategory; label: 
 	{ value: "other", label: "Other" },
 ];
 
+const clampQuantity = (value: string, maximum: number) => {
+	if (value === "") return "";
+	const quantity = Number(value);
+	if (!Number.isFinite(quantity)) return "";
+	return String(Math.min(Math.max(Math.trunc(quantity), 0), maximum));
+};
+
 type Props = {
 	order: PurchaseOrder;
 	onChanged: () => Promise<void>;
@@ -56,18 +63,18 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 	const canReceive = mayReceive && (canReceiveNormally || canReceiveReplacement || canReceivePendingReplacement);
 	const receivingReplacement = !canReceiveNormally && inTransitReplacements.length > 0;
 
-	const setQuantity = (itemId: number, field: "received" | "defective", value: string) => {
+	const setQuantity = (itemId: number, field: "received" | "defective", value: string, maximum: number) => {
 		setQuantities((current) => ({
 			...current,
-			[itemId]: { received: current[itemId]?.received ?? "", defective: current[itemId]?.defective ?? "", [field]: value },
+			[itemId]: { received: current[itemId]?.received ?? "", defective: current[itemId]?.defective ?? "", [field]: clampQuantity(value, maximum) },
 			}));
 			setIdempotencyKey(null);
 	};
-	const setSizeQuantity = (itemId: number, sizeId: number, field: "received" | "defective", value: string) => {
+	const setSizeQuantity = (itemId: number, sizeId: number, field: "received" | "defective", value: string, maximum: number) => {
 		const key = `${itemId}:${sizeId}`;
 		setSizeQuantities((current) => ({
 			...current,
-			[key]: { received: current[key]?.received ?? "", defective: current[key]?.defective ?? "", [field]: value },
+			[key]: { received: current[key]?.received ?? "", defective: current[key]?.defective ?? "", [field]: clampQuantity(value, maximum) },
 		}));
 		setIdempotencyKey(null);
 		};
@@ -238,7 +245,7 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 						{(order.items ?? []).map((item) => {
 							const eligible = (item.inventory_item?.sizes ?? []).filter((size) => item.eligible_size_ids?.includes(size.id));
 							const perSize = eligible.length > 1;
-							const perSizeLimit = perSize ? Math.ceil(item.ordered_quantity / eligible.length) : undefined;
+							const perSizeLimit = perSize ? Math.ceil(item.ordered_quantity / eligible.length) : item.ordered_quantity;
 							const summary = order.receiving_items?.find((line) => line.purchase_order_item_id === item.id);
 			return (
 			<Fragment key={item.id}>
@@ -246,8 +253,8 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 								<td className="py-2 pr-3 text-gray-900 dark:text-white">{item.product_name}{perSize && <div className="text-xs text-gray-500">{eligible.map((size) => `${size.size_system ?? "US"} ${size.size}`).join(", ")} · {perSizeLimit} each</div>}</td>
 								<td className="px-2">{item.ordered_quantity}</td><td className="px-2">{summary?.accounted_quantity ?? 0}</td><td className="px-2">{summary?.final_payable_quantity ?? 0}</td><td className="px-2">{summary?.defective_quantity ?? 0}</td><td className="px-2">{summary?.still_unresolved_quantity ?? item.ordered_quantity}</td>
 										{canReceive && <>
-											<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Received ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.received ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "received", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Received ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
-											<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Defective ${name}`} type="number" min="0" max={perSizeLimit} value={sizeQuantities[key]?.defective ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Defective ${item.product_name}`} type="number" min="0" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
+										<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Received ${name}`} type="number" min="0" max={perSizeLimit} step="1" value={sizeQuantities[key]?.received ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "received", event.target.value, perSizeLimit)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Received ${item.product_name}`} type="number" min="0" max={item.ordered_quantity} step="1" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value, item.ordered_quantity)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
+										<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Defective ${name}`} type="number" min="0" max={perSizeLimit} step="1" value={sizeQuantities[key]?.defective ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "defective", event.target.value, perSizeLimit)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Defective ${item.product_name}`} type="number" min="0" max={item.ordered_quantity} step="1" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value, item.ordered_quantity)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
 									</>}
 									</tr>
 									{canReceive && ((perSize

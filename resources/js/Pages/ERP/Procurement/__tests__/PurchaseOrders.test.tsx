@@ -204,6 +204,39 @@ describe("PurchaseOrderReceiptPanel", () => {
 		}));
 	});
 
+	it("caps receiving inputs at the physical order quantity", async () => {
+		const sizes = ["3", "5", "7", "9"].map((size, index) => ({
+			id: 90 + index,
+			size,
+			size_system: "US",
+		}));
+		render(<PurchaseOrderReceiptPanel order={order({
+			quantity: 320,
+			total_cost: 32000,
+			items: [{
+				id: 20, purchase_order_id: 10, product_name: "Shoe", ordered_quantity: 160,
+				accepted_quantity: 0, remaining_quantity: 160, unit_cost: 100, line_total: 16000,
+				quantity_multiplier: 1, eligible_size_ids: sizes.map((size) => size.id),
+				inventory_item: { sizes },
+			} as any, {
+				id: 21, purchase_order_id: 10, product_name: "Single shoe", ordered_quantity: 160,
+				accepted_quantity: 0, remaining_quantity: 160, unit_cost: 100, line_total: 16000,
+				quantity_multiplier: 1,
+			} as any],
+		})} onChanged={vi.fn().mockResolvedValue(undefined)} />);
+
+		const received = screen.getByLabelText("Received Shoe US 3") as HTMLInputElement;
+		expect(received).toHaveAttribute("max", "40");
+		expect(screen.getByText(/40 each/)).toBeInTheDocument();
+		fireEvent.change(received, { target: { value: "80" } });
+		await waitFor(() => expect(received.value).toBe("40"));
+
+		const singleItem = screen.getByLabelText("Received Single shoe") as HTMLInputElement;
+		expect(singleItem).toHaveAttribute("max", "160");
+		fireEvent.change(singleItem, { target: { value: "200" } });
+		await waitFor(() => expect(singleItem.value).toBe("160"));
+	});
+
 	it("hides receiving and void actions when the user lacks those permissions", () => {
 		render(<PurchaseOrderReceiptPanel
 			order={order({ can_finalize: true, final_payable_quantity: 5, receipts: [{ id: 1, purchase_order_id: 10, source: "manual", status: "receiving", received_at: "2026-08-02", items: [] }] })}
