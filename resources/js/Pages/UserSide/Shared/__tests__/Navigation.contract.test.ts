@@ -114,17 +114,26 @@ describe('user-side navigation shell', () => {
     expect(navigationSource).toContain('max-h-[55vh] overflow-y-auto no-scrollbar px-5 py-5 sm:px-7');
   });
 
-  it('uses pixel-adaptive blending for landing navigation artwork only', () => {
+  it('keeps landing navigation artwork and logo visible over light and dark backgrounds', () => {
     expect(navigationSource).toContain(
       'const isAdaptiveLandingNav = isLandingPage && landingSidebar;',
     );
     expect(navigationSource).toContain(
-      "const adaptiveLandingIconClass = isAdaptiveLandingNav ? 'mix-blend-difference' : '';",
+      "const adaptiveLandingIconClass = isAdaptiveLandingNav ? 'landing-adaptive-ink' : '';",
     );
     expect(navigationSource).toContain(
       'const headerIconSvgClasses = `block h-6 w-6 shrink-0 ${adaptiveLandingIconClass}`;',
     );
+    expect(navigationSource).toContain(
+      "    isTransparentNav\n      ? 'text-white hover:opacity-70'\n      : 'text-gray-900 rounded-full hover:bg-gray-100 hover:opacity-100'",
+    );
+    const logoStart = navigationSource.indexOf('href={route("landing")}');
+    const logoEnd = navigationSource.indexOf('SoleSpace', logoStart);
+    expect(navigationSource.slice(logoStart, logoEnd)).toContain('${adaptiveLandingIconClass}');
     expect(navigationSource).toContain('iconClassName={adaptiveLandingIconClass}');
+    expect(navigationSource).not.toContain('text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.7)]');
+    expect(appCssSource).toContain('.landing-adaptive-ink');
+    expect(appCssSource).toContain('mix-blend-mode: difference;');
     expect(notificationBellSource).toContain('iconClassName?: string;');
     expect(notificationBellSource).toContain(
       'className={`block h-5 w-5 shrink-0 ${iconClassName}`}',
