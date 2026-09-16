@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Enums\OwnerShellSelectionReason;
 use App\Models\CartItem;
 use App\Models\ConversationMessage;
+use App\Models\Employee;
 use App\Models\Notification;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -14,6 +15,7 @@ use App\Services\OwnerShell\CanonicalOwnerShellService;
 use App\Services\ShopModuleAccessService;
 use App\Support\Erp\ErpActorContext;
 use App\Support\OwnerShell\OwnerShellMetadata;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Auth;
@@ -162,6 +164,27 @@ class HandleInertiaRequests extends Middleware
 
         $permissions = $this->sharedPermissions($erpContext, $user);
         $activeModule = $this->activeModule($request, $erpContext);
+        $employeeAttendance = null;
+
+        if ($user instanceof User && $user->isEmployeeAccount()) {
+            $timezone = config('app.shop_timezone', 'Asia/Manila');
+            $today = Carbon::now($timezone)->toDateString();
+            $employee = Employee::query()
+                ->where('shop_owner_id', $user->shop_owner_id)
+                ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
+                ->first();
+
+            $employeeAttendance = [
+                'is_employee' => true,
+                'is_clocked_in' => $employee !== null && $employee->attendanceRecords()
+                    ->where('shop_owner_id', $user->shop_owner_id)
+                    ->whereDate('date', $today)
+                    ->whereNotNull('check_in_time')
+                    ->whereNull('check_out_time')
+                    ->exists(),
+                'date' => $today,
+            ];
+        }
 
         return [
             ...parent::share($request),
@@ -184,6 +207,7 @@ class HandleInertiaRequests extends Middleware
             'activeModule' => $activeModule,
             'navigationMode' => $activeModule === null ? 'picker' : 'module',
             'ownerShell' => $ownerShell,
+            'employeeAttendance' => $employeeAttendance,
 
             // Share session flash data
             'success' => fn() => $request->session()->get('success'),

@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   ownerShell: null as OwnerShellMetadata | null,
   auth: {} as Record<string, unknown>,
   activeModule: null as null | Record<string, unknown>,
+  employeeAttendance: null as null | Record<string, unknown>,
   url: "/shop-owner/home",
 }));
 
@@ -24,7 +25,12 @@ const routeMock = vi.hoisted(() => vi.fn((name: string) => (
 vi.mock("@inertiajs/react", () => ({
   usePage: () => ({
     url: state.url,
-    props: { auth: state.auth, ownerShell: state.ownerShell, activeModule: state.activeModule },
+    props: {
+      auth: state.auth,
+      ownerShell: state.ownerShell,
+      activeModule: state.activeModule,
+      employeeAttendance: state.employeeAttendance,
+    },
   }),
   Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
     <a href={href} {...props}>{children}</a>
@@ -85,6 +91,7 @@ beforeEach(() => {
   state.ownerShell = metadata;
   state.auth = {};
   state.activeModule = null;
+  state.employeeAttendance = null;
   state.url = "/shop-owner/home";
   Object.defineProperty(window, "innerWidth", {
     configurable: true,
@@ -98,6 +105,7 @@ afterEach(() => {
   state.ownerShell = null;
   state.auth = {};
   state.activeModule = null;
+  state.employeeAttendance = null;
   state.url = "/shop-owner/home";
 });
 
@@ -217,6 +225,46 @@ it("does not render owner local tabs for employee ERP pages with the same module
   render(<AppLayoutERP><div>employee ERP page</div></AppLayoutERP>);
 
   expect(screen.queryByRole("navigation", { name: "Customers navigation" })).not.toBeInTheDocument();
+});
+
+it('shows the employee read-only notice until the employee clocks in', () => {
+  state.auth = {
+    erpActor: { type: 'employee', ownerMode: false },
+    user: { shop_owner_id: 7 },
+  };
+  state.url = '/erp/staff/dashboard';
+  state.employeeAttendance = { is_employee: true, is_clocked_in: false };
+
+  render(<AppLayoutERP><div>employee page</div></AppLayoutERP>);
+
+  expect(screen.getByRole('status')).toHaveTextContent('Read-only mode');
+  expect(screen.getByRole('link', { name: 'Go to Time In' })).toHaveAttribute('href', '/erp/time-in');
+});
+
+it('hides the employee read-only notice on Time In', () => {
+  state.auth = {
+    erpActor: { type: 'employee', ownerMode: false },
+    user: { shop_owner_id: 7 },
+  };
+  state.url = '/erp/time-in';
+  state.employeeAttendance = { is_employee: true, is_clocked_in: false };
+
+  render(<AppLayoutERP><div>employee page</div></AppLayoutERP>);
+
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
+});
+
+it('hides the employee read-only notice after clock-in', () => {
+  state.auth = {
+    erpActor: { type: 'employee', ownerMode: false },
+    user: { shop_owner_id: 7 },
+  };
+  state.url = '/erp/staff/dashboard';
+  state.employeeAttendance = { is_employee: true, is_clocked_in: true };
+
+  render(<AppLayoutERP><div>employee page</div></AppLayoutERP>);
+
+  expect(screen.queryByRole('status')).not.toBeInTheDocument();
 });
 
 it("keeps the existing frame when canonical metadata is incomplete", () => {

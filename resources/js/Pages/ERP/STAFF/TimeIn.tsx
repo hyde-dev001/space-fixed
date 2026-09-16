@@ -175,16 +175,16 @@ export const isClockInAllowedAtTime = (now: Date, shopHours: ShopHours | null): 
     const close = extractTimeParts(shopHours.close);
     if (!open || !close) return false;
 
-    const currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
-    const openSeconds = open.hour * 3600 + open.minute * 60 + open.second;
-    const closeSeconds = close.hour * 3600 + close.minute * 60 + close.second;
-    const earliestCheckIn = openSeconds - 30 * 60;
+    const currentMinutes = now.getHours() * 60 + now.getMinutes();
+    const openMinutes = open.hour * 60 + open.minute;
+    const closeMinutes = close.hour * 60 + close.minute;
+    const earliestCheckIn = openMinutes - 30;
 
-    if (closeSeconds < openSeconds) {
-        return currentSeconds >= earliestCheckIn || currentSeconds <= closeSeconds;
+    if (closeMinutes < openMinutes) {
+        return currentMinutes >= earliestCheckIn || currentMinutes <= closeMinutes;
     }
 
-    return currentSeconds >= earliestCheckIn && currentSeconds <= closeSeconds;
+    return currentMinutes >= earliestCheckIn && currentMinutes <= closeMinutes;
 };
 
 const parseAttendanceTimeToDate = (timeValue?: string | null): Date | null => {
@@ -377,6 +377,20 @@ export default function TimeIn() {
             console.error('Error fetching shop hours:', error);
         }
     };
+
+    useEffect(() => {
+        const refreshShopHours = () => {
+            void fetchShopHours();
+        };
+        const intervalId = window.setInterval(refreshShopHours, 60_000);
+
+        window.addEventListener('focus', refreshShopHours);
+
+        return () => {
+            window.clearInterval(intervalId);
+            window.removeEventListener('focus', refreshShopHours);
+        };
+    }, []);
 
     const fetchLatenessStats = async () => {
         try {
