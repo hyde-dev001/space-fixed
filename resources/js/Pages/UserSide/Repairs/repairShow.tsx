@@ -53,7 +53,7 @@ interface RepairPackage {
 }
 
 interface Review {
-  id: number;
+  id: number | string;
   user_name: string;
   rating: number;
   comment: string;
@@ -90,6 +90,61 @@ type CoverageQuote = {
   fee?: number | null;
 };
 
+const normalizeReviewImage = (image: unknown): string => {
+  if (typeof image !== 'string' || !image) return '';
+  if (/^(https?:|data:|blob:|\/)/i.test(image)) return image;
+  return `/storage/${image}`;
+};
+
+const normalizeReview = (review: any, source: 'repair' | 'shop'): Review => {
+  const userName = [review.user?.first_name, review.user?.last_name]
+    .filter(Boolean)
+    .join(' ');
+  const images = source === 'repair' ? review.review_images : review.images;
+
+  return {
+    id: `${source}-${review.id}`,
+    user_name: source === 'repair'
+      ? userName || review.user?.name || 'Anonymous'
+      : review.user_name || 'Anonymous',
+    rating: Number(review.rating) || 0,
+    comment: source === 'repair' ? review.review_text || '' : review.comment || '',
+    images: (Array.isArray(images) ? images : [])
+      .map(normalizeReviewImage)
+      .filter(Boolean),
+    created_at: review.created_at || '',
+    verified: source === 'repair' ? Boolean(review.is_verified) : Boolean(review.verified),
+  };
+};
+
+const calculateReviewStats = (reviewList: Review[]): ReviewStats => {
+  const ratingCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let ratingTotal = 0;
+
+  reviewList.forEach((review) => {
+    const rating = Math.round(Number(review.rating));
+    if (rating >= 1 && rating <= 5) {
+      ratingCounts[rating] += 1;
+      ratingTotal += rating;
+    }
+  });
+
+  const totalReviews = reviewList.length;
+  const ratingDistribution: ReviewStats['rating_distribution'] = {};
+  for (let rating = 1; rating <= 5; rating += 1) {
+    ratingDistribution[rating] = {
+      count: ratingCounts[rating],
+      percentage: totalReviews > 0 ? Math.round((ratingCounts[rating] / totalReviews) * 100) : 0,
+    };
+  }
+
+  return {
+    average_rating: totalReviews > 0 ? Number((ratingTotal / totalReviews).toFixed(1)) : 0,
+    total_reviews: totalReviews,
+    rating_distribution: ratingDistribution,
+  };
+};
+
 const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) => {
   const { auth } = usePage().props as any;
   const isAuthenticated = !!auth?.user;
@@ -120,7 +175,9 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | 'all'>('all');
   const [currentReviewPage, setCurrentReviewPage] = useState(1);
   const reviewsPerPage = 10;
-  const initialAddressId = Number(new URLSearchParams(window.location.search).get('address_id')) || null;
+  const searchParams = new URLSearchParams(window.location.search);
+  const initialAddressId = Number(searchParams.get('address_id')) || null;
+  const reviewOrderId = Number(searchParams.get('review_order_id')) || null;
 
   const handleAddressSelect = useCallback((address: CustomerAddress) => {
     setSelectedAddress(address);
@@ -162,8 +219,11 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
     fetchReviews();
     if (isAuthenticated) {
       checkReviewEligibility();
+    } else {
+      setCanReview(false);
+      setReviewEligibility(null);
     }
-  }, [shop.id, isAuthenticated]);
+  }, [shop.id, isAuthenticated, reviewOrderId]);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -180,41 +240,73 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
   const fetchReviews = async () => {
     try {
-      const response = await fetch(`/api/shops/${shop.id}/reviews`);
-      const data = await response.json();
-      if (data.success) {
-        setReviews(data.reviews || []);
-        setReviewStats(data.statistics || { 
-          average_rating: 0, 
-          total_reviews: 0, 
-          rating_distribution: {} 
-        });
-      }
+      const fetchJson = async (url: string) => {
+        try {
+          const response = await fetch(url);
+          return response.ok ? response.json() : null;
+        } catch {
+          return null;
+        }
+      };
+
+      const [repairData, legacyData] = await Promise.all([
+        fetchJson(`/api/shop-owners/${shop.id}/reviews?per_page=100`),
+        fetchJson(`/api/shops/${shop.id}/reviews`),
+      ]);
+
+      const repairReviewItems = Array.isArray(repairData?.reviews)
+        ? repairData.reviews
+        : repairData?.reviews?.data || [];
+      const repairReviews = repairReviewItems.map((review: any) => normalizeReview(review, 'repair'));
+      const legacyReviews = (Array.isArray(legacyData?.reviews) ? legacyData.reviews : [])
+        .map((review: any) => normalizeReview(review, 'shop'));
+      const mergedReviews = [...repairReviews, ...legacyReviews].sort(
+        (first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime(),
+      );
+
+      setReviews(mergedReviews);
+      setReviewStats(calculateReviewStats(mergedReviews));
     } catch (error) {
       console.error('Failed to fetch reviews:', error);
     }
   };
 
   const checkReviewEligibility = async () => {
+    if (!reviewOrderId) {
+      setCanReview(false);
+      setReviewEligibility({
+        success: true,
+        can_review: false,
+        reason: 'repair_selection_required',
+        message: 'Please open this page from My Repairs to review a specific repair.',
+      });
+      return;
+    }
+
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-  
-      const response = await fetch(`/api/shops/${shop.id}/reviews/check-eligibility`, {
+
+      const response = await fetch(`/api/customer/repairs/${reviewOrderId}/can-review`, {
         credentials: 'include',
         headers: {
           'X-CSRF-TOKEN': csrfToken || '',
           'Accept': 'application/json',
         },
       });
+      if (!response.ok) throw new Error('Review eligibility request failed');
       const data = await response.json();
- 
-      if (data.success) {
-        setCanReview(data.can_review);
-        setReviewEligibility(data);
-      }
+
+      setCanReview(Boolean(data.success && data.can_review));
+      setReviewEligibility(data);
     } catch (error) {
       console.error('Failed to check review eligibility:', error);
+      setCanReview(false);
+      setReviewEligibility({
+        success: false,
+        can_review: false,
+        message: 'Unable to check this repair review right now. Please try again.',
+      });
     }
   };
 
@@ -371,8 +463,13 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
       return;
     }
 
+    if (!reviewOrderId) {
+      alert('Please open this page from My Repairs to review a specific repair');
+      return;
+    }
+
     if (!canReview) {
-      alert(reviewEligibility?.message || 'You are not eligible to review this shop');
+      alert(reviewEligibility?.message || 'You are not eligible to review this repair');
       return;
     }
 
@@ -383,16 +480,16 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
       const formData = new FormData();
       formData.append('rating', userRating.toString());
-      formData.append('comment', newComment);
+      formData.append('review_text', newComment);
 
       // Add images if any
       imageUploadGroups.forEach((group) => {
         if (group.file) {
-          formData.append('images[]', group.file);
+          formData.append('review_images[]', group.file);
         }
       });
 
-      const response = await fetch(`/api/shops/${shop.id}/reviews`, {
+      const response = await fetch(`/api/customer/repairs/${reviewOrderId}/review`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -984,16 +1081,16 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                       <polyline points="22 4 12 14.01 9 11.01"></polyline>
                     </svg>
-                    You are eligible to review this shop
+                    You are eligible to review this repair
                   </p>
                 </div>
               ) : isAuthenticated && reviewEligibility && !canReview ? (
                 <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
                   <p className="text-amber-800">
-                    {reviewEligibility.message || "You can only review shops where you have completed a purchase or repair service"}
-                    {reviewEligibility.reason === 'already_reviewed' && reviewEligibility.existing_review && (
+                    {reviewEligibility.message || "You can only review this repair after pickup"}
+                    {reviewEligibility.review && (
                       <span className="block mt-2 text-sm">
-                        You submitted a review on {new Date(reviewEligibility.existing_review.created_at).toLocaleDateString('en-US', {
+                        You submitted a review on {new Date(reviewEligibility.review.created_at).toLocaleDateString('en-US', {
                           year: 'numeric',
                           month: 'long',
                           day: 'numeric'

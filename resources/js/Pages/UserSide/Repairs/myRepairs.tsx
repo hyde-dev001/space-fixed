@@ -3594,8 +3594,9 @@ const MyRepairs: React.FC = () => {
     try {
       // Find the order to get the shop_id
       const order = orders.find(o => o.id === orderId);
-      
-      if (!order || !order.shop_id) {
+      const shopId = order?.shop_id ?? order?.shop_owner_id;
+
+      if (!order || !shopId) {
         Swal.fire({
           icon: 'error',
           title: 'Error',
@@ -3626,7 +3627,8 @@ const MyRepairs: React.FC = () => {
       }
 
       // Navigate to the shop page where they can leave a review
-      window.location.href = `/repair-shop/${order.shop_id}`;
+      const params = new URLSearchParams({ review_order_id: String(order.id) });
+      window.location.href = `/repair-shop/${shopId}?${params.toString()}`;
     } catch (error) {
       console.error('Error navigating to shop:', error);
       Swal.fire({
