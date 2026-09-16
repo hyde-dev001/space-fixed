@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:public/build/assets/ShopOwnerTwoFactor-qLuTCXtR.js
-import{j as e,s as o}from"./app-mHTqwsme.js";import a from"./EmployeeMfaChallenge-DNYRfy2A.js";import"./vendor-apexcharts-DPaa2SoU.js";/* empty css            */function c({email:r,verifyRoute:s,loginRoute:t}){const i=["userside-auth-page","userside-auth-card","userside-auth-primary"].join(" ");return e.jsx("div",{className:i,children:e.jsx(a,{companyAccount:r??"Shop Owner",verifyRoute:s??o("shop-owner.two-factor.verify"),loginRoute:t??o("login")})})}export{c as default};
-========
-import{j as e,s as o}from"./app-CZCsk_I7.js";import a from"./EmployeeMfaChallenge-DBORxxD1.js";import"./vendor-apexcharts-DPaa2SoU.js";/* empty css            */function c({email:r,verifyRoute:s,loginRoute:t}){const i=["userside-auth-page","userside-auth-card","userside-auth-primary"].join(" ");return e.jsx("div",{className:i,children:e.jsx(a,{companyAccount:r??"Shop Owner",verifyRoute:s??o("shop-owner.two-factor.verify"),loginRoute:t??o("login")})})}export{c as default};
->>>>>>>> 56ce3120b9 (fix: restore adaptive landing navigation contrast):public/build/assets/ShopOwnerTwoFactor-DlSBOrEM.js

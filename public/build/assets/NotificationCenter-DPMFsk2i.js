@@ -1,1 +1,0 @@
-import{N as o}from"./NotificationCenter-DUkxgCvx.js";import"./app-mHTqwsme.js";import"./vendor-apexcharts-DPaa2SoU.js";/* empty css            */import"./useNotifications-BTt7MPyu.js";import"./useQuery-4xwfm2Y9.js";import"./useMutation-znrNjZcD.js";import"./resolveNotificationActionUrl-Dl0Y8JLC.js";import"./XMarkIcon-C6pjG1Mv.js";export{o as default};

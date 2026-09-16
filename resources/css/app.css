@@ -31,18 +31,6 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   animation-play-state: paused;
 }
 
-/* Blend the fixed landing controls against the pixels behind them. */
-.landing-adaptive-ink {
-  color: #ffffff;
-  mix-blend-mode: difference;
-}
-
-@supports not (mix-blend-mode: difference) {
-  .landing-adaptive-ink {
-    color: inherit;
-  }
-}
-
 @keyframes landing-marquee {
   from {
     transform: translate3d(0, 0, 0);
