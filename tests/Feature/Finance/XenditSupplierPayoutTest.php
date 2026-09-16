@@ -113,7 +113,11 @@ class XenditSupplierPayoutTest extends TestCase
                 && $request->header('idempotency-key')[0] === 'xendit-attempt-001'
                 && ($payload['payout_details']['source_amount'] ?? null) === 10000
                 && ($payload['payout_details']['source_currency'] ?? null) === 'PHP'
-                && ($payload['recipient']['relationship'] ?? null) === 'SUPPLIER';
+                && ($payload['recipient']['type'] ?? null) === 'BUSINESS'
+                && ($payload['recipient']['business_name'] ?? null) === 'Supplier Trading'
+                && ($payload['recipient']['relationship'] ?? null) === 'SUPPLIER'
+                && ($payload['recipient']['address']['province_state'] ?? null) === 'Cavite'
+                && ($payload['recipient']['address']['postal_code'] ?? null) === '4117';
         });
 
         $this->assertDatabaseHas('supplier_payment_attempts', [
@@ -123,6 +127,43 @@ class XenditSupplierPayoutTest extends TestCase
             'status' => SupplierPaymentAttempt::STATUS_PROCESSING,
         ]);
         $this->assertDatabaseCount('finance_expense_settlements', 0);
+    }
+
+    public function test_individual_payout_uses_the_immutable_recipient_snapshot(): void
+    {
+        Http::fake([
+            'https://api.xendit.co/v3/payouts' => Http::response([
+                'payout_id' => 'payout-individual',
+                'status' => 'ACCEPTED',
+            ], 202),
+        ]);
+        [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
+        $supplier->paymentProfile()->update([
+            'recipient_type' => SupplierPaymentProfile::RECIPIENT_INDIVIDUAL,
+            'business_name' => null,
+            'given_name' => 'Juanito',
+            'surname' => 'Dimaguiba',
+        ]);
+        $this->connect($shop);
+
+        $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/expenses/{$expense->id}/supplier-payment-attempts",
+            [
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT,
+                'idempotency_key' => 'xendit-attempt-individual',
+            ],
+        )->assertCreated();
+
+        $supplier->paymentProfile()->update(['given_name' => 'Changed']);
+
+        Http::assertSent(function (\Illuminate\Http\Client\Request $request): bool {
+            $recipient = $request->data()['recipient'] ?? [];
+
+            return ($recipient['type'] ?? null) === 'INDIVIDUAL'
+                && ($recipient['given_name'] ?? null) === 'Juanito'
+                && ($recipient['surname'] ?? null) === 'Dimaguiba'
+                && ! array_key_exists('business_name', $recipient);
+        });
     }
 
     public function test_xendit_permission_rejection_is_actionable_instead_of_being_reported_as_a_gateway_error(): void
@@ -155,6 +196,10 @@ class XenditSupplierPayoutTest extends TestCase
         Http::fake([
             'https://api.xendit.co/v3/payouts' => Http::response([
                 'error_code' => 'API_VALIDATION_ERROR',
+                'errors' => [[
+                    'path' => 'recipient.address.postal_code',
+                    'message' => 'Rejected account 1234567890 with secret xnd_test_do_not_expose',
+                ]],
             ], 400),
         ]);
         [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
@@ -170,7 +215,9 @@ class XenditSupplierPayoutTest extends TestCase
 
         $response->assertUnprocessable()
             ->assertJsonPath('code', 'XENDIT_PAYOUT_INVALID')
-            ->assertJsonPath('message', 'Xendit rejected the payout details (API_VALIDATION_ERROR). Check the supplier bank code, account number, and payout destination, then start a new payment attempt.');
+            ->assertJsonPath('message', 'Xendit rejected the payout details (API_VALIDATION_ERROR, field: recipient.address.postal_code). Check the supplier bank code, account number, and payout destination, then start a new payment attempt.');
+        $this->assertStringNotContainsString('1234567890', $response->getContent());
+        $this->assertStringNotContainsString('xnd_test_do_not_expose', $response->getContent());
         $this->assertSame(SupplierPaymentAttempt::STATUS_FAILED, SupplierPaymentAttempt::query()->sole()->status);
         $this->assertDatabaseCount('finance_expense_settlements', 0);
     }
@@ -390,6 +437,13 @@ class XenditSupplierPayoutTest extends TestCase
         SupplierPaymentProfile::create([
             'shop_owner_id' => $shop->id,
             'supplier_id' => $supplier->id,
+            'recipient_type' => SupplierPaymentProfile::RECIPIENT_BUSINESS,
+            'business_name' => 'Supplier Trading',
+            'recipient_country' => 'PH',
+            'recipient_province_state' => 'Cavite',
+            'recipient_city' => 'General Mariano Alvarez',
+            'recipient_street_line_1' => '123 Test Street',
+            'recipient_postal_code' => '4117',
             'destination_type' => SupplierPaymentProfile::DESTINATION_BANK_ACCOUNT,
             'bank_name' => 'Test Bank',
             'bank_code' => 'TBK',

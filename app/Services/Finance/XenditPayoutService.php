@@ -63,7 +63,7 @@ final class XenditPayoutService
             throw new FinanceDomainException('The supplier payment destination is unavailable.', 'INVALID_STATE', 422);
         }
 
-        $payload = $this->payload($attempt, $supplier);
+        $payload = $this->payload($attempt);
 
         try {
             $response = $this->client($secretKey)
@@ -124,14 +124,14 @@ final class XenditPayoutService
     }
 
     /** @return array<string, mixed> */
-    private function payload(SupplierPaymentAttempt $attempt, Supplier $supplier): array
+    private function payload(SupplierPaymentAttempt $attempt): array
     {
         $destination = (array) $attempt->destination_snapshot;
         $destinationType = (string) ($destination['destination_type'] ?? '');
         $accountNumber = $destinationType === 'e_wallet'
             ? trim((string) ($destination['account_identifier'] ?? ''))
             : trim((string) ($destination['account_number'] ?? ''));
-        $accountName = trim((string) ($destination['account_name'] ?? '')) ?: trim((string) $supplier->name);
+        $accountName = trim((string) ($destination['account_name'] ?? ''));
         $routingValue = $destinationType === 'e_wallet'
             ? $this->walletRoutingValue((string) ($destination['wallet_provider'] ?? ''))
             : trim((string) ($destination['bank_code'] ?? ''));
@@ -144,8 +144,8 @@ final class XenditPayoutService
             );
         }
 
-        $country = strtoupper(trim((string) ($supplier->country ?: 'PH')));
-        $country = $country === 'PHILIPPINES' ? 'PH' : $country;
+        $recipientType = strtolower(trim((string) ($destination['recipient_type'] ?? '')));
+        $country = strtoupper(trim((string) ($destination['recipient_country'] ?? '')));
         if ($country !== 'PH') {
             throw new FinanceDomainException(
                 'Phase 1 Xendit supplier payouts support Philippine destinations only.',
@@ -154,20 +154,37 @@ final class XenditPayoutService
             );
         }
 
+        $identity = match ($recipientType) {
+            'business' => ['business_name' => Str::limit(trim((string) ($destination['business_name'] ?? '')), 50, '')],
+            'individual' => [
+                'given_name' => Str::limit(trim((string) ($destination['given_name'] ?? '')), 50, ''),
+                'surname' => Str::limit(trim((string) ($destination['surname'] ?? '')), 50, ''),
+            ],
+            default => [],
+        };
+        if ($identity === [] || collect($identity)->contains('')) {
+            throw new FinanceDomainException(
+                'The supplier payment profile is missing Xendit recipient details.',
+                'XENDIT_DESTINATION_INVALID',
+                422,
+            );
+        }
+
         $purchaseOrder = $attempt->expense?->procurementReceipt?->purchaseOrder;
-        $street = trim((string) ($supplier->address ?? ''));
-        $city = trim((string) ($supplier->city ?: ''));
 
         return [
             'reference_id' => (string) $attempt->internal_reference,
             'recipient' => [
-                'type' => 'BUSINESS',
-                'business_name' => Str::limit($accountName, 50, ''),
+                'type' => strtoupper($recipientType),
+                ...$identity,
                 'relationship' => 'SUPPLIER',
                 'address' => [
                     'country' => 'PH',
-                    'street_line_1' => Str::limit($street !== '' ? $street : $accountName, 255, ''),
-                    'city' => Str::limit($city !== '' ? $city : 'Philippines', 255, ''),
+                    'province_state' => Str::limit(trim((string) ($destination['recipient_province_state'] ?? '')), 255, ''),
+                    'city' => Str::limit(trim((string) ($destination['recipient_city'] ?? '')), 255, ''),
+                    'street_line_1' => Str::limit(trim((string) ($destination['recipient_street_line_1'] ?? '')), 255, ''),
+                    'street_line_2' => Str::limit(trim((string) ($destination['recipient_street_line_2'] ?? '')), 255, ''),
+                    'postal_code' => Str::limit(trim((string) ($destination['recipient_postal_code'] ?? '')), 32, ''),
                 ],
                 'account_details' => [
                     'currency' => 'PHP',
@@ -241,6 +258,7 @@ final class XenditPayoutService
             'attempt_id' => $attemptId,
             'http_status' => $response?->status(),
             'provider_code' => $response ? $this->providerErrorCode($response) : null,
+            'provider_field' => $response ? $this->providerErrorPath($response) : null,
         ]);
     }
 
@@ -265,7 +283,8 @@ final class XenditPayoutService
         }
 
         if ($response->clientError()) {
-            $providerCodeLabel = $providerCode ? " ({$providerCode})" : '';
+            $labels = array_filter([$providerCode, ($path = $this->providerErrorPath($response)) ? "field: {$path}" : null]);
+            $providerCodeLabel = $labels !== [] ? ' (' . implode(', ', $labels) . ')' : '';
 
             return new FinanceDomainException(
                 "Xendit rejected the payout details{$providerCodeLabel}. Check the supplier bank code, account number, and payout destination, then start a new payment attempt.",
@@ -291,6 +310,25 @@ final class XenditPayoutService
         $code = preg_replace('/[^A-Z0-9_.-]/', '_', strtoupper(trim((string) $code)));
 
         return $code !== '' ? Str::limit($code, 100, '') : null;
+    }
+
+    private function providerErrorPath(Response $response): ?string
+    {
+        $errors = $response->json('errors');
+        if (! is_array($errors)) {
+            return null;
+        }
+
+        foreach ($errors as $error) {
+            $path = is_array($error) && is_scalar($error['path'] ?? null)
+                ? trim((string) $error['path'])
+                : '';
+            if (preg_match('/^(?:recipient\.(?:type|business_name|given_name|surname|relationship|address\.(?:country|province_state|city|street_line_1|street_line_2|postal_code)|account_details\.(?:currency|account_country|account_holder_name|account_number|routing_type_1|routing_value_1))|payout_details\.(?:source_currency|source_amount|destination_currency))$/', $path)) {
+                return $path;
+            }
+        }
+
+        return null;
     }
 
     private function verificationFailureMessage(Response $response): string
