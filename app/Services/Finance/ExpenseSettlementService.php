@@ -56,12 +56,15 @@ final class ExpenseSettlementService
             ExpenseSettlement::SOURCE_PAYROLL,
             ExpenseSettlement::SOURCE_LEGACY_MIGRATION,
             ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT,
+            ExpenseSettlement::SOURCE_SUPPLIER_XENDIT_PAYOUT,
         ], true)) {
             throw new FinanceDomainException('Settlement source is not supported.', 'INVALID_STATE', 422);
         }
-        $allowedPaymentMethods = $source === ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT
-            ? SupplierPaymentAttempt::PAYMENT_METHODS
-            : self::PAYMENT_METHODS;
+        $allowedPaymentMethods = match ($source) {
+            ExpenseSettlement::SOURCE_SUPPLIER_MANUAL_PAYMENT => SupplierPaymentAttempt::MANUAL_PAYMENT_METHODS,
+            ExpenseSettlement::SOURCE_SUPPLIER_XENDIT_PAYOUT => [SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT],
+            default => self::PAYMENT_METHODS,
+        };
         if (! in_array($paymentMethod, $allowedPaymentMethods, true)) {
             throw new FinanceDomainException('Payment method is not supported.', 'INVALID_STATE', 422);
         }
@@ -181,7 +184,7 @@ final class ExpenseSettlementService
             : null;
         $idempotencyKey = $this->resolveRequestKey($data['idempotency_key'] ?? null);
 
-        if (! in_array($paymentMethod, SupplierPaymentAttempt::PAYMENT_METHODS, true)) {
+        if (! in_array($paymentMethod, SupplierPaymentAttempt::MANUAL_PAYMENT_METHODS, true)) {
             throw new FinanceDomainException('Payment method is not supported.', 'INVALID_STATE', 422);
         }
         if ($reference === '' || $paidAt === null) {
@@ -364,6 +367,56 @@ final class ExpenseSettlementService
                 'reversal_reason' => $reason,
                 'source' => ExpenseSettlement::SOURCE_MANUAL,
             ]);
+        }, 3);
+    }
+
+    public function reverseXenditPayout(ExpenseSettlement $settlement, ShopOwner $actor, string $reason): ExpenseSettlement
+    {
+        $shopId = (int) $actor->getKey();
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new FinanceDomainException('A reversal reason is required.', 'INVALID_STATE', 422);
+        }
+
+        return DB::transaction(function () use ($settlement, $actor, $shopId, $reason): ExpenseSettlement {
+            $lockedSettlement = ExpenseSettlement::query()
+                ->whereKey($settlement->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $expense = Expense::query()->whereKey($lockedSettlement->expense_id)->lockForUpdate()->firstOrFail();
+
+            if ((int) $lockedSettlement->shop_owner_id !== $shopId
+                || (int) $expense->shop_id !== $shopId) {
+                throw new FinanceDomainException('The settlement is not available in this shop.', 'FORBIDDEN', 403);
+            }
+            if ((string) $lockedSettlement->entry_type !== ExpenseSettlement::ENTRY_SETTLEMENT
+                || (string) $lockedSettlement->source !== ExpenseSettlement::SOURCE_SUPPLIER_XENDIT_PAYOUT) {
+                throw new FinanceDomainException('Only a Xendit supplier payout can be reversed here.', 'INVALID_STATE', 422);
+            }
+
+            $existing = ExpenseSettlement::query()
+                ->where('reverses_settlement_id', $lockedSettlement->id)
+                ->lockForUpdate()
+                ->first();
+            if ($existing) {
+                return $existing->fresh();
+            }
+
+            return ExpenseSettlement::create([
+                'shop_owner_id' => $shopId,
+                'expense_id' => $expense->id,
+                'entry_type' => ExpenseSettlement::ENTRY_REVERSAL,
+                'amount' => $lockedSettlement->amount,
+                'payment_method' => $lockedSettlement->payment_method,
+                'reference' => $lockedSettlement->reference,
+                'paid_at' => now(),
+                'recorded_by_user_id' => null,
+                'idempotency_key' => 'supplier-xendit-reversal:' . $lockedSettlement->id,
+                'reverses_settlement_id' => $lockedSettlement->id,
+                'reversal_reason' => $reason,
+                'source' => ExpenseSettlement::SOURCE_SUPPLIER_XENDIT_REVERSAL,
+                'source_reference' => 'supplier-xendit-reversal:' . $lockedSettlement->id,
+            ])->fresh();
         }, 3);
     }
 

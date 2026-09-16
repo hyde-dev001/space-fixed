@@ -392,6 +392,19 @@ export default function StockRequest() {
 		};
 	};
 
+	const applyUpdatedRequest = (updatedRequest: StockRequestApproval) => {
+		const nextRequests = requests.map((request) => request.id === updatedRequest.id
+			? { ...updatedRequest, sku_code: "" }
+			: request);
+		setRequests(nextRequests);
+		setMetrics({
+			total: nextRequests.length,
+			pending: nextRequests.filter((request) => request.status === "pending").length,
+			accepted: nextRequests.filter((request) => request.status === "accepted").length,
+			rejected: nextRequests.filter((request) => request.status === "rejected").length,
+		});
+	};
+
 	const handleAccept = async (request: StockRequestApproval) => {
 		if (ownerMode) return;
 
@@ -415,14 +428,13 @@ export default function StockRequest() {
 
 		setIsActionProcessing(true);
 		try {
-			await stockRequestApi.approve(request.id);
+			const updatedRequest = await stockRequestApi.approve(request.id);
+			applyUpdatedRequest(updatedRequest);
 			await workflowFeedback.success({
 				title: "Approved",
 				text: "Request approved and ready for purchase request creation.",
 			});
 			setViewingRequest(null);
-			fetchRequests();
-			fetchMetrics();
 		} catch (error: any) {
 			console.error("Failed to accept request:", error);
 			await workflowFeedback.error(error?.response?.data?.message || "Failed to accept request");
@@ -466,7 +478,8 @@ export default function StockRequest() {
 
 		setIsActionProcessing(true);
 		try {
-			await stockRequestApi.reject(request.id, { rejection_reason: result.value });
+			const updatedRequest = await stockRequestApi.reject(request.id, { rejection_reason: result.value });
+			applyUpdatedRequest(updatedRequest);
 			await workflowFeedback.success({
 				title: "Rejected",
 				text: "Request has been rejected.",
@@ -474,8 +487,6 @@ export default function StockRequest() {
 				showConfirmButton: false,
 			});
 			setViewingRequest(null);
-			fetchRequests();
-			fetchMetrics();
 		} catch (error: any) {
 			console.error("Failed to reject request:", error);
 			await workflowFeedback.error(error?.response?.data?.message || "Failed to reject request");

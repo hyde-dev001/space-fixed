@@ -194,6 +194,16 @@ describe("canonical settings sections", () => {
     expect(screen.getByText(/You haven't added your PayMongo secret key yet/)).toHaveClass("text-red-700");
   });
 
+  it("renders Xendit supplier payouts as a separate shop-owned integration", () => {
+    renderSettings("profile");
+
+    expect(screen.getByTestId("xendit-supplier-payouts-card")).toBeInTheDocument();
+    expect(screen.getByText("Xendit - Supplier Payouts")).toBeInTheDocument();
+    expect(screen.getByLabelText("Xendit Secret API Key")).toHaveAttribute("type", "password");
+    expect(screen.getByLabelText("Payout callback token")).toHaveAttribute("type", "password");
+    expect(screen.getByText(/Customer payments continue to use PayMongo/)).toBeInTheDocument();
+  });
+
   it("moves focus and active state when a user selects another section", async () => {
     renderSettings("profile");
 

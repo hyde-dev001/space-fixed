@@ -10,6 +10,7 @@ use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\SupplierAdjustment;
 use App\Models\SupplierPaymentAttempt;
+use App\Models\ShopPaymentIntegration;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Services\NotificationService;
@@ -109,6 +110,10 @@ class ExpenseController extends Controller
             'purchaseOrder.items',
             'items.purchaseOrderItem',
         ])->where('shop_owner_id', $shopId)->whereIn('id', $receiptIds)->get()->keyBy('id');
+        $xenditConfigured = ShopPaymentIntegration::query()
+            ->forSupplierPayouts($shopId)
+            ->where('status', ShopPaymentIntegration::STATUS_CONNECTED)
+            ->exists();
         $receiptItemIds = $receipts->flatMap(fn (PurchaseOrderReceipt $receipt) => $receipt->items->pluck('id'))->values();
         $adjustments = SupplierAdjustment::query()
             ->where('shop_owner_id', $shopId)
@@ -189,6 +194,7 @@ class ExpenseController extends Controller
                     'due_date' => optional($expense->due_date)->toDateString(),
                     'expense_status' => $expense->status,
                     'payment_status' => $this->procurementPaymentStatus($paymentAttempt, $settlementState),
+                    'xendit_configured' => $xenditConfigured,
                     'payment_attempt' => $this->paymentAttemptDetails($paymentAttempt),
                     'payment_timing' => $this->paymentTiming($expense->due_date),
                     'ordered_quantity' => (int) $receiptItems->sum(fn ($item) => (int) ($item->purchaseOrderItem?->ordered_quantity ?? 0)),
@@ -290,6 +296,7 @@ class ExpenseController extends Controller
                     $paymentAttempts->get($expense->id)?->first(),
                     (array) $expense->getAttribute('settlement_state'),
                 ),
+                'xendit_configured' => $xenditConfigured,
                 'payment_attempt' => $this->paymentAttemptDetails($paymentAttempts->get($expense->id)?->first()),
                 'payment_timing' => $this->paymentTiming($expense->due_date),
             ]);
@@ -319,6 +326,7 @@ class ExpenseController extends Controller
         return [
             'id' => (int) $attempt->id,
             'status' => (string) $attempt->status,
+            'provider' => (string) $attempt->provider,
             'amount' => (string) $attempt->amount,
             'currency' => (string) $attempt->currency,
             'payment_method' => $attempt->payment_method,

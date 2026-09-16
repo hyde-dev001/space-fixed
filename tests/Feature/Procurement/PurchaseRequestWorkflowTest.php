@@ -90,26 +90,10 @@ class PurchaseRequestWorkflowTest extends TestCase
             ->assertOk();
 
         $ownerApproved = $purchaseRequest->fresh();
-        $this->assertSame('pending_finance_final', $ownerApproved->status);
+        $this->assertSame('approved', $ownerApproved->status);
         $this->assertSame($this->shopOwner->id, $ownerApproved->approved_by_shop_owner_id);
         $this->assertNull($ownerApproved->approved_by);
-        $this->assertDatabaseHas('notifications', [
-            'user_id' => $this->finance->id,
-            'title' => 'Purchase Request Returned To Finance',
-            'action_url' => "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
-        ]);
-
-        $this->actingAs($this->finance, 'user')
-            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve", [
-                'approval_notes' => 'Funds released.',
-            ])
-            ->assertOk();
-
-        $final = $purchaseRequest->fresh();
-        $this->assertSame('approved', $final->status);
-        $this->assertSame($this->finance->id, $final->approved_by);
-        $this->assertSame($this->finance->id, $final->reviewed_by);
-        $this->assertSame($this->shopOwner->id, $final->approved_by_shop_owner_id);
+        $this->assertNotNull($ownerApproved->approved_date);
         $this->assertDatabaseHas('notifications', [
             'user_id' => $this->requester->id,
             'action_url' => "/erp/procurement/purchase-request?purchase_request={$purchaseRequest->id}",
@@ -140,16 +124,17 @@ class PurchaseRequestWorkflowTest extends TestCase
             ->assertOk();
 
         $afterInitialFinance = $purchaseRequest->fresh();
-        $this->assertSame('pending_finance_final', $afterInitialFinance->status);
+        $this->assertSame('approved', $afterInitialFinance->status);
         $this->assertSame($this->finance->id, $afterInitialFinance->reviewed_by);
+        $this->assertSame($this->finance->id, $afterInitialFinance->approved_by);
+        $this->assertNotNull($afterInitialFinance->approved_date);
         $this->assertDatabaseMissing('notifications', [
             'shop_owner_id' => $this->shopOwner->id,
             'action_url' => "/shop-owner/purchase-request-approval?purchase_request={$purchaseRequest->id}",
         ]);
         $this->assertDatabaseHas('notifications', [
-            'user_id' => $this->finance->id,
-            'title' => 'Purchase Request Ready For Final Release',
-            'action_url' => "/finance?section=purchase-request-approval&purchase_request={$purchaseRequest->id}",
+            'user_id' => $this->requester->id,
+            'title' => 'Purchase Request Approved',
         ]);
 
         $this->actingAs($this->shopOwner, 'shop_owner')
@@ -157,20 +142,40 @@ class PurchaseRequestWorkflowTest extends TestCase
             ->assertForbidden();
 
         $this->actingAs($this->finance)
-            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve", [
-                'approval_notes' => 'Funds released.',
-            ])
-            ->assertOk();
+            ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve")
+            ->assertForbidden();
+    }
 
-        $approved = $purchaseRequest->fresh();
-        $this->assertSame('approved', $approved->status);
-        $this->assertSame($this->finance->id, $approved->reviewed_by);
-        $this->assertSame($this->finance->id, $approved->approved_by);
-        $this->assertNull($approved->approved_by_shop_owner_id);
+    public function test_historical_owner_approved_request_can_still_receive_final_finance_release(): void
+    {
+        $purchaseRequest = $this->pendingRequest('pending_finance_final');
+        $purchaseRequest->update([
+            'requires_owner_approval' => true,
+            'approved_by_shop_owner_id' => $this->shopOwner->id,
+            'shop_owner_approved_at' => now(),
+        ]);
 
         $this->actingAs($this->finance)
             ->postJson("/api/erp/procurement/purchase-requests/{$purchaseRequest->id}/approve")
-            ->assertForbidden();
+            ->assertOk();
+
+        $this->assertSame('approved', $purchaseRequest->fresh()->status);
+    }
+
+    public function test_purchase_request_total_uses_decimal_safe_arithmetic(): void
+    {
+        $purchaseRequest = app(PurchaseRequestService::class)->createPurchaseRequest([
+            'shop_owner_id' => $this->shopOwner->id,
+            'supplier_id' => $this->supplier->id,
+            'product_name' => 'Decimal item',
+            'quantity' => 3,
+            'unit_cost' => '19.99',
+            'priority' => 'medium',
+            'justification' => 'Verify exact cent arithmetic.',
+            'requested_by' => $this->requester->id,
+        ]);
+
+        $this->assertSame('59.97', $purchaseRequest->total_cost);
     }
 
     public function test_shop_owner_purchase_request_queue_excludes_requests_without_owner_approval(): void

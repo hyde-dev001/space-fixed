@@ -17,7 +17,7 @@ class SubmitSupplierPaymentProofRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'payment_method' => ['required', 'string', Rule::in(SupplierPaymentAttempt::PAYMENT_METHODS)],
+            'payment_method' => ['required', 'string', Rule::in(SupplierPaymentAttempt::MANUAL_PAYMENT_METHODS)],
             'amount' => ['required', 'string', 'regex:/^\d+(?:\.\d{1,2})?$/'],
             'external_transaction_reference' => ['required', 'string', 'max:160'],
             'externally_paid_at' => ['required', 'date', 'before_or_equal:now'],

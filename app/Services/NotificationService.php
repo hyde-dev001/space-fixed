@@ -1165,6 +1165,8 @@ class NotificationService
 
     public function notifySupplierIssueReported(int $shopId, array $data): void
     {
+        $actionUrl = '/erp/procurement/purchase-orders?purchase_order=' . (int) ($data['purchase_order_id'] ?? 0)
+            . '&adjustment=' . (int) ($data['adjustment_id'] ?? 0);
         $this->sendToErpRole(
             roleName: 'Procurement Manager',
             shopId: $shopId,
@@ -1172,9 +1174,10 @@ class NotificationService
             title: 'Supplier Issue Reported',
             message: "A supplier issue was reported for PO {$data['po_number']}.",
             data: $data,
-            actionUrl: '/erp/procurement/purchase-orders',
+            actionUrl: $actionUrl,
             priority: 'high',
             requiresAction: true,
+            requiredPermission: 'procurement.manage_suppliers',
         );
     }
 
@@ -1204,27 +1207,47 @@ class NotificationService
             title: 'Supplier Replacement Received',
             message: "A supplier replacement was received for PO {$data['po_number']}.",
             data: $data,
-            actionUrl: '/erp/procurement/purchase-orders',
+            actionUrl: '/erp/procurement/purchase-orders?purchase_order=' . (int) ($data['purchase_order_id'] ?? 0)
+                . '&adjustment=' . (int) ($data['adjustment_id'] ?? 0),
             priority: 'high',
             groupKey: 'supplier-replacement-received:' . $data['adjustment_id'] . ':' . $data['receipt_item_id'],
             requiresAction: true,
+            requiredPermission: 'procurement.manage_suppliers',
         );
     }
 
     public function notifySupplierReplacementInTransit(int $shopId, array $data): void
     {
-        $this->sendToErpRole(
-            roleName: 'Inventory Manager',
-            shopId: $shopId,
-            type: NotificationType::SUPPLIER_REPLACEMENT_REQUESTED,
-            title: 'Supplier Replacement In Transit',
-            message: "A supplier replacement for PO {$data['po_number']} is in transit.",
-            data: $data,
-            actionUrl: '/erp/inventory/supplier-order-monitoring',
-            priority: 'high',
-            groupKey: 'supplier-replacement-in-transit:' . $data['adjustment_id'],
-            requiresAction: true,
-        );
+        $groupKey = 'supplier-replacement-in-transit:' . (int) ($data['adjustment_id'] ?? 0);
+        $recipients = User::query()
+            ->permission('view-inventory')
+            ->permission('procurement.receive_purchase_orders')
+            ->where('shop_owner_id', $shopId)
+            ->where('status', 'active')
+            ->get();
+
+        foreach ($recipients as $recipient) {
+            if (Notification::query()
+                ->forUser((int) $recipient->id)
+                ->byGroup($groupKey)
+                ->exists()) {
+                continue;
+            }
+
+            $this->sendToUser(
+                userId: (int) $recipient->id,
+                type: NotificationType::SUPPLIER_REPLACEMENT_REQUESTED,
+                title: 'Supplier Replacement In Transit',
+                message: "A supplier replacement for PO {$data['po_number']} is in transit.",
+                data: $data,
+                actionUrl: '/erp/inventory/supplier-order-monitoring?purchase_order=' . (int) ($data['purchase_order_id'] ?? 0)
+                    . '&adjustment=' . (int) ($data['adjustment_id'] ?? 0),
+                shopId: $shopId,
+                priority: 'high',
+                groupKey: $groupKey,
+                requiresAction: true,
+            );
+        }
     }
 
     public function notifySupplierAdjustmentResolved(int $shopId, array $data): void
@@ -1236,9 +1259,11 @@ class NotificationService
             title: 'Supplier Adjustment Resolved',
             message: "The supplier adjustment for PO {$data['po_number']} is resolved.",
             data: $data,
-            actionUrl: '/erp/inventory/supplier-order-monitoring',
+            actionUrl: '/erp/inventory/supplier-order-monitoring?purchase_order=' . (int) ($data['purchase_order_id'] ?? 0)
+                . '&adjustment=' . (int) ($data['adjustment_id'] ?? 0),
             priority: 'medium',
             groupKey: 'supplier-adjustment-resolved:' . $data['adjustment_id'],
+            requiredPermission: 'procurement.receive_purchase_orders',
         );
     }
 

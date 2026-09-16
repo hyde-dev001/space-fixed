@@ -567,12 +567,16 @@ const Expense: React.FC = () => {
     const details = expense.procurement_details;
     const paymentStatus = details?.payment_status || "unpaid";
     const attemptStatus = details?.payment_attempt?.status;
+    const existingAttempt = details?.payment_attempt;
+    const isXenditAttempt = existingAttempt?.provider === "xendit" || existingAttempt?.payment_method === "xendit";
+    const hasSupplierPayoutAccess = existingAttempt ? !isXenditAttempt || details?.xendit_configured === true : details?.xendit_configured === true;
 
     return !ownerMode
       && expense.status === "posted"
       && details?.payment_profile?.status === "verified"
       && paymentStatus !== "paid"
-      && !["initiating", "awaiting_verification"].includes(attemptStatus || paymentStatus);
+      && hasSupplierPayoutAccess
+      && !["initiating", "awaiting_verification", "processing", "pending_compliance"].includes(attemptStatus || paymentStatus);
   };
 
   const isCreatedByCurrentActor = (expense: Expense): boolean => {
@@ -587,6 +591,10 @@ const Expense: React.FC = () => {
     if (paymentStatus === "paid") return "Paid";
     if (paymentStatus === "awaiting_verification") return "Awaiting Shop Owner Verification";
     if (paymentStatus === "initiating") return "Payment Initiated";
+    if (paymentStatus === "processing") return "Xendit Payout Processing";
+    if (paymentStatus === "pending_compliance") return "Xendit Compliance Review";
+    if (paymentStatus === "failed") return "Xendit Payout Failed";
+    if (paymentStatus === "reversed") return "Xendit Payout Reversed";
     if (paymentStatus === "rejected") return "Payment Rejected";
     if (paymentStatus === "cancelled") return "Payment Cancelled";
     if (expense.status === "submitted") return "Submitted";

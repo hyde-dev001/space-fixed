@@ -90,7 +90,9 @@ export default function SupplierPaymentDialog({
 		return () => window.removeEventListener("keydown", handleKeyDown);
 	}, [selectedProof]);
 
-	const terminalAttempt = attempt?.status === "rejected" || attempt?.status === "cancelled";
+	const isXenditAttempt = attempt?.provider === "xendit" || attempt?.payment_method === "xendit";
+	const isXenditFlow = mode === "finance" && (isXenditAttempt || (!attempt && details.xendit_configured === true));
+	const terminalAttempt = ["failed", "rejected", "reversed", "cancelled"].includes(attempt?.status || "");
 	const attemptApiBase = mode === "owner"
 		? "/api/shop-owner/finance/supplier-payment-attempts"
 		: "/api/finance/supplier-payment-attempts";
@@ -106,7 +108,7 @@ export default function SupplierPaymentDialog({
 		: destination?.masked_account_identifier || destination?.masked_account_number || "—";
 	const proofMedia = attempt?.proof_media ?? [];
 
-	const title = mode === "owner" ? "Review Supplier Payment" : "Pay Supplier by Manual Transfer";
+	const title = mode === "owner" ? "Review Supplier Payment" : isXenditFlow ? "Pay Supplier via Xendit" : "Pay Supplier by Manual Transfer";
 	const statusLabel = useMemo(() => {
 		if (!attempt) return null;
 		return attempt.status.replaceAll("_", " ").toUpperCase();
@@ -147,19 +149,34 @@ export default function SupplierPaymentDialog({
 
 	const startAttempt = async (event: FormEvent) => {
 		event.preventDefault();
+		if (isXenditFlow) {
+			const confirmation = await workflowFeedback.confirm({
+				title: "Send supplier payout via Xendit?",
+				text: `${formatCurrency(payableAmount)} will be sent from this shop's connected Xendit account. The expense is recorded as paid only after Xendit's webhook confirms success.`,
+				confirmButtonText: "Pay Supplier",
+				cancelButtonText: "Review details",
+			});
+			if (!confirmation.isConfirmed) return;
+		}
 		setBusy(true);
 		setError(null);
 		try {
 			const idempotencyKey = initiationKey.current ?? requestKey();
 			initiationKey.current = idempotencyKey;
 			const response = await api.post(`/api/finance/expenses/${expenseId}/supplier-payment-attempts`, {
-				payment_method: paymentMethod,
+				payment_method: isXenditFlow ? "xendit" : paymentMethod,
 				idempotency_key: idempotencyKey,
 			});
 			if (!response.ok) throw new Error(response.error);
 			initiationKey.current = null;
 			setAttempt(response.data as SupplierPaymentAttemptSummary);
 			await onChanged?.();
+			if (isXenditFlow) {
+				await workflowFeedback.success({
+					title: "Supplier payout submitted",
+					text: "Xendit is processing the payout. The expense will be marked paid after webhook confirmation.",
+				});
+			}
 		} catch (caught) {
 			handleError(caught instanceof Error ? caught.message : undefined);
 		} finally {
@@ -196,6 +213,10 @@ export default function SupplierPaymentDialog({
 			if (!response.ok) throw new Error(response.error);
 			setAttempt(response.data as SupplierPaymentAttemptSummary);
 			await onChanged?.();
+			await workflowFeedback.success({
+				title: "Payment submitted",
+				text: "Waiting for Shop Owner verification.",
+			});
 		} catch (caught) {
 			handleError(caught instanceof Error ? caught.message : undefined);
 		} finally {
@@ -231,6 +252,10 @@ export default function SupplierPaymentDialog({
 			if (!response.ok) throw new Error(response.error);
 			setAttempt(response.data as SupplierPaymentAttemptSummary);
 			await onChanged?.();
+			await workflowFeedback.success({
+				title: "Payment confirmed",
+				text: "Finance can now send the supplier payment receipt.",
+			});
 		} catch (caught) {
 			handleError(caught instanceof Error ? caught.message : undefined);
 		} finally {
@@ -264,8 +289,15 @@ export default function SupplierPaymentDialog({
 		try {
 			const response = await api.post(`/api/finance/supplier-payment-attempts/${attempt.id}/send-receipt`, {});
 			if (!response.ok) throw new Error(response.error);
-			setAttempt(response.data as SupplierPaymentAttemptSummary);
+			const updatedAttempt = response.data as SupplierPaymentAttemptSummary;
+			setAttempt(updatedAttempt);
 			await onChanged?.();
+			if (updatedAttempt.supplier_email_status === "dispatched") {
+				await workflowFeedback.success({
+					title: "Receipt sent",
+					text: "The supplier payment receipt was dispatched by the mail server.",
+				});
+			}
 		} catch (caught) {
 			handleError(caught instanceof Error ? caught.message : undefined);
 		} finally {
@@ -299,7 +331,7 @@ export default function SupplierPaymentDialog({
 			<div className="my-auto flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
 				<div className="flex shrink-0 items-start justify-between gap-4 px-6 pb-2 pt-4">
 					<div>
-						<p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Manual supplier payment</p>
+						<p className="text-xs font-semibold uppercase tracking-wide text-gray-500">{mode === "owner" ? "Supplier payment review" : isXenditFlow ? "Xendit supplier payout" : "Manual supplier payment"}</p>
 						<h2 id="supplier-payment-dialog-title" className="mt-1 text-xl font-semibold text-gray-900 dark:text-white">{title}</h2>
 					</div>
 					<button type="button" aria-label="Close supplier payment dialog" onClick={onClose} className="min-h-11 min-w-11 rounded-lg text-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">×</button>
@@ -320,18 +352,25 @@ export default function SupplierPaymentDialog({
 				{mode === "finance" && (!attempt || terminalAttempt) && (
 					<form className="mt-4 space-y-3" onSubmit={startAttempt}>
 						{terminalAttempt && <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">Previous attempt {attempt?.status} {attempt?.rejection_reason || attempt?.cancellation_reason ? `: ${attempt.rejection_reason || attempt.cancellation_reason}` : ""}. Start a new attempt.</p>}
-						<div>
-							<label htmlFor="supplier-payment-method" className="mb-1 block text-sm font-medium">Payment method</label>
-							<select id="supplier-payment-method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as SupplierPaymentMethod)} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 dark:border-gray-700 dark:bg-gray-800">
-								<option value="manual_bank_transfer">Manual bank transfer</option>
-								<option value="manual_e_wallet">Manual e-wallet</option>
-							</select>
-						</div>
-						<button type="submit" disabled={busy} className="min-h-11 w-full rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? "Starting…" : "Start Payment"}</button>
+						{isXenditFlow ? (
+							<div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+								<p className="font-semibold">Pay the full outstanding amount through this shop&apos;s Xendit account.</p>
+								<p className="mt-1">Amount: <strong>{formatCurrency(payableAmount)}</strong>. Finance cannot change the amount or choose another shop account.</p>
+							</div>
+						) : (
+							<div>
+								<label htmlFor="supplier-payment-method" className="mb-1 block text-sm font-medium">Payment method</label>
+								<select id="supplier-payment-method" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as SupplierPaymentMethod)} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 dark:border-gray-700 dark:bg-gray-800">
+									<option value="manual_bank_transfer">Manual bank transfer</option>
+									<option value="manual_e_wallet">Manual e-wallet</option>
+								</select>
+							</div>
+						)}
+						<button type="submit" disabled={busy} className="min-h-11 w-full rounded-lg bg-blue-600 px-4 py-2 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? "Starting…" : isXenditFlow ? "Pay Supplier via Xendit" : "Start Payment"}</button>
 					</form>
 				)}
 
-				{mode === "finance" && attempt?.status === "initiating" && (
+				{mode === "finance" && attempt?.status === "initiating" && !isXenditAttempt && (
 					<form className="mt-4 space-y-3" onSubmit={submitProof}>
 						<p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-800">Perform the real transfer in your bank or e-wallet app, then submit the exact amount and proof below.</p>
 						<div className="grid gap-4 sm:grid-cols-2">
@@ -352,9 +391,16 @@ export default function SupplierPaymentDialog({
 
 		{mode === "finance" && attempt?.status === "awaiting_verification" && (
 			<p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm font-semibold uppercase text-amber-800">Awaiting Shop Owner Verification</p>
-		)}
+				)}
 
-		{["awaiting_verification", "succeeded"].includes(attempt?.status || "") && (
+				{isXenditAttempt && attempt && ["processing", "pending_compliance"].includes(attempt.status) && (
+					<div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900" role="status" aria-live="polite">
+						<p className="font-semibold">{attempt.status === "pending_compliance" ? "Xendit payout pending compliance review" : "Xendit payout processing"}</p>
+						<p className="mt-1">The expense will be marked paid only after Xendit confirms the payout. Do not submit another payout.</p>
+					</div>
+				)}
+
+		{!isXenditAttempt && ["awaiting_verification", "succeeded"].includes(attempt?.status || "") && (
 			<div className="mt-4 space-y-2">
 				<p className="text-sm font-semibold">Payment proof</p>
 				{proofMedia.length === 0 ? <p className="text-sm text-rose-700">No proof available.</p> : proofMedia.map((media) => {

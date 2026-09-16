@@ -46,6 +46,7 @@ class SupplierRefundTest extends TestCase
     public function test_supplier_proof_moves_a_paid_post_payment_adjustment_to_awaiting_verification_and_requires_distinct_finance_proof(): void
     {
         $context = $this->refundContext();
+        $this->chooseRefundAndWaiveReturn($context);
         $this->actingAs($context['procurement'], 'user')->post(
             "/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/supplier-refund-proof",
             [
@@ -194,6 +195,52 @@ class SupplierRefundTest extends TestCase
         $this->assertDatabaseCount('finance_expense_settlements', 1);
     }
 
+    public function test_post_payment_refund_requires_resolution_and_return_decisions_and_can_be_declined(): void
+    {
+        $context = $this->refundContext();
+
+        $this->actingAs($context['procurement'], 'user')->post(
+            "/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/supplier-refund-proof",
+            [
+                'expected_refund_amount' => '100.00',
+                'supplier_refund_proof' => $this->proof('premature-proof.pdf'),
+            ],
+            ['Accept' => 'application/json'],
+        )->assertUnprocessable();
+
+        $this->actingAs($context['procurement'], 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/resolution", ['resolution' => 'refund'])
+            ->assertOk()
+            ->assertJsonPath('data.resolution', SupplierAdjustment::RESOLUTION_REFUND);
+
+        $this->actingAs($context['procurement'], 'user')->post(
+            "/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/supplier-refund-proof",
+            [
+                'expected_refund_amount' => '100.00',
+                'supplier_refund_proof' => $this->proof('no-return-decision.pdf'),
+            ],
+            ['Accept' => 'application/json'],
+        )->assertUnprocessable();
+
+        $this->actingAs($context['procurement'], 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/return", ['status' => 'waived'])
+            ->assertOk();
+
+        $this->actingAs($context['procurement'], 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/refund/declined", [
+                'decline_reason' => 'Supplier disputes the defect.',
+                'supplier_reference' => 'DECLINE-100',
+            ])
+            ->assertOk()
+            ->assertJsonPath('data.resolution', null)
+            ->assertJsonPath('data.decline_reason', 'Supplier disputes the defect.');
+
+        $this->actingAs($context['procurement'], 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/resolution", ['resolution' => 'replacement'])
+            ->assertOk()
+            ->assertJsonPath('data.resolution', SupplierAdjustment::RESOLUTION_REPLACEMENT);
+    }
+
     public function test_refund_proof_download_is_private_and_tenant_protected(): void
     {
         $context = $this->refundContext();
@@ -332,6 +379,7 @@ class SupplierRefundTest extends TestCase
 
     private function submitSupplierProof(array $context): void
     {
+        $this->chooseRefundAndWaiveReturn($context);
         $this->actingAs($context['procurement'], 'user')->post(
             "/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/supplier-refund-proof",
             [
@@ -343,6 +391,16 @@ class SupplierRefundTest extends TestCase
             ],
             ['Accept' => 'application/json'],
         )->assertOk();
+    }
+
+    private function chooseRefundAndWaiveReturn(array $context): void
+    {
+        $this->actingAs($context['procurement'], 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/resolution", ['resolution' => 'refund'])
+            ->assertOk();
+        $this->actingAs($context['procurement'], 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/return", ['status' => 'waived'])
+            ->assertOk();
     }
 
     private function confirmRefund(array $context, string $amount, string $reference, string $key)

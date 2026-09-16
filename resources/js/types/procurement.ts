@@ -42,15 +42,16 @@ export interface UpsertSupplierPaymentProfilePayload {
     account_identifier?: string;
 }
 
-export type SupplierPaymentMethod = 'manual_bank_transfer' | 'manual_e_wallet';
+export type SupplierPaymentMethod = 'manual_bank_transfer' | 'manual_e_wallet' | 'xendit';
 
 export interface SupplierPaymentAttemptSummary {
     id: number;
-    status: 'initiating' | 'awaiting_verification' | 'succeeded' | 'rejected' | 'cancelled' | string;
+    status: 'initiating' | 'awaiting_verification' | 'processing' | 'pending_compliance' | 'succeeded' | 'failed' | 'rejected' | 'reversed' | 'cancelled' | string;
     payment_status?: string;
     amount: number | string;
     currency?: string;
     payment_method: SupplierPaymentMethod | string;
+    provider?: string | null;
     internal_reference?: string;
     external_transaction_reference?: string | null;
     masked_destination?: Pick<SupplierPaymentProfile, 'wallet_provider' | 'bank_name' | 'bank_code' | 'account_name' | 'masked_account_number' | 'masked_account_identifier'> & {
@@ -93,6 +94,17 @@ export interface SupplierAdjustment {
     reason_category: SupplierAdjustmentReasonCategory | string;
     inventory_notes: string;
     status: string;
+    status_label?: string;
+    issue_stage_label?: string;
+    resolution_label?: string | null;
+    replacement_status_label?: string | null;
+    return_status_label?: string | null;
+    current_owner?: 'procurement' | 'inventory' | 'finance' | null;
+    current_owner_label?: string;
+    next_action?: string;
+    initially_accepted_quantity?: number;
+    replacement_accepted_quantity?: number;
+    still_unresolved_quantity?: number;
     resolution?: 'replacement' | 'refund' | string | null;
     replacement_status?: 'requested' | 'sent' | 'accepted_by_supplier' | 'in_transit' | 'received' | 'declined' | string | null;
     return_status?: 'required' | 'released' | 'received_by_supplier' | 'waived' | string | null;
@@ -107,9 +119,10 @@ export interface SupplierAdjustment {
     supplier_reported_refund_date?: string | null;
     reported_at?: string | null;
     resolved_at?: string | null;
+    updated_at?: string | null;
     reported_by?: { id: number; name: string } | null;
     purchase_order?: { id: number | null; number: string | null; status: string | null; supplier?: { id: number; name: string } | null };
-    item?: { id: number; product_name: string } | null;
+    item?: { id: number; product_name: string; requested_size?: string | null; requested_color?: string | null } | null;
     affected_quantity?: number;
     receipt?: { id: number | null; status: string | null; reference?: string | null };
     receipt_item_id?: number | null;
@@ -204,8 +217,39 @@ export interface PurchaseOrder {
     days_since_delivery?: number;
     can_complete?: boolean;
     completion_blockers?: string[];
+    ordered_quantity?: number;
+    accounted_quantity?: number;
+    initial_accepted_quantity?: number;
+    replacement_accepted_quantity?: number;
+    short_fulfillment_quantity?: number;
+    still_unresolved_quantity?: number;
+    final_payable_quantity?: number;
+    can_finalize?: boolean;
+    finalization_blockers?: string[];
+    receiving_items?: Array<{
+        purchase_order_item_id: number;
+        ordered_quantity: number;
+        accounted_quantity: number;
+        initial_accepted_quantity: number;
+        defective_quantity: number;
+        replacement_accepted_quantity: number;
+        short_fulfillment_quantity: number;
+        still_unresolved_quantity: number;
+        final_payable_quantity: number;
+    }>;
+    post_payment_issue_items?: PostPaymentIssueItem[];
     created_at: string;
     updated_at: string;
+}
+
+export interface PostPaymentIssueItem {
+    receipt_id: number;
+    receipt_reference: string;
+    receipt_item_id: number;
+    purchase_order_item_id: number;
+    product_name: string;
+    accepted_quantity: number;
+    remaining_quantity: number;
 }
 
 export interface PurchaseOrderItem {
@@ -274,6 +318,7 @@ export interface ProcurementExpenseDetails {
     due_date?: string | null;
     expense_status?: string | null;
     payment_status?: 'unpaid' | 'partially_paid' | 'paid' | string | null;
+    xendit_configured?: boolean;
     payment_timing?: 'Overdue' | 'Due Today' | 'Due Soon' | 'Not Due' | string | null;
     payment_profile?: SupplierPaymentProfile | null;
     payment_attempt?: SupplierPaymentAttemptSummary | null;

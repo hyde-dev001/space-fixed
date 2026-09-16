@@ -69,6 +69,8 @@ Route::middleware([
         Route::post('/{adjustmentId}/replacement/{action}', [SupplierAdjustmentController::class, 'replacementAction'])
             ->whereNumber('adjustmentId')->whereIn('action', ['sent', 'accepted', 'declined', 'in-transit'])
             ->name('procurement.supplier-adjustments.replacement-action');
+        Route::post('/{adjustmentId}/refund/declined', [SupplierAdjustmentController::class, 'refundDeclined'])
+            ->whereNumber('adjustmentId')->name('procurement.supplier-adjustments.refund-declined');
         Route::post('/{adjustmentId}/short-fulfillment/close', [SupplierAdjustmentController::class, 'closeShortFulfillment'])
             ->whereNumber('adjustmentId')->name('procurement.supplier-adjustments.short-fulfillment');
         Route::post('/{adjustmentId}/return', [SupplierAdjustmentController::class, 'returnAction'])

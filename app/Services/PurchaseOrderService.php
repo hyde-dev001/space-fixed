@@ -7,6 +7,7 @@ use App\Models\Finance\ExpenseSettlement;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseOrderItem;
 use App\Models\PurchaseOrderReceipt;
+use App\Models\PurchaseOrderReceiptItem;
 use App\Models\PurchaseRequest;
 use App\Models\ProcurementSettings;
 use App\Models\Supplier;
@@ -319,18 +320,39 @@ class PurchaseOrderService
         if ($lock) {
             $receiptQuery->lockForUpdate();
         }
-        $postedReceipts = $receiptQuery->get(['id']);
+        $postedReceipts = $receiptQuery->get();
+        $finalReceipts = $postedReceipts
+            ->filter(fn (PurchaseOrderReceipt $receipt): bool => $receipt->isFinal())
+            ->values();
 
-        if ($postedReceipts->isEmpty()) {
-            $blockers[] = 'A posted receipt is required before completion.';
+        if ($finalReceipts->isEmpty()) {
+            $blockers[] = 'A posted final receipt is required before completion.';
         }
 
-        $items = $purchaseOrder->items()->get();
-        if ($items->isEmpty() || $items->contains(fn (PurchaseOrderItem $item): bool => $item->remainingQuantity() > 0)) {
-            $blockers[] = 'All purchase-order items must be fully received before completion.';
+        $itemsQuery = $purchaseOrder->items()->orderBy('id');
+        if ($lock) {
+            $itemsQuery->lockForUpdate();
+        }
+        $items = $itemsQuery->get()->keyBy('id');
+
+        $receiptIds = $finalReceipts->pluck('id');
+        $receiptItemsQuery = PurchaseOrderReceiptItem::query()
+            ->whereIn('purchase_order_receipt_id', $receiptIds)
+            ->orderBy('id');
+        if ($lock) {
+            $receiptItemsQuery->lockForUpdate();
+        }
+        $receiptItems = $receiptItemsQuery->get();
+        $initialAccountedByItem = $receiptItems
+            ->whereNull('replacement_for_adjustment_id')
+            ->groupBy('purchase_order_item_id')
+            ->map(fn ($lines): int => (int) $lines->sum('received_quantity'));
+        if ($items->isEmpty() || $items->contains(
+            fn (PurchaseOrderItem $item): bool => ($initialAccountedByItem[(int) $item->id] ?? 0) !== (int) $item->ordered_quantity
+        )) {
+            $blockers[] = 'Every purchase-order item must be fully accounted for by the final receipt.';
         }
 
-        $receiptIds = $postedReceipts->pluck('id');
         $expenseQuery = Expense::query()->whereIn('procurement_receipt_id', $receiptIds);
         if ($lock) {
             $expenseQuery->lockForUpdate();
@@ -338,8 +360,15 @@ class PurchaseOrderService
         $expenses = $expenseQuery->get();
 
         $expensesByReceipt = $expenses->groupBy(fn (Expense $expense): int => (int) $expense->procurement_receipt_id);
-        foreach ($postedReceipts as $receipt) {
-            if (!$expensesByReceipt->has((int) $receipt->id)) {
+        foreach ($finalReceipts as $receipt) {
+            $payableCents = $receiptItems
+                ->where('purchase_order_receipt_id', $receipt->id)
+                ->sum(function (PurchaseOrderReceiptItem $receiptItem) use ($items): int {
+                    $orderItem = $items->get((int) $receiptItem->purchase_order_item_id);
+
+                    return (int) $receiptItem->accepted_quantity * $this->moneyCents($orderItem?->unit_cost ?? '0.00');
+                });
+            if ($payableCents > 0 && !$expensesByReceipt->has((int) $receipt->id)) {
                 $blockers[] = 'A posted receipt expense is required before completion.';
                 break;
             }

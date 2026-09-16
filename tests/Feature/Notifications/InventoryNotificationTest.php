@@ -66,6 +66,48 @@ final class InventoryNotificationTest extends TestCase
         $this->assertSame(1, DatabaseNotification::query()->where('group_key', 'purchase-order:17:in-transit')->count());
     }
 
+    public function test_supplier_replacement_in_transit_notifies_inventory_receivers_even_when_role_label_differs(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $otherShop = ShopOwner::factory()->create();
+        $inventoryRole = Role::findOrCreate('Inventory', 'user');
+        $inventoryRole->syncPermissions([
+            Permission::findOrCreate('view-inventory', 'user'),
+            Permission::findOrCreate('procurement.receive_purchase_orders', 'user'),
+        ]);
+
+        $inventoryReceiver = User::factory()->for($shop)->create(['status' => 'active']);
+        $inventoryReceiver->assignRole($inventoryRole);
+        $inactiveReceiver = User::factory()->for($shop)->create(['status' => 'inactive']);
+        $inactiveReceiver->assignRole($inventoryRole);
+        $otherShopReceiver = User::factory()->for($otherShop)->create(['status' => 'active']);
+        $otherShopReceiver->assignRole($inventoryRole);
+
+        $payload = [
+            'adjustment_id' => 41,
+            'purchase_order_id' => 17,
+            'po_number' => 'PO-2026-017',
+            'status' => 'replacement_in_transit',
+        ];
+
+        app(NotificationService::class)->notifySupplierReplacementInTransit($shop->id, $payload);
+        app(NotificationService::class)->notifySupplierReplacementInTransit($shop->id, $payload);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $inventoryReceiver->id,
+            'title' => 'Supplier Replacement In Transit',
+            'action_url' => '/erp/inventory/supplier-order-monitoring?purchase_order=17&adjustment=41',
+            'group_key' => 'supplier-replacement-in-transit:41',
+        ]);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $inactiveReceiver->id]);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $otherShopReceiver->id]);
+        $this->assertSame(1, DatabaseNotification::query()->where('group_key', 'supplier-replacement-in-transit:41')->count());
+        $this->actingAs($inventoryReceiver, 'user')
+            ->getJson('/api/hr/notifications/recent?limit=10')
+            ->assertOk()
+            ->assertJsonFragment(['title' => 'Supplier Replacement In Transit']);
+    }
+
     public function test_variant_alert_notifications_are_queued_and_only_reach_same_shop_inventory_viewers(): void
     {
         Notification::fake();

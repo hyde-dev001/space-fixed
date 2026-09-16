@@ -7,6 +7,7 @@ use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
 use App\Models\PurchaseOrderReceipt;
 use App\Models\ShopOwner;
+use App\Models\ShopPaymentIntegration;
 use App\Models\Supplier;
 use App\Models\SupplierPaymentAttempt;
 use App\Models\SupplierPaymentProfile;
@@ -22,7 +23,10 @@ use Throwable;
 
 final class SupplierPaymentService
 {
-    public function __construct(private readonly ExpenseSettlementService $settlementService) {}
+    public function __construct(
+        private readonly ExpenseSettlementService $settlementService,
+        private readonly XenditPayoutService $xenditPayoutService,
+    ) {}
 
     /** @return array{attempt: SupplierPaymentAttempt, replayed: bool} */
     public function initiate(Expense $expense, User $actor, string $paymentMethod, string $idempotencyKey): array
@@ -34,13 +38,15 @@ final class SupplierPaymentService
         if ($shopId < 1) {
             throw new FinanceDomainException('A Finance shop context is required.', 'TENANT_CONTEXT_REQUIRED', 403);
         }
-        if (! in_array($paymentMethod, SupplierPaymentAttempt::PAYMENT_METHODS, true)) {
-            throw new FinanceDomainException('Payment method is not supported.', 'INVALID_STATE', 422);
-        }
         if ($idempotencyKey === '') {
             throw new FinanceDomainException('An idempotency key is required.', 'INVALID_STATE', 422);
         }
-
+        if ($paymentMethod === SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT) {
+            return $this->initiateXendit($expense, $actor, $idempotencyKey);
+        }
+        if (! in_array($paymentMethod, SupplierPaymentAttempt::MANUAL_PAYMENT_METHODS, true)) {
+            throw new FinanceDomainException('Payment method is not supported.', 'INVALID_STATE', 422);
+        }
         return DB::transaction(function () use ($expense, $actor, $shopId, $paymentMethod, $idempotencyKey): array {
             $lockedExpense = Expense::query()->whereKey($expense->getKey())->lockForUpdate()->firstOrFail();
             $this->assertExpenseBelongsToShop($lockedExpense, $shopId);
@@ -117,6 +123,400 @@ final class SupplierPaymentService
 
             return ['attempt' => $attempt->fresh(), 'replayed' => false];
         }, 3);
+    }
+
+    /** @return array{attempt: SupplierPaymentAttempt, replayed: bool} */
+    private function initiateXendit(Expense $expense, User $actor, string $idempotencyKey): array
+    {
+        $shopId = (int) ($actor->shop_owner_id ?? 0);
+        $context = DB::transaction(function () use ($expense, $actor, $shopId, $idempotencyKey): array {
+            $lockedExpense = Expense::query()->whereKey($expense->getKey())->lockForUpdate()->firstOrFail();
+            $this->assertExpenseBelongsToShop($lockedExpense, $shopId);
+
+            $receipt = $this->lockedReceiptForExpense($lockedExpense, $shopId);
+            $purchaseOrder = $receipt->purchaseOrder()->lockForUpdate()->firstOrFail();
+            $supplier = Supplier::query()->whereKey($purchaseOrder->supplier_id)->lockForUpdate()->firstOrFail();
+            $profile = SupplierPaymentProfile::query()
+                ->where('shop_owner_id', $shopId)
+                ->where('supplier_id', $supplier->id)
+                ->lockForUpdate()
+                ->first();
+            $amount = $this->outstandingAmount($lockedExpense);
+            $existing = SupplierPaymentAttempt::query()
+                ->where('shop_owner_id', $shopId)
+                ->where('idempotency_key', $idempotencyKey)
+                ->lockForUpdate()
+                ->first();
+
+            if ($existing) {
+                if ((int) $existing->expense_id !== (int) $lockedExpense->id
+                    || (string) $existing->payment_method !== SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT
+                    || $this->toCents($existing->amount) !== $this->toCents($amount)
+                    || (int) $existing->supplier_payment_profile_id !== (int) ($profile?->id ?? 0)) {
+                    throw new FinanceDomainException(
+                        'The payment request key was already used with different payment details.',
+                        'DUPLICATE_SUBMISSION',
+                        409,
+                    );
+                }
+
+                return ['attempt' => $existing->fresh(), 'integration' => null, 'replayed' => true];
+            }
+
+            $integration = ShopPaymentIntegration::query()
+                ->forSupplierPayouts($shopId)
+                ->lockForUpdate()
+                ->first();
+            if (! $integration || ! $integration->isConnected()) {
+                throw new FinanceDomainException(
+                    'Xendit supplier payouts are not configured for this shop.',
+                    'XENDIT_NOT_CONFIGURED',
+                    422,
+                );
+            }
+
+            $this->assertPaymentContext($lockedExpense, $receipt, $purchaseOrder, $supplier, $profile, $shopId);
+
+            $active = SupplierPaymentAttempt::query()
+                ->where('shop_owner_id', $shopId)
+                ->where('expense_id', $lockedExpense->id)
+                ->whereIn('status', [
+                    SupplierPaymentAttempt::STATUS_INITIATING,
+                    SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION,
+                    SupplierPaymentAttempt::STATUS_PROCESSING,
+                    SupplierPaymentAttempt::STATUS_PENDING_COMPLIANCE,
+                ])
+                ->lockForUpdate()
+                ->exists();
+            if ($active) {
+                throw new FinanceDomainException(
+                    'This expense already has a supplier payment awaiting completion.',
+                    'INVALID_STATE',
+                    422,
+                );
+            }
+
+            $attempt = SupplierPaymentAttempt::create([
+                'shop_owner_id' => $shopId,
+                'expense_id' => $lockedExpense->id,
+                'supplier_id' => $supplier->id,
+                'supplier_payment_profile_id' => $profile->id,
+                'amount' => $amount,
+                'currency' => 'PHP',
+                'provider' => ShopPaymentIntegration::PROVIDER_XENDIT,
+                'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT,
+                'internal_reference' => 'SPX-' . Str::upper(Str::random(20)),
+                'idempotency_key' => $idempotencyKey,
+                'destination_snapshot' => $this->destinationSnapshot($profile),
+                'status' => SupplierPaymentAttempt::STATUS_INITIATING,
+                'initiated_by_user_id' => $actor->id,
+                'initiated_at' => now(),
+                'supplier_email_to' => trim((string) $supplier->email),
+                'supplier_email_status' => SupplierPaymentAttempt::EMAIL_STATUS_PENDING,
+            ]);
+
+            return [
+                'attempt' => $attempt->fresh(),
+                'integration' => $integration->fresh(),
+                'replayed' => false,
+            ];
+        }, 3);
+
+        if ($context['replayed']) {
+            return ['attempt' => $context['attempt'], 'replayed' => true];
+        }
+
+        /** @var SupplierPaymentAttempt $attempt */
+        $attempt = $this->markXenditProcessing($context['attempt']);
+        /** @var ShopPaymentIntegration $integration */
+        $integration = $context['integration'];
+
+        try {
+            $providerPayout = $this->xenditPayoutService->createPayout($integration, $attempt);
+        } catch (FinanceDomainException $exception) {
+            if ($exception->errorCode !== 'XENDIT_PAYOUT_UNKNOWN') {
+                $this->markXenditFailed($attempt, $exception->errorCode);
+            }
+
+            throw $exception;
+        } catch (Throwable) {
+            throw new FinanceDomainException(
+                'The supplier payout is processing, but Xendit did not confirm the request. Please wait for the payout update.',
+                'XENDIT_PAYOUT_UNKNOWN',
+                502,
+            );
+        }
+
+        $updated = DB::transaction(function () use ($attempt, $providerPayout): SupplierPaymentAttempt {
+            $lockedAttempt = SupplierPaymentAttempt::query()->whereKey($attempt->getKey())->lockForUpdate()->firstOrFail();
+            $status = $this->xenditPayoutService->localStatus($providerPayout['status']);
+            $lockedAttempt->update([
+                'provider_reference' => $providerPayout['payout_id'],
+                'status' => $status,
+                'processing_at' => $lockedAttempt->processing_at ?: now(),
+                'failed_at' => in_array($status, [
+                    SupplierPaymentAttempt::STATUS_FAILED,
+                    SupplierPaymentAttempt::STATUS_REJECTED,
+                ], true) ? now() : null,
+                'failure_code' => in_array($status, [
+                    SupplierPaymentAttempt::STATUS_FAILED,
+                    SupplierPaymentAttempt::STATUS_REJECTED,
+                ], true) ? 'XENDIT_' . strtoupper($status) : null,
+                'failure_message' => in_array($status, [
+                    SupplierPaymentAttempt::STATUS_FAILED,
+                    SupplierPaymentAttempt::STATUS_REJECTED,
+                ], true) ? 'Xendit did not complete the supplier payout.' : null,
+            ]);
+
+            return $lockedAttempt->fresh();
+        }, 3);
+
+        activity('supplier_payouts')
+            ->causedBy($actor)
+            ->performedOn($updated)
+            ->withProperties([
+                'provider' => ShopPaymentIntegration::PROVIDER_XENDIT,
+                'attempt_id' => (int) $updated->id,
+                'expense_id' => (int) $updated->expense_id,
+                'status' => (string) $updated->status,
+            ])
+            ->log('supplier_payout_created');
+
+        return ['attempt' => $updated, 'replayed' => false];
+    }
+
+    public function handleXenditWebhook(SupplierPaymentAttempt $attempt, array $payload): SupplierPaymentAttempt
+    {
+        $event = trim((string) ($payload['event'] ?? ''));
+        $eventStatus = match ($event) {
+            'v3_payout.succeeded' => SupplierPaymentAttempt::STATUS_SUCCEEDED,
+            'v3_payout.failed' => SupplierPaymentAttempt::STATUS_FAILED,
+            'v3_payout.rejected' => SupplierPaymentAttempt::STATUS_REJECTED,
+            'v3_payout.pending_compliance' => SupplierPaymentAttempt::STATUS_PENDING_COMPLIANCE,
+            'v3_payout.reversed' => SupplierPaymentAttempt::STATUS_REVERSED,
+            default => null,
+        };
+        if ($eventStatus === null) {
+            throw new FinanceDomainException('Unsupported Xendit payout event.', 'XENDIT_EVENT_UNSUPPORTED', 422);
+        }
+
+        $data = is_array($payload['data'] ?? null) ? $payload['data'] : [];
+        $payoutId = trim((string) ($data['payout_id'] ?? ''));
+        $referenceId = trim((string) ($data['reference_id'] ?? ''));
+        $auditStatus = null;
+
+        $updated = DB::transaction(function () use ($attempt, $data, $payoutId, $referenceId, $eventStatus, &$auditStatus): SupplierPaymentAttempt {
+            $lockedAttempt = SupplierPaymentAttempt::query()->whereKey($attempt->getKey())->lockForUpdate()->firstOrFail();
+            if ((string) $lockedAttempt->provider !== ShopPaymentIntegration::PROVIDER_XENDIT) {
+                throw new FinanceDomainException('The payout is not a Xendit supplier payout.', 'INVALID_STATE', 422);
+            }
+            if ($payoutId !== '' && $lockedAttempt->provider_reference
+                && (string) $lockedAttempt->provider_reference !== $payoutId) {
+                throw new FinanceDomainException('The Xendit payout does not match the local payment attempt.', 'XENDIT_EVENT_MISMATCH', 422);
+            }
+            if ($referenceId !== '' && (string) $lockedAttempt->internal_reference !== $referenceId) {
+                throw new FinanceDomainException('The Xendit payout reference does not match the local payment attempt.', 'XENDIT_EVENT_MISMATCH', 422);
+            }
+            $this->assertXenditWebhookAmount($lockedAttempt, $data);
+
+            if ($payoutId !== '' && ! $lockedAttempt->provider_reference) {
+                $lockedAttempt->provider_reference = $payoutId;
+            }
+
+            $currentStatus = (string) $lockedAttempt->status;
+            if (in_array($currentStatus, [
+                SupplierPaymentAttempt::STATUS_FAILED,
+                SupplierPaymentAttempt::STATUS_REJECTED,
+                SupplierPaymentAttempt::STATUS_CANCELLED,
+            ], true)) {
+                return $lockedAttempt->fresh();
+            }
+            if ($eventStatus === SupplierPaymentAttempt::STATUS_REVERSED) {
+                if ($currentStatus === SupplierPaymentAttempt::STATUS_REVERSED) {
+                    return $lockedAttempt->fresh();
+                }
+
+                if ($lockedAttempt->settlement_id) {
+                    $shopOwner = ShopOwner::query()->findOrFail($lockedAttempt->shop_owner_id);
+                    $settlement = ExpenseSettlement::query()->findOrFail($lockedAttempt->settlement_id);
+                    $this->settlementService->reverseXenditPayout(
+                        $settlement,
+                        $shopOwner,
+                        'Xendit reported that the supplier payout was reversed.',
+                    );
+                }
+
+                $lockedAttempt->update([
+                    'status' => SupplierPaymentAttempt::STATUS_REVERSED,
+                    'reversed_at' => now(),
+                ]);
+                $auditStatus = SupplierPaymentAttempt::STATUS_REVERSED;
+
+                return $lockedAttempt->fresh();
+            }
+
+            if (in_array($currentStatus, [
+                SupplierPaymentAttempt::STATUS_SUCCEEDED,
+                SupplierPaymentAttempt::STATUS_REVERSED,
+            ], true)) {
+                return $lockedAttempt->fresh();
+            }
+
+            if ($eventStatus === SupplierPaymentAttempt::STATUS_SUCCEEDED) {
+                if ($payoutId === '' && ! $lockedAttempt->provider_reference) {
+                    throw new FinanceDomainException(
+                        'The Xendit payout confirmation is missing its payout ID.',
+                        'XENDIT_EVENT_MISMATCH',
+                        422,
+                    );
+                }
+                $expense = Expense::query()->whereKey($lockedAttempt->expense_id)->lockForUpdate()->firstOrFail();
+                $shopId = (int) $lockedAttempt->shop_owner_id;
+                $receipt = $this->lockedReceiptForExpense($expense, $shopId);
+                $purchaseOrder = $receipt->purchaseOrder()->lockForUpdate()->firstOrFail();
+                $supplier = Supplier::query()->whereKey($purchaseOrder->supplier_id)->lockForUpdate()->firstOrFail();
+                $this->assertAttemptLinks($lockedAttempt, $expense, $supplier);
+                $this->assertReceiptContext($expense, $receipt, $purchaseOrder, $supplier, $shopId);
+
+                if (SupplierPaymentAttempt::query()
+                    ->where('shop_owner_id', $shopId)
+                    ->where('expense_id', $lockedAttempt->expense_id)
+                    ->where('status', SupplierPaymentAttempt::STATUS_SUCCEEDED)
+                    ->whereKeyNot($lockedAttempt->id)
+                    ->exists()) {
+                    throw new FinanceDomainException('Another supplier payment has already settled this expense.', 'INVALID_STATE', 409);
+                }
+
+                $shopOwner = ShopOwner::query()->findOrFail($shopId);
+                $settlement = $this->settlementService->record($expense, $shopOwner, [
+                    'amount' => (string) $lockedAttempt->amount,
+                    'payment_method' => SupplierPaymentAttempt::PAYMENT_METHOD_XENDIT,
+                    'reference' => (string) ($payoutId ?: $lockedAttempt->provider_reference),
+                    'paid_at' => now()->toDateTimeString(),
+                    'idempotency_key' => 'supplier-xendit-settlement:' . $lockedAttempt->id,
+                    'source' => ExpenseSettlement::SOURCE_SUPPLIER_XENDIT_PAYOUT,
+                    'source_reference' => 'supplier-xendit-payout:' . $lockedAttempt->id,
+                ]);
+
+                $lockedAttempt->update([
+                    'provider_reference' => $payoutId ?: $lockedAttempt->provider_reference,
+                    'status' => SupplierPaymentAttempt::STATUS_SUCCEEDED,
+                    'settlement_id' => $settlement['settlement']->id,
+                    'succeeded_at' => now(),
+                    'settled_at' => now(),
+                    'externally_paid_at' => now(),
+                    'supplier_email_status' => SupplierPaymentAttempt::EMAIL_STATUS_READY_TO_SEND,
+                    'failure_code' => null,
+                    'failure_message' => null,
+                ]);
+                $auditStatus = SupplierPaymentAttempt::STATUS_SUCCEEDED;
+
+                return $lockedAttempt->fresh();
+            }
+
+            $lockedAttempt->update([
+                'provider_reference' => $payoutId ?: $lockedAttempt->provider_reference,
+                'status' => $eventStatus,
+                'processing_at' => $lockedAttempt->processing_at ?: now(),
+                'failed_at' => in_array($eventStatus, [
+                    SupplierPaymentAttempt::STATUS_FAILED,
+                    SupplierPaymentAttempt::STATUS_REJECTED,
+                ], true) ? now() : null,
+                'failure_code' => in_array($eventStatus, [
+                    SupplierPaymentAttempt::STATUS_FAILED,
+                    SupplierPaymentAttempt::STATUS_REJECTED,
+                ], true) ? $this->safeProviderCode($data['failure_code'] ?? null, $eventStatus) : null,
+                'failure_message' => in_array($eventStatus, [
+                    SupplierPaymentAttempt::STATUS_FAILED,
+                    SupplierPaymentAttempt::STATUS_REJECTED,
+                ], true) ? 'Xendit did not complete the supplier payout.' : null,
+            ]);
+            $auditStatus = $eventStatus;
+
+            return $lockedAttempt->fresh();
+        }, 3);
+
+        if ($auditStatus !== null) {
+            activity('supplier_payouts')
+                ->performedOn($updated)
+                ->withProperties([
+                    'provider' => ShopPaymentIntegration::PROVIDER_XENDIT,
+                    'attempt_id' => (int) $updated->id,
+                    'expense_id' => (int) $updated->expense_id,
+                    'status' => $auditStatus,
+                ])
+                ->log('supplier_payout_' . $auditStatus);
+        }
+
+        if ($auditStatus === SupplierPaymentAttempt::STATUS_SUCCEEDED) {
+            try {
+                $purchaseOrder = $updated->load('expense.procurementReceipt.purchaseOrder')
+                    ->expense?->procurementReceipt?->purchaseOrder;
+                app(\App\Services\NotificationService::class)->notifySupplierPaymentVerified((int) $updated->shop_owner_id, [
+                    'attempt_id' => $updated->id,
+                    'expense_id' => $updated->expense_id,
+                    'po_number' => $purchaseOrder?->po_number ?? 'unknown',
+                ]);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $updated;
+    }
+
+    private function markXenditProcessing(SupplierPaymentAttempt $attempt): SupplierPaymentAttempt
+    {
+        return DB::transaction(function () use ($attempt): SupplierPaymentAttempt {
+            $lockedAttempt = SupplierPaymentAttempt::query()->whereKey($attempt->getKey())->lockForUpdate()->firstOrFail();
+            if ((string) $lockedAttempt->status === SupplierPaymentAttempt::STATUS_INITIATING) {
+                $lockedAttempt->update([
+                    'status' => SupplierPaymentAttempt::STATUS_PROCESSING,
+                    'processing_at' => now(),
+                ]);
+            }
+
+            return $lockedAttempt->fresh();
+        }, 3);
+    }
+
+    private function markXenditFailed(SupplierPaymentAttempt $attempt, string $failureCode): void
+    {
+        DB::transaction(function () use ($attempt, $failureCode): void {
+            $lockedAttempt = SupplierPaymentAttempt::query()->whereKey($attempt->getKey())->lockForUpdate()->first();
+            if (! $lockedAttempt || $lockedAttempt->status === SupplierPaymentAttempt::STATUS_SUCCEEDED) {
+                return;
+            }
+
+            $safeCode = preg_replace('/[^A-Z0-9_.-]/', '_', strtoupper(trim($failureCode))) ?: 'XENDIT_PAYOUT_FAILED';
+            $lockedAttempt->update([
+                'status' => SupplierPaymentAttempt::STATUS_FAILED,
+                'failed_at' => now(),
+                'failure_code' => Str::limit($safeCode, 100, ''),
+                'failure_message' => 'Xendit did not complete the supplier payout.',
+            ]);
+        }, 3);
+    }
+
+    private function assertXenditWebhookAmount(SupplierPaymentAttempt $attempt, array $data): void
+    {
+        $sourceAmount = $data['source_amount'] ?? null;
+        if ($sourceAmount !== null && (int) $sourceAmount !== $this->toCents($attempt->amount)) {
+            throw new FinanceDomainException('The Xendit payout amount does not match the local payment attempt.', 'XENDIT_EVENT_MISMATCH', 422);
+        }
+
+        foreach (['source_currency', 'destination_currency'] as $key) {
+            if (isset($data[$key]) && strtoupper(trim((string) $data[$key])) !== 'PHP') {
+                throw new FinanceDomainException('The Xendit payout currency does not match the local payment attempt.', 'XENDIT_EVENT_MISMATCH', 422);
+            }
+        }
+    }
+
+    private function safeProviderCode(mixed $code, string $status): string
+    {
+        $code = preg_replace('/[^A-Z0-9_.-]/', '_', strtoupper(trim((string) $code))) ?: 'PAYOUT_' . strtoupper($status);
+
+        return Str::limit($code, 100, '');
     }
 
     public function submitForVerification(
@@ -272,6 +672,13 @@ final class SupplierPaymentService
             $this->assertAttemptBelongsToShop($lockedAttempt, $shopId);
             $this->assertAttemptLinks($lockedAttempt, $expense, $supplier);
 
+            if ((string) $lockedAttempt->provider === ShopPaymentIntegration::PROVIDER_XENDIT) {
+                throw new FinanceDomainException(
+                    'Xendit payouts are finalized automatically after provider confirmation.',
+                    'XENDIT_OWNER_REVIEW_NOT_REQUIRED',
+                    422,
+                );
+            }
             if ((string) $lockedAttempt->status === SupplierPaymentAttempt::STATUS_SUCCEEDED) {
                 return $lockedAttempt->fresh();
             }
@@ -432,10 +839,15 @@ final class SupplierPaymentService
             'payment_status' => match ((string) $attempt->status) {
                 SupplierPaymentAttempt::STATUS_SUCCEEDED => 'paid',
                 SupplierPaymentAttempt::STATUS_AWAITING_VERIFICATION => 'awaiting_verification',
+                SupplierPaymentAttempt::STATUS_PENDING_COMPLIANCE => 'pending_compliance',
+                SupplierPaymentAttempt::STATUS_REVERSED => 'reversed',
+                SupplierPaymentAttempt::STATUS_PROCESSING => 'processing',
+                SupplierPaymentAttempt::STATUS_FAILED => 'failed',
                 SupplierPaymentAttempt::STATUS_REJECTED => 'rejected',
                 SupplierPaymentAttempt::STATUS_CANCELLED => 'cancelled',
                 default => 'initiating',
             },
+            'provider' => (string) $attempt->provider,
             'amount' => (string) $attempt->amount,
             'currency' => (string) $attempt->currency,
             'payment_method' => (string) $attempt->payment_method,

@@ -18,6 +18,7 @@ use App\Models\User;
 use App\Services\PurchaseOrderReceiptService;
 use App\Services\PurchaseOrderService;
 use App\Services\PurchaseRequestService;
+use App\Services\StockRequestApprovalService;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -51,7 +52,7 @@ class ProcurementConcurrencyTest extends TestCase
         $item = PurchaseOrderItem::factory()->create([
             'purchase_order_id' => $po->id,
             'inventory_item_id' => $inventory->id,
-            'ordered_quantity' => 2,
+            'ordered_quantity' => 1,
         ]);
         $payload = [
             'idempotency_key' => 'concurrent-receipt',
@@ -127,6 +128,48 @@ class ProcurementConcurrencyTest extends TestCase
             ->where('requested_color', 'black')
             ->where('requested_size', 'US 8')
             ->count());
+    }
+
+    public function test_mysql_serializes_competing_stock_request_decisions(): void
+    {
+        if (DB::getDriverName() !== 'mysql') {
+            $this->markTestSkipped('MySQL row-lock verification is intentionally skipped on SQLite.');
+        }
+        if (! function_exists('pcntl_fork')) {
+            $this->markTestSkipped('MySQL concurrency verification requires the pcntl extension.');
+        }
+
+        $owner = ShopOwner::factory()->create();
+        $users = User::factory()->for($owner)->count(2)->create();
+        $request = StockRequestApproval::factory()->create([
+            'shop_owner_id' => $owner->id,
+            'status' => 'pending',
+        ]);
+        $children = [];
+        foreach ($users as $user) {
+            $pid = pcntl_fork();
+            if ($pid === 0) {
+                try {
+                    DB::disconnect();
+                    app(StockRequestApprovalService::class)->approveStockRequest($request->id, $user->id);
+                    exit(0);
+                } catch (\Throwable) {
+                    exit(1);
+                }
+            }
+            $children[] = $pid;
+        }
+
+        $statuses = [];
+        foreach ($children as $pid) {
+            pcntl_waitpid($pid, $status);
+            $statuses[] = pcntl_wexitstatus($status);
+        }
+        sort($statuses);
+
+        $this->assertSame([0, 1], $statuses);
+        $this->assertSame('accepted', $request->fresh()->status);
+        $this->assertNotNull($request->fresh()->approved_by);
     }
 
     public function test_mysql_serializes_purchase_request_numbers_per_shop(): void

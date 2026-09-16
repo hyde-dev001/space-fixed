@@ -15,6 +15,7 @@ use App\Services\Finance\ExpenseSettlementService;
 use App\Support\Finance\FinanceDomainException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Throwable;
@@ -109,6 +110,7 @@ final class SupplierAdjustmentService
                 try {
                     app(NotificationService::class)->notifySupplierIssueReported($shopId, [
                         'adjustment_id' => $adjustment->id,
+                        'purchase_order_id' => $purchaseOrder->id,
                         'po_number' => $purchaseOrder->po_number,
                     ]);
                 } catch (Throwable $exception) {
@@ -122,6 +124,38 @@ final class SupplierAdjustmentService
 
             throw $exception;
         }
+    }
+
+    /** @return array<int, array<string, int|string>> */
+    public function postPaymentIssueItems(PurchaseOrder $purchaseOrder): array
+    {
+        $purchaseOrder->loadMissing([
+            'receipts.expense',
+            'receipts.items.purchaseOrderItem',
+            'receipts.items.adjustments',
+        ]);
+
+        return $purchaseOrder->receipts
+            ->filter(fn (PurchaseOrderReceipt $receipt): bool => $receipt->isFinal() && $this->isExpenseFullyPaid($receipt->expense))
+            ->flatMap(fn (PurchaseOrderReceipt $receipt) => $receipt->items->map(function (PurchaseOrderReceiptItem $item) use ($receipt): array {
+                $claimed = $item->adjustments
+                    ->where('issue_stage', SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT)
+                    ->where('status', '<>', SupplierAdjustment::STATUS_RESOLVED)
+                    ->sum('reported_quantity');
+
+                return [
+                    'receipt_id' => (int) $receipt->id,
+                    'receipt_reference' => $receipt->display_reference,
+                    'receipt_item_id' => (int) $item->id,
+                    'purchase_order_item_id' => (int) $item->purchase_order_item_id,
+                    'product_name' => (string) ($item->purchaseOrderItem?->product_name ?? 'Item'),
+                    'accepted_quantity' => (int) $item->accepted_quantity,
+                    'remaining_quantity' => max(0, (int) $item->accepted_quantity - (int) $claimed),
+                ];
+            }))
+            ->filter(fn (array $item): bool => $item['remaining_quantity'] > 0)
+            ->values()
+            ->all();
     }
 
     /** @return array{adjustment: SupplierAdjustment, replayed: bool} */
@@ -152,8 +186,7 @@ final class SupplierAdjustmentService
                 if ((int) $lockedItem->accepted_quantity < 1 || ! $expense) {
                     throw ValidationException::withMessages(['reported_quantity' => 'Only accepted, paid receipt units can be reported.']);
                 }
-                if ((string) $expense->status !== 'posted'
-                    || $this->toCents(ExpenseSettlement::validSettledAmountForExpense((int) $expense->id)) < 1) {
+                if (! $this->isExpenseFullyPaid($expense)) {
                     throw ValidationException::withMessages(['receipt' => 'The receipt payable must be posted and fully paid before a post-payment issue is reported.']);
                 }
 
@@ -227,6 +260,7 @@ final class SupplierAdjustmentService
                 try {
                     app(NotificationService::class)->notifySupplierIssueReported((int) $adjustment->shop_owner_id, [
                         'adjustment_id' => $adjustment->id,
+                        'purchase_order_id' => $purchaseOrder?->id,
                         'po_number' => $purchaseOrder?->po_number ?? 'unknown',
                     ]);
                 } catch (Throwable $exception) {
@@ -420,9 +454,8 @@ final class SupplierAdjustmentService
             throw ValidationException::withMessages(['items' => 'A refund adjustment cannot receive a replacement.']);
         }
 
-        if ($adjustment->issue_stage === SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT
-            && $adjustment->replacement_status !== SupplierAdjustment::REPLACEMENT_IN_TRANSIT) {
-            throw ValidationException::withMessages(['items' => 'A receiving replacement can only be received after the supplier marks it in transit.']);
+        if ($adjustment->replacement_status !== SupplierAdjustment::REPLACEMENT_IN_TRANSIT) {
+            throw ValidationException::withMessages(['items' => 'A replacement can only be received after the supplier marks it in transit.']);
         }
 
         $acceptedReplacement = (int) PurchaseOrderReceiptItem::query()
@@ -520,6 +553,7 @@ final class SupplierAdjustmentService
                 try {
                     app(NotificationService::class)->notifySupplierReplacementReceived((int) $adjustment->shop_owner_id, [
                         'adjustment_id' => $adjustment->id,
+                        'purchase_order_id' => $purchaseOrder->id,
                         'receipt_item_id' => $receiptItem->id,
                         'po_number' => $purchaseOrder->po_number,
                         'status' => $adjustment->status,
@@ -527,6 +561,7 @@ final class SupplierAdjustmentService
                     if ($adjustment->status === SupplierAdjustment::STATUS_RESOLVED) {
                         app(NotificationService::class)->notifySupplierAdjustmentResolved((int) $adjustment->shop_owner_id, [
                             'adjustment_id' => $adjustment->id,
+                            'purchase_order_id' => $purchaseOrder->id,
                             'po_number' => $purchaseOrder->po_number,
                         ]);
                     }
@@ -546,9 +581,8 @@ final class SupplierAdjustmentService
     {
         return $this->updateReceivingAdjustment($adjustment, $actor, function (SupplierAdjustment $locked) use ($data) {
             $resolution = (string) $data['resolution'];
-            if ($locked->issue_stage !== SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT
-                || $locked->status === SupplierAdjustment::STATUS_RESOLVED) {
-                throw ValidationException::withMessages(['resolution' => 'Only unresolved receiving defects can use this resolution.']);
+            if ($locked->status === SupplierAdjustment::STATUS_RESOLVED || $locked->resolution !== null) {
+                throw ValidationException::withMessages(['resolution' => 'This supplier adjustment already has a resolution.']);
             }
             if ($resolution === SupplierAdjustment::RESOLUTION_REPLACEMENT) {
                 $locked->update([
@@ -557,8 +591,19 @@ final class SupplierAdjustmentService
                     'procurement_notes' => $data['procurement_notes'] ?? $locked->procurement_notes,
                     'status' => SupplierAdjustment::STATUS_RESOLUTION_IN_PROGRESS,
                 ]);
+            } elseif ($resolution === SupplierAdjustment::RESOLUTION_REFUND) {
+                if ($locked->issue_stage !== SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT) {
+                    throw ValidationException::withMessages(['resolution' => 'Only a post-payment issue can use a refund resolution.']);
+                }
+                $locked->update([
+                    'resolution' => SupplierAdjustment::RESOLUTION_REFUND,
+                    'replacement_status' => null,
+                    'procurement_notes' => $data['procurement_notes'] ?? $locked->procurement_notes,
+                    'status' => SupplierAdjustment::STATUS_AWAITING_SUPPLIER,
+                ]);
             } else {
-                if ($locked->replacement_status !== SupplierAdjustment::REPLACEMENT_DECLINED) {
+                if ($locked->issue_stage !== SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT
+                    || $locked->replacement_status !== SupplierAdjustment::REPLACEMENT_DECLINED) {
                     throw ValidationException::withMessages(['resolution' => 'Short fulfillment is available after the supplier declines replacement.']);
                 }
                 $locked->update([
@@ -575,8 +620,7 @@ final class SupplierAdjustmentService
     public function replacementAction(SupplierAdjustment $adjustment, User $actor, string $action, array $data = []): array
     {
         return $this->updateReceivingAdjustment($adjustment, $actor, function (SupplierAdjustment $locked) use ($action, $data) {
-            if ($locked->issue_stage !== SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT
-                || $locked->resolution !== SupplierAdjustment::RESOLUTION_REPLACEMENT
+            if ($locked->resolution !== SupplierAdjustment::RESOLUTION_REPLACEMENT
                 || $locked->status === SupplierAdjustment::STATUS_RESOLVED) {
                 throw ValidationException::withMessages(['replacement' => 'This supplier adjustment is not awaiting a replacement action.']);
             }
@@ -617,6 +661,7 @@ final class SupplierAdjustmentService
                     try {
                         app(NotificationService::class)->notifySupplierReplacementInTransit((int) $locked->shop_owner_id, [
                             'adjustment_id' => $locked->id,
+                            'purchase_order_id' => $locked->receiptItem?->receipt?->purchaseOrder?->id,
                             'po_number' => $locked->receiptItem?->receipt?->purchaseOrder?->po_number,
                             'status' => SupplierAdjustment::REPLACEMENT_IN_TRANSIT,
                         ]);
@@ -625,6 +670,27 @@ final class SupplierAdjustmentService
                     }
                 });
             }
+
+            return $locked->fresh();
+        });
+    }
+
+    public function refundDeclined(SupplierAdjustment $adjustment, User $actor, array $data): array
+    {
+        return $this->updateReceivingAdjustment($adjustment, $actor, function (SupplierAdjustment $locked) use ($data) {
+            if ($locked->issue_stage !== SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT
+                || $locked->resolution !== SupplierAdjustment::RESOLUTION_REFUND
+                || $locked->status !== SupplierAdjustment::STATUS_AWAITING_SUPPLIER) {
+                throw ValidationException::withMessages(['refund' => 'This supplier adjustment is not awaiting a supplier refund.']);
+            }
+
+            $locked->update([
+                'resolution' => null,
+                'status' => SupplierAdjustment::STATUS_REPORTED,
+                'decline_reason' => trim((string) $data['decline_reason']),
+                'supplier_reference' => $data['supplier_reference'] ?? null,
+                'procurement_notes' => $data['procurement_notes'] ?? $locked->procurement_notes,
+            ]);
 
             return $locked->fresh();
         });
@@ -662,6 +728,9 @@ final class SupplierAdjustmentService
             ], true)) {
                 throw ValidationException::withMessages(['status' => 'Unsupported defective return status.']);
             }
+            if ($locked->resolution === null || $locked->status === SupplierAdjustment::STATUS_RESOLVED) {
+                throw ValidationException::withMessages(['status' => 'Choose an unresolved supplier resolution before setting the return status.']);
+            }
             $current = $locked->return_status;
             $valid = match ($status) {
                 SupplierAdjustment::RETURN_REQUIRED => $current === null || $current === SupplierAdjustment::RETURN_REQUIRED,
@@ -676,7 +745,11 @@ final class SupplierAdjustmentService
                 'return_status' => $status,
                 'return_notes' => $data['return_notes'] ?? $locked->return_notes,
             ]);
-            $this->resolveIfComplete($locked, $actor);
+            if ($locked->resolution === SupplierAdjustment::RESOLUTION_REFUND) {
+                $locked->update(['status' => SupplierAdjustment::STATUS_AWAITING_SUPPLIER]);
+            } else {
+                $this->resolveIfComplete($locked, $actor);
+            }
 
             return $locked->fresh();
         });
@@ -703,6 +776,7 @@ final class SupplierAdjustmentService
                     try {
                         app(NotificationService::class)->notifySupplierAdjustmentResolved((int) $locked->shop_owner_id, [
                             'adjustment_id' => $locked->id,
+                            'purchase_order_id' => $locked->receiptItem?->receipt?->purchaseOrder?->id,
                             'po_number' => $locked->receiptItem?->receipt?->purchaseOrder?->po_number,
                             'status' => SupplierAdjustment::STATUS_RESOLVED,
                         ]);
@@ -760,19 +834,29 @@ final class SupplierAdjustmentService
         $receiptItem = $adjustment->receiptItem;
         $receipt = $receiptItem?->receipt;
         $purchaseOrder = $receipt?->purchaseOrder;
+        $acceptedReplacement = $this->acceptedReplacementQuantity($adjustment);
+        $workflow = $this->workflowContext($adjustment);
 
         return [
             'id' => (int) $adjustment->id,
             'issue_stage' => (string) $adjustment->issue_stage,
+            'issue_stage_label' => Str::headline((string) $adjustment->issue_stage),
             'reported_quantity' => (int) $adjustment->reported_quantity,
             'short_fulfillment_quantity' => (int) $adjustment->short_fulfillment_quantity,
             'unit_cost_snapshot' => (string) $adjustment->unit_cost_snapshot,
             'reason_category' => (string) $adjustment->reason_category,
             'inventory_notes' => (string) $adjustment->inventory_notes,
             'status' => (string) $adjustment->status,
+            'status_label' => Str::headline((string) $adjustment->status),
             'resolution' => $adjustment->resolution,
+            'resolution_label' => $adjustment->resolution ? Str::headline((string) $adjustment->resolution) : null,
             'replacement_status' => $adjustment->replacement_status,
+            'replacement_status_label' => $adjustment->replacement_status === SupplierAdjustment::REPLACEMENT_ACCEPTED
+                ? 'Accepted by Supplier'
+                : ($adjustment->replacement_status ? Str::headline((string) $adjustment->replacement_status) : null),
             'return_status' => $adjustment->return_status,
+            'return_status_label' => $adjustment->return_status ? Str::headline((string) $adjustment->return_status) : null,
+            ...$workflow,
             'procurement_notes' => $adjustment->procurement_notes,
             'decline_reason' => $adjustment->decline_reason,
             'supplier_reference' => $adjustment->supplier_reference,
@@ -784,6 +868,7 @@ final class SupplierAdjustmentService
             'refunded_amount' => ExpenseSettlement::validRefundedAmountForAdjustment((int) $adjustment->id),
             'reported_at' => $adjustment->reported_at?->toISOString(),
             'resolved_at' => $adjustment->resolved_at?->toISOString(),
+            'updated_at' => $adjustment->updated_at?->toISOString(),
             'reported_by' => $adjustment->reportedBy ? [
                 'id' => (int) $adjustment->reportedBy->id,
                 'name' => (string) $adjustment->reportedBy->name,
@@ -800,8 +885,13 @@ final class SupplierAdjustmentService
             'item' => $receiptItem?->purchaseOrderItem ? [
                 'id' => (int) $receiptItem->purchaseOrderItem->id,
                 'product_name' => (string) $receiptItem->purchaseOrderItem->product_name,
+                'requested_size' => $receiptItem->purchaseOrderItem->requested_size,
+                'requested_color' => $receiptItem->purchaseOrderItem->requested_color,
             ] : null,
             'affected_quantity' => (int) $adjustment->reported_quantity,
+            'initially_accepted_quantity' => (int) ($receiptItem?->accepted_quantity ?? 0),
+            'replacement_accepted_quantity' => $acceptedReplacement,
+            'still_unresolved_quantity' => max(0, (int) $adjustment->reported_quantity - $acceptedReplacement - (int) $adjustment->short_fulfillment_quantity),
             'receipt' => [
                 'id' => $receipt?->id,
                 'status' => $receipt?->status,
@@ -818,6 +908,38 @@ final class SupplierAdjustmentService
             'supplier_refund_proof' => $this->presentMedia($adjustment->getMedia('supplier_refund_proof')),
             'finance_confirmation_proof' => $this->presentMedia($adjustment->getMedia('finance_confirmation_proof')),
         ];
+    }
+
+    /** @return array{current_owner: ?string, current_owner_label: string, next_action: string} */
+    private function workflowContext(SupplierAdjustment $adjustment): array
+    {
+        if ($adjustment->status === SupplierAdjustment::STATUS_RESOLVED) {
+            return ['current_owner' => null, 'current_owner_label' => 'Resolved', 'next_action' => 'No further action required'];
+        }
+        if ($adjustment->issue_stage === SupplierAdjustment::ISSUE_STAGE_RECEIVING_DEFECT) {
+            if ($adjustment->return_status === SupplierAdjustment::RETURN_REQUIRED) {
+                return ['current_owner' => 'inventory', 'current_owner_label' => 'Inventory', 'next_action' => 'Release defective items to the supplier'];
+            }
+            if ($adjustment->return_status === SupplierAdjustment::RETURN_RELEASED) {
+                return ['current_owner' => 'procurement', 'current_owner_label' => 'Procurement', 'next_action' => 'Confirm the supplier received the returned items'];
+            }
+
+            return match ($adjustment->replacement_status) {
+                SupplierAdjustment::REPLACEMENT_REQUESTED => ['current_owner' => 'procurement', 'current_owner_label' => 'Procurement', 'next_action' => 'Mark the replacement request as sent'],
+                SupplierAdjustment::REPLACEMENT_SENT => ['current_owner' => 'procurement', 'current_owner_label' => 'Procurement', 'next_action' => 'Confirm the supplier response'],
+                SupplierAdjustment::REPLACEMENT_ACCEPTED => ['current_owner' => 'procurement', 'current_owner_label' => 'Procurement', 'next_action' => 'Mark the replacement as in transit'],
+                SupplierAdjustment::REPLACEMENT_IN_TRANSIT => ['current_owner' => 'inventory', 'current_owner_label' => 'Inventory', 'next_action' => 'Receive replacement items'],
+                SupplierAdjustment::REPLACEMENT_DECLINED => ['current_owner' => 'procurement', 'current_owner_label' => 'Procurement', 'next_action' => 'Close the unresolved quantity as short fulfillment'],
+                SupplierAdjustment::REPLACEMENT_RECEIVED => ['current_owner' => 'procurement', 'current_owner_label' => 'Procurement', 'next_action' => 'Request replacement for the remaining defective quantity'],
+                default => ['current_owner' => 'procurement', 'current_owner_label' => 'Procurement', 'next_action' => 'Choose a supplier resolution'],
+            };
+        }
+
+        if (in_array($adjustment->status, [SupplierAdjustment::STATUS_AWAITING_VERIFICATION, SupplierAdjustment::STATUS_PARTIALLY_REFUNDED], true)) {
+            return ['current_owner' => 'finance', 'current_owner_label' => 'Finance', 'next_action' => 'Verify the supplier refund'];
+        }
+
+        return ['current_owner' => 'procurement', 'current_owner_label' => 'Procurement', 'next_action' => 'Coordinate the supplier resolution'];
     }
 
     private function attachFinanceRefundProof(
@@ -901,8 +1023,11 @@ final class SupplierAdjustmentService
             throw new FinanceDomainException('Only a post-payment issue can request a supplier refund.', 'INVALID_STATE', 422);
         }
         if ($adjustment->status === SupplierAdjustment::STATUS_RESOLVED
-            || ($adjustment->resolution !== null && $adjustment->resolution !== SupplierAdjustment::RESOLUTION_REFUND)) {
+            || $adjustment->resolution !== SupplierAdjustment::RESOLUTION_REFUND) {
             throw new FinanceDomainException('This supplier adjustment cannot use a refund resolution.', 'INVALID_STATE', 422);
+        }
+        if (! in_array($adjustment->return_status, [SupplierAdjustment::RETURN_WAIVED, SupplierAdjustment::RETURN_RECEIVED_BY_SUPPLIER], true)) {
+            throw new FinanceDomainException('Complete the supplier return or waive it before submitting refund proof.', 'INVALID_STATE', 422);
         }
         if ((string) $receipt->status !== 'posted' || $receipt->voided_at !== null || ! $expense || (string) $expense->status !== 'posted') {
             throw new FinanceDomainException('A posted, nonvoid procurement expense is required for a supplier refund.', 'INVALID_STATE', 422);
@@ -1006,6 +1131,18 @@ final class SupplierAdjustmentService
             || (int) $purchaseOrder->shop_owner_id !== (int) $receipt->shop_owner_id) {
             throw ValidationException::withMessages(['receipt' => 'The receipt is not available in this shop.']);
         }
+    }
+
+    private function isExpenseFullyPaid(?Expense $expense): bool
+    {
+        if (! $expense || (string) $expense->status !== 'posted') {
+            return false;
+        }
+
+        $totalCents = $this->toCents($expense->amount);
+
+        return $totalCents > 0
+            && $this->toCents(ExpenseSettlement::validSettledAmountForExpense((int) $expense->id)) >= $totalCents;
     }
 
     /** @return array<int, UploadedFile> */

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 	post: vi.fn(),
 	get: vi.fn(),
 	confirm: vi.fn(),
+	success: vi.fn(),
 	resolveUrl: (url: string) => url,
 	onChanged: vi.fn(),
 	onClose: vi.fn(),
@@ -16,7 +17,7 @@ vi.mock("../../../../hooks/useFinanceApi", () => ({
 }));
 
 vi.mock("../../../../utils/workflowFeedback", () => ({
-	workflowFeedback: { confirm: mocks.confirm },
+	workflowFeedback: { confirm: mocks.confirm, success: mocks.success },
 }));
 
 	const details = {
@@ -42,6 +43,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.onChanged.mockResolvedValue(undefined);
 	mocks.confirm.mockResolvedValue({ isConfirmed: true });
+	mocks.success.mockResolvedValue({ isConfirmed: true });
 	mocks.get.mockResolvedValue({ ok: true, status: 200, data: { id: 8, account_number: "1234567890" } });
 });
 
@@ -77,6 +79,37 @@ describe("SupplierPaymentDialog", () => {
 		 expect(screen.getByRole("button", { name: "Submit for Shop Owner Verification" })).toBeDisabled();
 	});
 
+	it("starts a Xendit payout with a confirmation and no manual proof form", async () => {
+		mocks.post.mockResolvedValueOnce({
+			ok: true,
+			data: {
+				id: 45,
+				status: "processing",
+				payment_status: "processing",
+				provider: "xendit",
+				amount: "100.00",
+				payment_method: "xendit",
+			},
+		});
+
+		render(<SupplierPaymentDialog open mode="finance" expenseId="1" details={{ ...details, xendit_configured: true }} amount="100.00" onClose={mocks.onClose} onChanged={mocks.onChanged} />);
+		fireEvent.click(screen.getByRole("button", { name: "Pay Supplier via Xendit" }));
+
+		await waitFor(() => expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Send supplier payout via Xendit?",
+			confirmButtonText: "Pay Supplier",
+		})));
+		await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+			"/api/finance/expenses/1/supplier-payment-attempts",
+			expect.objectContaining({ payment_method: "xendit" }),
+		));
+		expect(screen.queryByLabelText("Payment method")).not.toBeInTheDocument();
+		expect(screen.getByRole("status")).toHaveTextContent(/Xendit payout processing/i);
+		expect(mocks.success).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Supplier payout submitted",
+		}));
+	});
+
 	it("confirms before submitting payment proof for Shop Owner verification", async () => {
 		mocks.post.mockResolvedValueOnce({
 			ok: true,
@@ -109,6 +142,9 @@ describe("SupplierPaymentDialog", () => {
 			"/api/finance/supplier-payment-attempts/44/submit",
 			expect.any(FormData),
 		));
+		expect(mocks.success).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Payment submitted",
+		}));
 	});
 
 	it("lets Finance reveal and hide the current supplier account for the transfer", async () => {
@@ -173,6 +209,9 @@ describe("SupplierPaymentDialog", () => {
 
 		await waitFor(() => expect(mocks.post).toHaveBeenCalledWith("/api/shop-owner/finance/supplier-payment-attempts/44/confirm", {}));
 		expect(mocks.onChanged).toHaveBeenCalled();
+		expect(mocks.success).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Payment confirmed",
+		}));
 		expect(screen.getByText(/Ready to Send/i)).toBeInTheDocument();
 	});
 
@@ -292,6 +331,9 @@ describe("SupplierPaymentDialog", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Send Payment Receipt" }));
 
 		await waitFor(() => expect(mocks.post).toHaveBeenCalledWith("/api/finance/supplier-payment-attempts/44/send-receipt", {}));
+		expect(mocks.success).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Receipt sent",
+		}));
 		expect(screen.getAllByText(/DISPATCHED/i).length).toBeGreaterThan(0);
 	});
 });

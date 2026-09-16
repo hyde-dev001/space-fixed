@@ -166,7 +166,7 @@ class PurchaseRequestController extends Controller
             );
 
             return response()->json([
-                'message' => 'Purchase request acknowledged by the Shop Owner and sent to Finance for final release.',
+                'message' => 'Purchase request approved by the Shop Owner.',
                 'data' => $payload,
             ]);
         } catch (\Exception $e) {
@@ -231,11 +231,11 @@ class PurchaseRequestController extends Controller
         }
     }
 
-    private function calculatePurchaseRequestTotalCost(array $data, int $shopOwnerId): float
+    private function calculatePurchaseRequestTotalCost(array $data, int $shopOwnerId): string
     {
-        $quantity = (int) ($data['quantity'] ?? 0);
-        $unitCost = (float) ($data['unit_cost'] ?? 0);
-
-        return $quantity > 0 && $unitCost >= 0 ? round($quantity * $unitCost, 2) : 0;
+        return $this->purchaseRequestService->calculateTotal(
+            (int) ($data['quantity'] ?? 0),
+            $data['unit_cost'] ?? 0,
+        );
     }
 }

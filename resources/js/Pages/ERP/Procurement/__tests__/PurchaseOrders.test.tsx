@@ -4,7 +4,7 @@ import PurchaseOrderReceiptPanel from "../components/PurchaseOrderReceiptPanel";
 import { purchaseOrderApi } from "@/services/purchaseOrderApi";
 import type { PurchaseOrder } from "@/types/procurement";
 
-vi.mock("@/services/purchaseOrderApi", () => ({ purchaseOrderApi: { receive: vi.fn(), voidReceipt: vi.fn(), getSupplierAdjustments: vi.fn() } }));
+vi.mock("@/services/purchaseOrderApi", () => ({ purchaseOrderApi: { receive: vi.fn(), finalizeReceipt: vi.fn(), voidReceipt: vi.fn(), getSupplierAdjustments: vi.fn() } }));
 vi.mock("sweetalert2", () => ({ default: { fire: vi.fn().mockResolvedValue({ isConfirmed: true }) } }));
 
 const order = (overrides: Partial<PurchaseOrder> = {}) => ({
@@ -22,7 +22,7 @@ describe("PurchaseOrderReceiptPanel", () => {
 		vi.spyOn(globalThis.crypto, "randomUUID").mockReturnValue("123e4567-e89b-12d3-a456-426614174000");
 	});
 
-	it("links a selected replacement adjustment through the canonical receipt", async () => {
+	it("automatically links the in-transit replacement through the canonical receipt", async () => {
 		vi.mocked(purchaseOrderApi.receive).mockResolvedValue({} as any);
 		vi.mocked(purchaseOrderApi.getSupplierAdjustments).mockResolvedValue([{
 			id: 90,
@@ -31,8 +31,9 @@ describe("PurchaseOrderReceiptPanel", () => {
 			unit_cost_snapshot: "100.00",
 			reason_category: "damaged",
 			inventory_notes: "Found after payment.",
-			status: "reported",
-			resolution: null,
+			status: "resolution_in_progress",
+			resolution: "replacement",
+			replacement_status: "in_transit",
 			purchase_order: { id: 10, number: "PO-10", status: "completed" },
 			purchase_order_item_id: 20,
 		}] as any);
@@ -45,13 +46,36 @@ describe("PurchaseOrderReceiptPanel", () => {
 			} as any],
 		})} onChanged={vi.fn().mockResolvedValue(undefined)} />);
 
-		fireEvent.change(await screen.findByLabelText("Receipt type Shoe cleaner"), { target: { value: "90" } });
-		fireEvent.change(screen.getByLabelText("Received Shoe cleaner"), { target: { value: "1" } });
-		fireEvent.click(screen.getByRole("button", { name: "Submit receiving result" }));
+		const received = await screen.findByLabelText("Received Shoe cleaner");
+		expect(screen.queryByText("Receipt type")).not.toBeInTheDocument();
+		fireEvent.change(received, { target: { value: "1" } });
+		fireEvent.click(screen.getByRole("button", { name: "Receive replacement" }));
 
 		await waitFor(() => expect(purchaseOrderApi.receive).toHaveBeenCalledWith(10, expect.objectContaining({
 			items: [expect.objectContaining({ replacement_for_adjustment_id: 90 })],
 		})));
+	});
+
+	it("does not let Inventory receive another post-payment replacement before it is in transit", async () => {
+		vi.mocked(purchaseOrderApi.getSupplierAdjustments).mockResolvedValue([{
+			id: 90,
+			issue_stage: "post_payment_issue",
+			reported_quantity: 6,
+			unit_cost_snapshot: "100.00",
+			reason_category: "damaged",
+			inventory_notes: "Found after payment.",
+			status: "resolution_in_progress",
+			resolution: "replacement",
+			replacement_status: "received",
+			purchase_order: { id: 10, number: "PO-10", status: "completed" },
+			purchase_order_item_id: 20,
+		}] as any);
+
+		render(<PurchaseOrderReceiptPanel order={order({ status: "completed", is_historical: true })} onChanged={vi.fn().mockResolvedValue(undefined)} />);
+
+		await waitFor(() => expect(purchaseOrderApi.getSupplierAdjustments).toHaveBeenCalled());
+		expect(screen.queryByText("Receipt type")).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Submit receiving result" })).not.toBeInTheDocument();
 	});
 
 	it("posts the line receipt with one idempotency key", async () => {
@@ -182,13 +206,14 @@ describe("PurchaseOrderReceiptPanel", () => {
 
 	it("hides receiving and void actions when the user lacks those permissions", () => {
 		render(<PurchaseOrderReceiptPanel
-			order={order({ receipts: [{ id: 1, purchase_order_id: 10, source: "manual", status: "posted", received_at: "2026-08-02", items: [] }] })}
+			order={order({ can_finalize: true, final_payable_quantity: 5, receipts: [{ id: 1, purchase_order_id: 10, source: "manual", status: "receiving", received_at: "2026-08-02", items: [] }] })}
 			canReceive={false}
 			canVoid={false}
 			onChanged={vi.fn().mockResolvedValue(undefined)}
 		/>);
 
 		expect(screen.queryByRole("button", { name: "Submit receiving result" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Post Final Receipt" })).not.toBeInTheDocument();
 		expect(screen.queryByRole("button", { name: "Void" })).not.toBeInTheDocument();
 	});
 });

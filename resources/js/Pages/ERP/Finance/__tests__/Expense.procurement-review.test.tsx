@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 	status: "submitted" as "submitted" | "posted",
 	paymentStatus: "unpaid" as string,
 	paymentAttempt: null as Record<string, unknown> | null,
+	adjustments: [] as Array<Record<string, unknown>>,
 	paymentProfileStatus: "unverified" as "unverified" | "verified" | "disabled",
 	expenseSource: "procurement" as "procurement" | "manual",
 	creatorId: null as number | null,
@@ -53,6 +54,7 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 				expense_status: mocks.status,
 				payment_status: mocks.paymentStatus,
 				payment_attempt: mocks.paymentAttempt,
+				adjustments: mocks.adjustments,
 				payment_timing: "Overdue",
 				supplier_id: 4,
 				payment_profile: {
@@ -80,6 +82,7 @@ beforeEach(() => {
 	mocks.status = "submitted";
 	mocks.paymentStatus = "unpaid";
 	mocks.paymentAttempt = null;
+	mocks.adjustments = [];
 	mocks.paymentProfileStatus = "unverified";
 	mocks.expenseSource = "procurement";
 	mocks.creatorId = null;
@@ -217,6 +220,89 @@ describe("Finance procurement expenses", () => {
 		expect(screen.queryByText("Review only")).not.toBeInTheDocument();
 	});
 
+	it("shows tenant-protected supplier refund proof links to Finance", () => {
+		mocks.status = "posted";
+		mocks.adjustments = [{
+			id: 91,
+			resolution: "refund",
+			status: "awaiting_verification",
+			expected_refund_amount: "100.00",
+			refunded_amount: "0.00",
+			supplier_refund_proof: [{ id: 901, file_name: "supplier-proof.pdf", mime_type: "application/pdf", size: 10 }],
+		}];
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByRole("link", { name: "View supplier-proof.pdf" })).toHaveAttribute(
+			"href",
+			"/api/finance/supplier-adjustments/91/refund-proof/901",
+		);
+	});
+
+	it("does not confirm an incoming supplier refund when confirmation is cancelled", async () => {
+		mocks.status = "posted";
+		mocks.adjustments = [{
+			id: 91,
+			resolution: "refund",
+			status: "awaiting_verification",
+			expected_refund_amount: "100.00",
+			refunded_amount: "0.00",
+			supplier_refund_proof: [{ id: 901, file_name: "supplier-proof.pdf", mime_type: "application/pdf", size: 10 }],
+		}];
+		mocks.swalFire.mockResolvedValueOnce({ isConfirmed: false });
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+		fireEvent.click(screen.getByRole("button", { name: "Confirm incoming refund" }));
+		fireEvent.change(screen.getByLabelText("Confirmed refund amount"), { target: { value: "100.00" } });
+		fireEvent.change(screen.getByLabelText("Confirmed refund reference"), { target: { value: "BANK-REF-001" } });
+		fireEvent.change(screen.getByLabelText("Finance refund proof"), {
+			target: { files: [new File(["proof"], "finance-proof.pdf", { type: "application/pdf" })] },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Confirm refund" }));
+
+		await waitFor(() => expect(mocks.swalFire).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Confirm incoming supplier refund?",
+			showCancelButton: true,
+		})));
+		expect(mocks.reviewRelease).not.toHaveBeenCalled();
+	});
+
+	it("shows success feedback after Finance confirms an incoming supplier refund", async () => {
+		mocks.status = "posted";
+		mocks.adjustments = [{
+			id: 91,
+			resolution: "refund",
+			status: "awaiting_verification",
+			expected_refund_amount: "100.00",
+			refunded_amount: "0.00",
+			supplier_refund_proof: [{ id: 901, file_name: "supplier-proof.pdf", mime_type: "application/pdf", size: 10 }],
+		}];
+		mocks.reviewRelease.mockResolvedValueOnce({ ok: true, status: 201, data: {} });
+		mocks.refetch.mockResolvedValueOnce({ data: [] });
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+		fireEvent.click(screen.getByRole("button", { name: "Confirm incoming refund" }));
+		fireEvent.change(screen.getByLabelText("Confirmed refund amount"), { target: { value: "100.00" } });
+		fireEvent.change(screen.getByLabelText("Confirmed refund reference"), { target: { value: "BANK-REF-001" } });
+		fireEvent.change(screen.getByLabelText("Finance refund proof"), {
+			target: { files: [new File(["proof"], "finance-proof.pdf", { type: "application/pdf" })] },
+		});
+		fireEvent.click(screen.getByRole("button", { name: "Confirm refund" }));
+
+		await waitFor(() => expect(mocks.reviewRelease).toHaveBeenCalledWith(
+			"/api/finance/expenses/expense-1/supplier-adjustments/91/refund-confirmations",
+			expect.any(FormData),
+		));
+		expect(mocks.swalFire).toHaveBeenCalledWith(
+			"Supplier refund confirmed",
+			"The Finance settlement and supplier adjustment were updated.",
+			"success",
+		);
+	});
+
 	it("shows the manual payment verification state instead of a duplicate pay action", () => {
 		mocks.status = "posted";
 		mocks.paymentStatus = "awaiting_verification";
@@ -299,6 +385,26 @@ describe("Finance procurement expenses", () => {
 		fireEvent.click(screen.getByRole("button", { name: "View Payment Proof" }));
 		expect(screen.getByRole("heading", { name: "Review Supplier Payment" })).toBeInTheDocument();
 		expect(screen.getByRole("button", { name: /proof\.pdf/i })).toBeInTheDocument();
+	});
+
+	it("does not ask the Shop Owner to review a paid Xendit payout", () => {
+		mocks.ownerMode = true;
+		mocks.status = "posted";
+		mocks.paymentStatus = "paid";
+		mocks.paymentAttempt = {
+			id: 45,
+			status: "succeeded",
+			provider: "xendit",
+			amount: "200.00",
+			payment_method: "xendit",
+		};
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+
+		expect(screen.getByText("PAID · PAYMENT VERIFIED")).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "View Payment Proof" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Review Supplier Payment" })).not.toBeInTheDocument();
 	});
 
 	it("does not expose payment-profile controls to the Shop Owner", () => {
