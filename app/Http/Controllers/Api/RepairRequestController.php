@@ -3898,6 +3898,7 @@ class RepairRequestController extends Controller
             'address_needs_pin' => 'Pin the exact address before choosing shop rider delivery.',
             'outside_coverage' => 'This address is outside the shop rider coverage. Choose walk-in or a customer-arranged courier.',
             'shop_needs_pin' => 'The shop must pin its location before shop rider delivery can be used.',
+            'business_account_required' => 'Shop rider delivery is available only for company accounts.',
             default => 'Shop rider delivery is unavailable for this address.',
         };
 

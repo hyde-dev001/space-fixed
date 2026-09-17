@@ -165,10 +165,7 @@ class RepairWarrantyService
         );
     }
 
-    /**
-     * @param  UploadedFile[]  $images
-     */
-    public function createPosWalkInClaim(RepairRequest $repair, array $validated, array $images, int $actorId): RepairWarrantyClaim
+    public function createPosWalkInClaim(RepairRequest $repair, array $validated, int $actorId): RepairWarrantyClaim
     {
         if (! $this->isManualPosRepair($repair)) {
             throw ValidationException::withMessages([
@@ -181,7 +178,7 @@ class RepairWarrantyService
         return $this->createClaimRecord(
             repair: $repair,
             validated: $validated,
-            images: $images,
+            images: [],
             window: $window,
             sourceChannel: 'manual_pos_walk_in',
             actorId: $actorId,
@@ -550,7 +547,7 @@ class RepairWarrantyService
         int $actorId,
         ?int $customerUserId
     ): RepairWarrantyClaim {
-        if (empty($images)) {
+        if (empty($images) && $sourceChannel !== 'manual_pos_walk_in') {
             throw ValidationException::withMessages([
                 'images' => ['At least one evidence image is required.'],
             ]);
@@ -570,7 +567,7 @@ class RepairWarrantyService
 
         [$handlerUserId, $handlerSource] = $this->resolveHandlerForRepair($repair);
 
-        $evidenceMedia = $this->storeEvidenceMedia($images);
+        $evidenceMedia = empty($images) ? [] : $this->storeEvidenceMedia($images);
 
         $preferredReturnMethod = $this->normalizePreferredReturnMethod((string) ($validated['preferred_return_method'] ?? 'walk_in'));
         $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));

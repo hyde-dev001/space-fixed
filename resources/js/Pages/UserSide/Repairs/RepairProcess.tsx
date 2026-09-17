@@ -50,6 +50,7 @@ interface ShopDetails {
   city_state?: string;
   postal_code?: string;
   country?: string;
+  registration_type?: string | null;
   latitude?: number | string | null;
   longitude?: number | string | null;
 }
@@ -82,6 +83,7 @@ const coverageMessage = (quote: DeliveryQuote): string => {
   if (quote.available) return `Within coverage${quote.distance_km != null ? ` · ${quote.distance_km} km` : ''}${quote.fee != null ? ` · ₱${Number(quote.fee).toLocaleString('en-PH')}` : ''}`;
   if (quote.reason === 'address_needs_pin') return 'Pin required';
   if (quote.reason === 'outside_coverage') return 'Outside coverage';
+  if (quote.reason === 'business_account_required') return 'Shop rider delivery is available only for business accounts.';
   return 'Shop rider delivery unavailable';
 };
 
@@ -155,6 +157,7 @@ const RepairProcess: React.FC = () => {
   const [isLoadingPackages, setIsLoadingPackages] = useState(true);
   const [shopDetails, setShopDetails] = useState<ShopDetails | null>(null);
   const [isLoadingServices, setIsLoadingServices] = useState(true);
+  const isCompanyShop = shopDetails?.registration_type === 'company';
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -196,6 +199,7 @@ const RepairProcess: React.FC = () => {
               name: data.shop.name || 'Repair Shop',
               location: data.shop.location || data.shop.address || '',
               address: data.shop.address || '',
+              registration_type: data.shop.registration_type,
             });
           }
         } else {
@@ -420,7 +424,7 @@ const RepairProcess: React.FC = () => {
   const effectiveReturnAddress = sameAsIntakeAddress ? intakeAddress : separateReturnAddress;
 
   useEffect(() => {
-    if (!shopId || !intakeAddress) {
+    if (!shopId || !isCompanyShop || !intakeAddress) {
       setIntakeQuote({ status: 'idle' });
       return;
     }
@@ -442,10 +446,10 @@ const RepairProcess: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, [shopId, intakeAddress]);
+  }, [shopId, isCompanyShop, intakeAddress]);
 
   useEffect(() => {
-    if (!shopId || !effectiveReturnAddress) {
+    if (!shopId || !isCompanyShop || !effectiveReturnAddress) {
       setReturnQuote({ status: 'idle' });
       return;
     }
@@ -467,22 +471,22 @@ const RepairProcess: React.FC = () => {
       });
 
     return () => controller.abort();
-  }, [shopId, effectiveReturnAddress]);
+  }, [shopId, isCompanyShop, effectiveReturnAddress]);
 
-  const intakeShopOwnedAvailable = Boolean(intakeAddress && intakeQuote.status === 'ready' && intakeQuote.available);
-  const returnShopOwnedAvailable = Boolean(effectiveReturnAddress && returnQuote.status === 'ready' && returnQuote.available);
+  const intakeShopOwnedAvailable = Boolean(isCompanyShop && intakeAddress && intakeQuote.status === 'ready' && intakeQuote.available);
+  const returnShopOwnedAvailable = Boolean(isCompanyShop && effectiveReturnAddress && returnQuote.status === 'ready' && returnQuote.available);
 
   useEffect(() => {
     if (formData.intakeDeliveryMethod === 'shop_pickup' && !intakeShopOwnedAvailable) {
       setFormData((current) => ({ ...current, intakeDeliveryMethod: '' }));
     }
-  }, [formData.intakeDeliveryMethod, intakeShopOwnedAvailable]);
+  }, [formData.intakeDeliveryMethod, intakeShopOwnedAvailable, isCompanyShop]);
 
   useEffect(() => {
     if (formData.returnDeliveryMethod === 'shop_delivery' && !returnShopOwnedAvailable) {
       setFormData((current) => ({ ...current, returnDeliveryMethod: '' }));
     }
-  }, [formData.returnDeliveryMethod, returnShopOwnedAvailable]);
+  }, [formData.returnDeliveryMethod, returnShopOwnedAvailable, isCompanyShop]);
 
   useEffect(() => {
     if (!saveInfoForCheckout) {
@@ -1415,10 +1419,12 @@ const RepairProcess: React.FC = () => {
                           <input type="radio" name="intakeDeliveryMethod" value="walk_in" checked={formData.intakeDeliveryMethod === 'walk_in'} onChange={handleInputChange} className="mt-1 h-4 w-4" />
                           <span><span className="block text-sm font-semibold text-black">Bring it myself</span><span className="mt-1 block text-xs text-gray-600">Walk in and hand your shoes to the shop.</span></span>
                         </label>
-                        <label className={`flex min-h-28 items-start gap-3 rounded-xl border p-3 ${intakeShopOwnedAvailable ? 'cursor-pointer bg-white' : 'cursor-not-allowed bg-gray-100 opacity-70'} ${formData.intakeDeliveryMethod === 'shop_pickup' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
-                          <input type="radio" name="intakeDeliveryMethod" value="shop_pickup" checked={formData.intakeDeliveryMethod === 'shop_pickup'} onChange={handleInputChange} disabled={!intakeShopOwnedAvailable} className="mt-1 h-4 w-4" />
-                          <span><span className="block text-sm font-semibold text-black">Shop rider pickup</span><span className="mt-1 block text-xs text-gray-600">The shop's Logistics rider collects from your pinned address.</span><span className={`mt-2 block text-xs font-semibold ${intakeQuote.available ? 'text-green-700' : 'text-amber-700'}`}>{coverageMessage(intakeQuote)}</span></span>
-                        </label>
+                        {isCompanyShop && (
+                          <label className={`flex min-h-28 items-start gap-3 rounded-xl border p-3 ${intakeShopOwnedAvailable ? 'cursor-pointer bg-white' : 'cursor-not-allowed bg-gray-100 opacity-70'} ${formData.intakeDeliveryMethod === 'shop_pickup' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
+                            <input type="radio" name="intakeDeliveryMethod" value="shop_pickup" checked={formData.intakeDeliveryMethod === 'shop_pickup'} onChange={handleInputChange} disabled={!intakeShopOwnedAvailable} className="mt-1 h-4 w-4" />
+                            <span><span className="block text-sm font-semibold text-black">Shop rider pickup</span><span className="mt-1 block text-xs text-gray-600">The shop's Logistics rider collects from your pinned address.</span><span className={`mt-2 block text-xs font-semibold ${intakeQuote.available ? 'text-green-700' : 'text-amber-700'}`}>{coverageMessage(intakeQuote)}</span></span>
+                          </label>
+                        )}
                         <label className={`flex min-h-28 items-start gap-3 rounded-xl border bg-white p-3 ${formData.intakeDeliveryMethod === 'customer_delivery' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
                           <input type="radio" name="intakeDeliveryMethod" value="customer_delivery" checked={formData.intakeDeliveryMethod === 'customer_delivery'} onChange={handleInputChange} className="mt-1 h-4 w-4" />
                           <span><span className="block text-sm font-semibold text-black">Third-party courier</span><span className="mt-1 block text-xs text-gray-600">You arrange and pay the courier directly. This remains available outside shop coverage.</span></span>
@@ -1468,10 +1474,12 @@ const RepairProcess: React.FC = () => {
                           <input type="radio" name="returnDeliveryMethod" value="walk_in" checked={formData.returnDeliveryMethod === 'walk_in'} onChange={handleInputChange} className="mt-1 h-4 w-4" />
                           <span><span className="block text-sm font-semibold text-black">Collect at shop</span><span className="mt-1 block text-xs text-gray-600">Pick up the repaired shoes yourself.</span></span>
                         </label>
-                        <label className={`flex min-h-28 items-start gap-3 rounded-xl border p-3 ${returnShopOwnedAvailable ? 'cursor-pointer bg-white' : 'cursor-not-allowed bg-gray-100 opacity-70'} ${formData.returnDeliveryMethod === 'shop_delivery' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
-                          <input type="radio" name="returnDeliveryMethod" value="shop_delivery" checked={formData.returnDeliveryMethod === 'shop_delivery'} onChange={handleInputChange} disabled={!returnShopOwnedAvailable} className="mt-1 h-4 w-4" />
-                          <span><span className="block text-sm font-semibold text-black">Shop rider delivery</span><span className="mt-1 block text-xs text-gray-600">The shop's Logistics rider delivers to the selected address.</span><span className={`mt-2 block text-xs font-semibold ${returnQuote.available ? 'text-green-700' : 'text-amber-700'}`}>{coverageMessage(returnQuote)}</span></span>
-                        </label>
+                        {isCompanyShop && (
+                          <label className={`flex min-h-28 items-start gap-3 rounded-xl border p-3 ${returnShopOwnedAvailable ? 'cursor-pointer bg-white' : 'cursor-not-allowed bg-gray-100 opacity-70'} ${formData.returnDeliveryMethod === 'shop_delivery' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
+                            <input type="radio" name="returnDeliveryMethod" value="shop_delivery" checked={formData.returnDeliveryMethod === 'shop_delivery'} onChange={handleInputChange} disabled={!returnShopOwnedAvailable} className="mt-1 h-4 w-4" />
+                            <span><span className="block text-sm font-semibold text-black">Shop rider delivery</span><span className="mt-1 block text-xs text-gray-600">The shop's Logistics rider delivers to the selected address.</span><span className={`mt-2 block text-xs font-semibold ${returnQuote.available ? 'text-green-700' : 'text-amber-700'}`}>{coverageMessage(returnQuote)}</span></span>
+                          </label>
+                        )}
                         <label className={`flex min-h-28 items-start gap-3 rounded-xl border bg-white p-3 ${formData.returnDeliveryMethod === 'customer_pickup' ? 'border-black ring-1 ring-black' : 'border-gray-300'}`}>
                           <input type="radio" name="returnDeliveryMethod" value="customer_pickup" checked={formData.returnDeliveryMethod === 'customer_pickup'} onChange={handleInputChange} className="mt-1 h-4 w-4" />
                           <span><span className="block text-sm font-semibold text-black">Third-party courier</span><span className="mt-1 block text-xs text-gray-600">You arrange and pay the courier directly. This remains available outside shop coverage.</span></span>

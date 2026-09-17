@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\PosTransaction;
+use App\Models\PosReceipt;
 use App\Models\RepairRequest;
+use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -65,6 +68,69 @@ class RepairPosManualQueueTest extends TestCase
         $this->assertSame('manual_pos', (string) data_get($repair->pricing_breakdown, 'mode'));
         $this->assertSame('vat_inclusive', (string) data_get($repair->pricing_breakdown, 'tax_mode'));
         $this->assertSame('12.00', number_format((float) data_get($repair->pricing_breakdown, 'vat_rate', 0), 2, '.', ''));
+    }
+
+    #[Test]
+    public function pos_warranty_claim_does_not_require_evidence_images(): void
+    {
+        Storage::fake('public');
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'individual',
+            'warranty_enabled' => true,
+            'repair_warranty_days' => 30,
+        ]);
+        $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $repair = $this->createRepairRequest([
+            'shop_owner_id' => $shopOwner->id,
+            'request_id' => 'REP-POS-WARRANTY-IMAGELESS-0001',
+            'phone' => '09170000000',
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDay(),
+            'payment_status' => 'completed',
+            'payment_status_derived' => 'completed',
+        ]);
+        $transaction = PosTransaction::create([
+            'transaction_no' => 'POS-POS-WARRANTY-IMAGELESS-0001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in Test',
+            'walk_in_phone' => '09170000000',
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+        PosReceipt::create([
+            'pos_transaction_id' => $transaction->id,
+            'shop_owner_id' => $shopOwner->id,
+            'receipt_no' => 'RCP-POS-WARRANTY-IMAGELESS-0001',
+            'issued_at' => now(),
+            'print_payload' => [],
+            'digital_payload' => [],
+        ]);
+
+        $this->actingAs($cashier, 'user')
+            ->postJson('/api/repair-pos/warranty-claims', [
+                'repair_request_id' => $repair->id,
+                'receipt_no' => 'RCP-POS-WARRANTY-IMAGELESS-0001',
+                'walk_in_phone' => '09170000000',
+                'reason_code' => 'issue_returned',
+                'reason_details' => 'The issue returned after pickup.',
+                'same_issue_confirmation' => '1',
+                'preferred_return_method' => 'walk_in',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('success', true);
+
+        $this->assertSame([], RepairWarrantyClaim::query()->latest('id')->firstOrFail()->evidence_media);
     }
 
     #[Test]

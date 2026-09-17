@@ -26,4 +26,10 @@ describe('repair booking logistics experience', () => {
     expect(source).toContain('disabled={!intakeShopOwnedAvailable}');
     expect(source).toContain('disabled={!returnShopOwnedAvailable}');
   });
+
+  it('shows shop-owned delivery only for company repair shops', () => {
+    expect(source).toContain('registration_type?: string | null;');
+    expect(source).toContain("const isCompanyShop = shopDetails?.registration_type === 'company';");
+    expect(source).toContain('{isCompanyShop && (');
+  });
 });

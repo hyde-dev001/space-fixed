@@ -205,6 +205,7 @@ class RepairLogisticsIntakeTest extends TestCase
     {
         $shop = ShopOwner::factory()->approved()->create([
             'business_type' => 'repair',
+            'registration_type' => 'company',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);

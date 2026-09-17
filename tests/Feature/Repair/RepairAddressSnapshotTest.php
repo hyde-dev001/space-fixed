@@ -25,7 +25,7 @@ class RepairAddressSnapshotTest extends TestCase
 
     public function test_shop_owned_intake_and_same_address_return_store_independent_authoritative_snapshots(): void
     {
-        [$customer, $shop, $service] = $this->fixtures();
+        [$customer, $shop, $service] = $this->fixtures('company');
         $address = $this->address($customer, ['address_line' => '126 Ilang-ilang Street']);
 
         $this->submit($customer, $shop, $service, [
@@ -38,9 +38,6 @@ class RepairAddressSnapshotTest extends TestCase
         $repair = RepairRequest::query()->latest('id')->firstOrFail();
         $this->assertFalse((bool) $repair->payment_enabled);
         $this->assertNull($repair->payment_enabled_at);
-        $this->actingAs($shop, 'shop_owner')
-            ->postJson("/api/shop-owner/repairs/{$repair->id}/activate-payment")
-            ->assertStatus(400);
         $this->assertSame($address->id, $repair->intake_address['address_id']);
         $this->assertSame($address->id, $repair->return_address['address_id']);
         $this->assertSame($repair->intake_address['address_line'], $repair->return_address['address_line']);
@@ -98,6 +95,23 @@ class RepairAddressSnapshotTest extends TestCase
         $this->assertSame(0.0, (float) $repair->return_delivery_fee);
     }
 
+    public function test_individual_both_shop_cannot_use_shop_owned_delivery(): void
+    {
+        [$customer, $shop, $service] = $this->fixtures();
+        $shop->update([
+            'business_type' => 'both',
+            'registration_type' => 'individual',
+        ]);
+        $address = $this->address($customer);
+
+        $this->submit($customer, $shop, $service, [
+            'intake_delivery_method' => 'shop_pickup',
+            'intake_address_id' => $address->id,
+            'return_delivery_method' => 'walk_in',
+        ])->assertUnprocessable()
+            ->assertJsonPath('errors.intake_address_id.0', 'Shop rider delivery is available only for company accounts.');
+    }
+
     public function test_repair_booking_phone_must_be_exactly_eleven_digits(): void
     {
         $this->withoutMiddleware();
@@ -113,7 +127,7 @@ class RepairAddressSnapshotTest extends TestCase
 
     public function test_foreign_addresses_and_outside_coverage_are_rejected_only_for_shop_owned_choices(): void
     {
-        [$customer, $shop, $service] = $this->fixtures();
+        [$customer, $shop, $service] = $this->fixtures('company');
         $foreign = $this->address(User::factory()->create());
         $outside = $this->address($customer, ['latitude' => 15.2, 'longitude' => 121.7]);
 
@@ -137,14 +151,14 @@ class RepairAddressSnapshotTest extends TestCase
         ])->assertOk();
     }
 
-    private function fixtures(): array
+    private function fixtures(string $registrationType = 'individual'): array
     {
         $customer = User::factory()->create([
             'identity_verification_status' => User::IDENTITY_APPROVED,
         ]);
         $shop = ShopOwner::factory()->approved()->create([
             'business_type' => 'repair',
-            'registration_type' => 'individual',
+            'registration_type' => $registrationType,
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);

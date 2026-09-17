@@ -100,6 +100,7 @@ class RepairDeliveryQuoteTest extends TestCase
     {
         $customer = User::factory()->create();
         $shop = ShopOwner::factory()->create([
+            'registration_type' => 'company',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
