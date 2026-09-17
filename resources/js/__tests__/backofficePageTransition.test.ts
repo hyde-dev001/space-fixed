@@ -41,6 +41,15 @@ describe('back-office page transition', () => {
     expect(superAdminLayout).toContain('backoffice-page-enter');
   });
 
+  it('anchors back-office modal overlays to the content shell', () => {
+    expect(appCss).toContain('#app .erp-theme .backoffice-content-shell');
+    expect(appCss).toContain('transform: translateZ(0);');
+
+    for (const source of [...layoutSources, superAdminLayout]) {
+      expect(source).toContain('backoffice-content-shell');
+    }
+  });
+
   it('does not alter the customer transition contract', () => {
     expect(appCss).toContain('.customer-page-transition {');
     expect(appCss).toContain('.scroll-reveal {');

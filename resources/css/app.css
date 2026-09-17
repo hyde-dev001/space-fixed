@@ -2329,6 +2329,11 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 /* Back-office navigation changes state with a quiet, non-blurring motion. */
+#app .erp-theme .backoffice-content-shell {
+  /* Keep fixed modal overlays centered in the back-office content area. */
+  transform: translateZ(0);
+}
+
 #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item),
 #app .erp-theme .backoffice-nav-item {
   transition:
@@ -2343,12 +2348,41 @@ html.userside-dark #app .userside-auth-ghost:hover {
   transition: color 220ms ease, fill 220ms ease, stroke 220ms ease;
 }
 
+#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
+  :is(.menu-item-active, .menu-dropdown-item-active),
+#app .erp-theme .backoffice-nav-item[aria-current="page"] {
+  animation: backoffice-nav-active 420ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@keyframes backoffice-nav-active {
+  from {
+    opacity: 0.55;
+    transform: translateY(8px) scale(0.97);
+  }
+
+  65% {
+    opacity: 0.92;
+    transform: translateY(-1px) scale(1.005);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item),
   #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
     :is(.menu-item, .menu-dropdown-item) > [class*="menu-item-icon-"],
   #app .erp-theme .backoffice-nav-item {
     transition: none !important;
+  }
+
+  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
+    :is(.menu-item-active, .menu-dropdown-item-active),
+  #app .erp-theme .backoffice-nav-item[aria-current="page"] {
+    animation: none !important;
   }
 }
 
