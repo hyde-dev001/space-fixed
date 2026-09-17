@@ -2638,11 +2638,6 @@ useEffect(() => {
 							<option value="customer_delivery">Customer Delivery</option>
 						</select>
 					</div>
-					<div>
-						<label for="shop_owner_pos_warranty_images" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Evidence Images</label>
-						<input id="shop_owner_pos_warranty_images" type="file" accept="image/jpeg,image/jpg,image/png,image/webp" multiple style="display:block; width:100%;" />
-						<p style="margin-top:6px; font-size:11px; color:#6b7280;">Upload 1 to 10 images (JPEG/PNG/WEBP, max 20MB each).</p>
-					</div>
 				</div>
 			`,
 			showCancelButton: true,
@@ -2654,7 +2649,6 @@ useEffect(() => {
 				const reasonCode = (document.getElementById('shop_owner_pos_warranty_reason_code') as HTMLSelectElement | null)?.value?.trim() || '';
 				const reasonDetails = (document.getElementById('shop_owner_pos_warranty_reason_details') as HTMLTextAreaElement | null)?.value?.trim() || '';
 				const preferredReturnMethod = (document.getElementById('shop_owner_pos_warranty_return_method') as HTMLSelectElement | null)?.value?.trim() || 'walk_in';
-				const files = Array.from((document.getElementById('shop_owner_pos_warranty_images') as HTMLInputElement | null)?.files || []);
 
 				if (!reasonCode) {
 					Swal.showValidationMessage('Please select a reason.');
@@ -2666,21 +2660,10 @@ useEffect(() => {
 					return null;
 				}
 
-				if (files.length === 0) {
-					Swal.showValidationMessage('Please upload at least one image.');
-					return null;
-				}
-
-				if (files.length > 10) {
-					Swal.showValidationMessage('You can upload a maximum of 10 images.');
-					return null;
-				}
-
 				return {
 					reasonCode,
 					reasonDetails,
 					preferredReturnMethod: preferredReturnMethod === 'customer_delivery' ? 'customer_delivery' : 'walk_in',
-					files,
 				};
 			},
 		});
@@ -2697,7 +2680,6 @@ useEffect(() => {
 				reason_code: modal.value.reasonCode,
 				reason_details: modal.value.reasonDetails,
 				preferred_return_method: modal.value.preferredReturnMethod,
-				images: modal.value.files,
 			});
 
 			setReceiptHistory((prev) => prev.map((entry) => (

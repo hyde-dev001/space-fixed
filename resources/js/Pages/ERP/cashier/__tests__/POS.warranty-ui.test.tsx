@@ -190,8 +190,9 @@ describe("Cashier POS warranty UI", () => {
     });
   });
 
-  it("validates warranty modal and requires at least one evidence image", async () => {
+  it("does not ask POS warranty claims for evidence images", async () => {
     historyRows = [buildRepairHistoryRow()];
+    let preConfirmValue: unknown;
 
     swalFireMock.mockImplementation(async (config: any) => {
       if (config?.title === "File Warranty Claim" && typeof config.preConfirm === "function") {
@@ -205,14 +206,10 @@ describe("Cashier POS warranty UI", () => {
         const reasonDetails = document.createElement("textarea");
         reasonDetails.id = "pos_warranty_reason_details";
 
-        const images = document.createElement("input");
-        images.id = "pos_warranty_images";
-        images.type = "file";
+        document.body.append(reasonCode, reasonDetails);
 
-        document.body.append(reasonCode, reasonDetails, images);
-
-        await config.preConfirm();
-        return { isConfirmed: false };
+        preConfirmValue = await config.preConfirm();
+        return { isConfirmed: false, value: preConfirmValue };
       }
 
       return { isConfirmed: false };
@@ -225,13 +222,18 @@ describe("Cashier POS warranty UI", () => {
     const warrantyButton = await screen.findByRole("button", { name: "Warranty" });
     fireEvent.click(warrantyButton);
 
-    await waitFor(() => {
-      expect(swalShowValidationMessageMock).toHaveBeenCalledWith("Please upload at least one image.");
-    });
+    await waitFor(() => expect(preConfirmValue).toEqual({
+      reasonCode: "issue_returned",
+      reasonDetails: "",
+    }));
+
+    expect(swalShowValidationMessageMock).not.toHaveBeenCalled();
 
     const warrantyConfig = swalFireMock.mock.calls.find(
       ([config]) => config?.title === "File Warranty Claim",
     )?.[0];
+    expect(warrantyConfig?.html).not.toContain("Evidence Images");
+    expect(warrantyConfig?.html).not.toContain("pos_warranty_images");
     expect(warrantyConfig?.html).not.toContain("Preferred Return Method");
     expect(warrantyConfig?.html).not.toContain("pos_warranty_return_method");
   });

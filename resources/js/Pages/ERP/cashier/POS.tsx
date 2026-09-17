@@ -1786,11 +1786,6 @@ const PointOfSalePage = () => {
 						<label for="pos_warranty_reason_details" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Details</label>
 						<textarea id="pos_warranty_reason_details" class="swal2-textarea" style="margin:0; width:100%;" placeholder="Describe the issue..."></textarea>
 					</div>
-					<div>
-						<label for="pos_warranty_images" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Evidence Images</label>
-						<input id="pos_warranty_images" type="file" accept="image/jpeg,image/jpg,image/png,image/webp" multiple style="display:block; width:100%;" />
-						<p style="margin-top:6px; font-size:11px; color:#6b7280;">Upload 1 to 10 images (JPEG/PNG/WEBP, max 20MB each).</p>
-					</div>
 				</div>
 			`,
 			showCancelButton: true,
@@ -1801,7 +1796,6 @@ const PointOfSalePage = () => {
 			preConfirm: () => {
 				const reasonCode = (document.getElementById('pos_warranty_reason_code') as HTMLSelectElement | null)?.value?.trim() || '';
 				const reasonDetails = (document.getElementById('pos_warranty_reason_details') as HTMLTextAreaElement | null)?.value?.trim() || '';
-				const files = Array.from((document.getElementById('pos_warranty_images') as HTMLInputElement | null)?.files || []);
 
 				if (!reasonCode) {
 					Swal.showValidationMessage('Please select a reason.');
@@ -1813,20 +1807,9 @@ const PointOfSalePage = () => {
 					return null;
 				}
 
-				if (files.length === 0) {
-					Swal.showValidationMessage('Please upload at least one image.');
-					return null;
-				}
-
-				if (files.length > 10) {
-					Swal.showValidationMessage('You can upload a maximum of 10 images.');
-					return null;
-				}
-
 				return {
 					reasonCode,
 					reasonDetails,
-					files,
 				};
 			},
 		});
@@ -1843,7 +1826,6 @@ const PointOfSalePage = () => {
 				reason_code: modal.value.reasonCode,
 				reason_details: modal.value.reasonDetails,
 				preferred_return_method: "walk_in",
-				images: modal.value.files,
 			});
 
 			setReceiptHistory((prev) => prev.map((entry) => (

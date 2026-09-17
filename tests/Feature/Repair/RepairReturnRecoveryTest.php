@@ -474,7 +474,10 @@ class RepairReturnRecoveryTest extends TestCase
 
     private function returnedRepairFixture(): array
     {
-        $shop = ShopOwner::factory()->create(['business_type' => 'repair']);
+        $shop = ShopOwner::factory()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'shipped',

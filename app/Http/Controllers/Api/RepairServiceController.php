@@ -129,6 +129,7 @@ class RepairServiceController extends Controller
                     'city_state',
                     'postal_code',
                     'country',
+                    'registration_type',
                     'shop_latitude',
                     'shop_longitude'
                 )
@@ -148,6 +149,7 @@ class RepairServiceController extends Controller
                     'city_state' => $shopOwner->city_state,
                     'postal_code' => $shopOwner->postal_code,
                     'country' => $shopOwner->country,
+                    'registration_type' => $shopOwner->registration_type,
                     'latitude' => $shopOwner->shop_latitude,
                     'longitude' => $shopOwner->shop_longitude,
                     'location' => $location,

@@ -61,6 +61,17 @@ final class RepairDeliveryService
 
     public function quote(ShopOwner $shop, UserAddress $address): array
     {
+        if (! $shop->isCompany()) {
+            return [
+                'available' => false,
+                'reason' => 'business_account_required',
+                'distance_km' => null,
+                'coverage_radius_km' => null,
+                'fee' => null,
+                'estimate' => null,
+            ];
+        }
+
         $coverage = $this->schedules->coverage($shop, $address->latitude, $address->longitude);
         if (! $coverage['available']) {
             return [...$coverage, 'fee' => null, 'estimate' => null];
