@@ -2397,15 +2397,15 @@ export default function GenerateSlip() {
 											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.withholdingTax)}</span>
 										</div>
 										<div className="flex items-center justify-between">
-											<span className="text-gray-600 dark:text-gray-400">SSS Contribution</span>
+											<span className="text-gray-600 dark:text-gray-400">SSS Contribution (Employee)</span>
 											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.sssContribution)}</span>
 										</div>
 										<div className="flex items-center justify-between">
-											<span className="text-gray-600 dark:text-gray-400">PhilHealth Contribution</span>
+											<span className="text-gray-600 dark:text-gray-400">PhilHealth Contribution (Employee)</span>
 											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.philhealthContribution)}</span>
 										</div>
 										<div className="flex items-center justify-between">
-											<span className="text-gray-600 dark:text-gray-400">Pag-IBIG Contribution</span>
+											<span className="text-gray-600 dark:text-gray-400">Pag-IBIG Contribution (Employee)</span>
 											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.pagibigContribution)}</span>
 										</div>
 										{payrollBreakdown.deductions.absentDeductions > 0 && (

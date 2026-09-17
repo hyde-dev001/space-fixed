@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Erp\HR;
 
 use App\Http\Controllers\Controller;
+use App\Models\Approval;
 use App\Models\HR\Payroll;
 use App\Models\HR\PayrollComponent;
 use App\Models\HR\BranchPayrollSetting;
@@ -15,8 +16,10 @@ use App\Services\HR\PayrollService;
 use App\Services\HR\EmployeeOperationalPolicy;
 use App\Services\Finance\ExpenseSettlementService;
 use App\Services\PayslipApprovalService;
+use App\Enums\ApprovalStatus;
 use App\Services\NotificationService;
 use App\Support\Finance\FinanceErrorResponse;
+use App\Support\PayrollMoney;
 use App\Traits\HR\LogsHRActivity;
 use App\Notifications\HR\PayslipGenerated;
 use Illuminate\Http\Request;
@@ -227,12 +230,14 @@ class PayrollController extends Controller
             'payrollPeriod'    => 'required|string',
             'paymentMethod'    => 'required|in:bank_transfer,check,cash',
             'attendance_days'  => 'nullable|integer|min:0|max:31',
+            'half_day_days'    => 'nullable|integer|min:0|max:31',
             'leave_days'       => 'nullable|integer|min:0|max:31',
             'absent_days'      => 'nullable|integer|min:0|max:31',
             'overtime_hours'   => 'nullable|numeric|min:0|max:744',
             'special_holiday_hours' => 'nullable|numeric|min:0|max:744',
             'regular_holiday_hours' => 'nullable|numeric|min:0|max:744',
             'undertime_hours'  => 'nullable|numeric|min:0|max:744',
+            'late_hours'       => 'nullable|numeric|min:0|max:744',
             'salesCommission'  => 'nullable|numeric|min:0',
             'performanceBonus' => 'nullable|numeric|min:0',
             'otherAllowances'  => 'nullable|numeric|min:0',
@@ -282,12 +287,14 @@ class PayrollController extends Controller
         // Build overrides for the service (attendance, leave, overtime, payment method).
         $overrides = ['payment_method' => $request->paymentMethod];
         if ($request->filled('attendance_days')) $overrides['attendance_days'] = (int)   $request->attendance_days;
+        if ($request->filled('half_day_days'))   $overrides['half_day_days']   = (int)   $request->half_day_days;
         if ($request->filled('leave_days'))      $overrides['leave_days']      = (int)   $request->leave_days;
         if ($request->filled('absent_days'))     $overrides['absent_days']     = (int)   $request->absent_days;
         if ($request->filled('overtime_hours'))  $overrides['overtime_hours']  = (float) $request->overtime_hours;
         if ($request->filled('special_holiday_hours')) $overrides['special_holiday_hours'] = (float) $request->special_holiday_hours;
         if ($request->filled('regular_holiday_hours')) $overrides['regular_holiday_hours'] = (float) $request->regular_holiday_hours;
         if ($request->filled('undertime_hours')) $overrides['undertime_hours'] = (float) $request->undertime_hours;
+        if ($request->filled('late_hours'))      $overrides['late_hours']      = (float) $request->late_hours;
 
         try {
             $payroll = $this->payrollService->generatePayroll(
@@ -602,6 +609,25 @@ class PayrollController extends Controller
                             throw new \RuntimeException("Payroll ID {$payrollId} has an invalid approval chain. Checker and final approver must differ.");
                         }
 
+                        if ($payroll->approval_id) {
+                            $approval = Approval::query()->lockForUpdate()->find($payroll->approval_id);
+                            $approvalMetadata = is_array($approval?->metadata) ? $approval->metadata : [];
+                            if (! $approval || $approval->status !== ApprovalStatus::APPROVED) {
+                                throw new \RuntimeException("Payroll ID {$payrollId} does not have a completed approval record.");
+                            }
+                            if (PayrollMoney::compare($approval->amount, $payroll->net_salary) !== 0) {
+                                throw new \RuntimeException("Payroll ID {$payrollId} approval amount does not match net salary.");
+                            }
+                            if (($approvalMetadata['financial_fingerprint'] ?? null) !== $payroll->financialFingerprint()) {
+                                throw new \RuntimeException("Payroll ID {$payrollId} approval snapshot is stale.");
+                            }
+                        }
+
+                        $reconciliationIssues = $payroll->reconciliationIssues();
+                        if ($reconciliationIssues !== []) {
+                            throw new \RuntimeException("Payroll ID {$payrollId} failed payroll reconciliation.");
+                        }
+
                         $disbursementDetails = [
                             'disbursed_by' => (int) $user->id,
                         ];
@@ -626,7 +652,9 @@ class PayrollController extends Controller
                             $disbursementDetails['payout_proof_notes'] = (string) $request->input('payoutProofNotes');
                         }
 
-                        $payroll->markAsPaid($paymentDate, $disbursementDetails);
+                        if (! $payroll->markAsPaid($paymentDate, $disbursementDetails)) {
+                            throw new \RuntimeException("Payroll ID {$payrollId} could not be marked as paid.");
+                        }
 
                         // Payroll state, its Finance expense, and the linked
                         // settlement commit or roll back as one transaction.
@@ -705,8 +733,8 @@ class PayrollController extends Controller
      */
     private function createExpenseFromPaidPayroll(Payroll $payroll, User $actor, string $paymentDate): void
     {
-        $amount = (float) ($payroll->net_salary ?? 0);
-        if ($amount <= 0) {
+        $amount = PayrollMoney::round($payroll->net_salary ?? 0);
+        if (PayrollMoney::compare($amount, 0) <= 0) {
             throw new \RuntimeException('Payroll net salary must be greater than zero before disbursement.');
         }
 
@@ -736,9 +764,22 @@ class PayrollController extends Controller
 
         $expenseDate = \Illuminate\Support\Carbon::parse($paymentDate)->toDateString();
 
-        $expense = Expense::firstOrCreate(
-            ['reference' => $reference],
-            [
+        $expense = Expense::query()
+            ->where('reference', $reference)
+            ->lockForUpdate()
+            ->first();
+
+        if ($expense) {
+            $expenseMeta = is_array($expense->meta) ? $expense->meta : [];
+            if ((int) $expense->shop_id !== (int) $payroll->shop_owner_id
+                || PayrollMoney::compare($expense->amount, $amount) !== 0
+                || (int) ($expenseMeta['payroll_id'] ?? 0) !== (int) $payroll->id
+                || (string) ($expenseMeta['source'] ?? '') !== $metaSource) {
+                throw new \RuntimeException('Existing payroll expense does not match the approved payroll amount or shop.');
+            }
+        } else {
+            $expense = Expense::create([
+                'reference' => $reference,
                 'date' => $expenseDate,
                 'category' => $category,
                 'vendor' => $employeeName,
@@ -758,11 +799,11 @@ class PayrollController extends Controller
                     'payout_proof_type' => $payroll->payout_proof_type,
                     'payout_proof_reference' => $payroll->payout_proof_reference,
                 ],
-            ]
-        );
+            ]);
+        }
 
         $this->expenseSettlementService->record($expense, $actor, [
-            'amount' => number_format($amount, 2, '.', ''),
+            'amount' => $amount,
             'payment_method' => (string) ($payroll->payment_method ?: 'bank_transfer'),
             'reference' => (string) ($payroll->payout_reference ?: $reference),
             'paid_at' => $paymentDate,
@@ -869,10 +910,16 @@ class PayrollController extends Controller
             return response()->json(['error' => 'Cannot recalculate non-pending payroll'], 422);
         }
 
+        if ($payroll->financialMutationLocked()) {
+            return response()->json(['error' => 'Payroll financial values are locked after approval starts'], 422);
+        }
+
         $validator = Validator::make($request->all(), [
             'attendance_days' => 'sometimes|integer|min:0|max:31',
+            'half_day_days'   => 'sometimes|integer|min:0|max:31',
             'leave_days'      => 'sometimes|integer|min:0|max:31',
             'overtime_hours'  => 'sometimes|numeric|min:0|max:744',
+            'late_hours'      => 'sometimes|numeric|min:0|max:744',
         ]);
 
         if ($validator->fails()) {
@@ -882,7 +929,7 @@ class PayrollController extends Controller
         try {
             $recalculated = $this->payrollService->recalculatePayroll(
                 $payroll,
-                $request->only(['attendance_days', 'leave_days', 'overtime_hours'])
+                $request->only(['attendance_days', 'half_day_days', 'leave_days', 'overtime_hours', 'late_hours'])
             );
 
             return response()->json([
@@ -1064,6 +1111,7 @@ class PayrollController extends Controller
             'special_holiday_hours' => 'nullable|numeric|min:0',
             'regular_holiday_hours' => 'nullable|numeric|min:0',
             'undertime_hours' => 'nullable|numeric|min:0',
+            'late_hours' => 'nullable|numeric|min:0',
             'absent_days'    => 'nullable|integer|min:0',
             'sales_commission' => 'nullable|numeric|min:0',
             'performance_bonus' => 'nullable|numeric|min:0',
@@ -1085,6 +1133,7 @@ class PayrollController extends Controller
         $specialHolidayHours = (float) ($request->special_holiday_hours ?? 0);
         $regularHolidayHours = (float) ($request->regular_holiday_hours ?? 0);
         $undertimeHours = (float) ($request->undertime_hours ?? 0);
+        $lateHours = (float) ($request->late_hours ?? 0);
         $absentDays = (int) ($request->absent_days ?? 0);
 
         $preview = $this->payrollService->previewPayroll(
@@ -1102,6 +1151,7 @@ class PayrollController extends Controller
                 'special_holiday_hours' => $specialHolidayHours,
                 'regular_holiday_hours' => $regularHolidayHours,
                 'undertime_hours' => $undertimeHours,
+                'late_hours' => $lateHours,
                 'absent_days' => $absentDays,
             ]
         );
@@ -1128,6 +1178,7 @@ class PayrollController extends Controller
         $pagibig = (float) ($statutory['pagibig_contribution'] ?? 0);
         $absentDeductions = (float) ($breakdown['absent_deductions'] ?? 0);
         $undertimeDeductions = (float) ($breakdown['undertime_deductions'] ?? 0);
+        $lateDeductions = (float) ($breakdown['late_deductions'] ?? 0);
         $totalDeductions = (float) ($calculation['total_deductions'] ?? 0);
         $totalEarnings = (float) ($calculation['gross_salary'] ?? 0);
         $netPay = (float) ($calculation['net_salary'] ?? 0);
@@ -1148,6 +1199,7 @@ class PayrollController extends Controller
                     'special_holiday_hours' => round($specialHolidayHours, 2),
                     'regular_holiday_hours' => round($regularHolidayHours, 2),
                     'undertime_hours' => round($undertimeHours, 2),
+                    'late_hours' => round($lateHours, 2),
                     'absent_days'    => $absentDays,
                 ],
                 'earnings' => [
@@ -1167,6 +1219,7 @@ class PayrollController extends Controller
                     'pagibig_contribution'    => round($pagibig, 2),
                     'absent_deductions'       => round($absentDeductions, 2),
                     'undertime_deductions'    => round($undertimeDeductions, 2),
+                    'late_deductions'         => round($lateDeductions, 2),
                     'total_deductions'        => round($totalDeductions, 2),
                 ],
                 'net_pay'   => round($netPay, 2),

@@ -18,7 +18,7 @@ class ApprovalService
         User $shopOwner,
         string $reference = '',
         string $description = '',
-        float $amount = 0,
+        string|int|float $amount = 0,
         ?array $metadata = null
     ): Approval {
         $first_role = $approvalRoles['1'] ?? null;

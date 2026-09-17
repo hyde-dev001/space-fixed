@@ -31,6 +31,11 @@ type SlipRecord = {
         other: number;
         total: number;
     };
+    employerContributions?: {
+        sss: number;
+        philhealth: number;
+        pagibig: number;
+    };
     // Hours breakdown (to match Generate Payslip output)
     totalRegularHours?: number;
     totalOvertimeHours?: number;
@@ -76,10 +81,11 @@ const buildDeductionDetails = (apiPayroll: any) => {
     const philhealth = toNumber(apiPayroll.philhealth ?? apiPayroll.philhealth_contributions);
     const pagibig = toNumber(apiPayroll.pag_ibig ?? apiPayroll.pagibig);
 
-    const legacyTotal = toNumber(apiPayroll.deductions);
-    const componentTotal = toNumber(apiPayroll.total_deductions);
+    const storedTotal = apiPayroll.total_deductions ?? apiPayroll.deductions;
     const statutoryTotal = withholdingTax + sss + philhealth + pagibig;
-    const total = legacyTotal > 0 ? legacyTotal : componentTotal + statutoryTotal;
+    const total = storedTotal !== null && storedTotal !== undefined
+        ? toNumber(storedTotal)
+        : statutoryTotal;
     const other = Math.max(0, total - statutoryTotal);
 
     return {
@@ -123,6 +129,7 @@ const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
     const department = apiPayroll.employee?.department || 'N/A';
     const employeeIdDisplay = apiPayroll.employee?.employee_id || 'N/A';
     const deductionDetails = buildDeductionDetails(apiPayroll);
+    const employerSnapshot = apiPayroll.calculation_snapshot?.employer_contributions;
     const attendanceDays = toNumber(apiPayroll.attendance_days);
     const regularHours = toNumber(apiPayroll.regular_hours);
     const absentDays = toNumber(apiPayroll.absent_days ?? apiPayroll.leave_days);
@@ -145,6 +152,11 @@ const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
             : new Date(apiPayroll.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         status: resolveSlipStatus(apiPayroll),
         deductionDetails,
+        employerContributions: {
+            sss: toNumber(employerSnapshot?.sss_contribution),
+            philhealth: toNumber(employerSnapshot?.philhealth_contribution),
+            pagibig: toNumber(employerSnapshot?.pagibig_contribution),
+        },
         totalRegularHours: regularHours > 0 ? regularHours : attendanceDays * 8,
         totalOvertimeHours: toNumber(apiPayroll.overtime_hours),
         totalSpecialHolidayHours: toNumber(apiPayroll.special_holiday_hours),
@@ -705,6 +717,36 @@ export default function ViewSlip() {
                                 </div>
                             </div>
                             
+                            {((selectedSlip.employerContributions?.sss || 0)
+                                + (selectedSlip.employerContributions?.philhealth || 0)
+                                + (selectedSlip.employerContributions?.pagibig || 0)) > 0 && (
+                                <div className="border-t border-dashed border-gray-200 dark:border-gray-700 pt-4">
+                                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">
+                                        Employer Contributions (not deducted from Net Pay)
+                                    </h4>
+                                    <div className="space-y-2.5">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-gray-600 dark:text-gray-400">SSS (Employer)</span>
+                                            <span className="text-gray-900 dark:text-white font-medium">
+                                                {formatPHP(selectedSlip.employerContributions?.sss || 0)}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-gray-600 dark:text-gray-400">PhilHealth (Employer)</span>
+                                            <span className="text-gray-900 dark:text-white font-medium">
+                                                {formatPHP(selectedSlip.employerContributions?.philhealth || 0)}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-gray-600 dark:text-gray-400">Pag-IBIG (Employer)</span>
+                                            <span className="text-gray-900 dark:text-white font-medium">
+                                                {formatPHP(selectedSlip.employerContributions?.pagibig || 0)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="border-t border-dashed border-gray-200 dark:border-gray-700" />
                             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 -mx-5 px-5 py-3">
                                 <div className="flex items-center justify-between">

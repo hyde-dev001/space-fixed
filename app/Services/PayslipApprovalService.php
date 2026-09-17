@@ -26,6 +26,7 @@ class PayslipApprovalService
     {
         $result = DB::transaction(function () use ($payslip, $generatedBy, $shopOwner): array {
             $lockedPayslip = Payroll::query()
+                ->with(['employee', 'components'])
                 ->lockForUpdate()
                 ->findOrFail($payslip->getKey());
 
@@ -56,13 +57,15 @@ class PayslipApprovalService
                 shopOwner: $shopOwner,
                 reference: "PAYROLL-{$lockedPayslip->id}",
                 description: "Payroll: {$lockedPayslip->employee->first_name} {$lockedPayslip->employee->last_name} ({$lockedPayslip->payroll_period})",
-                amount: (float) $lockedPayslip->gross_salary,
+                amount: (string) $lockedPayslip->net_salary,
                 metadata: [
                     'payroll_id' => $lockedPayslip->id,
                     'employee_id' => $lockedPayslip->employee_id,
                     'pay_period' => $lockedPayslip->payroll_period,
-                    'gross_salary' => (float) $lockedPayslip->gross_salary,
-                    'net_salary' => (float) $lockedPayslip->net_salary,
+                    'gross_salary' => (string) $lockedPayslip->gross_salary,
+                    'net_salary' => (string) $lockedPayslip->net_salary,
+                    'financial_snapshot' => $lockedPayslip->financialSnapshot(),
+                    'financial_fingerprint' => $lockedPayslip->financialFingerprint(),
                     'generated_by' => $generatedBy->id,
                 ]
             );
@@ -129,7 +132,10 @@ class PayslipApprovalService
         }
 
         $result = DB::transaction(function () use ($payslip, $approver, $comments): array {
-            $lockedPayslip = Payroll::query()->lockForUpdate()->find($payslip->id);
+            $lockedPayslip = Payroll::query()
+                ->with('components')
+                ->lockForUpdate()
+                ->find($payslip->id);
             $approval = $lockedPayslip?->approval_id
                 ? Approval::query()->lockForUpdate()->find($lockedPayslip->approval_id)
                 : null;
@@ -138,6 +144,23 @@ class PayslipApprovalService
                 return [
                     'success' => false,
                     'message' => 'Approval record not found',
+                ];
+            }
+
+            $metadata = is_array($approval->metadata) ? $approval->metadata : [];
+            if (($metadata['financial_fingerprint'] ?? null) !== $lockedPayslip->financialFingerprint()) {
+                return [
+                    'success' => false,
+                    'message' => 'Payslip financial values changed after approval was requested. Regenerate the payslip before approving it.',
+                ];
+            }
+
+            $reconciliationIssues = $lockedPayslip->reconciliationIssues();
+            if ($reconciliationIssues !== []) {
+                return [
+                    'success' => false,
+                    'message' => 'Payslip reconciliation failed. Resolve the payroll mismatch before approving it.',
+                    'reconciliation_issues' => $reconciliationIssues,
                 ];
             }
 
@@ -234,6 +257,15 @@ class PayslipApprovalService
                 'approved_at' => now(),
                 'approval_notes' => $comments,
                 'current_approval_level' => $approval->current_level,
+                'final_approved_by' => null,
+                'final_approved_at' => null,
+                'final_approval_notes' => null,
+                'payout_reference' => null,
+                'payout_proof_type' => null,
+                'payout_proof_reference' => null,
+                'payout_proof_notes' => null,
+                'disbursed_by' => null,
+                'disbursed_at' => null,
             ]);
 
             return $result;
