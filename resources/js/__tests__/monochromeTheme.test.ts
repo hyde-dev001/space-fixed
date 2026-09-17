@@ -206,6 +206,9 @@ describe('shared monochrome Light and Dark Mode theme', () => {
     expect(appCss).toContain('#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item)');
     expect(appCss).toContain('#app .erp-theme .backoffice-nav-item');
     expect(appCss).toContain('background-color 280ms cubic-bezier(.22, 1, .36, 1)');
+    expect(appCss).toContain('animation: backoffice-nav-active 420ms cubic-bezier(.22, 1, .36, 1) both;');
+    expect(appCss).toContain('.backoffice-nav-item[aria-current="page"]');
+    expect(appCss).toContain('@keyframes backoffice-nav-active');
     expect(appCss).toContain('transition: none !important;');
     expect(ownerModuleTabs).toContain('backoffice-nav-item');
 
