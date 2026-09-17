@@ -56,6 +56,7 @@ const readOwnerActiveModule = (value: unknown): OwnerActiveModule | null => {
 
 const LayoutContent: React.FC<{ children: ReactNode; hideHeader?: boolean; fullBleed?: boolean }> = ({ children, hideHeader, fullBleed }) => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
+  const page = usePage();
 
   return (
     <div className="erp-theme min-h-screen xl:flex bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
@@ -70,7 +71,9 @@ const LayoutContent: React.FC<{ children: ReactNode; hideHeader?: boolean; fullB
       >
         {!hideHeader && <AppHeader_ERP />}
         <div className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
-          {children}
+          <div key={page.component} className="backoffice-page-enter">
+            {children}
+          </div>
         </div>
       </div>
     </div>

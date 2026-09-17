@@ -37,8 +37,10 @@ class SingleDeliveryOfferTest extends TestCase
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
         Permission::findOrCreate('assign-logistics-deliveries', 'user');
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo('assign-logistics-deliveries');
         $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($user);
         $rider = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
             'linked_type' => User::class,
@@ -48,6 +50,7 @@ class SingleDeliveryOfferTest extends TestCase
             'availability_status' => 'available',
         ]);
         $otherUser = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($otherUser);
         RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
             'linked_type' => User::class,

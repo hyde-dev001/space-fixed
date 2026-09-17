@@ -87,6 +87,7 @@ class LogisticsEmployeeRoleAccessTest extends TestCase
             'shop_owner_id' => $shop->id,
             'role' => 'HR',
         ]);
+        $this->clockInEmployee($hrUser);
         $hrUser->givePermissionTo(Permission::findOrCreate('access-employee-directory', 'user'));
 
         $response = $this->actingAs($hrUser, 'user')

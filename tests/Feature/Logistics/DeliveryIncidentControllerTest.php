@@ -86,6 +86,7 @@ class DeliveryIncidentControllerTest extends TestCase
             'photo_paths' => [],
         ]);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($staff);
         $otherShop = ShopOwner::factory()->create();
         $otherStaff = User::factory()->create(['shop_owner_id' => $otherShop->id]);
         Permission::findOrCreate('resolve-logistics-exceptions', 'user');
@@ -124,6 +125,7 @@ class DeliveryIncidentControllerTest extends TestCase
             'status' => 'reported',
         ]);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($staff);
         Permission::findOrCreate('resolve-logistics-exceptions', 'user');
         $staff->givePermissionTo('resolve-logistics-exceptions');
 
@@ -142,6 +144,7 @@ class DeliveryIncidentControllerTest extends TestCase
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'picked_up']);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
             'linked_type' => User::class,

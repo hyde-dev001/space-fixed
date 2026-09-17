@@ -139,6 +139,7 @@ class RiderTenantAuthorizationTest extends TestCase
         $shop = ShopOwner::factory()->create();
         $foreignShop = ShopOwner::factory()->create();
         $foreignUser = User::factory()->create(['shop_owner_id' => $foreignShop->id]);
+        $this->clockInEmployee($foreignUser);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
         $profile = RiderProfile::factory()->create([
@@ -167,6 +168,7 @@ class RiderTenantAuthorizationTest extends TestCase
         $shop = ShopOwner::factory()->create();
         $foreignShop = ShopOwner::factory()->create();
         $foreignUser = User::factory()->create(['shop_owner_id' => $foreignShop->id]);
+        $this->clockInEmployee($foreignUser);
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $foreignShop->id,
             'linked_type' => User::class,
