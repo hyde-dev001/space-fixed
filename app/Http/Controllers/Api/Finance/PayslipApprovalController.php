@@ -553,6 +553,13 @@ class PayslipApprovalController extends Controller
             );
 
             try {
+                $this->notificationService->notifyPayslipReadyForDisbursement($actor['shop_owner_id'], [
+                    'payroll_id' => $payslip->id,
+                    'period' => $payslip->payroll_period,
+                    'employee_name' => trim(($payslip->employee?->first_name ?? '') . ' ' . ($payslip->employee?->last_name ?? '')),
+                    'net_salary' => number_format((float) $payslip->net_salary, 2),
+                ]);
+
                 if ($payslip->employee && $payslip->employee->user) {
                     $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
                     if ($employeeUserId > 0) {
@@ -887,6 +894,13 @@ class PayslipApprovalController extends Controller
                 );
 
                 try {
+                    $this->notificationService->notifyPayslipReadyForDisbursement($actor['shop_owner_id'], [
+                        'payroll_id' => $payslip->id,
+                        'period' => $payslip->payroll_period,
+                        'employee_name' => trim(($payslip->employee?->first_name ?? '') . ' ' . ($payslip->employee?->last_name ?? '')),
+                        'net_salary' => number_format((float) $payslip->net_salary, 2),
+                    ]);
+
                     if ($payslip->employee && $payslip->employee->user) {
                         $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
                         if ($employeeUserId > 0) {

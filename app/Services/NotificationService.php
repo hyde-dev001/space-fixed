@@ -1072,6 +1072,37 @@ class NotificationService
         );
     }
 
+    /** Notify eligible Finance users when a payslip can be disbursed. */
+    public function notifyPayslipReadyForDisbursement(int $shopId, array $payrollData): void
+    {
+        $payrollId = (int) ($payrollData['payroll_id'] ?? 0);
+        if ($payrollId < 1) {
+            Log::warning('Payslip disbursement notification is missing its payroll id', [
+                'shop_id' => $shopId,
+            ]);
+            return;
+        }
+
+        $employeeName = trim((string) ($payrollData['employee_name'] ?? '')) ?: 'Employee';
+        $period = trim((string) ($payrollData['period'] ?? '')) ?: 'the current period';
+        $netSalary = (string) ($payrollData['net_salary'] ?? '0.00');
+        $groupKey = "payslip-approval-{$payrollId}-ready-for-disbursement";
+
+        $this->sendToErpRole(
+            roleName: 'Finance',
+            shopId: $shopId,
+            type: NotificationType::PAYROLL_GENERATED,
+            title: 'Payslip Ready for Disbursement',
+            message: "Payroll {$period} for {$employeeName} (PHP {$netSalary}) is ready for disbursement.",
+            data: $payrollData,
+            actionUrl: '/finance?section=payslip-approvals&workflow_status=ready_for_disbursement&payroll=' . urlencode((string) $payrollId),
+            priority: 'high',
+            groupKey: $groupKey,
+            requiresAction: true,
+            requiredPermission: 'disburse-payroll',
+        );
+    }
+
     /** Notify employee when their payslip is rejected */
     public function notifyPayslipRejected(int $userId, int $shopId, array $payrollData): void
     {
