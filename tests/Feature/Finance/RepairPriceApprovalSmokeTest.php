@@ -17,6 +17,46 @@ class RepairPriceApprovalSmokeTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_individual_shop_owner_applies_repair_service_price_change_without_approval(): void
+    {
+        $this->withoutMiddleware();
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'individual',
+        ]);
+        $service = RepairService::create([
+            'name' => 'Individual Heel Repair',
+            'category' => 'Restoration',
+            'price' => 1000.00,
+            'duration' => '2 days',
+            'description' => 'Individual account test',
+            'status' => 'Active',
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->putJson("/api/shop-owner/repair-services/{$service->id}", [
+                'price' => 1250,
+                'reason' => 'Material cost increase',
+            ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Service updated successfully');
+
+        $service->refresh();
+
+        $this->assertSame('Active', $service->status);
+        $this->assertSame('1250.00', (string) $service->price);
+        $this->assertSame('1000.00', (string) $service->old_price);
+        $this->assertSame('individual_direct', $service->approval_workflow_version);
+        $this->assertNull($service->current_approval_level);
+        $this->assertNull($service->finance_notes);
+        $this->assertDatabaseMissing('notifications', [
+            'shop_owner_id' => $shopOwner->id,
+            'type' => NotificationType::PRICE_CHANGE_REQUEST->value,
+        ]);
+    }
+
     public function test_repair_service_price_change_notifies_each_approval_owner(): void
     {
         $this->withoutMiddleware();
@@ -281,7 +321,7 @@ class RepairPriceApprovalSmokeTest extends TestCase
 
         $shopOwner = ShopOwner::factory()->approved()->create([
             'business_type' => 'both',
-            'registration_type' => 'individual',
+            'registration_type' => 'company',
         ]);
         $this->setOwnerPriceApproval($shopOwner->id, true);
 
