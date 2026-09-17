@@ -146,6 +146,7 @@ class SourceModuleShipmentRequestTest extends TestCase
             'shop_owner_id' => $shop->id,
             'role' => 'STAFF',
         ]);
+        $this->clockInEmployee($staff);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $staff->givePermissionTo('access-staff-job-orders');
         $customer = User::factory()->create();
@@ -185,6 +186,7 @@ class SourceModuleShipmentRequestTest extends TestCase
     {
         $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($staff);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $staff->givePermissionTo('access-staff-job-orders');
         $order = Order::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'shipped']);
@@ -274,6 +276,7 @@ class SourceModuleShipmentRequestTest extends TestCase
             'coverage_radius_km' => 20,
         ]);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($staff);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $staff->givePermissionTo('access-staff-job-orders');
         $customer = User::factory()->create();
@@ -334,6 +337,7 @@ class SourceModuleShipmentRequestTest extends TestCase
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($staff);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $staff->givePermissionTo('access-staff-job-orders');
         $order = Order::factory()->create(['shop_owner_id' => $shop->id]);

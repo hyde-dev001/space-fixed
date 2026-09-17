@@ -271,6 +271,7 @@ class ProofReviewFlowTest extends TestCase
     {
         Permission::findOrCreate('approve-proof-of-delivery', 'user');
         $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($approver);
         $approver->givePermissionTo('approve-proof-of-delivery');
 
         return $approver;
@@ -314,6 +315,7 @@ class ProofReviewFlowTest extends TestCase
             'status' => 'in_transit',
         ]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('record-logistics-proof');
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,

@@ -269,6 +269,7 @@ final class ShopOwnerLogisticsResponsibilityTest extends TestCase
     private function user(ShopOwner $shop, array $permissions = []): User
     {
         $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($user);
         foreach ($permissions as $permission) {
             $user->givePermissionTo(Permission::findOrCreate($permission, 'user'));
         }

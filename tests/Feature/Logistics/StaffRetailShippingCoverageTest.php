@@ -41,6 +41,7 @@ class StaffRetailShippingCoverageTest extends TestCase
             'shop_owner_id' => $this->shop->id,
             'role' => 'STAFF',
         ]);
+        $this->clockInEmployee($this->staff);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $this->staff->givePermissionTo('access-staff-job-orders');
 

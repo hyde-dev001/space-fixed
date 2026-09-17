@@ -85,9 +85,11 @@ class RiderLocationApiTest extends TestCase
     {
         [$leg, $rider, $shop] = $this->fixture();
         $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($otherRider);
         $otherRider->givePermissionTo('update-logistics-status');
         $crossShop = ShopOwner::factory()->create();
         $crossTenantRider = User::factory()->create(['shop_owner_id' => $crossShop->id]);
+        $this->clockInEmployee($crossTenantRider);
         $crossTenantRider->givePermissionTo('update-logistics-status');
 
         foreach ([$otherRider, $crossTenantRider] as $actor) {
@@ -396,6 +398,7 @@ class RiderLocationApiTest extends TestCase
     {
         $shop = ShopOwner::factory()->create();
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('update-logistics-status');
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,

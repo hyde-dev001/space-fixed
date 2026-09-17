@@ -15,6 +15,7 @@ interface AppLayoutShopOwnerProps {
 
 const LayoutContent: React.FC<{ children: ReactNode; fullBleed?: boolean; hideHeader?: boolean }> = ({ children, fullBleed, hideHeader }) => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
+  const page = usePage();
 
   return (
     <div className="erp-theme min-h-screen bg-white text-gray-900 xl:flex dark:bg-gray-950 dark:text-gray-100">
@@ -28,7 +29,9 @@ const LayoutContent: React.FC<{ children: ReactNode; fullBleed?: boolean; hideHe
       >
         {!hideHeader && <AppHeader_shopOwner />}
         <div className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
-          {children}
+          <div key={page.component} className="backoffice-page-enter">
+            {children}
+          </div>
         </div>
       </div>
     </div>

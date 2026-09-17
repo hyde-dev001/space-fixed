@@ -146,6 +146,7 @@ class LogisticsApiTest extends TestCase
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'picked_up']);
         $assignedRider = User::factory()->create(['shop_owner_id' => $shop->id]);
         $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($otherRider);
         $riderProfile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
             'linked_type' => User::class,
@@ -210,6 +211,8 @@ class LogisticsApiTest extends TestCase
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
         $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
+        $this->clockInEmployee($approver);
         $rider->givePermissionTo(['record-logistics-proof', 'update-logistics-status']);
         $approver->givePermissionTo('approve-proof-of-delivery');
         $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
@@ -249,6 +252,7 @@ class LogisticsApiTest extends TestCase
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'in_transit']);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('record-logistics-proof');
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -301,6 +305,7 @@ class LogisticsApiTest extends TestCase
             'status' => 'in_transit',
         ]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('record-logistics-proof');
         Storage::fake('local');
 
@@ -330,6 +335,7 @@ class LogisticsApiTest extends TestCase
             'idempotency_key' => 'dddddddd-dddd-4ddd-8ddd-dddddddddddd',
         ]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('record-logistics-proof');
         Storage::fake('local');
 
@@ -353,6 +359,7 @@ class LogisticsApiTest extends TestCase
             'status' => 'in_transit',
         ]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('record-logistics-proof');
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -392,6 +399,7 @@ class LogisticsApiTest extends TestCase
                 'status' => 'in_transit',
             ]);
             $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+            $this->clockInEmployee($user);
             $user->givePermissionTo(['record-logistics-proof', $capability]);
             $profile = RiderProfile::factory()->create([
                 'shop_owner_id' => $shop->id,
@@ -516,6 +524,7 @@ class LogisticsApiTest extends TestCase
         Permission::findOrCreate('record-logistics-proof', 'user');
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('record-logistics-proof');
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -676,6 +685,8 @@ class LogisticsApiTest extends TestCase
         ]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
         $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
+        $this->clockInEmployee($approver);
         $approver->givePermissionTo('approve-proof-of-delivery');
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -738,6 +749,7 @@ class LogisticsApiTest extends TestCase
             'review_status' => 'pending',
         ]);
         $approver = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($approver);
         $approver->givePermissionTo('approve-proof-of-delivery');
 
         $this->actingAs($approver, 'user')
@@ -1357,6 +1369,7 @@ class LogisticsApiTest extends TestCase
         Permission::findOrCreate('update-logistics-status', 'user');
         [$shop, $leg] = $this->assignedRepairPickupLeg();
         $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($otherRider);
         $otherRider->givePermissionTo('update-logistics-status');
 
         $this->actingAs($otherRider, 'user')
@@ -1423,6 +1436,7 @@ class LogisticsApiTest extends TestCase
         Permission::findOrCreate('update-logistics-status', 'user');
         [$shop, $leg] = $this->assignedRiderLeg('picked_up');
         $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($otherRider);
         $otherRider->givePermissionTo('update-logistics-status');
 
         $this->actingAs($otherRider, 'user')
@@ -1439,6 +1453,7 @@ class LogisticsApiTest extends TestCase
         Permission::findOrCreate('update-logistics-status', 'user');
         [, $leg, $rider] = $this->assignedRiderLeg('in_transit');
         $rider->update(['shop_owner_id' => ShopOwner::factory()->create()->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('update-logistics-status');
 
         $this->actingAs($rider, 'user')->post("/api/logistics/legs/{$leg->id}/report-issue", [
@@ -1464,6 +1479,7 @@ class LogisticsApiTest extends TestCase
         Permission::findOrCreate('assign-logistics-deliveries', 'user');
         [$shop, $leg] = $this->assignedRiderLeg('picked_up');
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo(['update-logistics-status', 'assign-logistics-deliveries']);
 
         $this->actingAs($dispatcher, 'user')
@@ -1622,6 +1638,7 @@ class LogisticsApiTest extends TestCase
         Permission::findOrCreate('resolve-logistics-exceptions', 'user');
         $shop = ShopOwner::factory()->create();
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo('resolve-logistics-exceptions');
         $leg = ShipmentLeg::factory()->create(['shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id, 'status' => 'delivery_attempted']);
         $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'other', 'attempted_at' => now()]);
@@ -1633,6 +1650,7 @@ class LogisticsApiTest extends TestCase
     {
         Permission::findOrCreate('assign-logistics-deliveries', 'user');
         $dispatcher = User::factory()->create(['shop_owner_id' => ShopOwner::factory()->create()->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo('assign-logistics-deliveries');
         $leg = ShipmentLeg::factory()->create(['shipment_id' => Shipment::factory()->create()->id, 'status' => 'delivery_attempted']);
         $leg->attempts()->create(['attempt_type' => 'delivery', 'status' => 'failed', 'reason_code' => 'other', 'attempted_at' => now()]);
@@ -1665,6 +1683,7 @@ class LogisticsApiTest extends TestCase
         ]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => $status]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
         $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
 
@@ -1674,6 +1693,7 @@ class LogisticsApiTest extends TestCase
     private function dispatcher(ShopOwner $shop, string $permission): User
     {
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo(Permission::findOrCreate($permission, 'user'));
 
         return $dispatcher;

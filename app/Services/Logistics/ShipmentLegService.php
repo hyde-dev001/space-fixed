@@ -357,6 +357,10 @@ class ShipmentLegService
                 'visibility' => 'customer',
                 'message' => 'Third-party courier marked the shipment delivered.',
             ]);
+            Order::query()
+                ->whereKey($order->id)
+                ->where('status', 'shipped')
+                ->update(['status' => 'delivered']);
 
             return $leg->fresh();
         });
@@ -1248,7 +1252,7 @@ class ShipmentLegService
         }
 
         $order = Order::query()->whereKey($shipment->source_id)->first();
-        if (! $order || ! in_array($order->resolvedDeliveryMethod(), ['shop_owned', 'third_party'], true)) {
+        if (! $order || $order->resolvedDeliveryMethod() !== 'shop_owned') {
             return;
         }
 

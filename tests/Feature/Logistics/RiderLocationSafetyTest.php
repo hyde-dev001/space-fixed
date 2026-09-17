@@ -77,6 +77,7 @@ class RiderLocationSafetyTest extends TestCase
     {
         $shop = ShopOwner::factory()->create();
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('update-logistics-status');
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
