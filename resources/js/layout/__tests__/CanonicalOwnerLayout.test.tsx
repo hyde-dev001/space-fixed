@@ -227,7 +227,7 @@ it("does not render owner local tabs for employee ERP pages with the same module
   expect(screen.queryByRole("navigation", { name: "Customers navigation" })).not.toBeInTheDocument();
 });
 
-it('hides the employee read-only notice from the page shell', () => {
+it('shows the employee read-only notice until the employee clocks in', () => {
   state.auth = {
     erpActor: { type: 'employee', ownerMode: false },
     user: { shop_owner_id: 7 },
@@ -237,8 +237,8 @@ it('hides the employee read-only notice from the page shell', () => {
 
   render(<AppLayoutERP><div>employee page</div></AppLayoutERP>);
 
-  expect(screen.queryByRole('status')).not.toBeInTheDocument();
-  expect(screen.getByText('employee page')).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('Read-only mode');
+  expect(screen.getByRole('link', { name: 'Go to Time In' })).toHaveAttribute('href', '/erp/time-in');
 });
 
 it('hides the employee read-only notice on Time In', () => {

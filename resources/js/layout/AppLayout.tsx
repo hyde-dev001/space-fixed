@@ -1,5 +1,4 @@
 import { useSidebar } from "../context/SidebarContext";
-import { usePage } from "@inertiajs/react";
 import { ReactNode } from "react";
 import AppHeader from "./AppHeader";
 import Backdrop from "./Backdrop";
@@ -11,8 +10,6 @@ interface AppLayoutProps {
 
 const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
-  const page = usePage();
-  const isSuperAdminPage = typeof page.component === "string" && page.component.startsWith("superAdmin/");
 
   return (
     <div className="erp-theme super-admin-shell min-h-screen xl:flex bg-white text-gray-900 dark:bg-gray-950 dark:text-gray-100">
@@ -27,9 +24,7 @@ const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
       >
         <AppHeader />
         <div className="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6">
-          <div key={page.url} className={isSuperAdminPage ? "backoffice-page-enter" : undefined}>
-            {children}
-          </div>
+          {children}
         </div>
       </div>
     </div>

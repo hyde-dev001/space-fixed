@@ -2221,8 +2221,6 @@ const EmployeeSidebarERP: React.FC = () => {
                 nav.route && (
                   <Link
                     href={getHrefByRoute(nav.route, nav.params || undefined)}
-                    viewTransition
-                    aria-current={isActive(nav.route, nav.params, nav.extraPaths) ? "page" : undefined}
                     className={`menu-item group ${
                       isActive(nav.route, nav.params, nav.extraPaths) ? "menu-item-active" : "menu-item-inactive"
                     }`}
@@ -2261,8 +2259,6 @@ const EmployeeSidebarERP: React.FC = () => {
                       <li key={`${subItem.route}-${subIndex}`}>
                         <Link
                           href={getHrefByRoute(subItem.route, subItem.params || undefined)}
-                          viewTransition
-                          aria-current={isActive(subItem.route, subItem.params) ? "page" : undefined}
                           className={`menu-dropdown-item ${
                             isActive(subItem.route, subItem.params)
                               ? "menu-dropdown-item-active"

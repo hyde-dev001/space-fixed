@@ -47,35 +47,6 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   }
 }
 
-/* Smooth page entry for ERP, Shop Owner, and Superadmin content only. */
-.backoffice-page-enter {
-  animation: backoffice-page-enter 460ms cubic-bezier(.22, 1, .36, 1) both;
-  position: relative;
-}
-
-@keyframes backoffice-page-enter {
-  from {
-    opacity: 0;
-    top: 28px;
-  }
-
-  65% {
-    opacity: 0.94;
-    top: 4px;
-  }
-
-  to {
-    opacity: 1;
-    top: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .backoffice-page-enter {
-    animation: none;
-  }
-}
-
 /* Shared customer-page entrance motion. Pages opt in with data-scroll-reveal. */
 .scroll-reveal {
   opacity: 0;
@@ -2326,96 +2297,6 @@ html.userside-dark #app .userside-auth-ghost:hover {
 
 @utility menu-dropdown-badge-inactive {
   @apply bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400;
-}
-
-/* Back-office navigation keeps its active state moving without blur. */
-#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item),
-#app .erp-theme .backoffice-nav-item {
-  transition:
-    background-color 280ms cubic-bezier(.22, 1, .36, 1),
-    border-color 280ms cubic-bezier(.22, 1, .36, 1),
-    box-shadow 280ms cubic-bezier(.22, 1, .36, 1),
-    color 220ms ease;
-}
-
-#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
-  :is(.menu-item, .menu-dropdown-item) > [class*="menu-item-icon-"] {
-  transition: color 220ms ease, fill 220ms ease, stroke 220ms ease;
-}
-
-#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
-  :is(.menu-item-active, .menu-dropdown-item-active),
-#app .erp-theme .backoffice-nav-item[aria-current="page"] {
-  animation: backoffice-nav-active 420ms cubic-bezier(.22, 1, .36, 1) both;
-}
-
-#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) [aria-current="page"] {
-  view-transition-name: backoffice-sidebar-active;
-}
-
-#app .erp-theme .backoffice-nav-item[aria-current="page"] {
-  view-transition-name: backoffice-module-active;
-}
-
-@keyframes backoffice-nav-active {
-  from {
-    opacity: 0.55;
-    transform: translateY(8px) scale(0.97);
-  }
-
-  65% {
-    opacity: 0.92;
-    transform: translateY(-1px) scale(1.005);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-/* Inertia can use the browser's shared-element transition when a back-office
-   navigation link is clicked. Keep the page itself visible so the existing
-   fade/pop entry remains the page transition. */
-@supports (view-transition-name: none) {
-  html:has(#app .erp-theme)::view-transition-old(root),
-  html:has(#app .erp-theme)::view-transition-new(root) {
-    animation: none;
-    opacity: 0;
-  }
-
-  html:has(#app .erp-theme)::view-transition-group(backoffice-sidebar-active),
-  html:has(#app .erp-theme)::view-transition-group(backoffice-module-active) {
-    animation-duration: 560ms;
-    animation-timing-function: cubic-bezier(.22, 1, .36, 1);
-  }
-
-  html:has(#app .erp-theme)::view-transition-old(backoffice-sidebar-active),
-  html:has(#app .erp-theme)::view-transition-new(backoffice-sidebar-active),
-  html:has(#app .erp-theme)::view-transition-old(backoffice-module-active),
-  html:has(#app .erp-theme)::view-transition-new(backoffice-module-active) {
-    animation: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item),
-  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
-    :is(.menu-item, .menu-dropdown-item) > [class*="menu-item-icon-"],
-  #app .erp-theme .backoffice-nav-item {
-    transition: none !important;
-  }
-
-  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
-    :is(.menu-item-active, .menu-dropdown-item-active),
-  #app .erp-theme .backoffice-nav-item[aria-current="page"] {
-    animation: none !important;
-  }
-
-  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) [aria-current="page"],
-  #app .erp-theme .backoffice-nav-item[aria-current="page"] {
-    view-transition-name: none;
-  }
 }
 
 /* Shared light navigation and controls use black as the primary accent. */
