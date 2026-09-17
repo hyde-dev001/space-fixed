@@ -237,6 +237,7 @@ class CustomerDeliveryReceiptTest extends TestCase
         Permission::findOrCreate('resolve-logistics-exceptions', 'user');
         $shop = ShopOwner::factory()->create();
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo(['view-logistics-shipments', 'resolve-logistics-exceptions']);
         $customer = User::factory()->create();
         $order = Order::factory()->create([
@@ -291,6 +292,7 @@ class CustomerDeliveryReceiptTest extends TestCase
         Permission::findOrCreate('resolve-logistics-exceptions', 'user');
         $shop = ShopOwner::factory()->create();
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo(['view-logistics-shipments', 'resolve-logistics-exceptions']);
         $customer = User::factory()->create();
         $order = Order::factory()->create([
@@ -332,6 +334,7 @@ class CustomerDeliveryReceiptTest extends TestCase
         Permission::findOrCreate('resolve-logistics-exceptions', 'user');
         $shop = ShopOwner::factory()->create();
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo(['view-logistics-shipments', 'resolve-logistics-exceptions']);
         $customer = User::factory()->create();
         $order = Order::factory()->create([
@@ -375,6 +378,7 @@ class CustomerDeliveryReceiptTest extends TestCase
         Permission::findOrCreate('resolve-logistics-exceptions', 'user');
         $shop = ShopOwner::factory()->create();
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo(['view-logistics-shipments', 'resolve-logistics-exceptions']);
         $customer = User::factory()->create();
         $order = Order::factory()->create([

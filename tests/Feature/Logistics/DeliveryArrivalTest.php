@@ -233,11 +233,14 @@ class DeliveryArrivalTest extends TestCase
     {
         [$leg, $rider, $shop] = $this->fixture('assigned');
         $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($otherRider);
         $otherRider->givePermissionTo('update-logistics-status');
         $crossTenant = User::factory()->create(['shop_owner_id' => ShopOwner::factory()->create()->id]);
+        $this->clockInEmployee($crossTenant);
         $crossTenant->givePermissionTo('update-logistics-status');
         $customer = User::factory()->create(['shop_owner_id' => null]);
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         Permission::findOrCreate('assign-logistics-deliveries', 'user');
         $dispatcher->givePermissionTo('assign-logistics-deliveries');
 
@@ -308,6 +311,7 @@ class DeliveryArrivalTest extends TestCase
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
         LogisticsSetting::create(['shop_owner_id' => $shop->id, 'arrival_radius_m' => 100]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('update-logistics-status');
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,

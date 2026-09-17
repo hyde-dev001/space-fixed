@@ -61,6 +61,7 @@ class DeliveryBatchApiTest extends TestCase
         $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $dispatcher = $this->dispatcher($shop);
         $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($user);
         $rider = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $user->id,
             'active' => true, 'availability_status' => 'available',
@@ -83,6 +84,7 @@ class DeliveryBatchApiTest extends TestCase
     {
         $shop = ShopOwner::factory()->create();
         $other = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($other);
         $batch = \App\Models\Logistics\DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'offered']);
 
         $this->actingAs($other, 'user')->postJson("/api/logistics/batches/{$batch->id}/accept")->assertForbidden();
@@ -223,6 +225,7 @@ class DeliveryBatchApiTest extends TestCase
     private function dispatcher(ShopOwner $shop): User
     {
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo(Permission::findOrCreate('manage-logistics-batches', 'user'));
 
         return $dispatcher;

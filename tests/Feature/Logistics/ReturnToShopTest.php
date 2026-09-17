@@ -123,6 +123,7 @@ class ReturnToShopTest extends TestCase
             'return_for_leg_id' => $original->id,
         ]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
         $rider->givePermissionTo('record-logistics-proof');
         $profile = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -147,6 +148,7 @@ class ReturnToShopTest extends TestCase
         $this->postJson("/api/logistics/legs/{$return->id}/return-proofs/{$proofId}/handoff")->assertOk();
 
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo('assign-logistics-deliveries');
         $this->actingAs($dispatcher, 'user')
             ->postJson("/api/logistics/legs/{$return->id}/return-proofs/{$proofId}/receipt")
