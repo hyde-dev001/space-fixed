@@ -67,7 +67,7 @@ final class ShopOwnerActorUserResolver
             }
 
             $existingUser->shop_owner_id = (int) $shopOwner->id;
-            $existingUser->role = $existingUser->role ?: 'Shop Owner';
+            $existingUser->role = $existingUser->role ?: 'STAFF';
             $existingUser->name = $existingUser->name ?: trim((string) $shopOwner->first_name . ' ' . (string) $shopOwner->last_name);
             $existingUser->email_verified_at ??= now();
             $existingUser->save();
@@ -84,7 +84,7 @@ final class ShopOwnerActorUserResolver
                 'email' => $fallbackEmail,
                 'password' => Hash::make(Str::random(40)),
                 'shop_owner_id' => (int) $shopOwner->id,
-                'role' => 'Shop Owner',
+                'role' => 'STAFF',
                 'status' => 'active',
                 'email_verified_at' => now(),
             ]);

@@ -43,7 +43,7 @@ class PayslipApprovalWorkflowTest extends TestCase
         Permission::findOrCreate('disburse-payroll', 'user');
 
         Role::findOrCreate('finance', 'user');
-        Role::findOrCreate('shop-owner', 'user');
+        Role::findOrCreate('Shop Owner', 'user');
         Role::findOrCreate('Finance Manager', 'user');
 
         $this->shopOwnerAuth = ShopOwner::factory()->approved()->create();
@@ -52,9 +52,9 @@ class PayslipApprovalWorkflowTest extends TestCase
         $this->shopOwnerMappedUser = User::factory()->create([
             'id' => $this->shopOwnerAuth->id,
             'shop_owner_id' => $this->shopOwnerAuth->id,
-            'role' => 'Shop Owner',
+            'role' => 'STAFF',
         ]);
-        $this->shopOwnerMappedUser->assignRole('shop-owner');
+        $this->shopOwnerMappedUser->assignRole('Shop Owner');
 
         $this->requester = User::factory()->create([
             'shop_owner_id' => $this->shopOwnerAuth->id,
@@ -460,6 +460,32 @@ class PayslipApprovalWorkflowTest extends TestCase
         $this->assertSame('approved', $payslip->status);
         $this->assertSame('approved', $payslip->approval_status);
         $this->assertSame($this->shopOwnerMappedUser->id, $payslip->final_approved_by);
+    }
+
+    public function test_shop_owner_final_approval_recreates_an_enum_compatible_erp_actor_when_mapping_is_missing(): void
+    {
+        $this->shopOwnerMappedUser->delete();
+        $payslip = $this->createLegacyPayslip();
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
+                'notes' => 'Finance checker approval',
+            ])
+            ->assertOk();
+
+        $this->actingAs($this->shopOwnerAuth, 'shop_owner')
+            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/final-approve", [
+                'notes' => 'Shop owner approval without a pre-existing ERP mapping',
+            ])
+            ->assertOk();
+
+        $actor = User::query()
+            ->where('shop_owner_id', $this->shopOwnerAuth->id)
+            ->where('email', 'shopowner+' . $this->shopOwnerAuth->id . '@solespace.local')
+            ->firstOrFail();
+
+        $this->assertSame('STAFF', $actor->role);
+        $this->assertTrue($actor->hasRole('Shop Owner'));
     }
 
     public function test_batch_approval_preserves_mixed_v4_and_legacy_workflows(): void
