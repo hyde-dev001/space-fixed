@@ -18,7 +18,21 @@ const mocks = vi.hoisted(() => ({
 	paymentProfileStatus: "unverified" as "unverified" | "verified" | "disabled",
 	expenseSource: "procurement" as "procurement" | "manual",
 	creatorId: null as number | null,
+	createdAt: null as string | null,
 	ownerMode: false,
+	expenseFilters: {} as Record<string, unknown>,
+	categoryOptions: {
+		manual: [
+			{ value: "Travel", label: "Travel" },
+			{ value: "Other", label: "Other" },
+		],
+		system: [{ value: "Procurement", label: "Procurement" }],
+		filter: [
+			{ value: "Travel", label: "Travel" },
+			{ value: "Other", label: "Other" },
+			{ value: "Procurement", label: "Procurement" },
+		],
+	},
 }));
 
 vi.mock("@inertiajs/react", () => ({
@@ -30,10 +44,14 @@ vi.mock("../../../../hooks/useFinanceApi", () => ({
 	useFinanceApi: () => ({ delete: vi.fn(), get: mocks.revealPaymentProfile, post: mocks.reviewRelease }),
 }));
 vi.mock("../../../../hooks/useFinanceQueries", () => ({
-	useExpenses: () => ({
+	useExpenses: (filters: Record<string, unknown>) => {
+		mocks.expenseFilters = filters;
+
+		return {
 		data: [{
 			id: "expense-1",
 			date: "2026-08-09",
+			created_at: mocks.createdAt,
 			category: "Procurement",
 			description: "Receipt for purchase order PO-2026-003",
 			amount: 1020000,
@@ -81,7 +99,9 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 		}],
 		isLoading: false,
 		refetch: mocks.refetch,
-	}),
+		};
+	},
+	useExpenseCategories: () => ({ data: mocks.categoryOptions, isLoading: false }),
 	useTaxRates: () => ({ data: [], isLoading: false }),
 	useApproveExpense: () => ({ isPending: false, mutateAsync: mocks.approve }),
 	useRejectExpense: () => ({ isPending: false, mutateAsync: mocks.reject }),
@@ -90,6 +110,8 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.ownerMode = false;
+	mocks.expenseFilters = {};
+	mocks.createdAt = null;
 	mocks.status = "submitted";
 	mocks.paymentStatus = "unpaid";
 	mocks.paymentAttempt = null;
@@ -134,6 +156,41 @@ describe("Finance procurement expenses", () => {
 		expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
 	});
 
+	it("sends status, category, search, and server pagination filters to the query", () => {
+		render(<Expense />);
+
+		fireEvent.click(screen.getByRole("button", { name: "Pending" }));
+		fireEvent.change(screen.getByPlaceholderText("Search category or note"), { target: { value: "travel" } });
+		fireEvent.click(screen.getByRole("combobox", { name: "Filter by category" }));
+		fireEvent.click(screen.getByRole("option", { name: "Travel" }));
+
+		expect(mocks.expenseFilters).toEqual(expect.objectContaining({
+			status: "submitted",
+			category: "Travel",
+			search: "travel",
+			page: 1,
+			perPage: 10,
+		}));
+	});
+
+	it("renders a business date without inventing a midnight time", () => {
+		render(<Expense />);
+
+		expect(screen.getByText("Aug 09, 2026")).toBeInTheDocument();
+		expect(screen.queryByText("12:00 AM")).not.toBeInTheDocument();
+	});
+
+	it("shows the recorded timestamp separately from the business date", () => {
+		mocks.createdAt = "2026-08-09T01:30:00.000Z";
+		render(<Expense />);
+
+		const recordedTime = new Date(mocks.createdAt).toLocaleTimeString("en-US", {
+			hour: "numeric",
+			minute: "2-digit",
+		});
+		expect(screen.getByText(recordedTime)).toBeInTheDocument();
+	});
+
 	it("hides approval actions for an expense created by the current Finance user", () => {
 		mocks.expenseSource = "manual";
 		mocks.creatorId = 7;
@@ -152,6 +209,19 @@ describe("Finance procurement expenses", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Add Expense" }));
 
 		expect(document.querySelector(".erp-modal-backdrop .overflow-y-auto")).toBeInTheDocument();
+	});
+
+	it("uses backend categories and asks for a custom category when Other is selected", () => {
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "Add Expense" }));
+		fireEvent.click(screen.getByRole("combobox", { name: "Expense category" }));
+		const openOtherOption = screen.getAllByRole("option", { name: "Other" }).find(
+			(option) => option.closest('[role="listbox"]')?.getAttribute("data-state") === "open",
+		);
+		expect(openOtherOption).toBeDefined();
+		fireEvent.click(openOtherOption!);
+
+		expect(screen.getByLabelText("Custom category")).toBeInTheDocument();
 	});
 
 	it("shows procurement review details and Review & Release only while submitted", () => {

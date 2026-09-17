@@ -5,7 +5,7 @@ import Swal from "sweetalert2";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useFinanceApi } from "../../../hooks/useFinanceApi";
-import { useApproveExpense, useExpenses, useRejectExpense, useTaxRates } from "../../../hooks/useFinanceQueries";
+import { useApproveExpense, useExpenseCategories, useExpenses, useRejectExpense, useTaxRates } from "../../../hooks/useFinanceQueries";
 import { getApprovalStatusBadge } from "./InlineApprovalUtils";
 import ProcurementExpensePanel from "./components/ProcurementExpensePanel";
 import SupplierPaymentDialog from "./components/SupplierPaymentDialog";
@@ -25,6 +25,7 @@ const LoadingSpinner: React.FC<{ message?: string }> = ({ message = "Loading exp
 type Expense = {
   id: string;
   date: string;
+  created_at?: string | null;
   due_date?: string | null;
   category: string;
   description: string;
@@ -192,16 +193,17 @@ const normalizeApiDateString = (value: string) => {
   return value.replace(/\.(\d{3})\d+Z$/, '.$1Z');
 };
 
-const formatExpenseDate = (value: string) => {
-  const normalized = normalizeApiDateString(value);
-  const parsed = new Date(normalized);
+const formatExpenseDate = (value: string, createdAt?: string | null) => {
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  const parsed = dateOnlyMatch
+    ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+    : new Date(normalizeApiDateString(value));
 
   if (Number.isNaN(parsed.getTime())) {
-    return {
-      date: value,
-      time: null as string | null,
-    };
+    return { date: value, time: null as string | null };
   }
+
+  const recordedAt = createdAt ? new Date(normalizeApiDateString(createdAt)) : null;
 
   return {
     date: parsed.toLocaleDateString('en-US', {
@@ -209,10 +211,9 @@ const formatExpenseDate = (value: string) => {
       day: '2-digit',
       year: 'numeric',
     }),
-    time: parsed.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    }),
+    time: recordedAt && !Number.isNaN(recordedAt.getTime())
+      ? recordedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : null,
   };
 };
 
@@ -224,9 +225,22 @@ const Expense: React.FC = () => {
   const canCreateExpense = !ownerMode;
   const api = useFinanceApi();
   const [showArchived, setShowArchived] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | Expense["status"]>("all");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   
   // React Query hooks - automatically handle loading, caching, refetching
-  const { data: expensesData = [], isLoading, refetch: refetchExpenses } = useExpenses({ archived: showArchived });
+  const { data: expensesData = [], isLoading, refetch: refetchExpenses } = useExpenses({
+    archived: showArchived,
+    status: statusFilter === "all" ? undefined : statusFilter,
+    category: categoryFilter || undefined,
+    search: searchTerm || undefined,
+    page: currentPage,
+    perPage: itemsPerPage,
+  });
+  const { data: categoryOptions = { manual: [], system: [], filter: [] } } = useExpenseCategories();
   const { data: taxRates = [], isLoading: isLoadingTaxRates } = useTaxRates();
   const approveExpense = useApproveExpense();
   const rejectExpense = useRejectExpense();
@@ -236,13 +250,19 @@ const Expense: React.FC = () => {
   const [isSupplierPaymentOpen, setIsSupplierPaymentOpen] = useState(false);
   
   // Normalize expenses data
-  const expenses = useMemo(() => 
-    expensesData.map(normalizeExpense),
-    [expensesData]
-  );
-  
-  const [statusFilter, setStatusFilter] = useState<"all" | Expense["status"]>("all");
-  const [searchTerm, setSearchTerm] = useState("");
+  const expenses = useMemo(() => {
+    const rows = Array.isArray(expensesData) ? expensesData : expensesData.data;
+
+    return rows.map(normalizeExpense);
+  }, [expensesData]);
+  const expensePage = Array.isArray(expensesData) ? null : expensesData;
+  const totalExpenseCount = expensePage?.total ?? expenses.length;
+  const totalPages = Math.max(1, expensePage?.last_page ?? 1);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const startNumber = expensePage?.from ?? (totalExpenseCount > 0 ? startIndex + 1 : 0);
+  const endNumber = expensePage?.to ?? Math.min(startIndex + expenses.length, totalExpenseCount);
+  const paginatedExpenses = expenses;
+
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [activeExpense, setActiveExpense] = useState<Expense | null>(null);
@@ -250,6 +270,7 @@ const Expense: React.FC = () => {
     date: "",
     due_date: "",
     category: "",
+    custom_category: "",
     description: "",
     amount: 0,
     tax_rate_id: "",
@@ -261,30 +282,11 @@ const Expense: React.FC = () => {
   });
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter((expense) => {
-      const matchesStatus = statusFilter === "all" ? true : expense.status === statusFilter;
-      const matchesSearch =
-        (expense.category || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (expense.description || "").toLowerCase().includes(searchTerm.toLowerCase());
-
-      return matchesStatus && matchesSearch;
-    });
-  }, [expenses, searchTerm, statusFilter]);
-
-  // Pagination logic
-  const totalPages = Math.ceil(filteredExpenses.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedExpenses = filteredExpenses.slice(startIndex, endIndex);
 
   // Reset to page 1 when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, showArchived]);
+  }, [searchTerm, statusFilter, categoryFilter, showArchived]);
 
   const stats = useMemo(() => {
     const total = expenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
@@ -410,7 +412,8 @@ const Expense: React.FC = () => {
 
   const refreshExpenses = async (expenseId?: string) => {
     const result = await refetchExpenses();
-    const refreshedExpenses = (result.data ?? []).map(normalizeExpense);
+    const rows = Array.isArray(result.data) ? result.data : result.data?.data ?? [];
+    const refreshedExpenses = rows.map(normalizeExpense);
 
     if (expenseId) {
       setActiveExpense(refreshedExpenses.find((expense) => expense.id === expenseId) ?? null);
@@ -624,6 +627,7 @@ const Expense: React.FC = () => {
       date: "",
       due_date: "",
       category: "",
+      custom_category: "",
       description: "",
       amount: 0,
       tax_rate_id: "",
@@ -687,7 +691,9 @@ const Expense: React.FC = () => {
     if (!canCreateExpense) return;
 
     // guard: ensure required fields are filled
-    if (!addForm.date || !addForm.category.trim() || !(addForm.amount > 0)) {
+    const category = addForm.category.trim();
+    const customCategory = addForm.custom_category.trim();
+    if (!addForm.date || !category || (category === "Other" && !customCategory) || !(addForm.amount > 0)) {
       Swal.fire({
         title: "Incomplete",
         text: "Please complete all required fields before adding an expense.",
@@ -701,7 +707,8 @@ const Expense: React.FC = () => {
       formData.append('date', addForm.date);
       formData.append('payment_mode', addForm.payment_mode);
       if (addForm.due_date) formData.append('due_date', addForm.due_date);
-      formData.append('category', addForm.category);
+      formData.append('category', category);
+      if (category === "Other") formData.append('custom_category', customCategory);
       formData.append('description', addForm.description);
       formData.append('amount', addForm.amount.toString());
       formData.append('tax_amount', addForm.tax_amount.toString());
@@ -744,6 +751,7 @@ const Expense: React.FC = () => {
     return Boolean(
       addForm.date
       && addForm.category.trim()
+      && (addForm.category !== "Other" || addForm.custom_category.trim())
       && addForm.amount > 0
       && (addForm.payment_mode === "paid_now" || addForm.due_date)
     );
@@ -956,7 +964,18 @@ const Expense: React.FC = () => {
             ))}
           </div>
 
-          <div className="flex items-center w-full lg:w-auto">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center w-full lg:w-auto">
+            <MonochromeSelect
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              aria-label="Filter by category"
+              className="w-full sm:w-48"
+            >
+              <option value="">All categories</option>
+              {categoryOptions.filter.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </MonochromeSelect>
             <div className="relative flex-1 lg:flex-initial lg:w-72">
               <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-400 dark:text-gray-500" />
               <input
@@ -993,9 +1012,9 @@ const Expense: React.FC = () => {
                 <tr key={expense.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">
                     <div className="flex flex-col leading-tight">
-                      <span className="font-medium text-gray-900 dark:text-white">{formatExpenseDate(expense.date).date}</span>
-                      {formatExpenseDate(expense.date).time && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatExpenseDate(expense.date).time}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">{formatExpenseDate(expense.date, expense.created_at).date}</span>
+                      {formatExpenseDate(expense.date, expense.created_at).time && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatExpenseDate(expense.date, expense.created_at).time}</span>
                       )}
                     </div>
                   </td>
@@ -1069,13 +1088,13 @@ const Expense: React.FC = () => {
           </table>
         </div>
 
-        {filteredExpenses.length > 0 && (
+        {totalExpenseCount > 0 && (
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="text-sm text-gray-700 dark:text-gray-300">
-                Showing <span className="font-medium">{startIndex + 1}</span> to{" "}
-                <span className="font-medium">{Math.min(endIndex, filteredExpenses.length)}</span> of{" "}
-                <span className="font-medium">{filteredExpenses.length}</span>
+                Showing <span className="font-medium">{startNumber}</span> to{" "}
+                <span className="font-medium">{endNumber}</span> of{" "}
+                <span className="font-medium">{totalExpenseCount}</span>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1164,9 +1183,9 @@ const Expense: React.FC = () => {
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
                 <span className="text-gray-500 dark:text-gray-400">Date</span>
                 <div className="text-right">
-                  <p className="font-semibold text-gray-900 dark:text-white">{formatExpenseDate(activeExpense.date).date}</p>
-                  {formatExpenseDate(activeExpense.date).time && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{formatExpenseDate(activeExpense.date).time}</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{formatExpenseDate(activeExpense.date, activeExpense.created_at).date}</p>
+                  {formatExpenseDate(activeExpense.date, activeExpense.created_at).time && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{formatExpenseDate(activeExpense.date, activeExpense.created_at).time}</p>
                   )}
                 </div>
               </div>
@@ -1367,13 +1386,31 @@ const Expense: React.FC = () => {
               )}
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
-                <input
-                  type="text"
+                <MonochromeSelect
                   value={addForm.category}
-                  onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}
-                  placeholder="e.g., Office Supplies, Travel, Software"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                />
+                  aria-label="Expense category"
+                  onChange={(e) => setAddForm({
+                    ...addForm,
+                    category: e.target.value,
+                    custom_category: e.target.value === "Other" ? addForm.custom_category : "",
+                  })}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                >
+                  <option value="">Select a category</option>
+                  {categoryOptions.manual.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </MonochromeSelect>
+                {addForm.category === "Other" && (
+                  <input
+                    type="text"
+                    aria-label="Custom category"
+                    value={addForm.custom_category}
+                    onChange={(e) => setAddForm({ ...addForm, custom_category: e.target.value })}
+                    placeholder="Enter a custom category"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                  />
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
