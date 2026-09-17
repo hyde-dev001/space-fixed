@@ -1396,13 +1396,22 @@ class OrderRefundService
 
     public function canExecuteApprovedRefund(OrderRefund $refund): bool
     {
+        $status = (string) ($refund->status ?? '');
+        $recoveryStatus = (string) ($refund->recovery_status ?? '');
+
+        if ($status === 'failed' && in_array($recoveryStatus, [
+            OrderRefund::RECOVERY_STATUS_RESOLVED,
+            OrderRefund::RECOVERY_STATUS_SUPERSEDED,
+        ], true)) {
+            return false;
+        }
+
         return (string) ($refund->shop_owner_status ?? 'pending') === 'approved'
             && (string) ($refund->finance_status ?? 'pending') === 'approved'
             && (string) ($refund->return_status ?? 'awaiting_approval') === 'received'
-            && !in_array((string) ($refund->status ?? ''), [
+            && !in_array($status, [
                 'processing',
                 'succeeded',
-                'failed',
                 'rejected',
                 'completed',
                 'paid',
@@ -1442,6 +1451,14 @@ class OrderRefundService
             return [
                 'result' => (string) ($refund->status ?? 'processing') === 'succeeded' ? 'already_refunded' : 'already_processing',
                 'message' => 'Refund execution has already started for this request.',
+                'refund' => $refund,
+            ];
+        }
+
+        if (!$this->canExecuteApprovedRefund($refund)) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'This refund payout is no longer eligible for execution.',
                 'refund' => $refund,
             ];
         }
