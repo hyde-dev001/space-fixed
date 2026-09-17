@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 const appCss = readFileSync(resolve('resources/css/app.css'), 'utf8');
 const appSidebarErp = readFileSync(resolve('resources/js/layout/AppSidebar_ERP.tsx'), 'utf8');
 const appSidebarShopOwner = readFileSync(resolve('resources/js/layout/AppSidebar_shopOwner.tsx'), 'utf8');
+const appSidebarSuperAdmin = readFileSync(resolve('resources/js/layout/AppSidebar.tsx'), 'utf8');
 const canonicalOwnerSidebar = readFileSync(resolve('resources/js/layout/CanonicalOwnerSidebar.tsx'), 'utf8');
 const customSelect = readFileSync(resolve('resources/js/components/form/Select.tsx'), 'utf8');
 const multiSelect = readFileSync(resolve('resources/js/components/form/MultiSelect.tsx'), 'utf8');
@@ -199,5 +200,20 @@ describe('shared monochrome Light and Dark Mode theme', () => {
     }
 
     expect(canonicalOwnerSidebar).toContain('className="flex items-center gap-2 rounded-lg text-[#111111] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:text-gray-100 dark:focus-visible:ring-gray-300"');
+  });
+
+  it('animates back-office navigation state without touching customer transitions', () => {
+    expect(appCss).toContain('#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item)');
+    expect(appCss).toContain('#app .erp-theme .backoffice-nav-item');
+    expect(appCss).toContain('background-color 280ms cubic-bezier(.22, 1, .36, 1)');
+    expect(appCss).toContain('transition: none !important;');
+    expect(ownerModuleTabs).toContain('backoffice-nav-item');
+
+    for (const source of [appSidebarErp, appSidebarShopOwner, appSidebarSuperAdmin, canonicalOwnerSidebar]) {
+      expect(source).toContain('menu-item');
+    }
+
+    expect(appCss).toContain('.customer-page-transition');
+    expect(appCss).not.toContain('.customer-page-transition .backoffice-nav-item');
   });
 });
