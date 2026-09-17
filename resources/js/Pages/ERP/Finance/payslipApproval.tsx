@@ -49,6 +49,15 @@ interface PayslipApprovalRequest {
 	disbursed_by_name?: string | null;
 	disbursed_at?: string | null;
 	line_items: PayslipLineItem[];
+	approval?: {
+		id: number;
+		current_level: number;
+		total_levels: number;
+		current_approver_role: string | null;
+		status: string;
+	} | null;
+	current_approval_level?: number | null;
+	approval_workflow_version?: string | null;
 }
 
 interface PaginationMeta {

@@ -101,7 +101,9 @@ class PayrollControllerTest extends TestCase
 
         $this->withoutMiddleware();
 
-        $this->shopOwner = ShopOwner::factory()->create();
+        $this->shopOwner = ShopOwner::factory()->create([
+            'registration_type' => 'company',
+        ]);
 
         $this->hrUser = User::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -233,7 +235,11 @@ class PayrollControllerTest extends TestCase
         $this->assertNotNull($payroll);
         $this->assertGreaterThan(0, (float) $payroll->gross_salary);
         $this->assertGreaterThan(0, (float) $payroll->net_salary);
-        $this->assertLessThanOrEqual((float) $payroll->gross_salary, (float) $payroll->net_salary + (float) $payroll->tax_amount + (float) $payroll->total_deductions);
+        $this->assertEqualsWithDelta(
+            (float) $payroll->gross_salary,
+            (float) $payroll->net_salary + (float) $payroll->total_deductions,
+            0.01,
+        );
     }
 
     #[Test]
@@ -264,6 +270,39 @@ class PayrollControllerTest extends TestCase
         $payroll = Payroll::latest()->first();
         $this->assertEquals($daysPresent, (int) $payroll->attendance_days);
         $this->assertEquals($daysAbsent, (int) $payroll->absent_days);
+    }
+
+    #[Test]
+    public function test_batch_attendance_counts_late_and_half_day_records_as_worked(): void
+    {
+        $month = Carbon::parse('2026-03-01');
+        $this->seedFinalizedAttendanceForMonth($this->employee, $month);
+
+        $records = AttendanceRecord::query()
+            ->where('employee_id', $this->employee->id)
+            ->whereDate('date', '>=', $month->toDateString())
+            ->whereDate('date', '<=', $month->copy()->endOfMonth()->toDateString())
+            ->orderBy('date')
+            ->get();
+
+        $records[0]->forceFill(['status' => 'late', 'is_late' => true, 'minutes_late' => 30])->saveQuietly();
+        $records[1]->update(['status' => 'half_day', 'working_hours' => 4]);
+        $this->assertSame(22, $records->count());
+        $this->assertSame([], $records->pluck('status')->diff(['present', 'late', 'half_day'])->all());
+
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll/batch/preview', [
+                'payrollPeriod' => '2026-03',
+                'employeeIds' => [$this->employee->id],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('summary.preview_count', 1)
+            ->assertJsonPath('previews.0.attendance.total_present_days', 22)
+            ->assertJsonPath('previews.0.attendance.total_late_days', 1)
+            ->assertJsonPath('previews.0.attendance.total_late_hours', 0.5)
+            ->assertJsonPath('previews.0.attendance.total_half_day_days', 1)
+            ->assertJsonPath('previews.0.calculation.late_deductions', 3125);
     }
 
     #[Test]
@@ -850,11 +889,11 @@ class PayrollControllerTest extends TestCase
             "Payroll should record 1 leave day (Mar 20) from approved sick leave. Got: {$payroll->leave_days}"
         );
         
-        // Absent days should be 6 (Mar 23, 24, 25, 26, 27, 30 or 31) - March 20 moved to leave_days
+        // Absent days should be 7 (Mar 23-27 and Mar 30-31) - March 20 moved to leave_days
         $this->assertEquals(
-            6,
+            7,
             $payroll->absent_days,
-            "Absent days should exclude March 20. Got: {$payroll->absent_days}"
+            "Absent days should exclude March 20 while keeping March 31 in the period. Got: {$payroll->absent_days}"
         );
     }
 }

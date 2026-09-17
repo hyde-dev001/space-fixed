@@ -94,3 +94,10 @@
 
 - Completion and payable projections must identify the authoritative Final Receipt by domain meaning, not by the latest posted receipt, because later supporting replacement receipts must not create another payable or replace the original accounting source.
 - Payment-dependent UI actions must consume backend eligibility projections and repeat the same guard at mutation time; receipt status alone cannot prove that its expense is fully settled.
+
+## 2026-09-17 - Payroll financial authority
+
+- Keep one shared payroll calculation and snapshot path from the period-effective salary through approval; approval and disbursement must validate the same financial fingerprint and use stored net pay.
+- Keep employer statutory shares in the snapshot and UI as separate non-deduction values; only employee deductions reduce net pay.
+- In a multi-level payslip workflow, derive the queue stage from the centralized approval's current approver role; the payroll row can remain `pending` while Finance has already forwarded it to the Shop Owner.
+- Scheduled auto-clockout must persist both the checkout time and its diagnostic marker; otherwise a legitimate closing-time checkout appears indistinguishable from a manual one.

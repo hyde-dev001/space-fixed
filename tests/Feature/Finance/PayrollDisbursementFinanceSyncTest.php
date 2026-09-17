@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Finance;
 
+use App\Http\Middleware\EnsureEmployeeClockedIn;
 use App\Models\Employee;
 use App\Models\Finance\ExpenseSettlement;
 use App\Models\HR\Payroll;
@@ -20,6 +21,7 @@ class PayrollDisbursementFinanceSyncTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withoutMiddleware(EnsureEmployeeClockedIn::class);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         Permission::findOrCreate('disburse-payroll', 'user');
         Permission::findOrCreate('access-payslip-approval', 'user');
@@ -42,11 +44,13 @@ class PayrollDisbursementFinanceSyncTest extends TestCase
         $this->assertDatabaseHas('finance_expenses', [
             'shop_id' => $shop->id,
             'reference' => 'PAY-EXP-'.$payroll->id,
+            'amount' => '1000.00',
         ]);
         $this->assertDatabaseCount('finance_expense_settlements', 1);
         $this->assertDatabaseHas('finance_expense_settlements', [
             'source' => ExpenseSettlement::SOURCE_PAYROLL,
             'source_reference' => 'payroll:'.$payroll->id,
+            'amount' => '1000.00',
         ]);
 
         $retry = $this->actingAs($actor, 'user')->postJson('/api/finance/payslip-approvals/disburse', [
@@ -101,6 +105,27 @@ class PayrollDisbursementFinanceSyncTest extends TestCase
 
         $response->assertStatus(422);
         $this->assertDatabaseHas('payrolls', ['id' => $payroll->id, 'status' => 'approved']);
+        $this->assertDatabaseCount('finance_expenses', 0);
+        $this->assertDatabaseCount('finance_expense_settlements', 0);
+    }
+
+    public function test_disbursement_fails_when_net_pay_does_not_reconcile(): void
+    {
+        [$shop, $actor, $payroll] = $this->makeReadyPayroll([
+            'net_salary' => '900.00',
+            'total_deductions' => '0.00',
+            'deductions' => '0.00',
+        ]);
+
+        $response = $this->actingAs($actor, 'user')->postJson('/api/finance/payslip-approvals/disburse', [
+            'payrollIds' => [$payroll->id],
+        ]);
+
+        $response->assertStatus(422);
+        $this->assertDatabaseHas('payrolls', [
+            'id' => $payroll->id,
+            'status' => 'approved',
+        ]);
         $this->assertDatabaseCount('finance_expenses', 0);
         $this->assertDatabaseCount('finance_expense_settlements', 0);
     }

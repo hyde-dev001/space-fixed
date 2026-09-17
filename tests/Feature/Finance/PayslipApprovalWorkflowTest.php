@@ -178,6 +178,30 @@ class PayslipApprovalWorkflowTest extends TestCase
         $this->assertApprovalStage($payslip, 4, 4, 'finance_final');
     }
 
+    public function test_finance_approval_moves_payslip_queue_to_awaiting_shop_owner(): void
+    {
+        $payslip = $this->createWorkflowBoundPayslip();
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
+                'notes' => 'Forward to shop owner',
+            ])
+            ->assertOk();
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->getJson('/api/finance/payslip-approvals?workflow_status=awaiting_final_approval')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 1)
+            ->assertJsonPath('data.0.id', $payslip->id)
+            ->assertJsonPath('data.0.workflow_status', 'awaiting_final_approval')
+            ->assertJsonPath('data.0.approval.current_approver_role', 'shop_owner');
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->getJson('/api/finance/payslip-approvals?workflow_status=awaiting_checker')
+            ->assertOk()
+            ->assertJsonPath('meta.total', 0);
+    }
+
     public function test_company_owner_action_center_lists_payslip_after_finance_approval(): void
     {
         $this->shopOwnerAuth->update([
@@ -483,6 +507,26 @@ class PayslipApprovalWorkflowTest extends TestCase
         $payslip->refresh();
         $this->assertSame('pending', $payslip->status);
         $this->assertSame('pending', $payslip->approval_status);
+    }
+
+    public function test_stale_financial_values_cannot_be_approved(): void
+    {
+        $payslip = $this->createWorkflowBoundPayslip();
+        $payslip->update([
+            'gross_salary' => '19999.99',
+            'net_salary' => '19999.99',
+        ]);
+
+        $response = $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
+                'notes' => 'Approve changed values',
+            ]);
+
+        $response->assertStatus(422);
+        $payslip->refresh();
+        $this->assertSame('pending', $payslip->status);
+        $this->assertSame('pending', $payslip->approval_status);
+        $this->assertApprovalStage($payslip, 1, 4, 'finance');
     }
 
     private function createWorkflowBoundPayslip(): Payroll

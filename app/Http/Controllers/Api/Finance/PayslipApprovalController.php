@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\HR\Payroll;
 use App\Models\HR\PayrollComponent;
+use App\Support\PayrollMoney;
 use App\Notifications\HR\PayslipGenerated;
 use App\Services\NotificationService;
 use App\Services\PayslipApprovalService;
@@ -147,6 +148,7 @@ class PayslipApprovalController extends Controller
         $query = (clone $baseQuery)
             ->with([
                 'employee:id,first_name,last_name,department,position',
+                'approval',
                 'checker:id,name',
                 'finalApprover:id,name',
                 'disburser:id,name',
@@ -204,6 +206,7 @@ class PayslipApprovalController extends Controller
             ->with([
                 'employee:id,first_name,last_name,department,position',
                 'components',
+                'approval',
                 'checker:id,name',
                 'finalApprover:id,name',
                 'disburser:id,name',
@@ -275,6 +278,14 @@ class PayslipApprovalController extends Controller
         // Fallback to legacy 2-step approval for existing payslips
         if ($payslip->approval_status === 'approved') {
             return response()->json(['error' => 'Payslip already checker-approved'], 400);
+        }
+
+        $reconciliationIssues = $payslip->reconciliationIssues();
+        if ($reconciliationIssues !== []) {
+            return response()->json([
+                'error' => 'Payslip reconciliation failed. Resolve the payroll mismatch before approving it.',
+                'reconciliation_issues' => $reconciliationIssues,
+            ], 422);
         }
 
         try {
@@ -522,6 +533,14 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payroll already has final approval'], 400);
         }
 
+        $reconciliationIssues = $payslip->reconciliationIssues();
+        if ($reconciliationIssues !== []) {
+            return response()->json([
+                'error' => 'Payslip reconciliation failed. Resolve the payroll mismatch before final approval.',
+                'reconciliation_issues' => $reconciliationIssues,
+            ], 422);
+        }
+
         try {
             $payslip->markAsFinalApproved((int) $actor['actor_user_id'], $request->input('notes'));
 
@@ -670,6 +689,12 @@ class PayslipApprovalController extends Controller
 
                 if ($payslip->approval_status !== 'pending') {
                     $errors[] = "Payslip #{$payslipId} is not pending";
+                    $failedCount++;
+                    continue;
+                }
+
+                if (($reconciliationIssues = $payslip->reconciliationIssues()) !== []) {
+                    $errors[] = "Payslip #{$payslipId}: reconciliation failed";
                     $failedCount++;
                     continue;
                 }
@@ -845,6 +870,12 @@ class PayslipApprovalController extends Controller
                     continue;
                 }
 
+                if (($reconciliationIssues = $payslip->reconciliationIssues()) !== []) {
+                    $errors[] = "Payslip #{$payslipId}: reconciliation failed";
+                    $failedCount++;
+                    continue;
+                }
+
                 $payslip->markAsFinalApproved((int) $actor['actor_user_id'], $notes);
 
                 $this->logHRActivity(
@@ -899,11 +930,51 @@ class PayslipApprovalController extends Controller
     {
         switch ($workflowStatus) {
             case 'awaiting_checker':
-                $query->where('approval_status', 'pending');
+                $query->where(function (Builder $workflowQuery): void {
+                    $workflowQuery
+                        ->where(function (Builder $v4Query): void {
+                            $v4Query
+                                ->where('approval_workflow_version', 'v4_multi_level')
+                                ->whereHas('approval', function (Builder $approvalQuery): void {
+                                    $approvalQuery
+                                        ->where('status', 'pending')
+                                        ->whereIn('current_approver_role', ['finance', 'finance_final']);
+                                });
+                        })
+                        ->orWhere(function (Builder $legacyQuery): void {
+                            $legacyQuery
+                                ->where(function (Builder $versionQuery): void {
+                                    $versionQuery
+                                        ->whereNull('approval_workflow_version')
+                                        ->orWhere('approval_workflow_version', '!=', 'v4_multi_level');
+                                })
+                                ->where('approval_status', 'pending');
+                        });
+                });
                 break;
             case 'awaiting_final_approval':
-                $query->where('approval_status', 'approved')
-                    ->where('status', 'pending');
+                $query->where(function (Builder $workflowQuery): void {
+                    $workflowQuery
+                        ->where(function (Builder $v4Query): void {
+                            $v4Query
+                                ->where('approval_workflow_version', 'v4_multi_level')
+                                ->whereHas('approval', function (Builder $approvalQuery): void {
+                                    $approvalQuery
+                                        ->where('status', 'pending')
+                                        ->where('current_approver_role', 'shop_owner');
+                                });
+                        })
+                        ->orWhere(function (Builder $legacyQuery): void {
+                            $legacyQuery
+                                ->where(function (Builder $versionQuery): void {
+                                    $versionQuery
+                                        ->whereNull('approval_workflow_version')
+                                        ->orWhere('approval_workflow_version', '!=', 'v4_multi_level');
+                                })
+                                ->where('approval_status', 'approved')
+                                ->where('status', 'pending');
+                        });
+                });
                 break;
             case 'ready_for_disbursement':
                 $query->where('status', 'approved');
@@ -924,11 +995,19 @@ class PayslipApprovalController extends Controller
             'pending' => (clone $baseQuery)->where('approval_status', 'pending')->count(),
             'approved' => (clone $baseQuery)->where('approval_status', 'approved')->count(),
             'rejected' => (clone $baseQuery)->where('approval_status', 'rejected')->count(),
-            'awaiting_finance' => (clone $baseQuery)->where('approval_status', 'pending')->count(),
-            'awaiting_final_approval' => (clone $baseQuery)->where('approval_status', 'approved')->where('status', 'pending')->count(),
-            'ready_for_disbursement' => (clone $baseQuery)->where('status', 'approved')->count(),
-            'paid' => (clone $baseQuery)->where('status', 'paid')->count(),
+            'awaiting_finance' => $this->countWorkflowStatus($baseQuery, 'awaiting_checker'),
+            'awaiting_final_approval' => $this->countWorkflowStatus($baseQuery, 'awaiting_final_approval'),
+            'ready_for_disbursement' => $this->countWorkflowStatus($baseQuery, 'ready_for_disbursement'),
+            'paid' => $this->countWorkflowStatus($baseQuery, 'paid'),
         ];
+    }
+
+    private function countWorkflowStatus(Builder $baseQuery, string $workflowStatus): int
+    {
+        $query = clone $baseQuery;
+        $this->applyWorkflowStatusFilter($query, $workflowStatus);
+
+        return $query->count();
     }
 
     private function transformPayslip(Payroll $payslip, bool $includeLineItems = false): array
@@ -941,16 +1020,13 @@ class PayslipApprovalController extends Controller
         $sssContribution = (float) ($payslip->sss_contributions ?? 0);
         $philhealthContribution = (float) ($payslip->philhealth ?? 0);
         $pagibigContribution = (float) ($payslip->pag_ibig ?? 0);
-        $componentOrStoredDeductions = (float) ($payslip->total_deductions ?? 0);
-        $legacyDeductions = (float) ($payslip->deductions ?? 0);
-        $computedFromParts = $componentOrStoredDeductions + $taxAmount + $sssContribution + $philhealthContribution + $pagibigContribution;
-        $derivedFromGrossNet = round(max(0, $grossPay - $netPay), 2);
-
-        $effectiveDeductions = $legacyDeductions > 0
-            ? $legacyDeductions
-            : ($derivedFromGrossNet > 0
-                ? $derivedFromGrossNet
-                : $computedFromParts);
+        $approval = $payslip->relationLoaded('approval')
+            ? $payslip->getRelation('approval')
+            : ($payslip->approval_id ? $payslip->approval()->first() : null);
+        $storedDeductions = $payslip->total_deductions ?? $payslip->deductions;
+        $effectiveDeductions = $storedDeductions !== null
+            ? (float) $storedDeductions
+            : (float) PayrollMoney::maxZero(PayrollMoney::subtract($grossPay, $netPay));
 
         $lineItems = $components->map(fn ($component) => [
             'label' => $component->component_name,
@@ -1016,6 +1092,15 @@ class PayslipApprovalController extends Controller
             'tax_amount' => $taxAmount,
             'status' => $payslip->approval_status ?? 'pending',
             'workflow_status' => $payslip->workflow_status,
+            'approval' => $approval ? [
+                'id' => $approval->id,
+                'current_level' => $approval->current_level,
+                'total_levels' => $approval->total_levels,
+                'current_approver_role' => $approval->current_approver_role,
+                'status' => $approval->status,
+            ] : null,
+            'current_approval_level' => $payslip->current_approval_level,
+            'approval_workflow_version' => $payslip->approval_workflow_version,
             'final_approval_status' => $payslip->final_approved_by ? 'approved' : 'pending',
             'disbursement_status' => $payslip->disbursement_status,
             'notes' => $payslip->notes ?? '',
@@ -1034,6 +1119,7 @@ class PayslipApprovalController extends Controller
             'disbursed_by_name' => $payslip->disburser?->name,
             'disbursed_at' => $payslip->disbursed_at?->format('Y-m-d H:i:s'),
             'line_items' => $lineItems->values()->toArray(),
+            'reconciliation_issues' => $includeLineItems ? $payslip->reconciliationIssues() : [],
         ];
     }
 }

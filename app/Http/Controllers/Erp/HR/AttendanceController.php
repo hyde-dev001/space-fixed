@@ -99,12 +99,17 @@ class AttendanceController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $validator = Validator::make($request->all(), [
+        $payload = $request->all();
+        if (($payload['status'] ?? null) === 'half-day') {
+            $payload['status'] = 'half_day';
+        }
+
+        $validator = Validator::make($payload, [
             'employee_id' => 'required|exists:employees,id',
             'date' => 'required|date',
             'check_in_time' => 'nullable|date_format:H:i',
             'check_out_time' => 'nullable|date_format:H:i|after:check_in_time',
-            'status' => 'required|in:present,absent,late,half-day',
+            'status' => 'required|in:present,absent,late,half_day',
             'biometric_id' => 'nullable|string',
             'notes' => 'nullable|string|max:500',
             'lateness_reason' => 'nullable|string|max:500',
@@ -174,10 +179,15 @@ class AttendanceController extends Controller
         $attendance = AttendanceRecord::forShopOwner($user->shop_owner_id)
             ->findOrFail($id);
 
-        $validator = Validator::make($request->all(), [
+        $payload = $request->all();
+        if (($payload['status'] ?? null) === 'half-day') {
+            $payload['status'] = 'half_day';
+        }
+
+        $validator = Validator::make($payload, [
             'check_in_time' => 'nullable|date_format:H:i',
             'check_out_time' => 'nullable|date_format:H:i|after:check_in_time',
-            'status' => 'sometimes|required|in:present,absent,late,half-day',
+            'status' => 'sometimes|required|in:present,absent,late,half_day',
             'biometric_id' => 'nullable|string',
             'notes' => 'nullable|string|max:500',
         ]);
@@ -417,7 +427,7 @@ class AttendanceController extends Controller
             $presentRecords = $query->withStatus('present')->count();
             $absentRecords = $query->withStatus('absent')->count();
             $lateRecords = $query->withStatus('late')->count();
-            $halfDayRecords = $query->withStatus('half-day')->count();
+            $halfDayRecords = $query->whereIn('status', ['half_day', 'half-day'])->count();
 
             $stats = [
                 'totalDays' => $totalRecords,
@@ -454,7 +464,7 @@ class AttendanceController extends Controller
         $present = $todayAttendance->where('status', 'present')->count();
         $late = $todayAttendance->where('status', 'late')->count();
         $absent = $totalEmployees - $todayAttendance->count();
-        $halfDay = $todayAttendance->where('status', 'half-day')->count();
+        $halfDay = $todayAttendance->whereIn('status', ['half_day', 'half-day'])->count();
 
         return response()->json([
             'date' => $today,
@@ -954,6 +964,8 @@ class AttendanceController extends Controller
             'checked_out' => $attendance && $attendance->check_out_time ? true : false,
             'check_in_time' => $attendance ? $attendance->check_in_time : null,
             'check_out_time' => $attendance ? $attendance->check_out_time : null,
+            'auto_clocked_out' => $attendance ? (bool) $attendance->auto_clocked_out : false,
+            'auto_clockout_reason' => $attendance?->auto_clockout_reason,
             'status' => $approvedLeave ? 'on_leave' : ($attendance ? $attendance->status : 'pending'),
             'working_hours' => $attendance ? $attendance->working_hours : 0,
             'lunch_break_start' => $attendance ? $attendance->lunch_break_start : null,
@@ -1487,11 +1499,11 @@ class AttendanceController extends Controller
 
         foreach ($attendanceRecords as $rec) {
             $dateStr = $rec->date->toDateString();
-            if (in_array($rec->status, ['present'], true)) {
+            if (in_array($rec->status, ['present', 'late'], true)) {
                 $totalPresent++;
-            } elseif ($rec->status === 'late') {
-                $totalLate++;
-            } elseif ($rec->status === 'half-day') {
+                $totalLate += $rec->status === 'late' ? 1 : 0;
+            } elseif (in_array($rec->status, ['half_day', 'half-day'], true)) {
+                $totalPresent++;
                 $totalHalfDay++;
             } elseif ($rec->status === 'on_leave') {
                 $totalOnLeave++;
@@ -1527,14 +1539,14 @@ class AttendanceController extends Controller
         $nightDifferentialHours = 0;
 
         foreach ($attendanceRecords as $record) {
-            if (!in_array($record->status, ['present', 'late', 'half-day'], true)) {
+            if (!in_array($record->status, ['present', 'late', 'half_day', 'half-day'], true)) {
                 continue;
             }
 
             $workedHours = 0;
             if ($record->working_hours !== null && (float) $record->working_hours > 0) {
                 $workedHours = (float) $record->working_hours;
-            } elseif ($record->status === 'half-day') {
+            } elseif (in_array($record->status, ['half_day', 'half-day'], true)) {
                 $workedHours = 4;
             } else {
                 $workedHours = 8;
