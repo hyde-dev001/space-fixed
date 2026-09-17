@@ -84,6 +84,8 @@ type Order = {
   latest_refund?: {
     id: number;
     status: string;
+    amount?: number | string;
+    payout_amount?: number | string;
     reason_code?: string | null;
     reason_note?: string | null;
     other_reason_note?: string | null;
@@ -147,6 +149,11 @@ const getOnlineSucceededRefundLineAmount = (order: Pick<Order, 'latest_refund' |
   const paymentStatus = String(order.paymentStatus || '').toLowerCase();
   if (refundStatus !== 'succeeded' && paymentStatus !== 'refunded') {
     return 0;
+  }
+
+  const payoutAmount = parseAmount(latestRefund.payout_amount);
+  if (payoutAmount > 0) {
+    return roundCurrency(payoutAmount);
   }
 
   if (!Array.isArray(latestRefund.items)) {
@@ -617,8 +624,10 @@ export default function JobOrdersPage() {
 
       if (retailPosRefund.has_succeeded) {
         const refundedAmount = parseAmount(retailPosRefund.total_succeeded_amount);
-        const orderGrandTotal = parseAmount(order.grand_total);
-        const isFullyRefunded = orderGrandTotal > 0 && refundedAmount >= orderGrandTotal - 0.01;
+        const requestedAmount = parseAmount(retailPosRefund.total_requested_amount);
+        const isFullyRefunded = requestedAmount > 0
+          ? refundedAmount >= requestedAmount - 0.01
+          : orderGrandTotal > 0 && refundedAmount >= orderGrandTotal - 0.01;
 
         return {
           label: isFullyRefunded ? 'Refunded' : 'Partially Refunded',
@@ -636,8 +645,21 @@ export default function JobOrdersPage() {
       const returnStatus = String(latestRefund.return_status || '').toLowerCase();
       const onlineRefundedAmount = getOnlineSucceededRefundLineAmount(order);
       const hasOnlineRefundSucceeded = refundStatus === 'succeeded' || paymentStatus === 'refunded';
+      const hasRefundLines = Array.isArray(latestRefund.items) && latestRefund.items.length > 0;
+      const refundedItemQty = hasRefundLines
+        ? latestRefund.items!.reduce((sum, line) => sum + Math.max(0, Number(line.approved_qty ?? line.requested_qty ?? 0)), 0)
+        : 0;
+      const orderedItemQty = (order.items || []).reduce((sum, item) => sum + Math.max(0, Number(item.quantity || 0)), 0);
+      const coversAllOrderItems = hasRefundLines && orderedItemQty > 0 && refundedItemQty >= orderedItemQty;
 
       if (hasOnlineRefundSucceeded) {
+        if (!hasRefundLines || coversAllOrderItems) {
+          return {
+            label: 'Refunded',
+            className: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40',
+          };
+        }
+
         if (onlineRefundedAmount > 0 && orderGrandTotal > 0) {
           const isFullyRefunded = onlineRefundedAmount >= orderGrandTotal - 0.01;
           return {

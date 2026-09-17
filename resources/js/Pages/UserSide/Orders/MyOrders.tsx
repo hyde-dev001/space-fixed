@@ -1818,6 +1818,12 @@ const MyOrders: React.FC = () => {
   // or when a single line contains multiple purchased units.
   const canChooseRefundScope = refundLineCount > 1 || refundTotalUnits > 1;
   const refundTargetOrderTotal = refundTargetOrder ? resolveRefundableOrderTotal(refundTargetOrder) : 0;
+  const refundTargetRawItemsTotal = refundTargetOrder
+    ? (refundTargetOrder.items || []).reduce((sum, item) => sum + (resolveRefundItemUnitPrice(item) * Math.max(1, Number(item.quantity || 1))), 0)
+    : 0;
+  const refundVoucherAllocationRatio = refundTargetRawItemsTotal > 0
+    ? Math.min(1, refundTargetOrderTotal / refundTargetRawItemsTotal)
+    : 1;
   const refundSelectedLines = refundTargetOrder
     ? (refundTargetOrder.items || [])
       .map((item) => {
@@ -1835,7 +1841,7 @@ const MyOrders: React.FC = () => {
         return {
           order_item_id: item.id,
           requested_qty: requestedQty,
-          line_amount: unitPrice * requestedQty,
+          line_amount: roundCurrency(unitPrice * requestedQty * refundVoucherAllocationRatio),
         };
       })
       .filter((line): line is { order_item_id: number; requested_qty: number; line_amount: number } => line !== null)
@@ -3087,7 +3093,7 @@ const MyOrders: React.FC = () => {
                               {(refundTargetOrder?.items || []).map((item) => {
                                 const maxQty = Math.max(0, Number(item.quantity || 0));
                                 const selectedQty = Math.max(0, Math.min(maxQty, Math.floor(Number(refundLineQtyByItemId[item.id] || 0))));
-                                const unitPrice = resolveRefundItemUnitPrice(item);
+                                const unitPrice = roundCurrency(resolveRefundItemUnitPrice(item) * refundVoucherAllocationRatio);
 
                                 return (
                                   <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg border border-gray-100 px-3 py-2">

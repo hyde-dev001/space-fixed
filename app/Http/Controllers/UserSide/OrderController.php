@@ -837,7 +837,7 @@ class OrderController extends Controller
             }
 
             $order = Order::query()
-                ->with('items')
+                ->with(['items', 'shopOwner'])
                 ->where('id', (int) $validated['order_id'])
                 ->where('customer_id', (int) $user->id)
                 ->first();
@@ -957,13 +957,34 @@ class OrderController extends Controller
             $subtotalAmount = max(0, (float) ($order->total_amount ?? 0));
             $shippingAmount = max(0, (float) ($order->shipping_fee ?? 0));
             $vatAmount = max(0, (float) ($order->vat_amount ?? 0));
-            $fullRefundAmount = max(
+            $localCapturedAmount = max(
                 (float) ($order->grand_total ?? 0),
                 (float) ($order->total ?? 0),
                 $subtotalAmount + $shippingAmount + $vatAmount,
                 $subtotalAmount + $shippingAmount,
                 $subtotalAmount,
             );
+
+            $capturedPaymentAmount = null;
+            $paymongoSecretKey = trim((string) ($order->shopOwner?->paymongo_secret_key ?? ''));
+            $paymongoPaymentId = trim((string) ($order->paymongo_payment_id ?? ''));
+            if ($paymongoSecretKey !== '' && $paymongoPaymentId !== '') {
+                $capturedAmountInCentavos = $this->paymongoRefundService->getPaymentAmountInCentavos(
+                    $paymongoSecretKey,
+                    $paymongoPaymentId,
+                );
+                if ($capturedAmountInCentavos !== null && $capturedAmountInCentavos > 0) {
+                    $capturedPaymentAmount = round($capturedAmountInCentavos / 100, 2);
+                }
+            }
+
+            // Product refunds exclude paid shipping. The captured gateway
+            // amount is authoritative for voucher orders; local totals remain
+            // the fallback for legacy/manual records.
+            $fullRefundAmount = round(max(
+                0,
+                ($capturedPaymentAmount ?? $localCapturedAmount) - $shippingAmount,
+            ), 2);
 
             if ($fullRefundAmount <= 0) {
                 return response()->json([
@@ -1131,6 +1152,31 @@ class OrderController extends Controller
                 $selectedItemsAmount = round($selectedItemsAmount, 2);
             }
 
+            if ($capturedPaymentAmount !== null && $usesLinePayload && $selectedItemsAmount > 0) {
+                $rawItemAmount = round((float) $order->items->sum(function ($item): float {
+                    $subtotal = max(0, (float) ($item->subtotal ?? 0));
+                    if ($subtotal > 0) {
+                        return $subtotal;
+                    }
+
+                    return max(0, (float) ($item->price ?? 0)) * max(1, (int) ($item->quantity ?? 1));
+                }), 2);
+                $voucherAllocationRatio = $rawItemAmount > 0
+                    ? min(1, $fullRefundAmount / $rawItemAmount)
+                    : 1;
+
+                if ($voucherAllocationRatio < 1) {
+                    foreach ($normalizedRefundLines as &$line) {
+                        $line['line_amount'] = round(
+                            (float) ($line['line_amount'] ?? 0) * $voucherAllocationRatio,
+                            2,
+                        );
+                    }
+                    unset($line);
+                    $selectedItemsAmount = round((float) collect($normalizedRefundLines)->sum('line_amount'), 2);
+                }
+            }
+
             $amount = round($fullRefundAmount, 2);
             if ($requestType === 'partial') {
                 $hasRequestedAmount = array_key_exists('requested_amount', $validated) && $validated['requested_amount'] !== null;
@@ -1178,6 +1224,12 @@ class OrderController extends Controller
                 ], 422);
             }
 
+            // Keep the captured amount on the reservation for the existing
+            // payout resolver, which removes shipping at gateway execution.
+            $reservationAmount = $requestType === 'full'
+                ? ($capturedPaymentAmount ?? $localCapturedAmount)
+                : $amount;
+
             $reasonCode = Str::slug((string) $validated['reason'], '_');
             $baseReasonNote = trim((string) (($validated['reason'] ?? '') . (!empty($validated['note']) ? "\n\n" . $validated['note'] : '')));
             $reasonNote = $baseReasonNote;
@@ -1190,7 +1242,7 @@ class OrderController extends Controller
                 'status' => 'pending_approval',
                 'payment_gateway' => 'paymongo',
                 'paymongo_payment_id' => $order->paymongo_payment_id,
-                'amount' => round($amount, 2),
+                'amount' => round($reservationAmount, 2),
                 'currency' => 'PHP',
                 'requested_refund_method' => $resolvedRefundMethod,
                 'reason_code' => $reasonCode,
@@ -1201,7 +1253,12 @@ class OrderController extends Controller
                 'requested_at' => now(),
             ];
 
-            $reservation = $this->orderRefundService->reserveOrderRefund($order, $refundPayload, $normalizedRefundLines);
+            $reservation = $this->orderRefundService->reserveOrderRefund(
+                $order,
+                $refundPayload,
+                $normalizedRefundLines,
+                $capturedPaymentAmount,
+            );
             if (($reservation['result'] ?? null) === 'collision') {
                 return response()->json([
                     'success' => false,

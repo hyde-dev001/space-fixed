@@ -43,4 +43,11 @@ describe('shop owner order state contract', () => {
     expect(source).toContain('/api/shop-owner/refunds/${refund.id}/execute-gateway-refund');
     expect(source).toContain('Execute Refund Payout');
   });
+
+  it('uses the persisted payout amount and full item coverage for refund status', () => {
+    expect(source).toContain('payout_amount?: number | string;');
+    expect(source).toContain('const payoutAmount = parseAmount(latestRefund.payout_amount);');
+    expect(source).toContain('const coversAllOrderItems = hasRefundLines');
+    expect(source).toContain("label: 'Refunded'");
+  });
 });

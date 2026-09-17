@@ -179,6 +179,8 @@ class OrderController extends Controller
                     'latest_refund' => $latestRefund ? [
                         'id' => (int) $latestRefund->id,
                         'status' => (string) $latestRefund->status,
+                        'amount' => round((float) ($latestRefund->amount ?? 0), 2),
+                        'payout_amount' => $this->orderRefundService->resolvePayoutAmount($latestRefund, $order),
                         'reason_code' => $latestRefund->reason_code,
                         'reason_note' => $latestRefund->reason_note,
                         'other_reason_note' => $latestRefund->other_reason_note,
@@ -355,6 +357,8 @@ class OrderController extends Controller
             'latest_refund' => $latestRefund ? [
                 'id' => (int) $latestRefund->id,
                 'status' => (string) $latestRefund->status,
+                'amount' => round((float) ($latestRefund->amount ?? 0), 2),
+                'payout_amount' => $this->orderRefundService->resolvePayoutAmount($latestRefund, $order),
                 'reason_code' => $latestRefund->reason_code,
                 'reason_note' => $latestRefund->reason_note,
                 'other_reason_note' => $latestRefund->other_reason_note,
