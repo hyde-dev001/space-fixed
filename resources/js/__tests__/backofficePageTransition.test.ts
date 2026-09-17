@@ -11,12 +11,14 @@ const layoutSources = [
 const superAdminLayout = readFileSync(resolve('resources/js/layout/AppLayout.tsx'), 'utf8');
 
 describe('back-office page transition', () => {
-  it('defines the approved subtle fade-and-slide-up motion', () => {
+  it('defines the approved luxury fade-and-slide-up motion', () => {
     expect(appCss).toContain('.backoffice-page-enter {');
-    expect(appCss).toContain('animation: backoffice-page-enter 350ms');
+    expect(appCss).toContain('animation: backoffice-page-enter 460ms');
     expect(appCss).toContain('@keyframes backoffice-page-enter');
-    expect(appCss).toContain('transform: translate3d(0, 12px, 0);');
+    expect(appCss).toContain('transform: translate3d(0, 24px, 0) scale(0.985);');
     expect(appCss).toContain('transform: translate3d(0, 0, 0);');
+    expect(appCss).toContain('filter: blur(8px);');
+    expect(appCss).toContain('filter: blur(0);');
     expect(appCss).toContain('opacity: 0;');
     expect(appCss).toContain('opacity: 1;');
     expect(appCss).toContain('@media (prefers-reduced-motion: reduce)');
@@ -25,14 +27,14 @@ describe('back-office page transition', () => {
 
   it('keys page content in every back-office layout', () => {
     for (const source of layoutSources) {
-      expect(source).toContain('key={page.component}');
+      expect(source).toContain('key={page.url}');
       expect(source).toContain('className="backoffice-page-enter"');
     }
   });
 
   it('limits the legacy shared layout transition to Superadmin pages', () => {
     expect(superAdminLayout).toContain('page.component.startsWith("superAdmin/")');
-    expect(superAdminLayout).toContain('key={page.component}');
+    expect(superAdminLayout).toContain('key={page.url}');
     expect(superAdminLayout).toContain('backoffice-page-enter');
   });
 

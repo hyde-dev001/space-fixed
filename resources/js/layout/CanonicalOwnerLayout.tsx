@@ -42,7 +42,7 @@ const CanonicalOwnerLayoutContent: React.FC<CanonicalOwnerLayoutProps> = ({
       >
         <CanonicalOwnerHeader menuButtonRef={menuButtonRef} hideHeader={hideHeader} />
         <main className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
-          <div key={page.component} className="backoffice-page-enter">
+          <div key={page.url} className="backoffice-page-enter">
             {children}
           </div>
         </main>
