@@ -18,6 +18,7 @@ describe('Manager Audit Logs page contract', () => {
     expect(source).toContain('action_label');
     expect(source).toContain('display_description');
     expect(source).toContain('type_label');
+    expect(source).toContain("{formatAction(log.actor?.role ?? '—')}");
     expect(source).toContain('Activity');
     expect(source).toContain('Record / reference');
     expect(source).not.toContain('Actor ID');

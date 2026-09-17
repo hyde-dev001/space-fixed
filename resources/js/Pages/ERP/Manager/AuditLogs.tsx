@@ -487,7 +487,7 @@ export default function ManagerAuditLogs() {
                         </td>
                         <td className="px-4 py-4 text-sm">
                           <p className="font-semibold text-slate-800 dark:text-slate-200">{log.actor?.name ?? 'System / unavailable'}</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">{log.actor?.role ?? '—'}</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">{formatAction(log.actor?.role ?? '—')}</p>
                         </td>
                         <td className="px-4 py-4 text-sm">
                           <p className="font-semibold text-slate-800 dark:text-slate-200">{log.target.label}</p>
