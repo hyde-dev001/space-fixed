@@ -21,7 +21,7 @@ final class ExpenseQueryAndCategoryTest extends TestCase
         $this->withoutMiddleware();
     }
 
-    public function test_manual_submission_links_approval_to_the_canonical_shop_owner(): void
+    public function test_manual_expense_is_posted_and_not_routed_to_approval(): void
     {
         $owner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
@@ -29,12 +29,6 @@ final class ExpenseQueryAndCategoryTest extends TestCase
         $finance = User::factory()->create([
             'shop_owner_id' => $owner->id,
         ]);
-        $ownerUser = User::factory()->create([
-            'shop_owner_id' => $owner->id,
-            'role' => 'Shop Owner',
-        ]);
-        $this->assertNotSame((int) $owner->id, (int) $ownerUser->id);
-
         $response = $this->actingAs($finance, 'user')->postJson('/api/finance/expenses', [
             'date' => now()->subDay()->toDateString(),
             'due_date' => now()->addDays(7)->toDateString(),
@@ -47,10 +41,17 @@ final class ExpenseQueryAndCategoryTest extends TestCase
         $response->assertCreated();
         $expenseId = (int) $response->json('id');
 
-        $this->assertDatabaseHas('approvals', [
+        $response->assertJsonPath('status', 'posted');
+        $this->assertDatabaseMissing('approvals', [
             'approvable_type' => Expense::class,
             'approvable_id' => $expenseId,
-            'shop_owner_id' => $ownerUser->id,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $owner->id,
+            'type' => 'expense_submitted',
+            'title' => 'Expense Recorded',
+            'requires_action' => false,
+            'action_url' => "/shop-owner/erp/finance/expenses?expense={$expenseId}",
         ]);
     }
 
@@ -98,6 +99,23 @@ final class ExpenseQueryAndCategoryTest extends TestCase
         ]);
 
         $response->assertStatus(422)->assertJsonValidationErrors('date');
+    }
+
+    public function test_manual_expenses_accept_a_past_business_date(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $finance = User::factory()->create(['shop_owner_id' => $owner->id]);
+
+        $response = $this->actingAs($finance, 'user')->postJson('/api/finance/expenses', [
+            'date' => now()->subDay()->toDateString(),
+            'category' => 'Travel',
+            'description' => 'Past expense',
+            'amount' => 100,
+            'payment_mode' => 'pay_later',
+            'due_date' => now()->addDay()->toDateString(),
+        ]);
+
+        $response->assertCreated()->assertJsonPath('category', 'Travel');
     }
 
     public function test_expense_category_options_and_filters_are_tenant_scoped_and_paginated(): void

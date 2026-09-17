@@ -254,7 +254,7 @@ export default function SupplierPaymentDialog({
 			await onChanged?.();
 			await workflowFeedback.success({
 				title: "Payment confirmed",
-				text: "Finance can now send the supplier payment receipt.",
+				text: "The supplier payment has been recorded.",
 			});
 		} catch (caught) {
 			handleError(caught instanceof Error ? caught.message : undefined);
@@ -275,29 +275,6 @@ export default function SupplierPaymentDialog({
 			if (!response.ok) throw new Error(response.error);
 			setAttempt(response.data as SupplierPaymentAttemptSummary);
 			await onChanged?.();
-		} catch (caught) {
-			handleError(caught instanceof Error ? caught.message : undefined);
-		} finally {
-			setBusy(false);
-		}
-	};
-
-	const resendEmail = async () => {
-		if (!attempt) return;
-		setBusy(true);
-		setError(null);
-		try {
-			const response = await api.post(`/api/finance/supplier-payment-attempts/${attempt.id}/send-receipt`, {});
-			if (!response.ok) throw new Error(response.error);
-			const updatedAttempt = response.data as SupplierPaymentAttemptSummary;
-			setAttempt(updatedAttempt);
-			await onChanged?.();
-			if (updatedAttempt.supplier_email_status === "dispatched") {
-				await workflowFeedback.success({
-					title: "Receipt sent",
-					text: "The supplier payment receipt was dispatched by the mail server.",
-				});
-			}
 		} catch (caught) {
 			handleError(caught instanceof Error ? caught.message : undefined);
 		} finally {
@@ -443,13 +420,7 @@ export default function SupplierPaymentDialog({
 				{attempt?.status === "succeeded" && (
 					<div className="mt-4 space-y-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
 						<p className="font-semibold uppercase">Payment Verified</p>
-						<p>Expense settlement recorded. Payment receipt email status: {(attempt.supplier_email_status || "pending").replaceAll("_", " ").toUpperCase()}</p>
-						{attempt.supplier_email_status === "dispatched" && <p className="text-xs">Dispatched means the configured mail transport accepted the message; it does not confirm inbox delivery.</p>}
-						{mode === "finance" && ["ready_to_send", "failed"].includes(attempt.supplier_email_status || "") && (
-							<button type="button" disabled={busy} onClick={resendEmail} className="min-h-11 rounded-lg border border-emerald-700 px-4 py-2 font-semibold hover:bg-emerald-100 disabled:opacity-50">
-								{attempt.supplier_email_status === "failed" ? "Retry Payment Receipt" : "Send Payment Receipt"}
-							</button>
-						)}
+						<p>Expense settlement recorded.</p>
 					</div>
 				)}
 

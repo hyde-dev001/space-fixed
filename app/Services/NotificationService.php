@@ -1118,6 +1118,28 @@ class NotificationService
         );
     }
 
+    /** Notify the Shop Owner that Finance recorded a manual expense for review. */
+    public function notifyExpenseRecordedToShopOwner(int $shopId, array $expenseData): void
+    {
+        $expenseId = (int) ($expenseData['expense_id'] ?? 0);
+        $actionUrl = '/shop-owner/erp/finance/expenses';
+
+        if ($expenseId > 0) {
+            $actionUrl .= "?expense={$expenseId}";
+        }
+
+        $this->sendToShopOwner(
+            shopOwnerId: $shopId,
+            type: NotificationType::EXPENSE_SUBMITTED,
+            title: 'Expense Recorded',
+            message: "Finance recorded expense {$expenseData['reference']} of ₱{$expenseData['amount']} for your review.",
+            data: $expenseData,
+            actionUrl: $actionUrl,
+            priority: 'low',
+            requiresAction: false,
+        );
+    }
+
     public function notifyProcurementExpenseReleased(int $shopId, array $data): void
     {
         $this->sendToErpRole(

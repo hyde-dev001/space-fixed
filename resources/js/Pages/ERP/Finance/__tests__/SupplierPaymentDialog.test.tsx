@@ -212,7 +212,8 @@ describe("SupplierPaymentDialog", () => {
 		expect(mocks.success).toHaveBeenCalledWith(expect.objectContaining({
 			title: "Payment confirmed",
 		}));
-		expect(screen.getByText(/Ready to Send/i)).toBeInTheDocument();
+		expect(screen.queryByText(/Ready to Send/i)).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /Send Payment Receipt|Retry Payment Receipt/i })).not.toBeInTheDocument();
 	});
 
 	it("keeps payment proof available after the payment is verified", () => {
@@ -297,18 +298,7 @@ describe("SupplierPaymentDialog", () => {
 		expect(screen.queryByRole("dialog", { name: "Payment proof preview" })).not.toBeInTheDocument();
 	});
 
-	it("lets Finance send a ready receipt explicitly", async () => {
-		mocks.post.mockResolvedValueOnce({
-			ok: true,
-			data: {
-				id: 44,
-				status: "succeeded",
-				amount: "100.00",
-				payment_method: "manual_bank_transfer",
-				supplier_email_status: "dispatched",
-			},
-		});
-
+	it("does not expose supplier receipt email actions after payment", () => {
 		render(
 			<SupplierPaymentDialog
 				open
@@ -328,12 +318,8 @@ describe("SupplierPaymentDialog", () => {
 			/>,
 		);
 
-		fireEvent.click(screen.getByRole("button", { name: "Send Payment Receipt" }));
-
-		await waitFor(() => expect(mocks.post).toHaveBeenCalledWith("/api/finance/supplier-payment-attempts/44/send-receipt", {}));
-		expect(mocks.success).toHaveBeenCalledWith(expect.objectContaining({
-			title: "Receipt sent",
-		}));
-		expect(screen.getAllByText(/DISPATCHED/i).length).toBeGreaterThan(0);
+		expect(screen.getByText("Expense settlement recorded.")).toBeInTheDocument();
+		expect(screen.queryByText(/Payment receipt email status/i)).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: /Send Payment Receipt|Retry Payment Receipt/i })).not.toBeInTheDocument();
 	});
 });

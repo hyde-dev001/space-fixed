@@ -11,12 +11,9 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\SupplierAdjustment;
 use App\Models\SupplierPaymentAttempt;
 use App\Models\ShopPaymentIntegration;
-use App\Models\ShopOwner;
-use App\Models\User;
 use App\Models\AuditLog;
 use App\Services\NotificationService;
 use App\Services\ExpenseApprovalService;
-use App\Services\ShopOwnerActorUserResolver;
 use App\Services\Finance\ExpenseSettlementService;
 use App\Support\Finance\FinanceShopContext;
 use App\Support\Finance\FinanceErrorResponse;
@@ -37,21 +34,18 @@ class ExpenseController extends Controller
     protected ExpenseApprovalService $expenseApprovalService;
     protected ExpenseSettlementService $expenseSettlementService;
     protected FinanceShopContext $shopContext;
-    protected ShopOwnerActorUserResolver $shopOwnerActorUserResolver;
 
     public function __construct(
         NotificationService $notificationService,
         ExpenseApprovalService $expenseApprovalService,
         ExpenseSettlementService $expenseSettlementService,
-        FinanceShopContext $shopContext,
-        ShopOwnerActorUserResolver $shopOwnerActorUserResolver
+        FinanceShopContext $shopContext
     )
     {
         $this->notificationService = $notificationService;
         $this->expenseApprovalService = $expenseApprovalService;
         $this->expenseSettlementService = $expenseSettlementService;
         $this->shopContext = $shopContext;
-        $this->shopOwnerActorUserResolver = $shopOwnerActorUserResolver;
     }
     public function index(Request $request)
     {
@@ -500,7 +494,7 @@ class ExpenseController extends Controller
                 'description' => $data['description'] ?? null,
                 'amount' => $data['amount'],
                 'tax_amount' => $data['tax_amount'] ?? 0,
-                'status' => 'submitted',
+                'status' => 'posted',
                 'shop_id' => $shopId,
                 'created_by' => $this->actorUserId(),
                 'meta' => [
@@ -524,20 +518,6 @@ class ExpenseController extends Controller
                 ]);
             }
 
-            // Create the manual approval workflow against the canonical tenant owner.
-            $shopOwner = ShopOwner::query()->find($shopId);
-            if (! $shopOwner) {
-                throw new FinanceDomainException('The Finance shop context is invalid.', 'TENANT_CONTEXT_REQUIRED', 403);
-            }
-
-            $shopOwnerUserId = $this->shopOwnerActorUserResolver->ensure($shopOwner);
-            $shopOwnerUser = $shopOwnerUserId ? User::query()->find($shopOwnerUserId) : null;
-            if (! $shopOwnerUser) {
-                throw new FinanceDomainException('A shop owner approval identity is required.', 'OWNER_APPROVAL_IDENTITY_REQUIRED', 500);
-            }
-
-            $this->expenseApprovalService->createExpenseApproval($expense, $shopOwnerUser);
-
             $settlementState = $this->expenseSettlementService->state($expense, (int) $shopId);
             if ($paymentMode === 'paid_now') {
                 $settlementResult = $this->expenseSettlementService->record($expense, $actor, [
@@ -555,16 +535,16 @@ class ExpenseController extends Controller
 
             DB::commit();
 
-            // Live notification to all Finance users in this shop
+            // Manual expenses are final records; notify the Shop Owner for review only.
             try {
-                $this->notificationService->notifyExpenseSubmitted($shopId, [
+                $this->notificationService->notifyExpenseRecordedToShopOwner($shopId, [
                     'expense_id' => $expense->id,
                     'reference'  => $expense->reference ?? "EXP-{$expense->id}",
                     'amount'     => number_format((float) $expense->amount, 2),
                     'category'   => $expense->category ?? 'General',
                 ]);
             } catch (\Exception $e) {
-                Log::error('Failed to send live expense notification', ['error' => $e->getMessage()]);
+                Log::error('Failed to notify Shop Owner about recorded expense', ['error' => $e->getMessage()]);
             }
 
             return response()->json($expense, 201);

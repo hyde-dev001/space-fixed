@@ -220,9 +220,6 @@ export default function ProcurementExpensePanel({
 					{details.payment_attempt?.status === "succeeded" && canReviewSupplierPayment && (
 						<button type="button" onClick={onReviewSupplierPayment} className="min-h-10 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold normal-case text-white hover:bg-emerald-800">View Payment Proof</button>
 					)}
-					{details.payment_attempt?.status === "succeeded" && !ownerMode && details.payment_attempt.supplier_email_status === "ready_to_send" && onPaySupplier && (
-						<button type="button" onClick={onPaySupplier} className="min-h-10 w-full rounded-lg border border-emerald-700 px-3 py-2 text-sm font-semibold normal-case text-emerald-800 hover:bg-emerald-100">Send Payment Receipt</button>
-					)}
 				</div>
 			)}
 
@@ -339,9 +336,6 @@ export default function ProcurementExpensePanel({
 				</div>
 			)}
 
-			{!ownerMode && paymentStatus === "paid" && details.payment_attempt?.supplier_email_status === "failed" && onPaySupplier && (
-				<button type="button" onClick={onPaySupplier} className="min-h-11 w-full rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-800 hover:bg-amber-50">SUPPLIER EMAIL FAILED · Resend Email</button>
-			)}
 		</div>
 	);
 }
