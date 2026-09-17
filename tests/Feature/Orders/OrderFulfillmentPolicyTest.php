@@ -118,6 +118,60 @@ final class OrderFulfillmentPolicyTest extends TestCase
     }
 
     #[Test]
+    public function individual_shop_owner_can_retry_an_open_failed_refund_from_orders(): void
+    {
+        $shop = $this->shopOwner();
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'payment_status' => 'paid',
+        ]);
+        OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'failed',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'recovery_status' => OrderRefund::RECOVERY_STATUS_UNRESOLVED,
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson('/api/shop-owner/orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.latest_refund.can_execute_payout', true);
+    }
+
+    #[Test]
+    public function individual_shop_owner_cannot_retry_a_terminal_failed_refund_from_orders(): void
+    {
+        $shop = $this->shopOwner();
+        $customer = User::factory()->create();
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'payment_status' => 'paid',
+        ]);
+        OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'failed',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'recovery_status' => OrderRefund::RECOVERY_STATUS_RESOLVED,
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson('/api/shop-owner/orders')
+            ->assertOk()
+            ->assertJsonPath('data.0.latest_refund.can_execute_payout', false);
+    }
+
+    #[Test]
     public function staff_generic_status_endpoint_cannot_jump_pending_to_shipped(): void
     {
         $shop = $this->shopOwner(['registration_type' => 'company']);

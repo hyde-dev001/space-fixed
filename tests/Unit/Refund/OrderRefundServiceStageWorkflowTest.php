@@ -545,6 +545,39 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function failed_gateway_refund_can_be_retried_when_recovery_is_open(): void
+    {
+        $refund = $this->makeRefund([
+            'status' => 'failed',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'recovery_status' => OrderRefund::RECOVERY_STATUS_UNRESOLVED,
+        ]);
+
+        $this->assertTrue($this->service->canExecuteApprovedRefund($refund));
+    }
+
+    #[Test]
+    public function terminal_failed_refund_recovery_cannot_be_retried(): void
+    {
+        $refund = $this->makeRefund([
+            'status' => 'failed',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'recovery_status' => OrderRefund::RECOVERY_STATUS_RESOLVED,
+        ]);
+
+        $this->paymongoRefundService->expects($this->never())->method('createRefund');
+
+        $this->assertFalse($this->service->canExecuteApprovedRefund($refund));
+        $result = $this->service->executeApprovedRefund($refund);
+
+        $this->assertSame('invalid_state', $result['result']);
+    }
+
+    #[Test]
     public function shop_owner_rejection_sets_rejected_state_and_reason(): void
     {
         $refund = $this->makeRefund([
