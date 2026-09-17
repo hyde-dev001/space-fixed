@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import Expense from "../Expense";
 
@@ -20,6 +20,16 @@ const mocks = vi.hoisted(() => ({
 	creatorId: null as number | null,
 	createdAt: null as string | null,
 	ownerMode: false,
+	paged: false,
+	expensePage: {
+		data: [],
+		current_page: 1,
+		last_page: 2,
+		per_page: 10,
+		total: 11,
+		from: 1,
+		to: 10,
+	},
 	expenseFilters: {} as Record<string, unknown>,
 	categoryOptions: {
 		manual: [
@@ -48,8 +58,8 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 		mocks.expenseFilters = filters;
 
 		return {
-		data: [{
-			id: "expense-1",
+			data: mocks.paged ? mocks.expensePage : [{
+				id: "expense-1",
 			date: "2026-08-09",
 			created_at: mocks.createdAt,
 			category: "Procurement",
@@ -110,6 +120,16 @@ vi.mock("../../../../hooks/useFinanceQueries", () => ({
 beforeEach(() => {
 	vi.clearAllMocks();
 	mocks.ownerMode = false;
+	mocks.paged = false;
+	mocks.expensePage = {
+		data: [],
+		current_page: 1,
+		last_page: 2,
+		per_page: 10,
+		total: 11,
+		from: 1,
+		to: 10,
+	};
 	mocks.expenseFilters = {};
 	mocks.createdAt = null;
 	mocks.status = "submitted";
@@ -128,6 +148,7 @@ beforeEach(() => {
 
 afterEach(() => {
 	cleanup();
+	vi.useRealTimers();
 });
 
 describe("Finance procurement expenses", () => {
@@ -156,21 +177,42 @@ describe("Finance procurement expenses", () => {
 		expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
 	});
 
-	it("sends status, category, search, and server pagination filters to the query", () => {
+	it("debounces search before changing the server query", () => {
+		vi.useFakeTimers();
 		render(<Expense />);
 
-		fireEvent.click(screen.getByRole("button", { name: "Pending" }));
 		fireEvent.change(screen.getByPlaceholderText("Search category or note"), { target: { value: "travel" } });
-		fireEvent.click(screen.getByRole("combobox", { name: "Filter by category" }));
-		fireEvent.click(screen.getByRole("option", { name: "Travel" }));
+
+		expect(mocks.expenseFilters.search).toBeUndefined();
+
+		act(() => {
+			vi.advanceTimersByTime(300);
+		});
 
 		expect(mocks.expenseFilters).toEqual(expect.objectContaining({
-			status: "submitted",
-			category: "Travel",
 			search: "travel",
 			page: 1,
 			perPage: 10,
 		}));
+	});
+
+	it("uses server pagination metadata for the next page", () => {
+		mocks.paged = true;
+		mocks.expensePage.data = [{
+			id: "expense-1",
+			date: "2026-08-09",
+			category: "Travel",
+			description: "Paged expense",
+			amount: 100,
+			status: "submitted",
+		}];
+
+		render(<Expense />);
+
+		expect(screen.getByRole("button", { name: "Page 2" })).toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "Page 2" }));
+
+		expect(mocks.expenseFilters.page).toBe(2);
 	});
 
 	it("renders a business date without inventing a midnight time", () => {

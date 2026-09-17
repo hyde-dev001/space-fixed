@@ -25,6 +25,17 @@ interface ApiResponse<T = any> {
   message?: string;
 }
 
+const isPaginatedPayload = (
+  value: unknown,
+): value is { data: unknown[]; current_page: number; last_page: number } => {
+  if (typeof value !== 'object' || value === null) return false;
+
+  const payload = value as { data?: unknown; current_page?: unknown; last_page?: unknown };
+  return Array.isArray(payload.data)
+    && typeof payload.current_page === 'number'
+    && typeof payload.last_page === 'number';
+};
+
 export function useFinanceApi() {
   const { auth } = usePage().props as any;
   const isAuthenticated = Boolean(auth && auth.user);
@@ -161,7 +172,7 @@ export function useFinanceApi() {
       return {
         ok: true,
         status: response.status,
-        data: data?.data || data, // Unwrap Laravel API response format
+        data: isPaginatedPayload(data) ? data : data?.data || data, // Preserve paginator metadata.
       };
     } catch (error) {
       console.error('API request failed:', error);

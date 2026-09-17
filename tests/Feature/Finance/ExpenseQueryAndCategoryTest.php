@@ -178,5 +178,47 @@ final class ExpenseQueryAndCategoryTest extends TestCase
             ->assertJsonCount(1, 'data')
             ->assertJsonPath('data.0.reference', 'EXP-TRAVEL-1');
 
+        $allForOwner = $this->actingAs($finance, 'user')->getJson('/api/finance/expenses?per_page=10');
+
+        $allForOwner->assertOk()
+            ->assertJsonPath('total', 3)
+            ->assertJsonMissing(['reference' => 'EXP-OTHER-1']);
+    }
+
+    public function test_shop_owner_expenses_are_tenant_scoped_and_paginated(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+        $otherOwner = ShopOwner::factory()->approved()->create();
+
+        Expense::create([
+            'reference' => 'OWNER-EXPENSE-1',
+            'date' => now()->subDay()->toDateString(),
+            'category' => 'Travel',
+            'description' => 'Owner expense',
+            'amount' => 100,
+            'status' => 'submitted',
+            'shop_id' => $owner->id,
+        ]);
+        Expense::create([
+            'reference' => 'OTHER-OWNER-EXPENSE-1',
+            'date' => now()->subDay()->toDateString(),
+            'category' => 'Travel',
+            'description' => 'Other owner expense',
+            'amount' => 200,
+            'status' => 'submitted',
+            'shop_id' => $otherOwner->id,
+        ]);
+
+        $response = $this->actingAs($owner, 'shop_owner')->getJson(
+            '/api/shop-owner/finance/expenses?per_page=1'
+        );
+
+        $response->assertOk()
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('per_page', 1)
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.reference', 'OWNER-EXPENSE-1')
+            ->assertJsonMissing(['reference' => 'OTHER-OWNER-EXPENSE-1']);
+
     }
 }

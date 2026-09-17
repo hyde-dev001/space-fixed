@@ -2,6 +2,7 @@
 
 namespace App\Support\Finance;
 
+use App\Models\ShopOwner;
 use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\Request;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -20,8 +21,15 @@ final class FinanceShopContext
             return (int) $context->tenantOwner()->getKey();
         }
 
-        // Finance tenant authority is always the authenticated `user` guard.
-        // Never fall back to the default/web guard or request input.
+        // Shop-owner routes use their dedicated guard; never fall back to the
+        // default/web guard or request input for tenant authority.
+        if ($request->is('api/shop-owner', 'api/shop-owner/*')) {
+            $shopOwner = $request->user('shop_owner');
+            if ($shopOwner instanceof ShopOwner) {
+                return (int) $shopOwner->getKey();
+            }
+        }
+
         $actor = $request->user('user');
 
         if (! $actor) {

@@ -229,9 +229,19 @@ const Expense: React.FC = () => {
   const [showArchived, setShowArchived] = useState(false);
   const [statusFilter, setStatusFilter] = useState<"all" | Expense["status"]>("all");
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+
+  React.useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearchTerm(searchInput.trim());
+      setCurrentPage(1);
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
   
   // React Query hooks - automatically handle loading, caching, refetching
   const { data: expensesData = [], isLoading, refetch: refetchExpenses } = useExpenses({
@@ -288,7 +298,7 @@ const Expense: React.FC = () => {
   // Reset to page 1 when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, categoryFilter, showArchived]);
+  }, [statusFilter, categoryFilter, showArchived]);
 
   const stats = useMemo(() => {
     const total = expenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
@@ -991,8 +1001,8 @@ const Expense: React.FC = () => {
               <input
                 type="text"
                 placeholder="Search category or note"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
               />
             </div>

@@ -203,6 +203,7 @@ export function useExpenses(filters?: {
         to: payload?.to == null ? null : Number(payload.to),
       } as ExpensePage;
     },
+    placeholderData: (previousData) => previousData,
   });
 }
 
