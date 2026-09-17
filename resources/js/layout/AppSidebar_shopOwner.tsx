@@ -571,8 +571,6 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
                   href={page.url}
                   prefetch={SIDEBAR_PREFETCH}
                   cacheFor={SIDEBAR_PREFETCH_CACHE}
-                  viewTransition
-                  aria-current={active ? "page" : undefined}
                   className={`menu-item group ${active ? "menu-item-active" : "menu-item-inactive"}`}
                 >
                   <span className={`menu-item-icon-size w-6 h-6 ${active ? "menu-item-icon-active" : "menu-item-icon-inactive"}`}>
@@ -631,8 +629,6 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
                             href={page.url}
                             prefetch={SIDEBAR_PREFETCH}
                             cacheFor={SIDEBAR_PREFETCH_CACHE}
-                            viewTransition
-                            aria-current={active ? "page" : undefined}
                             className={`menu-dropdown-item ${active ? "menu-dropdown-item-active" : "menu-dropdown-item-inactive"}`}
                           >
                             {page.label}
@@ -753,7 +749,6 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
                 href={getHref(nav.route, nav.path) || "#"}
                 prefetch={SIDEBAR_PREFETCH}
                 cacheFor={SIDEBAR_PREFETCH_CACHE}
-                viewTransition
                 aria-current={active ? "page" : undefined}
                 className={`menu-item group ${active
                     ? "menu-item-active lg:border-l-2 lg:border-brand-500 lg:shadow-theme-sm"
@@ -803,8 +798,6 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
                       href={route(subItem.route)}
                       prefetch={SIDEBAR_PREFETCH}
                       cacheFor={SIDEBAR_PREFETCH_CACHE}
-                      viewTransition
-                      aria-current={isActive(subItem.route) ? "page" : undefined}
                       className={`menu-dropdown-item ${isActive(subItem.route)
                           ? "menu-dropdown-item-active"
                           : "menu-dropdown-item-inactive"
