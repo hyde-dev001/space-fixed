@@ -209,11 +209,16 @@ describe('shared monochrome Light and Dark Mode theme', () => {
     expect(appCss).toContain('animation: backoffice-nav-active 420ms cubic-bezier(.22, 1, .36, 1) both;');
     expect(appCss).toContain('.backoffice-nav-item[aria-current="page"]');
     expect(appCss).toContain('@keyframes backoffice-nav-active');
+    expect(appCss).toContain('view-transition-name: backoffice-sidebar-active;');
+    expect(appCss).toContain('view-transition-name: backoffice-module-active;');
+    expect(appCss).toContain('view-transition-group(backoffice-sidebar-active)');
+    expect(appCss).toContain('animation: none;');
     expect(appCss).toContain('transition: none !important;');
     expect(ownerModuleTabs).toContain('backoffice-nav-item');
 
     for (const source of [appSidebarErp, appSidebarShopOwner, appSidebarSuperAdmin, canonicalOwnerSidebar]) {
       expect(source).toContain('menu-item');
+      expect(source).toContain('viewTransition');
     }
 
     expect(appCss).toContain('.customer-page-transition');
