@@ -47,20 +47,26 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   }
 }
 
-/* Subtle page entry for ERP, Shop Owner, and Superadmin content only. */
+/* Smooth page entry for ERP, Shop Owner, and Superadmin content only. */
 .backoffice-page-enter {
-  animation: backoffice-page-enter 350ms cubic-bezier(.22, 1, .36, 1) both;
+  animation: backoffice-page-enter 460ms cubic-bezier(.22, 1, .36, 1) both;
+  position: relative;
 }
 
 @keyframes backoffice-page-enter {
   from {
     opacity: 0;
-    transform: translate3d(0, 12px, 0);
+    top: 28px;
+  }
+
+  65% {
+    opacity: 0.94;
+    top: 4px;
   }
 
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0);
+    top: 0;
   }
 }
 
