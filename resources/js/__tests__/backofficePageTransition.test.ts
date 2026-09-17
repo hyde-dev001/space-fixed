@@ -11,14 +11,17 @@ const layoutSources = [
 const superAdminLayout = readFileSync(resolve('resources/js/layout/AppLayout.tsx'), 'utf8');
 
 describe('back-office page transition', () => {
-  it('defines the approved smooth fade-and-pop-up motion without blur', () => {
+  it('defines the approved smooth fade-and-pop-up motion without transforming the modal ancestor', () => {
     expect(appCss).toContain('.backoffice-page-enter {');
     expect(appCss).toContain('animation: backoffice-page-enter 460ms cubic-bezier(.22, 1, .36, 1) both;');
+    expect(appCss).toContain('position: relative;');
     expect(appCss).toContain('@keyframes backoffice-page-enter');
-    expect(appCss).toContain('transform: translate3d(0, 28px, 0) scale(0.985);');
-    expect(appCss).toContain('transform: translate3d(0, 0, 0) scale(1);');
-    expect(appCss.slice(appCss.indexOf('.backoffice-page-enter'), appCss.indexOf('/* Shared customer-page entrance motion.')))
-      .not.toContain('filter:');
+    expect(appCss).toContain('top: 28px;');
+    expect(appCss).toContain('top: 4px;');
+    expect(appCss).toMatch(/@keyframes backoffice-page-enter[\s\S]*?to\s*\{\s*opacity: 1;\s*top: 0;\s*\}/);
+    const backofficeMotion = appCss.slice(appCss.indexOf('.backoffice-page-enter'), appCss.indexOf('/* Shared customer-page entrance motion.'));
+    expect(backofficeMotion).not.toContain('filter:');
+    expect(backofficeMotion).not.toContain('transform:');
     expect(appCss).toContain('opacity: 0;');
     expect(appCss).toContain('opacity: 1;');
     expect(appCss).toContain('@media (prefers-reduced-motion: reduce)');
