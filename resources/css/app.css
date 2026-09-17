@@ -50,23 +50,23 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
 /* Smooth page entry for ERP, Shop Owner, and Superadmin content only. */
 .backoffice-page-enter {
   animation: backoffice-page-enter 460ms cubic-bezier(.22, 1, .36, 1) both;
-  transform-origin: center top;
+  position: relative;
 }
 
 @keyframes backoffice-page-enter {
   from {
     opacity: 0;
-    transform: translate3d(0, 28px, 0) scale(0.985);
+    top: 28px;
   }
 
   65% {
     opacity: 0.94;
-    transform: translate3d(0, 4px, 0) scale(0.998);
+    top: 4px;
   }
 
   to {
     opacity: 1;
-    transform: translate3d(0, 0, 0) scale(1);
+    top: 0;
   }
 }
 
