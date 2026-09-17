@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
 import { SidebarProvider, useSidebar } from "../context/SidebarContext";
-import { usePage } from "@inertiajs/react";
 import type { OwnerShellMetadata } from "../types/ownerShell";
 import CanonicalOwnerHeader from "./CanonicalOwnerHeader";
 import CanonicalOwnerSidebar from "./CanonicalOwnerSidebar";
@@ -20,7 +19,6 @@ const CanonicalOwnerLayoutContent: React.FC<CanonicalOwnerLayoutProps> = ({
   hideHeader,
 }) => {
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
-  const page = usePage();
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const wasMobileOpen = useRef(false);
 
@@ -42,9 +40,7 @@ const CanonicalOwnerLayoutContent: React.FC<CanonicalOwnerLayoutProps> = ({
       >
         <CanonicalOwnerHeader menuButtonRef={menuButtonRef} hideHeader={hideHeader} />
         <main className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
-          <div key={page.url} className="backoffice-page-enter">
-            {children}
-          </div>
+          {children}
         </main>
       </div>
     </div>

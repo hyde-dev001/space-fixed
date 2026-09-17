@@ -47,35 +47,6 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   }
 }
 
-/* Smooth page entry for ERP, Shop Owner, and Superadmin content only. */
-.backoffice-page-enter {
-  animation: backoffice-page-enter 460ms cubic-bezier(.22, 1, .36, 1) both;
-  position: relative;
-}
-
-@keyframes backoffice-page-enter {
-  from {
-    opacity: 0;
-    top: 28px;
-  }
-
-  65% {
-    opacity: 0.94;
-    top: 4px;
-  }
-
-  to {
-    opacity: 1;
-    top: 0;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .backoffice-page-enter {
-    animation: none;
-  }
-}
-
 /* Shared customer-page entrance motion. Pages opt in with data-scroll-reveal. */
 .scroll-reveal {
   opacity: 0;
@@ -2326,30 +2297,6 @@ html.userside-dark #app .userside-auth-ghost:hover {
 
 @utility menu-dropdown-badge-inactive {
   @apply bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400;
-}
-
-/* Back-office navigation changes state with a quiet, non-blurring motion. */
-#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item),
-#app .erp-theme .backoffice-nav-item {
-  transition:
-    background-color 280ms cubic-bezier(.22, 1, .36, 1),
-    border-color 280ms cubic-bezier(.22, 1, .36, 1),
-    box-shadow 280ms cubic-bezier(.22, 1, .36, 1),
-    color 220ms ease;
-}
-
-#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
-  :is(.menu-item, .menu-dropdown-item) > [class*="menu-item-icon-"] {
-  transition: color 220ms ease, fill 220ms ease, stroke 220ms ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item),
-  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
-    :is(.menu-item, .menu-dropdown-item) > [class*="menu-item-icon-"],
-  #app .erp-theme .backoffice-nav-item {
-    transition: none !important;
-  }
 }
 
 /* Shared light navigation and controls use black as the primary accent. */
