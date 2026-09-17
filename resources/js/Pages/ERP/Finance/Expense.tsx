@@ -11,6 +11,8 @@ import ProcurementExpensePanel from "./components/ProcurementExpensePanel";
 import SupplierPaymentDialog from "./components/SupplierPaymentDialog";
 import type { ProcurementExpenseDetails, SupplierPaymentAttemptSummary } from "@/types/procurement";
 
+const MemoizedChart = React.memo(Chart);
+
 // Loading Spinner Component
 const LoadingSpinner: React.FC<{ message?: string }> = ({ message = "Loading expenses..." }) => (
   <div className="flex flex-col items-center justify-center py-16 gap-4">
@@ -291,7 +293,7 @@ const Expense: React.FC = () => {
   const stats = useMemo(() => {
     const total = expenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
     const approvedTotal = expenses
-      .filter((exp) => exp.status === "approved")
+      .filter((exp) => exp.status === "approved" || exp.status === "posted")
       .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
     const pendingTotal = expenses
       .filter((exp) => exp.status === "submitted")
@@ -316,7 +318,7 @@ const Expense: React.FC = () => {
     return Object.entries(grouped).map(([category, amount]) => ({ category, amount }));
   }, [expenses]);
 
-  const chartOptions: ApexOptions = {
+  const chartOptions = useMemo<ApexOptions>(() => ({
     colors: ["#eb2525"],
     chart: {
       fontFamily: "Outfit, sans-serif",
@@ -361,14 +363,12 @@ const Expense: React.FC = () => {
         formatter: (val) => `₱${val.toLocaleString()}`,
       },
     },
-  };
+  }), [categoryBreakdown]);
 
-  const chartSeries = [
-    {
-      name: "Expense",
-      data: categoryBreakdown.map((item) => item.amount),
-    },
-  ];
+  const chartSeries = useMemo(() => [{
+    name: "Expense",
+    data: categoryBreakdown.map((item) => item.amount),
+  }], [categoryBreakdown]);
 
   const categoryColors = [
     "bg-blue-100 text-blue-700",
@@ -702,6 +702,17 @@ const Expense: React.FC = () => {
       });
       return;
     }
+
+    const confirmation = await Swal.fire({
+      title: "Add this expense?",
+      text: "This will record the expense immediately and notify the Shop Owner for review.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Add Expense",
+      cancelButtonText: "Cancel",
+    });
+    if (!confirmation.isConfirmed) return;
+
     try {
       const formData = new FormData();
       formData.append('date', addForm.date);
@@ -712,7 +723,6 @@ const Expense: React.FC = () => {
       formData.append('description', addForm.description);
       formData.append('amount', addForm.amount.toString());
       formData.append('tax_amount', addForm.tax_amount.toString());
-      formData.append('status', 'submitted');
       if (addForm.payment_mode === 'paid_now') {
         formData.append('payment_method', addForm.payment_method);
         if (addForm.payment_reference) formData.append('payment_reference', addForm.payment_reference);
@@ -896,7 +906,7 @@ const Expense: React.FC = () => {
           </div>
           <div className="max-w-full overflow-x-auto custom-scrollbar">
             <div className="-ml-5 min-w-[640px] xl:min-w-full pl-2">
-              <Chart options={chartOptions} series={chartSeries} type="bar" height={420} />
+              <MemoizedChart options={chartOptions} series={chartSeries} type="bar" height={420} />
             </div>
           </div>
         </div>
@@ -1038,7 +1048,7 @@ const Expense: React.FC = () => {
                       >
                         <EyeIcon className="size-5" />
                       </button>
-                      {!showArchived && expense.status === "submitted" && !isProcurementExpense(expense) && !isCreatedByCurrentActor(expense) && (
+                      {!ownerMode && !showArchived && expense.status === "submitted" && !isProcurementExpense(expense) && !isCreatedByCurrentActor(expense) && (
                         <>
                           <button
                             disabled={isApprovalActionPending}
@@ -1060,7 +1070,7 @@ const Expense: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {!showArchived && expense.status !== "approved" && expense.status !== "posted" && (
+                      {!ownerMode && !showArchived && expense.status !== "approved" && expense.status !== "posted" && (
                         <button
                           className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"
                           aria-label="Archive expense"
@@ -1070,7 +1080,7 @@ const Expense: React.FC = () => {
                           <ArchiveBoxIcon className="size-5" />
                         </button>
                       )}
-                      {showArchived && (
+                      {showArchived && !ownerMode && (
                         <button
                           className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors"
                           aria-label="Restore expense"
@@ -1263,7 +1273,7 @@ const Expense: React.FC = () => {
 
             <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800">
               <div className="flex items-center justify-between gap-3">
-                {activeExpense.status === "submitted" && !showArchived && !isProcurementExpense(activeExpense) && !isCreatedByCurrentActor(activeExpense) ? (
+                {!ownerMode && activeExpense.status === "submitted" && !showArchived && !isProcurementExpense(activeExpense) && !isCreatedByCurrentActor(activeExpense) ? (
                   <div className="flex items-center gap-2">
                     <button
                       disabled={isApprovalActionPending}

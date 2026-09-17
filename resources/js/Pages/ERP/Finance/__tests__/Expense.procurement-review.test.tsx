@@ -468,7 +468,7 @@ describe("Finance procurement expenses", () => {
 		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
 
 		expect(screen.getByRole("button", { name: "View Payment Proof" })).toBeInTheDocument();
-		expect(screen.getByRole("button", { name: "Send Payment Receipt" })).toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Send Payment Receipt" })).not.toBeInTheDocument();
 		fireEvent.click(screen.getByRole("button", { name: "View Payment Proof" }));
 		expect(screen.getByRole("button", { name: /View proof\.pdf/i })).toBeInTheDocument();
 	});
@@ -535,5 +535,60 @@ describe("Finance procurement expenses", () => {
 
 		expect(screen.getByRole("heading", { name: "Expense Management" })).toHaveClass("sr-only");
 		expect(screen.queryByRole("button", { name: "Add Expense" })).not.toBeInTheDocument();
+	});
+
+	it("keeps the shop owner expense page read-only", () => {
+		mocks.ownerMode = true;
+		mocks.expenseSource = "manual";
+		mocks.creatorId = 999;
+
+		render(<Expense />);
+
+		expect(screen.queryByRole("button", { name: "Approve expense" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Reject expense" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Archive expense" })).not.toBeInTheDocument();
+		fireEvent.click(screen.getByRole("button", { name: "View expense" }));
+		expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+		expect(screen.queryByRole("button", { name: "Reject" })).not.toBeInTheDocument();
+	});
+
+	it("confirms a past-dated expense before submitting it", async () => {
+		mocks.reviewRelease.mockResolvedValue({ ok: true, status: 201, data: { id: 10 } });
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "Add Expense" }));
+		fireEvent.change(document.querySelector('input[type="date"]')!, { target: { value: "2026-09-16" } });
+		fireEvent.change(screen.getByRole("combobox", { name: "Expense category" }), { target: { value: "Travel" } });
+		fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "100" } });
+		fireEvent.click(screen.getAllByRole("button", { name: "Add Expense" }).at(-1)!);
+
+		await waitFor(() => expect(mocks.swalFire).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Add this expense?",
+			showCancelButton: true,
+			confirmButtonText: "Add Expense",
+		})));
+		await waitFor(() => expect(mocks.reviewRelease).toHaveBeenCalledWith(
+			"/api/finance/expenses",
+			expect.any(FormData),
+		));
+		const request = mocks.reviewRelease.mock.calls[0][1] as FormData;
+		expect(request.get("date")).toBe("2026-09-16");
+	});
+
+	it("does not submit an expense when its confirmation is cancelled", async () => {
+		mocks.swalFire.mockResolvedValueOnce({ isConfirmed: false });
+
+		render(<Expense />);
+		fireEvent.click(screen.getByRole("button", { name: "Add Expense" }));
+		fireEvent.change(document.querySelector('input[type="date"]')!, { target: { value: "2026-09-16" } });
+		fireEvent.change(screen.getByRole("combobox", { name: "Expense category" }), { target: { value: "Travel" } });
+		fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "100" } });
+		fireEvent.click(screen.getAllByRole("button", { name: "Add Expense" }).at(-1)!);
+
+		await waitFor(() => expect(mocks.swalFire).toHaveBeenCalledWith(expect.objectContaining({
+			title: "Add this expense?",
+			showCancelButton: true,
+		})));
+		expect(mocks.reviewRelease).not.toHaveBeenCalled();
 	});
 });
