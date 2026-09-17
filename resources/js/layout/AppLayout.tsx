@@ -27,7 +27,7 @@ const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
       >
         <AppHeader />
         <div className="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6">
-          <div key={page.component} className={isSuperAdminPage ? "backoffice-page-enter" : undefined}>
+          <div key={page.url} className={isSuperAdminPage ? "backoffice-page-enter" : undefined}>
             {children}
           </div>
         </div>
