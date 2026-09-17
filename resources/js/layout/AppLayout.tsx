@@ -26,7 +26,7 @@ const LayoutContent: React.FC<{ children: ReactNode }> = ({ children }) => {
         } ${isMobileOpen ? "ml-0" : ""}`}
       >
         <AppHeader />
-        <div className="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6 backoffice-content-shell">
+        <div className="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6">
           <div key={page.url} className={isSuperAdminPage ? "backoffice-page-enter" : undefined}>
             {children}
           </div>

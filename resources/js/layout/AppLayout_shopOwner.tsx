@@ -28,7 +28,7 @@ const LayoutContent: React.FC<{ children: ReactNode; fullBleed?: boolean; hideHe
           } ${isMobileOpen ? "ml-0" : ""}`}
       >
         {!hideHeader && <AppHeader_shopOwner />}
-        <div className={`${fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"} backoffice-content-shell`}>
+        <div className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
           <div key={page.url} className="backoffice-page-enter">
             {children}
           </div>

@@ -2328,12 +2328,7 @@ html.userside-dark #app .userside-auth-ghost:hover {
   @apply bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400;
 }
 
-/* Back-office navigation changes state with a quiet, non-blurring motion. */
-#app .erp-theme .backoffice-content-shell {
-  /* Keep fixed modal overlays centered in the back-office content area. */
-  transform: translateZ(0);
-}
-
+/* Back-office navigation keeps its active state moving without blur. */
 #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item),
 #app .erp-theme .backoffice-nav-item {
   transition:
@@ -2354,6 +2349,14 @@ html.userside-dark #app .userside-auth-ghost:hover {
   animation: backoffice-nav-active 420ms cubic-bezier(.22, 1, .36, 1) both;
 }
 
+#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) [aria-current="page"] {
+  view-transition-name: backoffice-sidebar-active;
+}
+
+#app .erp-theme .backoffice-nav-item[aria-current="page"] {
+  view-transition-name: backoffice-module-active;
+}
+
 @keyframes backoffice-nav-active {
   from {
     opacity: 0.55;
@@ -2371,6 +2374,30 @@ html.userside-dark #app .userside-auth-ghost:hover {
   }
 }
 
+/* Inertia can use the browser's shared-element transition when a back-office
+   navigation link is clicked. Keep the page itself visible so the existing
+   fade/pop entry remains the page transition. */
+@supports (view-transition-name: none) {
+  html:has(#app .erp-theme)::view-transition-old(root),
+  html:has(#app .erp-theme)::view-transition-new(root) {
+    animation: none;
+    opacity: 0;
+  }
+
+  html:has(#app .erp-theme)::view-transition-group(backoffice-sidebar-active),
+  html:has(#app .erp-theme)::view-transition-group(backoffice-module-active) {
+    animation-duration: 560ms;
+    animation-timing-function: cubic-bezier(.22, 1, .36, 1);
+  }
+
+  html:has(#app .erp-theme)::view-transition-old(backoffice-sidebar-active),
+  html:has(#app .erp-theme)::view-transition-new(backoffice-sidebar-active),
+  html:has(#app .erp-theme)::view-transition-old(backoffice-module-active),
+  html:has(#app .erp-theme)::view-transition-new(backoffice-module-active) {
+    animation: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item),
   #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar)
@@ -2383,6 +2410,11 @@ html.userside-dark #app .userside-auth-ghost:hover {
     :is(.menu-item-active, .menu-dropdown-item-active),
   #app .erp-theme .backoffice-nav-item[aria-current="page"] {
     animation: none !important;
+  }
+
+  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) [aria-current="page"],
+  #app .erp-theme .backoffice-nav-item[aria-current="page"] {
+    view-transition-name: none;
   }
 }
 

@@ -41,7 +41,7 @@ const CanonicalOwnerLayoutContent: React.FC<CanonicalOwnerLayoutProps> = ({
         className={`flex-1 bg-gray-50 transition-all duration-300 ease-in-out motion-reduce:transition-none dark:bg-gray-950 ${isExpanded || isHovered ? "xl:ml-[290px]" : "xl:ml-[90px]"} ${isMobileOpen ? "ml-0" : ""}`}
       >
         <CanonicalOwnerHeader menuButtonRef={menuButtonRef} hideHeader={hideHeader} />
-        <main className={`${fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"} backoffice-content-shell`}>
+        <main className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
           <div key={page.url} className="backoffice-page-enter">
             {children}
           </div>
