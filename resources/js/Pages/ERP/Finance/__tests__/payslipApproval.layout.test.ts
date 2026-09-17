@@ -28,4 +28,8 @@ describe("Finance payslip approval presentation", () => {
     expect(detailModal).toContain("Total Deductions");
     expect(detailModal).toContain("NET PAY");
   });
+
+  it("labels deduction percentages against gross pay", () => {
+    expect(payslipApproval).toContain("% of gross pay");
+  });
 });

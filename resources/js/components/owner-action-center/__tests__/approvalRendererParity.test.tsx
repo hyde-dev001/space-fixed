@@ -122,6 +122,26 @@ describe("owner approval renderer parity", () => {
     }
   });
 
+  it("shows a payslip deduction percentage against gross pay", () => {
+    render(
+      <PayslipApprovalDetails
+        item={item({ source_type: "payslip", title: "Payslip" })}
+        detail={{
+          employee_name: "Jane Customer",
+          gross_pay: 16117.8,
+          net_pay: 14894.85,
+          deductions: 1222.95,
+          line_items: [
+            { label: "PhilHealth Contribution", amount: 402.95, type: "deduction" },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("% of gross pay")).toBeInTheDocument();
+    expect(screen.getByText("2.50%")).toBeInTheDocument();
+  });
+
   it('resolves price approval metadata into human-readable owner details', () => {
     render(
       <PriceApprovalDetails

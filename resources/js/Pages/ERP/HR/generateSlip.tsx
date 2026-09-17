@@ -5,6 +5,7 @@ import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import { DashboardMetricCard } from "../../../components/dashboard";
 import { useMaintenance } from "../../../providers/MaintenanceProvider";
+import { formatDeductionPercentage } from "../../../utils/payrollDeductions";
 
 // ==================== Type Definitions ====================
 type EmployeeStatus = "active" | "inactive" | "suspended" | "terminated";
@@ -2390,53 +2391,53 @@ export default function GenerateSlip() {
 
 								{/* Deductions Breakdown */}
 								<div className="rounded-xl border-2 border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-5">
-									<h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide">Deductions</h4>
+									<h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-4 uppercase tracking-wide">Deductions <span className="text-xs font-normal normal-case text-gray-500 dark:text-gray-400">(% of gross pay)</span></h4>
 									<div className="space-y-2.5 text-sm">
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">Withholding Tax</span>
-											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.withholdingTax)}</span>
+											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.withholdingTax)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({formatDeductionPercentage(payrollBreakdown.deductions.withholdingTax, payrollBreakdown.grossPay)})</span></span>
 										</div>
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">SSS Contribution (Employee)</span>
-											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.sssContribution)}</span>
+											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.sssContribution)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({formatDeductionPercentage(payrollBreakdown.deductions.sssContribution, payrollBreakdown.grossPay)})</span></span>
 										</div>
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">PhilHealth Contribution (Employee)</span>
-											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.philhealthContribution)}</span>
+											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.philhealthContribution)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({formatDeductionPercentage(payrollBreakdown.deductions.philhealthContribution, payrollBreakdown.grossPay)})</span></span>
 										</div>
 										<div className="flex items-center justify-between">
 											<span className="text-gray-600 dark:text-gray-400">Pag-IBIG Contribution (Employee)</span>
-											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.pagibigContribution)}</span>
+											<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.pagibigContribution)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({formatDeductionPercentage(payrollBreakdown.deductions.pagibigContribution, payrollBreakdown.grossPay)})</span></span>
 										</div>
-										{payrollBreakdown.deductions.absentDeductions > 0 && (
-											<div className="flex items-center justify-between">
-												<span className="text-gray-600 dark:text-gray-400">Absent Deductions</span>
-												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.absentDeductions)}</span>
-											</div>
-										)}
-										{payrollBreakdown.deductions.undertimeDeductions > 0 && (
-											<div className="flex items-center justify-between">
-												<span className="text-gray-600 dark:text-gray-400">Undertime Deductions</span>
-												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.undertimeDeductions)}</span>
-											</div>
-										)}
-										{payrollBreakdown.deductions.loanDeductions > 0 && (
-											<div className="flex items-center justify-between">
-												<span className="text-gray-600 dark:text-gray-400">Loan Payment</span>
-												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.loanDeductions)}</span>
-											</div>
-										)}
-										{payrollBreakdown.deductions.otherDeductions > 0 && (
-											<div className="flex items-center justify-between">
-												<span className="text-gray-600 dark:text-gray-400">Other Deductions</span>
-												<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.otherDeductions)}</span>
-											</div>
-										)}
-										<div className="border-t border-gray-200 dark:border-gray-700 pt-2.5 mt-2.5">
-											<div className="flex items-center justify-between">
-												<span className="text-sm font-semibold text-gray-900 dark:text-white">Total Deductions</span>
-												<span className="text-base font-bold text-red-600 dark:text-red-400">-{formatPHP(payrollBreakdown.totalDeductions)}</span>
-											</div>
+						{payrollBreakdown.deductions.absentDeductions > 0 && (
+							<div className="flex items-center justify-between">
+								<span className="text-gray-600 dark:text-gray-400">Absent Deductions</span>
+								<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.absentDeductions)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({formatDeductionPercentage(payrollBreakdown.deductions.absentDeductions, payrollBreakdown.grossPay)})</span></span>
+							</div>
+						)}
+						{payrollBreakdown.deductions.undertimeDeductions > 0 && (
+							<div className="flex items-center justify-between">
+								<span className="text-gray-600 dark:text-gray-400">Undertime Deductions</span>
+								<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.undertimeDeductions)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({formatDeductionPercentage(payrollBreakdown.deductions.undertimeDeductions, payrollBreakdown.grossPay)})</span></span>
+							</div>
+						)}
+						{payrollBreakdown.deductions.loanDeductions > 0 && (
+							<div className="flex items-center justify-between">
+								<span className="text-gray-600 dark:text-gray-400">Loan Payment</span>
+								<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.loanDeductions)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({formatDeductionPercentage(payrollBreakdown.deductions.loanDeductions, payrollBreakdown.grossPay)})</span></span>
+							</div>
+						)}
+						{payrollBreakdown.deductions.otherDeductions > 0 && (
+							<div className="flex items-center justify-between">
+								<span className="text-gray-600 dark:text-gray-400">Other Deductions</span>
+								<span className="text-gray-900 dark:text-white font-medium">-{formatPHP(payrollBreakdown.deductions.otherDeductions)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({formatDeductionPercentage(payrollBreakdown.deductions.otherDeductions, payrollBreakdown.grossPay)})</span></span>
+							</div>
+						)}
+						<div className="border-t border-gray-200 dark:border-gray-700 pt-2.5 mt-2.5">
+							<div className="flex items-center justify-between">
+								<span className="text-sm font-semibold text-gray-900 dark:text-white">Total Deductions</span>
+								<span className="text-base font-bold text-red-600 dark:text-red-400">-{formatPHP(payrollBreakdown.totalDeductions)} <span className="text-xs font-normal text-gray-500 dark:text-gray-400">({formatDeductionPercentage(payrollBreakdown.totalDeductions, payrollBreakdown.grossPay)})</span></span>
+							</div>
 										</div>
 									</div>
 								</div>
@@ -2542,7 +2543,7 @@ export default function GenerateSlip() {
 										<th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Department</th>
 										<th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Hours</th>
 										<th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Gross</th>
-										<th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Deductions</th>
+										<th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Deductions (% of gross pay)</th>
 										<th className="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Net Pay</th>
 									</tr>
 								</thead>
@@ -2577,7 +2578,7 @@ export default function GenerateSlip() {
 												{formatPHP(preview.grossPay)}
 											</td>
 											<td className="px-4 py-3 text-right text-red-600 dark:text-red-400">
-												{formatPHP(preview.totalDeductions)}
+													{formatPHP(preview.totalDeductions)} <span className="text-xs text-gray-500 dark:text-gray-400">({formatDeductionPercentage(preview.totalDeductions, preview.grossPay)})</span>
 											</td>
 											<td className="px-4 py-3 text-right font-bold text-green-600 dark:text-green-400">
 												{formatPHP(preview.netPay)}

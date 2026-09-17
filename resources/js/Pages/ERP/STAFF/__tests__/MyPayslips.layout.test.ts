@@ -14,4 +14,8 @@ describe("My Payslips layout", () => {
 		);
 		expect(myPayslips).not.toContain("min-h-screen bg-gray-50");
 	});
+
+	it("labels deduction percentages against gross pay", () => {
+		expect(myPayslips).toContain("% of gross pay");
+	});
 });

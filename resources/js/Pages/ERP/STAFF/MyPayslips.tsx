@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
+import { formatDeductionPercentage } from '../../../utils/payrollDeductions';
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -305,6 +306,7 @@ const PayslipDetail: React.FC<PayslipDetailProps> = ({ slip, employeeName, shopN
 							<tr className="border-b border-gray-200 dark:border-gray-700">
 								<th className="text-left py-2 text-gray-500 dark:text-gray-400 font-medium">Description</th>
 								<th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">Amount</th>
+								<th className="text-right py-2 text-gray-500 dark:text-gray-400 font-medium">% of gross pay</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -312,12 +314,14 @@ const PayslipDetail: React.FC<PayslipDetailProps> = ({ slip, employeeName, shopN
 								<tr key={d.id} className="border-b border-gray-100 dark:border-gray-800">
 									<td className="py-2 text-gray-700 dark:text-gray-300">{d.component_name}</td>
 									<td className="py-2 text-right text-red-600 dark:text-red-400">−{formatPHP(d.calculated_amount)}</td>
+									<td className="py-2 text-right text-xs text-gray-500 dark:text-gray-400">{formatDeductionPercentage(d.calculated_amount, slip.gross_salary)}</td>
 								</tr>
 							))}
 							{statutoryRows.map(row => (
 								<tr key={row.label} className="border-b border-gray-100 dark:border-gray-800">
 									<td className="py-2 text-gray-700 dark:text-gray-300">{row.label}</td>
 									<td className="py-2 text-right text-red-600 dark:text-red-400">−{formatPHP(row.amount)}</td>
+									<td className="py-2 text-right text-xs text-gray-500 dark:text-gray-400">{formatDeductionPercentage(row.amount, slip.gross_salary)}</td>
 								</tr>
 							))}
 						</tbody>
@@ -325,6 +329,7 @@ const PayslipDetail: React.FC<PayslipDetailProps> = ({ slip, employeeName, shopN
 							<tr>
 								<td className="pt-3 font-bold text-gray-900 dark:text-white">Total Deductions</td>
 								<td className="pt-3 text-right font-bold text-red-600 dark:text-red-400">−{formatPHP(slip.total_deductions)}</td>
+								<td className="pt-3 text-right font-bold text-gray-700 dark:text-gray-300">{formatDeductionPercentage(slip.total_deductions, slip.gross_salary)}</td>
 							</tr>
 						</tfoot>
 					</table>
