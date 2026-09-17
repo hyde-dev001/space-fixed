@@ -398,6 +398,7 @@ class RolesAndPermissionsSeeder extends Seeder
         $this->command->info('Creating Shop Owner role...');
         
         $shopOwnerRole = Role::firstOrCreate(['name' => 'Shop Owner', 'guard_name' => 'shop_owner']);
+        Role::firstOrCreate(['name' => 'Shop Owner', 'guard_name' => 'user']);
         $this->command->info('✓ Shop Owner role created (full access)');
 
         // ===== SUPER ADMIN GUARD =====
