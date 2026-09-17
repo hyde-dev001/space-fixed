@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Finance;
 
+use App\Enums\NotificationType;
 use App\Models\Approval;
 use App\Models\HR\Payroll;
 use App\Models\ProcurementSettings;
@@ -167,6 +168,15 @@ class PayslipApprovalWorkflowTest extends TestCase
             'user_id' => $this->requester->id,
             'title' => 'Payslip Fully Approved',
             'action_url' => "/erp/hr?section=payroll-view&payroll={$payslip->id}",
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->financeFirst->id,
+            'shop_id' => $this->shopOwnerAuth->id,
+            'type' => NotificationType::PAYROLL_GENERATED->value,
+            'title' => 'Payslip Ready for Disbursement',
+            'action_url' => "/finance?section=payslip-approvals&workflow_status=ready_for_disbursement&payroll={$payslip->id}",
+            'group_key' => "payslip-approval-{$payslip->id}-ready-for-disbursement",
+            'requires_action' => true,
         ]);
 
         $stale = $this->actingAs($this->financeFinal, 'user')
@@ -460,6 +470,11 @@ class PayslipApprovalWorkflowTest extends TestCase
         $this->assertSame('approved', $payslip->status);
         $this->assertSame('approved', $payslip->approval_status);
         $this->assertSame($this->shopOwnerMappedUser->id, $payslip->final_approved_by);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->financeFirst->id,
+            'title' => 'Payslip Ready for Disbursement',
+            'group_key' => "payslip-approval-{$payslip->id}-ready-for-disbursement",
+        ]);
     }
 
     public function test_shop_owner_final_approval_recreates_an_enum_compatible_erp_actor_when_mapping_is_missing(): void
@@ -486,6 +501,35 @@ class PayslipApprovalWorkflowTest extends TestCase
 
         $this->assertSame('STAFF', $actor->role);
         $this->assertTrue($actor->hasRole('Shop Owner'));
+    }
+
+    public function test_batch_legacy_final_approval_notifies_finance_disburser(): void
+    {
+        $this->shopOwnerAuth->update(['registration_type' => 'company']);
+        $payslip = $this->createLegacyPayslip();
+
+        $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
+                'notes' => 'Finance checker approval',
+            ])
+            ->assertOk();
+
+        $this->actingAs($this->shopOwnerAuth, 'shop_owner')
+            ->postJson('/api/shop-owner/payslip-approvals/batch/final-approve', [
+                'payslip_ids' => [$payslip->id],
+                'notes' => 'Shop owner batch approval',
+            ])
+            ->assertOk()
+            ->assertJson([
+                'approved' => 1,
+                'failed' => 0,
+            ]);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $this->financeFirst->id,
+            'title' => 'Payslip Ready for Disbursement',
+            'group_key' => "payslip-approval-{$payslip->id}-ready-for-disbursement",
+        ]);
     }
 
     public function test_batch_approval_preserves_mixed_v4_and_legacy_workflows(): void

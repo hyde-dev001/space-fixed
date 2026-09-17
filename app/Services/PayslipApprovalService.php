@@ -313,6 +313,8 @@ class PayslipApprovalService
         $shopOwnerId = (int) $payslip->shop_owner_id;
 
         if ($result['is_final'] ?? false) {
+            $this->notificationService->notifyPayslipReadyForDisbursement($shopOwnerId, $payload);
+
             $generatedByUserId = (int) ($payslip->generated_by ?? 0);
             if ($generatedByUserId > 0) {
                 $this->notificationService->sendToUser(
