@@ -1506,6 +1506,43 @@ class OrderRefundService
         }
 
         $amount = $this->resolvePayoutAmount($refund, $order);
+        if ($amount > 0
+            && (string) ($refund->flow_type ?? '') === 'request_approval'
+            && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted') {
+            $capturedAmountInCentavos = $this->paymongoRefundService->getPaymentAmountInCentavos($secretKey, $paymentId);
+            if ($capturedAmountInCentavos !== null && $capturedAmountInCentavos > 0) {
+                $capturedProductAmount = round(max(
+                    0,
+                    ($capturedAmountInCentavos / 100) - max(0, (float) ($order->shipping_fee ?? 0)),
+                ), 2);
+                $lineAmount = $this->resolveLineBasedRefundAmount($refund);
+                $amount = min($amount, $capturedProductAmount);
+
+                if ($lineAmount > 0) {
+                    $rawLineAmount = round((float) $refund->items->sum(function ($line): float {
+                        $quantity = max(1, (int) ($line->approved_qty ?? $line->requested_qty ?? 1));
+                        return max(0, (float) ($line->unit_price_snapshot ?? 0)) * $quantity;
+                    }), 2);
+                    $lineWasAlreadyProrated = $rawLineAmount > 0
+                        && $lineAmount < $rawLineAmount - 0.01;
+                    $rawItemAmount = round((float) $order->items->sum(function ($item): float {
+                        $subtotal = max(0, (float) ($item->subtotal ?? 0));
+                        if ($subtotal > 0) {
+                            return $subtotal;
+                        }
+
+                        return max(0, (float) ($item->price ?? 0)) * max(1, (int) ($item->quantity ?? 1));
+                    }), 2);
+                    $voucherAllocationRatio = $rawItemAmount > 0
+                        ? min(1, $capturedProductAmount / $rawItemAmount)
+                        : 1;
+
+                    if (!$lineWasAlreadyProrated && $voucherAllocationRatio < 1) {
+                        $amount = min($amount, round($lineAmount * $voucherAllocationRatio, 2));
+                    }
+                }
+            }
+        }
         if ($amount > 0 && round((float) ($refund->amount ?? 0), 2) !== $amount) {
             $refund->update(['amount' => $amount]);
         }

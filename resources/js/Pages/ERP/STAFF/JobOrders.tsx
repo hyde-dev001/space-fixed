@@ -158,7 +158,7 @@ type Order = {
     rejected_at?: string | null;
     rejection_reason?: string | null;
     flow_type?: string;
-    payout_amount_value?: number;
+    payout_amount_value?: number | string;
     evidence_media?: string[];
     customer_dispute_evidence?: Array<{
       id: string;
@@ -231,6 +231,11 @@ const getOnlineSucceededRefundLineAmount = (order: Pick<Order, 'latest_refund' |
   const paymentStatus = String(order.paymentStatus || '').toLowerCase();
   if (refundStatus !== 'succeeded' && paymentStatus !== 'refunded') {
     return 0;
+  }
+
+  const payoutAmount = parseAmount(latestRefund.payout_amount_value);
+  if (payoutAmount > 0) {
+    return roundCurrency(payoutAmount);
   }
 
   if (!Array.isArray(latestRefund.items)) {

@@ -21,4 +21,9 @@ describe('My Orders page layout', () => {
     expect(source).toContain('data-order-id={order.id}');
     expect(source).toContain('className={`scroll-reveal border overflow-hidden');
   });
+
+  it('shows partial refund amounts after the order-level voucher allocation', () => {
+    expect(source).toContain('const refundVoucherAllocationRatio = refundTargetRawItemsTotal > 0');
+    expect(source).toContain('unitPrice * requestedQty * refundVoucherAllocationRatio');
+  });
 });

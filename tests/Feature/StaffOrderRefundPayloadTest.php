@@ -299,6 +299,9 @@ class StaffOrderRefundPayloadTest extends TestCase
     {
         [, , $finance, $order, $refund] = $this->refundFixture();
         $gateway = $this->mock(PaymongoRefundService::class);
+        $gateway->shouldReceive('getPaymentAmountInCentavos')
+            ->once()
+            ->andReturn(null);
         $gateway->shouldReceive('createRefund')
             ->once()
             ->withArgs(fn ($key, $paymentId, $amount) => $amount === 249900)
@@ -340,7 +343,9 @@ class StaffOrderRefundPayloadTest extends TestCase
                 'success' => false,
                 'message' => 'Cannot partially refund this payment on the same day.',
             ]);
-        $gateway->shouldNotReceive('getPaymentAmountInCentavos');
+        $gateway->shouldReceive('getPaymentAmountInCentavos')
+            ->once()
+            ->andReturn(null);
 
         $result = app(OrderRefundService::class)->executeApprovedRefund($refund->fresh());
 
