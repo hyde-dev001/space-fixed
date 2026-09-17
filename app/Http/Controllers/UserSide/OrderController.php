@@ -526,6 +526,11 @@ class OrderController extends Controller
             $firstPayment = $payments[0] ?? [];
             $firstPaymentStatus = strtolower((string) ($firstPayment['data']['attributes']['status'] ?? $firstPayment['attributes']['status'] ?? ''));
             $paymentId = (string) ($firstPayment['data']['id'] ?? $firstPayment['id'] ?? '');
+            $paymentMethod = strtolower((string) (
+                data_get($firstPayment, 'data.attributes.source.type')
+                ?? data_get($firstPayment, 'attributes.source.type')
+                ?? ''
+            ));
 
             $isVerifiedPaid = in_array('paid', [$sessionPaymentStatus, $firstPaymentStatus], true);
             if ($isVerifiedPaid) {
@@ -533,6 +538,7 @@ class OrderController extends Controller
                     order: $order,
                     paymentId: $paymentId !== '' ? $paymentId : null,
                     ignoreExpiry: true,
+                    paymentMethod: $paymentMethod,
                 );
                 return;
             }

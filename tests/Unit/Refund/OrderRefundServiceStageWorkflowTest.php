@@ -545,6 +545,49 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function product_only_refund_keeps_shipping_excluded_when_same_day_partial_is_rejected(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'status' => 'pending_approval',
+            'amount' => 2500.00,
+        ]);
+        $refund->order->shipping_fee = 100.00;
+
+        $this->paymongoRefundService
+            ->expects($this->once())
+            ->method('createRefund')
+            ->withArgs(fn (string $secretKey, string $paymentId, int $amountInCentavos, string $reason): bool => $secretKey === 'sk_test_abc'
+                && $paymentId === 'pay_test_123'
+                && $amountInCentavos === 240000
+                && $reason === 'requested_by_customer')
+            ->willReturn([
+                'success' => false,
+                'message' => 'Cannot partially refund for payments done on the same day.',
+            ]);
+
+        $this->paymongoRefundService
+            ->expects($this->once())
+            ->method('getPaymentAmountInCentavos')
+            ->willReturn(250000);
+
+        $this->paymentSettlementService
+            ->expects($this->once())
+            ->method('recordOrderRefundFailure');
+
+        $result = $this->service->executeApprovedRefund($refund, processedBy: 99);
+
+        $this->assertSame('failed', $result['result']);
+        $this->assertSame(
+            'PayMongo does not allow a product-only refund on the payment date. The refund amount is PHP 2,400.00 and excludes the PHP 100.00 shipping fee. Please retry after the payment date.',
+            $result['message'],
+        );
+        $this->assertSame(2400.00, (float) $refund->amount);
+    }
+
+    #[Test]
     public function failed_gateway_refund_can_be_retried_when_recovery_is_open(): void
     {
         $refund = $this->makeRefund([

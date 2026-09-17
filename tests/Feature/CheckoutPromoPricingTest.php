@@ -980,6 +980,21 @@ class CheckoutPromoPricingTest extends TestCase
     }
 
     #[Test]
+    public function settled_paymongo_orders_keep_the_verified_gateway_payment_method(): void
+    {
+        $order = Order::factory()->create([
+            'payment_method' => 'paymongo',
+            'payment_status' => 'pending',
+        ]);
+
+        $result = app(\App\Services\PaymentSettlementService::class)
+            ->settleOrderPaid($order, 'pay_test_method', true, 'paymaya');
+
+        $this->assertSame('settled', $result['result']);
+        $this->assertSame('paymaya', $order->fresh()->payment_method);
+    }
+
+    #[Test]
     public function customer_login_keeps_session_for_retry_payment(): void
     {
         Http::fake([

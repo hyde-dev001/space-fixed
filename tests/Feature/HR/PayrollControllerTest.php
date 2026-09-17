@@ -616,6 +616,20 @@ class PayrollControllerTest extends TestCase
     }
 
     #[Test]
+    public function test_hr_with_payslip_generation_permission_can_trigger_thirteenth_month_release(): void
+    {
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll/13th-month/release', [
+                'year' => 2025,
+                'release_date' => '2025-12-31',
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('message', '13th-month release process completed')
+            ->assertJsonPath('result.year', 2025);
+    }
+
+    #[Test]
     public function test_thirteenth_month_release_accepts_explicit_december_release_date_in_non_december_runtime()
     {
         Carbon::setTestNow(Carbon::parse('2026-03-17'));

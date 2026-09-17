@@ -1633,16 +1633,28 @@ class OrderRefundService
         );
 
         if (!($gatewayResult['success'] ?? false)) {
+            $gatewayMessage = (string) ($gatewayResult['message'] ?? 'Refund request failed');
+            if (
+                (float) ($order->shipping_fee ?? 0) > 0
+                && $this->shouldRetryWithCapturedAmount($gatewayResult, $amountInCentavos)
+            ) {
+                $gatewayMessage = sprintf(
+                    'PayMongo does not allow a product-only refund on the payment date. The refund amount is PHP %s and excludes the PHP %s shipping fee. Please retry after the payment date.',
+                    number_format($amount, 2),
+                    number_format((float) $order->shipping_fee, 2),
+                );
+            }
+
             $this->recoveryService()->recordFailure(
                 refund: $refund,
-                reason: (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+                reason: $gatewayMessage,
             );
 
-            $this->paymentSettlementService->recordOrderRefundFailure($order, (string) ($gatewayResult['message'] ?? 'refund_failed'));
+            $this->paymentSettlementService->recordOrderRefundFailure($order, $gatewayMessage);
 
             return [
                 'result' => 'failed',
-                'message' => (string) ($gatewayResult['message'] ?? 'Refund request failed'),
+                'message' => $gatewayMessage,
                 'refund' => $refund->fresh(),
             ];
         }

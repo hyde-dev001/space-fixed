@@ -285,12 +285,29 @@ class PaymentSettlementService
         return $settledRepair->fresh();
     }
 
-    public function settleOrderPaid(Order $order, ?string $paymentId = null, bool $ignoreExpiry = false): array
+    public function settleOrderPaid(
+        Order $order,
+        ?string $paymentId = null,
+        bool $ignoreExpiry = false,
+        ?string $paymentMethod = null,
+    ): array
     {
+        $normalizedPaymentMethod = strtolower(trim((string) $paymentMethod));
+        $isSupportedPaymentMethod = in_array($normalizedPaymentMethod, [
+            'card',
+            'gcash',
+            'paymaya',
+            'grab_pay',
+        ], true);
+
         if ($this->isOrderSettled($order)) {
+            if ($isSupportedPaymentMethod) {
+                $order->update(['payment_method' => $normalizedPaymentMethod]);
+            }
+
             return [
                 'result' => 'already_settled',
-                'model' => $order,
+                'model' => $order->fresh(),
             ];
         }
 
@@ -301,14 +318,20 @@ class PaymentSettlementService
             ];
         }
 
-        $order->update([
+        $updates = [
             'payment_status' => 'paid',
             'paymongo_payment_id' => $paymentId,
             'paid_at' => now(),
             'payment_failed_at' => null,
             'payment_failure_reason' => null,
             'payment_expired_at' => null,
-        ]);
+        ];
+
+        if ($isSupportedPaymentMethod) {
+            $updates['payment_method'] = $normalizedPaymentMethod;
+        }
+
+        $order->update($updates);
 
         if ($order->invoice_id) {
             $invoice = Invoice::find($order->invoice_id);
