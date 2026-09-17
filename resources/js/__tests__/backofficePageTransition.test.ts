@@ -11,14 +11,14 @@ const layoutSources = [
 const superAdminLayout = readFileSync(resolve('resources/js/layout/AppLayout.tsx'), 'utf8');
 
 describe('back-office page transition', () => {
-  it('defines the approved luxury fade-and-slide-up motion', () => {
+  it('defines the approved smooth fade-and-pop-up motion without blur', () => {
     expect(appCss).toContain('.backoffice-page-enter {');
-    expect(appCss).toContain('animation: backoffice-page-enter 460ms');
+    expect(appCss).toContain('animation: backoffice-page-enter 460ms cubic-bezier(.22, 1, .36, 1) both;');
     expect(appCss).toContain('@keyframes backoffice-page-enter');
-    expect(appCss).toContain('transform: translate3d(0, 24px, 0) scale(0.985);');
-    expect(appCss).toContain('transform: translate3d(0, 0, 0);');
-    expect(appCss).toContain('filter: blur(8px);');
-    expect(appCss).toContain('filter: blur(0);');
+    expect(appCss).toContain('transform: translate3d(0, 28px, 0) scale(0.985);');
+    expect(appCss).toContain('transform: translate3d(0, 0, 0) scale(1);');
+    expect(appCss.slice(appCss.indexOf('.backoffice-page-enter'), appCss.indexOf('/* Shared customer-page entrance motion.')))
+      .not.toContain('filter:');
     expect(appCss).toContain('opacity: 0;');
     expect(appCss).toContain('opacity: 1;');
     expect(appCss).toContain('@media (prefers-reduced-motion: reduce)');
