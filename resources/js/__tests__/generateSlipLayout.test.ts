@@ -27,4 +27,10 @@ describe('generate payslip layout', () => {
 		expect(employeeTableIndex).toBeGreaterThan(thirteenthMonthControlsIndex);
 		expect(filtersIndex).toBeGreaterThan(employeeTableIndex);
 	});
+
+	it('labels deduction percentages against gross pay', () => {
+		const source = readFileSync(resolve(sourcePath), 'utf8');
+
+		expect(source).toContain('% of gross pay');
+	});
 });

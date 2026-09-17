@@ -4,6 +4,7 @@ import type { ComponentType } from "react";
 import { useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
 import { hasAnyPermission } from "../../../utils/permissions";
+import { formatDeductionPercentage } from "../../../utils/payrollDeductions";
 
 interface PayslipLineItem {
 	label: string;
@@ -1504,12 +1505,13 @@ export default function PayslipApproval({
 							</section>
 
 							<section className="rounded-xl border border-gray-200 p-3 dark:border-gray-800" aria-labelledby="finance-deductions-heading">
-								<h4 id="finance-deductions-heading" className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">Deductions</h4>
+								<h4 id="finance-deductions-heading" className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-700 dark:text-gray-300">Deductions <span className="font-normal normal-case text-gray-500 dark:text-gray-400">(% of gross pay)</span></h4>
 								<table className="w-full text-xs">
 									<thead>
 										<tr className="border-b border-gray-200 dark:border-gray-700">
 											<th className="py-1 text-left font-medium text-gray-500 dark:text-gray-400">Description</th>
 											<th className="py-1 text-right font-medium text-gray-500 dark:text-gray-400">Amount</th>
+											<th className="py-1 text-right font-medium text-gray-500 dark:text-gray-400">% of gross pay</th>
 										</tr>
 									</thead>
 									<tbody>
@@ -1517,15 +1519,17 @@ export default function PayslipApproval({
 											<tr key={`deduction-${item.label}-${idx}`} className="border-b border-gray-100 dark:border-gray-800">
 												<td className="py-1 text-gray-700 dark:text-gray-300">{item.label}</td>
 												<td className="py-1 text-right text-red-600 dark:text-red-400">-{formatCurrency(item.amount)}</td>
+												<td className="py-1 text-right text-gray-500 dark:text-gray-400">{formatDeductionPercentage(item.amount, selectedRequest.gross_pay)}</td>
 											</tr>
 										)) : (
-											<tr><td colSpan={2} className="py-1 text-gray-500 dark:text-gray-400">No deductions listed</td></tr>
+											<tr><td colSpan={3} className="py-1 text-gray-500 dark:text-gray-400">No deductions listed</td></tr>
 										)}
 									</tbody>
 									<tfoot>
 										<tr>
 											<td className="pt-2 font-bold text-gray-900 dark:text-white">Total Deductions</td>
 											<td className="pt-2 text-right font-bold text-red-600 dark:text-red-400">-{formatCurrency(selectedRequest.deductions)}</td>
+											<td className="pt-2 text-right font-bold text-gray-700 dark:text-gray-300">{formatDeductionPercentage(selectedRequest.deductions, selectedRequest.gross_pay)}</td>
 										</tr>
 									</tfoot>
 								</table>
