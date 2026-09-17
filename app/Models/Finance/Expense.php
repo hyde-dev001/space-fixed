@@ -14,6 +14,39 @@ class Expense extends Model
 {
     use HasFactory, SoftDeletes, LogsActivity, ShopScoped;
 
+    public const MANUAL_CATEGORIES = [
+        'Travel',
+        'Utilities',
+        'Rent',
+        'Maintenance',
+        'Office Supplies',
+        'Supplies',
+        'Marketing',
+        'Transportation',
+        'Meals',
+        'Professional Services',
+        'Operations',
+        'Miscellaneous',
+        'Other',
+    ];
+
+    public const SYSTEM_CATEGORIES = [
+        'Procurement',
+        'Payroll',
+    ];
+
+    /** @return array<int, string> */
+    public static function manualCategories(): array
+    {
+        return self::MANUAL_CATEGORIES;
+    }
+
+    /** @return array<int, string> */
+    public static function systemCategories(): array
+    {
+        return self::SYSTEM_CATEGORIES;
+    }
+
     protected $table = 'finance_expenses';
 
     protected $fillable = [

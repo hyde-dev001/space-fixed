@@ -11,10 +11,12 @@ use App\Models\PurchaseOrderReceipt;
 use App\Models\SupplierAdjustment;
 use App\Models\SupplierPaymentAttempt;
 use App\Models\ShopPaymentIntegration;
-use App\Models\AuditLog;
+use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\AuditLog;
 use App\Services\NotificationService;
 use App\Services\ExpenseApprovalService;
+use App\Services\ShopOwnerActorUserResolver;
 use App\Services\Finance\ExpenseSettlementService;
 use App\Support\Finance\FinanceShopContext;
 use App\Support\Finance\FinanceErrorResponse;
@@ -35,18 +37,21 @@ class ExpenseController extends Controller
     protected ExpenseApprovalService $expenseApprovalService;
     protected ExpenseSettlementService $expenseSettlementService;
     protected FinanceShopContext $shopContext;
+    protected ShopOwnerActorUserResolver $shopOwnerActorUserResolver;
 
     public function __construct(
         NotificationService $notificationService,
         ExpenseApprovalService $expenseApprovalService,
         ExpenseSettlementService $expenseSettlementService,
-        FinanceShopContext $shopContext
+        FinanceShopContext $shopContext,
+        ShopOwnerActorUserResolver $shopOwnerActorUserResolver
     )
     {
         $this->notificationService = $notificationService;
         $this->expenseApprovalService = $expenseApprovalService;
         $this->expenseSettlementService = $expenseSettlementService;
         $this->shopContext = $shopContext;
+        $this->shopOwnerActorUserResolver = $shopOwnerActorUserResolver;
     }
     public function index(Request $request)
     {
@@ -80,6 +85,44 @@ class ExpenseController extends Controller
         $this->appendProcurementDetails($expenses->getCollection(), (int) $shopId);
 
         return response()->json($expenses);
+    }
+
+    public function categories()
+    {
+        $shopId = $this->shopOwnerId();
+        if (! $shopId) {
+            return response()->json(['message' => 'No shop association found for this account.'], 403);
+        }
+
+        $historical = Expense::query()
+            ->withTrashed()
+            ->where('shop_id', $shopId)
+            ->whereNotNull('category')
+            ->distinct()
+            ->orderBy('category')
+            ->pluck('category')
+            ->map(static fn (mixed $category): string => (string) $category)
+            ->all();
+
+        $toOption = static fn (string $value): array => [
+            'value' => $value,
+            'label' => $value,
+        ];
+
+        return response()->json([
+            'data' => [
+                'manual' => array_map($toOption, Expense::manualCategories()),
+                'system' => array_map($toOption, Expense::systemCategories()),
+                'filter' => array_map(
+                    $toOption,
+                    array_values(array_unique(array_merge(
+                        Expense::manualCategories(),
+                        Expense::systemCategories(),
+                        $historical,
+                    )))
+                ),
+            ],
+        ]);
     }
 
     public function show($id)
@@ -387,9 +430,10 @@ class ExpenseController extends Controller
 
         $data = $request->validate([
             'reference' => 'nullable|string|max:191',
-            'date' => 'required|date',
+            'date' => ['required', 'date', 'before_or_equal:'.now()->toDateString()],
             'due_date' => 'nullable|date',
-            'category' => 'required|string|max:191',
+            'category' => ['required', 'string', 'max:191', Rule::in(Expense::manualCategories())],
+            'custom_category' => 'nullable|string|max:191',
             'vendor' => 'nullable|string|max:191',
             'description' => 'nullable|string',
             'amount' => 'required|numeric|min:0.01',
@@ -401,6 +445,7 @@ class ExpenseController extends Controller
             'idempotency_key' => 'nullable|string|max:191',
             'receipt' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:10240', // 10MB max
         ]);
+        $data['category'] = $this->resolveManualCategory($data);
 
         $paymentMode = (string) ($data['payment_mode'] ?? 'paid_now');
 
@@ -457,6 +502,7 @@ class ExpenseController extends Controller
                 'tax_amount' => $data['tax_amount'] ?? 0,
                 'status' => 'submitted',
                 'shop_id' => $shopId,
+                'created_by' => $this->actorUserId(),
                 'meta' => [
                     'created_by' => $this->actorUserId(),
                     'payment_mode' => $paymentMode,
@@ -478,19 +524,19 @@ class ExpenseController extends Controller
                 ]);
             }
 
-            // Create the minimal manual approval workflow for the expense.
-            $shopOwner = User::find($shopId);
-            if ($shopOwner) {
-                try {
-                    $this->expenseApprovalService->createExpenseApproval($expense, $shopOwner);
-                } catch (\Exception $e) {
-                    Log::error('Failed to create expense approval workflow', [
-                        'expense_id' => $expense->id,
-                        'error' => $e->getMessage()
-                    ]);
-                    // Continue anyway - approval workflow is optional
-                }
+            // Create the manual approval workflow against the canonical tenant owner.
+            $shopOwner = ShopOwner::query()->find($shopId);
+            if (! $shopOwner) {
+                throw new FinanceDomainException('The Finance shop context is invalid.', 'TENANT_CONTEXT_REQUIRED', 403);
             }
+
+            $shopOwnerUserId = $this->shopOwnerActorUserResolver->ensure($shopOwner);
+            $shopOwnerUser = $shopOwnerUserId ? User::query()->find($shopOwnerUserId) : null;
+            if (! $shopOwnerUser) {
+                throw new FinanceDomainException('A shop owner approval identity is required.', 'OWNER_APPROVAL_IDENTITY_REQUIRED', 500);
+            }
+
+            $this->expenseApprovalService->createExpenseApproval($expense, $shopOwnerUser);
 
             $settlementState = $this->expenseSettlementService->state($expense, (int) $shopId);
             if ($paymentMode === 'paid_now') {
@@ -622,19 +668,54 @@ class ExpenseController extends Controller
         }
 
         $data = $request->validate([
-            'date' => 'sometimes|date',
+            'date' => ['sometimes', 'date', 'before_or_equal:'.now()->toDateString()],
             'due_date' => 'sometimes|nullable|date',
-            'category' => 'sometimes|string|max:191',
+            'category' => ['sometimes', 'string', 'max:191', Rule::in(array_values(array_unique(array_merge(
+                Expense::manualCategories(),
+                Expense::systemCategories(),
+                [$expense->category],
+            ))))],
+            'custom_category' => 'nullable|string|max:191',
             'vendor' => 'sometimes|nullable|string|max:191',
             'description' => 'sometimes|nullable|string',
             'amount' => 'sometimes|numeric|min:0.01',
             'tax_amount' => 'sometimes|numeric|min:0',
         ]);
 
+        if (array_key_exists('category', $data)) {
+            $data['category'] = $this->resolveManualCategory($data, (string) $expense->category);
+        }
+        unset($data['custom_category']);
+
         $expense->update($data);
         $this->audit('update_expense', $expense->id, $data);
 
         return response()->json($expense);
+    }
+
+    private function resolveManualCategory(array $data, ?string $existingCategory = null): string
+    {
+        $category = trim((string) ($data['category'] ?? ''));
+        if ($category === 'Other') {
+            $customCategory = trim((string) ($data['custom_category'] ?? ''));
+            if ($customCategory === '') {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'custom_category' => 'A custom category is required when Other is selected.',
+                ]);
+            }
+
+            return $customCategory;
+        }
+
+        if (! in_array($category, Expense::manualCategories(), true)
+            && $category !== $existingCategory
+            && ! in_array($category, Expense::systemCategories(), true)) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'category' => 'Select a valid expense category.',
+            ]);
+        }
+
+        return $category;
     }
 
     public function approve(Request $request, $id)

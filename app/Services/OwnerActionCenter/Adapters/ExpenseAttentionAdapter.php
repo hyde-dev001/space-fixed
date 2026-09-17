@@ -7,6 +7,7 @@ namespace App\Services\OwnerActionCenter\Adapters;
 use App\Contracts\OwnerActionCenter\OwnerAttentionAdapter;
 use App\Models\Finance\Expense;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Support\OwnerActionCenter\OwnerAttentionAdapterResult;
 use App\Support\OwnerActionCenter\OwnerAttentionItem;
 use App\Support\OwnerActionCenter\OwnerAttentionQuery;
@@ -34,6 +35,13 @@ final class ExpenseAttentionAdapter implements OwnerAttentionAdapter
             return new OwnerAttentionAdapterResult([], 0);
         }
 
+        $ownerApprovalIds = User::query()
+            ->where('shop_owner_id', (int) $owner->getKey())
+            ->pluck('id')
+            ->push((int) $owner->getKey())
+            ->unique()
+            ->values();
+
         $baseQuery = Expense::query()
             ->select([
                 'id',
@@ -50,11 +58,11 @@ final class ExpenseAttentionAdapter implements OwnerAttentionAdapter
             ->whereNull('procurement_receipt_id')
             ->where('status', 'submitted')
             ->whereNotNull('approval_id')
-            ->whereHas('approval', static function ($approvalQuery) use ($owner): void {
+            ->whereHas('approval', static function ($approvalQuery) use ($ownerApprovalIds): void {
                 $approvalQuery
                     ->whereColumn('approvals.id', 'finance_expenses.approval_id')
                     ->where('approvals.approvable_type', Expense::class)
-                    ->where('approvals.shop_owner_id', (int) $owner->getKey())
+                    ->whereIn('approvals.shop_owner_id', $ownerApprovalIds)
                     ->where('approvals.status', 'pending')
                     ->where('approvals.current_level', '>', 0)
                     ->where('approvals.current_approver_role', 'shop_owner');

@@ -83,6 +83,9 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
     // ============================================
     // EXPENSES
     // ============================================
+    Route::get('/expense-categories', [ExpenseController::class, 'categories'])
+        ->middleware('permission:access-finance-expenses')
+        ->name('finance.expenses.categories');
     Route::prefix('expenses')->middleware('permission:access-finance-expenses')->group(function () {
         Route::get('/', [ExpenseController::class, 'index'])->name('finance.expenses.index');
         Route::post('/{id}/receipt', [ExpenseController::class, 'uploadReceipt'])->whereNumber('id')->name('finance.expenses.receipt.upload');

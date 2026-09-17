@@ -38,6 +38,7 @@ export interface Expense {
   id: string;
   reference: string;
   date: string;
+  created_at?: string | null;
   due_date?: string | null;
   vendor?: string | null;
   category: string;
@@ -69,6 +70,27 @@ export interface Expense {
   };
 }
 
+export interface ExpensePage {
+  data: Expense[];
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number | null;
+  to: number | null;
+}
+
+export interface ExpenseCategoryOption {
+  value: string;
+  label: string;
+}
+
+export interface ExpenseCategoryOptions {
+  manual: ExpenseCategoryOption[];
+  system: ExpenseCategoryOption[];
+  filter: ExpenseCategoryOption[];
+}
+
 type ExpenseApprovalInput = {
   expenseId: string;
   approvalNotes?: string;
@@ -78,6 +100,7 @@ export const queryKeys = {
   invoices: ['finance', 'invoices'] as const,
   invoice: (id: string) => ['finance', 'invoices', id] as const,
   expenses: ['finance', 'expenses'] as const,
+  expenseCategories: ['finance', 'expense-categories'] as const,
   expense: (id: string) => ['finance', 'expenses', id] as const,
   taxRates: ['finance', 'tax-rates'] as const,
   approvals: {
@@ -143,6 +166,8 @@ export function useExpenses(filters?: {
   search?: string;
   sort?: string;
   archived?: boolean;
+  page?: number;
+  perPage?: number;
 }) {
   const api = useFinanceApi();
 
@@ -158,11 +183,44 @@ export function useExpenses(filters?: {
       if (filters?.search) params.append('filter[search_all]', filters.search);
       if (filters?.sort) params.append('sort', filters.sort);
       if (filters?.archived !== undefined) params.append('archived', filters.archived ? '1' : '0');
+      if (filters?.page) params.append('page', String(filters.page));
+      if (filters?.perPage) params.append('per_page', String(filters.perPage));
       const query = params.toString();
       const response = await api.get(query ? `/api/finance/expenses?${query}` : '/api/finance/expenses');
       if (!response.ok) throw new Error(response.error || 'Failed to load expenses');
+      const payload = response.data;
+      if (Array.isArray(payload)) {
+        return payload as Expense[];
+      }
+
+      return {
+        data: Array.isArray(payload?.data) ? payload.data : [],
+        current_page: Number(payload?.current_page ?? 1),
+        last_page: Number(payload?.last_page ?? 1),
+        per_page: Number(payload?.per_page ?? filters?.perPage ?? 15),
+        total: Number(payload?.total ?? payload?.data?.length ?? 0),
+        from: payload?.from == null ? null : Number(payload.from),
+        to: payload?.to == null ? null : Number(payload.to),
+      } as ExpensePage;
+    },
+  });
+}
+
+export function useExpenseCategories() {
+  const api = useFinanceApi();
+
+  return useQuery({
+    queryKey: queryKeys.expenseCategories,
+    queryFn: async () => {
+      const response = await api.get('/api/finance/expense-categories');
+      if (!response.ok) throw new Error(response.error || 'Failed to load expense categories');
+
       const data = response.data?.data || response.data;
-      return (Array.isArray(data) ? data : []) as Expense[];
+      return {
+        manual: Array.isArray(data?.manual) ? data.manual : [],
+        system: Array.isArray(data?.system) ? data.system : [],
+        filter: Array.isArray(data?.filter) ? data.filter : [],
+      } as ExpenseCategoryOptions;
     },
   });
 }

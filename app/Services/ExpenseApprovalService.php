@@ -305,8 +305,17 @@ class ExpenseApprovalService
             throw new \LogicException('Operational expenses are not routed through manual approval.');
         }
 
+        $shopOwnerId = (int) ($shopOwner->shop_owner_id ?: $shopOwner->id);
+        $requester = $expense->created_by
+            ? User::find($expense->created_by)
+            : $shopOwner;
+
+        if (! $requester) {
+            throw new \LogicException('An expense requester is required to create an approval.');
+        }
+
         $approvalRoles = $this->approvalPolicyService->requiresOwnerApprovalForExpense(
-            (int) $shopOwner->id,
+            $shopOwnerId,
             (float) $expense->amount
         )
             ? ['1' => 'finance', '2' => 'shop_owner']
@@ -316,7 +325,7 @@ class ExpenseApprovalService
         $approval = $this->approvalService->createApproval(
             approvable: $expense,
             approvalRoles: $approvalRoles,
-            requestedBy: $expense->created_by ? User::find($expense->created_by) : $shopOwner,
+            requestedBy: $requester,
             shopOwner: $shopOwner,
             reference: $expense->reference,
             description: "Expense: {$expense->category} - {$expense->vendor}",
