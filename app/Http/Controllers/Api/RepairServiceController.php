@@ -280,7 +280,7 @@ class RepairServiceController extends Controller
 
     /**
      * Update the specified repair service in storage.
-     * Price changes require approval workflow (Finance → Shop Owner).
+     * Company price changes use the approval workflow; individual owners apply them directly.
      */
     public function update(Request $request, $id)
     {
@@ -341,8 +341,10 @@ class RepairServiceController extends Controller
 
         // Check if price is being changed against baseline current price
         $isPriceChange = $request->filled('price') && (float)$request->price !== $baselineCurrentPrice;
+        $shopOwner = ShopOwner::query()->find($service->shop_owner_id);
+        $isIndividualShop = strtolower(trim((string) ($shopOwner?->registration_type ?? ''))) === 'individual';
 
-        if ($isPriceChange) {
+        if ($isPriceChange && ! $isIndividualShop) {
             $proposedPrice = (float) $request->price;
             $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
                 (int) $service->shop_owner_id,
@@ -420,10 +422,31 @@ class RepairServiceController extends Controller
             ]);
         }
 
-        // Non-price updates can be applied directly
+        // Apply updates that do not enter the company approval workflow directly.
         $updateData = $request->only(['name', 'category', 'duration', 'description']);
         if ($request->filled('status')) {
             $updateData['status'] = $normalizedInputStatus ?? $request->status;
+        }
+        if ($isPriceChange && $isIndividualShop) {
+            $status = $normalizedInputStatus ?? $service->status;
+            if (in_array($status, ['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval', 'Rejected'], true)) {
+                $status = 'Active';
+            }
+
+            $updateData = array_merge($updateData, [
+                'old_price' => $baselineCurrentPrice,
+                'price' => round((float) $request->price, 2),
+                'change_reason' => null,
+                'status' => $status,
+                'approval_workflow_version' => 'individual_direct',
+                'current_approval_level' => null,
+                'finance_reviewed_by' => null,
+                'finance_reviewed_at' => null,
+                'finance_notes' => null,
+                'owner_reviewed_by' => null,
+                'owner_reviewed_at' => null,
+                'rejection_reason' => null,
+            ]);
         }
         $updateData['updated_by'] = $this->resolveUpdaterUserId();
 
