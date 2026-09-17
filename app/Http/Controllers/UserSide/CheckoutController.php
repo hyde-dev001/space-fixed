@@ -2447,6 +2447,11 @@ class CheckoutController extends Controller
             $firstPayment         = $payments[0] ?? null;
             $firstPaymentStatus   = $firstPayment['data']['attributes']['status'] ?? ($firstPayment['attributes']['status'] ?? null);
             $paymentId            = $firstPayment['data']['id'] ?? ($firstPayment['id'] ?? $data['data']['id'] ?? null);
+            $paymentMethod        = strtolower((string) (
+                data_get($firstPayment, 'data.attributes.source.type')
+                ?? data_get($firstPayment, 'attributes.source.type')
+                ?? ''
+            ));
 
             $isVerified = ($paymentStatus === 'paid') || ($firstPaymentStatus === 'paid');
 
@@ -2496,7 +2501,7 @@ class CheckoutController extends Controller
                 ]);
             }
 
-            $settlement = $settlementService->settleOrderPaid($order, (string) $paymentId, true);
+            $settlement = $settlementService->settleOrderPaid($order, (string) $paymentId, true, $paymentMethod);
             $result = $settlement['result'] ?? 'settled';
             $settledOrder = $settlement['model'] ?? $order;
 

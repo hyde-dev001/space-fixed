@@ -989,6 +989,7 @@ class PayrollController extends Controller
 
         $hasReleasePermission =
             $user->hasRole('Shop Owner')
+            || $user->can('access-payslip-generation')
             || $user->can('access-approval-workflow')
             || $user->can('access-payslip-approval');
 

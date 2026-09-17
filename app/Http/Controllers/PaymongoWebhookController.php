@@ -102,6 +102,11 @@ class PaymongoWebhookController extends Controller
         $paymentLinkId = $attributes['payment_link_id'] ?? null;
         $paymentId = $eventData['id'] ?? null;
         $amount = $attributes['amount'] ?? 0;
+        $paymentMethod = strtolower((string) (
+            data_get($attributes, 'source.type')
+            ?? data_get($attributes, 'data.attributes.source.type')
+            ?? ''
+        ));
 
         if (!$paymentLinkId) {
             Log::error('No payment_link_id in webhook data');
@@ -113,7 +118,7 @@ class PaymongoWebhookController extends Controller
 
         if ($order) {
             // Handle product order payment
-            return $this->handleOrderPayment($order, $paymentId);
+            return $this->handleOrderPayment($order, $paymentId, $paymentMethod);
         }
 
         $repairSession = RepairPaymentSession::query()
@@ -140,10 +145,10 @@ class PaymongoWebhookController extends Controller
     /**
      * Handle product order payment
      */
-    private function handleOrderPayment($order, $paymentId)
+    private function handleOrderPayment($order, $paymentId, ?string $paymentMethod = null)
     {
         $settlement = app(PaymentSettlementService::class)
-            ->settleOrderPaid($order, (string) $paymentId, true);
+            ->settleOrderPaid($order, (string) $paymentId, true, $paymentMethod);
 
         $result = $settlement['result'] ?? 'settled';
         $settledOrder = $settlement['model'] ?? $order;

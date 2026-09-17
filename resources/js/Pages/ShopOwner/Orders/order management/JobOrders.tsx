@@ -13,6 +13,7 @@ import {
   type OrderAction,
   type OrderStatus,
 } from "../../../../utils/orderStatusPresentation";
+import { formatPaymentMethod } from "../../../../utils/paymentMethodLabel";
 import axios from "axios";
 
 type OrderItem = {
@@ -503,7 +504,6 @@ export default function JobOrdersPage() {
 
     hasAppliedFocusOrder.current = true;
     setSelectedTab('refund');
-    setSearchTerm(matchedOrder.order_number);
     setCurrentPage(1);
     setViewOrder(matchedOrder);
     setIsViewModalOpen(true);
@@ -1285,9 +1285,14 @@ export default function JobOrdersPage() {
     const refund = order.latest_refund;
     if (!refund || !canExecuteRefundPayout(order)) return;
 
+    const payoutAmount = parseAmount(refund.payout_amount);
+    const payoutSummary = payoutAmount > 0
+      ? `Refund amount: ${formatOrderTotal(payoutAmount)} (shipping excluded).`
+      : 'The refund amount excludes shipping.';
+
     const result = await Swal.fire({
       title: 'Execute Refund Payout?',
-      text: `Release the refund for order ${order.order_number} to the customer's original payment method?`,
+      text: `Release the refund for order ${order.order_number} to the customer's original payment method?\n\n${payoutSummary}`,
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Execute Refund',
@@ -2617,6 +2622,10 @@ export default function JobOrdersPage() {
                     <p className="text-sm text-gray-900 dark:text-white">{viewOrder.email}</p>
                   </div>
                   <div>
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Payment Method</p>
+                    <p className="text-sm text-gray-900 dark:text-white">{formatPaymentMethod(viewOrder.paymentMethod)}</p>
+                  </div>
+                  <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Address</p>
                     <p className="text-sm text-gray-900 dark:text-white">{viewOrder.shippingAddress}</p>
                   </div>
@@ -2746,6 +2755,22 @@ export default function JobOrdersPage() {
                     </div>
                   </div>
                 </div>
+                {viewOrder.latest_refund && parseAmount(viewOrder.latest_refund.payout_amount) > 0 && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Refund Summary</p>
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/50 dark:bg-emerald-900/20">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-sm font-medium text-emerald-800 dark:text-emerald-200">Refund Amount (shipping excluded)</span>
+                        <span className="text-lg font-bold text-emerald-800 dark:text-emerald-200">
+                          {formatOrderTotal(parseAmount(viewOrder.latest_refund?.payout_amount))}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+                        Shipping fee is excluded from this refund amount. If PayMongo rejects it as a same-day partial refund, retry after the payment date.
+                      </p>
+                    </div>
+                  </div>
+                )}
                 {(String(viewOrder.cancellation_reason || '').trim()
                   || String(viewOrder.cancellation_other_reason_note || '').trim()
                   || String(viewOrder.latest_refund?.reason_code || '').trim()

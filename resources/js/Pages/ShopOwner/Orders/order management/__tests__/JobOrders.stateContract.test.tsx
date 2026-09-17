@@ -6,6 +6,10 @@ const source = readFileSync(
   join(process.cwd(), 'resources/js/Pages/ShopOwner/Orders/order management/JobOrders.tsx'),
   'utf8',
 );
+const staffSource = readFileSync(
+  join(process.cwd(), 'resources/js/Pages/ERP/STAFF/JobOrders.tsx'),
+  'utf8',
+);
 const presentationSource = readFileSync(
   join(process.cwd(), 'resources/js/utils/orderStatusPresentation.ts'),
   'utf8',
@@ -49,5 +53,23 @@ describe('shop owner order state contract', () => {
     expect(source).toContain('const payoutAmount = parseAmount(latestRefund.payout_amount);');
     expect(source).toContain('const coversAllOrderItems = hasRefundLines');
     expect(source).toContain("label: 'Refunded'");
+  });
+
+  it('shows the exact product-only refund amount before payout execution', () => {
+    expect(source).toContain('Refund Amount (shipping excluded)');
+    expect(source).toContain('parseAmount(viewOrder.latest_refund?.payout_amount)');
+    expect(source).toContain('Shipping fee is excluded from this refund amount.');
+  });
+
+  it('shows the payment method in order details', () => {
+    expect(source).toContain('Payment Method');
+    expect(source).toContain('formatPaymentMethod(viewOrder.paymentMethod)');
+    expect(staffSource).toContain('Payment Method');
+    expect(staffSource).toContain('formatPaymentMethod(viewOrder.paymentMethod)');
+  });
+
+  it('opens focused refund orders without filtering the order list', () => {
+    expect(source).not.toContain('setSearchTerm(matchedOrder.order_number);');
+    expect(source).toContain("params.delete('focus_order');");
   });
 });

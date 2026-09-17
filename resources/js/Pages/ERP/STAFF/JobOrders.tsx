@@ -15,6 +15,7 @@ import {
   type OrderAction,
   type OrderStatus,
 } from "../../../utils/orderStatusPresentation";
+import { formatPaymentMethod } from "../../../utils/paymentMethodLabel";
 import axios from "axios";
 
 const SHOP_OWNED_LOGISTICS = "Shop-owned logistics";
@@ -865,14 +866,6 @@ export default function JobOrdersPage() {
   const formatOrderSizeColor = (order: Pick<Order, 'items'>) => {
     if (!order.items || order.items.length === 0) return '-';
     return order.items.map((item) => formatItemSizeColor(order, item)).join(', ');
-  };
-
-  const getPaymentMethodLabel = (paymentMethod?: string) => {
-    const normalized = (paymentMethod || '').toLowerCase();
-    if (normalized === 'cod' || normalized === 'cash_on_delivery' || normalized === 'cash on delivery') {
-      return 'Cash on Delivery (COD)';
-    }
-    return 'Online Payment';
   };
 
   const isCodOrder = (order: Pick<Order, 'paymentMethod'>) => {
@@ -2681,8 +2674,8 @@ export default function JobOrdersPage() {
                     <p className="text-sm text-gray-900 dark:text-white">{viewOrder.email}</p>
                   </div>
                   <div>
-                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Payment Type</p>
-                    <p className="text-sm text-gray-900 dark:text-white">{getPaymentMethodLabel(viewOrder.paymentMethod)}</p>
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Payment Method</p>
+                    <p className="text-sm text-gray-900 dark:text-white">{formatPaymentMethod(viewOrder.paymentMethod)}</p>
                   </div>
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Payment Status</p>
