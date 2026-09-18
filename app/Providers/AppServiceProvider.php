@@ -2,36 +2,31 @@
 
 namespace App\Providers;
 
-use App\Models\ShopOwner;
-use App\Models\User;
-use Illuminate\Cache\RateLimiting\Limit;
-use Illuminate\Auth\Notifications\VerifyEmail;
-use Illuminate\Http\Request;
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\RateLimiter;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\URL;
-
-// Inventory Events
-use App\Events\InventoryItemCreated;
 use App\Events\InventoryItemUpdated;
-use App\Events\StockMovementRecorded;
 use App\Events\LowStockAlert;
 use App\Events\OutOfStockAlert;
-use App\Events\SupplierOrderCreated;
+use App\Events\StockMovementRecorded;
 use App\Events\SupplierOrderDelivered;
 use App\Events\SupplierOrderOverdue;
-
-// Inventory Listeners
+use App\Listeners\CreateStockMovement;
+use App\Listeners\GenerateInventoryReport;
+use App\Listeners\NotifySupplierOrderOverdue;
+use App\Listeners\QueueLowStockCheck;
 use App\Listeners\SendLowStockNotification;
 use App\Listeners\SendOutOfStockNotification;
-use App\Listeners\QueueLowStockCheck;
 use App\Listeners\UpdateProductStock;
-use App\Listeners\CreateStockMovement;
-use App\Listeners\NotifySupplierOrderOverdue;
-use App\Listeners\GenerateInventoryReport;
+use App\Models\ShopOwner;
+use App\Models\User;
+use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Foundation\Vite;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\URL;
+use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -48,6 +43,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if ($this->app->isProduction()) {
+            $this->app->make(Vite::class)->useHotFile(
+                $this->app->storagePath('framework/vite.hot'),
+            );
+        }
+
         VerifyEmail::createUrlUsing(static function (object $notifiable): string {
             $accountType = match (true) {
                 $notifiable instanceof User => 'user',
