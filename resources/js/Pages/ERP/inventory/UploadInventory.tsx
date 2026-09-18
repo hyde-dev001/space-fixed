@@ -304,7 +304,6 @@ export default function UploadInventory() {
     'image/webp',
     'image/avif',
   ];
-  const inventoryImageInputAccept = '.jpg,.jpeg,.png,.gif,.webp,.avif';
 
   const isAllowedInventoryImageFile = (file: File) => {
     const mimeType = (file.type || '').toLowerCase();
@@ -595,6 +594,21 @@ export default function UploadInventory() {
       );
     } catch {
       await Swal.fire({ icon: 'error', title: 'Failed to delete image' });
+    }
+  };
+
+  const handleSetColorImageThumbnail = async (colorVariantId: string, imageId: string) => {
+    try {
+      await inventoryItemAPI.setThumbnail(Number(imageId));
+      setColorVariants((prev) =>
+        prev.map((v) =>
+          v.id === colorVariantId
+            ? { ...v, images: v.images.map((img) => ({ ...img, is_thumbnail: img.id === imageId })) }
+            : v,
+        ),
+      );
+    } catch {
+      await Swal.fire({ icon: 'error', title: 'Failed to set thumbnail' });
     }
   };
 
@@ -1217,7 +1231,7 @@ export default function UploadInventory() {
 
       {isModalOpen && createPortal(
         <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 erp-modal-backdrop">
-          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-6xl w-full shadow-2xl relative flex flex-col border border-gray-200 dark:border-gray-700" style={{ height: 'calc(100vh - 1rem)' }}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-7xl w-full shadow-2xl relative flex flex-col border border-gray-200 dark:border-gray-700" style={{ height: 'calc(100vh - 1rem)' }}>
             <div className="sticky top-0 p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl z-10">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -1310,84 +1324,44 @@ export default function UploadInventory() {
                               return (
                                 <div
                                   key={cv.id}
-                                  className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 shadow-sm"
+                                  className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
                                 >
-                                  <div className="flex items-center gap-3 mb-4">
+                                  <div className="flex items-center gap-3 border-b border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800/60">
                                     <div
-                                      className="h-5 w-5 rounded-full border border-gray-300 dark:border-gray-600 flex-shrink-0"
+                                      className="h-9 w-9 flex-shrink-0 rounded-full border border-gray-300 dark:border-gray-600"
                                       style={{ backgroundColor: cv.color_code }}
                                     />
-                                    <span className="font-semibold text-gray-900 dark:text-white text-sm">{cv.color_name}</span>
-                                    <span className="text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200 px-2 py-0.5 rounded-full">
+                                    <span className="font-semibold text-gray-900 dark:text-white">{cv.color_name}</span>
+                                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200">
                                       {cv.sizes.length} sizes
                                     </span>
-                                    <span className="ml-auto text-xs font-semibold bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-gray-100 px-2.5 py-0.5 rounded-full">
+                                    <span className="ml-auto rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-semibold text-gray-900 dark:bg-gray-700 dark:text-gray-100">
                                       {cv.sizes.reduce((sum, s) => sum + s.quantity, 0)} units
                                     </span>
                                   </div>
 
-                                  <div className="mb-4 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
-                                    <div className="flex items-center justify-between mb-2">
-                                      <span className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">Images ({cv.images.length})</span>
-                                      <label
-                                        className="cursor-pointer inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-900 hover:border-gray-500 hover:bg-gray-100 hover:text-black transition-colors dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:border-gray-400"
-                                        title={colorImageUploading[cv.id] ? 'Uploading images...' : 'Add images'}
-                                        aria-label="Add images"
-                                      >
-                                        {colorImageUploading[cv.id] ? (
-                                          <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                          </svg>
-                                        ) : (
-                                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h3l1.2 1.5a2 2 0 001.56.75H19a2 2 0 012 2v7a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v4m2-2h-4" />
-                                          </svg>
-                                        )}
-                                        <input
-                                          type="file"
-                                          accept={inventoryImageInputAccept}
-                                          multiple
-                                          className="hidden"
-                                          disabled={!!colorImageUploading[cv.id]}
-                                          onChange={(e) => {
-                                            const files = Array.from(e.target.files ?? []);
-                                            if (files.length > 0) handleUploadColorImages(cv.id, files);
-                                            e.target.value = '';
-                                          }}
-                                        />
-                                      </label>
-                                    </div>
-                                    {cv.images.length > 0 ? (
-                                      <div className="flex flex-wrap gap-1.5">
-                                        {cv.images.map((img) => (
-                                          <div key={img.id} className="relative group w-14 h-14 flex-shrink-0">
-                                            <img
-                                              src={img.preview}
-                                              alt={cv.color_name}
-                                              className="w-14 h-14 object-cover rounded-lg border border-gray-200 dark:border-gray-700"
-                                            />
-                                            {img.is_thumbnail && (
-                                              <span className="absolute bottom-0 left-0 right-0 bg-gray-900/90 text-white text-[9px] text-center rounded-b-lg leading-tight py-0.5">
-                                                Thumb
-                                              </span>
-                                            )}
-                                            <button
-                                              type="button"
-                                              onClick={() => handleDeleteColorImage(cv.id, img.id)}
-                                              className="absolute -top-1.5 -right-1.5 hidden group-hover:flex w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full items-center justify-center transition-colors"
-                                              title="Delete image"
-                                            >
-                                              <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                                              </svg>
-                                            </button>
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-xs text-gray-400 dark:text-gray-500 italic">No images — click Add Images above.</p>
+                                  <div className="space-y-4 p-4">
+                                    <ColorVariantImageUploader
+                                      colorName={cv.color_name}
+                                      images={cv.images}
+                                      onImagesChange={(images) =>
+                                        setColorVariants((prev) =>
+                                          prev.map((variant) =>
+                                            variant.id === cv.id ? { ...variant, images } : variant,
+                                          ),
+                                        )
+                                      }
+                                      maxImages={10}
+                                      readOnly={!!colorImageUploading[cv.id]}
+                                      onAddFiles={(files) => handleUploadColorImages(cv.id, files)}
+                                      onRemoveImage={(imageId) => handleDeleteColorImage(cv.id, imageId)}
+                                      onSetThumbnail={(imageId) => handleSetColorImageThumbnail(cv.id, imageId)}
+                                      disableReorder
+                                    />
+                                    {colorImageUploading[cv.id] && (
+                                      <p className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                        Uploading images...
+                                      </p>
                                     )}
                                   </div>
 
