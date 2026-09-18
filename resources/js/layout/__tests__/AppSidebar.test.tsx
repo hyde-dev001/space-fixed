@@ -22,8 +22,8 @@ const pageState = vi.hoisted<PageState>(() => ({
 
 vi.mock('@inertiajs/react', () => ({
   usePage: () => pageState,
-  Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
-    <a href={href} {...props}>{children}</a>
+  Link: ({ href, children, viewTransition, ...props }: React.PropsWithChildren<{ href: string; viewTransition?: boolean }>) => (
+    <a href={href} data-view-transition={viewTransition ? 'true' : undefined} {...props}>{children}</a>
   ),
 }));
 
@@ -103,6 +103,19 @@ it('shows truthful canonical operational links to both privileged roles', () => 
   expect(screen.getByRole('link', { name: /registered shops/i })).toHaveAttribute('href', '/admin/shops');
   expect(screen.queryByText(/notification & communication tools/i)).not.toBeInTheDocument();
   expect(screen.queryAllByRole('link').some((link) => link.getAttribute('href')?.includes('/superAdmin/'))).toBe(false);
+});
+
+it('marks direct and nested super admin links for shared active-state transitions', () => {
+  render(<AppSidebar />);
+
+  openAccountManagement();
+
+  expect(screen.getByRole('link', { name: /dashboard/i }))
+    .toHaveAttribute('data-view-transition', 'true');
+  expect(screen.getByRole('link', { name: /dashboard/i }))
+    .toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('link', { name: /audit history/i }))
+    .toHaveAttribute('data-view-transition', 'true');
 });
 
 it('hides administrator and plan management from a regular admin', () => {

@@ -2299,14 +2299,14 @@ html.userside-dark #app .userside-auth-ghost:hover {
   @apply bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400;
 }
 
-/* Keep the active ERP sidebar item moving with the Inertia navigation. */
-#app .erp-theme .erp-sidebar :is(.menu-item, .menu-dropdown-item) {
+/* Keep the active sidebar item moving with the Inertia navigation. */
+#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item) {
   transition:
     background-color 220ms cubic-bezier(.22, 1, .36, 1),
     color 220ms cubic-bezier(.22, 1, .36, 1);
 }
 
-#app .erp-theme .erp-sidebar [aria-current='page'] {
+#app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) [aria-current='page'] {
   view-transition-name: erp-sidebar-active;
 }
 
@@ -2314,7 +2314,6 @@ html.userside-dark #app .userside-auth-ghost:hover {
   html:has(#app .erp-theme)::view-transition-old(root),
   html:has(#app .erp-theme)::view-transition-new(root) {
     animation: none;
-    opacity: 0;
   }
 
   html:has(#app .erp-theme)::view-transition-group(erp-sidebar-active) {
@@ -2329,11 +2328,11 @@ html.userside-dark #app .userside-auth-ghost:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  #app .erp-theme .erp-sidebar :is(.menu-item, .menu-dropdown-item) {
+  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) :is(.menu-item, .menu-dropdown-item) {
     transition: none;
   }
 
-  #app .erp-theme .erp-sidebar [aria-current='page'] {
+  #app .erp-theme :is(.erp-sidebar, #canonical-owner-sidebar) [aria-current='page'] {
     view-transition-name: none;
   }
 }
