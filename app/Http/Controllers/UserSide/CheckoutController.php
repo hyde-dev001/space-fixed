@@ -20,6 +20,7 @@ use App\Models\VoucherClaim;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
+use App\Services\CodCollectionService;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Services\PolicyAcceptanceService;
@@ -41,15 +42,18 @@ class CheckoutController extends Controller
     protected NotificationService $notificationService;
     protected PromoPricingService $promoPricingService;
     protected ShippingVoucherService $shippingVoucherService;
+    protected CodCollectionService $codCollectionService;
 
     public function __construct(
         NotificationService $notificationService,
         PromoPricingService $promoPricingService,
         ShippingVoucherService $shippingVoucherService,
+        CodCollectionService $codCollectionService,
     ) {
         $this->notificationService = $notificationService;
         $this->promoPricingService = $promoPricingService;
         $this->shippingVoucherService = $shippingVoucherService;
+        $this->codCollectionService = $codCollectionService;
     }
 
     private function normalizeSizeSystem(?string $rawSystem): string
@@ -1733,6 +1737,10 @@ class CheckoutController extends Controller
                         'vat_rate' => $vatRatePercent,
                         'total' => $orderGrandTotal,
                     ]));
+
+                    if ($isCodCheckout) {
+                        $this->codCollectionService->ensureForOrder($order);
+                    }
 
                     foreach ($appliedVouchers as $voucherToRedeem) {
                         $claimToRedeem = VoucherClaim::query()

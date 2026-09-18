@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Str;
 
 class OrderRefund extends Model
 {
@@ -72,6 +73,19 @@ class OrderRefund extends Model
         'amount',
         'currency',
         'requested_refund_method',
+        'refund_destination_type',
+        'refund_destination',
+        'refund_provider',
+        'payout_status',
+        'payout_idempotency_key',
+        'provider_payout_id',
+        'provider_reference',
+        'payout_initiated_at',
+        'payout_succeeded_at',
+        'payout_failed_at',
+        'payout_reversed_at',
+        'payout_failure_code',
+        'payout_failure_message',
         'reason_code',
         'reason_note',
         'other_reason_note',
@@ -99,6 +113,7 @@ class OrderRefund extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'refund_destination' => 'encrypted:array',
         'requires_owner_approval' => 'boolean',
         'evidence_media' => 'array',
         'requested_at' => 'datetime',
@@ -112,10 +127,18 @@ class OrderRefund extends Model
         'refund_executed_at' => 'datetime',
         'refunded_at' => 'datetime',
         'failed_at' => 'datetime',
+        'payout_initiated_at' => 'datetime',
+        'payout_succeeded_at' => 'datetime',
+        'payout_failed_at' => 'datetime',
+        'payout_reversed_at' => 'datetime',
         'recovery_attempt_count' => 'integer',
         'recovery_assigned_at' => 'datetime',
         'recovery_last_attempted_at' => 'datetime',
         'recovery_resolved_at' => 'datetime',
+    ];
+
+    protected $attributes = [
+        'payout_status' => 'not_started',
     ];
 
     public function order(): BelongsTo
@@ -146,6 +169,30 @@ class OrderRefund extends Model
     public function replacementRefund(): BelongsTo
     {
         return $this->belongsTo(self::class, 'replacement_refund_id');
+    }
+
+    public function maskedRefundDestination(): ?array
+    {
+        $destination = is_array($this->refund_destination) ? $this->refund_destination : null;
+        if (! $destination) {
+            return null;
+        }
+
+        $masked = [];
+        foreach (['account_name', 'account_holder_name', 'bank', 'channel'] as $field) {
+            if (filled($destination[$field] ?? null)) {
+                $masked[$field] = (string) $destination[$field];
+            }
+        }
+
+        foreach (['account_number', 'number'] as $field) {
+            if (filled($destination[$field] ?? null)) {
+                $value = (string) $destination[$field];
+                $masked[$field] = Str::mask($value, '*', 0, max(0, Str::length($value) - 4));
+            }
+        }
+
+        return $masked;
     }
 
     /**

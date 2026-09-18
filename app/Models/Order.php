@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use App\Enums\OrderStatus;
 use App\Models\OrderRefund;
@@ -279,6 +280,11 @@ class Order extends Model
     public function refunds(): HasMany
     {
         return $this->hasMany(OrderRefund::class);
+    }
+
+    public function codCollection(): HasOne
+    {
+        return $this->hasOne(CodCollection::class);
     }
 
     public function deliveryDisputes(): HasMany
