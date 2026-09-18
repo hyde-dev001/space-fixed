@@ -237,7 +237,7 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
-        // If payslip has new 4-step approval workflow, use it
+        // If payslip has the multi-level approval workflow, use it.
         if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
             $result = $this->payslipApprovalService->approvePayslip(
                 $payslip,
@@ -357,7 +357,7 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
-        // If payslip has new 4-step approval workflow, use it
+        // If payslip has the multi-level approval workflow, use it.
         if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
             $result = $this->payslipApprovalService->rejectPayslip(
                 $payslip,
@@ -444,9 +444,9 @@ class PayslipApprovalController extends Controller
     }
 
     /**
-     * Final approval before payroll can be disbursed.
-     * For 4-step workflows: can be called by Shop Owner (level 2) or Finance Manager (level 4)
-     * For legacy workflows: called by Shop Owner only
+     * Shop Owner approval before the final Finance approval.
+     * For multi-level workflows, the Finance final stage uses approvePayslip().
+     * For legacy workflows, this endpoint remains the final approval action.
      */
     public function finalApprovePayslip(Request $request, $id): JsonResponse
     {
@@ -482,7 +482,7 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
-        // If payslip has new 4-step approval workflow, use it
+        // If payslip has the multi-level approval workflow, use it.
         if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
             $result = $this->payslipApprovalService->approvePayslip(
                 $payslip,

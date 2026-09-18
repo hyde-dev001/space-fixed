@@ -602,11 +602,7 @@ class PayrollController extends Controller
                         }
 
                         if ($payroll->status !== 'approved' || empty($payroll->final_approved_by)) {
-                            throw new \RuntimeException("Payroll ID {$payrollId} requires final owner approval before disbursement");
-                        }
-
-                        if ((int) $payroll->approved_by === (int) $payroll->final_approved_by) {
-                            throw new \RuntimeException("Payroll ID {$payrollId} has an invalid approval chain. Checker and final approver must differ.");
+                            throw new \RuntimeException("Payroll ID {$payrollId} requires final approval before disbursement");
                         }
 
                         if ($payroll->approval_id) {

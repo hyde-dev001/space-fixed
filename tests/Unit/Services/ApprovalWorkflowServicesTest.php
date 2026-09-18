@@ -169,7 +169,6 @@ class ApprovalWorkflowServicesTest extends TestCase
 
         $service->approvePayslip($payroll->fresh(), $this->financeUser, 'ok');
         $service->approvePayslip($payroll->fresh(), $this->shopOwnerUser, 'ok');
-        $service->approvePayslip($payroll->fresh(), $this->financeSecondUser, 'ok');
         $result = $service->approvePayslip($payroll->fresh(), $this->financeFinalUser, 'final ok');
 
         $this->assertTrue($result['success']);
@@ -191,11 +190,10 @@ class ApprovalWorkflowServicesTest extends TestCase
 
         $approval = $service->createPayslipApproval($payroll, $this->shopOwnerUser, $this->requester);
 
-        $this->assertSame(3, (int) $approval->total_levels);
+        $this->assertSame(2, (int) $approval->total_levels);
         $this->assertSame([
             '1' => 'finance',
-            '2' => 'finance',
-            '3' => 'finance_final',
+            '2' => 'finance_final',
         ], $approval->approval_roles);
         $this->assertSame('finance', $approval->current_approver_role);
 
@@ -203,12 +201,6 @@ class ApprovalWorkflowServicesTest extends TestCase
         $this->assertTrue($first['success']);
         $this->assertFalse($first['is_final']);
         $this->assertSame(2, (int) $approval->fresh()->current_level);
-        $this->assertSame('finance', $approval->fresh()->current_approver_role);
-
-        $second = $service->approvePayslip($payroll->fresh(), $this->financeSecondUser, 'second finance review');
-        $this->assertTrue($second['success']);
-        $this->assertFalse($second['is_final']);
-        $this->assertSame(3, (int) $approval->fresh()->current_level);
         $this->assertSame('finance_final', $approval->fresh()->current_approver_role);
 
         $final = $service->approvePayslip($payroll->fresh(), $this->financeFinalUser, 'final finance review');

@@ -41,13 +41,11 @@ class PayslipApprovalService
                 ? [
                     '1' => 'finance',
                     '2' => 'shop_owner',
-                    '3' => 'finance',
-                    '4' => 'finance_final',
+                    '3' => 'finance_final',
                 ]
                 : [
                     '1' => 'finance',
-                    '2' => 'finance',
-                    '3' => 'finance_final',
+                    '2' => 'finance_final',
                 ];
 
             $approval = $this->approvalService->createApproval(
@@ -147,6 +145,8 @@ class PayslipApprovalService
                 ];
             }
 
+            $this->normalizeLegacyPayrollApproval($lockedPayslip, $approval);
+
             $metadata = is_array($approval->metadata) ? $approval->metadata : [];
             if (($metadata['financial_fingerprint'] ?? null) !== $lockedPayslip->financialFingerprint()) {
                 return [
@@ -218,6 +218,50 @@ class PayslipApprovalService
         );
 
         return $result;
+    }
+
+    private function normalizeLegacyPayrollApproval(Payroll $payslip, Approval $approval): void
+    {
+        if ($approval->status !== ApprovalStatus::PENDING) {
+            return;
+        }
+
+        $roles = $approval->approval_roles;
+        $canonicalRoles = match ($roles) {
+            [
+                '1' => 'finance',
+                '2' => 'shop_owner',
+                '3' => 'finance',
+                '4' => 'finance_final',
+            ] => [
+                '1' => 'finance',
+                '2' => 'shop_owner',
+                '3' => 'finance_final',
+            ],
+            [
+                '1' => 'finance',
+                '2' => 'finance',
+                '3' => 'finance_final',
+            ] => [
+                '1' => 'finance',
+                '2' => 'finance_final',
+            ],
+            default => null,
+        };
+
+        if ($canonicalRoles === null) {
+            return;
+        }
+
+        $currentLevel = max(1, min((int) $approval->current_level, count($canonicalRoles)));
+        $approval->forceFill([
+            'approval_roles' => $canonicalRoles,
+            'total_levels' => count($canonicalRoles),
+            'current_level' => $currentLevel,
+            'current_approver_role' => $canonicalRoles[(string) $currentLevel],
+        ])->save();
+
+        $payslip->update(['current_approval_level' => $currentLevel]);
     }
 
     /**
