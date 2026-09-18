@@ -445,7 +445,7 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
       {/* Color Picker Modal */}
       {showColorPicker && (
         <div className="fixed inset-0 z-[99999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
-          <div className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-800">
+          <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h4 className="text-xl font-semibold text-gray-900 dark:text-white">
                 Select Color
@@ -463,69 +463,8 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
               </button>
             </div>
 
-            {/* Named Color Search */}
-            <div className="mb-6">
-              <label
-                htmlFor="named-color-search"
-                className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-              >
-                Search named colors
-              </label>
-              <p className="mb-3 text-xs text-gray-500 dark:text-gray-400">
-                Search and select any named color, such as Indigo, Coral, or Dark Blue.
-              </p>
-              <div className="relative">
-                <input
-                  id="named-color-search"
-                  type="search"
-                  value={colorSearchQuery}
-                  onChange={(e) => setColorSearchQuery(e.target.value)}
-                  placeholder="Search e.g. Indigo, Coral, or Dark Blue"
-                  aria-label="Search named colors"
-                  autoFocus
-                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 pr-20 text-gray-900 outline-none transition focus:border-gray-500 focus:ring-2 focus:ring-gray-200 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:focus:ring-gray-700"
-                />
-                {colorSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setColorSearchQuery('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
-                  >
-                    Clear
-                  </button>
-                )}
-              </div>
-              {colorSearchQuery && (
-                <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-900/50">
-                  {namedColorResults.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                      {namedColorResults.map((color) => (
-                        <button
-                          key={`${color.name}-${color.code}`}
-                          type="button"
-                          onClick={() => handleNamedColorSelection(color)}
-                          aria-label={`Select ${color.name} color`}
-                          className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2 py-2 text-left text-sm text-gray-700 transition hover:border-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-400"
-                        >
-                          <span
-                            className="h-6 w-6 shrink-0 rounded-full border border-gray-300 dark:border-gray-600"
-                            style={{ backgroundColor: color.code }}
-                          />
-                          <span className="truncate">{color.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="px-2 py-2 text-sm text-gray-500 dark:text-gray-400">
-                      No named colors found. Use Custom Color below for another label.
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-
             {/* Quick Select */}
-            <div className="mb-6 border-t border-gray-200 pt-4 dark:border-gray-700">
+            <div className="mb-6">
               <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
                 Quick Select
               </h5>
@@ -574,6 +513,63 @@ export const ColorVariantManager: React.FC<ColorVariantManagerProps> = ({
                   </>
                 )}
               </div>
+            </div>
+
+            {/* Named Color Search */}
+            <div className="mb-6 border-t border-gray-200 pt-4 dark:border-gray-700">
+              <label
+                htmlFor="named-color-search"
+                className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+              >
+                Search named colors
+              </label>
+              <div className="relative">
+                <input
+                  id="named-color-search"
+                  type="search"
+                  value={colorSearchQuery}
+                  onChange={(e) => setColorSearchQuery(e.target.value)}
+                  placeholder="Search e.g. Indigo, Coral, or Dark Blue"
+                  aria-label="Search named colors"
+                  className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 pr-20 text-gray-900 outline-none transition focus:border-gray-500 focus:ring-2 focus:ring-gray-200 dark:border-gray-600 dark:bg-gray-900 dark:text-white dark:focus:ring-gray-700"
+                />
+                {colorSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setColorSearchQuery('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-200"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {colorSearchQuery && (
+                <div className="mt-3 max-h-48 overflow-y-auto rounded-lg border border-gray-200 bg-gray-50 p-2 dark:border-gray-700 dark:bg-gray-900/50">
+                  {namedColorResults.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {namedColorResults.map((color) => (
+                        <button
+                          key={`${color.name}-${color.code}`}
+                          type="button"
+                          onClick={() => handleNamedColorSelection(color)}
+                          aria-label={`Select ${color.name} color`}
+                          className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2 py-2 text-left text-sm text-gray-700 transition hover:border-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-400"
+                        >
+                          <span
+                            className="h-6 w-6 shrink-0 rounded-full border border-gray-300 dark:border-gray-600"
+                            style={{ backgroundColor: color.code }}
+                          />
+                          <span className="truncate">{color.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="px-2 py-2 text-sm text-gray-500 dark:text-gray-400">
+                      No named colors found. Use Custom Color below for another label.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Custom Color */}
