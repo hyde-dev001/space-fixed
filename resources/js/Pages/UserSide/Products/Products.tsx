@@ -46,6 +46,37 @@ type ShopSearchResult = {
   virtual_showroom_url?: string | null;
 };
 
+type ColorOption = {
+  name: string;
+  code: string | null;
+};
+
+const QUICK_COLOR_OPTIONS: ColorOption[] = [
+  { name: 'Black', code: '#000000' },
+  { name: 'White', code: '#ffffff' },
+  { name: 'Red', code: '#ef2929' },
+  { name: 'Blue', code: '#2563eb' },
+  { name: 'Green', code: '#16a34a' },
+  { name: 'Yellow', code: '#f4b400' },
+  { name: 'Pink', code: '#ec4899' },
+  { name: 'Purple', code: '#9333ea' },
+  { name: 'Orange', code: '#f97316' },
+  { name: 'Brown', code: '#92400e' },
+  { name: 'Gray', code: '#6b7280' },
+  { name: 'Navy', code: '#1e3a8a' },
+];
+
+const parseColorSelection = (value: string | null): string[] =>
+  Array.from(
+    new Map(
+      (value || '')
+        .split(',')
+        .map((color) => color.trim().replace(/\s+/g, ' '))
+        .filter(Boolean)
+        .map((color) => [color.toLowerCase(), color]),
+    ).values(),
+  );
+
 interface Props {
   // will accept products from backend later
 }
@@ -88,6 +119,7 @@ const Products: React.FC<Props> = () => {
   const categoryParam = ALLOWED_CATEGORY_FILTERS.includes(rawCategoryParam as typeof ALLOWED_CATEGORY_FILTERS[number])
     ? rawCategoryParam
     : '';
+  const colorParam = parseColorSelection(urlParams.get('colors'));
   
   const [products, setProducts] = useState<Product[]>([]);
   const [shopResults, setShopResults] = useState<ShopSearchResult[]>([]);
@@ -95,6 +127,11 @@ const Products: React.FC<Props> = () => {
   const [loading, setLoading] = useState(true);
   const [sortBy, setSortBy] = useState('near_me');
   const [isSortOpen, setIsSortOpen] = useState(false);
+  const [isColorFilterOpen, setIsColorFilterOpen] = useState(false);
+  const [colorSearchQuery, setColorSearchQuery] = useState('');
+  const [selectedColors, setSelectedColors] = useState<string[]>(colorParam);
+  const [pendingColors, setPendingColors] = useState<string[]>(colorParam);
+  const [availableColors, setAvailableColors] = useState<ColorOption[]>([]);
   const [searchQuery, setSearchQuery] = useState(searchParam);
   const [activeCategory, setActiveCategory] = useState(categoryParam);
   const [mobileSearchQuery, setMobileSearchQuery] = useState(searchParam);
@@ -131,11 +168,13 @@ const Products: React.FC<Props> = () => {
         ? category
         : ''
     );
+    setSelectedColors(parseColorSelection(params.get('colors')));
+    setPendingColors(parseColorSelection(params.get('colors')));
   }, [window.location.search]);
 
   useEffect(() => {
     fetchProducts();
-  }, [sortBy, currentPage, searchQuery, activeCategory]);
+  }, [sortBy, currentPage, searchQuery, activeCategory, selectedColors]);
 
   useEffect(() => {
     const fetchShops = async () => {
@@ -300,6 +339,10 @@ const Products: React.FC<Props> = () => {
         params.append('filter[category]', activeCategory);
       }
 
+      if (selectedColors.length > 0) {
+        params.append('filter[color]', selectedColors.join(','));
+      }
+
       const response = await fetch(`/api/products/?${params.toString()}`, {
         headers: { 'Accept': 'application/json' }
       });
@@ -308,6 +351,18 @@ const Products: React.FC<Props> = () => {
 
       const data = await response.json();
       let productsData = data.products.data || [];
+      const parsedAvailableColors = Array.isArray(data.available_colors)
+        ? data.available_colors.reduce<ColorOption[]>((colors, color: { name?: unknown; code?: unknown }) => {
+            if (typeof color?.name !== 'string' || !color.name.trim()) return colors;
+            colors.push({
+              name: color.name.trim(),
+              code: typeof color.code === 'string' && color.code.trim() ? color.code : null,
+            });
+            return colors;
+          }, [])
+        : [];
+
+      setAvailableColors(parsedAvailableColors);
 
       if (sortBy === 'best_selling') {
         productsData = productsData
@@ -367,6 +422,88 @@ const Products: React.FC<Props> = () => {
     { value: 'created_at_asc', label: 'Date, old to new' },
     { value: 'created_at_desc', label: 'Date, new to old' },
   ];
+
+  const mergedColorOptions = useMemo(() => {
+    const options = new Map<string, ColorOption>();
+
+    [...QUICK_COLOR_OPTIONS, ...availableColors].forEach((option) => {
+      const name = option.name.trim().replace(/\s+/g, ' ');
+      const key = name.toLowerCase();
+      if (!key) return;
+
+      const existing = options.get(key);
+      options.set(key, {
+        name: existing?.name ?? name,
+        code: existing?.code ?? option.code ?? null,
+      });
+    });
+
+    return Array.from(options.values());
+  }, [availableColors]);
+
+  const searchableColorOptions = useMemo(() => {
+    const query = colorSearchQuery.trim().toLowerCase();
+    return mergedColorOptions
+      .filter((option) => !QUICK_COLOR_OPTIONS.some((quickColor) => quickColor.name.toLowerCase() === option.name.toLowerCase()))
+      .filter((option) => !query || option.name.toLowerCase().includes(query))
+      .slice(0, 24);
+  }, [colorSearchQuery, mergedColorOptions]);
+
+  const updateColorQueryParam = (colors: string[]) => {
+    const params = new URLSearchParams(window.location.search);
+    if (colors.length > 0) {
+      params.set('colors', colors.join(','));
+    } else {
+      params.delete('colors');
+    }
+
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+    );
+  };
+
+  const togglePendingColor = (colorName: string) => {
+    const normalizedName = colorName.trim().replace(/\s+/g, ' ');
+    if (!normalizedName) return;
+
+    setPendingColors((current) => {
+      const normalizedKey = normalizedName.toLowerCase();
+      const alreadySelected = current.some((color) => color.toLowerCase() === normalizedKey);
+
+      return alreadySelected
+        ? current.filter((color) => color.toLowerCase() !== normalizedKey)
+        : [...current, normalizedName];
+    });
+  };
+
+  const applyColorFilter = () => {
+    const nextColors = parseColorSelection(pendingColors.join(','));
+    setSelectedColors(nextColors);
+    setPendingColors(nextColors);
+    setCurrentPage(1);
+    updateColorQueryParam(nextColors);
+    setColorSearchQuery('');
+    setIsColorFilterOpen(false);
+  };
+
+  const clearColorFilter = () => {
+    setSelectedColors([]);
+    setPendingColors([]);
+    setCurrentPage(1);
+    updateColorQueryParam([]);
+    setColorSearchQuery('');
+    setIsColorFilterOpen(false);
+  };
+
+  const openColorFilter = () => {
+    setPendingColors(selectedColors);
+    setColorSearchQuery('');
+    setIsSortOpen(false);
+    setIsColorFilterOpen(true);
+  };
 
   const getProductImages = (product: Product) => {
     const images = [product.main_image, ...(product.gallery_images ?? [])].filter(Boolean) as string[];
@@ -811,11 +948,222 @@ const Products: React.FC<Props> = () => {
                         </button>
                       );
                     })}
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="color-filter-menu-item"
+                      aria-haspopup="dialog"
+                      onClick={openColorFilter}
+                      className="group w-full px-5 py-2.5 text-left text-sm"
+                    >
+                      <span className={`relative inline-block ${selectedColors.length > 0 ? 'text-black font-semibold' : 'text-black/75'}`}>
+                        Color{selectedColors.length > 0 ? ` (${selectedColors.length})` : ''}
+                        <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${selectedColors.length > 0 ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                      </span>
+                    </button>
                   </div>
                 )}
               </div>
             </div>
           </div>
+
+          {isColorFilterOpen && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-6 sm:px-6">
+              <div
+                className="absolute inset-0 bg-black/40"
+                aria-hidden="true"
+                onClick={() => setIsColorFilterOpen(false)}
+              />
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="color-filter-title"
+                className="relative z-10 flex max-h-[min(88vh,42rem)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+              >
+                <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 sm:px-6">
+                  <div>
+                    <h2 id="color-filter-title" className="text-lg font-semibold text-gray-900">Select Color</h2>
+                    <p className="mt-1 text-xs text-gray-500">Choose one or more colors to filter the shoes.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsColorFilterOpen(false)}
+                    className="flex h-10 w-10 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                    aria-label="Close color filter"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
+                  <label htmlFor="color-filter-search" className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                    Search custom colors
+                  </label>
+                  <div className="relative">
+                    <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="m21 21-4.35-4.35m1.6-5.4a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                    </svg>
+                    <input
+                      id="color-filter-search"
+                      type="search"
+                      value={colorSearchQuery}
+                      onChange={(event) => setColorSearchQuery(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter') return;
+                        event.preventDefault();
+                        if (colorSearchQuery.trim()) {
+                          togglePendingColor(colorSearchQuery);
+                          setColorSearchQuery('');
+                        }
+                      }}
+                      placeholder="e.g., Forest Green"
+                      className="w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-9 pr-3 text-sm text-gray-900 outline-none transition focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                    />
+                  </div>
+
+                  <div className="mt-6">
+                    <div className="mb-3 flex items-center justify-between">
+                      <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Quick Select</h3>
+                      {pendingColors.length > 0 && (
+                        <span className="text-xs text-gray-500">{pendingColors.length} selected</span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+                      {QUICK_COLOR_OPTIONS.map((color) => {
+                        const isSelected = pendingColors.some((selectedColor) => selectedColor.toLowerCase() === color.name.toLowerCase());
+
+                        return (
+                          <button
+                            key={color.name}
+                            type="button"
+                            onClick={() => togglePendingColor(color.name)}
+                            className={`relative flex min-h-16 flex-col items-center justify-center gap-2 rounded-xl border px-2 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 ${
+                              isSelected ? 'border-gray-900 bg-gray-50 text-gray-900' : 'border-gray-200 text-gray-700 hover:border-gray-400'
+                            }`}
+                            aria-pressed={isSelected}
+                            aria-label={`${isSelected ? 'Remove' : 'Select'} ${color.name}`}
+                          >
+                            <span className="h-7 w-7 rounded-full border border-black/10 shadow-sm" style={{ backgroundColor: color.code ?? '#d1d5db' }} />
+                            <span>{color.name}</span>
+                            {isSelected && (
+                              <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gray-900 text-white">
+                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                  <path d="m5 12 4 4L19 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {(colorSearchQuery.trim() || availableColors.length > 0) && (
+                    <div className="mt-6 border-t border-gray-200 pt-5">
+                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Custom colors</h3>
+                      {searchableColorOptions.length > 0 ? (
+                        <div className="grid gap-2 sm:grid-cols-2">
+                          {searchableColorOptions.map((color) => {
+                            const isSelected = pendingColors.some((selectedColor) => selectedColor.toLowerCase() === color.name.toLowerCase());
+
+                            return (
+                              <button
+                                key={color.name}
+                                type="button"
+                                onClick={() => togglePendingColor(color.name)}
+                                className={`flex min-h-11 items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 ${
+                                  isSelected ? 'border-gray-900 bg-gray-50 font-semibold text-gray-900' : 'border-gray-200 text-gray-700 hover:border-gray-400'
+                                }`}
+                                aria-pressed={isSelected}
+                              >
+                                <span className="h-5 w-5 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: color.code ?? '#d1d5db' }} />
+                                <span className="min-w-0 flex-1 truncate">{color.name}</span>
+                                {isSelected && <span className="text-xs text-gray-500">Selected</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : colorSearchQuery.trim() ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            togglePendingColor(colorSearchQuery);
+                            setColorSearchQuery('');
+                          }}
+                          className="w-full rounded-lg border border-dashed border-gray-300 px-3 py-3 text-left text-sm text-gray-700 transition hover:border-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                        >
+                          Use “{colorSearchQuery.trim()}” as a color filter
+                        </button>
+                      ) : (
+                        <p className="text-sm text-gray-500">No custom colors available yet.</p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-6 border-t border-gray-200 pt-5">
+                    <div className="mb-2 flex items-center justify-between">
+                      <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Selected colors</h3>
+                      {pendingColors.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={clearColorFilter}
+                          className="rounded-md px-2 py-1 text-xs font-semibold text-gray-700 underline underline-offset-2 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    {pendingColors.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {pendingColors.map((color) => {
+                          const colorOption = mergedColorOptions.find((option) => option.name.toLowerCase() === color.toLowerCase());
+
+                          return (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => togglePendingColor(color)}
+                              className="inline-flex min-h-9 items-center gap-2 rounded-full border border-gray-300 bg-white px-3 text-sm text-gray-800 transition hover:border-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                              aria-label={`Remove ${color} color filter`}
+                            >
+                              <span className="h-3.5 w-3.5 rounded-full border border-black/10" style={{ backgroundColor: colorOption?.code ?? '#d1d5db' }} />
+                              {color}
+                              <span aria-hidden="true">×</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-500">No colors selected.</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4 sm:px-6">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingColors(selectedColors);
+                      setColorSearchQuery('');
+                      setIsColorFilterOpen(false);
+                    }}
+                    className="min-h-11 rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyColorFilter}
+                    className="min-h-11 rounded-lg bg-gray-900 px-5 text-sm font-semibold text-white transition hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                  >
+                    Apply{pendingColors.length > 0 ? ` (${pendingColors.length})` : ''}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {locError && (
             <div className="mb-8 rounded-2xl bg-red-50 border border-red-200 px-5 py-3.5 text-sm text-red-700">
