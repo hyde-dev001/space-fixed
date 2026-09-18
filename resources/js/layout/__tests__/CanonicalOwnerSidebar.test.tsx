@@ -13,8 +13,8 @@ const state = vi.hoisted(() => ({
 
 vi.mock("@inertiajs/react", () => ({
   usePage: () => ({ url: state.url, props: { auth: {} } }),
-  Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
-    <a href={href} {...props}>{children}</a>
+  Link: ({ href, children, viewTransition, ...props }: React.PropsWithChildren<{ href: string; viewTransition?: boolean }>) => (
+    <a href={href} data-view-transition={viewTransition ? "true" : undefined} {...props}>{children}</a>
   ),
 }));
 
@@ -212,6 +212,7 @@ it("matches one canonical item when a compatibility URL is active", () => {
   expect(activeLinks).toHaveLength(1);
   expect(activeLinks[0]).toHaveTextContent("Retail");
   expect(activeLinks[0]).toHaveClass("menu-item-active");
+  expect(activeLinks[0]).toHaveAttribute("data-view-transition", "true");
 });
 
 it("keeps an active nested page visible and expands its parent group", () => {
@@ -278,6 +279,7 @@ it("keeps Shop Owner Articles at the bottom of the primary navigation", () => {
 
   const articleLink = screen.getByRole("link", { name: "Articles" });
   expect(articleLink).toHaveAttribute("href", "/shop-owner/erp/articles");
+  expect(articleLink).toHaveAttribute("data-view-transition", "true");
   expect(screen.getByTestId("canonical-owner-articles-navigation")).toContainElement(articleLink);
 
   const primaryLinks = within(screen.getByTestId("canonical-owner-primary-navigation")).getAllByRole("link");

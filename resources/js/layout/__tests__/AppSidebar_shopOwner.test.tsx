@@ -64,8 +64,8 @@ vi.mock('@inertiajs/react', () => ({
       ownerShell: state.ownerShell,
     },
   }),
-  Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => (
-    <a href={href} {...props}>{children}</a>
+  Link: ({ href, children, viewTransition, ...props }: React.PropsWithChildren<{ href: string; viewTransition?: boolean }>) => (
+    <a href={href} data-view-transition={viewTransition ? 'true' : undefined} {...props}>{children}</a>
   ),
 }));
 
@@ -157,6 +157,16 @@ it('keeps Shop Owner Articles as the last sidebar link', () => {
 
   const sidebarLinks = screen.getAllByRole('link');
   expect(sidebarLinks[sidebarLinks.length - 1]).toBe(articleLink);
+});
+
+it('marks the active Shop Owner Articles link for a shared transition', () => {
+  state.url = '/shop-owner/erp/articles';
+
+  render(<AppSidebarShopOwner />);
+
+  const articleLink = screen.getByRole('link', { name: /^Articles$/i });
+  expect(articleLink).toHaveAttribute('aria-current', 'page');
+  expect(articleLink).toHaveAttribute('data-view-transition', 'true');
 });
 
 it('renders individual owner operational pages with business and module access', () => {

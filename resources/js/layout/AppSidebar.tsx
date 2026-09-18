@@ -298,6 +298,8 @@ const AppSidebar: React.FC = () => {
                 nav.route && resolveRouteHref(nav.route) && (
                   <Link
                     href={resolveRouteHref(nav.route) as string}
+                    viewTransition
+                    aria-current={isActive(nav.route) ? "page" : undefined}
                     className={`menu-item group ${
                       isActive(nav.route) ? "menu-item-active" : "menu-item-inactive"
                     }`}
@@ -340,6 +342,8 @@ const AppSidebar: React.FC = () => {
                       <li key={subItem.name}>
                         <Link
                           href={href}
+                          viewTransition
+                          aria-current={isActive(subItem.route) ? "page" : undefined}
                           className={`menu-dropdown-item ${
                             isActive(subItem.route)
                               ? "menu-dropdown-item-active"

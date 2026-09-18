@@ -182,6 +182,7 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
       <li key={item.key}>
         <Link
           href={item.canonical_url}
+          viewTransition
           className={itemClassName}
           aria-current={active && !activeChild ? "page" : undefined}
           title={showLabels ? undefined : item.label}
@@ -261,6 +262,7 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
           <li>
             <Link
               href={OWNER_ARTICLES_PATH}
+              viewTransition
               className={`flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:focus-visible:ring-gray-300 ${currentPath === OWNER_ARTICLES_PATH || currentPath.startsWith(`${OWNER_ARTICLES_PATH}/`)
                 ? "menu-item-active bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
                 : "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white"
