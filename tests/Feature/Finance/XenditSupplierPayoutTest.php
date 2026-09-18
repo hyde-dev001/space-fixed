@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Finance;
 
+use App\Enums\NotificationType;
 use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
 use App\Models\PurchaseOrder;
@@ -366,6 +367,13 @@ class XenditSupplierPayoutTest extends TestCase
             'source_reference' => 'supplier-xendit-payout:'.SupplierPaymentAttempt::query()->sole()->id,
         ]);
         $this->assertDatabaseCount('finance_expense_settlements', 1);
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $shop->id,
+            'type' => NotificationType::SUPPLIER_PAYMENT_VERIFIED->value,
+            'title' => 'Supplier Payment Completed',
+            'action_url' => '/shop-owner/erp/finance/expenses',
+            'requires_action' => true,
+        ]);
     }
 
     public function test_pending_or_failed_xendit_webhooks_do_not_mark_the_expense_paid(): void

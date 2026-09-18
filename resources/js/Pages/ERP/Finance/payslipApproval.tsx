@@ -496,6 +496,7 @@ export default function PayslipApproval({
 	const handleApprove = async (request: PayslipApprovalRequest) => {
 		setViewModalOpen(false);
 		setSelectedRequest(null);
+		const isFinalFinanceApproval = request.approval?.current_approver_role === 'finance_final';
 
 		const { value: notes } = await Swal.fire({
 			title: "Approve payslip?",
@@ -534,8 +535,10 @@ export default function PayslipApproval({
 				if (!response.ok) throw new Error('Failed to approve payslip');
 
 				await Swal.fire({
-					title: "Finance Approved",
-					text: "Payslip approved by Finance. Forwarded to Shop Owner for final approval.",
+					title: isFinalFinanceApproval ? "Final Finance Approval Granted" : "Finance Approved",
+					text: isFinalFinanceApproval
+						? "Payslip is now ready for disbursement."
+						: "Payslip approved by Finance. Forwarded to Shop Owner for final approval.",
 					icon: "success",
 					confirmButtonColor: "#111827",
 				});

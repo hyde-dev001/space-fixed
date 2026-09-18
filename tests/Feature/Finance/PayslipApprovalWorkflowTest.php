@@ -84,11 +84,11 @@ class PayslipApprovalWorkflowTest extends TestCase
         $this->payslipApprovalService = app(PayslipApprovalService::class);
     }
 
-    public function test_payslip_v4_workflow_progresses_across_all_levels(): void
+    public function test_payslip_v4_workflow_completes_once_and_can_be_disbursed(): void
     {
         $payslip = $this->createWorkflowBoundPayslip();
 
-        $this->assertApprovalStage($payslip, 1, 4, 'finance');
+        $this->assertApprovalStage($payslip, 1, 3, 'finance');
         $this->assertDatabaseHas('notifications', [
             'title' => 'Payslip Approval Required',
             'action_url' => "/finance?section=payslip-approvals&payroll={$payslip->id}",
@@ -105,8 +105,9 @@ class PayslipApprovalWorkflowTest extends TestCase
             ->assertJson([
                 'is_final' => false,
                 'approval_level' => 2,
-            ]);
-        $this->assertApprovalStage($payslip, 2, 4, 'shop_owner');
+            ])
+            ->assertJsonPath('payslip.workflow_status', 'awaiting_final_approval');
+        $this->assertApprovalStage($payslip, 2, 3, 'shop_owner');
         $this->assertDatabaseHas('notifications', [
             'shop_owner_id' => $this->shopOwnerAuth->id,
             'title' => 'Payslip Awaiting Shop Owner Approval',
@@ -120,7 +121,7 @@ class PayslipApprovalWorkflowTest extends TestCase
             ]);
 
         $wrongRole->assertStatus(422);
-        $this->assertApprovalStage($payslip, 2, 4, 'shop_owner');
+        $this->assertApprovalStage($payslip, 2, 3, 'shop_owner');
 
         // Level 2: linked Shop Owner ERP user via final-approve endpoint
         $l2 = $this->actingAs($this->shopOwnerMappedUser, 'user')
@@ -132,36 +133,31 @@ class PayslipApprovalWorkflowTest extends TestCase
             ->assertJson([
                 'is_final' => false,
                 'approval_level' => 3,
-            ]);
-        $this->assertApprovalStage($payslip, 3, 4, 'finance');
+            ])
+            ->assertJsonPath('payslip.workflow_status', 'awaiting_checker');
+        $this->assertApprovalStage($payslip, 3, 3, 'finance_final');
+        $this->assertDatabaseHas('notifications', [
+            'title' => 'Payslip Awaiting Final Finance Approval',
+            'action_url' => "/finance?section=payslip-approvals&payroll={$payslip->id}",
+            'requires_action' => true,
+        ]);
 
-        // Level 3: Finance checker
-        $l3 = $this->actingAs($this->financeSecond, 'user')
+        // Level 3: Finance final approval. The same Finance account may
+        // complete the distinct final stage after the Shop Owner decision.
+        $l3 = $this->actingAs($this->financeFirst, 'user')
             ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
-                'notes' => 'L3 finance checked',
+                'notes' => 'Final finance approval',
             ]);
 
         $l3->assertStatus(200)
             ->assertJson([
-                'is_final' => false,
-                'approval_level' => 4,
-            ]);
-        $this->assertApprovalStage($payslip, 4, 4, 'finance_final');
-
-        // Level 4: Finance manager final
-        $l4 = $this->actingAs($this->financeFinal, 'user')
-            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
-                'notes' => 'L4 final finance approval',
-            ]);
-
-        $l4->assertStatus(200)
-            ->assertJson([
                 'is_final' => true,
-                'approval_level' => 4,
-            ]);
+                'approval_level' => 3,
+            ])
+            ->assertJsonPath('payslip.workflow_status', 'ready_for_disbursement');
 
         $payslip->refresh();
-        $this->assertSame(4, $payslip->current_approval_level);
+        $this->assertSame(3, $payslip->current_approval_level);
         $this->assertSame('approved', $payslip->status);
         $this->assertSame('approved', $payslip->approval_status);
         $this->assertDatabaseHas('notifications', [
@@ -179,13 +175,28 @@ class PayslipApprovalWorkflowTest extends TestCase
             'requires_action' => true,
         ]);
 
+        $disbursement = $this->actingAs($this->financeFirst, 'user')
+            ->postJson('/api/finance/payslip-approvals/disburse', [
+                'payrollIds' => [$payslip->id],
+                'paymentDate' => '2026-09-18',
+                'paymentMethod' => 'bank_transfer',
+                'payoutReference' => 'PAYROLL-LIFECYCLE-1',
+            ]);
+
+        $disbursement->assertOk()->assertJsonPath('processed', 1);
+        $this->assertDatabaseHas('payrolls', [
+            'id' => $payslip->id,
+            'status' => 'paid',
+            'disbursed_by' => $this->financeFirst->id,
+        ]);
+
         $stale = $this->actingAs($this->financeFinal, 'user')
             ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
                 'notes' => 'Replay final approval',
             ]);
 
         $stale->assertStatus(422);
-        $this->assertApprovalStage($payslip, 4, 4, 'finance_final');
+        $this->assertApprovalStage($payslip, 3, 3, 'finance_final');
     }
 
     public function test_finance_approval_moves_payslip_queue_to_awaiting_shop_owner(): void
@@ -210,6 +221,37 @@ class PayslipApprovalWorkflowTest extends TestCase
             ->getJson('/api/finance/payslip-approvals?workflow_status=awaiting_checker')
             ->assertOk()
             ->assertJsonPath('meta.total', 0);
+    }
+
+    public function test_inflight_four_level_payslip_is_collapsed_before_final_finance_action(): void
+    {
+        $payslip = $this->createWorkflowBoundPayslip();
+        $approval = Approval::findOrFail($payslip->approval_id);
+        $approval->update([
+            'approval_roles' => [
+                '1' => 'finance',
+                '2' => 'shop_owner',
+                '3' => 'finance',
+                '4' => 'finance_final',
+            ],
+            'current_level' => 3,
+            'total_levels' => 4,
+            'current_approver_role' => 'finance',
+        ]);
+        $payslip->update(['current_approval_level' => 3]);
+
+        $response = $this->actingAs($this->financeFirst, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
+                'notes' => 'Complete the migrated final Finance stage',
+            ]);
+
+        $response->assertOk()->assertJson([
+            'is_final' => true,
+            'approval_level' => 3,
+        ]);
+
+        $this->assertApprovalStage($payslip, 3, 3, 'finance_final');
+        $this->assertSame('approved', $payslip->fresh()->status);
     }
 
     public function test_company_owner_action_center_lists_payslip_after_finance_approval(): void
@@ -278,8 +320,8 @@ class PayslipApprovalWorkflowTest extends TestCase
                 'failed' => 0,
             ]);
 
-        $this->assertApprovalStage($first, 3, 4, 'finance');
-        $this->assertApprovalStage($second, 3, 4, 'finance');
+        $this->assertApprovalStage($first, 3, 3, 'finance_final');
+        $this->assertApprovalStage($second, 3, 3, 'finance_final');
     }
 
     public function test_payslip_policy_off_removes_only_the_shop_owner_stage(): void
@@ -287,11 +329,10 @@ class PayslipApprovalWorkflowTest extends TestCase
         $this->setPayslipApproval(false);
         $payslip = $this->createWorkflowBoundPayslip();
 
-        $this->assertApprovalStage($payslip, 1, 3, 'finance');
+        $this->assertApprovalStage($payslip, 1, 2, 'finance');
         $this->assertSame([
             '1' => 'finance',
-            '2' => 'finance',
-            '3' => 'finance_final',
+            '2' => 'finance_final',
         ], Approval::findOrFail($payslip->approval_id)->approval_roles);
         $this->setPayslipApproval(true);
 
@@ -305,7 +346,7 @@ class PayslipApprovalWorkflowTest extends TestCase
                 'is_final' => false,
                 'approval_level' => 2,
             ]);
-        $this->assertApprovalStage($payslip, 2, 3, 'finance');
+        $this->assertApprovalStage($payslip, 2, 2, 'finance_final');
 
         $owner = $this->actingAs($this->shopOwnerAuth, 'shop_owner')
             ->postJson("/api/finance/payslip-approvals/{$payslip->id}/final-approve", [
@@ -313,29 +354,17 @@ class PayslipApprovalWorkflowTest extends TestCase
             ]);
 
         $owner->assertStatus(422);
-        $this->assertApprovalStage($payslip, 2, 3, 'finance');
+        $this->assertApprovalStage($payslip, 2, 2, 'finance_final');
 
-        $l2 = $this->actingAs($this->financeSecond, 'user')
+        $l2 = $this->actingAs($this->financeFinal, 'user')
             ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
-                'notes' => 'Second Finance decision',
+                'notes' => 'Final Finance decision',
             ]);
 
         $l2->assertStatus(200)
             ->assertJson([
-                'is_final' => false,
-                'approval_level' => 3,
-            ]);
-        $this->assertApprovalStage($payslip, 3, 3, 'finance_final');
-
-        $l3 = $this->actingAs($this->financeFinal, 'user')
-            ->postJson("/api/finance/payslip-approvals/{$payslip->id}/approve", [
-                'notes' => 'Final Finance approval',
-            ]);
-
-        $l3->assertStatus(200)
-            ->assertJson([
                 'is_final' => true,
-                'approval_level' => 3,
+                'approval_level' => 2,
             ]);
 
         $payslip->refresh();
@@ -442,7 +471,7 @@ class PayslipApprovalWorkflowTest extends TestCase
             ])
             ->assertStatus(404);
 
-        $this->assertApprovalStage($payslip, 2, 4, 'shop_owner');
+        $this->assertApprovalStage($payslip, 2, 3, 'shop_owner');
     }
 
     public function test_legacy_payslip_keeps_the_legacy_two_step_path(): void
@@ -556,8 +585,8 @@ class PayslipApprovalWorkflowTest extends TestCase
                 'failed' => 1,
             ]);
 
-        $this->assertApprovalStage($v4Payslip, 2, 4, 'shop_owner');
-        $this->assertApprovalStage($v4OwnerStagePayslip, 2, 4, 'shop_owner');
+        $this->assertApprovalStage($v4Payslip, 2, 3, 'shop_owner');
+        $this->assertApprovalStage($v4OwnerStagePayslip, 2, 3, 'shop_owner');
 
         $legacyPayslip->refresh();
         $this->assertSame('approved', $legacyPayslip->approval_status);
@@ -596,7 +625,7 @@ class PayslipApprovalWorkflowTest extends TestCase
         $payslip->refresh();
         $this->assertSame('pending', $payslip->status);
         $this->assertSame('pending', $payslip->approval_status);
-        $this->assertApprovalStage($payslip, 1, 4, 'finance');
+        $this->assertApprovalStage($payslip, 1, 3, 'finance');
     }
 
     private function createWorkflowBoundPayslip(): Payroll
