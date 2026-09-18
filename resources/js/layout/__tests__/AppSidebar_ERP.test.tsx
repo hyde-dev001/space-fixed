@@ -53,7 +53,7 @@ vi.mock('@inertiajs/react', () => ({
       activeModule: state.activeModule,
     },
   }),
-  Link: ({ href, children, ...props }: React.PropsWithChildren<{ href: string }>) => <a href={href} {...props}>{children}</a>,
+  Link: ({ href, children, viewTransition: _viewTransition, cacheFor: _cacheFor, ...props }: React.PropsWithChildren<{ href: string; viewTransition?: boolean; cacheFor?: unknown }>) => <a href={href} {...props}>{children}</a>,
 }));
 
 vi.mock('ziggy-js', () => ({
@@ -286,8 +286,13 @@ it('marks only the current logistics page active on the shipments route', () => 
 
   render(<AppSidebarERP />);
 
-  expect(screen.getByRole('link', { name: /^logistics dashboard$/i })).toHaveClass('menu-item-inactive');
-  expect(screen.getByRole('link', { name: /^logistics$/i })).toHaveClass('menu-item-active');
+  const dashboardLink = screen.getByRole('link', { name: /^logistics dashboard$/i });
+  const shipmentsLink = screen.getByRole('link', { name: /^logistics$/i });
+
+  expect(dashboardLink).toHaveClass('menu-item-inactive');
+  expect(shipmentsLink).toHaveClass('menu-item-active');
+  expect(dashboardLink).not.toHaveAttribute('aria-current');
+  expect(shipmentsLink).toHaveAttribute('aria-current', 'page');
 });
 
 it('keeps logistics riders out of the dashboard while showing My Deliveries', () => {

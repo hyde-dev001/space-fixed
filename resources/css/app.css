@@ -2299,6 +2299,45 @@ html.userside-dark #app .userside-auth-ghost:hover {
   @apply bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400;
 }
 
+/* Keep the active ERP sidebar item moving with the Inertia navigation. */
+#app .erp-theme .erp-sidebar :is(.menu-item, .menu-dropdown-item) {
+  transition:
+    background-color 220ms cubic-bezier(.22, 1, .36, 1),
+    color 220ms cubic-bezier(.22, 1, .36, 1);
+}
+
+#app .erp-theme .erp-sidebar [aria-current='page'] {
+  view-transition-name: erp-sidebar-active;
+}
+
+@supports (view-transition-name: none) {
+  html:has(#app .erp-theme)::view-transition-old(root),
+  html:has(#app .erp-theme)::view-transition-new(root) {
+    animation: none;
+    opacity: 0;
+  }
+
+  html:has(#app .erp-theme)::view-transition-group(erp-sidebar-active) {
+    animation-duration: 260ms;
+    animation-timing-function: cubic-bezier(.22, 1, .36, 1);
+  }
+
+  html:has(#app .erp-theme)::view-transition-old(erp-sidebar-active),
+  html:has(#app .erp-theme)::view-transition-new(erp-sidebar-active) {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app .erp-theme .erp-sidebar :is(.menu-item, .menu-dropdown-item) {
+    transition: none;
+  }
+
+  #app .erp-theme .erp-sidebar [aria-current='page'] {
+    view-transition-name: none;
+  }
+}
+
 /* Shared light navigation and controls use black as the primary accent. */
 html:not(.dark) {
   --color-black: #111111;
