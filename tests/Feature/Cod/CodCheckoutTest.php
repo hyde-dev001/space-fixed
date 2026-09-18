@@ -72,7 +72,7 @@ class CodCheckoutTest extends TestCase
                 'shipping_barangay' => $address->barangay,
                 'shipping_postal_code' => $address->postal_code,
                 'shipping_address_line' => $address->address_line,
-                'payment_method' => 'cod',
+                'payment_method' => 'cash_on_delivery',
             ]);
 
         $response->assertOk()->assertJsonPath('success', true);
@@ -91,6 +91,14 @@ class CodCheckoutTest extends TestCase
             (float) $order->total_amount + (float) $order->shipping_fee + (float) $order->vat_amount,
             (float) $collection->expected_amount,
         );
+        $this->assertNotNull($order->invoice_id);
+        $this->assertDatabaseHas('finance_invoices', [
+            'id' => $order->invoice_id,
+            'shop_id' => $shopOwner->id,
+            'status' => 'sent',
+            'payment_method' => 'cod',
+        ]);
+        $this->assertDatabaseCount('finance_invoice_payments', 0);
         $this->assertNull($order->paid_at);
     }
 }

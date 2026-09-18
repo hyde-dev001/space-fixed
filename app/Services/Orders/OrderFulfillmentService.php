@@ -103,17 +103,6 @@ final class OrderFulfillmentService
                 OrderStatus::DELIVERED,
             );
 
-            $paymentMethod = strtolower((string) ($lockedOrder->payment_method ?? ''));
-            $isCodOrder = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
-
-            if ($isCodOrder && ! in_array((string) ($lockedOrder->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
-                $lockedOrder->payment_status = 'paid';
-                $lockedOrder->paid_at = now();
-                $lockedOrder->payment_failed_at = null;
-                $lockedOrder->payment_failure_reason = null;
-                $lockedOrder->payment_expired_at = null;
-            }
-
             $this->persistStatus($lockedOrder, OrderStatus::DELIVERED, $actor, notifyCustomer: false);
 
             try {

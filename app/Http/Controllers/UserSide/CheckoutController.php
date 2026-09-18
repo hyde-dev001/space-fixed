@@ -1389,9 +1389,14 @@ class CheckoutController extends Controller
             $shopIndex = 0;
             $ordersHasShippingFee = Schema::hasColumn('orders', 'shipping_fee');
             $requestedPaymentMethod = strtolower((string) ($validated['payment_method'] ?? 'paymongo'));
+            $canonicalPaymentMethod = in_array(
+                $requestedPaymentMethod,
+                ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'],
+                true,
+            ) ? 'cod' : $requestedPaymentMethod;
             $vatRatePercent = 12.0;
 
-            $isCodCheckout = in_array($requestedPaymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
+            $isCodCheckout = $canonicalPaymentMethod === 'cod';
             if (!$isCodCheckout && !empty($shopOwnerIds)) {
                 $shopsMissingPaymongoCount = ShopOwner::query()
                     ->whereIn('id', $shopOwnerIds)
@@ -1569,7 +1574,7 @@ class CheckoutController extends Controller
                         'customer_email' => $validated['customer_email'],
                         'customer_phone' => $validated['customer_phone'] ?? null,
                         'customer_address' => $validated['shipping_address'],
-                        'payment_method' => $validated['payment_method'] ?? 'paymongo',
+                        'payment_method' => $canonicalPaymentMethod,
                         'payment_status' => 'pending',
                         // Store structured address data
                         'address_id' => $validated['address_id'] ?? null,
@@ -1740,6 +1745,7 @@ class CheckoutController extends Controller
 
                     if ($isCodCheckout) {
                         $this->codCollectionService->ensureForOrder($order);
+                        $this->autoGenerateInvoice($order);
                     }
 
                     foreach ($appliedVouchers as $voucherToRedeem) {
