@@ -103,6 +103,95 @@ class ProductController extends Controller
         });
     }
 
+    private function applyPublicProductVisibility($query): void
+    {
+        $query->where('is_active', true)
+            ->whereHas('shopOwner', function ($shopQuery) {
+                $shopQuery->where('status', 'approved');
+                $this->applyRetailCapableBusinessTypeFilter($shopQuery);
+            });
+    }
+
+    private function normalizeColorFilterValues(mixed $value): array
+    {
+        return collect(is_array($value) ? $value : explode(',', (string) $value))
+            ->map(fn ($color) => trim((string) preg_replace('/\s+/', ' ', (string) $color)))
+            ->filter()
+            ->map(fn ($color) => strtolower($color))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function applyColorNameFilter($query, string $column, string $color): void
+    {
+        $query->where(function ($colorQuery) use ($column, $color) {
+            $colorQuery->whereRaw("LOWER(TRIM({$column})) = ?", [$color])
+                ->orWhereRaw("LOWER(TRIM({$column})) LIKE ?", [$color . ' +%'])
+                ->orWhereRaw("LOWER(TRIM({$column})) LIKE ?", ['%+ ' . $color . ' +%'])
+                ->orWhereRaw("LOWER(TRIM({$column})) LIKE ?", ['%+ ' . $color]);
+        });
+    }
+
+    private function availablePublicColors(): array
+    {
+        $colors = [];
+
+        $addColor = static function (?string $name, ?string $code = null) use (&$colors): void {
+            $displayName = trim((string) preg_replace('/\s+/', ' ', (string) $name));
+            if ($displayName === '') {
+                return;
+            }
+
+            $key = strtolower($displayName);
+            $normalizedCode = trim((string) $code) ?: null;
+
+            if (!isset($colors[$key])) {
+                $colors[$key] = [
+                    'name' => $displayName,
+                    'code' => $normalizedCode,
+                ];
+                return;
+            }
+
+            if ($colors[$key]['code'] === null && $normalizedCode !== null) {
+                $colors[$key]['code'] = $normalizedCode;
+            }
+        };
+
+        ProductColorVariant::query()
+            ->select(['color_name', 'color_code'])
+            ->where('is_active', true)
+            ->whereHas('product', function ($query) {
+                $this->applyPublicProductVisibility($query);
+            })
+            ->get()
+            ->each(fn (ProductColorVariant $variant) => $addColor($variant->color_name, $variant->color_code));
+
+        ProductVariant::query()
+            ->select('color')
+            ->where('is_active', true)
+            ->whereNotNull('color')
+            ->whereHas('product', function ($query) {
+                $this->applyPublicProductVisibility($query);
+            })
+            ->get()
+            ->each(fn (ProductVariant $variant) => $addColor($variant->color));
+
+        $legacyProducts = Product::query()->select('colors_available');
+        $this->applyPublicProductVisibility($legacyProducts);
+        $legacyProducts->get()->each(function (Product $product) use ($addColor): void {
+            foreach ($product->colors_available ?? [] as $color) {
+                $addColor((string) $color);
+            }
+        });
+
+        return collect($colors)
+            ->sortBy(fn (array $color) => strtolower($color['name']))
+            ->values()
+            ->all();
+    }
+
     private function canonicalizeColorName(string $colorName): string
     {
         $parts = preg_split('/\+/', $colorName) ?: [];
@@ -248,10 +337,35 @@ class ProductController extends Controller
                     AllowedFilter::exact('shop_id', 'shop_owner_id'),
                     AllowedFilter::partial('search', 'name'),
                     AllowedFilter::scope('search_all'),
+                    AllowedFilter::callback('color', function ($query, $value) {
+                        $colors = $this->normalizeColorFilterValues($value);
+
+                        if ($colors === []) {
+                            return;
+                        }
+
+                        $query->where(function ($colorQuery) use ($colors) {
+                            foreach ($colors as $index => $color) {
+                                $method = $index === 0 ? 'where' : 'orWhere';
+                                $colorQuery->{$method}(function ($sourceQuery) use ($color) {
+                                    $sourceQuery->whereHas('colorVariants', function ($variantQuery) use ($color) {
+                                        $variantQuery->active();
+                                        $this->applyColorNameFilter($variantQuery, 'color_name', $color);
+                                    })->orWhereHas('variants', function ($variantQuery) use ($color) {
+                                        $variantQuery->where('is_active', true);
+                                        $this->applyColorNameFilter($variantQuery, 'color', $color);
+                                    });
+
+                                    foreach (array_unique([$color, ucwords($color), strtoupper($color)]) as $jsonColor) {
+                                        $sourceQuery->orWhereJsonContains('colors_available', $jsonColor);
+                                    }
+                                });
+                            }
+                        });
+                    }),
                 ])
                 ->allowedSorts(['price', 'name', 'created_at', 'sales_count'])
                 ->defaultSort('-created_at')
-                ->where('is_active', true)
                 ->withSum('variants as variants_stock_quantity', 'quantity')
                 ->with([
                     'shopOwner:id,first_name,last_name,business_name,business_type,shop_latitude,shop_longitude',
@@ -264,11 +378,7 @@ class ProductController extends Controller
                     }
                 ]);
 
-            // Filter by business type - only show products from retail or both shops
-            $query->whereHas('shopOwner', function ($q) {
-                $q->where('status', 'approved');
-                $this->applyRetailCapableBusinessTypeFilter($q);
-            });
+            $this->applyPublicProductVisibility($query);
 
             $products = $query->paginate($request->get('per_page', 12));
 
@@ -333,12 +443,13 @@ class ProductController extends Controller
                 return $product;
             });
 
-                        return response()->json([
+            return response()->json([
                 'success' => true,
                 'products' => $products,
-                        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-                            ->header('Pragma', 'no-cache')
-                            ->header('Expires', '0');
+                'available_colors' => $this->availablePublicColors(),
+            ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                ->header('Pragma', 'no-cache')
+                ->header('Expires', '0');
         } catch (\Exception $e) {
             Log::error('Error fetching products', [
                 'error' => $e->getMessage(),

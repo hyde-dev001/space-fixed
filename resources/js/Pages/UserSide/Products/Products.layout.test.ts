@@ -43,4 +43,16 @@ describe('Products page layout', () => {
       'absolute right-0 left-auto z-40 mt-3 w-[min(92vw,14.5rem)]',
     );
   });
+
+  it('places the multi-select color filter after the newest-date sort option', () => {
+    const newestDateIndex = productsSource.indexOf('Date, new to old');
+    const colorIndex = productsSource.indexOf('data-testid="color-filter-menu-item"');
+
+    expect(newestDateIndex).toBeGreaterThanOrEqual(0);
+    expect(colorIndex).toBeGreaterThan(newestDateIndex);
+    expect(productsSource).toContain('filter[color]');
+    expect(productsSource).toContain('available_colors');
+    expect(productsSource).toContain('selectedColors');
+    expect(productsSource).toContain('pendingColors');
+  });
 });
