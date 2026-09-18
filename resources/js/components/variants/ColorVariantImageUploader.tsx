@@ -17,10 +17,6 @@ type ColorVariantImageUploaderProps = {
   onImagesChange: (images: ColorVariantImage[]) => void;
   maxImages?: number;
   readOnly?: boolean;
-  onAddFiles?: (files: File[]) => void | Promise<void>;
-  onRemoveImage?: (imageId: string) => void | Promise<void>;
-  onSetThumbnail?: (imageId: string) => void | Promise<void>;
-  disableReorder?: boolean;
 };
 
 export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps> = ({
@@ -29,10 +25,6 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
   onImagesChange,
   maxImages = 10,
   readOnly = false,
-  onAddFiles,
-  onRemoveImage,
-  onSetThumbnail,
-  disableReorder = false,
 }) => {
   const [draggingImageId, setDraggingImageId] = useState<string | null>(null);
 
@@ -88,12 +80,6 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
       return;
     }
 
-    if (onAddFiles) {
-      void onAddFiles(validFiles);
-      e.target.value = '';
-      return;
-    }
-
     const newImages = validFiles.map((file, index) => {
       const id = `${Date.now()}-${index}`;
       const preview = URL.createObjectURL(file);
@@ -112,11 +98,6 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
 
   const handleRemoveImage = (id: string) => {
     if (readOnly) return;
-
-    if (onRemoveImage) {
-      void onRemoveImage(id);
-      return;
-    }
 
     const updatedImages = images.filter(img => img.id !== id);
     
@@ -137,11 +118,6 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
   const handleSetThumbnail = (id: string) => {
     if (readOnly) return;
 
-    if (onSetThumbnail) {
-      void onSetThumbnail(id);
-      return;
-    }
-
     const updatedImages = images.map(img => ({
       ...img,
       is_thumbnail: img.id === id,
@@ -150,21 +126,19 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
   };
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
-    if (readOnly || disableReorder) return;
+    if (readOnly) return;
 
     setDraggingImageId(id);
     e.dataTransfer.effectAllowed = 'move';
   };
 
   const handleDragOver = (e: React.DragEvent) => {
-    if (readOnly || disableReorder) return;
-
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
   };
 
   const handleDrop = (e: React.DragEvent, targetId: string) => {
-    if (readOnly || disableReorder) return;
+    if (readOnly) return;
 
     e.preventDefault();
     if (!draggingImageId || draggingImageId === targetId) return;
@@ -248,11 +222,11 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
           {images.map((image, index) => (
             <div
               key={image.id}
-              draggable={!readOnly && !disableReorder}
+              draggable={!readOnly}
               onDragStart={(e) => handleDragStart(e, image.id)}
               onDragOver={handleDragOver}
               onDrop={(e) => handleDrop(e, image.id)}
-              className={`relative group ${disableReorder ? 'cursor-default' : 'cursor-move'} transition-all ${
+              className={`relative group cursor-move transition-all ${
                 draggingImageId === image.id ? 'opacity-50 scale-95' : ''
               }`}
             >
@@ -306,7 +280,7 @@ export const ColorVariantImageUploader: React.FC<ColorVariantImageUploaderProps>
         </div>
       )}
 
-      {images.length > 0 && !readOnly && !disableReorder && (
+      {images.length > 0 && !readOnly && (
         <p className="text-xs text-gray-500 dark:text-gray-400 italic">
           💡 Drag images to reorder • Click thumbnail badge to change
         </p>
