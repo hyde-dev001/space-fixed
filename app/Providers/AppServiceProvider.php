@@ -6,6 +6,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Auth\Notifications\VerifyEmail;
+use Illuminate\Foundation\Vite;
 use Illuminate\Http\Request;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -48,6 +49,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        if ($this->app->isProduction()) {
+            $this->app->make(Vite::class)->useHotFile(
+                $this->app->storagePath('framework/vite.hot'),
+            );
+        }
+
         VerifyEmail::createUrlUsing(static function (object $notifiable): string {
             $accountType = match (true) {
                 $notifiable instanceof User => 'user',

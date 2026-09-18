@@ -6,6 +6,24 @@ import type { ColorVariant } from '../ColorVariantManager';
 const emptyVariants: ColorVariant[] = [];
 
 describe('ColorVariantManager color picker', () => {
+  it('shows named color search before quick select', () => {
+    render(
+      <ColorVariantManager
+        colorVariants={emptyVariants}
+        onColorVariantsChange={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add Color' }));
+
+    const searchInput = screen.getByRole('searchbox', { name: 'Search named colors' });
+    const quickSelectHeading = screen.getByText('Quick Select');
+
+    expect(
+      searchInput.compareDocumentPosition(quickSelectHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('searches and selects a named color', () => {
     const onColorVariantsChange = vi.fn();
 
