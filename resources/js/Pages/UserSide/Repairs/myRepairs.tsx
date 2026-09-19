@@ -24,6 +24,7 @@ const REFUND_ALLOWED_VIDEO_EXTENSIONS = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
 const REFUND_MEDIA_ACCEPT = '.jpg,.jpeg,.png,.webp,.mp4,.mov,.avi,.mkv,.webm';
 const MY_REPAIRS_POLL_INTERVAL_MS = 3000;
 const REPAIR_PAYMENT_RETURN_MARKER = 'repairPaymentReturnHandled:';
+const INTAKE_CARRIER_OPTIONS = ['Lalamove', 'J&T', 'Flash Express', 'Gogo Xpress', 'Transportify', 'Borzo', 'GrabExpress'];
 
 const repairPaymentReturnMarker = (repairId: number): string => `${REPAIR_PAYMENT_RETURN_MARKER}${repairId}`;
 
@@ -104,6 +105,8 @@ type RepairAddressSnapshot = {
     carrier?: string | null;
     tracking_number?: string | null;
     tracking_url?: string | null;
+    rider_name?: string | null;
+    rider_contact?: string | null;
     updated_at?: string | null;
   } | null;
 };
@@ -1457,18 +1460,34 @@ const CustomerExternalTrackingCard: React.FC<{
       : 'Enter the courier carrier and tracking number before the shop records the return handoff.';
   const title = `${isIntake ? 'Intake' : 'Return'} courier tracking`;
   const fieldPrefix = isIntake ? 'Intake' : 'Return';
-  const [carrier, setCarrier] = useState(tracking?.carrier ?? '');
+  const currentCarrier = tracking?.carrier ?? '';
+  const [carrier, setCarrier] = useState(currentCarrier);
+  const [carrierChoice, setCarrierChoice] = useState(
+    isIntake && currentCarrier && !INTAKE_CARRIER_OPTIONS.includes(currentCarrier)
+      ? 'Other'
+      : currentCarrier,
+  );
   const [trackingNumber, setTrackingNumber] = useState(tracking?.tracking_number ?? '');
   const [trackingUrl, setTrackingUrl] = useState(tracking?.tracking_url ?? '');
+  const [riderName, setRiderName] = useState(tracking?.rider_name ?? '');
+  const [riderContact, setRiderContact] = useState(tracking?.rider_contact ?? '');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setCarrier(tracking?.carrier ?? '');
+    const nextCarrier = tracking?.carrier ?? '';
+    setCarrier(nextCarrier);
+    setCarrierChoice(
+      isIntake && nextCarrier && !INTAKE_CARRIER_OPTIONS.includes(nextCarrier)
+        ? 'Other'
+        : nextCarrier,
+    );
     setTrackingNumber(tracking?.tracking_number ?? '');
     setTrackingUrl(tracking?.tracking_url ?? '');
-  }, [tracking?.carrier, tracking?.tracking_number, tracking?.tracking_url]);
+    setRiderName(tracking?.rider_name ?? '');
+    setRiderContact(tracking?.rider_contact ?? '');
+  }, [isIntake, tracking?.carrier, tracking?.tracking_number, tracking?.tracking_url, tracking?.rider_name, tracking?.rider_contact]);
 
   if (!enabled) return null;
 
@@ -1487,6 +1506,10 @@ const CustomerExternalTrackingCard: React.FC<{
         carrier: carrier.trim(),
         tracking_number: trackingNumber.trim(),
         tracking_url: trackingUrl.trim() || null,
+        ...(isIntake ? {
+          rider_name: riderName.trim(),
+          rider_contact: riderContact.trim(),
+        } : {}),
       });
       setMessage(response.data?.message || 'Tracking details saved.');
       await onRefresh();
@@ -1531,6 +1554,18 @@ const CustomerExternalTrackingCard: React.FC<{
               <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">Tracking number</dt>
               <dd className="mt-1 font-semibold text-gray-900">{tracking.tracking_number}</dd>
             </div>
+            {isIntake && tracking.rider_name && (
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">Rider name</dt>
+                <dd className="mt-1 font-semibold text-gray-900">{tracking.rider_name}</dd>
+              </div>
+            )}
+            {isIntake && tracking.rider_contact && (
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">Rider contact</dt>
+                <dd className="mt-1 font-semibold text-gray-900">{tracking.rider_contact}</dd>
+              </div>
+            )}
             {tracking.tracking_url && (
               <div className="sm:col-span-2">
                 <a
@@ -1549,15 +1584,48 @@ const CustomerExternalTrackingCard: React.FC<{
         )
       ) : (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <label className="text-sm font-semibold text-gray-700">
-            Carrier
-            <input
-              aria-label={`${fieldPrefix} carrier`}
-              value={carrier}
-              onChange={(event) => setCarrier(event.target.value)}
-              className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
-            />
-          </label>
+          {isIntake ? (
+            <label className="text-sm font-semibold text-gray-700">
+              Carrier <span className="font-normal text-gray-500">(required)</span>
+              <select
+                aria-label={`${fieldPrefix} carrier`}
+                value={carrierChoice}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setCarrierChoice(value);
+                  setCarrier(value === 'Other' ? '' : value);
+                }}
+                className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2 font-normal text-gray-900"
+                required
+              >
+                <option value="">Select carrier</option>
+                {INTAKE_CARRIER_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                <option value="Other">Other</option>
+              </select>
+            </label>
+          ) : (
+            <label className="text-sm font-semibold text-gray-700">
+              Carrier
+              <input
+                aria-label={`${fieldPrefix} carrier`}
+                value={carrier}
+                onChange={(event) => setCarrier(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+              />
+            </label>
+          )}
+          {isIntake && carrierChoice === 'Other' && (
+            <label className="text-sm font-semibold text-gray-700">
+              Other carrier <span className="font-normal text-gray-500">(required)</span>
+              <input
+                aria-label={`${fieldPrefix} other carrier`}
+                value={carrier}
+                onChange={(event) => setCarrier(event.target.value)}
+                className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+                required
+              />
+            </label>
+          )}
           <label className="text-sm font-semibold text-gray-700">
             Tracking number
             <input
@@ -1568,19 +1636,48 @@ const CustomerExternalTrackingCard: React.FC<{
             />
           </label>
           <label className="text-sm font-semibold text-gray-700 sm:col-span-2">
-            Tracking link <span className="font-normal text-gray-500">(optional)</span>
+            Tracking link <span className="font-normal text-gray-500">({isIntake ? 'required' : 'optional'})</span>
             <input
               type="url"
               aria-label={`${fieldPrefix} tracking link`}
               value={trackingUrl}
               onChange={(event) => setTrackingUrl(event.target.value)}
               className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+              required={isIntake}
             />
           </label>
+          {isIntake && (
+            <>
+              <label className="text-sm font-semibold text-gray-700">
+                Rider name <span className="font-normal text-gray-500">(required)</span>
+                <input
+                  aria-label={`${fieldPrefix} rider name`}
+                  value={riderName}
+                  onChange={(event) => setRiderName(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+                  required
+                />
+              </label>
+              <label className="text-sm font-semibold text-gray-700">
+                Rider contact number <span className="font-normal text-gray-500">(required)</span>
+                <input
+                  type="tel"
+                  aria-label={`${fieldPrefix} rider contact`}
+                  value={riderContact}
+                  onChange={(event) => setRiderContact(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+                  required
+                />
+              </label>
+            </>
+          )}
           <button
             type="button"
             onClick={save}
-            disabled={saving || !carrier.trim() || !trackingNumber.trim()}
+            disabled={saving
+              || !carrier.trim()
+              || !trackingNumber.trim()
+              || (isIntake && (!trackingUrl.trim() || !riderName.trim() || !riderContact.trim()))}
             className="rounded-full bg-[#16233b] px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-fit"
           >
             {saving ? 'Saving...' : `Save ${leg} tracking`}
@@ -4878,6 +4975,21 @@ const MyRepairs: React.FC = () => {
                           </p>
                         </div>
                       )}
+                      {order.status === 'new_request' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCancelTargetOrderId(order.id);
+                            setSelectedReason('');
+                            setCancelNote('');
+                            setShowCancelModal(true);
+                          }}
+                          disabled={processingPayment}
+                          className={`${actionButtonBaseClass} ${processingPayment ? actionButtonDisabledClass : actionButtonDangerClass}`}
+                        >
+                          CANCEL REQUEST
+                        </button>
+                      )}
                       {/* Chat with Repairer actions */}
                       {order.status === 'repairer_accepted' &&
                         order.conversation_id &&
@@ -4920,18 +5032,6 @@ const MyRepairs: React.FC = () => {
                               {repairPaymentRetryFrozen ? 'PAYMENT PAUSED' : processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
                             </button>
                           )}
-                          <button
-                            onClick={() => {
-                              setCancelTargetOrderId(order.id);
-                              setSelectedReason('');
-                              setCancelNote('');
-                              setShowCancelModal(true);
-                            }}
-                            disabled={processingPayment}
-                            className={`${actionButtonBaseClass} ${processingPayment ? actionButtonDisabledClass : actionButtonDangerClass}`}
-                          >
-                            CANCEL REQUEST
-                          </button>
                         </>
                       )}
                       
@@ -4962,18 +5062,6 @@ const MyRepairs: React.FC = () => {
                               {repairPaymentRetryFrozen ? 'PAYMENT PAUSED' : processingPayment ? 'PROCESSING...' : (isWarrantyNoChargeOrder(order) ? 'Pay pickup shipping fee' : 'PAY NOW')}
                             </button>
                           )}
-                          <button
-                            onClick={() => {
-                              setCancelTargetOrderId(order.id);
-                              setSelectedReason('');
-                              setCancelNote('');
-                              setShowCancelModal(true);
-                            }}
-                            disabled={processingPayment}
-                            className={`${actionButtonBaseClass} ${processingPayment ? actionButtonDisabledClass : actionButtonDangerClass}`}
-                          >
-                            CANCEL REPAIR
-                          </button>
                         </>
                       )}
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
@@ -5015,7 +5103,7 @@ const MyRepairs: React.FC = () => {
                               ? 'Confirm only after your repaired shoes are in your hands'
                               : 'Waiting for the shop to record the return handoff';
                             const receiveLabel = canConfirmReceive
-                              ? 'Confirm I received my repaired shoes'
+                              ? 'Confirm'
                               : 'Awaiting handoff';
 
                             return (

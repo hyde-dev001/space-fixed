@@ -492,6 +492,36 @@ describe("MyRepairs intake payment", () => {
   });
 });
 
+describe("MyRepairs repair cancellation", () => {
+  it("shows cancellation only while the request is new", async () => {
+    mocks.repair = repair({
+      status: "new_request",
+      conversation_id: null,
+      logistics_shipments: [],
+    });
+
+    render(<MyRepairs />);
+    const newRequestTabs = await screen.findAllByRole("button", { name: /New Request/i });
+    fireEvent.click(newRequestTabs[0]);
+
+    expect(screen.getByRole("button", { name: "CANCEL REQUEST" })).toBeEnabled();
+
+    cleanup();
+    mocks.repair = repair({
+      status: "pending",
+      conversation_id: 15,
+      logistics_shipments: [],
+    });
+
+    render(<MyRepairs />);
+    const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
+    fireEvent.click(pendingTabs[0]);
+
+    expect(screen.queryByRole("button", { name: "CANCEL REQUEST" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "CANCEL REPAIR" })).not.toBeInTheDocument();
+  });
+});
+
 describe("MyRepairs return logistics", () => {
   it("shows the server return plan, exact amount, and purpose-specific tracking events", async () => {
     await renderReadyRepair();
@@ -868,7 +898,7 @@ describe("MyRepairs return logistics", () => {
     expect(within(tracking).getByText("Lalamove")).toBeInTheDocument();
     expect(within(tracking).getByText("RETURN-123")).toBeInTheDocument();
     expect(within(tracking).queryByRole("button", { name: "Save return tracking" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm I received my repaired shoes" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
   });
 
   it("locks only the return plan controls when the server provides the matching lock", async () => {
@@ -1098,6 +1128,15 @@ describe("MyRepairs warranty logistics", () => {
       fireEvent.change(within(editableTracking).getByLabelText("Intake tracking number"), {
         target: { value: "WARRANTY-INTAKE-123" },
       });
+      fireEvent.change(within(editableTracking).getByLabelText("Intake tracking link"), {
+        target: { value: "https://tracker.example/WARRANTY-INTAKE-123" },
+      });
+      fireEvent.change(within(editableTracking).getByLabelText("Intake rider name"), {
+        target: { value: "Juan Rider" },
+      });
+      fireEvent.change(within(editableTracking).getByLabelText("Intake rider contact"), {
+        target: { value: "09171234567" },
+      });
       fireEvent.click(within(editableTracking).getByRole("button", { name: "Save intake tracking" }));
 
       await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
@@ -1106,7 +1145,9 @@ describe("MyRepairs warranty logistics", () => {
           leg: "intake",
           carrier: "J&T",
           tracking_number: "WARRANTY-INTAKE-123",
-          tracking_url: null,
+          tracking_url: "https://tracker.example/WARRANTY-INTAKE-123",
+          rider_name: "Juan Rider",
+          rider_contact: "09171234567",
         },
       ));
 
@@ -1119,7 +1160,9 @@ describe("MyRepairs warranty logistics", () => {
           external_tracking: {
             carrier: "J&T",
             tracking_number: "WARRANTY-INTAKE-123",
-            tracking_url: null,
+            tracking_url: "https://tracker.example/WARRANTY-INTAKE-123",
+            rider_name: "Juan Rider",
+            rider_contact: "09171234567",
           },
         },
       });
@@ -1133,6 +1176,66 @@ describe("MyRepairs warranty logistics", () => {
       expect(within(lockedTracking).getByText("WARRANTY-INTAKE-123")).toBeInTheDocument();
       expect(within(lockedTracking).queryByLabelText("Intake carrier")).not.toBeInTheDocument();
       expect(within(lockedTracking).queryByRole("button", { name: "Save intake tracking" })).not.toBeInTheDocument();
+    });
+
+    it("requires a tracking link and supports a custom intake carrier", async () => {
+      const sponsoredIntake = {
+        is_warranty_job: true,
+        billing_mode: "warranty_no_charge",
+        status: "repairer_accepted",
+        payment_status: "completed",
+        payment_enabled: false,
+        intake_delivery_method: "customer_delivery",
+        intake_logistics_locked_at: null,
+        received_at: null,
+        logistics_shipments: [],
+      };
+      mocks.repair = repair(sponsoredIntake);
+      mocks.post.mockResolvedValueOnce({
+        data: { success: true, message: "Tracking details saved." },
+      });
+
+      render(<MyRepairs />);
+      const pendingTabs = await screen.findAllByRole("button", { name: /Pending/i });
+      fireEvent.click(pendingTabs[0]);
+
+      const tracking = await screen.findByRole("region", { name: "Intake courier tracking" });
+      fireEvent.change(within(tracking).getByLabelText("Intake carrier"), {
+        target: { value: "Other" },
+      });
+      fireEvent.change(within(tracking).getByLabelText("Intake other carrier"), {
+        target: { value: "Ninja Van" },
+      });
+      fireEvent.change(within(tracking).getByLabelText("Intake tracking number"), {
+        target: { value: "CUSTOM-INTAKE-123" },
+      });
+      fireEvent.change(within(tracking).getByLabelText("Intake rider name"), {
+        target: { value: "Maria Rider" },
+      });
+      fireEvent.change(within(tracking).getByLabelText("Intake rider contact"), {
+        target: { value: "09181234567" },
+      });
+
+      const saveButton = within(tracking).getByRole("button", { name: "Save intake tracking" });
+      expect(saveButton).toBeDisabled();
+
+      fireEvent.change(within(tracking).getByLabelText("Intake tracking link"), {
+        target: { value: "https://tracker.example/CUSTOM-INTAKE-123" },
+      });
+      expect(saveButton).toBeEnabled();
+      fireEvent.click(saveButton);
+
+      await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+        "/api/customer/repairs/77/external-tracking",
+        {
+          leg: "intake",
+          carrier: "Ninja Van",
+          tracking_number: "CUSTOM-INTAKE-123",
+          tracking_url: "https://tracker.example/CUSTOM-INTAKE-123",
+          rider_name: "Maria Rider",
+          rider_contact: "09181234567",
+        },
+      ));
     });
   });
 

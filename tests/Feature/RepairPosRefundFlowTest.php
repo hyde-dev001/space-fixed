@@ -20,7 +20,7 @@ class RepairPosRefundFlowTest extends TestCase
         $repair = $this->createRepairRequest($shopOwner, $customer, [
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
-            'status' => 'for_release',
+            'status' => 'new_request',
             'payment_status' => 'paid',
             'payment_policy_snapshot' => 'deposit_50',
             'total_paid_amount' => 1120,
@@ -235,7 +235,7 @@ class RepairPosRefundFlowTest extends TestCase
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
-            'status' => 'pending',
+            'status' => 'new_request',
             'payment_policy' => 'deposit_50',
         ], $overrides));
     }
@@ -250,7 +250,7 @@ class RepairPosRefundFlowTest extends TestCase
         $repair = $this->createRepairRequest($shopOwner, $customer, [
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
-            'status' => 'pending',
+            'status' => 'new_request',
             'payment_policy_snapshot' => 'deposit_50',
             'payment_status_derived' => 'partially_paid',
             'total_paid_amount' => 500,
@@ -289,6 +289,24 @@ class RepairPosRefundFlowTest extends TestCase
             'request_type' => 'full',
             'reason_code' => 'customer_cancelled_repair',
         ]);
+    }
+
+    #[Test]
+    public function customer_cannot_cancel_after_repair_request_moves_to_pending(): void
+    {
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        /** @var \App\Models\User $customer */
+        $customer = \App\Models\User::factory()->create();
+        $repair = $this->createRepairRequest($shopOwner, $customer, [
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/cancel")
+            ->assertStatus(400)
+            ->assertJsonPath('success', false);
+
+        $this->assertSame('pending', (string) $repair->fresh()->status);
     }
 
     #[Test]

@@ -146,6 +146,9 @@ class RepairIntakeHandoffTest extends TestCase
                 'leg' => 'intake',
                 'carrier' => 'LBC',
                 'tracking_number' => 'LBC-INTAKE-001',
+                'tracking_url' => 'https://tracker.example/LBC-INTAKE-001',
+                'rider_name' => 'LBC Rider',
+                'rider_contact' => '09171234567',
             ])
             ->assertOk();
 
