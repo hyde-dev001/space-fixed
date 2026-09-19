@@ -241,4 +241,33 @@ describe('user-side navigation shell', () => {
     expect(shopOwnerRegistrationSource).toContain('userside-auth-page userside-auth-pattern');
     expect(shopOwnerRegistrationSource).toContain('<Navigation hidePromoBar hideSearchAndCart />');
   });
+
+  it('keeps personal address fields editable while preserving GPS autofill', () => {
+    const personalAddressStart = shopOwnerRegistrationSource.indexOf(
+      '<h3 className="text-base font-semibold text-gray-900">Personal Address</h3>',
+    );
+    const personalAddressEnd = shopOwnerRegistrationSource.indexOf(
+      '<CustomerAddressMapPicker',
+      personalAddressStart,
+    );
+    const personalAddressSource = shopOwnerRegistrationSource.slice(personalAddressStart, personalAddressEnd);
+
+    expect(personalAddressStart).toBeGreaterThan(-1);
+    expect(personalAddressEnd).toBeGreaterThan(personalAddressStart);
+    for (const [id, name] of [
+      ['personalAddress', 'address'],
+      ['addressPostalCode', 'addressPostalCode'],
+      ['addressRegion', 'addressRegion'],
+      ['addressProvince', 'addressProvince'],
+      ['addressCity', 'addressCity'],
+      ['addressBarangay', 'addressBarangay'],
+    ]) {
+      expect(personalAddressSource).toContain(`id="${id}"`);
+      expect(personalAddressSource).toContain(`name="${name}"`);
+    }
+    expect(personalAddressSource).toContain('onChange={handleInputChange}');
+    expect(personalAddressSource).not.toContain('disabled');
+    expect(shopOwnerRegistrationSource).toContain('gpsButtonLabel="Use My GPS"');
+    expect(shopOwnerRegistrationSource).toContain('onChange={handlePersonalAddressChange}');
+  });
 });

@@ -367,6 +367,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       suffix: 'suffix',
       age: 'age',
       address: 'address',
+      addressRegion: 'address_region',
+      addressProvince: 'address_province',
+      addressCity: 'address_city',
+      addressBarangay: 'address_barangay',
       businessName: 'business_name',
       businessAddress: 'business_address',
       businessType: 'business_type',
@@ -1257,10 +1261,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
         submitData.append('suffix', formData.suffix);
         submitData.append('age', formData.age);
         submitData.append('address', formData.address || personalAddress.displayName);
-        submitData.append('address_region', personalAddress.region);
-        submitData.append('address_province', personalAddress.province);
-        submitData.append('address_city', personalAddress.city);
-        submitData.append('address_barangay', personalAddress.barangay);
+        submitData.append('address_region', formData.addressRegion);
+        submitData.append('address_province', formData.addressProvince);
+        submitData.append('address_city', formData.addressCity);
+        submitData.append('address_barangay', formData.addressBarangay);
         submitData.append('address_postal_code', formData.addressPostalCode || personalAddress.postalCode);
         submitData.append('address_latitude', String(personalAddress.latitude));
         submitData.append('address_longitude', String(personalAddress.longitude));
@@ -1656,9 +1660,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       <Input
                         type="text"
                         id="addressRegion"
+                        name="addressRegion"
                         value={formData.addressRegion}
-                        disabled
-                        className={`w-full bg-gray-100 text-gray-600 ${errors.address_region ? 'border-red-500' : ''}`}
+                        onChange={handleInputChange}
+                        className={`w-full ${errors.address_region ? 'border-red-500' : ''}`}
                       />
                       {errors.address_region && <p className="mt-1 text-sm text-red-600">{errors.address_region}</p>}
                     </div>
@@ -1667,9 +1672,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       <Input
                         type="text"
                         id="addressProvince"
+                        name="addressProvince"
                         value={formData.addressProvince}
-                        disabled
-                        className={`w-full bg-gray-100 text-gray-600 ${errors.address_province ? 'border-red-500' : ''}`}
+                        onChange={handleInputChange}
+                        className={`w-full ${errors.address_province ? 'border-red-500' : ''}`}
                       />
                       {errors.address_province && <p className="mt-1 text-sm text-red-600">{errors.address_province}</p>}
                     </div>
@@ -1678,9 +1684,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       <Input
                         type="text"
                         id="addressCity"
+                        name="addressCity"
                         value={formData.addressCity}
-                        disabled
-                        className={`w-full bg-gray-100 text-gray-600 ${errors.address_city ? 'border-red-500' : ''}`}
+                        onChange={handleInputChange}
+                        className={`w-full ${errors.address_city ? 'border-red-500' : ''}`}
                       />
                       {errors.address_city && <p className="mt-1 text-sm text-red-600">{errors.address_city}</p>}
                     </div>
@@ -1689,9 +1696,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       <Input
                         type="text"
                         id="addressBarangay"
+                        name="addressBarangay"
                         value={formData.addressBarangay}
-                        disabled
-                        className={`w-full bg-gray-100 text-gray-600 ${errors.address_barangay ? 'border-red-500' : ''}`}
+                        onChange={handleInputChange}
+                        className={`w-full ${errors.address_barangay ? 'border-red-500' : ''}`}
                       />
                       {errors.address_barangay && <p className="mt-1 text-sm text-red-600">{errors.address_barangay}</p>}
                     </div>
