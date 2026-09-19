@@ -144,6 +144,12 @@ class RepairWarrantyService
             ]);
         }
 
+        if ((string) $repair->status !== 'picked_up') {
+            throw ValidationException::withMessages([
+                'repair' => ['Warranty claims can only be filed after the customer receives the repaired shoes.'],
+            ]);
+        }
+
         $window = $this->validateEligibility($repair, (int) $customer->id);
         $preferredReturnMethod = $this->normalizePreferredReturnMethod((string) ($validated['preferred_return_method'] ?? 'walk_in'));
         $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));

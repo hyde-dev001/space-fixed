@@ -352,6 +352,7 @@ class ShippingEstimateControllerTest extends TestCase
                 'reason' => 'logistics_unavailable',
                 'distance_km' => null,
                 'coverage_radius_km' => null,
+                'cod_available' => true,
             ]);
     }
 

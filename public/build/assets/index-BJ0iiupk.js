@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:public/build/assets/index-BJ0iiupk.js
-import{j as e}from"./app-g1FKIG9K.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
-========
-import{j as e}from"./app-DqCZ_Hk6.js";const n=({children:s,className:a})=>e.jsx("table",{className:`min-w-full  ${a}`,children:s}),o=({children:s,className:a})=>e.jsx("thead",{className:a,children:s}),c=({children:s,className:a})=>e.jsx("tbody",{className:a,children:s}),b=({children:s,className:a})=>e.jsx("tr",{className:a,children:s}),x=({children:s,isHeader:a=!1,className:t})=>{const r=a?"th":"td";return e.jsx(r,{className:` ${t}`,children:s})};export{n as T,o as a,b,x as c,c as d};
->>>>>>>> 8702ceebd5 (fix: route third-party refunds through staff workflow):public/build/assets/index-IaEHggPh.js

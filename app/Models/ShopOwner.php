@@ -495,6 +495,14 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         return $this->registration_type === 'individual';
     }
 
+    public function supportsCashOnDelivery(): bool
+    {
+        return !(
+            strtolower(trim((string) $this->registration_type)) === 'individual'
+            && strtolower(trim((string) $this->business_type)) === 'retail'
+        );
+    }
+
     /**
      * Check if this is a company registration
      * 

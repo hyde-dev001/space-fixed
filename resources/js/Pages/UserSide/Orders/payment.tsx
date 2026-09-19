@@ -76,6 +76,7 @@ interface ShippingEstimateData {
   pay_after_order_notice?: string;
   shop_owned?: {
     available: boolean;
+    cod_available?: boolean;
     reason: 'address_needs_pin' | 'shop_needs_pin' | 'outside_coverage' | 'logistics_unavailable' | null;
     distance_km: number | null;
     coverage_radius_km: number | null;
@@ -242,7 +243,7 @@ const Payment: React.FC = () => {
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
   const shippingEstimateRequestRef = useRef(0);
-  const isCodAvailable = !isPremiumPayment && !isRepairPayment && shopOwnedCoverage?.available === true;
+  const isCodAvailable = !isPremiumPayment && !isRepairPayment && shopOwnedCoverage?.available === true && shopOwnedCoverage?.cod_available !== false;
   const [promoPreview, setPromoPreview] = useState<PromoPreviewData | null>(null);
   const [isPromoPreviewLoading, setIsPromoPreviewLoading] = useState(false);
   const [selectedVoucherCampaignIds, setSelectedVoucherCampaignIds] = useState<Record<'items' | 'shipping', number | null>>({

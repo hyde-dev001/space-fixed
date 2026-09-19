@@ -23,4 +23,10 @@ describe('My Repairs service modification integration', () => {
     expect(source).toContain('remove_package: Boolean(modifyOrder.repair_package_id)');
     expect(source).toContain('selectedModifyServiceIds.length === 0');
   });
+
+  it('shows warranty claims only after the customer receives the repaired shoes', () => {
+    expect(source).toContain("if (order.status !== 'picked_up')");
+    expect(source).toContain("{order.status === 'picked_up' && (");
+    expect(source).not.toContain("order.status === 'picked_up' || order.status === 'received'");
+  });
 });

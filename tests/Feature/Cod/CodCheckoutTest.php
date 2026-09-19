@@ -177,4 +177,74 @@ class CodCheckoutTest extends TestCase
             ->assertJsonPath('error', 'cod_outside_delivery_radius');
         $this->assertDatabaseCount('orders', 0);
     }
+
+    #[Test]
+    public function cod_checkout_is_not_available_for_an_individual_retail_shop(): void
+    {
+        Http::preventStrayRequests();
+
+        $customer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+            'registration_type' => 'individual',
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create([
+            'shop_owner_id' => $shopOwner->id,
+            'coverage_radius_km' => 20,
+        ]);
+        $address = UserAddress::create([
+            'user_id' => $customer->id,
+            'name' => 'Individual Retail Customer',
+            'phone' => '09171234567',
+            'region' => 'NCR',
+            'province' => 'Metro Manila',
+            'city' => 'Manila',
+            'barangay' => 'Ermita',
+            'postal_code' => '1000',
+            'address_line' => '1 Individual Retail Street',
+            'latitude' => 14.60,
+            'longitude' => 120.98,
+        ]);
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Individual Retail COD Shoe',
+            'slug' => 'individual-retail-cod-shoe-'.random_int(1000, 9999),
+            'price' => 1000,
+            'stock_quantity' => 5,
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/create-order', [
+                'items' => [[
+                    'id' => 'individual-retail-cod-item',
+                    'pid' => $product->id,
+                    'qty' => 1,
+                    'name' => $product->name,
+                    'price' => 1000,
+                ]],
+                'total_amount' => 1000,
+                'shipping_fee' => 50,
+                'customer_name' => $customer->name,
+                'customer_email' => $customer->email,
+                'customer_phone' => '09171234567',
+                'shipping_address' => $address->full_address,
+                'address_id' => $address->id,
+                'shipping_region' => $address->region,
+                'shipping_province' => $address->province,
+                'shipping_city' => $address->city,
+                'shipping_barangay' => $address->barangay,
+                'shipping_postal_code' => $address->postal_code,
+                'shipping_address_line' => $address->address_line,
+                'payment_method' => 'cash_on_delivery',
+            ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('error', 'cod_not_available_for_individual_shop');
+        $this->assertDatabaseCount('orders', 0);
+    }
 }

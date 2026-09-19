@@ -2173,6 +2173,7 @@ export default function JobOrdersPage() {
                 <col className="w-12" />
                 <col className="w-[17rem]" />
                 <col className="w-40" />
+                <col className="w-40" />
                 <col className="w-32" />
                 <col className="w-20" />
                 <col className="w-56" />
@@ -2199,6 +2200,9 @@ export default function JobOrdersPage() {
                   </th>
                   <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Customer
+                  </th>
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                    Payment Method
                   </th>
                   <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Product
@@ -2249,6 +2253,9 @@ export default function JobOrdersPage() {
                           <div className="truncate text-sm font-medium text-gray-900 dark:text-white">{order.customer}</div>
                           <div className="truncate text-xs text-gray-500 dark:text-gray-400">{order.email}</div>
                         </div>
+                      </td>
+                      <td className="box-border px-5 py-5 align-top text-sm text-gray-700 dark:text-gray-300">
+                        {formatPaymentMethod(order.paymentMethod)}
                       </td>
                       <td className="box-border px-5 py-5 align-top">
                         <span className="block truncate text-sm text-gray-700 dark:text-gray-300">{order.product}</span>
@@ -2403,7 +2410,7 @@ export default function JobOrdersPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={10} className="box-border px-6 py-12 text-center">
+                    <td colSpan={11} className="box-border px-6 py-12 text-center">
                       <p className="text-sm text-gray-500 dark:text-gray-400">No orders found</p>
                     </td>
                   </tr>

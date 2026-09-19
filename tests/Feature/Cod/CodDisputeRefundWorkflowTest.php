@@ -666,8 +666,20 @@ class CodDisputeRefundWorkflowTest extends TestCase
             $evidencePath,
         );
         $this->assertStringContainsString('media_kind=video', $request['media'][1]);
+        $this->assertStringStartsWith('/', $request['media'][0]);
 
         $this->actingAs($finance, 'user')
+            ->get($evidencePath)
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/jpeg');
+
+        $ownerRequest = $this->actingAs($shop, 'shop_owner')
+            ->getJson("/api/shop-owner/refunds/{$refundId}")
+            ->assertOk()
+            ->json();
+
+        $this->assertSame($request['media'], $ownerRequest['media']);
+        $this->actingAs($shop, 'shop_owner')
             ->get($evidencePath)
             ->assertOk()
             ->assertHeader('Content-Type', 'image/jpeg');

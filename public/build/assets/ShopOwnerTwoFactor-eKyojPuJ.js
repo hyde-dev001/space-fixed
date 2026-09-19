@@ -1,5 +1,0 @@
-<<<<<<<< HEAD:public/build/assets/ShopOwnerTwoFactor-eKyojPuJ.js
-import{j as e,s as o}from"./app-g1FKIG9K.js";import a from"./EmployeeMfaChallenge-33dq-xi3.js";import"./vendor-apexcharts-DPaa2SoU.js";/* empty css            */function c({email:r,verifyRoute:s,loginRoute:t}){const i=["userside-auth-page","userside-auth-card","userside-auth-primary"].join(" ");return e.jsx("div",{className:i,children:e.jsx(a,{companyAccount:r??"Shop Owner",verifyRoute:s??o("shop-owner.two-factor.verify"),loginRoute:t??o("login")})})}export{c as default};
-========
-import{j as e,s as o}from"./app-DqCZ_Hk6.js";import a from"./EmployeeMfaChallenge-B8aZbYq6.js";import"./vendor-apexcharts-DPaa2SoU.js";/* empty css            */function c({email:r,verifyRoute:s,loginRoute:t}){const i=["userside-auth-page","userside-auth-card","userside-auth-primary"].join(" ");return e.jsx("div",{className:i,children:e.jsx(a,{companyAccount:r??"Shop Owner",verifyRoute:s??o("shop-owner.two-factor.verify"),loginRoute:t??o("login")})})}export{c as default};
->>>>>>>> 8702ceebd5 (fix: route third-party refunds through staff workflow):public/build/assets/ShopOwnerTwoFactor-BJCUMAu2.js

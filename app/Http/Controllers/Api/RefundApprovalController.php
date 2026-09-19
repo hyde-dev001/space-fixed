@@ -471,7 +471,7 @@ class RefundApprovalController extends Controller
                 $url = route('api.logistics.delivery-disputes.evidence', [
                     'dispute' => $refundDispute->id,
                     'mediaId' => $mediaId,
-                ]);
+                ], false);
 
                 return strtolower((string) ($entry['kind'] ?? '')) === 'video'
                     ? $url . '?media_kind=video'

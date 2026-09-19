@@ -1397,6 +1397,21 @@ class CheckoutController extends Controller
             $vatRatePercent = 12.0;
 
             $isCodCheckout = $canonicalPaymentMethod === 'cod';
+            if ($isCodCheckout && !empty($shopOwnerIds)) {
+                $hasIndividualRetailShop = ShopOwner::query()
+                    ->whereIn('id', $shopOwnerIds)
+                    ->get(['registration_type', 'business_type'])
+                    ->contains(fn (ShopOwner $shop): bool => ! $shop->supportsCashOnDelivery());
+
+                if ($hasIndividualRetailShop) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => 'cod_not_available_for_individual_shop',
+                        'message' => 'Cash on Delivery is not available for individual retail shops. Please choose online payment.',
+                    ], 422);
+                }
+            }
+
             if ($isCodCheckout && count($shopOwnerIds) === 1) {
                 $shopOwner = ShopOwner::query()
                     ->with('logisticsSetting')
