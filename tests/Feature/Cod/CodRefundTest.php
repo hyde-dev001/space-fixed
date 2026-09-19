@@ -11,6 +11,7 @@ use App\Models\ShopOwner;
 use App\Models\ShopPaymentIntegration;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
@@ -343,6 +344,32 @@ class CodRefundTest extends TestCase
             ->getJson('/api/finance/refunds?status=all')
             ->assertOk()
             ->assertJsonPath('data.0.payoutFailureMessage', 'Xendit rejected the COD payout details. Verify the selected channel and account number, then retry the payout.');
+    }
+
+    public function test_finance_refund_list_does_not_select_removed_order_total_columns(): void
+    {
+        [, $finance, $order] = $this->makeContext('settled');
+        $this->makeRefund($order);
+        $queries = [];
+        DB::listen(static function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/refunds?status=all')
+            ->assertOk();
+
+        $orderSelect = collect($queries)->first(static function (string $sql): bool {
+            $normalizedSql = strtolower($sql);
+
+            return str_contains($normalizedSql, 'orders')
+                && str_contains($normalizedSql, 'order_number')
+                && str_contains($normalizedSql, 'total_amount');
+        });
+
+        $this->assertIsString($orderSelect);
+        $this->assertDoesNotMatchRegularExpression('/["`]total["`]/i', $orderSelect);
+        $this->assertDoesNotMatchRegularExpression('/["`]grand_total["`]/i', $orderSelect);
     }
 
     public function test_finance_can_explicitly_reveal_a_cod_destination_without_leaking_it_in_the_list(): void

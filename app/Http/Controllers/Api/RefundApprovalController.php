@@ -404,7 +404,7 @@ class RefundApprovalController extends Controller
     {
         $query = OrderRefund::query()
             ->with([
-                'order:id,order_number,total_amount,shipping_fee,payment_method,total,grand_total,vat_amount',
+                'order:id,order_number,total_amount,shipping_fee,payment_method,vat_amount',
                 'order.deliveryDisputes:id,order_id,order_refund_id,evidence_media',
                 'order.codCollection.remittanceItem.remittance',
                 'customer:id,name',

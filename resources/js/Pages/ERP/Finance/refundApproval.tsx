@@ -465,20 +465,24 @@ const normalizeFinanceRefundRequest = (item: RefundRequest): RefundRequest => {
 	};
 };
 
+const isCodRefund = (request: Pick<RefundRequest, "refundType" | "isCod">): boolean => request.refundType === "order" && request.isCod === true;
+
 export const canFinanceAuthorizeRefund = (request: RefundRequest): boolean => {
 	const rawStatus = String(request.rawStatus || "").toLowerCase();
 	const financeStatus = String(request.financeStatus || "").toLowerCase();
 	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
 	const requiresOwnerApproval = request.requiresOwnerApproval !== false;
+	const isCod = isCodRefund(request);
 
 	if (request.refundType === "repair") {
 		return financeStatus === "pending"
 			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 	}
 
-	return (!requiresOwnerApproval || shopOwnerStatus === "approved")
-		&& (financeStatus === "pending"
-			|| (requiresOwnerApproval && financeStatus === "approved_initial"))
+	return (
+		(financeStatus === "pending" && (isCod || !requiresOwnerApproval || shopOwnerStatus === "approved"))
+		|| (requiresOwnerApproval && financeStatus === "approved_initial" && shopOwnerStatus === "approved")
+	)
 		&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 };
 
@@ -516,8 +520,6 @@ export const canExecuteRefundPayout = (request: RefundRequest): boolean => {
 		&& String(request.returnStatus || "").toLowerCase() === "received"
 		&& !["processing", "succeeded", "completed", "paid", "refunded", "failed", "rejected"].includes(rawStatus);
 };
-
-const isCodRefund = (request: Pick<RefundRequest, "refundType" | "isCod">): boolean => request.refundType === "order" && request.isCod === true;
 
 const shouldShowCodExecuteAction = (request: RefundRequest): boolean => {
 	if (!isCodRefund(request)) return false;
@@ -974,9 +976,15 @@ export default function RefundApproval() {
 	const canFinanceReject = (request: RefundRequest): boolean => {
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const rawStatus = String(request.rawStatus || "").toLowerCase();
-		
-		return (request.refundType === "repair" || String(request.shopOwnerStatus || "").toLowerCase() === "approved")
-			&& financeStatus === "pending"
+		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+		const canReviewInitial = request.refundType === "repair"
+			|| isCodRefund(request)
+			|| shopOwnerStatus === "approved";
+
+		return (
+			(financeStatus === "pending" && canReviewInitial)
+			|| (financeStatus === "approved_initial" && shopOwnerStatus === "approved")
+		)
 			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 	};
 

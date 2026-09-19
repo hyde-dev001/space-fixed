@@ -31,6 +31,16 @@ describe("Finance customer refund gates", () => {
 		expect(canFinanceAuthorizeRefund(request({ shopOwnerStatus: "approved" }))).toBe(true);
 	});
 
+	it("allows COD Finance initial approval before shop owner approval", () => {
+		expect(canFinanceAuthorizeRefund(request({ isCod: true }))).toBe(true);
+		expect(canFinanceAuthorizeRefund(request({ isCod: true, financeStatus: "approved_initial" }))).toBe(false);
+		expect(canFinanceAuthorizeRefund(request({
+			isCod: true,
+			financeStatus: "approved_initial",
+			shopOwnerStatus: "approved",
+		}))).toBe(true);
+	});
+
 	it("lets Finance approve directly when shop-owner approval is disabled", () => {
 		expect(canFinanceAuthorizeRefund(request({ requiresOwnerApproval: false }))).toBe(true);
 	});

@@ -24,7 +24,7 @@ vi.mock('../../../../layout/AppLayout_ERP', () => ({
 vi.mock('../../../../components/common/ErrorModal', () => ({ default: () => null }));
 vi.mock('sweetalert2', () => ({ default: { fire: mockSwalFire } }));
 
-import JobOrdersPage from '../JobOrders';
+import JobOrdersPage, { canStaffReviewRefund } from '../JobOrders';
 
 const source = readFileSync(
   join(process.cwd(), 'resources/js/Pages/ERP/STAFF/JobOrders.tsx'),
@@ -573,6 +573,45 @@ describe('staff order state contract', () => {
 });
 
 describe('staff refund visibility', () => {
+  it('only exposes Staff refund review while the request is still pending staff review', () => {
+    const order = (status: string) => ({
+      latest_refund: {
+        id: 75,
+        status,
+        shop_owner_status: 'pending',
+        finance_status: 'pending',
+        return_status: 'awaiting_approval',
+        flow_type: 'request_approval',
+      },
+    });
+
+    expect(canStaffReviewRefund(order('requested'))).toBe(true);
+    expect(canStaffReviewRefund(order('pending_approval'))).toBe(false);
+  });
+
+  it('shows Finance as the next stage after Staff accepts a refund request', async () => {
+    const order = {
+      ...makeOrder(75),
+      status: 'delivered',
+      latest_refund: {
+        id: 75,
+        status: 'pending_approval',
+        shop_owner_status: 'pending',
+        finance_status: 'pending',
+        return_status: 'awaiting_approval',
+        flow_type: 'request_approval',
+      },
+    };
+    mockPage.props.initialOrders = [order];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [order]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Delivered (1)' }));
+
+    expect(await screen.findByText('Awaiting Finance', { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText('Awaiting Staff Review', { exact: true })).not.toBeInTheDocument();
+  });
+
   const makeRefundOrder = () => ({
     ...makeOrder(41),
     status: 'refund',
@@ -677,7 +716,7 @@ describe('staff refund visibility', () => {
       status: 'refund',
       latest_refund: {
         id: 74,
-        status: 'pending',
+        status: 'requested',
         shop_owner_status: 'pending',
         finance_status: 'pending',
         return_status: 'pending_customer_shipment',

@@ -126,6 +126,21 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function cod_staged_approval_routes_the_return_to_staff_pickup(): void
+    {
+        $refund = $this->makeRefund();
+        $refund->order->setAttribute('payment_method', 'cod');
+
+        $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+        $this->service->approveRequestedRefund($refund, stage: 'shop_owner', processedBy: 11);
+        $result = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('pending_customer_shipment', $refund->return_status);
+        $this->assertSame('staff', $refund->return_source);
+    }
+
+    #[Test]
     public function company_refund_requires_staff_approval_before_finance(): void
     {
         $refund = $this->makeRefund(registrationType: 'company');
@@ -225,6 +240,29 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
 
         $this->assertSame('invalid_state', $result['result']);
         $this->assertStringContainsString('handled by staff', strtolower((string) $result['message']));
+    }
+
+    #[Test]
+    public function cod_customer_cannot_submit_a_return_before_staff_arranges_pickup(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+            'return_source' => 'customer',
+            'status' => 'pending_approval',
+        ]);
+        $refund->order->setAttribute('payment_method', 'cod');
+
+        $result = $this->service->markCustomerReturnShipped($refund, [
+            'tracking_number' => 'TRK-COD-BLOCKED',
+            'carrier' => 'LBC',
+            'tracking_link' => 'https://track.example/TRK-COD-BLOCKED',
+        ]);
+
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertStringContainsString('staff', strtolower((string) $result['message']));
+        $this->assertSame('pending_customer_shipment', $refund->return_status);
     }
 
     #[Test]
