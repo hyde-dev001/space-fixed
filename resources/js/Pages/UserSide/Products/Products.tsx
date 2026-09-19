@@ -10,6 +10,7 @@ import { CustomerFooterReveal } from '../../../components/common/CustomerFooter'
 import { useScrollReveal } from '../Shared/useScrollReveal';
 import ProductQuickView from '../../../components/products/ProductQuickView';
 import type { ProductQuickViewColorVariant } from '../../../components/products/ProductQuickView';
+import { NAMED_COLORS } from '@/data/namedColors';
 
 type Product = {
   id: number;
@@ -50,21 +51,6 @@ type ColorOption = {
   name: string;
   code: string | null;
 };
-
-const QUICK_COLOR_OPTIONS: ColorOption[] = [
-  { name: 'Black', code: '#000000' },
-  { name: 'White', code: '#ffffff' },
-  { name: 'Red', code: '#ef2929' },
-  { name: 'Blue', code: '#2563eb' },
-  { name: 'Green', code: '#16a34a' },
-  { name: 'Yellow', code: '#f4b400' },
-  { name: 'Pink', code: '#ec4899' },
-  { name: 'Purple', code: '#9333ea' },
-  { name: 'Orange', code: '#f97316' },
-  { name: 'Brown', code: '#92400e' },
-  { name: 'Gray', code: '#6b7280' },
-  { name: 'Navy', code: '#1e3a8a' },
-];
 
 const parseColorSelection = (value: string | null): string[] =>
   Array.from(
@@ -426,7 +412,7 @@ const Products: React.FC<Props> = () => {
   const mergedColorOptions = useMemo(() => {
     const options = new Map<string, ColorOption>();
 
-    [...QUICK_COLOR_OPTIONS, ...availableColors].forEach((option) => {
+    [...NAMED_COLORS, ...availableColors].forEach((option) => {
       const name = option.name.trim().replace(/\s+/g, ' ');
       const key = name.toLowerCase();
       if (!key) return;
@@ -434,7 +420,7 @@ const Products: React.FC<Props> = () => {
       const existing = options.get(key);
       options.set(key, {
         name: existing?.name ?? name,
-        code: existing?.code ?? option.code ?? null,
+        code: option.code ?? existing?.code ?? null,
       });
     });
 
@@ -443,10 +429,15 @@ const Products: React.FC<Props> = () => {
 
   const searchableColorOptions = useMemo(() => {
     const query = colorSearchQuery.trim().toLowerCase();
+    if (!query) return [];
+
     return mergedColorOptions
-      .filter((option) => !QUICK_COLOR_OPTIONS.some((quickColor) => quickColor.name.toLowerCase() === option.name.toLowerCase()))
-      .filter((option) => !query || option.name.toLowerCase().includes(query))
-      .slice(0, 24);
+      .filter((option) => option.name.toLowerCase().includes(query))
+      .sort((first, second) => {
+        const firstExact = first.name.toLowerCase() === query ? 0 : 1;
+        const secondExact = second.name.toLowerCase() === query ? 0 : 1;
+        return firstExact - secondExact || first.name.localeCompare(second.name);
+      });
   }, [colorSearchQuery, mergedColorOptions]);
 
   const updateColorQueryParam = (colors: string[]) => {
@@ -485,15 +476,6 @@ const Products: React.FC<Props> = () => {
     setPendingColors(nextColors);
     setCurrentPage(1);
     updateColorQueryParam(nextColors);
-    setColorSearchQuery('');
-    setIsColorFilterOpen(false);
-  };
-
-  const clearColorFilter = () => {
-    setSelectedColors([]);
-    setPendingColors([]);
-    setCurrentPage(1);
-    updateColorQueryParam([]);
     setColorSearchQuery('');
     setIsColorFilterOpen(false);
   };
@@ -999,7 +981,7 @@ const Products: React.FC<Props> = () => {
 
                 <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
                   <label htmlFor="color-filter-search" className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
-                    Search custom colors
+                    Search named colors
                   </label>
                   <div className="relative">
                     <svg className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
@@ -1010,138 +992,60 @@ const Products: React.FC<Props> = () => {
                       type="search"
                       value={colorSearchQuery}
                       onChange={(event) => setColorSearchQuery(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key !== 'Enter') return;
-                        event.preventDefault();
-                        if (colorSearchQuery.trim()) {
-                          togglePendingColor(colorSearchQuery);
-                          setColorSearchQuery('');
-                        }
-                      }}
-                      placeholder="e.g., Forest Green"
+                      placeholder="Search a color, e.g. Indigo"
+                      autoComplete="off"
                       className="w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-9 pr-3 text-sm text-gray-900 outline-none transition focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
                     />
                   </div>
 
-                  <div className="mt-6">
-                    <div className="mb-3 flex items-center justify-between">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Quick Select</h3>
-                      {pendingColors.length > 0 && (
-                        <span className="text-xs text-gray-500">{pendingColors.length} selected</span>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-                      {QUICK_COLOR_OPTIONS.map((color) => {
-                        const isSelected = pendingColors.some((selectedColor) => selectedColor.toLowerCase() === color.name.toLowerCase());
-
-                        return (
-                          <button
-                            key={color.name}
-                            type="button"
-                            onClick={() => togglePendingColor(color.name)}
-                            className={`relative flex min-h-16 flex-col items-center justify-center gap-2 rounded-xl border px-2 py-2 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 ${
-                              isSelected ? 'border-gray-900 bg-gray-50 text-gray-900' : 'border-gray-200 text-gray-700 hover:border-gray-400'
-                            }`}
-                            aria-pressed={isSelected}
-                            aria-label={`${isSelected ? 'Remove' : 'Select'} ${color.name}`}
-                          >
-                            <span className="h-7 w-7 rounded-full border border-black/10 shadow-sm" style={{ backgroundColor: color.code ?? '#d1d5db' }} />
-                            <span>{color.name}</span>
-                            {isSelected && (
-                              <span className="absolute right-1.5 top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-gray-900 text-white">
-                                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                                  <path d="m5 12 4 4L19 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {(colorSearchQuery.trim() || availableColors.length > 0) && (
-                    <div className="mt-6 border-t border-gray-200 pt-5">
-                      <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Custom colors</h3>
+                  {colorSearchQuery.trim() && (
+                    <div className="mt-5">
                       {searchableColorOptions.length > 0 ? (
-                        <div className="grid gap-2 sm:grid-cols-2">
+                        <div
+                          role="listbox"
+                          aria-label="Named color results"
+                          className="grid max-h-[min(56vh,24rem)] gap-2 overflow-y-auto sm:grid-cols-2"
+                        >
                           {searchableColorOptions.map((color) => {
                             const isSelected = pendingColors.some((selectedColor) => selectedColor.toLowerCase() === color.name.toLowerCase());
+                            const label = `${color.name.charAt(0).toUpperCase()}${color.name.slice(1)}`;
 
                             return (
                               <button
                                 key={color.name}
                                 type="button"
+                                role="option"
+                                aria-selected={isSelected}
+                                aria-pressed={isSelected}
                                 onClick={() => togglePendingColor(color.name)}
                                 className={`flex min-h-11 items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 ${
                                   isSelected ? 'border-gray-900 bg-gray-50 font-semibold text-gray-900' : 'border-gray-200 text-gray-700 hover:border-gray-400'
                                 }`}
-                                aria-pressed={isSelected}
                               >
                                 <span className="h-5 w-5 shrink-0 rounded-full border border-black/10" style={{ backgroundColor: color.code ?? '#d1d5db' }} />
-                                <span className="min-w-0 flex-1 truncate">{color.name}</span>
-                                {isSelected && <span className="text-xs text-gray-500">Selected</span>}
+                                <span className="min-w-0 flex-1 truncate">{label}</span>
                               </button>
                             );
                           })}
                         </div>
-                      ) : colorSearchQuery.trim() ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            togglePendingColor(colorSearchQuery);
-                            setColorSearchQuery('');
-                          }}
-                          className="w-full rounded-lg border border-dashed border-gray-300 px-3 py-3 text-left text-sm text-gray-700 transition hover:border-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
-                        >
-                          Use “{colorSearchQuery.trim()}” as a color filter
-                        </button>
                       ) : (
-                        <p className="text-sm text-gray-500">No custom colors available yet.</p>
+                        <p className="py-4 text-sm text-gray-500">No named color found.</p>
                       )}
                     </div>
                   )}
 
-                  <div className="mt-6 border-t border-gray-200 pt-5">
-                    <div className="mb-2 flex items-center justify-between">
-                      <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Selected colors</h3>
-                      {pendingColors.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={clearColorFilter}
-                          className="rounded-md px-2 py-1 text-xs font-semibold text-gray-700 underline underline-offset-2 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                    {pendingColors.length > 0 ? (
-                      <div className="flex flex-wrap gap-2">
-                        {pendingColors.map((color) => {
-                          const colorOption = mergedColorOptions.find((option) => option.name.toLowerCase() === color.toLowerCase());
-
-                          return (
-                            <button
-                              key={color}
-                              type="button"
-                              onClick={() => togglePendingColor(color)}
-                              className="inline-flex min-h-9 items-center gap-2 rounded-full border border-gray-300 bg-white px-3 text-sm text-gray-800 transition hover:border-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
-                              aria-label={`Remove ${color} color filter`}
-                            >
-                              <span className="h-3.5 w-3.5 rounded-full border border-black/10" style={{ backgroundColor: colorOption?.code ?? '#d1d5db' }} />
-                              {color}
-                              <span aria-hidden="true">×</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-500">No colors selected.</p>
-                    )}
-                  </div>
                 </div>
 
                 <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4 sm:px-6">
+                  {pendingColors.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPendingColors([])}
+                      className="mr-auto rounded-md px-2 py-1 text-xs font-semibold text-gray-700 underline underline-offset-2 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                    >
+                      Clear
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
