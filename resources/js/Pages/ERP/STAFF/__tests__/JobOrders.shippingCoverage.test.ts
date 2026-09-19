@@ -215,6 +215,15 @@ describe('staff order shipping coverage integration', () => {
     expect(source).toContain('Products + paid shop-owned delivery, excl. VAT');
   });
 
+  it('shows the payment method in the order table', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [makeOrder(1), makeOrder(2)]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'All Orders (2)' }));
+
+    expect(screen.getAllByText('Cash on Delivery (COD)', { exact: true })).toHaveLength(2);
+  });
+
   it('maps the backend shop-owned coverage contract to the order model', () => {
     expect(source).toMatch(/shopOwnedCoverage\?:\s*\{[\s\S]*available:\s*boolean;[\s\S]*reason:\s*string\s*\|\s*null;[\s\S]*distance_km:\s*number\s*\|\s*null;[\s\S]*coverage_radius_km:\s*number\s*\|\s*null;/);
     expect(source).toContain('shopOwnedCoverage: order.shop_owned_coverage || undefined');

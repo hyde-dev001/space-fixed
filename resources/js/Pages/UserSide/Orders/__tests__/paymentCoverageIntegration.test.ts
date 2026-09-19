@@ -11,7 +11,7 @@ describe('payment shop-owned coverage integration', () => {
   it('requests coverage for the latest selected saved address and retains the response', () => {
     expect(paymentSource).toContain('address_id: addressId');
     expect(paymentSource).toContain('requestShippingEstimate(checkoutData.address_id, controller.signal)');
-    expect(paymentSource).toMatch(/shop_owned\?:\s*\{[\s\S]*available:\s*boolean;[\s\S]*reason:\s*'address_needs_pin'\s*\|\s*'shop_needs_pin'\s*\|\s*'outside_coverage'\s*\|\s*'logistics_unavailable'\s*\|\s*null;[\s\S]*distance_km:\s*number\s*\|\s*null;[\s\S]*coverage_radius_km:\s*number\s*\|\s*null;/);
+    expect(paymentSource).toMatch(/shop_owned\?:\s*\{[\s\S]*available:\s*boolean;[\s\S]*cod_available\?:\s*boolean;[\s\S]*reason:\s*'address_needs_pin'\s*\|\s*'shop_needs_pin'\s*\|\s*'outside_coverage'\s*\|\s*'logistics_unavailable'\s*\|\s*null;[\s\S]*distance_km:\s*number\s*\|\s*null;[\s\S]*coverage_radius_km:\s*number\s*\|\s*null;/);
     expect(paymentSource).toContain('shop_owned: data.shop_owned');
     expect(paymentSource).toContain('checkoutData,');
   });
@@ -37,6 +37,16 @@ describe('payment shop-owned coverage integration', () => {
     expect(paymentSource).toContain('shippingEstimate?.max_fee');
     expect(paymentSource).toContain('if (!shippingEstimate || computedShippingFee <= 0)');
     expect(paymentSource).toContain('shipping_fee: computedShippingFee');
+  });
+
+  it('offers COD only after the selected address is confirmed inside shop coverage', () => {
+    expect(paymentSource).toContain("const isCodAvailable = !isPremiumPayment && !isRepairPayment && shopOwnedCoverage?.available === true && shopOwnedCoverage?.cod_available !== false;");
+    expect(paymentSource).toContain("if (selectedPaymentMethod === 'cod' && !isCodAvailable)");
+    expect(paymentSource.match(/\{isCodAvailable && \(/g)?.length).toBe(2);
+  });
+
+  it('does not offer COD for an individual retail shop even inside delivery coverage', () => {
+    expect(paymentSource).toContain('shopOwnedCoverage?.cod_available !== false');
   });
 
   it('refreshes preview coverage from the latest draft pin with stale-response protection', () => {

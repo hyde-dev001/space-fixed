@@ -2025,7 +2025,7 @@ const MyRepairs: React.FC = () => {
       return false;
     }
 
-    if (order.status !== 'picked_up' && order.status !== 'received') {
+    if (order.status !== 'picked_up') {
       return false;
     }
 
@@ -2046,8 +2046,8 @@ const MyRepairs: React.FC = () => {
       return 'Warranty rework jobs cannot be filed for another warranty claim.';
     }
 
-    if (order.status !== 'picked_up' && order.status !== 'received') {
-      return 'Warranty claim is available only after pickup/receipt completion.';
+    if (order.status !== 'picked_up') {
+      return 'Warranty claim is available only after you receive the repaired shoes.';
     }
 
     if (hasBlockingRefundForReview(order)) {
@@ -5036,7 +5036,7 @@ const MyRepairs: React.FC = () => {
                           })()}
                         </>
                       )}
-                      {(order.status === 'picked_up' || order.status === 'received') && (
+                      {order.status === 'picked_up' && (
                         <button
                           onClick={() => handleFileWarrantyClaim(order)}
                           disabled={!canFileWarrantyClaim(order)}

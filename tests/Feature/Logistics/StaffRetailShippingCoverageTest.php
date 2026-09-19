@@ -236,7 +236,7 @@ class StaffRetailShippingCoverageTest extends TestCase
             ])
             ->assertOk()
             ->assertJsonPath('refund.return_status', 'in_transit')
-            ->assertJsonPath('refund.return_source', 'customer');
+            ->assertJsonPath('refund.return_source', 'staff');
 
         $this->assertDatabaseMissing('shipments', [
             'source_type' => 'order_refund',

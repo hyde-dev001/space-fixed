@@ -552,6 +552,9 @@ class OrderRefundService
         );
         $isCompanyCustomerRefund = strtolower(trim((string) ($order->shopOwner?->registration_type ?? ''))) === 'company'
             && !$isExhaustedDeliveryRefund;
+        $isThirdPartyCustomerRefund = $this->isThirdPartyCustomerRefund($refund, $order, $isExhaustedDeliveryRefund);
+        $hasThirdPartyStaffApproval = $isThirdPartyCustomerRefund
+            && $this->thirdPartyStaffApprovalId($refund) !== null;
         $payload = [
             'approved_at' => $refund->approved_at ?? now(),
             'processed_by' => $processedBy,
@@ -610,15 +613,15 @@ class OrderRefundService
         }
 
         if ($stageNormalized === 'staff') {
-            if (!$isCompanyCustomerRefund && !$isCodRefund) {
+            if (!$isCompanyCustomerRefund && !$isCodRefund && !$isThirdPartyCustomerRefund) {
                 return [
                     'result' => 'invalid_state',
-                    'message' => 'Staff review is only available for company or COD customer refunds.',
+                    'message' => 'Staff review is not available for this refund request.',
                     'refund' => $refund,
                 ];
             }
 
-            if ((string) ($refund->shop_owner_status ?? 'pending') !== 'pending') {
+            if ((string) ($refund->shop_owner_status ?? 'pending') !== 'pending' || $hasThirdPartyStaffApproval) {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Staff has already reviewed this refund request.',
@@ -634,6 +637,9 @@ class OrderRefundService
                         'refund' => $refund,
                     ];
                 }
+            } elseif ($isThirdPartyCustomerRefund) {
+                $payload['staff_approved_at'] = now();
+                $payload['staff_approved_by'] = $processedBy;
             } else {
                 $payload['shop_owner_status'] = 'approved';
                 $payload['shop_owner_approved_at'] = now();
@@ -653,7 +659,7 @@ class OrderRefundService
             $financeStatus = (string) ($refund->finance_status ?? 'pending');
             $financePreapproved = $financeStatus === 'approved_initial';
 
-            if (($isCodRefund || !$isIndividualRegistration) && !$financePreapproved) {
+            if (($isCodRefund || !$isIndividualRegistration || $isThirdPartyCustomerRefund) && !$financePreapproved) {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Shop owner approval requires finance initial approval first.',
@@ -673,7 +679,7 @@ class OrderRefundService
             $payload['shop_owner_approved_at'] = now();
             $payload['shop_owner_approved_by'] = $processedBy;
 
-            if ($isIndividualRegistration && !$isCodRefund && $financeStatus !== 'approved') {
+            if ($isIndividualRegistration && !$isCodRefund && !$isThirdPartyCustomerRefund && $financeStatus !== 'approved') {
                 $payload['finance_status'] = 'approved';
                 $payload['finance_approved_at'] = now();
                 $payload['finance_approved_by'] = null;
@@ -712,6 +718,59 @@ class OrderRefundService
                         'message' => 'Refund request cannot be approved in its current finance state.',
                         'refund' => $refund,
                     ];
+                }
+            } elseif ($isThirdPartyCustomerRefund) {
+                if (!$hasThirdPartyStaffApproval) {
+                    return [
+                        'result' => 'invalid_state',
+                        'message' => 'Staff approval is required before Finance authorization.',
+                        'refund' => $refund,
+                    ];
+                }
+
+                if ($requiresOwnerApproval) {
+                    if ($financeStatus === 'pending') {
+                        $payload['finance_status'] = 'approved_initial';
+                        $payload['finance_approved_at'] = now();
+                        $payload['finance_approved_by'] = $processedBy;
+                    } elseif ($financeStatus === 'approved_initial') {
+                        if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
+                            return [
+                                'result' => 'invalid_state',
+                                'message' => 'Shop owner approval is required before Finance final approval.',
+                                'refund' => $refund,
+                            ];
+                        }
+
+                        $payload['finance_status'] = 'approved';
+                        $payload['finance_approved_at'] = now();
+                        $payload['finance_approved_by'] = $processedBy;
+                    } elseif ($financeStatus === 'approved') {
+                        return [
+                            'result' => 'already_approved',
+                            'message' => 'Finance has already finalized this refund request.',
+                            'refund' => $refund,
+                        ];
+                    } else {
+                        return [
+                            'result' => 'invalid_state',
+                            'message' => 'Refund request cannot be approved in its current finance state.',
+                            'refund' => $refund,
+                        ];
+                    }
+                } else {
+                    if ($financeStatus === 'approved') {
+                        return [
+                            'result' => 'already_approved',
+                            'message' => 'Finance has already approved this refund request.',
+                            'refund' => $refund,
+                        ];
+                    }
+
+                    $payload['finance_status'] = 'approved';
+                    $payload['finance_approved_at'] = now();
+                    $payload['finance_approved_by'] = $processedBy;
+                    $payload['shop_owner_status'] = 'approved';
                 }
             } elseif ($isCompanyCustomerRefund) {
                 if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
@@ -791,8 +850,11 @@ class OrderRefundService
             && ($payload['finance_status'] ?? $refund->finance_status) === 'approved';
 
         if ($isDualApproved && in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['awaiting_approval', 'not_required'], true)) {
-            $payload['return_status'] = 'pending_customer_shipment';
-            $payload['return_source'] = $isCodRefund
+            $staffArrangedReturn = $isCodRefund || $isThirdPartyCustomerRefund;
+            $payload['return_status'] = $staffArrangedReturn
+                ? 'pending_staff_pickup'
+                : 'pending_customer_shipment';
+            $payload['return_source'] = $staffArrangedReturn
                 ? 'staff'
                 : ($payload['return_source'] ?? 'customer');
         }
@@ -872,13 +934,16 @@ class OrderRefundService
         $isCompanyCustomerRefund = strtolower(trim((string) ($refund->order?->shopOwner?->registration_type ?? ''))) === 'company'
             && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted';
         $isCodRefund = $this->isCodOrder($refund->order);
+        $isThirdPartyCustomerRefund = $this->isThirdPartyCustomerRefund($refund, $refund->order);
+        $hasThirdPartyStaffApproval = $isThirdPartyCustomerRefund
+            && $this->thirdPartyStaffApprovalId($refund) !== null;
         $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
         if ((string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted') {
             $requiresOwnerApproval = false;
         }
 
         if ($stageNormalized === 'finance') {
-            if (($isCompanyCustomerRefund || $isCodRefund)
+            if (($isCompanyCustomerRefund || $isCodRefund || $isThirdPartyCustomerRefund)
                 && (string) ($refund->status ?? '') === 'requested') {
                 return [
                     'result' => 'invalid_state',
@@ -896,7 +961,7 @@ class OrderRefundService
                 ];
             }
 
-            if ($isCodRefund
+            if (($isCodRefund || $isThirdPartyCustomerRefund)
                 && $requiresOwnerApproval
                 && $financeStatus === 'approved_initial'
                 && (string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
@@ -909,15 +974,15 @@ class OrderRefundService
         }
 
         if ($stageNormalized === 'staff') {
-            if (!$isCompanyCustomerRefund && !$isCodRefund) {
+            if (!$isCompanyCustomerRefund && !$isCodRefund && !$isThirdPartyCustomerRefund) {
                 return [
                     'result' => 'invalid_state',
-                    'message' => 'Staff review is only available for company or COD customer refunds.',
+                    'message' => 'Staff review is not available for this refund request.',
                     'refund' => $refund,
                 ];
             }
 
-            if ((string) ($refund->shop_owner_status ?? 'pending') !== 'pending') {
+            if ((string) ($refund->shop_owner_status ?? 'pending') !== 'pending' || $hasThirdPartyStaffApproval) {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Staff has already reviewed this refund request.',
@@ -946,7 +1011,8 @@ class OrderRefundService
                 ];
             }
 
-            if (!$isIndividualRegistration && (string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
+            if (($isThirdPartyCustomerRefund || !$isIndividualRegistration)
+                && (string) ($refund->finance_status ?? 'pending') !== 'approved_initial') {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Shop owner can reject only after finance initial approval.',
@@ -1084,10 +1150,16 @@ class OrderRefundService
             }
 
             $returnStatus = (string) ($lockedRefund->return_status ?? '');
+            $returnMethod = $lockedRefund->returnDeliveryMethod();
+            $isUnassignedStaffReturn = (string) ($lockedRefund->return_source ?? '') === 'staff'
+                && $returnStatus === 'pending_staff_pickup'
+                && $returnMethod === null;
             $canSwitchUnstartedShopOwnedReturn = $isExplicitThirdParty
                 && $returnStatus === 'pending_staff_pickup'
                 && $lockedRefund->isShopOwnedReturn();
-            if ($returnStatus !== 'pending_customer_shipment' && !$canSwitchUnstartedShopOwnedReturn) {
+            if ($returnStatus !== 'pending_customer_shipment'
+                && !$isUnassignedStaffReturn
+                && !$canSwitchUnstartedShopOwnedReturn) {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Return pickup has already been arranged or cannot be arranged in the current state.',
@@ -1106,21 +1178,21 @@ class OrderRefundService
             if ($isExplicitThirdParty) {
                 $this->updateOrderRefundCompat($lockedRefund, [
                     'return_status' => 'in_transit',
-                    'customer_return_tracking_number' => $pickupData['tracking_number'],
-                    'customer_return_carrier' => $pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? null),
-                    'customer_return_rider_name' => $pickupData['rider_name'],
-                    'customer_return_rider_phone' => $pickupData['rider_phone'],
-                    'customer_return_tracking_link' => $pickupData['tracking_link'],
-                    'customer_return_shipped_at' => $pickupData['shipped_at'] ?? now(),
-                    'staff_return_tracking_number' => null,
-                    'staff_return_carrier' => null,
-                    'staff_return_rider_name' => null,
-                    'staff_return_rider_phone' => null,
-                    'staff_return_tracking_link' => null,
-                    'staff_return_shipped_at' => null,
+                    'customer_return_tracking_number' => null,
+                    'customer_return_carrier' => null,
+                    'customer_return_rider_name' => null,
+                    'customer_return_rider_phone' => null,
+                    'customer_return_tracking_link' => null,
+                    'customer_return_shipped_at' => null,
+                    'staff_return_tracking_number' => $pickupData['tracking_number'],
+                    'staff_return_carrier' => $pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? null),
+                    'staff_return_rider_name' => $pickupData['rider_name'],
+                    'staff_return_rider_phone' => $pickupData['rider_phone'],
+                    'staff_return_tracking_link' => $pickupData['tracking_link'],
+                    'staff_return_shipped_at' => $pickupData['shipped_at'] ?? now(),
                     'return_arranged_by_staff_id' => $staffId,
                     'return_arranged_by_staff_at' => now(),
-                    'return_source' => 'customer',
+                    'return_source' => 'staff',
                     'return_notes' => $pickupData['note'] ?? $lockedRefund->return_notes,
                 ]);
             } else {
@@ -1154,7 +1226,7 @@ class OrderRefundService
             return [
                 'result' => 'pickup_arranged',
                 'message' => $isExplicitThirdParty
-                    ? 'Third-party return tracking saved. The return is now in transit; staff can confirm receipt after the parcel physically arrives.'
+                    ? 'Third-party return pickup arranged. The customer has been notified; staff can confirm receipt after the parcel physically arrives.'
                     : (($pickupData['shipped_at'] ?? null)
                         ? 'Staff pickup and shipment details saved successfully.'
                         : 'Staff pickup details saved successfully. Waiting for rider pickup.'),
@@ -2127,6 +2199,42 @@ class OrderRefundService
         ], true);
     }
 
+    private function isThirdPartyCustomerRefund(
+        OrderRefund $refund,
+        ?Order $order = null,
+        ?bool $isExhaustedDeliveryRefund = null,
+    ): bool {
+        if ((string) ($refund->flow_type ?? '') !== 'request_approval') {
+            return false;
+        }
+
+        $isExhaustedDeliveryRefund ??= (string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted';
+        if ($isExhaustedDeliveryRefund) {
+            return false;
+        }
+
+        $order ??= $refund->relationLoaded('order') ? $refund->order : $refund->order()->first();
+
+        return $order?->resolvedDeliveryMethod() === 'third_party';
+    }
+
+    private function thirdPartyStaffApprovalId(OrderRefund $refund): ?int
+    {
+        $staffApprovalId = $refund->staff_approved_by;
+        if (filled($staffApprovalId)) {
+            return (int) $staffApprovalId;
+        }
+
+        // Backward compatibility for rows created before the dedicated Staff
+        // audit fields existed while the owner stage was still pending.
+        if ((string) ($refund->shop_owner_status ?? 'pending') === 'pending'
+            && filled($refund->shop_owner_approved_by)) {
+            return (int) $refund->shop_owner_approved_by;
+        }
+
+        return null;
+    }
+
     private function resolvePaymentId(Order $order, string $secretKey): ?string
     {
         $storedPaymentId = trim((string) ($order->paymongo_payment_id ?? ''));
@@ -2361,18 +2469,34 @@ class OrderRefundService
         $isIndividualRegistration = $this->isIndividualRegistrationType(
             (string) ($order->shopOwner?->registration_type ?? '')
         );
+        $isThirdPartyCustomerRefund = $this->isThirdPartyCustomerRefund($refund, $order);
 
         if ($isCodRefund) {
             return;
         }
 
         $data = $this->buildRefundNotificationData($refund, [
-            'stage' => 'submitted',
+            'stage' => $isThirdPartyCustomerRefund ? 'staff_review' : 'submitted',
             'requires_owner_approval' => $requiresOwnerApproval,
+            'requires_staff_approval' => $isThirdPartyCustomerRefund,
         ]);
         $data['source_type'] = 'order_refund';
 
-        if ($isIndividualRegistration && $requiresOwnerApproval) {
+        if ($isThirdPartyCustomerRefund) {
+            $this->notificationService->sendToErpRole(
+                'Staff',
+                (int) ($refund->shop_owner_id ?? 0),
+                NotificationType::REFUND_REQUEST,
+                'Refund Eligibility Review Required',
+                "Customer refund request for order #{$data['order_number']} needs Staff review before Finance.",
+                $data,
+                '/erp/staff/job-orders',
+                'high',
+                null,
+                true,
+                'access-staff-job-orders',
+            );
+        } elseif ($isIndividualRegistration && $requiresOwnerApproval) {
             $this->notificationService->notifyRefundRequest(
                 (int) ($refund->shop_owner_id ?? 0),
                 $data,
@@ -2416,6 +2540,7 @@ class OrderRefundService
         $currentFinanceStatus = (string) ($refund->finance_status ?? 'pending');
         $currentShopOwnerStatus = (string) ($refund->shop_owner_status ?? 'pending');
         $isCodRefund = $this->isCodOrder($order);
+        $isThirdPartyCustomerRefund = $this->isThirdPartyCustomerRefund($refund, $order);
         $data = $this->buildRefundNotificationData($refund, [
             'stage' => $stage,
             'requires_owner_approval' => $requiresOwnerApproval,
@@ -2430,13 +2555,18 @@ class OrderRefundService
             return;
         }
 
-        if ($stage === 'staff' && $isCodRefund && $previousFinanceStatus === 'pending' && $currentFinanceStatus === 'pending') {
+        if ($stage === 'staff'
+            && ($isCodRefund || $isThirdPartyCustomerRefund)
+            && $previousFinanceStatus === 'pending'
+            && $currentFinanceStatus === 'pending') {
             $this->notificationService->sendToErpRole(
                 'Finance',
                 (int) ($refund->shop_owner_id ?? 0),
                 NotificationType::REFUND_REQUEST,
-                'COD Refund Initial Approval Required',
-                "Staff accepted the COD refund for order #{$data['order_number']}. Finance initial approval is required.",
+                $isCodRefund ? 'COD Refund Initial Approval Required' : 'Refund Finance Approval Required',
+                $isCodRefund
+                    ? "Staff accepted the COD refund for order #{$data['order_number']}. Finance initial approval is required."
+                    : "Staff accepted the refund request for order #{$data['order_number']}. Finance approval is required.",
                 $data,
                 '/finance?section=refund-approvals',
                 'high',
@@ -2476,7 +2606,11 @@ class OrderRefundService
             return;
         }
 
-        if ($stage === 'shop_owner' && $requiresOwnerApproval && !$isIndividualRegistration && $previousShopOwnerStatus !== 'approved' && $currentShopOwnerStatus === 'approved') {
+        if ($stage === 'shop_owner'
+            && $requiresOwnerApproval
+            && ($isThirdPartyCustomerRefund || !$isIndividualRegistration)
+            && $previousShopOwnerStatus !== 'approved'
+            && $currentShopOwnerStatus === 'approved') {
             $this->notificationService->sendToErpRole(
                 'Finance',
                 (int) ($refund->shop_owner_id ?? 0),
@@ -2492,7 +2626,12 @@ class OrderRefundService
             return;
         }
 
-        if ($stage === 'shop_owner' && $isIndividualRegistration && !$isCodRefund && $previousShopOwnerStatus !== 'approved' && $currentShopOwnerStatus === 'approved') {
+        if ($stage === 'shop_owner'
+            && $isIndividualRegistration
+            && !$isCodRefund
+            && !$isThirdPartyCustomerRefund
+            && $previousShopOwnerStatus !== 'approved'
+            && $currentShopOwnerStatus === 'approved') {
             $this->notificationService->sendToShopOwner(
                 shopOwnerId: (int) ($refund->shop_owner_id ?? 0),
                 type: NotificationType::REFUND_REQUEST,

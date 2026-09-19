@@ -308,6 +308,8 @@ interface RefundRequest {
 	shopOwnerStatus?: string;
 	financeStatus?: string;
 	requiresOwnerApproval?: boolean;
+	requiresStaffApproval?: boolean;
+	staffApprovalStatus?: string;
 	approvalStage?: string;
 	approvalStageLabel?: string | null;
 	returnStatus?: string | null;
@@ -405,6 +407,10 @@ export const getApprovalStageLabel = (
 	const financeStatus = String(request.financeStatus || "").toLowerCase();
 	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
 
+	if (approvalStage === "staff") {
+		return "Waiting for Staff approval";
+	}
+
 	if (approvalStage === "shop_owner" || (
 		financeStatus === "approved_initial"
 		&& !["approved", "skipped"].includes(shopOwnerStatus)
@@ -473,6 +479,9 @@ export const canFinanceAuthorizeRefund = (request: RefundRequest): boolean => {
 	const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
 	const requiresOwnerApproval = request.requiresOwnerApproval !== false;
 	const isCod = isCodRefund(request);
+	const staffApprovalPassed = request.requiresStaffApproval === true
+		? String(request.staffApprovalStatus || "").toLowerCase() === "approved"
+		: shopOwnerStatus === "approved" || !requiresOwnerApproval;
 
 	if (request.refundType === "repair") {
 		return financeStatus === "pending"
@@ -480,7 +489,7 @@ export const canFinanceAuthorizeRefund = (request: RefundRequest): boolean => {
 	}
 
 	return (
-		(financeStatus === "pending" && (isCod || !requiresOwnerApproval || shopOwnerStatus === "approved"))
+		(financeStatus === "pending" && (isCod || staffApprovalPassed))
 		|| (requiresOwnerApproval && financeStatus === "approved_initial" && shopOwnerStatus === "approved")
 	)
 		&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
@@ -977,9 +986,12 @@ export default function RefundApproval() {
 		const financeStatus = String(request.financeStatus || "").toLowerCase();
 		const rawStatus = String(request.rawStatus || "").toLowerCase();
 		const shopOwnerStatus = String(request.shopOwnerStatus || "").toLowerCase();
+		const staffApprovalPassed = request.requiresStaffApproval === true
+			? String(request.staffApprovalStatus || "").toLowerCase() === "approved"
+			: shopOwnerStatus === "approved";
 		const canReviewInitial = request.refundType === "repair"
 			|| isCodRefund(request)
-			|| shopOwnerStatus === "approved";
+			|| staffApprovalPassed;
 
 		return (
 			(financeStatus === "pending" && canReviewInitial)

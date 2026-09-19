@@ -73,6 +73,32 @@ final class AdminNotificationInboxTest extends TestCase
             ->assertJsonPath('pagination.per_page', 20);
     }
 
+    public function test_pending_shop_registration_notification_reaches_every_active_super_admin(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->mfaEnrolled()->create();
+
+        Notification::notifyAllSuperAdmins(
+            type: NotificationType::SHOP_REGISTRATION_PENDING,
+            title: 'New shop registration',
+            message: 'Test shop submitted a registration for review.',
+            actionUrl: '/admin/registrations?status=pending',
+            data: ['shop_owner_id' => 42, 'business_name' => 'Test shop'],
+        );
+
+        $this->assertDatabaseHas('notifications', [
+            'super_admin_id' => $admin->id,
+            'type' => NotificationType::SHOP_REGISTRATION_PENDING->value,
+            'is_read' => false,
+            'requires_action' => true,
+        ]);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->getJson('/api/admin/notifications?unread_only=1')
+            ->assertOk()
+            ->assertJsonPath('unread_count', 1)
+            ->assertJsonPath('notifications.0.action_url', '/admin/registrations?status=pending');
+    }
+
     public function test_unread_filter_and_response_serialization_are_explicit_and_safe(): void
     {
         $admin = SuperAdmin::factory()->admin()->mfaEnrolled()->create();

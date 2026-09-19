@@ -282,7 +282,7 @@ class OrderRefundReturnInspectionTest extends TestCase
         ]);
     }
 
-    public function test_company_staff_third_party_tracking_starts_customer_return_and_allows_physical_receipt_inspection(): void
+    public function test_company_staff_third_party_tracking_starts_staff_return_and_allows_physical_receipt_inspection(): void
     {
         [$refund, $staff, $line] = $this->fixture();
         $refund->update([
@@ -307,13 +307,13 @@ class OrderRefundReturnInspectionTest extends TestCase
         $this->assertDatabaseHas('order_refunds', [
             'id' => $refund->id,
             'return_status' => 'in_transit',
-            'return_source' => 'customer',
-            'customer_return_carrier' => 'J&T Express',
-            'customer_return_tracking_number' => 'JT-RETURN-001',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'J&T Express',
+            'staff_return_tracking_number' => 'JT-RETURN-001',
         ]);
         $savedRefund = $refund->fresh();
-        $this->assertSame('Juan Rider', $savedRefund->customer_return_rider_name);
-        $this->assertNull($savedRefund->staff_return_carrier);
+        $this->assertSame('Juan Rider', $savedRefund->staff_return_rider_name);
+        $this->assertNull($savedRefund->customer_return_carrier);
         $this->assertDatabaseMissing('shipments', [
             'source_type' => 'order_refund',
             'source_id' => $refund->id,
@@ -376,7 +376,7 @@ class OrderRefundReturnInspectionTest extends TestCase
                 ->where('orders.0.refund_stage.return_delivery_method', 'third_party')
                 ->where('orders.0.refund_stage.is_shop_owned_return', false)
                 ->where('orders.0.refund_stage.logistics_shipment_id', null)
-                ->where('orders.0.refund_stage.customer_return_tracking_number', 'LBC-RETURN-001')
+                ->where('orders.0.refund_stage.staff_return_tracking_number', 'LBC-RETURN-001')
             );
 
         $this->assertDatabaseHas('shipments', ['id' => $staleShipment->id]);

@@ -6,6 +6,7 @@ use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\RepairRequest;
@@ -82,6 +83,52 @@ class SourceModuleShipmentRequestTest extends TestCase
 
         $this->assertSame('delivered', $order->fresh()->status->value);
         $this->assertSame('completed', $shipment->fresh()->status->value);
+    }
+
+    public function test_cod_third_party_delivery_cannot_complete_before_cash_collection(): void
+    {
+        $shop = ShopOwner::factory()->create([
+            'business_type' => 'retail',
+            'registration_type' => 'individual',
+            'status' => 'approved',
+        ]);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'processing',
+            'delivery_method' => 'third_party',
+            'payment_method' => 'cod',
+            'total_amount' => 1000,
+            'shipping_fee' => 50,
+            'vat_amount' => 120,
+            'carrier_company' => 'Lalamove',
+        ]);
+
+        $this->actingAs($shop, 'shop_owner')
+            ->patchJson("/api/shop-owner/orders/{$order->id}/status", [
+                'status' => 'shipped',
+                'delivery_method' => 'third_party',
+                'carrier_company' => 'Lalamove',
+            ])
+            ->assertOk();
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/orders/{$order->id}/third-party-delivery", [
+                'action' => 'in_transit',
+            ])
+            ->assertOk();
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/orders/{$order->id}/third-party-delivery", [
+                'action' => 'delivered',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('payment');
+
+        $this->assertSame('in_transit', ShipmentLeg::query()
+            ->whereHas('shipment', fn ($query) => $query->where('source_id', $order->id))
+            ->firstOrFail()
+            ->status
+            ->value);
     }
 
     public function test_order_marked_shipped_requests_outbound_shipment(): void

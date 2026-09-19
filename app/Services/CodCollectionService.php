@@ -239,6 +239,27 @@ final class CodCollectionService
         ];
     }
 
+    public function assertCollectedBeforeDelivery(Order $order): void
+    {
+        if (! $this->isCodOrder($order)) {
+            return;
+        }
+
+        $collected = CodCollection::query()
+            ->where('order_id', $order->id)
+            ->whereIn('status', [
+                CodCollection::STATUS_CASH_COLLECTED,
+                CodCollection::STATUS_SETTLED,
+            ])
+            ->exists();
+
+        if (! $collected) {
+            throw ValidationException::withMessages([
+                'payment' => ['COD payment must be collected before delivery can be completed.'],
+            ]);
+        }
+    }
+
     /** @return array{0: ShipmentLeg, 1: RiderProfile} */
     private function resolveAssignedLeg(Order $order, User $actor, ShopOwner $shopOwner): array
     {

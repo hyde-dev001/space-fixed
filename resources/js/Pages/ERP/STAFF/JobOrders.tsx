@@ -531,12 +531,15 @@ export const canArrangeReturnPickup = (order: Pick<Order, "latest_refund">) => {
 
   const returnMethod = getReturnDeliveryMethod(refund);
   const returnStatus = String(refund.return_status || '').toLowerCase();
+  const isUnassignedStaffReturn = String(refund.return_source || '').toLowerCase() === 'staff'
+    && returnStatus === 'pending_staff_pickup'
+    && returnMethod === null;
   const canSwitchUnstartedShopOwnedReturn = returnMethod === 'shop_owned'
     && returnStatus === 'pending_staff_pickup';
 
   return String(refund.shop_owner_status || '').toLowerCase() === 'approved'
     && String(refund.finance_status || '').toLowerCase() === 'approved'
-    && (returnStatus === 'pending_customer_shipment' || canSwitchUnstartedShopOwnedReturn)
+    && (returnStatus === 'pending_customer_shipment' || isUnassignedStaffReturn || canSwitchUnstartedShopOwnedReturn)
     && !['rejected', 'failed', 'succeeded'].includes(String(refund.status || '').toLowerCase());
 };
 
@@ -1114,27 +1117,27 @@ export default function JobOrdersPage() {
     const existingReturnMethod = getReturnDeliveryMethod(existingPickup);
     const defaultCarrier = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_carrier || existingPickup?.staff_return_carrier || '')
+        ? (existingPickup?.staff_return_carrier || existingPickup?.customer_return_carrier || '')
         : (existingPickup?.staff_return_carrier || ''),
     ).trim();
     const defaultRiderName = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_rider_name || existingPickup?.staff_return_rider_name || '')
+        ? (existingPickup?.staff_return_rider_name || existingPickup?.customer_return_rider_name || '')
         : (existingPickup?.staff_return_rider_name || ''),
     ).trim();
     const defaultRiderPhone = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_rider_phone || existingPickup?.staff_return_rider_phone || '')
+        ? (existingPickup?.staff_return_rider_phone || existingPickup?.customer_return_rider_phone || '')
         : (existingPickup?.staff_return_rider_phone || ''),
     ).trim();
     const defaultTrackingNumber = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_tracking_number || existingPickup?.staff_return_tracking_number || '')
+        ? (existingPickup?.staff_return_tracking_number || existingPickup?.customer_return_tracking_number || '')
         : (existingPickup?.staff_return_tracking_number || ''),
     ).trim();
     const defaultTrackingLink = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_tracking_link || existingPickup?.staff_return_tracking_link || '')
+        ? (existingPickup?.staff_return_tracking_link || existingPickup?.customer_return_tracking_link || '')
         : (existingPickup?.staff_return_tracking_link || ''),
     ).trim();
     const shopOwnedOptionLabel = shopOwnedEligible
@@ -2170,6 +2173,7 @@ export default function JobOrdersPage() {
                 <col className="w-12" />
                 <col className="w-[17rem]" />
                 <col className="w-40" />
+                <col className="w-40" />
                 <col className="w-32" />
                 <col className="w-20" />
                 <col className="w-56" />
@@ -2196,6 +2200,9 @@ export default function JobOrdersPage() {
                   </th>
                   <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Customer
+                  </th>
+                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                    Payment Method
                   </th>
                   <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Product
@@ -2246,6 +2253,9 @@ export default function JobOrdersPage() {
                           <div className="truncate text-sm font-medium text-gray-900 dark:text-white">{order.customer}</div>
                           <div className="truncate text-xs text-gray-500 dark:text-gray-400">{order.email}</div>
                         </div>
+                      </td>
+                      <td className="box-border px-5 py-5 align-top text-sm text-gray-700 dark:text-gray-300">
+                        {formatPaymentMethod(order.paymentMethod)}
                       </td>
                       <td className="box-border px-5 py-5 align-top">
                         <span className="block truncate text-sm text-gray-700 dark:text-gray-300">{order.product}</span>
@@ -2400,7 +2410,7 @@ export default function JobOrdersPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={10} className="box-border px-6 py-12 text-center">
+                    <td colSpan={11} className="box-border px-6 py-12 text-center">
                       <p className="text-sm text-gray-500 dark:text-gray-400">No orders found</p>
                     </td>
                   </tr>

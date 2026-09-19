@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Order;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\User;
@@ -36,7 +37,15 @@ class CheckoutAddressOwnershipTest extends TestCase
             'identity_verification_status' => User::IDENTITY_APPROVED,
         ]);
         $address = $this->addressFor($customer);
-        $product = $this->productFor(ShopOwner::factory()->approved()->create());
+        $shop = ShopOwner::factory()->approved()->create([
+            'shop_latitude' => 14.5995,
+            'shop_longitude' => 120.9842,
+        ]);
+        LogisticsSetting::create([
+            'shop_owner_id' => $shop->id,
+            'coverage_radius_km' => 20,
+        ]);
+        $product = $this->productFor($shop);
 
         $this->actingAs($customer, 'user')
             ->postJson('/api/checkout/create-order', $this->payload($product, $customer, $address))

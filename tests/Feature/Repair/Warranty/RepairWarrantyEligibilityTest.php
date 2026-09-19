@@ -77,6 +77,45 @@ class RepairWarrantyEligibilityTest extends TestCase
         ]);
     }
 
+    public function test_customer_cannot_file_warranty_claim_when_repairer_has_only_received_the_shoes(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+            'warranty_enabled' => true,
+            'repair_warranty_days' => 30,
+        ]);
+        $customer = User::factory()->create();
+        $repair = RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'status' => 'received',
+            'received_at' => now()->subDays(2),
+            'picked_up_at' => null,
+            'payment_status' => 'completed',
+            'total_paid_amount' => 900,
+        ]);
+
+        $this->actingAs($customer, 'user')->post(
+            "/api/customer/repairs/{$repair->id}/warranty-claims",
+            [
+                'reason_code' => 'issue_returned',
+                'reason_details' => 'Issue came back after two days.',
+                'same_issue_confirmation' => '1',
+                'preferred_return_method' => 'walk_in',
+                'preferred_receive_method' => 'walk_in',
+                'images' => [UploadedFile::fake()->create('proof-1.jpg', 64, 'image/jpeg')],
+            ],
+            ['Accept' => 'application/json']
+        )
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['repair']);
+
+        $this->assertDatabaseMissing('repair_warranty_claims', [
+            'original_repair_request_id' => $repair->id,
+        ]);
+    }
+
     public function test_individual_repair_claim_rejects_shop_owned_logistics(): void
     {
         Storage::fake('public');

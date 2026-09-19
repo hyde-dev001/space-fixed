@@ -162,11 +162,14 @@ class ShippingEstimateController extends Controller
     private function shopOwnedCoverage(ShopOwner $shopOwner, ?UserAddress $address, ?array $draftCoordinates): array
     {
         try {
-            return $this->deliverySchedules->coverage(
-                $shopOwner,
-                $draftCoordinates['lat'] ?? ($address?->latitude !== null ? (float) $address->latitude : null),
-                $draftCoordinates['lng'] ?? ($address?->longitude !== null ? (float) $address->longitude : null),
-            );
+            return [
+                ...$this->deliverySchedules->coverage(
+                    $shopOwner,
+                    $draftCoordinates['lat'] ?? ($address?->latitude !== null ? (float) $address->latitude : null),
+                    $draftCoordinates['lng'] ?? ($address?->longitude !== null ? (float) $address->longitude : null),
+                ),
+                'cod_available' => $shopOwner->supportsCashOnDelivery(),
+            ];
         } catch (\Throwable $exception) {
             Log::warning('Shipping estimate logistics coverage failed', ['message' => $exception->getMessage()]);
 
@@ -175,6 +178,7 @@ class ShippingEstimateController extends Controller
                 'reason' => 'logistics_unavailable',
                 'distance_km' => null,
                 'coverage_radius_km' => null,
+                'cod_available' => $shopOwner->supportsCashOnDelivery(),
             ];
         }
     }

@@ -76,6 +76,7 @@ interface ShippingEstimateData {
   pay_after_order_notice?: string;
   shop_owned?: {
     available: boolean;
+    cod_available?: boolean;
     reason: 'address_needs_pin' | 'shop_needs_pin' | 'outside_coverage' | 'logistics_unavailable' | null;
     distance_km: number | null;
     coverage_radius_km: number | null;
@@ -242,6 +243,7 @@ const Payment: React.FC = () => {
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
   const shippingEstimateRequestRef = useRef(0);
+  const isCodAvailable = !isPremiumPayment && !isRepairPayment && shopOwnedCoverage?.available === true && shopOwnedCoverage?.cod_available !== false;
   const [promoPreview, setPromoPreview] = useState<PromoPreviewData | null>(null);
   const [isPromoPreviewLoading, setIsPromoPreviewLoading] = useState(false);
   const [selectedVoucherCampaignIds, setSelectedVoucherCampaignIds] = useState<Record<'items' | 'shipping', number | null>>({
@@ -1280,6 +1282,12 @@ const Payment: React.FC = () => {
     shippingLatitude,
     shippingLongitude,
   ]);
+
+  useEffect(() => {
+    if (selectedPaymentMethod === 'cod' && !isCodAvailable) {
+      setSelectedPaymentMethod('paymongo');
+    }
+  }, [isCodAvailable, selectedPaymentMethod]);
 
   useEffect(() => {
     if (!checkoutData || isPremiumPayment || isRepairPayment) {
@@ -2636,24 +2644,26 @@ const Payment: React.FC = () => {
                 />
               </label>
 
-              <label
-                className={`mt-3 flex items-center justify-between px-3 py-3 border rounded-xl cursor-pointer transition-colors ${
-                  selectedPaymentMethod === 'cod' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white'
-                }`}
-              >
-                <div>
-                  <p className="text-base font-medium text-black leading-tight">Cash on delivery</p>
-                  <p className="text-xs text-gray-500 mt-1">Pay the rider in cash when your order arrives.</p>
-                </div>
-                <input
-                  type="radio"
-                  name="mobile-payment-method"
-                  value="cod"
-                  checked={selectedPaymentMethod === 'cod'}
-                  onChange={() => setSelectedPaymentMethod('cod')}
-                  className="h-5 w-5 accent-indigo-600"
-                />
-              </label>
+              {isCodAvailable && (
+                <label
+                  className={`mt-3 flex items-center justify-between px-3 py-3 border rounded-xl cursor-pointer transition-colors ${
+                    selectedPaymentMethod === 'cod' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white'
+                  }`}
+                >
+                  <div>
+                    <p className="text-base font-medium text-black leading-tight">Cash on delivery</p>
+                    <p className="text-xs text-gray-500 mt-1">Pay the rider in cash when your order arrives.</p>
+                  </div>
+                  <input
+                    type="radio"
+                    name="mobile-payment-method"
+                    value="cod"
+                    checked={selectedPaymentMethod === 'cod'}
+                    onChange={() => setSelectedPaymentMethod('cod')}
+                    className="h-5 w-5 accent-indigo-600"
+                  />
+                </label>
+              )}
 
               <div className={selectedPaymentMethod === 'paymongo' ? 'pt-3' : 'hidden'}>
                 <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">Supported</p>
@@ -3517,20 +3527,22 @@ const Payment: React.FC = () => {
                   </div>
                 </label>
 
-                <label className="flex items-center gap-3 px-4 py-3 border border-gray-300 rounded-lg cursor-pointer mb-4 bg-white">
-                  <input
-                    type="radio"
-                    name="payment-method"
-                    value="cod"
-                    checked={selectedPaymentMethod === 'cod'}
-                    onChange={() => setSelectedPaymentMethod('cod')}
-                    className="w-5 h-5 shrink-0"
-                  />
-                  <div className="flex-1">
-                    <span className="text-base font-semibold text-black block">Cash on delivery</span>
-                    <p className="text-sm text-gray-600">Pay the rider in cash when your order arrives.</p>
-                  </div>
-                </label>
+                {isCodAvailable && (
+                  <label className="flex items-center gap-3 px-4 py-3 border border-gray-300 rounded-lg cursor-pointer mb-4 bg-white">
+                    <input
+                      type="radio"
+                      name="payment-method"
+                      value="cod"
+                      checked={selectedPaymentMethod === 'cod'}
+                      onChange={() => setSelectedPaymentMethod('cod')}
+                      className="w-5 h-5 shrink-0"
+                    />
+                    <div className="flex-1">
+                      <span className="text-base font-semibold text-black block">Cash on delivery</span>
+                      <p className="text-sm text-gray-600">Pay the rider in cash when your order arrives.</p>
+                    </div>
+                  </label>
+                )}
 
                 {/* Secure Payments Box */}
                 <div className={selectedPaymentMethod === 'paymongo' ? 'border border-gray-300 rounded-lg overflow-hidden' : 'hidden'}>
