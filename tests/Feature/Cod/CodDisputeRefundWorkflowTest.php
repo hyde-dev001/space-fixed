@@ -95,7 +95,7 @@ class CodDisputeRefundWorkflowTest extends TestCase
 
         $this->assertDatabaseHas('order_refunds', [
             'id' => $refundId,
-            'return_status' => 'pending_customer_shipment',
+            'return_status' => 'pending_staff_pickup',
             'return_source' => 'staff',
         ]);
 

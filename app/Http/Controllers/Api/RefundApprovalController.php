@@ -28,7 +28,7 @@ class RefundApprovalController extends Controller
             ->where(function ($builder) {
                 $builder->whereDoesntHave('order', function ($orderQuery) {
                     $orderQuery->whereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash']);
-                })->orWhere(function ($nested) {
+                })->where('status', '!=', 'requested')->orWhere(function ($nested) {
                     $nested->whereHas('order', function ($orderQuery) {
                         $orderQuery->whereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash']);
                     })->where('status', 'pending_approval');
@@ -509,6 +509,15 @@ class RefundApprovalController extends Controller
         $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
         $paymentMethod = strtolower(trim((string) ($order?->payment_method ?? '')));
         $isCod = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
+        $isThirdPartyCustomerRefund = (string) ($refund->flow_type ?? '') === 'request_approval'
+            && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted'
+            && $order?->resolvedDeliveryMethod() === 'third_party';
+        $staffApprovalStatus = $isThirdPartyCustomerRefund
+            ? ($refund->staff_approved_by !== null
+                || ((string) ($refund->shop_owner_status ?? 'pending') === 'pending' && $refund->shop_owner_approved_by !== null)
+                ? 'approved'
+                : 'pending')
+            : null;
         $codCollection = $order?->codCollection;
         $codRemittance = $codCollection?->remittanceItem?->remittance;
         $canExecutePayout = $this->orderRefundService->canExecuteApprovedRefund($refund);
@@ -521,7 +530,7 @@ class RefundApprovalController extends Controller
             && $refund->refund_destination !== [];
 
         $approvalStage = 'none';
-        if ($isCod && $status === 'requested' && $shopOwnerStatus === 'pending') {
+        if (($isCod || $isThirdPartyCustomerRefund) && $status === 'requested' && $shopOwnerStatus === 'pending') {
             $approvalStage = 'staff';
         } elseif ($financeStatus === 'pending') {
             $approvalStage = 'finance_initial';
@@ -585,6 +594,8 @@ class RefundApprovalController extends Controller
             'shopOwnerStatus' => (string) ($refund->shop_owner_status ?? 'pending'),
             'financeStatus' => (string) ($refund->finance_status ?? 'pending'),
             'requiresOwnerApproval' => $requiresOwnerApproval,
+            'requiresStaffApproval' => $isThirdPartyCustomerRefund,
+            'staffApprovalStatus' => $staffApprovalStatus,
             'approvalStage' => $approvalStage,
             'returnStatus' => (string) ($refund->return_status ?? 'awaiting_approval'),
             'canExecutePayout' => $canExecutePayout,

@@ -531,12 +531,15 @@ export const canArrangeReturnPickup = (order: Pick<Order, "latest_refund">) => {
 
   const returnMethod = getReturnDeliveryMethod(refund);
   const returnStatus = String(refund.return_status || '').toLowerCase();
+  const isUnassignedStaffReturn = String(refund.return_source || '').toLowerCase() === 'staff'
+    && returnStatus === 'pending_staff_pickup'
+    && returnMethod === null;
   const canSwitchUnstartedShopOwnedReturn = returnMethod === 'shop_owned'
     && returnStatus === 'pending_staff_pickup';
 
   return String(refund.shop_owner_status || '').toLowerCase() === 'approved'
     && String(refund.finance_status || '').toLowerCase() === 'approved'
-    && (returnStatus === 'pending_customer_shipment' || canSwitchUnstartedShopOwnedReturn)
+    && (returnStatus === 'pending_customer_shipment' || isUnassignedStaffReturn || canSwitchUnstartedShopOwnedReturn)
     && !['rejected', 'failed', 'succeeded'].includes(String(refund.status || '').toLowerCase());
 };
 
@@ -1114,27 +1117,27 @@ export default function JobOrdersPage() {
     const existingReturnMethod = getReturnDeliveryMethod(existingPickup);
     const defaultCarrier = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_carrier || existingPickup?.staff_return_carrier || '')
+        ? (existingPickup?.staff_return_carrier || existingPickup?.customer_return_carrier || '')
         : (existingPickup?.staff_return_carrier || ''),
     ).trim();
     const defaultRiderName = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_rider_name || existingPickup?.staff_return_rider_name || '')
+        ? (existingPickup?.staff_return_rider_name || existingPickup?.customer_return_rider_name || '')
         : (existingPickup?.staff_return_rider_name || ''),
     ).trim();
     const defaultRiderPhone = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_rider_phone || existingPickup?.staff_return_rider_phone || '')
+        ? (existingPickup?.staff_return_rider_phone || existingPickup?.customer_return_rider_phone || '')
         : (existingPickup?.staff_return_rider_phone || ''),
     ).trim();
     const defaultTrackingNumber = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_tracking_number || existingPickup?.staff_return_tracking_number || '')
+        ? (existingPickup?.staff_return_tracking_number || existingPickup?.customer_return_tracking_number || '')
         : (existingPickup?.staff_return_tracking_number || ''),
     ).trim();
     const defaultTrackingLink = String(
       existingReturnMethod === 'third_party'
-        ? (existingPickup?.customer_return_tracking_link || existingPickup?.staff_return_tracking_link || '')
+        ? (existingPickup?.staff_return_tracking_link || existingPickup?.customer_return_tracking_link || '')
         : (existingPickup?.staff_return_tracking_link || ''),
     ).trim();
     const shopOwnedOptionLabel = shopOwnedEligible

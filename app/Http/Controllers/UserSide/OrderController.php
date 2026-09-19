@@ -896,7 +896,7 @@ class OrderController extends Controller
                 ], 422);
             }
 
-            if (strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics') {
+            if ($order->resolvedDeliveryMethod() === 'shop_owned') {
                 return response()->json([
                     'success' => false,
                     'message' => 'Shop-owned logistics orders use Report Order for dispatcher investigation.',
@@ -1286,7 +1286,11 @@ class OrderController extends Controller
                 'customer_id' => $order->customer_id,
                 'shop_owner_id' => $order->shop_owner_id,
                 'flow_type' => 'request_approval',
-                'status' => 'pending_approval',
+                // Direct third-party returns always start with Staff review.
+                'status' => 'requested',
+                'shop_owner_status' => 'pending',
+                'finance_status' => 'pending',
+                'return_status' => 'awaiting_approval',
                 'payment_gateway' => $isCodPayment ? 'xendit' : 'paymongo',
                 'paymongo_payment_id' => $isCodPayment ? null : $order->paymongo_payment_id,
                 'amount' => round($reservationAmount, 2),
@@ -1609,14 +1613,32 @@ class OrderController extends Controller
                 $customerName = trim((string) (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')));
             }
 
-            $this->notificationService->notifyRefundRequest($shopOwnerId, [
+            $fallbackData = [
                 'order_id' => (int) ($order->id ?? 0),
                 'order_number' => $orderNumber,
                 'amount' => number_format((float) ($refundRequest->amount ?? 0), 2, '.', ''),
                 'customer_name' => $customerName,
                 'refund_id' => (int) ($refundRequest->id ?? 0),
-                'stage' => 'submitted',
-            ]);
+                'stage' => $order->resolvedDeliveryMethod() === 'third_party' ? 'staff_review' : 'submitted',
+            ];
+
+            if ($order->resolvedDeliveryMethod() === 'third_party') {
+                $this->notificationService->sendToErpRole(
+                    'Staff',
+                    $shopOwnerId,
+                    \App\Enums\NotificationType::REFUND_REQUEST,
+                    'Refund Eligibility Review Required',
+                    "Customer refund request for order #{$orderNumber} needs Staff review before Finance.",
+                    $fallbackData + ['requires_staff_approval' => true],
+                    '/erp/staff/job-orders',
+                    'high',
+                    null,
+                    true,
+                    'access-staff-job-orders',
+                );
+            } else {
+                $this->notificationService->notifyRefundRequest($shopOwnerId, $fallbackData);
+            }
 
             Log::info('Refund request fallback notification dispatched', [
                 'order_id' => (int) ($order->id ?? 0),
@@ -1637,7 +1659,10 @@ class OrderController extends Controller
     {
         try {
             $query = Notification::query()
-                ->where('shop_owner_id', $shopOwnerId)
+                ->where(function ($scope) use ($shopOwnerId) {
+                    $scope->where('shop_owner_id', $shopOwnerId)
+                        ->orWhere('shop_id', $shopOwnerId);
+                })
                 ->where('type', 'refund_request')
                 ->where('created_at', '>=', now()->subMinutes(5));
 
