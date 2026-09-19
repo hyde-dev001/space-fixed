@@ -1541,10 +1541,10 @@ class RepairRequestController extends Controller
         }
 
         // Check if can be cancelled
-        if (in_array($repair->status, ['completed', 'picked_up', 'cancelled'])) {
+        if ($repair->status !== 'new_request') {
             return response()->json([
                 'success' => false,
-                'message' => 'Cannot cancel repair in current status',
+                'message' => 'You can only cancel a repair request while it is new.',
             ], 400);
         }
 
@@ -2080,11 +2080,17 @@ class RepairRequestController extends Controller
         $user = Auth::guard('user')->user();
         abort_unless($user, 401);
 
+        $trackingUrlRules = $request->input('leg') === 'intake'
+            ? ['required', 'url', 'max:500']
+            : ['nullable', 'url', 'max:500'];
+
         $validated = $request->validate([
             'leg' => ['required', 'in:intake,return'],
             'carrier' => ['required', 'string', 'max:100'],
             'tracking_number' => ['required', 'string', 'max:100'],
-            'tracking_url' => ['nullable', 'url', 'max:500'],
+            'tracking_url' => $trackingUrlRules,
+            'rider_name' => ['nullable', 'required_if:leg,intake', 'string', 'max:255'],
+            'rider_contact' => ['nullable', 'required_if:leg,intake', 'string', 'max:30'],
         ]);
 
         $repair = DB::transaction(function () use ($id, $user, $validated, $settlementService): RepairRequest {
@@ -2140,12 +2146,17 @@ class RepairRequestController extends Controller
             }
 
             $snapshot = is_array($repair->{$addressField}) ? $repair->{$addressField} : [];
-            $snapshot['external_tracking'] = [
+            $externalTracking = [
                 'carrier' => $validated['carrier'],
                 'tracking_number' => $validated['tracking_number'],
                 'tracking_url' => $validated['tracking_url'] ?? null,
                 'updated_at' => now()->toISOString(),
             ];
+            if ($isIntake) {
+                $externalTracking['rider_name'] = $validated['rider_name'];
+                $externalTracking['rider_contact'] = $validated['rider_contact'];
+            }
+            $snapshot['external_tracking'] = $externalTracking;
             $repair->update([$addressField => $snapshot]);
 
             return $repair->fresh();

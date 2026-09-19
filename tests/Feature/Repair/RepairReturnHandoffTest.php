@@ -313,12 +313,17 @@ class RepairReturnHandoffTest extends TestCase
                 'leg' => 'intake',
                 'carrier' => 'J&T',
                 'tracking_number' => 'INTAKE-123',
+                'tracking_url' => 'https://tracker.example/INTAKE-123',
+                'rider_name' => 'Juan Rider',
+                'rider_contact' => '09171234567',
             ])
             ->assertOk();
 
         $repair->refresh();
         $this->assertSame('intake-v1', data_get($repair->intake_address, 'version'));
         $this->assertSame('INTAKE-123', data_get($repair->intake_address, 'external_tracking.tracking_number'));
+        $this->assertSame('Juan Rider', data_get($repair->intake_address, 'external_tracking.rider_name'));
+        $this->assertSame('09171234567', data_get($repair->intake_address, 'external_tracking.rider_contact'));
         $this->assertDatabaseMissing('shipments', [
             'source_type' => 'repair_request',
             'source_id' => $repair->id,
@@ -331,8 +336,31 @@ class RepairReturnHandoffTest extends TestCase
                 'leg' => 'intake',
                 'carrier' => 'J&T',
                 'tracking_number' => 'CHANGED',
+                'tracking_url' => 'https://tracker.example/CHANGED',
+                'rider_name' => 'Changed Rider',
+                'rider_contact' => '09170000000',
             ])
             ->assertUnprocessable();
+    }
+
+    public function test_customer_intake_tracking_requires_link_and_rider_details(): void
+    {
+        [$repair, $customer] = $this->repairFixture('walk_in', 'pending');
+        $repair->update([
+            'intake_delivery_method' => 'customer_delivery',
+            'intake_address' => ['version' => 'intake-v1', 'address_line' => '1 Customer Street'],
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'intake',
+                'carrier' => 'Borzo',
+                'tracking_number' => 'INTAKE-REQUIRED-123',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['tracking_url', 'rider_name', 'rider_contact']);
+
+        $this->assertNull(data_get($repair->fresh()->intake_address, 'external_tracking'));
     }
 
     #[DataProvider('sponsoredIntakeWarrantyMarkers')]
@@ -351,6 +379,9 @@ class RepairReturnHandoffTest extends TestCase
                 'leg' => 'intake',
                 'carrier' => 'J&T',
                 'tracking_number' => 'WARRANTY-INTAKE-123',
+                'tracking_url' => 'https://tracker.example/WARRANTY-INTAKE-123',
+                'rider_name' => 'Warranty Rider',
+                'rider_contact' => '09171234567',
             ])
             ->assertOk();
 
@@ -376,6 +407,9 @@ class RepairReturnHandoffTest extends TestCase
                 'leg' => 'intake',
                 'carrier' => 'J&T',
                 'tracking_number' => 'CHANGED-AFTER-RECEIPT',
+                'tracking_url' => 'https://tracker.example/CHANGED-AFTER-RECEIPT',
+                'rider_name' => 'Changed Rider',
+                'rider_contact' => '09170000000',
             ])
             ->assertUnprocessable();
 
