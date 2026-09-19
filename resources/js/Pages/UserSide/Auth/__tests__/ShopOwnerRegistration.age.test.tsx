@@ -1,0 +1,75 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { swalFireMock, swalCloseMock } = vi.hoisted(() => ({
+  swalFireMock: vi.fn(),
+  swalCloseMock: vi.fn(),
+}));
+
+vi.mock('@inertiajs/react', () => ({
+  Head: () => null,
+  router: {
+    visit: vi.fn(),
+    post: vi.fn(),
+  },
+}));
+
+vi.mock('@/Pages/UserSide/Shared/UserModal', () => ({
+  default: {
+    fire: swalFireMock,
+    close: swalCloseMock,
+  },
+}));
+
+vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
+vi.mock('@/components/address/CustomerAddressMapPicker', () => ({ default: () => null }));
+vi.mock('@/components/common/ComponentCard', () => ({
+  default: ({ children }: { children: React.ReactNode }) => <section>{children}</section>,
+}));
+vi.mock('@/components/form/form-elements/DropZone', () => ({ default: () => null }));
+vi.mock('@/components/form/RegistrationDocumentMetadataFields', () => ({ default: () => null }));
+vi.mock('@/components/common/CustomerFooter', () => ({
+  CustomerFooterReveal: ({ children }: { children: React.ReactNode }) => <>{children}</>,
+}));
+
+import ShopOwnerRegistration from '../ShopOwnerRegistration';
+
+beforeEach(() => {
+  swalFireMock.mockReset();
+  swalFireMock.mockResolvedValue({ isConfirmed: true });
+  swalCloseMock.mockReset();
+});
+
+describe('shop owner registration age input', () => {
+  it.each(['-18', '+18', '0', '00018'])('rejects signed or non-positive age input %s with an invalid-age alert', async (value) => {
+    render(<ShopOwnerRegistration />);
+
+    const ageInput = screen.getByLabelText('Age');
+    fireEvent.change(ageInput, { target: { value } });
+
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      icon: 'error',
+      title: 'Invalid age',
+      text: 'Age must be a positive whole number.',
+    })));
+
+    expect(ageInput).toHaveValue('');
+  });
+
+  it('uses a text input with numeric keyboard guidance instead of a signed number input', () => {
+    render(<ShopOwnerRegistration />);
+
+    const ageInput = screen.getByLabelText('Age');
+    expect(ageInput).toHaveAttribute('type', 'text');
+    expect(ageInput).toHaveAttribute('inputmode', 'numeric');
+  });
+
+  it('keeps a positive whole-number age in the field', () => {
+    render(<ShopOwnerRegistration />);
+
+    const ageInput = screen.getByLabelText('Age');
+    fireEvent.change(ageInput, { target: { value: '18' } });
+
+    expect(ageInput).toHaveValue('18');
+  });
+});
