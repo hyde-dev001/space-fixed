@@ -15,7 +15,7 @@ final class EmployeePasswordRules
             'required',
             'string',
             'confirmed',
-            Password::min(8)->mixedCase()->numbers()->symbols(),
+            Password::min(12)->mixedCase()->numbers()->symbols(),
         ];
     }
 }

@@ -53,7 +53,7 @@ describe("ERP profile password requirements", () => {
       />,
     );
 
-    expect(screen.getByText("At least 8 characters")).toBeInTheDocument();
+    expect(screen.getByText("At least 12 characters")).toBeInTheDocument();
     expect(screen.getByText("One special character")).toBeInTheDocument();
   });
 });

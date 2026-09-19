@@ -30,8 +30,8 @@ class CustomerRegistrationAddressTest extends TestCase
             'email' => 'juan.dela.cruz@gmail.com',
             'phone' => '09171234567',
             'age' => 25,
-            'password' => 'Password1',
-            'password_confirmation' => 'Password1',
+            'password' => 'Password123!',
+            'password_confirmation' => 'Password123!',
             'address' => '123 Rizal Street, Ermita, Manila',
             'address_region' => 'National Capital Region',
             'address_province' => 'Metro Manila',
@@ -122,6 +122,18 @@ class CustomerRegistrationAddressTest extends TestCase
             $this->assertNotNull($route);
             $this->assertContains('throttle:10,1', $route->middleware());
         }
+    }
+
+    public function test_customer_registration_requires_at_least_twelve_characters(): void
+    {
+        $this->post('/user/register', $this->payload([
+            'email' => 'short-password@example.test',
+            'password' => 'Password1!',
+            'password_confirmation' => 'Password1!',
+        ]))
+            ->assertSessionHasErrors('password');
+
+        $this->assertDatabaseMissing('users', ['email' => 'short-password@example.test']);
     }
 
     public function test_registration_rejects_a_phone_registered_to_any_account_type(): void

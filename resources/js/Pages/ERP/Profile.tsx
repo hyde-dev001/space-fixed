@@ -70,7 +70,7 @@ export default function Profile({ user, requiresPasswordChange, security }: Page
     // Password strength validation
     const validatePassword = (pwd: string) => {
         return {
-            hasMinLength: pwd.length >= 8,
+            hasMinLength: pwd.length >= 12,
             hasUppercase: /[A-Z]/.test(pwd),
             hasLowercase: /[a-z]/.test(pwd),
             hasNumber: /[0-9]/.test(pwd),
@@ -253,6 +253,7 @@ export default function Profile({ user, requiresPasswordChange, security }: Page
                                 </label>
                                 <input
                                     type="password"
+                                    minLength={12}
                                     value={data.password}
                                     onChange={(e) =>
                                         setData("password", e.target.value)

@@ -450,8 +450,8 @@ export default function Register() {
 
       if (!formData.password) {
         newErrors.password = 'Please enter a password.';
-      } else if (formData.password.length < 8) {
-        newErrors.password = 'Password must be at least 8 characters.';
+      } else if (formData.password.length < 12) {
+        newErrors.password = 'Password must be at least 12 characters.';
       } else if (!isPasswordValid(formData.password)) {
         newErrors.password = 'Password must include uppercase, lowercase, and at least one number.';
       }
@@ -1389,6 +1389,7 @@ export default function Register() {
                         type="password"
                         id="password"
                         name="password"
+                        minLength={12}
                         placeholder="Enter your password"
                         value={formData.password}
                         onChange={handleInputChange}
@@ -1426,6 +1427,7 @@ export default function Register() {
                         type="password"
                         id="confirmPassword"
                         name="confirmPassword"
+                        minLength={12}
                         placeholder="Confirm your password"
                         value={formData.confirmPassword}
                         onChange={handleInputChange}

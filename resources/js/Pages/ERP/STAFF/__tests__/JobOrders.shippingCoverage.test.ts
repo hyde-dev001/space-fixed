@@ -76,15 +76,19 @@ afterEach(() => {
 });
 
 describe('staff order shipping coverage integration', () => {
-  it('keeps the order table columns grouped with balanced visual spacing', () => {
-    expect(source).toContain('min-w-[1180px]');
-    expect(source).toContain('w-[17rem]');
-    expect(source).toContain('w-44');
+  it('keeps every order table column visible without horizontal scrolling', () => {
+    expect(source).toContain('<div className="h-135 overflow-y-auto">');
+    expect(source).toContain('<table className="w-full table-fixed">');
+    expect(source).not.toContain('overflow-x-auto');
+    expect(source).not.toContain('min-w-[1180px]');
+    expect(source).toContain('w-[14%]');
+    expect(source).toContain('w-[10%]');
     expect(source).toContain('flex flex-nowrap items-center justify-start gap-2');
     expect(source).toContain('rounded-xl bg-gray-50/80');
     expect(source).toContain('h-9 w-9');
     expect(source).toContain('aria-label="View order details"');
     expect(source).toContain('whitespace-nowrap');
+    expect(source).toContain('<col className="w-[12%]" />');
   });
 
   it('keeps the finance return status concise and contained in its table cell', async () => {

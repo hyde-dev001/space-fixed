@@ -73,7 +73,7 @@ describe("customer profile security card", () => {
     render(<CustomerProfile />);
 
     expect(screen.getAllByText(/change password/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("At least 8 characters").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("At least 12 characters").length).toBeGreaterThan(0);
     expect(screen.getAllByText("One special character").length).toBeGreaterThan(0);
   });
 
