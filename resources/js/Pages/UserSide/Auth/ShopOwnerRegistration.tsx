@@ -18,7 +18,8 @@ import {
 import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
 import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '@/utils/carto';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
-import { getRegistrationAddressFields } from './registrationAddress';
+import CustomerAddressMapPicker from '../../../components/address/CustomerAddressMapPicker';
+import { getRegistrationAddressFields, type RegistrationAddress } from './registrationAddress';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 const CAVITE_CENTER = {
@@ -91,6 +92,32 @@ const isWithinCaviteBounds = (lat: number, lng: number) => (
   && lng <= CAVITE_BOUNDS.maxLng
 );
 
+const getResubmissionPersonalAddress = (
+  form?: ResubmissionPayload['form'],
+): RegistrationAddress | null => {
+  const latitude = Number(form?.addressLatitude);
+  const longitude = Number(form?.addressLongitude);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  if (!form?.addressRegion || !form.addressProvince || !form.addressCity || !form.addressBarangay) {
+    return null;
+  }
+
+  return {
+    displayName: form.address ?? '',
+    region: form.addressRegion,
+    province: form.addressProvince,
+    city: form.addressCity,
+    barangay: form.addressBarangay,
+    postalCode: form.addressPostalCode ?? '',
+    latitude,
+    longitude,
+  };
+};
+
 interface ExistingDocumentPayload {
   id: number;
   type: string;
@@ -111,6 +138,16 @@ interface ResubmissionPayload {
     lastName: string;
     email: string;
     phone: string;
+    suffix?: string | null;
+    age?: number | null;
+    address?: string | null;
+    addressRegion?: string | null;
+    addressProvince?: string | null;
+    addressCity?: string | null;
+    addressBarangay?: string | null;
+    addressPostalCode?: string | null;
+    addressLatitude?: string | number | null;
+    addressLongitude?: string | number | null;
     businessName: string;
     businessAddress: string;
     postalCode: string;
@@ -161,12 +198,23 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     lastName: resubmission?.form?.lastName ?? "",
     email: resubmission?.form?.email ?? "",
     phone: resubmission?.form?.phone ?? "",
+    suffix: resubmission?.form?.suffix ?? "",
+    age: resubmission?.form?.age != null ? String(resubmission.form.age) : "",
+    address: resubmission?.form?.address ?? "",
+    addressRegion: resubmission?.form?.addressRegion ?? "",
+    addressProvince: resubmission?.form?.addressProvince ?? "",
+    addressCity: resubmission?.form?.addressCity ?? "",
+    addressBarangay: resubmission?.form?.addressBarangay ?? "",
+    addressPostalCode: resubmission?.form?.addressPostalCode ?? "",
     businessName: resubmission?.form?.businessName ?? "",
     businessAddress: resubmission?.form?.businessAddress ?? "",
     postalCode: resubmission?.form?.postalCode ?? "",
     businessType: resubmission?.form?.businessType ?? "",
     registrationType: resubmission?.form?.registrationType ?? "individual",
   });
+  const [personalAddressLocation, setPersonalAddressLocation] = useState<RegistrationAddress | null>(
+    () => getResubmissionPersonalAddress(resubmission?.form),
+  );
   const [selectedCity, setSelectedCity] = useState(inferCaviteCity(resubmission?.form?.businessAddress ?? ""));
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
   const cityDropdownRef = useRef<HTMLDivElement>(null);
@@ -283,6 +331,16 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return;
     }
 
+    if (name === 'age') {
+      const digitsOnly = value.replace(/\D/g, '').slice(0, 3);
+      setFormData(prev => ({ ...prev, age: digitsOnly }));
+
+      if (errors.age) {
+        setErrors(prev => ({ ...prev, age: '' }));
+      }
+      return;
+    }
+
     if (name === 'postalCode') {
       const numericValue = value.replace(/\D/g, '');
       setFormData(prev => ({ ...prev, postalCode: numericValue }));
@@ -293,9 +351,22 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return;
     }
 
+    if (name === 'addressPostalCode') {
+      const numericValue = value.replace(/\D/g, '').slice(0, 10);
+      setFormData(prev => ({ ...prev, addressPostalCode: numericValue }));
+
+      if (errors.address_postal_code) {
+        setErrors(prev => ({ ...prev, address_postal_code: '' }));
+      }
+      return;
+    }
+
     const errorKeyMap: Record<string, string> = {
       firstName: 'first_name',
       lastName: 'last_name',
+      suffix: 'suffix',
+      age: 'age',
+      address: 'address',
       businessName: 'business_name',
       businessAddress: 'business_address',
       businessType: 'business_type',
@@ -312,6 +383,29 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       setErrors(prev => ({ ...prev, [resolvedErrorKey]: '' }));
     }
 
+  };
+
+  const handlePersonalAddressChange = (location: RegistrationAddress) => {
+    setPersonalAddressLocation(location);
+    setFormData(previous => ({
+      ...previous,
+      address: location.displayName,
+      addressRegion: location.region,
+      addressProvince: location.province,
+      addressCity: location.city,
+      addressBarangay: location.barangay,
+      addressPostalCode: location.postalCode,
+    }));
+    setErrors(previous => ({
+      ...previous,
+      address: '',
+      address_region: '',
+      address_province: '',
+      address_city: '',
+      address_barangay: '',
+      address_latitude: '',
+      address_longitude: '',
+    }));
   };
 
   const handleSelectChange = (value: string) => {
@@ -667,6 +761,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       const lastName = formData.lastName.trim();
       const email = formData.email.trim().toLowerCase();
       const phone = formData.phone.trim();
+      const age = Number(formData.age);
 
       if (!firstName) {
         stepErrors.first_name = 'Please enter your first name.';
@@ -690,6 +785,38 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
         stepErrors.phone = 'Please enter your phone number.';
       } else if (!PHONE_REGEX.test(phone)) {
         stepErrors.phone = 'Phone number must be exactly 11 digits (example: 09171234567).';
+      }
+
+      if (!formData.age.trim()) {
+        stepErrors.age = 'Please enter your age.';
+      } else if (!Number.isInteger(age) || age < 18 || age > 120) {
+        stepErrors.age = 'Age must be a whole number from 18 to 120.';
+      }
+
+      if (!formData.address.trim()) {
+        stepErrors.address = 'Please enter your personal address.';
+      }
+
+      if (!formData.addressRegion.trim()) {
+        stepErrors.address_region = 'Select a complete personal address on the map.';
+      }
+
+      if (!formData.addressProvince.trim()) {
+        stepErrors.address_province = 'Select a complete personal address on the map.';
+      }
+
+      if (!formData.addressCity.trim()) {
+        stepErrors.address_city = 'Select your city or municipality on the map.';
+      }
+
+      if (!formData.addressBarangay.trim()) {
+        stepErrors.address_barangay = 'Select your barangay on the map.';
+      }
+
+      if (!personalAddressLocation
+        || !Number.isFinite(personalAddressLocation.latitude)
+        || !Number.isFinite(personalAddressLocation.longitude)) {
+        stepErrors.address_latitude = 'Use the map or Use My GPS to set your personal location.';
       }
 
       const hasValidEmail = Boolean(email) && EMAIL_REGEX.test(email);
@@ -777,7 +904,21 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   });
 
   const getFirstInvalidStep = (validationErrors: Record<string, string>): number => {
-    const stepOneKeys = ['first_name', 'last_name', 'email', 'phone', 'email_verification'];
+    const stepOneKeys = [
+      'first_name',
+      'last_name',
+      'email',
+      'phone',
+      'age',
+      'address',
+      'address_region',
+      'address_province',
+      'address_city',
+      'address_barangay',
+      'address_latitude',
+      'address_longitude',
+      'email_verification',
+    ];
     const stepTwoKeys = ['business_name', 'business_address', 'business_type', 'shop_latitude', 'shop_longitude'];
     const stepThreeKeys = ['dti_registration', 'mayors_permit', 'bir_certificate', 'valid_id'];
 
@@ -1069,6 +1210,17 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return;
     }
 
+    if (!personalAddressLocation) {
+      setCurrentStep(1);
+      setErrors((prev) => ({
+        ...prev,
+        address_latitude: 'Use the map or Use My GPS to set your personal location.',
+      }));
+      return;
+    }
+
+    const personalAddress = personalAddressLocation;
+
     if (!caviteLocationState.allowed) {
       Swal.fire({
         icon: 'error',
@@ -1102,6 +1254,16 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
         submitData.append('last_name', formData.lastName);
         submitData.append('email', formData.email);
         submitData.append('phone', formData.phone);
+        submitData.append('suffix', formData.suffix);
+        submitData.append('age', formData.age);
+        submitData.append('address', formData.address || personalAddress.displayName);
+        submitData.append('address_region', personalAddress.region);
+        submitData.append('address_province', personalAddress.province);
+        submitData.append('address_city', personalAddress.city);
+        submitData.append('address_barangay', personalAddress.barangay);
+        submitData.append('address_postal_code', formData.addressPostalCode || personalAddress.postalCode);
+        submitData.append('address_latitude', String(personalAddress.latitude));
+        submitData.append('address_longitude', String(personalAddress.longitude));
         submitData.append('business_name', formData.businessName);
         submitData.append('business_address', formData.businessAddress);
         submitData.append('postal_code', formData.postalCode);
@@ -1350,6 +1512,35 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     {errors.last_name && <p className="mt-1 text-sm text-red-600">{errors.last_name}</p>}
                   </div>
                   <div>
+                    <Label htmlFor="suffix">Suffix <span className="font-normal text-gray-400">(optional)</span></Label>
+                    <Input
+                      type="text"
+                      id="suffix"
+                      name="suffix"
+                      value={formData.suffix}
+                      onChange={handleInputChange}
+                      placeholder="Jr., Sr., III"
+                      className={errors.suffix ? 'border-red-500' : ''}
+                    />
+                    {errors.suffix && <p className="mt-1 text-sm text-red-600">{errors.suffix}</p>}
+                  </div>
+                  <div>
+                    <Label htmlFor="age">Age</Label>
+                    <Input
+                      type="number"
+                      id="age"
+                      name="age"
+                      value={formData.age}
+                      onChange={handleInputChange}
+                      inputMode="numeric"
+                      min="18"
+                      max="120"
+                      placeholder="Enter age"
+                      className={errors.age ? 'border-red-500' : ''}
+                    />
+                    {errors.age && <p className="mt-1 text-sm text-red-600">{errors.age}</p>}
+                  </div>
+                  <div>
                     <Label htmlFor="email">Email</Label>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <div className="w-full">
@@ -1422,6 +1613,100 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       className={errors.phone ? 'border-red-500' : ''}
                     />
                     {errors.phone && <p className="mt-1 text-sm text-red-600">{errors.phone}</p>}
+                  </div>
+                </div>
+                <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 md:p-5">
+                  <div className="mb-5">
+                    <h3 className="text-base font-semibold text-gray-900">Personal Address</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      This is the shop owner&apos;s residential address. It is separate from the shop address in Shop Information.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <Label htmlFor="personalAddress">Address</Label>
+                      <Input
+                        type="text"
+                        id="personalAddress"
+                        name="address"
+                        value={formData.address}
+                        onChange={handleInputChange}
+                        placeholder="House/Unit, Street, Barangay, City"
+                        className={errors.address ? 'border-red-500' : ''}
+                      />
+                      {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressPostalCode">Postal Code / ZIP Code</Label>
+                      <Input
+                        type="text"
+                        id="addressPostalCode"
+                        name="addressPostalCode"
+                        value={formData.addressPostalCode}
+                        onChange={handleInputChange}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="Enter postal or ZIP code"
+                        className={errors.address_postal_code ? 'border-red-500' : ''}
+                      />
+                      {errors.address_postal_code && <p className="mt-1 text-sm text-red-600">{errors.address_postal_code}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressRegion">Region</Label>
+                      <Input
+                        type="text"
+                        id="addressRegion"
+                        value={formData.addressRegion}
+                        disabled
+                        className={`w-full bg-gray-100 text-gray-600 ${errors.address_region ? 'border-red-500' : ''}`}
+                      />
+                      {errors.address_region && <p className="mt-1 text-sm text-red-600">{errors.address_region}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressProvince">Province</Label>
+                      <Input
+                        type="text"
+                        id="addressProvince"
+                        value={formData.addressProvince}
+                        disabled
+                        className={`w-full bg-gray-100 text-gray-600 ${errors.address_province ? 'border-red-500' : ''}`}
+                      />
+                      {errors.address_province && <p className="mt-1 text-sm text-red-600">{errors.address_province}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressCity">City / Municipality</Label>
+                      <Input
+                        type="text"
+                        id="addressCity"
+                        value={formData.addressCity}
+                        disabled
+                        className={`w-full bg-gray-100 text-gray-600 ${errors.address_city ? 'border-red-500' : ''}`}
+                      />
+                      {errors.address_city && <p className="mt-1 text-sm text-red-600">{errors.address_city}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressBarangay">Barangay</Label>
+                      <Input
+                        type="text"
+                        id="addressBarangay"
+                        value={formData.addressBarangay}
+                        disabled
+                        className={`w-full bg-gray-100 text-gray-600 ${errors.address_barangay ? 'border-red-500' : ''}`}
+                      />
+                      {errors.address_barangay && <p className="mt-1 text-sm text-red-600">{errors.address_barangay}</p>}
+                    </div>
+                  </div>
+                  <div className="mt-6">
+                    <CustomerAddressMapPicker
+                      value={personalAddressLocation
+                        ? { latitude: personalAddressLocation.latitude, longitude: personalAddressLocation.longitude }
+                        : null}
+                      onChange={handlePersonalAddressChange}
+                      embeddedInForm
+                      gpsButtonLabel="Use My GPS"
+                    />
+                    {errors.address_latitude && <p className="mt-1 text-sm text-red-600">{errors.address_latitude}</p>}
+                    {errors.address_longitude && <p className="mt-1 text-sm text-red-600">{errors.address_longitude}</p>}
                   </div>
                 </div>
                 <div className="flex justify-end pt-4">

@@ -11,6 +11,7 @@ use App\Services\CaviteLocationPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -24,6 +25,26 @@ class ShopOwnerAuthRegistrationTest extends TestCase
     private const LNG_DASMARINAS = 120.9367;
     private const LAT_MAKATI = 14.5547;
     private const LNG_MAKATI = 121.0244;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::fake([
+            'nominatim.openstreetmap.org/*' => Http::response([
+                'lat' => '14.3294',
+                'lon' => '120.9367',
+                'address' => [
+                    'country_code' => 'ph',
+                    'region' => 'Cavite',
+                    'province' => 'Cavite',
+                    'city' => 'Dasmarinas',
+                    'suburb' => 'Salitran I',
+                    'postcode' => '4114',
+                ],
+            ]),
+        ]);
+    }
 
     private function docs(): array
     {
@@ -67,6 +88,16 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'last_name' => 'Dela Cruz',
             'email' => 'auth-register@solespaceph.com',
             'phone' => '09171234567',
+            'suffix' => 'Jr.',
+            'age' => 32,
+            'address' => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region' => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city' => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
+            'address_latitude' => self::LAT_DASMARINAS,
+            'address_longitude' => self::LNG_DASMARINAS,
             'business_name' => 'Juan Shoes & Repairs',
             'business_address' => 'Dasmariñas, Cavite',
             'business_type' => 'repair',
@@ -136,6 +167,14 @@ class ShopOwnerAuthRegistrationTest extends TestCase
         $this->assertDatabaseHas('shop_owners', [
             'email' => 'auth-register@solespaceph.com',
             'status' => 'pending',
+            'suffix' => 'Jr.',
+            'age' => 32,
+            'address' => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region' => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city' => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
         ]);
         $this->assertSame(4, ShopDocument::query()
             ->where('shop_owner_id', ShopOwner::query()->where('email', 'auth-register@solespaceph.com')->value('id'))
@@ -156,6 +195,38 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'is_read' => false,
             'requires_action' => true,
         ]);
+    }
+
+    public function test_registration_requires_personal_age_and_verified_address_location(): void
+    {
+        Storage::fake('public');
+        $email = 'auth-missing-personal-address@solespaceph.com';
+        $this->markRegistrationEmailVerified($email);
+
+        $payload = array_merge($this->payload(['email' => $email]), $this->docs());
+        unset(
+            $payload['age'],
+            $payload['address'],
+            $payload['address_region'],
+            $payload['address_province'],
+            $payload['address_city'],
+            $payload['address_barangay'],
+            $payload['address_latitude'],
+            $payload['address_longitude'],
+        );
+
+        $this->postJson('/shop-owner/register', $payload)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors([
+                'age',
+                'address',
+                'address_region',
+                'address_province',
+                'address_city',
+                'address_barangay',
+                'address_latitude',
+                'address_longitude',
+            ]);
     }
 
     public function test_rejected_resubmission_notifies_super_admins_once_when_it_returns_to_pending(): void
@@ -334,6 +405,8 @@ class ShopOwnerAuthRegistrationTest extends TestCase
         $payload = $this->payload([
             'email' => $owner->email,
             'business_name' => 'Updated Juan Shoes',
+            'age' => 41,
+            'address' => 'Updated personal address, Dasmarinas, Cavite',
         ]);
 
         $this->withHeaders(['Accept' => 'application/json'])
@@ -347,6 +420,8 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'resubmission_count' => 1,
             'rejection_reason' => null,
             'business_name' => 'Updated Juan Shoes',
+            'age' => 41,
+            'address' => 'Updated personal address, Dasmarinas, Cavite',
         ]);
         $this->assertSame(8, ShopDocument::query()->where('shop_owner_id', $owner->id)->count());
         $this->assertSame(4, ShopDocument::query()->where('shop_owner_id', $owner->id)->where('status', 'rejected')->count());

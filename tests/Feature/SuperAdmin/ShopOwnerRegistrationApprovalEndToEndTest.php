@@ -13,6 +13,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -29,6 +30,20 @@ final class ShopOwnerRegistrationApprovalEndToEndTest extends TestCase
 
         Storage::fake('local');
         Queue::fake();
+        Http::fake([
+            'nominatim.openstreetmap.org/*' => Http::response([
+                'lat' => '14.3294',
+                'lon' => '120.9367',
+                'address' => [
+                    'country_code' => 'ph',
+                    'region' => 'Cavite',
+                    'province' => 'Cavite',
+                    'city' => 'Dasmarinas',
+                    'suburb' => 'Salitran I',
+                    'postcode' => '4114',
+                ],
+            ]),
+        ]);
     }
 
     public function test_real_registration_can_be_approved_while_pending_owner_guard_remains_in_session(): void
@@ -43,6 +58,9 @@ final class ShopOwnerRegistrationApprovalEndToEndTest extends TestCase
         $owner = ShopOwner::query()->where('email', $email)->firstOrFail();
         $this->assertAuthenticatedAs($owner, 'shop_owner');
         $this->assertSame('pending', $owner->status->value);
+        $this->assertSame('Jr.', $owner->suffix);
+        $this->assertSame(38, $owner->age);
+        $this->assertSame('Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite', $owner->address);
         $this->assertSame(4, $owner->documents()->count());
 
         $admin = SuperAdmin::factory()->admin()->create();
@@ -104,6 +122,16 @@ final class ShopOwnerRegistrationApprovalEndToEndTest extends TestCase
             'last_name' => 'Regression',
             'email' => $email,
             'phone' => '09171234567',
+            'suffix' => 'Jr.',
+            'age' => 38,
+            'address' => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region' => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city' => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
+            'address_latitude' => 14.3294,
+            'address_longitude' => 120.9367,
             'business_name' => 'Approval Regression Shoes',
             'business_address' => 'Dasmarinas, Cavite',
             'business_type' => 'retail',

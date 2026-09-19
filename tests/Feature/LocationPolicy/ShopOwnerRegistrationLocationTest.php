@@ -7,6 +7,7 @@ use App\Services\CaviteLocationPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -28,6 +29,26 @@ use Tests\TestCase;
 class ShopOwnerRegistrationLocationTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::fake([
+            'nominatim.openstreetmap.org/*' => Http::response([
+                'lat' => '14.3294',
+                'lon' => '120.9367',
+                'address' => [
+                    'country_code' => 'ph',
+                    'region' => 'Cavite',
+                    'province' => 'Cavite',
+                    'city' => 'Dasmarinas',
+                    'suburb' => 'Salitran I',
+                    'postcode' => '4114',
+                ],
+            ]),
+        ]);
+    }
 
     // ──────────────────────────────────────────────────────────────────────────
     // Coordinate constants
@@ -61,6 +82,16 @@ class ShopOwnerRegistrationLocationTest extends TestCase
             'last_name'        => 'dela Cruz',
             'email'            => 'juan@solespaceph.com',
             'phone'            => '09171234567',
+            'suffix'           => 'Sr.',
+            'age'              => 45,
+            'address'          => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region'   => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city'     => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
+            'address_latitude' => self::LAT_DASMARINAS,
+            'address_longitude' => self::LNG_DASMARINAS,
             'business_name'    => 'Juan Sole Works',
             'business_address' => 'Dasmariñas, Cavite',
             'business_type'    => 'repair',

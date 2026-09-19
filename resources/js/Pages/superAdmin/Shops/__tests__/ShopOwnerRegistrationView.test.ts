@@ -145,7 +145,7 @@ describe('registration decision guards', () => {
 });
 
 describe('registration queue pagination UI', () => {
-  it('sends search through the server paginator', async () => {
+  it('sends search through the server paginator and keeps both addresses visible', async () => {
     render(
       React.createElement(ShopOwnerRegistrationView, {
         registrations: {
@@ -155,8 +155,15 @@ describe('registration queue pagination UI', () => {
             lastName: 'One',
             email: 'owner@example.test',
             phone: '09170000000',
+            suffix: 'Jr.',
+            age: 32,
+            address: '123 Personal Street',
+            addressBarangay: 'Salitran I',
+            addressCity: 'Dasmarinas',
+            addressProvince: 'Cavite',
+            addressPostalCode: '4114',
             businessName: 'Sole Space',
-            businessAddress: 'Cavite',
+            businessAddress: 'Cavite business address',
             businessType: 'Retail',
             serviceType: 'Retail',
             operatingHours: [],
@@ -187,5 +194,10 @@ describe('registration queue pagination UI', () => {
       { search: 'Sole', status: 'pending', page: 1 },
       expect.any(Object),
     ));
+
+    fireEvent.click(screen.getByTitle('View Details'));
+
+    expect(screen.getByText('123 Personal Street, Salitran I, Dasmarinas, Cavite, 4114')).toBeInTheDocument();
+    expect(screen.getByText('Cavite business address')).toBeInTheDocument();
   });
 });

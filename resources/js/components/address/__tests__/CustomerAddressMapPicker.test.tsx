@@ -95,6 +95,12 @@ describe('CustomerAddressMapPicker', () => {
     await waitFor(() => expect(leaflet.mapFactory).toHaveBeenCalled());
   });
 
+  it('supports a registration-specific GPS button label', () => {
+    render(<CustomerAddressMapPicker gpsButtonLabel="Use My GPS" value={null} onChange={vi.fn()} />);
+
+    expect(screen.getByRole('button', { name: 'Use My GPS' })).toBeInTheDocument();
+  });
+
   it('gives multiple pickers unique labeled search inputs', () => {
     render(<>
       <CustomerAddressMapPicker value={null} onChange={vi.fn()} />

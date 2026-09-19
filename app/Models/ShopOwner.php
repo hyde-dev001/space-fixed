@@ -50,6 +50,16 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'first_name',           // Shop owner's first name
         'last_name',            // Shop owner's last name
         'email',                // Contact email (must be unique)
+        'suffix',               // Optional name suffix
+        'age',                  // Shop owner's age
+        'address',              // Shop owner's personal address
+        'address_region',
+        'address_province',
+        'address_city',
+        'address_barangay',
+        'address_postal_code',
+        'address_latitude',
+        'address_longitude',
         'profile_photo',        // Profile photo path
         'cover_photo',          // Cover photo path
         'showroom_left_wall_art_path',
@@ -107,6 +117,16 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'paymongo_secret_key', // Never expose the key in API responses
         'shop_owner_totp_secret',
         'shop_owner_totp_recovery_codes',
+        'suffix',
+        'age',
+        'address',
+        'address_region',
+        'address_province',
+        'address_city',
+        'address_barangay',
+        'address_postal_code',
+        'address_latitude',
+        'address_longitude',
     ];
 
     /**
@@ -120,6 +140,9 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     protected $casts = [
         'operating_hours' => 'array',  // Auto JSON encode/decode
         'email_verified_at' => 'datetime',
+        'age' => 'integer',
+        'address_latitude' => 'decimal:8',
+        'address_longitude' => 'decimal:8',
         'password' => 'hashed',
         'status' => \App\Enums\ShopOwnerStatus::class,
         'resubmission_count' => 'integer',
