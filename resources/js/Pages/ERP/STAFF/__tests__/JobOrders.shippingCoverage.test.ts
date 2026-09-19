@@ -81,8 +81,11 @@ describe('staff order shipping coverage integration', () => {
     expect(source).toContain('<table className="w-full table-fixed">');
     expect(source).not.toContain('overflow-x-auto');
     expect(source).not.toContain('min-w-[1180px]');
-    expect(source).toContain('w-[14%]');
+    expect(source).toContain('w-[9%]');
     expect(source).toContain('w-[10%]');
+    expect(source).toContain('<col className="w-[13%]" />');
+    expect(source).toContain('<col className="w-[7%]" />');
+    expect(source).toContain('Refund / Return');
     expect(source).toContain('flex flex-nowrap items-center justify-start gap-2');
     expect(source).toContain('rounded-xl bg-gray-50/80');
     expect(source).toContain('h-9 w-9');

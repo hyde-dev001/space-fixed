@@ -2171,15 +2171,14 @@ export default function JobOrdersPage() {
             <table className="w-full table-fixed">
               <colgroup>
                 <col className="w-[3%]" />
-                <col className="w-[14%]" />
+                <col className="w-[13%]" />
                 <col className="w-[10%]" />
-                <col className="w-[11%]" />
-                <col className="w-[8%]" />
-                <col className="w-[5%]" />
-                <col className="w-[14%]" />
                 <col className="w-[10%]" />
-                <col className="w-[8%]" />
                 <col className="w-[5%]" />
+                <col className="w-[13%]" />
+                <col className="w-[9%]" />
+                <col className="w-[10%]" />
+                <col className="w-[7%]" />
                 <col className="w-[12%]" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
@@ -2219,10 +2218,10 @@ export default function JobOrdersPage() {
                   <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Status
                   </th>
-                  <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
-                    Refunded/Return
+                  <th className="box-border whitespace-normal px-3 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                    Refund / Return
                   </th>
-                  <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     ETA
                   </th>
                   <th className="box-border whitespace-normal px-3 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
