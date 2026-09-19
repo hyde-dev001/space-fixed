@@ -1462,7 +1462,7 @@ const RepairProcess: React.FC = () => {
                       </div>
 
                       {formData.intakeDeliveryMethod === 'customer_delivery' && (
-                        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                        <div className="rounded-xl border border-black bg-white p-3 text-sm text-black">
                           Courier destination: <strong>{exactShopAddress || shopDetails?.location || 'Shop address unavailable'}</strong>
                           {!!shopMapsUrl && <a href={shopMapsUrl} target="_blank" rel="noreferrer" className="ml-2 font-semibold underline">Open map</a>}
                         </div>
