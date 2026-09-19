@@ -32,4 +32,14 @@ describe('repair booking logistics experience', () => {
     expect(source).toContain("const isCompanyShop = shopDetails?.registration_type === 'company';");
     expect(source).toContain('{isCompanyShop && (');
   });
+
+  it('reveals an editable shoe type field when Other is selected', () => {
+    expect(source).toContain('const [isOtherShoeType, setIsOtherShoeType] = useState(false);');
+    expect(source).toContain("setIsOtherShoeType(true);");
+    expect(source).toContain("setIsOtherShoeType(false);");
+    expect(source).toContain("{isOtherShoeType && (");
+    expect(source).toContain('name="shoeType"');
+    expect(source).toContain('placeholder="Enter your shoe type"');
+    expect(source).toContain("submitFormData.append('shoe_type', formData.shoeType.trim());");
+  });
 });

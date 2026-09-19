@@ -257,6 +257,7 @@ const RepairProcess: React.FC = () => {
   const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
   const [selectedAddOnServiceIds, setSelectedAddOnServiceIds] = useState<number[]>([]);
   const [isShoeTypeOpen, setIsShoeTypeOpen] = useState(false);
+  const [isOtherShoeType, setIsOtherShoeType] = useState(false);
   const [saveInfoForCheckout, setSaveInfoForCheckout] = useState(false);
   const shoeTypeDropdownRef = useRef<HTMLDivElement | null>(null);
 
@@ -395,14 +396,18 @@ const RepairProcess: React.FC = () => {
 
     try {
       const parsed = JSON.parse(savedCheckoutInfo) as Partial<typeof formData>;
+      const savedShoeType = parsed.shoeType || '';
+      const savedIsOtherShoeType = savedShoeType === 'Other'
+        || (savedShoeType !== '' && !SHOE_TYPE_OPTIONS.includes(savedShoeType));
       setFormData((prev) => ({
         ...prev,
         customerName: parsed.customerName || '',
         email: parsed.email || '',
         phone: (parsed.phone || '').replace(/\D/g, '').slice(0, 11),
-        shoeType: parsed.shoeType || '',
+        shoeType: savedShoeType === 'Other' ? '' : savedShoeType,
         brand: parsed.brand || '',
       }));
+      setIsOtherShoeType(savedIsOtherShoeType);
       setSaveInfoForCheckout(true);
     } catch {
       localStorage.removeItem(CHECKOUT_INFO_STORAGE_KEY);
@@ -961,7 +966,7 @@ const RepairProcess: React.FC = () => {
       return;
     }
 
-    if (!formData.shoeType) {
+    if (!formData.shoeType.trim()) {
       Swal.fire({
         title: 'Shoe Type Required',
         text: 'Please select your shoe type before submitting the repair request.',
@@ -1101,7 +1106,7 @@ const RepairProcess: React.FC = () => {
       submitFormData.append('customer_name', formData.customerName);
       submitFormData.append('email', formData.email);
       submitFormData.append('phone', formData.phone);
-      submitFormData.append('shoe_type', formData.shoeType);
+      submitFormData.append('shoe_type', formData.shoeType.trim());
       submitFormData.append('brand', formData.brand);
       submitFormData.append('description', formData.description);
       submitFormData.append('intake_delivery_method', formData.intakeDeliveryMethod);
@@ -1189,6 +1194,7 @@ const RepairProcess: React.FC = () => {
             intakeDeliveryMethod: '',
             returnDeliveryMethod: '',
           });
+          setIsOtherShoeType(false);
         }
         setSelectedServiceIds([]);
         setSelectedPackageId(null);
@@ -1326,8 +1332,8 @@ const RepairProcess: React.FC = () => {
                           className="w-full px-4 py-3 border border-gray-300 rounded text-left bg-white flex items-center justify-between"
                           onClick={() => setIsShoeTypeOpen((prev) => !prev)}
                         >
-                          <span className={formData.shoeType ? 'text-black' : 'text-gray-500'}>
-                            {formData.shoeType || 'Select shoe type'}
+                          <span className={isOtherShoeType || formData.shoeType ? 'text-black' : 'text-gray-500'}>
+                            {isOtherShoeType ? 'Other' : (formData.shoeType || 'Select shoe type')}
                           </span>
                           <svg className={`h-4 w-4 text-gray-500 transition-transform ${isShoeTypeOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -1343,6 +1349,7 @@ const RepairProcess: React.FC = () => {
                                   className="w-full px-4 py-2 text-left text-sm text-gray-600 hover:bg-gray-100"
                                   onClick={() => {
                                     setFormData((prev) => ({ ...prev, shoeType: '' }));
+                                    setIsOtherShoeType(false);
                                     setIsShoeTypeOpen(false);
                                   }}
                                 >
@@ -1353,9 +1360,15 @@ const RepairProcess: React.FC = () => {
                                 <li key={shoeType}>
                                   <button
                                     type="button"
-                                    className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 ${formData.shoeType === shoeType ? 'bg-gray-100 text-black font-medium' : 'text-black'}`}
+                                    className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 ${((shoeType === 'Other' && isOtherShoeType) || formData.shoeType === shoeType) ? 'bg-gray-100 text-black font-medium' : 'text-black'}`}
                                     onClick={() => {
-                                      setFormData((prev) => ({ ...prev, shoeType }));
+                                      if (shoeType === 'Other') {
+                                        setFormData((prev) => ({ ...prev, shoeType: '' }));
+                                        setIsOtherShoeType(true);
+                                      } else {
+                                        setFormData((prev) => ({ ...prev, shoeType }));
+                                        setIsOtherShoeType(false);
+                                      }
                                       setIsShoeTypeOpen(false);
                                     }}
                                   >
@@ -1367,6 +1380,23 @@ const RepairProcess: React.FC = () => {
                           </div>
                         )}
                       </div>
+                      {isOtherShoeType && (
+                        <div className="mt-3">
+                          <label htmlFor="customShoeType" className="block text-sm font-medium text-black mb-2">
+                            Enter shoe type *
+                          </label>
+                          <input
+                            id="customShoeType"
+                            name="shoeType"
+                            type="text"
+                            value={formData.shoeType}
+                            onChange={handleInputChange}
+                            className="w-full px-4 py-3 border border-gray-300 rounded text-black bg-white"
+                            placeholder="Enter your shoe type"
+                            required
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                   <label className="mt-4 inline-flex items-center gap-2 text-sm text-black">
