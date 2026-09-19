@@ -5128,14 +5128,14 @@ const MyRepairs: React.FC = () => {
               </div>
 
               {modifyOrder.repair_package_id && !packageRemovalConfirmed && (
-                <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
-                  <p className="text-sm text-amber-900">
+                <div className="mt-5 rounded-xl border border-black bg-white p-4">
+                  <p className="text-sm text-black">
                     This repair uses a package. Remove it to switch to individually priced services.
                   </p>
                   <button
                     type="button"
                     onClick={() => setPackageRemovalConfirmed(true)}
-                    className="mt-3 text-sm font-semibold text-amber-950 underline"
+                    className="mt-3 text-sm font-semibold text-black underline"
                   >
                     Remove Package
                   </button>

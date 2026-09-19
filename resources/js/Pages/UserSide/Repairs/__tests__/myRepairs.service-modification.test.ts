@@ -29,4 +29,16 @@ describe('My Repairs service modification integration', () => {
     expect(source).toContain("{order.status === 'picked_up' && (");
     expect(source).not.toContain("order.status === 'picked_up' || order.status === 'received'");
   });
+
+  it('keeps the package warning monochrome', () => {
+    const noticeStart = source.indexOf('This repair uses a package');
+    const noticeEnd = source.indexOf('Remove Package', noticeStart);
+    const packageNotice = source.slice(noticeStart - 220, noticeEnd + 120);
+
+    expect(packageNotice).toContain('border border-black bg-white p-4');
+    expect(packageNotice).toContain('text-sm text-black');
+    expect(packageNotice).not.toContain('border-amber-200 bg-amber-50');
+    expect(packageNotice).not.toContain('text-amber-900');
+    expect(packageNotice).not.toContain('text-amber-950');
+  });
 });
