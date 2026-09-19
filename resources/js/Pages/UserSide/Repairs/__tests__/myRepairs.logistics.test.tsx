@@ -520,6 +520,21 @@ describe("MyRepairs repair cancellation", () => {
     expect(screen.queryByRole("button", { name: "CANCEL REQUEST" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "CANCEL REPAIR" })).not.toBeInTheDocument();
   });
+
+  it("hides intake tracking for cancelled repairs", async () => {
+    mocks.repair = repair({
+      status: "cancelled",
+      intake_delivery_method: "customer_delivery",
+      conversation_id: null,
+      logistics_shipments: [],
+    });
+
+    render(<MyRepairs />);
+    const cancelledTabs = await screen.findAllByRole("button", { name: /Cancelled/i });
+    fireEvent.click(cancelledTabs[0]);
+
+    expect(screen.queryByRole("region", { name: "Intake courier tracking" })).not.toBeInTheDocument();
+  });
 });
 
 describe("MyRepairs return logistics", () => {
@@ -1126,7 +1141,7 @@ describe("MyRepairs warranty logistics", () => {
         target: { value: "J&T" },
       });
       fireEvent.change(within(editableTracking).getByLabelText("Intake tracking number"), {
-        target: { value: "WARRANTY-INTAKE-123" },
+        target: { value: "123456789012" },
       });
       fireEvent.change(within(editableTracking).getByLabelText("Intake tracking link"), {
         target: { value: "https://tracker.example/WARRANTY-INTAKE-123" },
@@ -1144,7 +1159,7 @@ describe("MyRepairs warranty logistics", () => {
         {
           leg: "intake",
           carrier: "J&T",
-          tracking_number: "WARRANTY-INTAKE-123",
+          tracking_number: "123456789012",
           tracking_url: "https://tracker.example/WARRANTY-INTAKE-123",
           rider_name: "Juan Rider",
           rider_contact: "09171234567",
@@ -1159,7 +1174,7 @@ describe("MyRepairs warranty logistics", () => {
         intake_address: {
           external_tracking: {
             carrier: "J&T",
-            tracking_number: "WARRANTY-INTAKE-123",
+            tracking_number: "123456789012",
             tracking_url: "https://tracker.example/WARRANTY-INTAKE-123",
             rider_name: "Juan Rider",
             rider_contact: "09171234567",
@@ -1173,7 +1188,7 @@ describe("MyRepairs warranty logistics", () => {
 
       const lockedTracking = await screen.findByRole("region", { name: "Intake courier tracking" });
       expect(within(lockedTracking).getByText("Locked after handoff")).toBeInTheDocument();
-      expect(within(lockedTracking).getByText("WARRANTY-INTAKE-123")).toBeInTheDocument();
+      expect(within(lockedTracking).getByText("123456789012")).toBeInTheDocument();
       expect(within(lockedTracking).queryByLabelText("Intake carrier")).not.toBeInTheDocument();
       expect(within(lockedTracking).queryByRole("button", { name: "Save intake tracking" })).not.toBeInTheDocument();
     });
@@ -1207,17 +1222,20 @@ describe("MyRepairs warranty logistics", () => {
         target: { value: "Ninja Van" },
       });
       fireEvent.change(within(tracking).getByLabelText("Intake tracking number"), {
-        target: { value: "CUSTOM-INTAKE-123" },
+        target: { value: "9876543210abc" },
       });
       fireEvent.change(within(tracking).getByLabelText("Intake rider name"), {
-        target: { value: "Maria Rider" },
+        target: { value: "Maria123 Rider" },
       });
       fireEvent.change(within(tracking).getByLabelText("Intake rider contact"), {
-        target: { value: "09181234567" },
+        target: { value: "091812345678" },
       });
 
       const saveButton = within(tracking).getByRole("button", { name: "Save intake tracking" });
       expect(saveButton).toBeDisabled();
+      expect(within(tracking).getByLabelText("Intake tracking number")).toHaveValue("9876543210");
+      expect(within(tracking).getByLabelText("Intake rider name")).toHaveValue("Maria Rider");
+      expect(within(tracking).getByLabelText("Intake rider contact")).toHaveValue("09181234567");
 
       fireEvent.change(within(tracking).getByLabelText("Intake tracking link"), {
         target: { value: "https://tracker.example/CUSTOM-INTAKE-123" },
@@ -1230,7 +1248,7 @@ describe("MyRepairs warranty logistics", () => {
         {
           leg: "intake",
           carrier: "Ninja Van",
-          tracking_number: "CUSTOM-INTAKE-123",
+          tracking_number: "9876543210",
           tracking_url: "https://tracker.example/CUSTOM-INTAKE-123",
           rider_name: "Maria Rider",
           rider_contact: "09181234567",

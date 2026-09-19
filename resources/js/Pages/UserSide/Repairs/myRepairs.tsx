@@ -1489,7 +1489,7 @@ const CustomerExternalTrackingCard: React.FC<{
     setRiderContact(tracking?.rider_contact ?? '');
   }, [isIntake, tracking?.carrier, tracking?.tracking_number, tracking?.tracking_url, tracking?.rider_name, tracking?.rider_contact]);
 
-  if (!enabled) return null;
+  if (!enabled || (isIntake && order.status === 'cancelled')) return null;
 
   const save = async () => {
     if (unpaidThirdPartyReturn) {
@@ -1627,12 +1627,16 @@ const CustomerExternalTrackingCard: React.FC<{
             </label>
           )}
           <label className="text-sm font-semibold text-gray-700">
-            Tracking number
+            Tracking number <span className="font-normal text-gray-500">(required)</span>
             <input
               aria-label={`${fieldPrefix} tracking number`}
               value={trackingNumber}
-              onChange={(event) => setTrackingNumber(event.target.value)}
+              onChange={(event) => setTrackingNumber(
+                isIntake ? event.target.value.replace(/\D/g, '') : event.target.value,
+              )}
               className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+              inputMode={isIntake ? 'numeric' : undefined}
+              required={isIntake}
             />
           </label>
           <label className="text-sm font-semibold text-gray-700 sm:col-span-2">
@@ -1653,7 +1657,7 @@ const CustomerExternalTrackingCard: React.FC<{
                 <input
                   aria-label={`${fieldPrefix} rider name`}
                   value={riderName}
-                  onChange={(event) => setRiderName(event.target.value)}
+                  onChange={(event) => setRiderName(event.target.value.replace(/[^\p{L}\s.'-]/gu, ''))}
                   className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
                   required
                 />
@@ -1664,8 +1668,10 @@ const CustomerExternalTrackingCard: React.FC<{
                   type="tel"
                   aria-label={`${fieldPrefix} rider contact`}
                   value={riderContact}
-                  onChange={(event) => setRiderContact(event.target.value)}
+                  onChange={(event) => setRiderContact(event.target.value.replace(/\D/g, '').slice(0, 11))}
                   className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
+                  inputMode="numeric"
+                  maxLength={11}
                   required
                 />
               </label>
