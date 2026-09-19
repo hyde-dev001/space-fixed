@@ -15,8 +15,25 @@ class StockRequestApprovalPolicy
      */
     public function viewAny(User $user): bool
     {
-        return $user->can('procurement.approve_stock_requests') 
-            || $user->can('procurement.reject_stock_requests');
+        return $user->can('procurement.review_stock_requests')
+            || $user->can('procurement.create_purchase_requests')
+            || $user->can('procurement.view')
+            || $user->can('access-stock-request-approval')
+            || $user->can('view-inventory');
+    }
+
+    public function create(User $user): bool
+    {
+        return $user->can('procurement.create_purchase_requests');
+    }
+
+    /**
+     * Inventory staff may submit a replenishment request from the canonical
+     * Inventory flow without gaining access to Procurement request creation.
+     */
+    public function createFromInventory(User $user): bool
+    {
+        return $user->can('view-inventory');
     }
 
     /**
@@ -24,9 +41,37 @@ class StockRequestApprovalPolicy
      */
     public function view(User $user, StockRequestApproval $stockRequestApproval): bool
     {
-        return ($user->can('procurement.approve_stock_requests') 
-                || $user->can('procurement.reject_stock_requests'))
+        return $this->viewAny($user)
             && $user->shop_owner_id === $stockRequestApproval->shop_owner_id;
+    }
+
+    public function viewInventory(User $user, StockRequestApproval $stockRequestApproval): bool
+    {
+        return $this->isInventoryRepairRequest($user, $stockRequestApproval);
+    }
+
+    public function approveInventory(User $user, StockRequestApproval $stockRequestApproval): bool
+    {
+        return $this->isInventoryRepairRequest($user, $stockRequestApproval)
+            && $stockRequestApproval->canBeApproved();
+    }
+
+    public function rejectInventory(User $user, StockRequestApproval $stockRequestApproval): bool
+    {
+        return $this->isInventoryRepairRequest($user, $stockRequestApproval)
+            && $stockRequestApproval->canBeRejected();
+    }
+
+    public function requestInventoryDetails(User $user, StockRequestApproval $stockRequestApproval): bool
+    {
+        return $this->approveInventory($user, $stockRequestApproval);
+    }
+
+    private function isInventoryRepairRequest(User $user, StockRequestApproval $stockRequestApproval): bool
+    {
+        return $user->can('view-inventory')
+            && $user->shop_owner_id === $stockRequestApproval->shop_owner_id
+            && $stockRequestApproval->request_source === 'repair';
     }
 
     /**
@@ -34,7 +79,7 @@ class StockRequestApprovalPolicy
      */
     public function approve(User $user, StockRequestApproval $stockRequestApproval): bool
     {
-        return $user->can('procurement.approve_stock_requests')
+        return $user->can('procurement.review_stock_requests')
             && $user->shop_owner_id === $stockRequestApproval->shop_owner_id
             && in_array($stockRequestApproval->status, ['pending', 'needs_details']);
     }
@@ -44,9 +89,14 @@ class StockRequestApprovalPolicy
      */
     public function reject(User $user, StockRequestApproval $stockRequestApproval): bool
     {
-        return $user->can('procurement.reject_stock_requests')
+        return $user->can('procurement.review_stock_requests')
             && $user->shop_owner_id === $stockRequestApproval->shop_owner_id
             && in_array($stockRequestApproval->status, ['pending', 'needs_details']);
+    }
+
+    public function requestDetails(User $user, StockRequestApproval $stockRequestApproval): bool
+    {
+        return $this->approve($user, $stockRequestApproval);
     }
 
     /**
@@ -54,7 +104,7 @@ class StockRequestApprovalPolicy
      */
     public function restore(User $user, StockRequestApproval $stockRequestApproval): bool
     {
-        return $user->can('procurement.approve_stock_requests')
+        return $user->can('procurement.review_stock_requests')
             && $user->shop_owner_id === $stockRequestApproval->shop_owner_id;
     }
 
@@ -63,7 +113,7 @@ class StockRequestApprovalPolicy
      */
     public function forceDelete(User $user, StockRequestApproval $stockRequestApproval): bool
     {
-        return $user->can('procurement.approve_stock_requests')
+        return $user->can('procurement.review_stock_requests')
             && $user->shop_owner_id === $stockRequestApproval->shop_owner_id;
     }
 }

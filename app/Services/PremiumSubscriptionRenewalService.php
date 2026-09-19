@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Enums\NotificationType;
 use App\Models\PremiumPlan;
 use App\Models\ShopOwnerSubscription;
+use App\Models\ShopOwnerSubscriptionPayment;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -82,8 +83,8 @@ class PremiumSubscriptionRenewalService
             ];
         }
 
-        $renewalSubscription = DB::transaction(function () use ($sourceSubscription, $plan) {
-            return ShopOwnerSubscription::create([
+        [$renewalSubscription, $payment] = DB::transaction(function () use ($sourceSubscription, $plan) {
+            $renewalSubscription = ShopOwnerSubscription::create([
                 'shop_owner_id' => $sourceSubscription->shop_owner_id,
                 'premium_plan_id' => $plan->id,
                 'plan_code' => $plan->plan_code,
@@ -94,6 +95,31 @@ class PremiumSubscriptionRenewalService
                 'renewal_of_subscription_id' => $sourceSubscription->id,
                 'renewal_due_at' => $sourceSubscription->ends_at,
             ]);
+
+            $paymentType = 'renewal';
+            $ledgerKey = ShopOwnerSubscriptionPayment::ledgerKeyFor((int) $renewalSubscription->id, $paymentType);
+            $metadata = [
+                'type' => 'premium_subscription_renewal',
+                'renewal_of_subscription_id' => (string) $sourceSubscription->id,
+                'ledger_key' => $ledgerKey,
+            ];
+            $payment = ShopOwnerSubscriptionPayment::create([
+                'shop_owner_id' => $sourceSubscription->shop_owner_id,
+                'subscription_id' => $renewalSubscription->id,
+                'source_subscription_id' => $sourceSubscription->id,
+                'payment_type' => $paymentType,
+                'gateway' => 'paymongo',
+                'currency' => 'PHP',
+                'plan_price' => (float) $plan->price,
+                'amount_due' => (float) $plan->price,
+                'status' => 'pending',
+                'ledger_key' => $ledgerKey,
+                'metadata' => $metadata,
+            ]);
+            $metadata['payment_record_id'] = (string) $payment->id;
+            $payment->update(['metadata' => $metadata]);
+
+            return [$renewalSubscription, $payment->fresh()];
         });
 
         $successUrl = route('shop-owner.premium-success', [
@@ -109,52 +135,63 @@ class PremiumSubscriptionRenewalService
 
         $paymentMethodTypes = ['card', 'gcash', 'paymaya', 'grab_pay'];
 
-        $response = Http::withHeaders([
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
-        ])->post('https://api.paymongo.com/v1/checkout_sessions', [
-            'data' => [
-                'attributes' => [
-                    'success_url' => $successUrl,
-                    'cancel_url' => $cancelUrl,
-                    'description' => $description,
-                    'send_email_receipt' => true,
-                    'show_description' => true,
-                    'show_line_items' => true,
-                    'line_items' => [[
-                        'currency' => 'PHP',
-                        'amount' => (int) ($plan->price * 100),
-                        'name' => 'SoleSpace ' . $plan->name . ' Renewal',
+        try {
+            $response = Http::timeout(10)->connectTimeout(3)->withHeaders([
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+            ])->post('https://api.paymongo.com/v1/checkout_sessions', [
+                'data' => [
+                    'attributes' => [
+                        'success_url' => $successUrl,
+                        'cancel_url' => $cancelUrl,
                         'description' => $description,
-                        'quantity' => 1,
-                    ]],
-                    'payment_method_types' => $paymentMethodTypes,
-                    'metadata' => [
-                        'type' => 'premium_subscription_renewal',
-                        'subscription_id' => (string) $renewalSubscription->id,
-                        'renewal_of_subscription_id' => (string) $sourceSubscription->id,
-                        'shop_owner_id' => (string) $sourceSubscription->shop_owner_id,
-                        'plan_code' => $plan->plan_code,
+                        'send_email_receipt' => true,
+                        'show_description' => true,
+                        'show_line_items' => true,
+                        'line_items' => [[
+                            'currency' => 'PHP',
+                            'amount' => (int) ($plan->price * 100),
+                            'name' => 'SoleSpace ' . $plan->name . ' Renewal',
+                            'description' => $description,
+                            'quantity' => 1,
+                        ]],
+                        'payment_method_types' => $paymentMethodTypes,
+                        'metadata' => [
+                            'type' => 'premium_subscription_renewal',
+                            'subscription_id' => (string) $renewalSubscription->id,
+                            'renewal_of_subscription_id' => (string) $sourceSubscription->id,
+                            'shop_owner_id' => (string) $sourceSubscription->shop_owner_id,
+                            'plan_code' => $plan->plan_code,
+                            'payment_record_id' => (string) $payment->id,
+                            'ledger_key' => $payment->ledger_key,
+                        ],
                     ],
                 ],
-            ],
-        ]);
+            ]);
+        } catch (\Throwable $exception) {
+            $this->markRenewalCheckoutFailed($sourceSubscription, $renewalSubscription, $payment);
+
+            Log::warning('Premium renewal checkout request failed', [
+                'source_subscription_id' => $sourceSubscription->id,
+                'renewal_subscription_id' => $renewalSubscription->id,
+                'shop_owner_id' => $sourceSubscription->shop_owner_id,
+                'exception_class' => $exception::class,
+            ]);
+
+            return [
+                'success' => false,
+                'message' => 'Failed to create renewal checkout session.',
+            ];
+        }
 
         if ($response->failed()) {
-            $renewalSubscription->update(['status' => 'failed']);
-            $sourceSubscription->update([
-                'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ACTION_REQUIRED,
-                'renewal_retry_count' => (int) $sourceSubscription->renewal_retry_count + 1,
-                'renewal_last_attempt_at' => now(),
-                'renewal_next_attempt_at' => now()->addHours(6),
-            ]);
+            $this->markRenewalCheckoutFailed($sourceSubscription, $renewalSubscription, $payment);
 
             Log::warning('Premium renewal checkout creation failed', [
                 'source_subscription_id' => $sourceSubscription->id,
                 'renewal_subscription_id' => $renewalSubscription->id,
                 'shop_owner_id' => $sourceSubscription->shop_owner_id,
                 'http_status' => $response->status(),
-                'body' => $response->json(),
             ]);
 
             return [
@@ -167,23 +204,13 @@ class PremiumSubscriptionRenewalService
         $checkoutUrl = $response->json('data.attributes.checkout_url');
 
         if (!$sessionId || !$checkoutUrl) {
-            $renewalSubscription->update(['status' => 'failed']);
-            $sourceSubscription->update([
-                'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ACTION_REQUIRED,
-                'renewal_retry_count' => (int) $sourceSubscription->renewal_retry_count + 1,
-                'renewal_last_attempt_at' => now(),
-                'renewal_next_attempt_at' => now()->addHours(6),
-            ]);
+            $this->markRenewalCheckoutFailed($sourceSubscription, $renewalSubscription, $payment);
 
             return [
                 'success' => false,
                 'message' => 'Incomplete renewal checkout response.',
             ];
         }
-
-        $renewalSubscription->update([
-            'paymongo_session_id' => $sessionId,
-        ]);
 
         $sourceUpdatePayload = [
             'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ACTION_REQUIRED,
@@ -203,7 +230,25 @@ class PremiumSubscriptionRenewalService
             $sourceUpdatePayload['pending_plan_effective_at'] = null;
         }
 
-        $sourceSubscription->update($sourceUpdatePayload);
+        DB::transaction(function () use ($renewalSubscription, $payment, $sourceSubscription, $sessionId, $sourceUpdatePayload): void {
+            ShopOwnerSubscriptionPayment::query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail()
+                ->update(['paymongo_session_id' => $sessionId]);
+
+            ShopOwnerSubscription::query()
+                ->whereKey($renewalSubscription->id)
+                ->lockForUpdate()
+                ->firstOrFail()
+                ->update(['paymongo_session_id' => $sessionId]);
+
+            ShopOwnerSubscription::query()
+                ->whereKey($sourceSubscription->id)
+                ->lockForUpdate()
+                ->firstOrFail()
+                ->update($sourceUpdatePayload);
+        });
 
         try {
             app(NotificationService::class)->sendToShopOwner(
@@ -223,7 +268,7 @@ class PremiumSubscriptionRenewalService
             Log::warning('Failed to send renewal action-required notification', [
                 'source_subscription_id' => $sourceSubscription->id,
                 'renewal_subscription_id' => $renewalSubscription->id,
-                'error' => $e->getMessage(),
+                'exception_class' => $e::class,
             ]);
         }
 
@@ -235,5 +280,40 @@ class PremiumSubscriptionRenewalService
             'checkout_url' => $checkoutUrl,
             'checkout_session_id' => $sessionId,
         ];
+    }
+
+    private function markRenewalCheckoutFailed(
+        ShopOwnerSubscription $sourceSubscription,
+        ShopOwnerSubscription $renewalSubscription,
+        ShopOwnerSubscriptionPayment $payment,
+    ): void {
+        DB::transaction(function () use ($sourceSubscription, $renewalSubscription, $payment): void {
+            $lockedPayment = ShopOwnerSubscriptionPayment::query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $lockedRenewal = ShopOwnerSubscription::query()
+                ->whereKey($renewalSubscription->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            $lockedSource = ShopOwnerSubscription::query()
+                ->whereKey($sourceSubscription->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($lockedPayment->status === 'pending') {
+                $lockedPayment->update(['status' => 'failed']);
+            }
+            if ($lockedRenewal->status === 'pending') {
+                $lockedRenewal->update(['status' => 'failed']);
+            }
+
+            $lockedSource->update([
+                'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ACTION_REQUIRED,
+                'renewal_retry_count' => (int) $lockedSource->renewal_retry_count + 1,
+                'renewal_last_attempt_at' => now(),
+                'renewal_next_attempt_at' => now()->addHours(6),
+            ]);
+        });
     }
 }

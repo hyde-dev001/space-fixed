@@ -8,8 +8,12 @@ use App\Models\OrderRefund;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\OrderRefundService;
+use App\Services\PaymentSettlementService;
+use App\Services\PaymongoRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -17,6 +21,13 @@ use Tests\TestCase;
 class OrderItemBasedPartialRefundFlowTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::fake();
+    }
 
     #[Test]
     public function online_partial_refund_can_match_subtotal_when_order_has_vat_on_top(): void
@@ -98,6 +109,237 @@ class OrderItemBasedPartialRefundFlowTest extends TestCase
     {
         $this->assertTrue(Schema::hasTable('order_refund_items'));
         $this->assertTrue(Schema::hasTable('pos_refund_items'));
+    }
+
+    #[Test]
+    public function online_full_refund_uses_captured_product_amount_when_voucher_reduced_payment(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+            'paymongo_secret_key' => 'sk_test_voucher_refund',
+        ]);
+
+        /** @var User $customer */
+        $customer = User::factory()->create();
+
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Voucher Refund Shoe',
+            'slug' => 'voucher-refund-shoe-' . random_int(1000, 9999),
+            'price' => 7589.29,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+
+        $order = Order::create([
+            'shop_owner_id' => $shopOwner->id,
+            'customer_id' => $customer->id,
+            'order_number' => 'ORD-VOUCHER-REFUND-' . random_int(1000, 9999),
+            'customer_name' => $customer->name,
+            'customer_email' => $customer->email,
+            'customer_phone' => '09171234567',
+            'customer_address' => 'Test Address',
+            'total_amount' => 7589.29,
+            'vat_amount' => 910.71,
+            'shipping_fee' => 98,
+            'status' => 'delivered',
+            'payment_method' => 'paymongo_card',
+            'payment_status' => 'paid',
+            'paymongo_payment_id' => 'pay_voucher_refund_123',
+            'paid_at' => now()->subDay(),
+            'cancellation_refund_window_started_at' => now()->subMinutes(10),
+            'cancellation_refund_window_minutes' => 1440,
+        ]);
+
+        OrderItem::create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'product_slug' => $product->slug,
+            'price' => 7589.29,
+            'quantity' => 1,
+            'subtotal' => 7589.29,
+            'size' => '43',
+            'color' => 'Black',
+            'product_image' => null,
+        ]);
+
+        $this->mock(PaymongoRefundService::class, function ($mock): void {
+            $mock->shouldReceive('getPaymentAmountInCentavos')
+                ->once()
+                ->andReturn(759800);
+        });
+
+        $response = $this->actingAs($customer, 'user')
+            ->post('/orders/request-refund', [
+                'order_id' => $order->id,
+                'reason' => 'damaged_item',
+                'request_type' => 'full',
+                'media' => $this->buildRefundMedia(),
+            ]);
+
+        $response->assertStatus(200)->assertJsonPath('success', true);
+
+        $refund = OrderRefund::query()->latest('id')->first();
+        $this->assertNotNull($refund);
+        $this->assertSame(7598.0, round((float) ($refund?->amount ?? 0), 2));
+        $this->assertSame(
+            7500.0,
+            app(\App\Services\OrderRefundService::class)->resolvePayoutAmount($refund, $order),
+        );
+    }
+
+    #[Test]
+    public function voucher_refund_execution_sends_product_amount_without_shipping(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+            'paymongo_secret_key' => 'sk_test_voucher_execution',
+        ]);
+        $customer = User::factory()->create();
+        $order = Order::create([
+            'shop_owner_id' => $shopOwner->id,
+            'customer_id' => $customer->id,
+            'order_number' => 'ORD-VOUCHER-EXEC-' . random_int(1000, 9999),
+            'customer_name' => $customer->name,
+            'customer_email' => $customer->email,
+            'customer_phone' => '09171234567',
+            'customer_address' => 'Test Address',
+            'total_amount' => 7589.29,
+            'vat_amount' => 910.71,
+            'shipping_fee' => 98,
+            'status' => 'delivered',
+            'payment_method' => 'paymongo_card',
+            'payment_status' => 'paid',
+            'paymongo_payment_id' => 'pay_voucher_execution_123',
+            'paid_at' => now()->subDay(),
+        ]);
+        $refund = OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'flow_type' => 'request_approval',
+            'status' => 'pending_approval',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'amount' => 8598,
+            'reason_code' => 'damaged_item',
+        ]);
+
+        $this->mock(PaymongoRefundService::class, function ($mock): void {
+            $mock->shouldReceive('getPaymentAmountInCentavos')
+                ->once()
+                ->andReturn(759800);
+            $mock->shouldReceive('createRefund')
+                ->once()
+                ->withArgs(fn ($key, $paymentId, $amount) => $key === 'sk_test_voucher_execution'
+                    && $paymentId === 'pay_voucher_execution_123'
+                    && $amount === 750000)
+                ->andReturn([
+                    'success' => true,
+                    'status' => 'succeeded',
+                    'refund_id' => 're_voucher_product_only',
+                ]);
+        });
+        $this->mock(PaymentSettlementService::class, function ($mock): void {
+            $mock->shouldReceive('settleOrderRefunded')->once();
+        });
+
+        $result = app(OrderRefundService::class)->executeApprovedRefund($refund->fresh());
+
+        $this->assertSame('refunded', $result['result']);
+        $this->assertSame(7500.0, (float) $refund->fresh()->amount);
+    }
+
+    #[Test]
+    public function voucher_partial_refund_line_amount_is_not_prorated_twice_during_execution(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+            'paymongo_secret_key' => 'sk_test_voucher_partial_execution',
+        ]);
+        $customer = User::factory()->create();
+        $product = Product::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Voucher Partial Execution Shoe',
+            'slug' => 'voucher-partial-execution-shoe-' . random_int(1000, 9999),
+            'price' => 500,
+            'stock_quantity' => 10,
+            'is_active' => true,
+        ]);
+        $order = Order::create([
+            'shop_owner_id' => $shopOwner->id,
+            'customer_id' => $customer->id,
+            'order_number' => 'ORD-VOUCHER-PARTIAL-EXEC-' . random_int(1000, 9999),
+            'customer_name' => $customer->name,
+            'customer_email' => $customer->email,
+            'customer_phone' => '09171234567',
+            'customer_address' => 'Test Address',
+            'total_amount' => 1000,
+            'vat_amount' => 0,
+            'shipping_fee' => 50,
+            'status' => 'delivered',
+            'payment_method' => 'paymongo_card',
+            'payment_status' => 'paid',
+            'paymongo_payment_id' => 'pay_voucher_partial_execution_123',
+            'paid_at' => now()->subDay(),
+        ]);
+        $orderItem = OrderItem::create([
+            'order_id' => $order->id,
+            'product_id' => $product->id,
+            'product_name' => $product->name,
+            'product_slug' => $product->slug,
+            'price' => 500,
+            'quantity' => 2,
+            'subtotal' => 1000,
+            'size' => '43',
+            'color' => 'Black',
+            'product_image' => null,
+        ]);
+        $refund = OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'pending_approval',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'amount' => 400,
+            'reason_code' => 'damaged_item',
+        ]);
+        $refund->items()->create([
+            'order_item_id' => $orderItem->id,
+            'product_id' => $product->id,
+            'requested_qty' => 1,
+            'approved_qty' => 1,
+            'unit_price_snapshot' => 500,
+            'line_amount' => 400,
+            'inspection_disposition' => 'resellable',
+            'inventory_action' => 'restock',
+        ]);
+
+        $this->mock(PaymongoRefundService::class, function ($mock): void {
+            $mock->shouldReceive('getPaymentAmountInCentavos')->zeroOrMoreTimes()->andReturn(85000);
+            $mock->shouldReceive('createRefund')
+                ->once()
+                ->withArgs(fn ($key, $paymentId, $amount) => $key === 'sk_test_voucher_partial_execution'
+                    && $paymentId === 'pay_voucher_partial_execution_123'
+                    && $amount === 40000)
+                ->andReturn([
+                    'success' => true,
+                    'status' => 'succeeded',
+                    'refund_id' => 're_voucher_partial_product_only',
+                ]);
+        });
+        $this->mock(PaymentSettlementService::class, function ($mock): void {
+            $mock->shouldReceive('settleOrderRefunded')->once();
+        });
+
+        $result = app(OrderRefundService::class)->executeApprovedRefund($refund->fresh());
+
+        $this->assertSame('refunded', $result['result']);
+        $this->assertSame(400.0, (float) $refund->fresh()->amount);
     }
 
     #[Test]

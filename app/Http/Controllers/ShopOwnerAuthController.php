@@ -2,13 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\NotificationType;
 use App\Mail\ShopOwnerApplicationUnderReviewMail;
 use App\Services\CaviteLocationPolicyService;
+use App\Models\Notification;
 use App\Models\ShopOwner;
 use App\Enums\ShopOwnerStatus;
 use App\Models\ShopDocument;
 use App\Models\Employee;
 use App\Models\User;
+use App\Services\EmployeeMfaService;
+use App\Services\ShopOwnerDocumentRequirementService;
+use App\Services\ShopDocumentLifecycleService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Hash;
@@ -19,11 +24,13 @@ use App\Rules\NotDisposableEmail;
 use Inertia\Inertia;
 use Inertia\Response as InertiaResponse;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 
 /**
  * ShopOwnerAuthController
@@ -33,13 +40,22 @@ use Illuminate\Support\Facades\Validator;
  */
 class ShopOwnerAuthController extends Controller
 {
+    public function __construct(
+        private readonly ShopOwnerDocumentRequirementService $documentRequirements,
+        private readonly ShopDocumentLifecycleService $documentLifecycle,
+        private readonly EmployeeMfaService $mfa,
+    ) {}
+
     private const MAX_RESUBMISSION_ATTEMPTS = 3;
     private const REGISTRATION_EMAIL_OTP_TTL_MINUTES = 10;
     private const REGISTRATION_EMAIL_OTP_MAX_ATTEMPTS = 5;
     private const REGISTRATION_EMAIL_VERIFIED_TTL_MINUTES = 60;
-    private const LOGIN_EMAIL_OTP_TTL_MINUTES = 10;
-    private const LOGIN_EMAIL_OTP_MAX_ATTEMPTS = 5;
+    private const LOGIN_TOTP_TTL_MINUTES = 10;
+    private const LOGIN_TOTP_MAX_ATTEMPTS = 5;
+    private const LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY = 'shop_owner_2fa_attempts';
     private const LOGIN_TWO_FACTOR_SESSION_KEY = 'shop_owner_2fa_entry';
+    private const LOGIN_TOTP_ENROLLMENT_SESSION_KEY = 'shop_owner_totp_login_enrollment';
+    private const DUMMY_PASSWORD_HASH = '$2y$10$5n3DruMVEXy/QDrfseoa.uJ3ed2F8YjGuWk8rbM.tE0uNTd85ew.C';
 
     /**
      * Show signed resubmission form for rejected applications.
@@ -58,16 +74,44 @@ class ShopOwnerAuthController extends Controller
         $remainingAttempts = max(0, self::MAX_RESUBMISSION_ATTEMPTS - $usedAttempts);
         $limitReached = $remainingAttempts <= 0;
 
-        $documents = $shopOwner->documents()->get()->groupBy('document_type');
-        $toDocumentPayload = static function ($document) {
+        $documents = $shopOwner->documents()->get();
+        $latestRequiredDocuments = $this->documentRequirements->latestRequiredDocuments($documents);
+        $latestDocumentsBySlot = $this->latestDocumentsByLogicalSlot($shopOwner);
+        $otherDocuments = $documents
+            ->filter(function ($document) use ($latestDocumentsBySlot): bool {
+                $normalizedType = $this->documentRequirements->normalizeType((string) $document->document_type);
+                if ($normalizedType === 'other_supporting_document') {
+                    return true;
+                }
+
+                $slot = trim((string) $document->logical_slot);
+
+                return str_starts_with($slot, 'supporting_document:')
+                    && ($latestDocumentsBySlot[$slot]->id ?? null) === $document->id;
+            })
+            ->sortByDesc('id')
+            ->values();
+        $documentLinkExpiresAt = now()->addDays(14);
+        $toDocumentPayload = function ($document) use ($shopOwner, $documentLinkExpiresAt) {
             if (!$document) {
                 return null;
+            }
+
+            $logicalSlot = trim((string) $document->logical_slot);
+            if ($logicalSlot === ''
+                && $this->documentRequirements->normalizeType((string) $document->document_type) === 'other_supporting_document') {
+                $logicalSlot = 'supporting_document:legacy:' . $document->id;
             }
 
             return [
                 'id' => $document->id,
                 'type' => $document->document_type,
-                'url' => asset('storage/' . ltrim((string) $document->file_path, '/')),
+                'logical_slot' => $logicalSlot !== '' ? $logicalSlot : null,
+                'url' => URL::temporarySignedRoute(
+                    'shop-owner.resubmission.document',
+                    $documentLinkExpiresAt,
+                    ['shopOwner' => $shopOwner->id, 'document' => $document->id],
+                ),
                 'fileName' => basename((string) $document->file_path),
             ];
         };
@@ -76,7 +120,7 @@ class ShopOwnerAuthController extends Controller
             ? null
             : URL::temporarySignedRoute(
                 'shop-owner.resubmission.submit',
-                now()->addDays(14),
+                $documentLinkExpiresAt,
                 ['shopOwner' => $shopOwner->id]
             );
 
@@ -105,22 +149,28 @@ class ShopOwnerAuthController extends Controller
                     'shopGeofenceRadius' => (int) ($shopOwner->shop_geofence_radius ?? 90),
                 ],
                 'documents' => [
-                    'dti_registration' => $toDocumentPayload($documents->get('dti_registration')?->sortByDesc('id')->first()),
-                    'mayors_permit' => $toDocumentPayload($documents->get('mayors_permit')?->sortByDesc('id')->first()),
-                    'bir_certificate' => $toDocumentPayload($documents->get('bir_certificate')?->sortByDesc('id')->first()),
-                    'valid_id' => $toDocumentPayload($documents->get('valid_id')?->sortByDesc('id')->first()),
-                    'other_documents' => $documents
-                        ->get('other_supporting_document', collect())
-                        ->sortByDesc('id')
-                        ->values()
-                        ->map(static function ($document) {
-                            return [
-                                'id' => $document->id,
-                                'type' => $document->document_type,
-                                'url' => asset('storage/' . ltrim((string) $document->file_path, '/')),
-                                'fileName' => basename((string) $document->file_path),
-                            ];
-                        })
+                    'dti_registration' => $toDocumentPayload(
+                        $latestDocumentsBySlot['business_registration']
+                            ?? $latestRequiredDocuments['dti_registration']
+                            ?? null,
+                    ),
+                    'mayors_permit' => $toDocumentPayload(
+                        $latestDocumentsBySlot['mayors_permit']
+                            ?? $latestRequiredDocuments['mayors_permit']
+                            ?? null,
+                    ),
+                    'bir_certificate' => $toDocumentPayload(
+                        $latestDocumentsBySlot['bir_certificate']
+                            ?? $latestRequiredDocuments['bir_certificate']
+                            ?? null,
+                    ),
+                    'valid_id' => $toDocumentPayload(
+                        $latestDocumentsBySlot['valid_id']
+                            ?? $latestRequiredDocuments['valid_id']
+                            ?? null,
+                    ),
+                    'other_documents' => $otherDocuments
+                        ->map(fn ($document) => $toDocumentPayload($document))
                         ->all(),
                 ],
             ],
@@ -161,7 +211,10 @@ class ShopOwnerAuthController extends Controller
             ? $shopOwner->status->value
             : (string) $shopOwner->status;
 
-        if ($statusValue !== ShopOwnerStatus::REJECTED->value) {
+        if (!in_array($statusValue, [
+            ShopOwnerStatus::REJECTED->value,
+            ShopOwnerStatus::PENDING->value,
+        ], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Only rejected applications can be resubmitted.',
@@ -169,7 +222,8 @@ class ShopOwnerAuthController extends Controller
         }
 
         $usedAttempts = max(0, (int) ($shopOwner->resubmission_count ?? 0));
-        if ($usedAttempts >= self::MAX_RESUBMISSION_ATTEMPTS) {
+        if ($statusValue === ShopOwnerStatus::REJECTED->value
+            && $usedAttempts >= self::MAX_RESUBMISSION_ATTEMPTS) {
             return response()->json([
                 'success' => false,
                 'message' => 'Resubmission limit reached. You can only resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times.',
@@ -178,13 +232,6 @@ class ShopOwnerAuthController extends Controller
                 ],
             ], 422);
         }
-
-        $requiredDocumentTypes = [
-            'dti_registration',
-            'mayors_permit',
-            'bir_certificate',
-            'valid_id',
-        ];
 
         try {
             $validated = $request->validate([
@@ -202,26 +249,26 @@ class ShopOwnerAuthController extends Controller
                 'shop_longitude' => 'nullable|numeric|between:-180,180',
                 'shop_address' => 'nullable|string|max:500',
                 'shop_geofence_radius' => 'nullable|integer|min:10|max:5000',
-                'dti_registration' => 'nullable|file|mimes:jpg,jpeg,png|max:5120',
+                'business_registration' => 'nullable|file|mimes:jpg,jpeg,png|max:5120',
+                'business_registration_type' => 'required|in:dti_registration,sec_registration',
                 'mayors_permit' => 'nullable|file|mimes:jpg,jpeg,png|max:5120',
                 'bir_certificate' => 'nullable|file|mimes:jpg,jpeg,png|max:5120',
                 'valid_id' => 'nullable|file|mimes:jpg,jpeg,png|max:5120',
+                'document_metadata' => 'required|array',
+                'document_metadata.*' => 'required|array',
+                'document_metadata.*.expiration_mode' => 'required|string',
+                'document_metadata.*.expires_on' => 'nullable|date_format:Y-m-d',
+                'document_metadata.*.issued_on' => 'nullable|date_format:Y-m-d',
+                'submission_keys' => 'nullable|array',
+                'submission_keys.*' => 'uuid',
                 'other_documents' => 'nullable|array|max:8',
-                'other_documents.*' => 'nullable|file|mimes:jpg,jpeg,png|max:5120',
+                'other_documents.*' => 'file|mimes:jpg,jpeg,png|max:5120',
+                'other_document_metadata' => 'nullable|array|max:8',
+                'other_document_metadata.*' => 'required|array',
+                'other_document_metadata.*.expiration_mode' => 'required|string',
+                'other_document_metadata.*.expires_on' => 'nullable|date_format:Y-m-d',
+                'other_document_metadata.*.issued_on' => 'nullable|date_format:Y-m-d',
             ]);
-
-            foreach ($requiredDocumentTypes as $documentType) {
-                $hasExistingDocument = $shopOwner
-                    ->documents()
-                    ->where('document_type', $documentType)
-                    ->exists();
-
-                if (!$request->hasFile($documentType) && !$hasExistingDocument) {
-                    throw ValidationException::withMessages([
-                        $documentType => ['This document is required for resubmission.'],
-                    ]);
-                }
-            }
 
             $caviteLocationPolicy->assertRegistrationLocation(
                 $validated['shop_latitude'] ?? null,
@@ -237,103 +284,74 @@ class ShopOwnerAuthController extends Controller
                 ]
             );
 
-            DB::beginTransaction();
-
-            $shopOwner->update([
-                'first_name' => $validated['first_name'],
-                'last_name' => $validated['last_name'],
-                'phone' => $validated['phone'],
-                'business_name' => $validated['business_name'],
-                'business_address' => $validated['business_address'],
-                'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
-                'business_type' => $validated['business_type'],
-                'registration_type' => $validated['registration_type'],
-                'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
-                'shop_latitude' => $validated['shop_latitude'] ?? null,
-                'shop_longitude' => $validated['shop_longitude'] ?? null,
-                'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
-                'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
-                'status' => ShopOwnerStatus::PENDING->value,
-                'rejection_reason' => null,
-                'resubmission_count' => $usedAttempts + 1,
-            ]);
-
-            $shopOwner->documents()->update(['status' => 'pending']);
-
-            foreach ($requiredDocumentTypes as $documentType) {
-                if ($request->hasFile($documentType)) {
-                    $file = $request->file($documentType);
-
-                    if ($file) {
-                        $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                        $newPath = $file->storeAs('shop_documents', $fileName, 'public');
-
-                        $latestDocument = $shopOwner
-                            ->documents()
-                            ->where('document_type', $documentType)
-                            ->latest('id')
-                            ->first();
-
-                        if ($latestDocument) {
-                            $oldPath = (string) $latestDocument->file_path;
-                            $latestDocument->update([
-                                'file_path' => $newPath,
-                                'status' => 'pending',
-                            ]);
-
-                            if ($oldPath !== '' && $oldPath !== $newPath) {
-                                Storage::disk('public')->delete($oldPath);
-                            }
-                        } else {
-                            ShopDocument::create([
-                                'shop_owner_id' => $shopOwner->id,
-                                'document_type' => $documentType,
-                                'file_path' => $newPath,
-                                'status' => 'pending',
-                            ]);
-                        }
-                    }
-                }
+            if ($statusValue === ShopOwnerStatus::PENDING->value) {
+                return $this->resubmissionResponse($request, true);
             }
 
-            if ($request->hasFile('other_documents')) {
-                foreach ((array) $request->file('other_documents') as $file) {
-                    if (!$file) {
-                        continue;
-                    }
+            $shopOwner = DB::transaction(function () use ($shopOwner, $validated, $request): ShopOwner {
+                $lockedShopOwner = ShopOwner::query()->lockForUpdate()->findOrFail($shopOwner->id);
+                $lockedStatusValue = $lockedShopOwner->status instanceof ShopOwnerStatus
+                    ? $lockedShopOwner->status->value
+                    : (string) $lockedShopOwner->status;
 
-                    $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                    $filePath = $file->storeAs('shop_documents', $fileName, 'public');
-
-                    ShopDocument::create([
-                        'shop_owner_id' => $shopOwner->id,
-                        'document_type' => 'other_supporting_document',
-                        'file_path' => $filePath,
-                        'status' => 'pending',
+                if ($lockedStatusValue !== ShopOwnerStatus::REJECTED->value) {
+                    throw ValidationException::withMessages([
+                        'status' => ['Only rejected applications can be resubmitted.'],
                     ]);
                 }
-            }
 
-            DB::commit();
+                $lockedUsedAttempts = max(0, (int) ($lockedShopOwner->resubmission_count ?? 0));
+                if ($lockedUsedAttempts >= self::MAX_RESUBMISSION_ATTEMPTS) {
+                    throw ValidationException::withMessages([
+                        'email' => ['Resubmission limit reached. You can only resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times.'],
+                    ]);
+                }
+
+                $predecessors = $this->latestDocumentsByLogicalSlot($lockedShopOwner);
+                $entries = $this->registrationDocumentEntries($request, $validated, $predecessors, true);
+
+                $lockedShopOwner->forceFill([
+                    'first_name' => $validated['first_name'],
+                    'last_name' => $validated['last_name'],
+                    'phone' => $validated['phone'],
+                    'business_name' => $validated['business_name'],
+                    'business_address' => $validated['business_address'],
+                    'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
+                    'business_type' => $validated['business_type'],
+                    'registration_type' => $validated['registration_type'],
+                    'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
+                    'shop_latitude' => $validated['shop_latitude'] ?? null,
+                    'shop_longitude' => $validated['shop_longitude'] ?? null,
+                    'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
+                    'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
+                    'status' => ShopOwnerStatus::PENDING->value,
+                    'rejection_reason' => null,
+                    'resubmission_count' => $lockedUsedAttempts + 1,
+                ])->save();
+
+                $this->documentLifecycle->createPendingVersions($lockedShopOwner, $entries, true);
+
+                return $lockedShopOwner->fresh();
+            });
 
             Log::info('Shop owner application resubmitted successfully', [
                 'shop_owner_id' => $shopOwner->id,
                 'email' => $shopOwner->email,
             ]);
 
+            $this->notifySuperAdminsOfPendingRegistration($shopOwner);
             $this->sendApplicationUnderReviewEmail($shopOwner);
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
+                    'applied' => true,
                     'message' => 'Application resubmitted successfully. Please wait for admin review.',
                 ]);
             }
 
             return redirect()->route('shop-owner-register')->with('success', 'Application resubmitted successfully. Please wait for admin review.');
         } catch (ValidationException $e) {
-            DB::rollBack();
-
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
@@ -346,8 +364,6 @@ class ShopOwnerAuthController extends Controller
 
             throw $e;
         } catch (\Throwable $e) {
-            DB::rollBack();
-
             Log::error('Error resubmitting shop owner application', [
                 'shop_owner_id' => $shopOwner->id,
                 'error' => $e->getMessage(),
@@ -362,6 +378,24 @@ class ShopOwnerAuthController extends Controller
 
             return back()->withErrors(['message' => 'Resubmission failed. Please try again.'])->withInput();
         }
+    }
+
+    private function resubmissionResponse(Request $request, bool $idempotent = false)
+    {
+        $message = $idempotent
+            ? 'This application is already pending review.'
+            : 'Application resubmitted successfully. Please wait for admin review.';
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'success' => true,
+                'applied' => !$idempotent,
+                'idempotent' => $idempotent,
+                'message' => $message,
+            ]);
+        }
+
+        return redirect()->route('shop-owner-register')->with('success', $message);
     }
 
     /**
@@ -536,13 +570,29 @@ class ShopOwnerAuthController extends Controller
                 'shop_geofence_radius' => 'nullable|integer|min:10|max:5000',
                 // operating hours removed from required validation
 
-                // Document uploads
-                'dti_registration' => 'required|file|mimes:jpg,jpeg,png|max:5120',
+                // Versioned document uploads
+                'business_registration' => 'required|file|mimes:jpg,jpeg,png|max:5120',
+                'business_registration_type' => 'required|in:dti_registration,sec_registration',
                 'mayors_permit' => 'required|file|mimes:jpg,jpeg,png|max:5120',
                 'bir_certificate' => 'required|file|mimes:jpg,jpeg,png|max:5120',
                 'valid_id' => 'required|file|mimes:jpg,jpeg,png|max:5120',
+                'document_metadata' => 'required|array',
+                'document_metadata.business_registration' => 'required|array',
+                'document_metadata.mayors_permit' => 'required|array',
+                'document_metadata.bir_certificate' => 'required|array',
+                'document_metadata.valid_id' => 'required|array',
+                'document_metadata.*.expiration_mode' => 'required|string',
+                'document_metadata.*.expires_on' => 'nullable|date_format:Y-m-d',
+                'document_metadata.*.issued_on' => 'nullable|date_format:Y-m-d',
+                'submission_keys' => 'nullable|array',
+                'submission_keys.*' => 'uuid',
                 'other_documents' => 'nullable|array|max:8',
-                'other_documents.*' => 'nullable|file|mimes:jpg,jpeg,png|max:5120',
+                'other_documents.*' => 'file|mimes:jpg,jpeg,png|max:5120',
+                'other_document_metadata' => 'nullable|array|max:8',
+                'other_document_metadata.*' => 'required|array',
+                'other_document_metadata.*.expiration_mode' => 'required|string',
+                'other_document_metadata.*.expires_on' => 'nullable|date_format:Y-m-d',
+                'other_document_metadata.*.issued_on' => 'nullable|date_format:Y-m-d',
             ], [
                 'first_name.required' => 'Please enter your first name.',
                 'first_name.min' => 'First name must be at least 2 characters.',
@@ -565,10 +615,11 @@ class ShopOwnerAuthController extends Controller
                 'shop_geofence_radius.integer' => 'Geofence radius must be a whole number.',
                 'shop_geofence_radius.min' => 'Geofence radius must be at least 10 meters.',
                 'shop_geofence_radius.max' => 'Geofence radius must not exceed 5000 meters.',
-                'dti_registration.required' => 'Upload your Shop Registration document (DTI or SEC).',
-                'dti_registration.file' => 'Shop Registration (DTI/SEC) must be a valid file.',
-                'dti_registration.mimes' => 'Shop Registration (DTI/SEC) must be JPG, JPEG, or PNG only.',
-                'dti_registration.max' => 'Shop Registration (DTI/SEC) file size must not exceed 5MB.',
+                'business_registration.required' => 'Upload your Shop Registration document (DTI or SEC).',
+                'business_registration.file' => 'Business registration must be a valid file.',
+                'business_registration.mimes' => 'Business registration must be JPG, JPEG, or PNG only.',
+                'business_registration.max' => 'Business registration file size must not exceed 5MB.',
+                'business_registration_type.required' => 'Choose whether the business registration is DTI or SEC.',
                 'mayors_permit.required' => "Upload your Mayor's Permit or Shop Permit.",
                 'mayors_permit.file' => "Mayor's Permit / Shop Permit must be a valid file.",
                 'mayors_permit.mimes' => "Mayor's Permit / Shop Permit must be JPG, JPEG, or PNG only.",
@@ -626,105 +677,66 @@ class ShopOwnerAuthController extends Controller
                 ]
             );
 
-            DB::beginTransaction();
-
-            if ($isReapplication) {
-                $shopOwner = $existingRejectedShopOwner;
-
-                $shopOwner->update([
-                    'first_name' => $validated['first_name'],
-                    'last_name' => $validated['last_name'],
-                    'email' => $normalizedEmail,
-                    'phone' => $validated['phone'],
-                    'password' => null,
-                    'business_name' => $validated['business_name'],
-                    'business_address' => $validated['business_address'],
-                    'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
-                    'business_type' => $validated['business_type'],
-                    'registration_type' => $validated['registration_type'],
-                    'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
-                    'shop_latitude' => $validated['shop_latitude'] ?? null,
-                    'shop_longitude' => $validated['shop_longitude'] ?? null,
-                    'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
-                    'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
-                    'status' => 'pending',
-                    'rejection_reason' => null,
-                    'resubmission_count' => (int) ($shopOwner->resubmission_count ?? 0) + 1,
-                ]);
-
-                $oldDocuments = $shopOwner->documents()->get();
-                foreach ($oldDocuments as $oldDocument) {
-                    if (!empty($oldDocument->file_path)) {
-                        Storage::disk('public')->delete($oldDocument->file_path);
-                    }
-                }
-                $shopOwner->documents()->delete();
-            } else {
-                // Create shop owner with pending status
-                $shopOwner = ShopOwner::create([
-                    'first_name' => $validated['first_name'],
-                    'last_name' => $validated['last_name'],
-                    'email' => $normalizedEmail,
-                    'phone' => $validated['phone'],
-                    'password' => null, // Will be set after admin approval via email
-                    'business_name' => $validated['business_name'],
-                    'business_address' => $validated['business_address'],
-                    'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
-                    'business_type' => $validated['business_type'],
-                    'registration_type' => $validated['registration_type'],
-                    'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
-                    'shop_latitude' => $validated['shop_latitude'] ?? null,
-                    'shop_longitude' => $validated['shop_longitude'] ?? null,
-                    'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
-                    'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
-                    // operating_hours intentionally omitted (removed client-side)
-                    'status' => 'pending', // Requires admin approval
-                    'resubmission_count' => 0,
-                ]);
-            }
-
-            // Upload and save documents
-            $documents = [
-                'dti_registration',
-                'mayors_permit',
-                'bir_certificate',
-                'valid_id',
-            ];
-
-            foreach ($documents as $documentType) {
-                if ($request->hasFile($documentType)) {
-                    $file = $request->file($documentType);
-                    $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                    $filePath = $file->storeAs('shop_documents', $fileName, 'public');
-
-                    ShopDocument::create([
-                        'shop_owner_id' => $shopOwner->id,
-                        'document_type' => $documentType,
-                        'file_path' => $filePath,
+            $shopOwner = DB::transaction(function () use (
+                $validated,
+                $normalizedEmail,
+                $existingRejectedShopOwner,
+                $isReapplication,
+                $request,
+            ): ShopOwner {
+                if ($isReapplication) {
+                    $shopOwner = ShopOwner::query()->lockForUpdate()->findOrFail($existingRejectedShopOwner->id);
+                    $shopOwner->update([
+                        'first_name' => $validated['first_name'],
+                        'last_name' => $validated['last_name'],
+                        'email' => $normalizedEmail,
+                        'phone' => $validated['phone'],
+                        'password' => null,
+                        'business_name' => $validated['business_name'],
+                        'business_address' => $validated['business_address'],
+                        'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
+                        'business_type' => $validated['business_type'],
+                        'registration_type' => $validated['registration_type'],
+                        'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
+                        'shop_latitude' => $validated['shop_latitude'] ?? null,
+                        'shop_longitude' => $validated['shop_longitude'] ?? null,
+                        'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
+                        'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
                         'status' => 'pending',
+                        'rejection_reason' => null,
+                        'resubmission_count' => (int) ($shopOwner->resubmission_count ?? 0) + 1,
+                    ]);
+                } else {
+                    $shopOwner = ShopOwner::create([
+                        'first_name' => $validated['first_name'],
+                        'last_name' => $validated['last_name'],
+                        'email' => $normalizedEmail,
+                        'phone' => $validated['phone'],
+                        'password' => null,
+                        'business_name' => $validated['business_name'],
+                        'business_address' => $validated['business_address'],
+                        'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
+                        'business_type' => $validated['business_type'],
+                        'registration_type' => $validated['registration_type'],
+                        'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
+                        'shop_latitude' => $validated['shop_latitude'] ?? null,
+                        'shop_longitude' => $validated['shop_longitude'] ?? null,
+                        'shop_address' => $validated['shop_address'] ?? $validated['business_address'],
+                        'shop_geofence_radius' => $validated['shop_geofence_radius'] ?? 100,
+                        'status' => 'pending',
+                        'resubmission_count' => 0,
                     ]);
                 }
-            }
 
-            if ($request->hasFile('other_documents')) {
-                foreach ((array) $request->file('other_documents') as $file) {
-                    if (!$file) {
-                        continue;
-                    }
+                $predecessors = $isReapplication
+                    ? $this->latestDocumentsByLogicalSlot($shopOwner)
+                    : [];
+                $entries = $this->registrationDocumentEntries($request, $validated, $predecessors, $isReapplication);
+                $this->documentLifecycle->createPendingVersions($shopOwner, $entries, $isReapplication);
 
-                    $fileName = time() . '_' . uniqid() . '.' . $file->getClientOriginalExtension();
-                    $filePath = $file->storeAs('shop_documents', $fileName, 'public');
+                return $shopOwner->fresh();
+            });
 
-                    ShopDocument::create([
-                        'shop_owner_id' => $shopOwner->id,
-                        'document_type' => 'other_supporting_document',
-                        'file_path' => $filePath,
-                        'status' => 'pending',
-                    ]);
-                }
-            }
-
-            DB::commit();
             Cache::forget($this->registrationEmailOtpCacheKey($normalizedEmail));
 
             Log::info('Shop owner registered successfully', [
@@ -733,6 +745,7 @@ class ShopOwnerAuthController extends Controller
                 'business_name' => $shopOwner->business_name,
             ]);
 
+            $this->notifySuperAdminsOfPendingRegistration($shopOwner);
             $this->sendApplicationUnderReviewEmail($shopOwner);
 
             // Auto-login the shop owner so they can access the pending approval page
@@ -763,7 +776,6 @@ class ShopOwnerAuthController extends Controller
                 'email' => $shopOwner->email,
             ]);
         } catch (ValidationException $e) {
-            DB::rollBack();
             Log::warning('Shop owner registration validation failed', ['errors' => $e->errors()]);
 
             if ($request->expectsJson()) {
@@ -778,7 +790,6 @@ class ShopOwnerAuthController extends Controller
 
             throw $e;
         } catch (\Exception $e) {
-            DB::rollBack();
             Log::error('Error registering shop owner', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -793,6 +804,147 @@ class ShopOwnerAuthController extends Controller
 
             return back()->withErrors(['message' => 'Registration failed. Please try again.'])->withInput();
         }
+    }
+
+    /**
+     * @return array<string, ShopDocument>
+     */
+    private function latestDocumentsByLogicalSlot(ShopOwner $shopOwner): array
+    {
+        $latest = [];
+
+        foreach ($shopOwner->documents()->orderBy('id')->get() as $document) {
+            $slot = trim((string) $document->logical_slot);
+            if ($slot !== '' && $this->documentRequirements->slotForType($slot) !== $slot) {
+                $slot = '';
+            }
+
+            if ($slot === '') {
+                $normalizedType = $this->documentRequirements->normalizeType((string) $document->document_type);
+                $slot = match ($normalizedType) {
+                    'dti_registration', 'sec_registration' => 'business_registration',
+                    'mayors_permit', 'bir_certificate', 'valid_id' => $normalizedType,
+                    'other_supporting_document' => 'supporting_document:legacy:' . $document->id,
+                    default => '',
+                };
+            }
+
+            if ($slot !== '') {
+                $latest[$slot] = $document;
+            }
+        }
+
+        return $latest;
+    }
+
+    /**
+     * @param array<string, mixed> $validated
+     * @param array<string, ShopDocument> $predecessors
+     * @return array<int, array{metadata: array<string, mixed>, file?: \Illuminate\Http\UploadedFile|null, predecessor?: ShopDocument|null, submission_key?: string|null}>
+     */
+    private function registrationDocumentEntries(
+        Request $request,
+        array $validated,
+        array $predecessors,
+        bool $isReapplication,
+    ): array {
+        $documentTypes = [
+            'business_registration' => (string) $validated['business_registration_type'],
+            'mayors_permit' => 'mayors_permit',
+            'bir_certificate' => 'bir_certificate',
+            'valid_id' => 'valid_id',
+        ];
+        $errors = [];
+        $records = [];
+        $entries = [];
+
+        foreach ($documentTypes as $slot => $documentType) {
+            $metadata = is_array($validated['document_metadata'][$slot] ?? null)
+                ? $validated['document_metadata'][$slot]
+                : [];
+            $metadata['document_type'] = $documentType;
+            $metadata['logical_slot'] = $slot;
+            $file = $request->file($slot);
+            $predecessor = $predecessors[$slot] ?? null;
+
+            if (! $file && ! $predecessor) {
+                $errors[$slot][] = 'This document is required.';
+            }
+
+            if (! $file && $predecessor && $slot === 'business_registration') {
+                $previousType = $this->documentRequirements->normalizeType((string) $predecessor->document_type);
+                if ($previousType !== $documentType) {
+                    $errors[$slot][] = 'Upload a new file when changing DTI/SEC registration type.';
+                }
+            }
+
+            if (! $file && $predecessor && (
+                (string) $predecessor->disk !== 'local'
+                || trim((string) $predecessor->file_path) === ''
+                || ! Storage::disk('local')->exists((string) $predecessor->file_path)
+            )) {
+                $errors[$slot][] = 'Upload a replacement because the previous private document is unavailable.';
+            }
+
+            $records[] = $metadata;
+            $entries[] = [
+                'metadata' => $metadata,
+                'file' => $file,
+                'predecessor' => $predecessor,
+                'submission_key' => $validated['submission_keys'][$slot] ?? Str::uuid()->toString(),
+            ];
+        }
+
+        $uploadedSupportingDocuments = $request->file('other_documents', []);
+        $supportingMetadata = $validated['other_document_metadata'] ?? [];
+        $supportingKeys = array_values(array_unique(array_merge(
+            array_keys(is_array($uploadedSupportingDocuments) ? $uploadedSupportingDocuments : []),
+            array_keys(is_array($supportingMetadata) ? $supportingMetadata : []),
+        )));
+
+        foreach ($supportingKeys as $supportingKey) {
+            $isUuidSlot = is_string($supportingKey) && Str::isUuid($supportingKey);
+            $isLegacySlot = is_string($supportingKey)
+                && preg_match('/^legacy:[1-9][0-9]*$/', $supportingKey) === 1
+                && isset($predecessors['supporting_document:'.$supportingKey]);
+            if (! $isUuidSlot && ! $isLegacySlot) {
+                $errors['other_documents'][] = 'Supporting document slots must use a stable UUID or an existing legacy slot.';
+                continue;
+            }
+
+            $slot = 'supporting_document:' . strtolower($supportingKey);
+            $metadata = is_array($supportingMetadata[$supportingKey] ?? null)
+                ? $supportingMetadata[$supportingKey]
+                : [];
+            $metadata['document_type'] = 'supporting_document';
+            $metadata['logical_slot'] = $slot;
+            $file = is_array($uploadedSupportingDocuments)
+                ? ($uploadedSupportingDocuments[$supportingKey] ?? null)
+                : null;
+            $predecessor = $predecessors[$slot] ?? null;
+
+            if (! $file && ! $predecessor) {
+                $errors[$slot][] = 'Upload this supporting document or provide a reusable predecessor.';
+            }
+
+            $records[] = $metadata;
+            $entries[] = [
+                'metadata' => $metadata,
+                'file' => $file,
+                'predecessor' => $predecessor,
+                'submission_key' => $validated['submission_keys'][$slot] ?? Str::uuid()->toString(),
+            ];
+        }
+
+        foreach ($this->documentRequirements->validateSubmission($records) as $slot => $messages) {
+            $errors[$slot] = array_merge($errors[$slot] ?? [], $messages);
+        }
+
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        return $entries;
     }
 
     private function normalizeEmail(string $email): string
@@ -898,6 +1050,20 @@ class ShopOwnerAuthController extends Controller
         }
     }
 
+    private function notifySuperAdminsOfPendingRegistration(ShopOwner $shopOwner): void
+    {
+        Notification::notifyAllSuperAdmins(
+            type: NotificationType::SHOP_REGISTRATION_PENDING,
+            title: 'New shop registration',
+            message: (string) $shopOwner->business_name.' submitted a registration for review.',
+            actionUrl: '/admin/registrations?status=pending',
+            data: [
+                'shop_owner_id' => (int) $shopOwner->getKey(),
+                'business_name' => (string) $shopOwner->business_name,
+            ],
+        );
+    }
+
     /**
      * Login a shop owner
      * 
@@ -917,55 +1083,67 @@ class ShopOwnerAuthController extends Controller
             // Find shop owner by email
             $shopOwner = ShopOwner::where('email', $credentials['email'])->first();
 
-            // Check if shop owner exists
-            if (!$shopOwner) {
+            $passwordHash = $shopOwner?->getAuthPassword() ?: self::DUMMY_PASSWORD_HASH;
+            if (! $shopOwner || ! Hash::check((string) $credentials['password'], (string) $passwordHash)) {
                 throw ValidationException::withMessages([
                     'email' => ['Invalid email or password.'],
                 ]);
             }
 
-            // Check if account is approved
-            if ($shopOwner->status === 'pending') {
+            $statusValue = $shopOwner->status instanceof ShopOwnerStatus
+                ? $shopOwner->status->value
+                : (string) $shopOwner->status;
+
+            // Account status is revealed only after selected-context credentials verify.
+            if ($statusValue === ShopOwnerStatus::PENDING->value) {
                 throw ValidationException::withMessages([
                     'email' => ['Your application is still pending admin approval. Please wait for confirmation.'],
                 ]);
             }
 
-            if ($shopOwner->status === 'rejected') {
+            if ($statusValue === ShopOwnerStatus::REJECTED->value) {
                 $reason = $shopOwner->rejection_reason ? ': ' . $shopOwner->rejection_reason : '';
                 throw ValidationException::withMessages([
                     'email' => ['Your application was rejected' . $reason . '. Please contact support.'],
                 ]);
             }
 
-            if ($shopOwner->status !== ShopOwnerStatus::APPROVED) {
+            if ($statusValue !== ShopOwnerStatus::APPROVED->value) {
                 throw ValidationException::withMessages([
                     'email' => ['Your account is inactive. Please contact support.'],
                 ]);
             }
 
-            // Verify password
-            if (!Hash::check($credentials['password'], $shopOwner->password)) {
-                throw ValidationException::withMessages([
-                    'email' => ['Invalid email or password.'],
-                ]);
-            }
-
             $remember = (bool) $request->boolean('remember');
 
-            if ((bool) ($shopOwner->two_factor_email_enabled ?? false)) {
+            if ($shopOwner->hasTotpEnabled()) {
                 $this->beginLoginTwoFactorChallenge($request, $shopOwner, $remember);
 
                 if ($request->expectsJson()) {
                     return response()->json([
                         'success' => true,
                         'requires_two_factor' => true,
-                        'message' => 'Verification code sent to your email.',
+                        'message' => 'Authenticator verification required.',
                         'redirect' => route('shop-owner.two-factor.challenge'),
                     ], 202);
                 }
 
-                return redirect()->route('shop-owner.two-factor.challenge')->with('status', 'otp-sent');
+                return redirect()->route('shop-owner.two-factor.challenge');
+            }
+
+            if ((bool) ($shopOwner->two_factor_email_enabled ?? false)) {
+                $this->beginLoginTwoFactorEnrollment($request, $shopOwner, $remember);
+
+                if ($request->expectsJson()) {
+                    return response()->json([
+                        'success' => true,
+                        'requires_two_factor_setup' => true,
+                        'message' => 'Authenticator setup is required before you can sign in.',
+                        'redirect' => route('shop-owner.two-factor.enroll'),
+                    ], 202);
+                }
+
+                return redirect()->route('shop-owner.two-factor.enroll');
             }
 
             // Login the shop owner using shop_owner guard
@@ -1033,13 +1211,42 @@ class ShopOwnerAuthController extends Controller
             return redirect()->route('shop-owner.login.form');
         }
 
-        $entry = $this->readLoginTwoFactorEntry($request, (int) $shopOwner->id);
-        $secondsRemaining = max(0, ((int) ($entry['expires_at'] ?? now()->timestamp)) - now()->timestamp);
+        if ($request->session()->has(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY)) {
+            return redirect()->route('shop-owner.two-factor.enroll');
+        }
 
-        return Inertia::render('UserSide/Auth/ShopOwnerTwoFactor', [
-            'status' => session('status'),
-            'email' => $this->maskEmail((string) $shopOwner->email),
-            'seconds_remaining' => $secondsRemaining,
+        return Inertia::render('ERP/EmployeeMfaChallenge', [
+            'companyAccount' => (string) $shopOwner->email,
+            'verifyRoute' => route('shop-owner.two-factor.verify'),
+            'loginRoute' => route('login'),
+        ]);
+    }
+
+    public function showTwoFactorEnrollment(Request $request)
+    {
+        $shopOwner = $this->resolvePendingTwoFactorShopOwner($request);
+        $pending = $shopOwner ? $this->pendingLoginEnrollment($request, $shopOwner) : null;
+
+        if (! $shopOwner || $pending === null) {
+            $this->clearLoginTwoFactorChallenge($request, $shopOwner?->getKey());
+
+            return redirect()->route('shop-owner.login.form');
+        }
+
+        try {
+            $secret = Crypt::decryptString($pending['secret']);
+        } catch (\Throwable) {
+            $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
+
+            return redirect()->route('shop-owner.login.form');
+        }
+
+        return Inertia::render('UserSide/Auth/ShopOwnerTotpEnrollment', [
+            'qr_code' => $this->mfa->qrDataUri(
+                $this->mfa->provisioningUriForEmail((string) $shopOwner->email, $secret),
+            ),
+            'manual_key' => $secret,
+            'expires_at' => $pending['expires_at'],
         ]);
     }
 
@@ -1050,59 +1257,95 @@ class ShopOwnerAuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'otp' => ['required', 'digits:6'],
+                'code' => ['required', 'string', 'max:32'],
             ]);
 
             $shopOwner = $this->resolvePendingTwoFactorShopOwner($request);
             if (!$shopOwner) {
                 throw ValidationException::withMessages([
-                    'otp' => ['Your login session expired. Please sign in again.'],
+                    'code' => ['Your login session expired. Please sign in again.'],
                 ]);
             }
 
-            $entry = $this->readLoginTwoFactorEntry($request, (int) $shopOwner->id);
-            if (!is_array($entry)) {
+            if ($request->session()->has(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY)) {
                 throw ValidationException::withMessages([
-                    'otp' => ['Verification code expired. Please request a new code.'],
+                    'code' => ['Authenticator setup is required before you can sign in.'],
                 ]);
             }
 
-            if ((int) ($entry['attempts'] ?? 0) >= self::LOGIN_EMAIL_OTP_MAX_ATTEMPTS) {
+            $attempts = (int) $request->session()->get(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY, 0);
+            if ($attempts >= self::LOGIN_TOTP_MAX_ATTEMPTS) {
                 $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
 
                 throw ValidationException::withMessages([
-                    'otp' => ['Too many failed attempts. Please sign in again.'],
+                    'code' => ['Too many failed attempts. Please sign in again.'],
                 ]);
             }
 
-            if ((int) ($entry['expires_at'] ?? 0) < now()->timestamp) {
-                $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
+            $code = trim((string) $validated['code']);
+            $method = preg_match('/\A\d{6}\z/', $code) === 1 ? 'totp' : 'recovery_code';
+            $authenticatedOwner = DB::transaction(function () use ($shopOwner, $request, $code, $method): ShopOwner|false {
+                $lockedOwner = ShopOwner::query()
+                    ->whereKey($shopOwner->getKey())
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $lockedOwner instanceof ShopOwner
+                    || ! $this->isApprovedShopOwner($lockedOwner)
+                    || ! $lockedOwner->hasTotpEnabled()) {
+                    return false;
+                }
+
+                if ($method === 'totp') {
+                    $secret = $lockedOwner->shop_owner_totp_secret;
+                    $acceptedTimestep = is_string($secret)
+                        ? $this->mfa->consumeTotpState(
+                            $secret,
+                            $lockedOwner->shop_owner_totp_last_used_timestep,
+                            $code,
+                            intdiv(now()->timestamp, 30),
+                        )
+                        : false;
+
+                    if (! is_int($acceptedTimestep)) {
+                        return false;
+                    }
+
+                    $lockedOwner->shop_owner_totp_last_used_timestep = $acceptedTimestep;
+                } else {
+                    $remainingCodes = $this->mfa->consumeRecoveryCodeFromHashes(
+                        is_array($lockedOwner->shop_owner_totp_recovery_codes)
+                            ? $lockedOwner->shop_owner_totp_recovery_codes
+                            : [],
+                        $code,
+                    );
+
+                    if ($remainingCodes === false) {
+                        return false;
+                    }
+
+                    $lockedOwner->shop_owner_totp_recovery_codes = $remainingCodes;
+                }
+
+                $lockedOwner->save();
+
+                return $lockedOwner;
+            });
+
+            if (! $authenticatedOwner instanceof ShopOwner) {
+                $attempts++;
+                if ($attempts >= self::LOGIN_TOTP_MAX_ATTEMPTS) {
+                    $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
+                } else {
+                    $request->session()->put(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY, $attempts);
+                }
 
                 throw ValidationException::withMessages([
-                    'otp' => ['Verification code expired. Please sign in again.'],
+                    'code' => ['Incorrect verification code. Please try again.'],
                 ]);
             }
 
-            $otp = (string) ($validated['otp'] ?? '');
-            if (!Hash::check($otp, (string) ($entry['otp_hash'] ?? ''))) {
-                $entry['attempts'] = (int) ($entry['attempts'] ?? 0) + 1;
-                $this->storeLoginTwoFactorEntry($request, (int) $shopOwner->id, $entry);
-
-                throw ValidationException::withMessages([
-                    'otp' => ['Incorrect verification code. Please try again.'],
-                ]);
-            }
-
-            $remember = (bool) $request->session()->get('shop_owner_2fa_remember', false);
-            $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
-
-            Auth::guard('shop_owner')->login($shopOwner, $remember);
-            $request->session()->regenerate();
-
-            $shopOwner->update([
-                'last_login_at' => now(),
-                'last_login_ip' => $request->ip(),
-            ]);
+            $this->completeTwoFactorLogin($request, $authenticatedOwner);
 
             if ($request->expectsJson()) {
                 return response()->json([
@@ -1124,84 +1367,173 @@ class ShopOwnerAuthController extends Controller
 
             throw $e;
         } catch (\Exception $e) {
-            Log::error('Error verifying shop owner two-factor OTP', ['error' => $e->getMessage()]);
+            Log::error('Error verifying shop owner TOTP', ['error' => $e->getMessage()]);
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unable to verify code right now. Please try again.',
+                    'message' => 'Unable to verify authenticator code right now. Please try again.',
                 ], 500);
             }
 
-            return back()->withErrors(['otp' => 'Unable to verify code right now. Please try again.']);
+            return back()->withErrors(['code' => 'Unable to verify authenticator code right now. Please try again.']);
         }
     }
 
-    /**
-     * Resend login two-factor OTP for shop owner.
-     */
-    public function resendLoginTwoFactorOtp(Request $request)
+    public function verifyTwoFactorEnrollment(Request $request)
     {
         try {
+            $validated = $request->validate([
+                'code' => ['required', 'digits:6'],
+            ]);
+
             $shopOwner = $this->resolvePendingTwoFactorShopOwner($request);
-            if (!$shopOwner) {
+            $pending = $shopOwner ? $this->pendingLoginEnrollment($request, $shopOwner) : null;
+            if (! $shopOwner || $pending === null) {
                 throw ValidationException::withMessages([
-                    'otp' => ['Your login session expired. Please sign in again.'],
+                    'code' => ['Your authenticator setup session expired. Please sign in again.'],
                 ]);
             }
 
-            $this->issueLoginTwoFactorOtp($request, $shopOwner);
+            try {
+                $secret = Crypt::decryptString($pending['secret']);
+            } catch (\Throwable) {
+                $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
+
+                throw ValidationException::withMessages([
+                    'code' => ['Your authenticator setup session is invalid. Please sign in again.'],
+                ]);
+            }
+
+            $attempts = (int) $request->session()->get(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY, 0);
+            if ($attempts >= self::LOGIN_TOTP_MAX_ATTEMPTS) {
+                $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
+
+                throw ValidationException::withMessages([
+                    'code' => ['Too many failed attempts. Please sign in again.'],
+                ]);
+            }
+
+            $result = DB::transaction(function () use ($shopOwner, $secret, $validated, $request): array|false {
+                $lockedOwner = ShopOwner::query()
+                    ->whereKey($shopOwner->getKey())
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $lockedOwner instanceof ShopOwner
+                    || ! $this->isApprovedShopOwner($lockedOwner)
+                    || $lockedOwner->hasTotpEnabled()
+                    || ! (bool) $lockedOwner->two_factor_email_enabled
+                    || ! $this->mfa->verifyEnrollment($secret, (string) $validated['code'])) {
+                    return false;
+                }
+
+                $recoveryCodes = $this->mfa->generateRecoveryCodes();
+                $lockedOwner->forceFill([
+                    'shop_owner_totp_secret' => $secret,
+                    'shop_owner_totp_enabled_at' => now(),
+                    'shop_owner_totp_recovery_codes' => $this->mfa->hashRecoveryCodes($recoveryCodes),
+                    'shop_owner_totp_last_used_timestep' => null,
+                    'two_factor_email_enabled' => false,
+                ])->save();
+
+                return [
+                    'owner' => $lockedOwner,
+                    'recovery_codes' => $recoveryCodes,
+                ];
+            });
+
+            if ($result === false) {
+                $attempts++;
+                if ($attempts >= self::LOGIN_TOTP_MAX_ATTEMPTS) {
+                    $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
+                } else {
+                    $request->session()->put(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY, $attempts);
+                }
+
+                throw ValidationException::withMessages([
+                    'code' => ['The authenticator code is invalid. Please try again.'],
+                ]);
+            }
+
+            /** @var ShopOwner $authenticatedOwner */
+            $authenticatedOwner = $result['owner'];
+            $this->completeTwoFactorLogin($request, $authenticatedOwner);
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => true,
-                    'message' => 'A new verification code has been sent to your email.',
+                    'message' => 'Two-factor authentication enabled.',
+                    'recovery_codes' => $result['recovery_codes'],
+                    'redirect' => route('shop-owner.dashboard'),
                 ]);
             }
 
-            return back()->with('status', 'otp-resent');
+            return redirect()->route('shop-owner.dashboard')->with('success', 'Welcome back!');
         } catch (ValidationException $e) {
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unable to resend verification code.',
+                    'message' => 'Authenticator setup could not be completed.',
                     'errors' => $e->errors(),
                 ], 422);
             }
 
             throw $e;
         } catch (\Exception $e) {
-            Log::error('Error resending shop owner two-factor OTP', ['error' => $e->getMessage()]);
+            Log::error('Error completing Shop Owner TOTP enrollment', ['error' => $e->getMessage()]);
 
             if ($request->expectsJson()) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Unable to resend verification code right now. Please try again.',
+                    'message' => 'Unable to complete authenticator setup right now. Please try again.',
                 ], 500);
             }
 
-            return back()->withErrors(['otp' => 'Unable to resend verification code right now. Please try again.']);
+            return back()->withErrors(['code' => 'Unable to complete authenticator setup right now. Please try again.']);
         }
     }
 
     private function beginLoginTwoFactorChallenge(Request $request, ShopOwner $shopOwner, bool $remember): void
     {
-        $request->session()->put('shop_owner_2fa_pending_id', (int) $shopOwner->id);
-        $request->session()->put('shop_owner_2fa_remember', $remember);
-        $request->session()->put('shop_owner_2fa_pending_at', now()->timestamp);
+        $request->session()->put([
+            'shop_owner_2fa_pending_id' => (int) $shopOwner->id,
+            'shop_owner_2fa_remember' => $remember,
+            'shop_owner_2fa_pending_at' => now()->timestamp,
+            self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY => 0,
+        ]);
+        $request->session()->forget(self::LOGIN_TWO_FACTOR_SESSION_KEY);
+        $request->session()->forget(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY);
+    }
 
-        $this->issueLoginTwoFactorOtp($request, $shopOwner);
+    private function beginLoginTwoFactorEnrollment(Request $request, ShopOwner $shopOwner, bool $remember): void
+    {
+        $this->beginLoginTwoFactorChallenge($request, $shopOwner, $remember);
+
+        $secret = $this->mfa->generateSecret();
+        $expiresAt = now()->addMinutes(self::LOGIN_TOTP_TTL_MINUTES);
+
+        $request->session()->put(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY, [
+            'shop_owner_id' => (int) $shopOwner->getKey(),
+            'secret' => Crypt::encryptString($secret),
+            'expires_at' => $expiresAt->timestamp,
+        ]);
     }
 
     private function resolvePendingTwoFactorShopOwner(Request $request): ?ShopOwner
     {
         $pendingId = (int) $request->session()->get('shop_owner_2fa_pending_id', 0);
-        if ($pendingId <= 0) {
+        $pendingAt = (int) $request->session()->get('shop_owner_2fa_pending_at', 0);
+        if ($pendingId <= 0 || $pendingAt <= 0 || $pendingAt + (self::LOGIN_TOTP_TTL_MINUTES * 60) <= now()->timestamp) {
+            if ($pendingId > 0) {
+                $this->clearLoginTwoFactorChallenge($request, $pendingId);
+            }
+
             return null;
         }
 
         $shopOwner = ShopOwner::find($pendingId);
-        if (!$shopOwner) {
+        if (! $shopOwner instanceof ShopOwner || ! $this->isApprovedShopOwner($shopOwner)) {
             $this->clearLoginTwoFactorChallenge($request, $pendingId);
 
             return null;
@@ -1210,143 +1542,61 @@ class ShopOwnerAuthController extends Controller
         return $shopOwner;
     }
 
-    private function issueLoginTwoFactorOtp(Request $request, ShopOwner $shopOwner): void
+    /** @return array{shop_owner_id: int, secret: string, expires_at: int}|null */
+    private function pendingLoginEnrollment(Request $request, ShopOwner $shopOwner): ?array
     {
-        $otp = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        $ttl = now()->addMinutes(self::LOGIN_EMAIL_OTP_TTL_MINUTES);
-
-        try {
-            $this->storeLoginTwoFactorEntry($request, (int) $shopOwner->id, [
-                'otp_hash' => Hash::make($otp),
-                'attempts' => 0,
-                'expires_at' => $ttl->timestamp,
-            ]);
-
-            Mail::raw(
-                "Your SoleSpace login verification code is {$otp}. This code expires in "
-                . self::LOGIN_EMAIL_OTP_TTL_MINUTES
-                . ' minutes.',
-                function ($message) use ($shopOwner) {
-                    $message->to($shopOwner->email)
-                        ->subject('SoleSpace Login Verification Code');
-                }
-            );
-        } catch (\Throwable $e) {
-            $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->id);
-
-            Log::error('Failed to send shop owner login two-factor OTP email', [
-                'shop_owner_id' => $shopOwner->id,
-                'email' => $shopOwner->email,
-                'error' => $e->getMessage(),
-            ]);
-
-            throw ValidationException::withMessages([
-                'email' => ['Unable to send verification code right now. Please try again.'],
-            ]);
-        }
-    }
-
-    private function readLoginTwoFactorEntry(Request $request, int $shopOwnerId): ?array
-    {
-        $entry = $request->session()->get(self::LOGIN_TWO_FACTOR_SESSION_KEY);
-        if (
-            is_array($entry)
-            && (int) ($entry['shop_owner_id'] ?? 0) === $shopOwnerId
-        ) {
-            return $entry;
+        $pending = $request->session()->get(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY);
+        if (! is_array($pending)
+            || (int) ($pending['shop_owner_id'] ?? 0) !== (int) $shopOwner->getKey()
+            || ! is_string($pending['secret'] ?? null)
+            || ! is_numeric($pending['expires_at'] ?? null)) {
+            return null;
         }
 
-        // Backward-compatible fallback for pre-session-based challenges.
-        try {
-            $legacyEntry = Cache::get($this->loginTwoFactorCacheKey($shopOwnerId));
-        } catch (\Throwable $e) {
-            Log::warning('Shop owner 2FA legacy cache read failed', [
-                'shop_owner_id' => $shopOwnerId,
-                'error' => $e->getMessage(),
-            ]);
+        if ((int) $pending['expires_at'] <= now()->timestamp) {
+            $request->session()->forget(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY);
 
             return null;
         }
 
-        if (!is_array($legacyEntry)) {
-            return null;
-        }
-
-        $normalizedLegacyEntry = [
-            'shop_owner_id' => $shopOwnerId,
-            'otp_hash' => (string) ($legacyEntry['otp_hash'] ?? ''),
-            'attempts' => (int) ($legacyEntry['attempts'] ?? 0),
-            'expires_at' => (int) ($legacyEntry['expires_at'] ?? 0),
+        return [
+            'shop_owner_id' => (int) $pending['shop_owner_id'],
+            'secret' => $pending['secret'],
+            'expires_at' => (int) $pending['expires_at'],
         ];
-
-        $request->session()->put(self::LOGIN_TWO_FACTOR_SESSION_KEY, $normalizedLegacyEntry);
-        try {
-            Cache::forget($this->loginTwoFactorCacheKey($shopOwnerId));
-        } catch (\Throwable $e) {
-            Log::warning('Shop owner 2FA legacy cache cleanup failed', [
-                'shop_owner_id' => $shopOwnerId,
-                'error' => $e->getMessage(),
-            ]);
-        }
-
-        return $normalizedLegacyEntry;
     }
 
-    private function storeLoginTwoFactorEntry(Request $request, int $shopOwnerId, array $entry): void
+    private function completeTwoFactorLogin(Request $request, ShopOwner $shopOwner): void
     {
-        $normalizedEntry = [
-            'shop_owner_id' => $shopOwnerId,
-            'otp_hash' => (string) ($entry['otp_hash'] ?? ''),
-            'attempts' => (int) ($entry['attempts'] ?? 0),
-            'expires_at' => (int) ($entry['expires_at'] ?? 0),
-        ];
+        $remember = (bool) $request->session()->get('shop_owner_2fa_remember', false);
+        $this->clearLoginTwoFactorChallenge($request, (int) $shopOwner->getKey());
 
-        $request->session()->put(self::LOGIN_TWO_FACTOR_SESSION_KEY, $normalizedEntry);
-    }
+        Auth::guard('shop_owner')->login($shopOwner, $remember);
+        $request->session()->regenerate();
 
-    private function loginTwoFactorCacheKey(int $shopOwnerId): string
-    {
-        return 'shop_owner_login_2fa:' . $shopOwnerId;
+        Log::info('Shop owner logged in successfully after TOTP verification', [
+            'shop_owner_id' => $shopOwner->getKey(),
+            'business_name' => $shopOwner->business_name,
+        ]);
     }
 
     private function clearLoginTwoFactorChallenge(Request $request, ?int $shopOwnerId = null): void
     {
-        $resolvedShopOwnerId = $shopOwnerId ?? (int) $request->session()->get('shop_owner_2fa_pending_id', 0);
-        if ($resolvedShopOwnerId > 0) {
-            try {
-                Cache::forget($this->loginTwoFactorCacheKey($resolvedShopOwnerId));
-            } catch (\Throwable $e) {
-                Log::warning('Shop owner 2FA legacy cache clear failed', [
-                    'shop_owner_id' => $resolvedShopOwnerId,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
         $request->session()->forget('shop_owner_2fa_pending_id');
         $request->session()->forget('shop_owner_2fa_remember');
         $request->session()->forget('shop_owner_2fa_pending_at');
+        $request->session()->forget(self::LOGIN_TWO_FACTOR_ATTEMPTS_SESSION_KEY);
         $request->session()->forget(self::LOGIN_TWO_FACTOR_SESSION_KEY);
+        $request->session()->forget(self::LOGIN_TOTP_ENROLLMENT_SESSION_KEY);
     }
 
-    private function maskEmail(string $email): string
+    private function isApprovedShopOwner(ShopOwner $shopOwner): bool
     {
-        $email = trim($email);
-        if ($email === '' || !str_contains($email, '@')) {
-            return 'your email';
-        }
+        $statusValue = $shopOwner->status instanceof ShopOwnerStatus
+            ? $shopOwner->status->value
+            : (string) $shopOwner->status;
 
-        [$local, $domain] = explode('@', $email, 2);
-
-        if ($local === '') {
-            return '***@' . $domain;
-        }
-
-        if (strlen($local) <= 2) {
-            return substr($local, 0, 1) . '*@' . $domain;
-        }
-
-        return substr($local, 0, 2) . str_repeat('*', max(strlen($local) - 2, 2)) . '@' . $domain;
+        return $statusValue === ShopOwnerStatus::APPROVED->value;
     }
 
     /**

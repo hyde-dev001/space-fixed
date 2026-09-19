@@ -1,0 +1,75 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const source = readFileSync(
+  join(process.cwd(), 'resources/js/Pages/ShopOwner/Orders/order management/JobOrders.tsx'),
+  'utf8',
+);
+const staffSource = readFileSync(
+  join(process.cwd(), 'resources/js/Pages/ERP/STAFF/JobOrders.tsx'),
+  'utf8',
+);
+const presentationSource = readFileSync(
+  join(process.cwd(), 'resources/js/utils/orderStatusPresentation.ts'),
+  'utf8',
+);
+
+describe('shop owner order state contract', () => {
+  it('declares and presents both terminal fulfillment outcomes', () => {
+    expect(presentationSource).toMatch(/"pending"[\s\S]*"processing"[\s\S]*"shipped"[\s\S]*"delivered"[\s\S]*"completed"/);
+    expect(source).toContain('ORDER_STATUS_PRESENTATION');
+    expect(presentationSource).toContain('completed:');
+    expect(presentationSource).toContain('shipped:');
+  });
+
+  it('uses server-provided action metadata for fulfillment controls', () => {
+    expect(source).toContain('availableActions?:');
+    expect(source).toContain("availableActions?.includes('processing')");
+    expect(source).toContain("availableActions?.includes('shipped')");
+    expect(source).not.toMatch(/order\.status\s*===\s*["']pending["'][\s\S]{0,120}Start processing/);
+  });
+
+  it('keeps company-owner orders read-only while preserving the details modal', () => {
+    expect(source).toContain("const isIndividualRegistration = shopOwnerRegistrationType === 'individual';");
+    expect(source).toContain("isIndividualRegistration && order.availableActions?.includes('processing')");
+    expect(source).toContain("isIndividualRegistration && order.availableActions?.includes('shipped')");
+    expect(source).toContain('isIndividualRegistration && viewOrder.status === "pending"');
+    expect(source).toContain('isIndividualRegistration && viewOrder.status === "shipped"');
+    expect(source).toContain('title="View order details"');
+    expect(source).toContain('<h1 className="sr-only">Customer Orders</h1>');
+    expect(source).not.toContain('Open Approval');
+  });
+
+  it('exposes the individual-owner refund payout action after return receipt', () => {
+    expect(source).toContain('can_execute_payout?: boolean;');
+    expect(source).toContain('handleExecuteRefundPayout');
+    expect(source).toContain('/api/shop-owner/refunds/${refund.id}/execute-gateway-refund');
+    expect(source).toContain('Execute Refund Payout');
+  });
+
+  it('uses the persisted payout amount and full item coverage for refund status', () => {
+    expect(source).toContain('payout_amount?: number | string;');
+    expect(source).toContain('const payoutAmount = parseAmount(latestRefund.payout_amount);');
+    expect(source).toContain('const coversAllOrderItems = hasRefundLines');
+    expect(source).toContain("label: 'Refunded'");
+  });
+
+  it('shows the exact product-only refund amount before payout execution', () => {
+    expect(source).toContain('Refund Amount (shipping excluded)');
+    expect(source).toContain('parseAmount(viewOrder.latest_refund?.payout_amount)');
+    expect(source).toContain('Shipping fee is excluded from this refund amount.');
+  });
+
+  it('shows the payment method in order details', () => {
+    expect(source).toContain('Payment Method');
+    expect(source).toContain('formatPaymentMethod(viewOrder.paymentMethod)');
+    expect(staffSource).toContain('Payment Method');
+    expect(staffSource).toContain('formatPaymentMethod(viewOrder.paymentMethod)');
+  });
+
+  it('opens focused refund orders without filtering the order list', () => {
+    expect(source).not.toContain('setSearchTerm(matchedOrder.order_number);');
+    expect(source).toContain("params.delete('focus_order');");
+  });
+});

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Head, usePage } from "@inertiajs/react";
+import { Head, Link, usePage } from "@inertiajs/react";
 import AppLayout from "../../layout/AppLayout";
 
 // Icon Components
@@ -21,18 +21,6 @@ const TaskIcon = ({ className = "" }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className = "" }) => (
-  <svg className={className} width="13" height="12" viewBox="0 0 13 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path fillRule="evenodd" clipRule="evenodd" d="M6.06462 1.62393C6.20193 1.47072 6.40135 1.37432 6.62329 1.37432C6.6236 1.37432 6.62391 1.37432 6.62422 1.37432C6.81631 1.37415 7.00845 1.44731 7.15505 1.5938L10.1551 4.5918C10.4481 4.88459 10.4483 5.35946 10.1555 5.65246C9.86273 5.94546 9.38785 5.94562 9.09486 5.65283L7.37329 3.93247L7.37329 10.125C7.37329 10.5392 7.03751 10.875 6.62329 10.875C6.20908 10.875 5.87329 10.5392 5.87329 10.125L5.87329 3.93578L4.15516 5.65281C3.86218 5.94561 3.3873 5.94546 3.0945 5.65248C2.8017 5.35949 2.80185 4.88462 3.09484 4.59182L6.06462 1.62393Z" fill="currentColor" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className = "" }) => (
-  <svg className={className} width="13" height="12" viewBox="0 0 13 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path fillRule="evenodd" clipRule="evenodd" d="M6.93538 10.3761C6.79807 10.5293 6.59865 10.6257 6.37671 10.6257C6.3764 10.6257 6.37609 10.6257 6.37578 10.6257C6.18369 10.6259 5.99155 10.5527 5.84495 10.4062L2.84495 7.4082C2.55195 7.11541 2.55175 6.64054 2.84455 6.34754C3.13727 6.05454 3.61215 6.05438 3.90514 6.34717L5.62671 8.06753L5.62671 1.875C5.62671 1.46079 5.96249 1.125 6.37671 1.125C6.79092 1.125 7.12671 1.46079 7.12671 1.875L7.12671 8.06422L8.84484 6.34719C9.13782 6.05439 9.6127 6.05454 9.9055 6.34752C10.1983 6.64051 10.1982 7.11538 9.90516 7.40818L6.93538 10.3761Z" fill="currentColor" />
-  </svg>
-);
-
 import {
   Table,
   TableBody,
@@ -46,8 +34,6 @@ import Badge from "../../components/ui/badge/Badge";
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -58,9 +44,6 @@ interface DashboardPayload {
     total_users?: number;
     total_admins?: number;
     suspended_admins?: number;
-    total_users_change?: number;
-    total_admins_change?: number;
-    suspended_admins_change?: number;
   };
   system_health?: Array<{ metric: string; value: string; status: string }>;
   recent_activity?: Array<{ activity: string; time: string; status: string }>;
@@ -74,8 +57,6 @@ interface DashboardPayload {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -117,18 +98,9 @@ const MetricCard: React.FC<MetricData> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-            changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-          }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -156,14 +128,12 @@ export default function SystemMonitoringDashboard() {
   const systemHealthRows = dashboard?.system_health || [];
   const recentActivityRows = dashboard?.recent_activity || [];
   const performanceRows = dashboard?.performance_metrics || [];
-  const systemsOperational = dashboard?.systems_operational !== false;
+  const systemsOperational = dashboard?.systems_operational === true;
 
   const metricsData: MetricData[] = [
     {
       title: "Total Users",
       value: Number(metrics.total_users || 0),
-      change: Math.abs(Number(metrics.total_users_change || 0)),
-      changeType: Number(metrics.total_users_change || 0) >= 0 ? 'increase' : 'decrease',
       icon: GroupIcon,
       color: 'success',
       description: "Active registered users"
@@ -171,8 +141,6 @@ export default function SystemMonitoringDashboard() {
     {
       title: "Total Admin Accounts",
       value: Number(metrics.total_admins || 0),
-      change: Math.abs(Number(metrics.total_admins_change || 0)),
-      changeType: Number(metrics.total_admins_change || 0) >= 0 ? 'increase' : 'decrease',
       icon: BoxIconLine,
       color: 'success',
       description: "Accounts with admin access"
@@ -180,8 +148,6 @@ export default function SystemMonitoringDashboard() {
     {
       title: "Suspended Admin Accounts",
       value: Number(metrics.suspended_admins || 0),
-      change: Math.abs(Number(metrics.suspended_admins_change || 0)),
-      changeType: Number(metrics.suspended_admins_change || 0) >= 0 ? 'increase' : 'decrease',
       icon: TaskIcon,
       color: 'warning',
       description: "Currently restricted admin accounts"
@@ -200,14 +166,14 @@ export default function SystemMonitoringDashboard() {
               System Monitoring Dashboard
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Real-time insights into system performance, user activity, and platform health
+              Current database, queue, failed-job, and account snapshots
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 px-4 py-2 bg-green-100 rounded-lg dark:bg-green-900/30">
-              <div className={`w-2 h-2 rounded-full ${systemsOperational ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></div>
+            <div className={`flex items-center gap-2 rounded-lg px-4 py-2 ${systemsOperational ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+              <div className={`h-2 w-2 rounded-full ${systemsOperational ? 'bg-green-500' : 'bg-red-500'}`}></div>
               <span className={`text-sm font-medium ${systemsOperational ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
-                {systemsOperational ? 'All Systems Operational' : 'System Attention Required'}
+                {systemsOperational ? 'Database connected' : 'Database attention required'}
               </span>
             </div>
           </div>
@@ -226,11 +192,6 @@ export default function SystemMonitoringDashboard() {
             <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">System Health</h4>
-              </div>
-              <div className="flex items-center gap-3">
-                <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200">
-                  See all
-                </button>
               </div>
             </div>
             <div className="max-w-full overflow-x-auto">
@@ -262,11 +223,12 @@ export default function SystemMonitoringDashboard() {
               <div>
                 <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">Recent Activity</h4>
               </div>
-              <div className="flex items-center gap-3">
-                <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200">
-                  See all
-                </button>
-              </div>
+              <Link
+                href="/admin/audit"
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200"
+              >
+                View Audit History
+              </Link>
             </div>
             <div className="max-w-full overflow-x-auto">
               <Table>
@@ -302,12 +264,7 @@ export default function SystemMonitoringDashboard() {
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
             <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">Performance Metrics</h4>
-              </div>
-              <div className="flex items-center gap-3">
-                <button className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200">
-                  See all
-                </button>
+                <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">Current operational snapshots</h4>
               </div>
             </div>
             <div className="max-w-full overflow-x-auto">
@@ -325,7 +282,7 @@ export default function SystemMonitoringDashboard() {
                       <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">{row.metric}</TableCell>
                       <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">{row.value}</TableCell>
                       <TableCell className="py-3 text-gray-500 text-theme-sm dark:text-gray-400">
-                        <Badge size="sm" color={/warning/i.test(row.status) ? 'warning' : /excellent|high|live|low/i.test(row.status) ? 'success' : 'info'}>{row.status}</Badge>
+                        <Badge size="sm" color={/warning/i.test(row.status) ? 'warning' : /excellent|high|snapshot|low/i.test(row.status) ? 'success' : 'info'}>{row.status}</Badge>
                       </TableCell>
                     </TableRow>
                   ))}

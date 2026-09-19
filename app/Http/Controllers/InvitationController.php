@@ -3,19 +3,21 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
-use App\Models\Employee;
-use App\Mail\EmployeeInvitation;
+use App\Services\EmployeeAccountLinkService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 use Carbon\Carbon;
 use Inertia\Inertia;
 
 class InvitationController extends Controller
 {
+    public function __construct(
+        private readonly EmployeeAccountLinkService $accountLinks,
+    ) {
+    }
+
     /**
      * Show invitation acceptance page
      */
@@ -108,7 +110,7 @@ class InvitationController extends Controller
             'force_password_change' => false,
         ]);
 
-        return redirect('/user/login')->with('success', 'Your account has been activated! Please log in with your work email and new password.');
+        return redirect('/login')->with('success', 'Your account has been activated! Please log in with your work email and new password.');
     }
     
     /**
@@ -122,49 +124,12 @@ class InvitationController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $employee = Employee::query()
-            ->where('id', $employeeId)
-            ->where('shop_owner_id', $authUser->shop_owner_id)
-            ->first();
-
-        if (!$employee) {
-            return response()->json(['error' => 'Employee not found'], 404);
-        }
-
-        $user = User::query()
-            ->where('email', $employee->email)
-            ->where('shop_owner_id', $authUser->shop_owner_id)
-            ->first();
-
-        if (!$user) {
-            return response()->json(['error' => 'Linked user account not found'], 404);
-        }
-
-        if ((int) $user->id === (int) $authUser->id || strcasecmp((string) $user->email, (string) $authUser->email) === 0) {
-            return response()->json([
-                'error' => 'You cannot reset the password of the account you are currently using.'
-            ], 422);
-        }
-
-        $newToken = Str::random(64);
-        $newExpiry = Carbon::now()->addDays(7);
-
-        $user->update([
-            'password' => null,
-            'force_password_change' => true,
-            'invite_token' => $newToken,
-            'invite_expires_at' => $newExpiry,
-            'invited_at' => now(),
-            'invited_by' => $authUser->id,
-        ]);
+        $link = $this->accountLinks->issueForEmployeeId((int) $employeeId, $authUser, true);
 
         return response()->json([
             'success' => true,
             'message' => 'Password reset initiated. Share the new setup link with the employee.',
-            'invite_url' => url("/accept-invitation/{$newToken}"),
-            'invite_expires_at' => $newExpiry->toIso8601String(),
-            'work_email' => $user->email,
-            'employee_name' => $user->name,
+            ...$link,
         ]);
     }
 
@@ -178,47 +143,11 @@ class InvitationController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $employee = Employee::query()
-            ->where('id', $employeeId)
-            ->where('shop_owner_id', $authUser->shop_owner_id)
-            ->first();
+        $link = $this->accountLinks->issueForEmployeeId((int) $employeeId, $authUser, false);
 
-        if (!$employee) {
-            return response()->json(['error' => 'Employee not found'], 404);
-        }
-
-        $user = User::query()
-            ->where('email', $employee->email)
-            ->where('shop_owner_id', $authUser->shop_owner_id)
-            ->first();
-        
-        if (!$user) {
-            return response()->json(['error' => 'User account not found'], 404);
-        }
-
-        if ((int) $user->id === (int) $authUser->id || strcasecmp((string) $user->email, (string) $authUser->email) === 0) {
-            return response()->json([
-                'error' => 'You cannot reset the password of the account you are currently using.'
-            ], 422);
-        }
-        
-        // Generate new token
-        $newToken = Str::random(64);
-        $newExpiry = Carbon::now()->addDays(7);
-        
-        $user->update([
-            'invite_token' => $newToken,
-            'invite_expires_at' => $newExpiry,
-            'invited_at' => now(),
-            'invited_by' => $authUser->id,
-        ]);
-        
         return response()->json([
             'success' => true,
-            'invite_url' => url("/accept-invitation/{$newToken}"),
-            'invite_expires_at' => $newExpiry->toIso8601String(),
-            'work_email' => $user->email,
-            'employee_name' => $user->name,
+            ...$link,
         ]);
     }
     
@@ -232,98 +161,33 @@ class InvitationController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $request->validate([
-            'personal_email' => 'required|email',
+        $validated = $request->validate([
+            'personal_email' => ['required', 'email', 'max:255'],
         ]);
 
-        $employee = Employee::query()
-            ->where('id', $employeeId)
-            ->where('shop_owner_id', $authUser->shop_owner_id)
-            ->first();
-
-        if (!$employee) {
-            return response()->json(['error' => 'Employee not found'], 404);
-        }
-
-        $user = User::query()
-            ->where('email', $employee->email)
-            ->where('shop_owner_id', $authUser->shop_owner_id)
-            ->first();
-
-        if (!$user) {
-            return response()->json(['error' => 'User account not found'], 404);
-        }
-
-        if (!$user->invite_token || !$user->invite_expires_at) {
-            return response()->json(['error' => 'No active invitation found. Please regenerate the invitation first.'], 400);
-        }
-
-        if (Carbon::now()->greaterThan($user->invite_expires_at)) {
-            return response()->json(['error' => 'Invitation has expired. Please regenerate a new invitation.'], 400);
-        }
-
-        $inviteUrl = url("/accept-invitation/{$user->invite_token}");
-        $shopName = 'SoleSpace';
-        $expiresAt = $user->invite_expires_at->format('M d, Y h:i A');
-        $personalEmail = $request->personal_email;
-        $employeeName = $user->name;
-        $workEmail = $user->email;
-
         try {
-            Mail::send([], [], function ($message) use ($employeeName, $inviteUrl, $shopName, $expiresAt, $personalEmail, $workEmail) {
-                $message->to($personalEmail)
-                    ->subject("Your {$shopName} Account Invitation")
-                    ->html("
-                        <html>
-                        <body style='font-family: Arial, sans-serif; line-height: 1.6; color: #333;'>
-                            <div style='max-width: 600px; margin: 0 auto; padding: 20px;'>
-                                <h2 style='color: #4F46E5;'>Welcome to {$shopName}!</h2>
-                                
-                                <p>Hi <strong>{$employeeName}</strong>,</p>
-                                
-                                <p>You've been invited to join our team at <strong>{$shopName}</strong>!</p>
-                                
-                                <div style='background: #F3F4F6; padding: 15px; border-radius: 8px; margin: 20px 0;'>
-                                    <p style='margin: 0 0 10px 0;'><strong>Your work email:</strong> {$workEmail}</p>
-                                    <p style='margin: 0;'><strong>Invitation expires:</strong> {$expiresAt}</p>
-                                </div>
-                                
-                                <p>Click the button below to set up your account and create your password:</p>
-                                
-                                <div style='text-align: center; margin: 30px 0;'>
-                                    <a href='{$inviteUrl}' 
-                                       style='display: inline-block; background: #4F46E5; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;'>
-                                        Set Up My Account
-                                    </a>
-                                </div>
-                                
-                                <p style='font-size: 12px; color: #666;'>
-                                    Or copy and paste this link into your browser:<br>
-                                    <a href='{$inviteUrl}' style='color: #4F46E5; word-break: break-all;'>{$inviteUrl}</a>
-                                </p>
-                                
-                                <hr style='border: none; border-top: 1px solid #E5E7EB; margin: 20px 0;'>
-                                
-                                <p style='font-size: 12px; color: #666;'>
-                                    <strong>Important:</strong> This invitation link will expire on {$expiresAt}.
-                                    If you need a new invitation, please contact your administrator.
-                                </p>
-                            </div>
-                        </body>
-                        </html>
-                    ");
-            });
+            $link = $this->accountLinks->sendToPersonalEmailForEmployeeId(
+                (int) $employeeId,
+                $authUser,
+                (string) $validated['personal_email'],
+            );
 
             return response()->json([
                 'success' => true,
-                'message' => "Invitation email sent successfully to {$personalEmail}",
-                'invite_url' => $inviteUrl,
-                'invite_expires_at' => $user->invite_expires_at->toIso8601String(),
+                ...$link,
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'details' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::error('Failed to send employee invitation email.', [
+                'employee_id' => (int) $employeeId,
+                'error' => $e->getMessage(),
             ]);
 
-        } catch (\Exception $e) {
-            Log::error('Failed to send invitation email: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to send email: ' . $e->getMessage()], 500);
+            return response()->json(['error' => 'Failed to send email.'], 500);
         }
     }
     
@@ -332,30 +196,30 @@ class InvitationController extends Controller
      */
     public function resendInvite($employeeId)
     {
-        $employee = Employee::findOrFail($employeeId);
-        $user = User::where('email', $employee->email)->first();
-        
-        if (!$user || !$user->invite_token) {
-            return response()->json(['error' => 'No pending invitation found'], 404);
+        $authUser = Auth::guard('user')->user();
+        if (!$authUser) {
+            return response()->json(['error' => 'Unauthorized'], 403);
         }
-        
-        if ($user->password !== null) {
-            return response()->json(['error' => 'User has already accepted invitation'], 400);
-        }
-        
-        $inviteUrl = url("/invite/{$user->invite_token}");
-        
+
         try {
-            Mail::to($user->email)->send(new EmployeeInvitation($user, $inviteUrl));
-            
+            $link = $this->accountLinks->resendToWorkEmailForEmployeeId((int) $employeeId, $authUser);
+
             return response()->json([
                 'success' => true,
-                'email' => $user->email,
-                'message' => 'Invitation email resent successfully'
+                ...$link,
             ]);
-        } catch (\Exception $e) {
-            Log::error('Failed to resend invitation email: ' . $e->getMessage());
-            return response()->json(['error' => 'Failed to send email'], 500);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'error' => $e->getMessage(),
+                'details' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::error('Failed to resend employee invitation email.', [
+                'employee_id' => (int) $employeeId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json(['error' => 'Failed to send email.'], 500);
         }
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Events\StockMovementRecorded;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
@@ -11,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 
 class StockMovement extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'inventory_item_id',
         'movement_type',
@@ -19,6 +22,8 @@ class StockMovement extends Model
         'quantity_after',
         'reference_type',
         'reference_id',
+        'purchase_order_receipt_item_id',
+        'reversal_of_stock_movement_id',
         'notes',
         'performed_by',
         'performed_at',
@@ -62,6 +67,21 @@ class StockMovement extends Model
     public function reference(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function purchaseOrderReceiptItem(): BelongsTo
+    {
+        return $this->belongsTo(PurchaseOrderReceiptItem::class);
+    }
+
+    public function reversedMovement(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'reversal_of_stock_movement_id');
+    }
+
+    public function reversal()
+    {
+        return $this->hasOne(self::class, 'reversal_of_stock_movement_id');
     }
 
     /**

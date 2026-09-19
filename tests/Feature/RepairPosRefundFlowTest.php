@@ -153,7 +153,10 @@ class RepairPosRefundFlowTest extends TestCase
     #[Test]
     public function shop_pos_refund_request_is_blocked_when_warranty_claim_is_active(): void
     {
-        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $shopOwner = \App\Models\ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
 

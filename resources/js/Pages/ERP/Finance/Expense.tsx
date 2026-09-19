@@ -1,10 +1,17 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useState } from "react";
+import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import Chart from "react-apexcharts";
 import { ApexOptions } from "apexcharts";
 import { useFinanceApi } from "../../../hooks/useFinanceApi";
-import { useExpenses, useTaxRates } from "../../../hooks/useFinanceQueries";
+import { useApproveExpense, useExpenseCategories, useExpenses, useRejectExpense, useTaxRates } from "../../../hooks/useFinanceQueries";
 import { getApprovalStatusBadge } from "./InlineApprovalUtils";
+import ProcurementExpensePanel from "./components/ProcurementExpensePanel";
+import SupplierPaymentDialog from "./components/SupplierPaymentDialog";
+import type { ProcurementExpenseDetails, SupplierPaymentAttemptSummary } from "@/types/procurement";
+
+const MemoizedChart = React.memo(Chart);
 
 // Loading Spinner Component
 const LoadingSpinner: React.FC<{ message?: string }> = ({ message = "Loading expenses..." }) => (
@@ -20,6 +27,8 @@ const LoadingSpinner: React.FC<{ message?: string }> = ({ message = "Loading exp
 type Expense = {
   id: string;
   date: string;
+  created_at?: string | null;
+  due_date?: string | null;
   category: string;
   description: string;
   amount: number | string;
@@ -27,48 +36,36 @@ type Expense = {
   status: "draft" | "submitted" | "approved" | "posted" | "rejected";
   reference?: string;
   tax_amount?: number | string;
-  journal_entry_id?: number;
   approval_notes?: string | null;
   receipt_path?: string | null;
   receipt_original_name?: string | null;
   receipt_mime_type?: string | null;
   receipt_size?: number | null;
-  procurement_details?: {
-    purchase_order_id?: number;
-    po_number?: string;
-    supplier_name?: string | null;
-    product_name?: string | null;
-    quantity?: number | null;
-    requested_size?: string | null;
-    requested_color?: string | null;
-    unit_cost?: number | string | null;
-    total_cost?: number | string | null;
-    expected_delivery_date?: string | null;
-    actual_delivery_date?: string | null;
+  created_by?: number | string | null;
+  meta?: {
+    created_by?: number | string | null;
+    [key: string]: unknown;
   } | null;
+  procurement_receipt_id?: number | null;
+  procurement_details?: ProcurementExpenseDetails | null;
+  settlement_state?: {
+    approval_status: string;
+    paid_amount: string;
+    outstanding_balance: string;
+    refunded_amount?: string;
+    status: "unpaid" | "partially_paid" | "paid";
+    integrity_warnings: string[];
+    settlements: Array<{ id: number; entry_type: "settlement" | "reversal" | "supplier_refund"; amount: string; payment_method: string; reference?: string | null; paid_at?: string | null }>;
+  };
 };
 
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
 };
-
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
 
 const WalletIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -109,6 +106,18 @@ const SearchIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+const ChevronLeftIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+  </svg>
+);
+
+const ChevronRightIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+);
+
 const PlusIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -130,8 +139,6 @@ const ArchiveRestoreIcon: React.FC<{ className?: string }> = ({ className }) => 
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color = "info",
   description,
@@ -155,23 +162,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-
-          {change !== undefined && changeType && (
-            <div
-              className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-                changeType === "increase"
-                  ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                  : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-              }`}
-            >
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -192,21 +186,26 @@ const normalizeExpense = (expense: Expense) => ({
   tax_amount: Number(expense.tax_amount) || 0,
 });
 
+const isProcurementExpense = (expense: Expense) => Boolean(
+  expense.procurement_receipt_id || expense.procurement_details?.receipt_id
+);
+
 const normalizeApiDateString = (value: string) => {
   // Some API values include 6-digit fractional seconds, which JS Date cannot parse reliably.
   return value.replace(/\.(\d{3})\d+Z$/, '.$1Z');
 };
 
-const formatExpenseDate = (value: string) => {
-  const normalized = normalizeApiDateString(value);
-  const parsed = new Date(normalized);
+const formatExpenseDate = (value: string, createdAt?: string | null) => {
+  const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  const parsed = dateOnlyMatch
+    ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+    : new Date(normalizeApiDateString(value));
 
   if (Number.isNaN(parsed.getTime())) {
-    return {
-      date: value,
-      time: null as string | null,
-    };
+    return { date: value, time: null as string | null };
   }
+
+  const recordedAt = createdAt ? new Date(normalizeApiDateString(createdAt)) : null;
 
   return {
     date: parsed.toLocaleDateString('en-US', {
@@ -214,71 +213,97 @@ const formatExpenseDate = (value: string) => {
       day: '2-digit',
       year: 'numeric',
     }),
-    time: parsed.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-    }),
+    time: recordedAt && !Number.isNaN(recordedAt.getTime())
+      ? recordedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+      : null,
   };
 };
 
 const Expense: React.FC = () => {
+  const page = usePage();
+  const auth = page.props.auth as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const currentActorId = Number(auth?.erpActor?.id ?? auth?.user?.id ?? 0);
+  const canCreateExpense = !ownerMode;
   const api = useFinanceApi();
   const [showArchived, setShowArchived] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<"all" | Expense["status"]>("all");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [searchInput, setSearchInput] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
+  React.useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setSearchTerm(searchInput.trim());
+      setCurrentPage(1);
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchInput]);
   
   // React Query hooks - automatically handle loading, caching, refetching
-  const { data: expensesData = [], isLoading, refetch: refetchExpenses } = useExpenses({ archived: showArchived });
+  const { data: expensesData = [], isLoading, refetch: refetchExpenses } = useExpenses({
+    archived: showArchived,
+    status: statusFilter === "all" ? undefined : statusFilter,
+    category: categoryFilter || undefined,
+    search: searchTerm || undefined,
+    page: currentPage,
+    perPage: itemsPerPage,
+  });
+  const { data: categoryOptions = { manual: [], system: [], filter: [] } } = useExpenseCategories();
   const { data: taxRates = [], isLoading: isLoadingTaxRates } = useTaxRates();
+  const approveExpense = useApproveExpense();
+  const rejectExpense = useRejectExpense();
+  const isApprovalActionPending = approveExpense.isPending || rejectExpense.isPending;
+  const [isProcurementReleasePending, setIsProcurementReleasePending] = useState(false);
+  const [isPaymentProfileActionPending, setIsPaymentProfileActionPending] = useState(false);
+  const [isSupplierPaymentOpen, setIsSupplierPaymentOpen] = useState(false);
   
   // Normalize expenses data
-  const expenses = useMemo(() => 
-    expensesData.map(normalizeExpense),
-    [expensesData]
-  );
-  
-  const [statusFilter, setStatusFilter] = useState<"all" | Expense["status"]>("all");
-  const [searchTerm, setSearchTerm] = useState("");
+  const expenses = useMemo(() => {
+    const rows = Array.isArray(expensesData) ? expensesData : expensesData.data;
+
+    return rows.map(normalizeExpense);
+  }, [expensesData]);
+  const expensePage = Array.isArray(expensesData) ? null : expensesData;
+  const totalExpenseCount = expensePage?.total ?? expenses.length;
+  const totalPages = Math.max(1, expensePage?.last_page ?? 1);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const startNumber = expensePage?.from ?? (totalExpenseCount > 0 ? startIndex + 1 : 0);
+  const endNumber = expensePage?.to ?? Math.min(startIndex + expenses.length, totalExpenseCount);
+  const paginatedExpenses = expenses;
+
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [activeExpense, setActiveExpense] = useState<Expense | null>(null);
   const [addForm, setAddForm] = useState({
     date: "",
+    due_date: "",
     category: "",
+    custom_category: "",
     description: "",
     amount: 0,
     tax_rate_id: "",
     tax_amount: 0,
+    payment_mode: "paid_now" as "paid_now" | "pay_later",
+    payment_method: "cash",
+    payment_reference: "",
+    idempotency_key: "",
   });
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 10;
-
-  const filteredExpenses = useMemo(() => {
-    return expenses.filter((expense) => {
-      const matchesStatus = statusFilter === "all" ? true : expense.status === statusFilter;
-      const matchesSearch =
-        (expense.category || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (expense.description || "").toLowerCase().includes(searchTerm.toLowerCase());
-
-      return matchesStatus && matchesSearch;
-    });
-  }, [expenses, searchTerm, statusFilter]);
-
-  // Pagination logic
-  const totalPages = Math.ceil(filteredExpenses.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const paginatedExpenses = filteredExpenses.slice(startIndex, endIndex);
 
   // Reset to page 1 when filters change
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, showArchived]);
+  }, [statusFilter, categoryFilter, showArchived]);
 
   const stats = useMemo(() => {
     const total = expenses.reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
     const approvedTotal = expenses
-      .filter((exp) => exp.status === "approved")
+      .filter((exp) => exp.status === "approved" || exp.status === "posted")
       .reduce((sum, exp) => sum + (Number(exp.amount) || 0), 0);
     const pendingTotal = expenses
       .filter((exp) => exp.status === "submitted")
@@ -303,7 +328,7 @@ const Expense: React.FC = () => {
     return Object.entries(grouped).map(([category, amount]) => ({ category, amount }));
   }, [expenses]);
 
-  const chartOptions: ApexOptions = {
+  const chartOptions = useMemo<ApexOptions>(() => ({
     colors: ["#eb2525"],
     chart: {
       fontFamily: "Outfit, sans-serif",
@@ -348,14 +373,12 @@ const Expense: React.FC = () => {
         formatter: (val) => `₱${val.toLocaleString()}`,
       },
     },
-  };
+  }), [categoryBreakdown]);
 
-  const chartSeries = [
-    {
-      name: "Expense",
-      data: categoryBreakdown.map((item) => item.amount),
-    },
-  ];
+  const chartSeries = useMemo(() => [{
+    name: "Expense",
+    data: categoryBreakdown.map((item) => item.amount),
+  }], [categoryBreakdown]);
 
   const categoryColors = [
     "bg-blue-100 text-blue-700",
@@ -397,6 +420,202 @@ const Expense: React.FC = () => {
     setIsViewOpen(false);
   };
 
+  const refreshExpenses = async (expenseId?: string) => {
+    const result = await refetchExpenses();
+    const rows = Array.isArray(result.data) ? result.data : result.data?.data ?? [];
+    const refreshedExpenses = rows.map(normalizeExpense);
+
+    if (expenseId) {
+      setActiveExpense(refreshedExpenses.find((expense) => expense.id === expenseId) ?? null);
+    }
+
+    return refreshedExpenses;
+  };
+
+  const handleApprovalAction = async (expense: Expense, action: "approve" | "reject") => {
+    const isRejecting = action === "reject";
+    const result = await Swal.fire({
+      title: isRejecting ? "Reject this expense?" : "Approve this expense?",
+      text: isRejecting
+        ? `Please provide a reason for rejecting "${expense.category}".`
+        : `${expense.category} — ${formatCurrency(expense.amount)}`,
+      icon: isRejecting ? "warning" : "question",
+      input: "textarea",
+      inputLabel: isRejecting ? "Rejection reason" : "Approval notes (optional)",
+      inputPlaceholder: isRejecting ? "Type reason here..." : "Add any notes...",
+      showCancelButton: true,
+      confirmButtonText: isRejecting ? "Reject" : "Approve",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: isRejecting ? "#dc2626" : "#16a34a",
+      cancelButtonColor: "#6b7280",
+      inputValidator: isRejecting
+        ? (value) => (!value || !value.trim() ? "A rejection reason is required." : undefined)
+        : undefined,
+    });
+
+    if (!result.isConfirmed || (isRejecting && !result.value?.trim())) return;
+
+    try {
+      const mutation = isRejecting ? rejectExpense : approveExpense;
+      const response = await mutation.mutateAsync({
+        expenseId: expense.id,
+        approvalNotes: String(result.value || "").trim() || undefined,
+      });
+
+      closeViewModal();
+      await refetchExpenses();
+
+      const isFinalApproval = !isRejecting && Boolean(response?.is_final);
+      await Swal.fire({
+        icon: "success",
+        title: isRejecting ? "Expense rejected" : isFinalApproval ? "Expense approved" : "Approval recorded",
+        text: isRejecting
+          ? "The expense has been rejected."
+          : isFinalApproval
+          ? "The expense completed the approval workflow."
+          : "The expense moved to the next approval step.",
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      await Swal.fire({
+        icon: "error",
+        title: "Action failed",
+        text: error instanceof Error ? error.message : "The expense could not be updated.",
+        confirmButtonColor: "#2563eb",
+      });
+    }
+  };
+
+  const handleReviewAndRelease = async (expense: Expense) => {
+    const result = await Swal.fire({
+      title: "Release procurement expense?",
+      text: `${expense.category} — ${formatCurrency(expense.amount)}`,
+      icon: "question",
+      input: "textarea",
+      inputLabel: "Review notes (optional)",
+      inputPlaceholder: "Add any review notes...",
+      showCancelButton: true,
+      confirmButtonText: "Review & Release",
+      cancelButtonText: "Cancel",
+      confirmButtonColor: "#16a34a",
+      cancelButtonColor: "#6b7280",
+    });
+
+    if (!result.isConfirmed) return;
+
+    setIsProcurementReleasePending(true);
+    try {
+      const response = await api.post(`/api/finance/expenses/${expense.id}/review-release`, {
+        approval_notes: String(result.value || "").trim() || undefined,
+      });
+      if (!response.ok) throw new Error(response.error || "The procurement expense could not be released.");
+
+      await refreshExpenses(expense.id);
+      await Swal.fire({
+        icon: "success",
+        title: "Expense released",
+        text: "The procurement expense is ready for payment.",
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      await Swal.fire({
+        icon: "error",
+        title: "Release failed",
+        text: error instanceof Error ? error.message : "The procurement expense could not be released.",
+        confirmButtonColor: "#2563eb",
+      });
+    } finally {
+      setIsProcurementReleasePending(false);
+    }
+  };
+
+  const handlePaymentProfileStatus = async (expense: Expense, action: "verify" | "disable") => {
+    const supplierId = expense.procurement_details?.supplier_id;
+    if (!supplierId) return;
+
+    if (action === "disable") {
+      const confirmation = await Swal.fire({
+        title: "Disable supplier payment profile?",
+        text: "New supplier payments will be blocked until Procurement replaces the destination and Finance verifies it again.",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonText: "Disable Payment Profile",
+        cancelButtonText: "Keep Profile",
+        confirmButtonColor: "#d97706",
+        reverseButtons: true,
+      });
+
+      if (!confirmation.isConfirmed) return;
+    }
+
+    setIsPaymentProfileActionPending(true);
+    try {
+      const response = await api.post(`/api/finance/suppliers/${supplierId}/payment-profile/${action}`, {});
+      if (!response?.ok) throw new Error(response?.error || "The supplier payment profile could not be updated.");
+
+      await refreshExpenses(expense.id);
+      await Swal.fire({
+        icon: "success",
+        title: action === "verify" ? "Payment profile verified" : "Payment profile disabled",
+        timer: 1600,
+        showConfirmButton: false,
+      });
+    } catch (error) {
+      await Swal.fire({
+        icon: "error",
+        title: "Profile update failed",
+        text: error instanceof Error ? error.message : "The supplier payment profile could not be updated.",
+        confirmButtonColor: "#2563eb",
+      });
+    } finally {
+      setIsPaymentProfileActionPending(false);
+    }
+  };
+
+  const openSupplierPayment = () => setIsSupplierPaymentOpen(true);
+
+  const canStartSupplierPayment = (expense: Expense): boolean => {
+    const details = expense.procurement_details;
+    const paymentStatus = details?.payment_status || "unpaid";
+    const attemptStatus = details?.payment_attempt?.status;
+    const existingAttempt = details?.payment_attempt;
+    const isXenditAttempt = existingAttempt?.provider === "xendit" || existingAttempt?.payment_method === "xendit";
+    const hasSupplierPayoutAccess = existingAttempt ? !isXenditAttempt || details?.xendit_configured === true : details?.xendit_configured === true;
+
+    return !ownerMode
+      && expense.status === "posted"
+      && details?.payment_profile?.status === "verified"
+      && paymentStatus !== "paid"
+      && hasSupplierPayoutAccess
+      && !["initiating", "awaiting_verification", "processing", "pending_compliance"].includes(attemptStatus || paymentStatus);
+  };
+
+  const isCreatedByCurrentActor = (expense: Expense): boolean => {
+    const creatorId = expense.created_by ?? expense.meta?.created_by;
+
+    return currentActorId > 0 && Number(creatorId) === currentActorId;
+  };
+
+  const procurementStatusLabel = (expense: Expense): string => {
+    const paymentStatus = expense.procurement_details?.payment_status;
+
+    if (paymentStatus === "paid") return "Paid";
+    if (paymentStatus === "awaiting_verification") return "Awaiting Shop Owner Verification";
+    if (paymentStatus === "initiating") return "Payment Initiated";
+    if (paymentStatus === "processing") return "Xendit Payout Processing";
+    if (paymentStatus === "pending_compliance") return "Xendit Compliance Review";
+    if (paymentStatus === "failed") return "Xendit Payout Failed";
+    if (paymentStatus === "reversed") return "Xendit Payout Reversed";
+    if (paymentStatus === "rejected") return "Payment Rejected";
+    if (paymentStatus === "cancelled") return "Payment Cancelled";
+    if (expense.status === "submitted") return "Submitted";
+    if (expense.status === "posted" && paymentStatus === "unpaid") return "Ready for Payment";
+
+    return expense.status.charAt(0).toUpperCase() + expense.status.slice(1);
+  };
+
   const calculateTax = (amount: number, taxRateId: string) => {
     if (!amount || !taxRateId) return 0;
     
@@ -412,13 +631,21 @@ const Expense: React.FC = () => {
   };
 
   const openAddModal = () => {
+    if (!canCreateExpense) return;
+
     setAddForm({
       date: "",
+      due_date: "",
       category: "",
+      custom_category: "",
       description: "",
       amount: 0,
       tax_rate_id: "",
       tax_amount: 0,
+      payment_mode: "paid_now",
+      payment_method: "cash",
+      payment_reference: "",
+      idempotency_key: typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : "",
     });
     setReceiptFile(null);
     setReceiptPreview(null);
@@ -471,8 +698,12 @@ const Expense: React.FC = () => {
   };
 
   const handleSaveAdd = async () => {
+    if (!canCreateExpense) return;
+
     // guard: ensure required fields are filled
-    if (!addForm.date || !addForm.category.trim() || !(addForm.amount > 0)) {
+    const category = addForm.category.trim();
+    const customCategory = addForm.custom_category.trim();
+    if (!addForm.date || !category || (category === "Other" && !customCategory) || !(addForm.amount > 0)) {
       Swal.fire({
         title: "Incomplete",
         text: "Please complete all required fields before adding an expense.",
@@ -481,36 +712,42 @@ const Expense: React.FC = () => {
       });
       return;
     }
+
+    const confirmation = await Swal.fire({
+      title: "Add this expense?",
+      text: "This will record the expense immediately and notify the Shop Owner for review.",
+      icon: "question",
+      showCancelButton: true,
+      confirmButtonText: "Add Expense",
+      cancelButtonText: "Cancel",
+    });
+    if (!confirmation.isConfirmed) return;
+
     try {
       const formData = new FormData();
       formData.append('date', addForm.date);
-      formData.append('category', addForm.category);
+      formData.append('payment_mode', addForm.payment_mode);
+      if (addForm.due_date) formData.append('due_date', addForm.due_date);
+      formData.append('category', category);
+      if (category === "Other") formData.append('custom_category', customCategory);
       formData.append('description', addForm.description);
       formData.append('amount', addForm.amount.toString());
       formData.append('tax_amount', addForm.tax_amount.toString());
-      formData.append('status', 'submitted');
+      if (addForm.payment_mode === 'paid_now') {
+        formData.append('payment_method', addForm.payment_method);
+        if (addForm.payment_reference) formData.append('payment_reference', addForm.payment_reference);
+        if (addForm.idempotency_key) formData.append('idempotency_key', addForm.idempotency_key);
+      }
       
       if (receiptFile) {
         formData.append('receipt', receiptFile);
       }
 
-      const response = await fetch('/api/finance/session/expenses', {
-        method: 'POST',
-        headers: {
-          'X-Requested-With': 'XMLHttpRequest',
-          'Accept': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
-        },
-        body: formData,
-        credentials: 'include',
-      });
+      const response = await api.post('/api/finance/expenses', formData);
 
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to add expense');
+        throw new Error(response.error || 'Failed to add expense');
       }
-
-      await response.json();
       // React Query will automatically refetch on next render
       refetchExpenses();
       closeAddModal();
@@ -531,7 +768,13 @@ const Expense: React.FC = () => {
   };
 
   const isAddFormValid = React.useMemo(() => {
-    return Boolean(addForm.date && addForm.category.trim() && addForm.amount > 0);
+    return Boolean(
+      addForm.date
+      && addForm.category.trim()
+      && (addForm.category !== "Other" || addForm.custom_category.trim())
+      && addForm.amount > 0
+      && (addForm.payment_mode === "paid_now" || addForm.due_date)
+    );
   }, [addForm]);
 
   const handleArchiveExpense = (id: string) => {
@@ -548,7 +791,7 @@ const Expense: React.FC = () => {
       if (result.isConfirmed) {
         (async () => {
           try {
-            const response = await api.delete(`/api/finance/session/expenses/${id}`);
+            const response = await api.delete(`/api/finance/expenses/${id}`);
             if (!response.ok) throw new Error(response.error || 'Failed to archive expense');
             // React Query will automatically refetch
             refetchExpenses();
@@ -585,7 +828,7 @@ const Expense: React.FC = () => {
       if (result.isConfirmed) {
         (async () => {
           try {
-            const response = await api.post(`/api/finance/session/expenses/${id}/restore`);
+            const response = await api.post(`/api/finance/expenses/${id}/restore`);
             if (!response.ok) throw new Error(response.error || 'Failed to restore expense');
             refetchExpenses();
             Swal.fire({
@@ -614,14 +857,9 @@ const Expense: React.FC = () => {
           <LoadingSpinner message="Loading expenses..." />
         ) : (
           <>
-            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Expense Management</h1>
-                <p className="text-gray-600 dark:text-gray-400 mt-2">
-                  Add and track team spending across the ERP suite.
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col items-end gap-4 md:flex-row md:items-center md:justify-end">
+              <h1 className="sr-only">Expense Management</h1>
+              <div className="flex items-center justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setShowArchived((prev) => !prev)}
@@ -629,7 +867,7 @@ const Expense: React.FC = () => {
                 >
                   {showArchived ? 'Show Active' : 'Show Archived'}
                 </button>
-                {!showArchived && (
+                {canCreateExpense && !showArchived && (
                   <button 
                     onClick={openAddModal}
                     className="inline-flex items-center px-4 py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 shadow-sm transition-colors">
@@ -644,8 +882,6 @@ const Expense: React.FC = () => {
         <MetricCard
           title="Total Spend"
           value={formatCurrency(stats.total)}
-          change={6.2}
-          changeType="increase"
           icon={WalletIcon}
           color="info"
           description="Month to date spend"
@@ -653,8 +889,6 @@ const Expense: React.FC = () => {
         <MetricCard
           title="Approved"
           value={formatCurrency(stats.approvedTotal)}
-          change={3.1}
-          changeType="increase"
           icon={CheckIcon}
           color="success"
           description="Cleared for payment"
@@ -662,8 +896,6 @@ const Expense: React.FC = () => {
         <MetricCard
           title="Pending"
           value={formatCurrency(stats.pendingTotal)}
-          change={2.4}
-          changeType="decrease"
           icon={ClockIcon}
           color="warning"
           description="Awaiting review"
@@ -671,8 +903,6 @@ const Expense: React.FC = () => {
         <MetricCard
           title="Average Expense"
           value={formatCurrency(Math.round(stats.avgExpense))}
-          change={1.8}
-          changeType="increase"
           icon={TrendingUpIcon}
           color="info"
           description="Per submitted record"
@@ -686,7 +916,7 @@ const Expense: React.FC = () => {
           </div>
           <div className="max-w-full overflow-x-auto custom-scrollbar">
             <div className="-ml-5 min-w-[640px] xl:min-w-full pl-2">
-              <Chart options={chartOptions} series={chartSeries} type="bar" height={420} />
+              <MemoizedChart options={chartOptions} series={chartSeries} type="bar" height={420} />
             </div>
           </div>
         </div>
@@ -741,8 +971,8 @@ const Expense: React.FC = () => {
                 onClick={() => setStatusFilter(tab as Expense["status"] | "all")}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
                   statusFilter === tab
-                    ? "bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400"
-                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800"
+                    ? "bg-[#111111] text-white dark:bg-[#111111] dark:text-white"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800"
                 }`}
               >
                 {tab === "all"
@@ -754,14 +984,25 @@ const Expense: React.FC = () => {
             ))}
           </div>
 
-          <div className="flex items-center w-full lg:w-auto">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center w-full lg:w-auto">
+            <MonochromeSelect
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              aria-label="Filter by category"
+              className="w-full sm:w-48"
+            >
+              <option value="">All categories</option>
+              {categoryOptions.filter.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </MonochromeSelect>
             <div className="relative flex-1 lg:flex-initial lg:w-72">
               <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-5 text-gray-400 dark:text-gray-500" />
               <input
                 type="text"
                 placeholder="Search category or note"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
               />
             </div>
@@ -791,9 +1032,9 @@ const Expense: React.FC = () => {
                 <tr key={expense.id} className="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800">
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">
                     <div className="flex flex-col leading-tight">
-                      <span className="font-medium text-gray-900 dark:text-white">{formatExpenseDate(expense.date).date}</span>
-                      {formatExpenseDate(expense.date).time && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatExpenseDate(expense.date).time}</span>
+                      <span className="font-medium text-gray-900 dark:text-white">{formatExpenseDate(expense.date, expense.created_at).date}</span>
+                      {formatExpenseDate(expense.date, expense.created_at).time && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatExpenseDate(expense.date, expense.created_at).time}</span>
                       )}
                     </div>
                   </td>
@@ -801,7 +1042,11 @@ const Expense: React.FC = () => {
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">{expense.description}</td>
                   <td className="py-4 px-6 text-right text-sm font-semibold text-gray-900 dark:text-white">{formatCurrency(expense.amount)}</td>
                   <td className="py-4 px-6">
-                    {getApprovalStatusBadge(false, expense.status)}
+                    {isProcurementExpense(expense) ? (
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400">
+                        {procurementStatusLabel(expense)}
+                      </span>
+                    ) : getApprovalStatusBadge(false, expense.status)}
                   </td>
                   <td className="py-4 px-4 text-sm text-gray-700 dark:text-gray-300">
                     <div className="flex items-center justify-center gap-2">
@@ -813,7 +1058,29 @@ const Expense: React.FC = () => {
                       >
                         <EyeIcon className="size-5" />
                       </button>
-                      {!showArchived && expense.status !== "approved" && expense.status !== "posted" && (
+                      {!ownerMode && !showArchived && expense.status === "submitted" && !isProcurementExpense(expense) && !isCreatedByCurrentActor(expense) && (
+                        <>
+                          <button
+                            disabled={isApprovalActionPending}
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            aria-label="Approve expense"
+                            title="Approve expense"
+                            onClick={() => handleApprovalAction(expense, "approve")}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            disabled={isApprovalActionPending}
+                            className="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-900/30 hover:bg-rose-100 dark:hover:bg-rose-900/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            aria-label="Reject expense"
+                            title="Reject expense"
+                            onClick={() => handleApprovalAction(expense, "reject")}
+                          >
+                            Reject
+                          </button>
+                        </>
+                      )}
+                      {!ownerMode && !showArchived && expense.status !== "approved" && expense.status !== "posted" && (
                         <button
                           className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"
                           aria-label="Archive expense"
@@ -823,7 +1090,7 @@ const Expense: React.FC = () => {
                           <ArchiveBoxIcon className="size-5" />
                         </button>
                       )}
-                      {showArchived && (
+                      {showArchived && !ownerMode && (
                         <button
                           className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-emerald-600 dark:text-emerald-400 hover:text-emerald-800 dark:hover:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 transition-colors"
                           aria-label="Restore expense"
@@ -840,15 +1107,85 @@ const Expense: React.FC = () => {
             </tbody>
           </table>
         </div>
+
+        {totalExpenseCount > 0 && (
+          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-800">
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="text-sm text-gray-700 dark:text-gray-300">
+                Showing <span className="font-medium">{startNumber}</span> to{" "}
+                <span className="font-medium">{endNumber}</span> of{" "}
+                <span className="font-medium">{totalExpenseCount}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  aria-label="Previous page"
+                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
+                  disabled={currentPage === 1}
+                  className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Previous page"
+                >
+                  <ChevronLeftIcon className="size-5" />
+                </button>
+
+                {Array.from({ length: totalPages }, (_, index) => index + 1).map((page) => {
+                  if (
+                    page === 1
+                    || page === totalPages
+                    || (page >= currentPage - 1 && page <= currentPage + 1)
+                  ) {
+                    return (
+                      <button
+                        key={page}
+                        type="button"
+                        aria-label={`Page ${page}`}
+                        aria-current={currentPage === page ? "page" : undefined}
+                        onClick={() => setCurrentPage(page)}
+                        className={`min-w-[40px] px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          currentPage === page
+                            ? "bg-blue-600 text-white"
+                            : "border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800"
+                        }`}
+                      >
+                        {page}
+                      </button>
+                    );
+                  }
+
+                  if (page === currentPage - 2 || page === currentPage + 2) {
+                    return (
+                      <span key={page} className="px-2 text-gray-500 dark:text-gray-400">
+                        ...
+                      </span>
+                    );
+                  }
+
+                  return null;
+                })}
+
+                <button
+                  type="button"
+                  aria-label="Next page"
+                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
+                  disabled={currentPage === totalPages}
+                  className="p-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Next page"
+                >
+                  <ChevronRightIcon className="size-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
           </>
         )}
       </div>
 
       {isViewOpen && activeExpense && (
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
-          <div className="w-full max-w-lg rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800">
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm erp-modal-backdrop sm:py-8">
+          <div className="flex w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Expense</p>
                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white">{activeExpense.category}</h4>
@@ -862,13 +1199,13 @@ const Expense: React.FC = () => {
               </button>
             </div>
 
-            <div className="px-6 py-4 space-y-3">
+            <div className="space-y-1 px-5 py-2">
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
                 <span className="text-gray-500 dark:text-gray-400">Date</span>
                 <div className="text-right">
-                  <p className="font-semibold text-gray-900 dark:text-white">{formatExpenseDate(activeExpense.date).date}</p>
-                  {formatExpenseDate(activeExpense.date).time && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400">{formatExpenseDate(activeExpense.date).time}</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{formatExpenseDate(activeExpense.date, activeExpense.created_at).date}</p>
+                  {formatExpenseDate(activeExpense.date, activeExpense.created_at).time && (
+                    <p className="text-xs text-gray-500 dark:text-gray-400">{formatExpenseDate(activeExpense.date, activeExpense.created_at).time}</p>
                   )}
                 </div>
               </div>
@@ -882,65 +1219,49 @@ const Expense: React.FC = () => {
               </div>
 
               {activeExpense.procurement_details && (
-                <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 space-y-2">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Procured Stock Details</p>
-                  {activeExpense.procurement_details.po_number && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">PO Number</span>
-                      <span className="font-semibold text-right">{activeExpense.procurement_details.po_number}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.product_name && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Product</span>
-                      <span className="font-semibold text-right max-w-[60%]">{activeExpense.procurement_details.product_name}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.supplier_name && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Supplier</span>
-                      <span className="text-right max-w-[60%]">{activeExpense.procurement_details.supplier_name}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.quantity !== undefined && activeExpense.procurement_details.quantity !== null && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Quantity</span>
-                      <span className="font-semibold text-right">{activeExpense.procurement_details.quantity}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.requested_size && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Requested Size</span>
-                      <span className="text-right">{activeExpense.procurement_details.requested_size}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.requested_color && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Requested Color</span>
-                      <span className="text-right">{activeExpense.procurement_details.requested_color}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.unit_cost !== undefined && activeExpense.procurement_details.unit_cost !== null && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">Unit Cost</span>
-                      <span className="font-semibold text-right">{formatCurrency(activeExpense.procurement_details.unit_cost)}</span>
-                    </div>
-                  )}
-                  {activeExpense.procurement_details.total_cost !== undefined && activeExpense.procurement_details.total_cost !== null && (
-                    <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
-                      <span className="text-gray-500 dark:text-gray-400">PO Total</span>
-                      <span className="font-semibold text-right">{formatCurrency(activeExpense.procurement_details.total_cost)}</span>
-                    </div>
-                  )}
-                </div>
+                <ProcurementExpensePanel
+                  details={activeExpense.procurement_details}
+                  expenseId={activeExpense.id}
+                  expenseStatus={activeExpense.status}
+                  amount={activeExpense.amount}
+                  isReviewPending={isProcurementReleasePending}
+                  onReviewAndRelease={() => handleReviewAndRelease(activeExpense)}
+                  isPaymentProfileActionPending={isPaymentProfileActionPending}
+                  onVerifyPaymentProfile={() => handlePaymentProfileStatus(activeExpense, "verify")}
+                  onDisablePaymentProfile={() => handlePaymentProfileStatus(activeExpense, "disable")}
+                  canPaySupplier={canStartSupplierPayment(activeExpense)}
+                  onPaySupplier={openSupplierPayment}
+                  ownerMode={ownerMode}
+                  onReviewSupplierPayment={openSupplierPayment}
+                  onRefundChanged={async () => { await refreshExpenses(activeExpense.id); }}
+                />
               )}
 
               <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300 items-center">
                 <span className="text-gray-500 dark:text-gray-400">Status</span>
                 <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getStatusColor(activeExpense.status)}`}>
-                  {activeExpense.status.charAt(0).toUpperCase() + activeExpense.status.slice(1)}
+                  {isProcurementExpense(activeExpense)
+                    ? procurementStatusLabel(activeExpense)
+                    : activeExpense.status.charAt(0).toUpperCase() + activeExpense.status.slice(1)}
                 </span>
               </div>
+              {activeExpense.settlement_state && (
+                <div className="space-y-2 rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+                  <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                    <span className="text-gray-500 dark:text-gray-400">Settlement</span>
+                    <span className="font-semibold capitalize">{activeExpense.settlement_state.status.replace("_", " ")}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-gray-700 dark:text-gray-300">
+                    <span className="text-gray-500 dark:text-gray-400">Paid</span>
+                    <span className="font-semibold">{formatCurrency(activeExpense.settlement_state.paid_amount)}</span>
+                  </div>
+                  {activeExpense.settlement_state.integrity_warnings.length > 0 && (
+                    <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                      Requires reconciliation: {activeExpense.settlement_state.integrity_warnings.join(", ")}
+                    </p>
+                  )}
+                </div>
+              )}
               
               {activeExpense.receipt_path && (
                 <div className="flex flex-col gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -950,7 +1271,7 @@ const Expense: React.FC = () => {
                       {activeExpense.receipt_original_name}
                     </span>
                     <button
-                      onClick={() => window.open(`/api/finance/session/expenses/${activeExpense.id}/receipt/download`, '_blank')}
+                      onClick={() => window.open(`/api/finance/expenses/${activeExpense.id}/receipt`, '_blank')}
                       className="px-3 py-1 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
                     >
                       Download
@@ -960,13 +1281,31 @@ const Expense: React.FC = () => {
               )}
             </div>
 
-            <div className="flex flex-col gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800">
-              <div className="flex items-center justify-end gap-3">
+            <div className="flex flex-col gap-2 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800">
+              <div className="flex items-center justify-between gap-3">
+                {!ownerMode && activeExpense.status === "submitted" && !showArchived && !isProcurementExpense(activeExpense) && !isCreatedByCurrentActor(activeExpense) ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      disabled={isApprovalActionPending}
+                      className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      onClick={() => handleApprovalAction(activeExpense, "approve")}
+                    >
+                      Approve
+                    </button>
+                    <button
+                      disabled={isApprovalActionPending}
+                      className="px-3 py-2 rounded-lg bg-rose-600 text-white text-sm font-semibold hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      onClick={() => handleApprovalAction(activeExpense, "reject")}
+                    >
+                      Reject
+                    </button>
+                  </div>
+                ) : <span />}
                 <button
-                className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                onClick={closeViewModal}
-              >
-                Close
+                  className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  onClick={closeViewModal}
+                >
+                  Close
                 </button>
               </div>
             </div>
@@ -974,10 +1313,23 @@ const Expense: React.FC = () => {
         </div>
       )}
 
-      {isAddOpen && (
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
-          <div className="w-full max-w-lg max-h-[90vh] rounded-2xl bg-white dark:bg-gray-900 shadow-2xl border border-gray-200 dark:border-gray-800 overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex-shrink-0">
+      {isSupplierPaymentOpen && activeExpense?.procurement_details && (
+        <SupplierPaymentDialog
+          open={isSupplierPaymentOpen}
+          mode={ownerMode ? "owner" : "finance"}
+          expenseId={activeExpense.id}
+          details={activeExpense.procurement_details}
+          amount={activeExpense.amount}
+          initialAttempt={activeExpense.procurement_details.payment_attempt as SupplierPaymentAttemptSummary | null | undefined}
+          onClose={() => setIsSupplierPaymentOpen(false)}
+          onChanged={async () => { await refreshExpenses(activeExpense.id); }}
+        />
+      )}
+
+      {canCreateExpense && isAddOpen && (
+        <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 px-4 py-6 backdrop-blur-sm erp-modal-backdrop sm:py-8">
+          <div className="flex w-full max-w-3xl max-h-[calc(100vh-3rem)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-800 dark:bg-gray-900 sm:max-h-[calc(100vh-4rem)]">
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-3 dark:border-gray-800">
               <div>
                 <p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">New Expense</p>
                 <h4 className="text-lg font-semibold text-gray-900 dark:text-white">Add Expense</h4>
@@ -991,7 +1343,7 @@ const Expense: React.FC = () => {
               </button>
             </div>
 
-            <div className="px-6 py-4 space-y-4 overflow-y-auto flex-1">
+            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-5 py-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
                 <input
@@ -1002,14 +1354,83 @@ const Expense: React.FC = () => {
                 />
               </div>
               <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Settlement</label>
+                <MonochromeSelect
+                  value={addForm.payment_mode}
+                  onChange={(e) => setAddForm({ ...addForm, payment_mode: e.target.value as "paid_now" | "pay_later" })}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                >
+                  <option value="paid_now">Paid now</option>
+                  <option value="pay_later">Pay later</option>
+                </MonochromeSelect>
+              </div>
+              {addForm.payment_mode === "pay_later" ? (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Due date</label>
+                  <input
+                    type="date"
+                    value={addForm.due_date}
+                    onChange={(e) => setAddForm({ ...addForm, due_date: e.target.value })}
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                  />
+                </div>
+              ) : (
+                <>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment method</label>
+                    <MonochromeSelect
+                      value={addForm.payment_method}
+                      onChange={(e) => setAddForm({ ...addForm, payment_method: e.target.value })}
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                    >
+                      <option value="cash">Cash</option>
+                      <option value="bank_transfer">Bank transfer</option>
+                      <option value="check">Check</option>
+                      <option value="gcash">GCash</option>
+                      <option value="maya">Maya</option>
+                      <option value="paypal">PayPal</option>
+                      <option value="other">Other</option>
+                    </MonochromeSelect>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Payment reference (optional)</label>
+                    <input
+                      type="text"
+                      value={addForm.payment_reference}
+                      onChange={(e) => setAddForm({ ...addForm, payment_reference: e.target.value })}
+                      placeholder="Receipt or transfer reference"
+                      className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                    />
+                  </div>
+                </>
+              )}
+              <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
-                <input
-                  type="text"
+                <MonochromeSelect
                   value={addForm.category}
-                  onChange={(e) => setAddForm({ ...addForm, category: e.target.value })}
-                  placeholder="e.g., Office Supplies, Travel, Software"
-                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                />
+                  aria-label="Expense category"
+                  onChange={(e) => setAddForm({
+                    ...addForm,
+                    category: e.target.value,
+                    custom_category: e.target.value === "Other" ? addForm.custom_category : "",
+                  })}
+                  className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                >
+                  <option value="">Select a category</option>
+                  {categoryOptions.manual.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </MonochromeSelect>
+                {addForm.category === "Other" && (
+                  <input
+                    type="text"
+                    aria-label="Custom category"
+                    value={addForm.custom_category}
+                    onChange={(e) => setAddForm({ ...addForm, custom_category: e.target.value })}
+                    placeholder="Enter a custom category"
+                    className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
+                  />
+                )}
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
@@ -1041,7 +1462,7 @@ const Expense: React.FC = () => {
               
               <div className="space-y-2">
                 <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Tax Rate (Optional)</label>
-                <select
+                <MonochromeSelect
                   value={addForm.tax_rate_id}
                   onChange={(e) => {
                     const taxRateId = e.target.value;
@@ -1060,7 +1481,7 @@ const Expense: React.FC = () => {
                       {tax.name} - {tax.rate}% {tax.is_inclusive ? '(Inclusive)' : ''}
                     </option>
                   ))}
-                </select>
+                </MonochromeSelect>
               </div>
               
               {addForm.tax_amount > 0 && (
@@ -1120,7 +1541,7 @@ const Expense: React.FC = () => {
               </div>
             </div>
 
-            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800 flex-shrink-0">
+            <div className="flex shrink-0 items-center justify-end gap-3 border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-800 dark:bg-gray-800">
               <button
                 className="px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 onClick={closeAddModal}

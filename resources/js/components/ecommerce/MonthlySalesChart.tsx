@@ -34,7 +34,7 @@ export default function MonthlySalesChart({ revenueTrend = [] }: MonthlySalesCha
     chart: {
       fontFamily: "Outfit, sans-serif",
       type: "bar",
-      height: 300,
+      height: 380,
       toolbar: {
         show: false,
       },
@@ -155,9 +155,9 @@ export default function MonthlySalesChart({ revenueTrend = [] }: MonthlySalesCha
       <div className="max-w-full overflow-x-auto custom-scrollbar">
         <div className="-ml-5 min-w-[650px] xl:min-w-full pl-2">
           {revenueTrend.length > 0 ? (
-            <Chart options={options} series={series} type="bar" height={300} />
+            <Chart options={options} series={series} type="bar" height={380} />
           ) : (
-            <div className="flex items-center justify-center h-[300px] text-gray-500 dark:text-gray-400">
+            <div className="flex h-[380px] items-center justify-center text-gray-500 dark:text-gray-400">
               No revenue data available
             </div>
           )}
@@ -166,4 +166,3 @@ export default function MonthlySalesChart({ revenueTrend = [] }: MonthlySalesCha
     </div>
   );
 }
-

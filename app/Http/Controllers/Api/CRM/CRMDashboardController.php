@@ -13,6 +13,7 @@ use App\Models\ShopReview;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use App\Support\Erp\ErpActorContext;
 use Inertia\Inertia;
 
 class CRMDashboardController extends Controller
@@ -21,12 +22,22 @@ class CRMDashboardController extends Controller
 
     private function shopOwnerId(): int
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
         $user = Auth::guard('user')->user() ?? Auth::user();
         return $user->shop_owner_id ?? $user->id;
     }
 
     private function shopOwnerIds(): array
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return [(int) $context->tenantOwner()->getKey()];
+        }
+
         $user = Auth::guard('user')->user() ?? Auth::user();
         if (! $user) {
             return [];
@@ -209,7 +220,8 @@ class CRMDashboardController extends Controller
     {
         $user = Auth::guard('user')->user();
 
-        if ($user?->force_password_change) {
+        $context = request()->attributes->get('erp.actor_context');
+        if (! $context instanceof ErpActorContext && $user?->force_password_change) {
             return redirect()->route('erp.profile');
         }
 

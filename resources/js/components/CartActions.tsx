@@ -158,17 +158,18 @@ export const AddToCartButton: React.FC<AddToCartButtonProps> = ({ productId, pro
       if (response.ok && data.success) {
         // Notify with the new total count from server
         const total = data.total_count;
-        dispatchCartAddedEvent({ added: addQty, total });
-
-        // Show success message
-        Swal.fire({
-          icon: 'success',
-          title: 'Added to Cart!',
-          text: `${product?.name || 'Product'} has been added to your cart`,
-          showConfirmButton: false,
-          timer: 1500,
-          timerProgressBar: true,
-          ...modalTheme,
+        dispatchCartAddedEvent({
+          added: addQty,
+          total,
+          openDrawer: true,
+          item: {
+            name: product?.name || null,
+            price: parsePrice(product?.price),
+            image: selectedImage,
+            size,
+            color,
+            quantity: addQty,
+          },
         });
 
         // Scroll to the cart icon

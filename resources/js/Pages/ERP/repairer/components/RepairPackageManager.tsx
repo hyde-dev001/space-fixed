@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
@@ -151,11 +152,15 @@ const ArchiveRestoreIcon = ({ className }: { className?: string }) => (
 type RepairPackageManagerProps = {
   serviceEndpoint?: string;
   materialsEndpoint?: string;
+  readOnly?: boolean;
+  allowDirectPriceEdit?: boolean;
 };
 
 export default function RepairPackageManager({
   serviceEndpoint = "/api/repair-services",
   materialsEndpoint = "/api/repairer/materials",
+  readOnly = false,
+  allowDirectPriceEdit = false,
 }: RepairPackageManagerProps) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -376,8 +381,8 @@ export default function RepairPackageManager({
     }
 
     const packagePrice = Number(formState.package_price);
-    if (!Number.isFinite(packagePrice) || packagePrice < 0) {
-      return "Package price must be a valid non-negative number.";
+    if (!Number.isFinite(packagePrice) || packagePrice < 0.01) {
+      return "Package price must be a valid amount greater than zero.";
     }
 
     return null;
@@ -515,7 +520,7 @@ export default function RepairPackageManager({
     const isEditMode = mode === "edit";
 
     return (
-      <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b border-gray-200 dark:border-gray-800">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{title}</h2>
@@ -536,7 +541,7 @@ export default function RepairPackageManager({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
-                <select
+                <MonochromeSelect
                   title="Package status"
                   value={formState.status}
                   onChange={(e) => setFormState((prev) => ({ ...prev, status: e.target.value as "active" | "inactive" }))}
@@ -544,7 +549,7 @@ export default function RepairPackageManager({
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </MonochromeSelect>
               </div>
             </div>
 
@@ -564,22 +569,22 @@ export default function RepairPackageManager({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Package Price *</label>
                 <input
                   type="number"
-                  min="0"
+                  min="0.01"
                   step="0.01"
                   value={formState.package_price}
                   onChange={(e) => {
                     setFormState((prev) => ({ ...prev, package_price: e.target.value }));
                   }}
-                  disabled={isEditMode}
+                  disabled={isEditMode && !allowDirectPriceEdit}
                   className={`w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white ${
-                    isEditMode
+                    isEditMode && !allowDirectPriceEdit
                       ? "bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
                       : "bg-white dark:bg-gray-800"
                   }`}
                   placeholder="e.g. 948.00"
                 />
                 <div className="mt-1 space-y-1">
-                  {isEditMode ? (
+                  {isEditMode && !allowDirectPriceEdit ? (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Package price is locked when editing.
                     </p>
@@ -632,7 +637,7 @@ export default function RepairPackageManager({
                 {services.map((service) => {
                   const checked = formState.service_ids.includes(service.id);
                   return (
-                    <label key={service.id} className={`flex items-center justify-between gap-3 rounded border p-3 cursor-pointer ${checked ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-700"}`}>
+                    <label key={service.id} className={`flex items-center justify-between gap-3 rounded border p-3 cursor-pointer transition-colors ${checked ? "border-gray-500 bg-gray-100 dark:border-gray-600 dark:bg-gray-800" : "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"}`}>
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{service.name}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">{service.category} • {service.duration}</p>
@@ -680,7 +685,7 @@ export default function RepairPackageManager({
                     <div key={`material-template-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                       <div className="md:col-span-5">
                         <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
-                        <select
+                        <MonochromeSelect
                           title="Select inventory material"
                           value={line.inventory_item_id || ""}
                           onChange={(e) => updateMaterialTemplateLine(index, "inventory_item_id", Number(e.target.value || 0))}
@@ -692,7 +697,7 @@ export default function RepairPackageManager({
                               {material.name} (Available: {material.available_quantity})
                             </option>
                           ))}
-                        </select>
+                        </MonochromeSelect>
                       </div>
 
                       <div className="md:col-span-2">
@@ -876,7 +881,11 @@ export default function RepairPackageManager({
         <div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Repair Packages</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            {showArchived ? "Archived package list" : "Create bundled service packages (repairer-managed)."}
+            {showArchived
+              ? "Archived package list"
+              : readOnly
+                ? "View bundled service packages."
+                : "Create bundled service packages (repairer-managed)."}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -893,7 +902,7 @@ export default function RepairPackageManager({
             {showArchived ? "Show Active" : "Show Archived"}
           </button>
 
-          {!showArchived && (
+          {!readOnly && !showArchived && (
             <button
               onClick={openAddModal}
               className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800"
@@ -912,7 +921,7 @@ export default function RepairPackageManager({
           placeholder="Search package name or description"
           className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
         />
-        <select
+        <MonochromeSelect
           title="Package status filter"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "inactive")}
@@ -921,7 +930,7 @@ export default function RepairPackageManager({
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
-        </select>
+        </MonochromeSelect>
       </div>
 
       <div className="overflow-x-auto">
@@ -933,13 +942,13 @@ export default function RepairPackageManager({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Savings</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              {!readOnly && <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
             {loading && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={readOnly ? 5 : 6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
                   Loading repair packages...
                 </td>
               </tr>
@@ -947,7 +956,7 @@ export default function RepairPackageManager({
 
             {!loading && filteredPackages.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={readOnly ? 5 : 6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
                   {showArchived ? "No archived repair packages found." : "No repair packages found."}
                 </td>
               </tr>
@@ -969,7 +978,7 @@ export default function RepairPackageManager({
                     {pkg.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 align-top">
+                {!readOnly && <td className="px-6 py-4 align-top">
                   <div className="flex items-center gap-2">
                     {!showArchived ? (
                       <>
@@ -1001,15 +1010,15 @@ export default function RepairPackageManager({
                       </button>
                     )}
                   </div>
-                </td>
+                </td>}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {renderModal("add")}
-      {renderModal("edit")}
+      {!readOnly && renderModal("add")}
+      {!readOnly && renderModal("edit")}
     </div>
   );
 }

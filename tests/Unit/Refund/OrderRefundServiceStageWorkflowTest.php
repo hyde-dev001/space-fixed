@@ -84,6 +84,27 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function finance_uses_the_refund_snapshot_when_live_policy_changes(): void
+    {
+        $this->requiresOwnerApproval = true;
+
+        $refund = $this->makeRefund(['requires_owner_approval' => false]);
+        $result = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 10);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('approved', $refund->finance_status);
+        $this->assertSame('approved', $refund->shop_owner_status);
+
+        $this->requiresOwnerApproval = false;
+        $refund = $this->makeRefund(['requires_owner_approval' => true]);
+        $result = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 10);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('approved_initial', $refund->finance_status);
+        $this->assertSame('pending', $refund->shop_owner_status);
+    }
+
+    #[Test]
     public function staged_approval_moves_refund_to_pending_customer_shipment(): void
     {
         $refund = $this->makeRefund();
@@ -102,6 +123,65 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
         $this->assertSame('approved', $refund->finance_status);
         $this->assertSame('pending_customer_shipment', $refund->return_status);
         $this->assertSame('pending_approval', $refund->status);
+    }
+
+    #[Test]
+    public function cod_staged_approval_routes_the_return_to_staff_pickup(): void
+    {
+        $refund = $this->makeRefund();
+        $refund->order->setAttribute('payment_method', 'cod');
+
+        $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+        $this->service->approveRequestedRefund($refund, stage: 'shop_owner', processedBy: 11);
+        $result = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('pending_customer_shipment', $refund->return_status);
+        $this->assertSame('staff', $refund->return_source);
+    }
+
+    #[Test]
+    public function company_refund_requires_staff_approval_before_finance(): void
+    {
+        $refund = $this->makeRefund(registrationType: 'company');
+        $this->assertSame('company', $refund->order->shopOwner->registration_type);
+
+        $blocked = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+
+        $this->assertSame('invalid_state', $blocked['result']);
+        $this->assertSame('pending', $refund->finance_status);
+
+        $staff = $this->service->approveRequestedRefund($refund, stage: 'staff', processedBy: 11);
+
+        $this->assertSame('approved', $staff['result']);
+        $this->assertSame('approved', $refund->shop_owner_status);
+        $this->assertSame(11, $refund->shop_owner_approved_by);
+        $this->assertSame('pending', $refund->finance_status);
+        $this->assertSame('awaiting_approval', $refund->return_status);
+
+        $finance = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 12);
+
+        $this->assertSame('approved', $finance['result']);
+        $this->assertSame('approved', $refund->finance_status);
+        $this->assertSame('pending_customer_shipment', $refund->return_status);
+    }
+
+    #[Test]
+    public function company_finance_cannot_reject_before_staff_review(): void
+    {
+        $refund = $this->makeRefund(registrationType: 'company');
+        $this->assertSame('company', $refund->order->shopOwner->registration_type);
+
+        $blocked = $this->service->rejectRequestedRefund($refund, 'Not approved', stage: 'finance', processedBy: 12);
+
+        $this->assertSame('invalid_state', $blocked['result']);
+        $this->assertSame('requested', $refund->status);
+
+        $staff = $this->service->rejectRequestedRefund($refund, 'Not refundable', stage: 'staff', processedBy: 11);
+
+        $this->assertSame('rejected', $staff['result']);
+        $this->assertSame('rejected', $refund->shop_owner_status);
+        $this->assertSame('Not refundable', $refund->rejection_reason);
     }
 
     #[Test]
@@ -160,6 +240,29 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
 
         $this->assertSame('invalid_state', $result['result']);
         $this->assertStringContainsString('handled by staff', strtolower((string) $result['message']));
+    }
+
+    #[Test]
+    public function cod_customer_cannot_submit_a_return_before_staff_arranges_pickup(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+            'return_source' => 'customer',
+            'status' => 'pending_approval',
+        ]);
+        $refund->order->setAttribute('payment_method', 'cod');
+
+        $result = $this->service->markCustomerReturnShipped($refund, [
+            'tracking_number' => 'TRK-COD-BLOCKED',
+            'carrier' => 'LBC',
+            'tracking_link' => 'https://track.example/TRK-COD-BLOCKED',
+        ]);
+
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertStringContainsString('staff', strtolower((string) $result['message']));
+        $this->assertSame('pending_customer_shipment', $refund->return_status);
     }
 
     #[Test]
@@ -225,6 +328,110 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function completed_return_notifies_finance_that_payout_is_ready(): void
+    {
+        $this->notificationService
+            ->expects($this->once())
+            ->method('sendToErpRole')
+            ->with(
+                'Finance',
+                202,
+                NotificationType::REFUND_REQUEST,
+                'Refund Payout Ready',
+                $this->stringContains('payout'),
+                $this->callback(fn ($data): bool => is_array($data)
+                    && ($data['refund_id'] ?? null) === 5001
+                    && ($data['return_status'] ?? null) === 'received'),
+                '/finance?section=refund-approvals',
+                'high',
+                'refund-payout-ready:order:5001',
+                true,
+            );
+
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'in_transit',
+            'status' => 'pending_approval',
+        ]);
+        $refund->setAttribute('id', 5001);
+        $refund->setAttribute('shop_owner_id', 202);
+
+        $result = $this->service->confirmReturnReceived($refund, staffId: 77, notes: 'Box inspected and complete');
+
+        $this->assertSame('received', $result['result']);
+    }
+
+    #[Test]
+    public function completed_individual_return_notifies_the_shop_owner_to_execute_payout(): void
+    {
+        $this->notificationService
+            ->expects($this->once())
+            ->method('sendToShopOwner')
+            ->with(
+                202,
+                NotificationType::REFUND_REQUEST,
+                'Refund Payout Ready',
+                $this->stringContains('you to execute'),
+                $this->isType('array'),
+                $this->stringContains('/shop-owner/erp/retail/orders'),
+                'high',
+                'refund-payout-ready:order:5001',
+                true,
+            );
+
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'in_transit',
+            'status' => 'pending_approval',
+        ], registrationType: 'individual');
+        $refund->setAttribute('id', 5001);
+        $refund->setAttribute('shop_owner_id', 202);
+
+        $result = $this->service->confirmReturnReceived($refund, staffId: null, notes: 'Inspected by owner');
+
+        $this->assertSame('received', $result['result']);
+        $this->assertStringContainsString('execute the refund payout', strtolower((string) $result['message']));
+    }
+
+    #[Test]
+    public function final_finance_approval_notifies_finance_when_return_was_already_received(): void
+    {
+        $this->notificationService
+            ->expects($this->once())
+            ->method('sendToErpRole')
+            ->with(
+                'Finance',
+                202,
+                NotificationType::REFUND_REQUEST,
+                'Refund Payout Ready',
+                $this->stringContains('payout'),
+                $this->callback(fn ($data): bool => is_array($data)
+                    && ($data['refund_id'] ?? null) === 5001
+                    && ($data['return_status'] ?? null) === 'received'),
+                '/finance?section=refund-approvals',
+                'high',
+                'refund-payout-ready:order:5001',
+                true,
+            );
+
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved_initial',
+            'return_status' => 'received',
+            'status' => 'pending_approval',
+        ]);
+        $refund->setAttribute('id', 5001);
+        $refund->setAttribute('shop_owner_id', 202);
+
+        $result = $this->service->approveRequestedRefund($refund, stage: 'finance', processedBy: 77);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('approved', $refund->finance_status);
+    }
+
+    #[Test]
     public function staff_can_confirm_return_received_after_shipment(): void
     {
         $refund = $this->makeRefund([
@@ -261,7 +468,25 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function execute_refund_attempts_payout_when_return_is_in_transit(): void
+    public function staff_cannot_confirm_shop_owned_return_before_rider_delivery(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'Shop-owned logistics',
+            'status' => 'pending_approval',
+        ]);
+
+        $result = $this->service->confirmReturnReceived($refund, staffId: 88);
+
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertSame('pending_staff_pickup', $refund->return_status);
+    }
+
+    #[Test]
+    public function execute_refund_blocks_payout_when_return_is_in_transit(): void
     {
         $refund = $this->makeRefund([
             'shop_owner_status' => 'approved',
@@ -270,19 +495,13 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
             'status' => 'pending_approval',
         ]);
 
-        $this->paymongoRefundService
-            ->expects($this->once())
-            ->method('createRefund')
-            ->willReturn([
-                'success' => false,
-                'message' => 'Gateway temporarily unavailable',
-            ]);
+        $this->paymongoRefundService->expects($this->never())->method('createRefund');
 
         $result = $this->service->executeApprovedRefund($refund, processedBy: 90);
 
-        $this->assertSame('failed', $result['result']);
-        $this->assertSame('failed', $refund->status);
-        $this->assertStringContainsString('gateway', strtolower((string) $result['message']));
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertSame('pending_approval', $refund->status);
+        $this->assertStringContainsString('received', strtolower((string) $result['message']));
     }
 
     #[Test]
@@ -364,6 +583,82 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
+    public function product_only_refund_keeps_shipping_excluded_when_same_day_partial_is_rejected(): void
+    {
+        $refund = $this->makeRefund([
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'status' => 'pending_approval',
+            'amount' => 2500.00,
+        ]);
+        $refund->order->shipping_fee = 100.00;
+
+        $this->paymongoRefundService
+            ->expects($this->once())
+            ->method('createRefund')
+            ->withArgs(fn (string $secretKey, string $paymentId, int $amountInCentavos, string $reason): bool => $secretKey === 'sk_test_abc'
+                && $paymentId === 'pay_test_123'
+                && $amountInCentavos === 240000
+                && $reason === 'requested_by_customer')
+            ->willReturn([
+                'success' => false,
+                'message' => 'Cannot partially refund for payments done on the same day.',
+            ]);
+
+        $this->paymongoRefundService
+            ->expects($this->once())
+            ->method('getPaymentAmountInCentavos')
+            ->willReturn(250000);
+
+        $this->paymentSettlementService
+            ->expects($this->once())
+            ->method('recordOrderRefundFailure');
+
+        $result = $this->service->executeApprovedRefund($refund, processedBy: 99);
+
+        $this->assertSame('failed', $result['result']);
+        $this->assertSame(
+            'PayMongo does not allow a product-only refund on the payment date. The refund amount is PHP 2,400.00 and excludes the PHP 100.00 shipping fee. Please retry after the payment date.',
+            $result['message'],
+        );
+        $this->assertSame(2400.00, (float) $refund->amount);
+    }
+
+    #[Test]
+    public function failed_gateway_refund_can_be_retried_when_recovery_is_open(): void
+    {
+        $refund = $this->makeRefund([
+            'status' => 'failed',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'recovery_status' => OrderRefund::RECOVERY_STATUS_UNRESOLVED,
+        ]);
+
+        $this->assertTrue($this->service->canExecuteApprovedRefund($refund));
+    }
+
+    #[Test]
+    public function terminal_failed_refund_recovery_cannot_be_retried(): void
+    {
+        $refund = $this->makeRefund([
+            'status' => 'failed',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'approved',
+            'return_status' => 'received',
+            'recovery_status' => OrderRefund::RECOVERY_STATUS_RESOLVED,
+        ]);
+
+        $this->paymongoRefundService->expects($this->never())->method('createRefund');
+
+        $this->assertFalse($this->service->canExecuteApprovedRefund($refund));
+        $result = $this->service->executeApprovedRefund($refund);
+
+        $this->assertSame('invalid_state', $result['result']);
+    }
+
+    #[Test]
     public function shop_owner_rejection_sets_rejected_state_and_reason(): void
     {
         $refund = $this->makeRefund([
@@ -394,6 +689,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
             'shop_owner_status' => 'pending',
             'finance_status' => 'pending',
             'return_status' => 'awaiting_approval',
+            'requires_owner_approval' => $this->requiresOwnerApproval,
             'amount' => 2500.00,
             'currency' => 'PHP',
             'reason_code' => 'quality_issue',

@@ -30,11 +30,11 @@ class RepairOnlineRefundWorkflowService
             'repairer_reviewed_at' => now(),
             'approved_amount' => round($approvedAmount, 2),
             'status' => 'requested',
-            'failure_reason' => null,
-            'failed_at' => null,
         ]);
 
-        if ($this->isIndividualShopOwner((int) $refund->shop_owner_id)) {
+        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+
+        if ($requiresOwnerApproval && $this->isIndividualShopOwner((int) $refund->shop_owner_id)) {
             $this->notificationService->sendToShopOwner(
                 shopOwnerId: (int) $refund->shop_owner_id,
                 type: NotificationType::REFUND_REQUEST,
@@ -45,7 +45,7 @@ class RepairOnlineRefundWorkflowService
                     'refund_no' => (string) $refund->refund_no,
                     'repairer_status' => 'approved',
                 ],
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );
@@ -63,6 +63,7 @@ class RepairOnlineRefundWorkflowService
                 ],
                 actionUrl: '/finance?section=refund-approvals',
                 priority: 'high',
+                requiresAction: true,
             );
         }
 
@@ -83,8 +84,10 @@ class RepairOnlineRefundWorkflowService
             'repairer_reviewed_by' => $actorId,
             'repairer_reviewed_at' => now(),
             'status' => 'rejected',
-            'failure_reason' => Str::limit(trim($reason), 255, ''),
-            'failed_at' => now(),
+            'failure_reason' => trim((string) ($refund->failure_reason ?? '')) !== ''
+                ? $refund->failure_reason
+                : Str::limit(trim($reason), 255, ''),
+            'failed_at' => $refund->failed_at ?? now(),
         ]);
 
         $customerId = $this->resolveCustomerUserId($refund);
@@ -119,7 +122,7 @@ class RepairOnlineRefundWorkflowService
                     'repairer_status' => 'rejected',
                     'reason' => trim($reason),
                 ],
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );
@@ -135,7 +138,7 @@ class RepairOnlineRefundWorkflowService
                     'repairer_status' => 'rejected',
                     'reason' => trim($reason),
                 ],
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );

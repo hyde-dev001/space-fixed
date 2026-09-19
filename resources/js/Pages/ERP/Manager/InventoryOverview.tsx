@@ -1,6 +1,11 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import {
+  useManagerInventoryOverview,
+  type ManagerInventoryOverviewFilters,
+} from "../../../hooks/useManagerApi";
 
 const BoxIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -35,13 +40,15 @@ const CloseIcon = ({ className }: { className?: string }) => (
 
 interface InventoryItem {
   id: number;
+  source_type?: string;
+  source_id?: number;
   name: string;
   sku: string;
   category: string;
   quantity: number;
   image: string | null;
-  status: "In Stock" | "Low Stock" | "Out of Stock";
-  last_updated?: string;
+  status: "In Stock" | "Low Stock" | "Out of Stock" | string;
+  last_updated: string | null;
 }
 
 interface PaginationPayload<T> {
@@ -53,6 +60,7 @@ interface PaginationPayload<T> {
 }
 
 interface MetricsPayload {
+  total_items?: number;
   total_quantity: number;
   low_stock_count: number;
   out_of_stock_count: number;
@@ -61,6 +69,12 @@ interface MetricsPayload {
 interface InventoryResponse {
   items: PaginationPayload<InventoryItem>;
   metrics: MetricsPayload;
+  categories?: string[];
+  snapshot?: {
+    captured_at: string;
+    scope: string;
+  };
+  last_updated_at?: string;
 }
 
 interface MetricCardProps {
@@ -130,8 +144,11 @@ export default function ERPInventoryOverview() {
   const [currentPage, setCurrentPage] = useState(Number.isFinite(initialPage) && initialPage > 0 ? initialPage : 1);
   const [searchQuery, setSearchQuery] = useState(initialQuery.get("search") || "");
   const [statusFilter, setStatusFilter] = useState(allowedStatuses.includes(requestedStatus) ? requestedStatus : "All");
+  const [categoryFilter, setCategoryFilter] = useState(initialQuery.get("category") || "All");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
   const [metrics, setMetrics] = useState<MetricsPayload>({
     total_quantity: 0,
     low_stock_count: 0,
@@ -150,10 +167,19 @@ export default function ERPInventoryOverview() {
 
   const forceCategory = isRepairer ? "repair_materials" : isStaff ? "shoes" : null;
 
+  const managerFilters: ManagerInventoryOverviewFilters = {
+    page: currentPage,
+    per_page: 10,
+    ...(searchQuery.trim() ? { search: searchQuery.trim() } : {}),
+    ...(categoryFilter !== "All" ? { category: categoryFilter } : {}),
+    ...(statusFilter !== "All" ? { status: statusFilter } : {}),
+  };
+  const managerInventoryQuery = useManagerInventoryOverview(managerFilters, isManager);
+
   const scopedItems = useMemo(() => {
     if (isRepairer) return items.filter((item) => isRepairCategory(item.category));
     if (isStaff) return items.filter((item) => isProductCategory(item.category));
-    if (isManager) return items.filter((item) => isProductCategory(item.category) || isRepairCategory(item.category));
+    if (isManager) return items;
     return items;
   }, [isManager, isRepairer, isStaff, items]);
 
@@ -169,6 +195,21 @@ export default function ERPInventoryOverview() {
   }, [scopedItems]);
 
   useEffect(() => {
+    if (!isManager || !managerInventoryQuery.data) return;
+
+    const payload = managerInventoryQuery.data;
+    setItems(payload.items.data);
+    setTotalItems(payload.items.total);
+    setItemsPerPage(payload.items.per_page);
+    setTotalPages(payload.items.last_page || 1);
+    setMetrics(payload.metrics);
+    setCategories(payload.categories);
+    setLastUpdatedAt(payload.last_updated_at);
+  }, [isManager, managerInventoryQuery.data]);
+
+  useEffect(() => {
+    if (isManager) return;
+
     const fetchInventoryOverview = async () => {
       try {
         setLoading(true);
@@ -201,6 +242,8 @@ export default function ERPInventoryOverview() {
         setItemsPerPage(payload.items.per_page);
         setTotalPages(payload.items.last_page || 1);
         setMetrics(payload.metrics);
+        setCategories(payload.categories || []);
+        setLastUpdatedAt(payload.last_updated_at || null);
       } catch (fetchError) {
         setError(fetchError instanceof Error ? fetchError.message : "Failed to load inventory overview");
       } finally {
@@ -209,7 +252,12 @@ export default function ERPInventoryOverview() {
     };
 
     fetchInventoryOverview();
-  }, [currentPage, searchQuery, statusFilter, forceCategory, inventoryApiBasePath]);
+  }, [currentPage, searchQuery, statusFilter, forceCategory, inventoryApiBasePath, isManager]);
+
+  const displayLoading = isManager ? managerInventoryQuery.isLoading : loading;
+  const displayError = isManager ? managerInventoryQuery.error?.message || null : error;
+  const displayMetrics = isManager ? metrics : derivedMetrics;
+  const availableCategories = isManager ? (managerInventoryQuery.data?.categories || categories) : [];
 
   const startIndex = (currentPage - 1) * itemsPerPage;
 
@@ -221,20 +269,6 @@ export default function ERPInventoryOverview() {
       .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
       .join(" ");
 
-  const getCategoryBadgeClasses = (category: string) => {
-    const normalized = normalizeCategory(category);
-
-    if (normalized === "repair_materials") {
-      return "bg-sky-50 text-sky-700 ring-1 ring-sky-200 dark:bg-sky-900/30 dark:text-sky-200 dark:ring-sky-800";
-    }
-
-    if (normalized === "shoes" || normalized === "products" || normalized === "product") {
-      return "bg-violet-50 text-violet-700 ring-1 ring-violet-200 dark:bg-violet-900/30 dark:text-violet-200 dark:ring-violet-800";
-    }
-
-    return "bg-gray-100 text-gray-700 ring-1 ring-gray-200 dark:bg-gray-800 dark:text-gray-200 dark:ring-gray-700";
-  };
-
   const handleViewClick = (item: InventoryItem) => {
     setSelectedItem(item);
     setViewModalOpen(true);
@@ -243,43 +277,33 @@ export default function ERPInventoryOverview() {
   return (
     <AppLayoutERP>
       <Head title="Inventory Overview - Solespace" />
-      <div className="p-6 space-y-6">
+      <div className="p-6 space-y-6" data-last-updated-at={lastUpdatedAt ?? undefined}>
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-semibold mb-1">Stocks Overview</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              {isRepairer
-                ? "Monitor repair-material stock levels and item availability"
-                : isStaff
-                ? "Monitor product stock levels and item availability"
-                : "Monitor stock levels across products and repair materials"}
-            </p>
+            <h1 className="sr-only">Stocks Overview</h1>
           </div>
-          <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200 w-fit">
-            {isRepairer ? "Repair Materials" : isStaff ? "Products" : "Products + Repair Materials"}
-          </span>
         </div>
 
         {/* Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <MetricCard
             title="Total Items in Stock"
-            value={derivedMetrics.total_quantity.toLocaleString()}
+            value={displayMetrics.total_quantity.toLocaleString()}
             icon={BoxIcon}
             color="info"
             description={isRepairer ? "Across repair materials" : isStaff ? "Across products" : "Across products and repair materials"}
           />
           <MetricCard
             title="Low Stock Items"
-            value={derivedMetrics.low_stock_count}
+            value={displayMetrics.low_stock_count}
             icon={AlertIcon}
             color="warning"
             description="Need attention"
           />
           <MetricCard
             title="Out of Stock"
-            value={derivedMetrics.out_of_stock_count}
+            value={displayMetrics.out_of_stock_count}
             icon={TrendUpIcon}
             color="success"
             description="Awaiting restock"
@@ -315,8 +339,27 @@ export default function ERPInventoryOverview() {
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               />
             </div>
+            {isManager && (
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
+                value={categoryFilter}
+                onChange={(e) => {
+                  setCategoryFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
+                title="Filter inventory by category"
+                aria-label="Filter inventory by category"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+              >
+                <option value="All">All Categories</option>
+                {availableCategories.map((category) => (
+                  <option key={category} value={category}>{formatCategoryLabel(category)}</option>
+                ))}
+              </MonochromeSelect>
+            </div>
+            )}
+            <div className="sm:w-48">
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
@@ -330,7 +373,7 @@ export default function ERPInventoryOverview() {
                 <option value="In Stock">In Stock</option>
                 <option value="Low Stock">Low Stock</option>
                 <option value="Out of Stock">Out of Stock</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -347,16 +390,16 @@ export default function ERPInventoryOverview() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                {loading ? (
+                {displayLoading ? (
                   <tr>
                     <td colSpan={5} className="py-10 text-center text-sm text-gray-500 dark:text-gray-400">
                       Loading inventory...
                     </td>
                   </tr>
-                ) : error ? (
+                ) : displayError ? (
                   <tr>
                     <td colSpan={5} className="py-10 text-center text-sm text-red-600 dark:text-red-400">
-                      {error}
+                      {displayError}
                     </td>
                   </tr>
                 ) : scopedItems.length === 0 ? (
@@ -366,7 +409,7 @@ export default function ERPInventoryOverview() {
                     </td>
                   </tr>
                 ) : scopedItems.map((item) => (
-                  <tr key={item.id}>
+                  <tr key={`${item.source_type ?? "inventory"}-${item.source_id ?? item.id}`}>
                     <td className="py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-12 w-12 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
@@ -378,7 +421,7 @@ export default function ERPInventoryOverview() {
                       </div>
                     </td>
                     <td className="py-3">
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(item.category)}`}>
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
                         {formatCategoryLabel(item.category)}
                       </span>
                     </td>
@@ -386,15 +429,7 @@ export default function ERPInventoryOverview() {
                       <span className="font-semibold text-gray-900 dark:text-gray-100">{item.quantity}</span>
                     </td>
                     <td className="py-3">
-                      <span
-                        className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                          item.status === "In Stock"
-                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                            : item.status === "Low Stock"
-                            ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                            : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                        }`}
-                      >
+                      <span className="font-medium text-gray-900 dark:text-gray-100">
                         {item.status}
                       </span>
                     </td>
@@ -414,7 +449,7 @@ export default function ERPInventoryOverview() {
           </div>
 
           {/* Pagination */}
-          {!loading && !error && totalItems > 0 && (
+          {!displayLoading && !displayError && totalItems > 0 && (
             <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700 mt-4">
               <div className="flex items-center justify-between">
                 <div className="text-sm text-gray-700 dark:text-gray-300">
@@ -449,7 +484,7 @@ export default function ERPInventoryOverview() {
 
         {/* View Details Modal */}
         {viewModalOpen && selectedItem && (
-          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full">
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Item Details</h2>
@@ -478,7 +513,7 @@ export default function ERPInventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Category</p>
-                    <span className={`mt-1 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(selectedItem.category)}`}>
+                    <span className="mt-1 font-medium text-gray-900 dark:text-gray-100">
                       {formatCategoryLabel(selectedItem.category)}
                     </span>
                   </div>
@@ -488,15 +523,7 @@ export default function ERPInventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</p>
-                    <span
-                      className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
-                        selectedItem.status === "In Stock"
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                          : selectedItem.status === "Low Stock"
-                          ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                          : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                      }`}
-                    >
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
                       {selectedItem.status}
                     </span>
                   </div>

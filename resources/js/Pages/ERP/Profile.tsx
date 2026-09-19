@@ -3,8 +3,29 @@ import { Head, useForm, usePage } from "@inertiajs/react";
 import { router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../layout/AppLayout_ERP";
+import EmployeeTotpSecurity from "../../components/UserProfile/EmployeeTotpSecurity";
+import PasswordRequirements from "../../components/auth/PasswordRequirements";
+
+interface SecurityActivity {
+    action: string;
+    description: string;
+    label: string;
+    created_at?: string | null;
+}
+
+interface ActiveSession {
+    device: string;
+    last_active_at: string;
+    current: boolean;
+}
 
 interface PageProps {
+    security?: {
+        is_employee: boolean;
+        totp_enabled: boolean;
+        activity?: SecurityActivity[];
+        active_sessions?: ActiveSession[];
+    };
     user: {
         id: number;
         name: string;
@@ -23,7 +44,7 @@ interface PageProps {
     requiresPasswordChange: boolean;
 }
 
-export default function Profile({ user, requiresPasswordChange }: PageProps) {
+export default function Profile({ user, requiresPasswordChange, security }: PageProps) {
     const { flash } = usePage().props as any;
     
     const { data, setData, post, processing, errors, reset } = useForm({
@@ -248,6 +269,7 @@ export default function Profile({ user, requiresPasswordChange }: PageProps) {
                                         {errors.password}
                                     </p>
                                 )}
+                                <PasswordRequirements password={data.password} />
                             </div>
 
                             <div>
@@ -277,6 +299,16 @@ export default function Profile({ user, requiresPasswordChange }: PageProps) {
                         </form>
                     </div>
                 </div>
+
+                {security?.is_employee && (
+                    <div className="mt-8">
+                        <EmployeeTotpSecurity
+                            enabled={security.totp_enabled}
+                            activity={security.activity}
+                            active_sessions={security.active_sessions}
+                        />
+                    </div>
+                )}
             </div>
         </AppLayoutERP>
     );

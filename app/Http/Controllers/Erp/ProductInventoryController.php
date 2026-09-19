@@ -3,14 +3,23 @@
 namespace App\Http\Controllers\Erp;
 
 use App\Http\Controllers\Controller;
+use App\Models\InventoryImage;
 use App\Models\InventoryItem;
 use App\Models\StockMovement;
+use App\Services\Erp\ShopOwnerInventoryReadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
+use App\Support\Erp\ErpActorContext;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class ProductInventoryController extends Controller
 {
+    use AuthorizesRequests;
+
+    public function __construct(
+        private readonly ShopOwnerInventoryReadService $ownerInventoryRead,
+    ) {}
+
     /**
      * List all inventory items with filters
      */
@@ -23,6 +32,19 @@ class ProductInventoryController extends Controller
             ], 403);
         }
         
+        if ($this->ownerMode()) {
+            return response()->json($this->ownerInventoryRead->paginate($shopOwnerId, $request->only([
+                'search',
+                'category',
+                'brand',
+                'status',
+                'sort_by',
+                'sort_order',
+                'page',
+                'per_page',
+            ])));
+        }
+
         $query = InventoryItem::with(['sizes', 'colorVariants', 'images'])
             ->where('shop_owner_id', $shopOwnerId)
             ->where('is_active', true);
@@ -125,6 +147,8 @@ class ProductInventoryController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($id);
+
+        $this->authorize('adjustStock', $item);
         
         DB::transaction(function () use ($item, $validated, $request) {
             $quantityBefore = $item->available_quantity;
@@ -185,6 +209,8 @@ class ProductInventoryController extends Controller
                     ->find($itemData['id']);
                 
                 if (!$item) continue;
+
+                $this->authorize('adjustStock', $item);
                 
                 $quantityBefore = $item->available_quantity;
                 $quantityAfter = $itemData['available_quantity'];
@@ -220,26 +246,32 @@ class ProductInventoryController extends Controller
 
     private function sanitizeItemImagePaths(InventoryItem $item): InventoryItem
     {
-        if ($item->main_image && !$this->publicFileExists($item->main_image)) {
-            $item->main_image = null;
-        }
+        $item->main_image = InventoryImage::existingPublicPath($item->main_image);
 
         if ($item->relationLoaded('images')) {
             $item->setRelation(
                 'images',
                 $item->images
-                    ->filter(fn ($image) => $image->image_path && $this->publicFileExists($image->image_path))
+                    ->filter(function ($image): bool {
+                        $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                        return $image->image_path !== null;
+                    })
                     ->values()
             );
         }
 
         if ($item->relationLoaded('colorVariants')) {
-            $item->colorVariants->each(function ($variant) {
+            $item->colorVariants->each(function ($variant): void {
                 if ($variant->relationLoaded('images')) {
                     $variant->setRelation(
                         'images',
                         $variant->images
-                            ->filter(fn ($image) => $image->image_path && $this->publicFileExists($image->image_path))
+                            ->filter(function ($image): bool {
+                                $image->image_path = InventoryImage::existingPublicPath($image->image_path);
+
+                                return $image->image_path !== null;
+                            })
                             ->values()
                     );
                 }
@@ -249,13 +281,13 @@ class ProductInventoryController extends Controller
         return $item;
     }
 
-    private function publicFileExists(string $path): bool
-    {
-        return Storage::disk('public')->exists(ltrim($path, '/'));
-    }
-
     private function resolveShopOwnerId(Request $request): ?int
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext && $context->isOwnerMode()) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
         $user = $request->user();
         if (!$user) {
             return null;
@@ -266,5 +298,12 @@ class ProductInventoryController extends Controller
             ?? null;
 
         return $shopOwnerId ? (int) $shopOwnerId : null;
+    }
+
+    private function ownerMode(): bool
+    {
+        $context = request()->attributes->get('erp.actor_context');
+
+        return $context instanceof ErpActorContext && $context->isOwnerMode();
     }
 }
