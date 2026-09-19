@@ -1373,7 +1373,7 @@ const EmployeeSidebarERP: React.FC = () => {
     if (hasLogisticsAccess() && !hasStaffAccess()) return "logistics";
     if (hasStaffAccess()) return "staff";
     if (hasLogisticsAccess()) return "logistics";
-    if (hasRepairerAccess()) return null;
+    if (hasRepairerAccess()) return "repair";
     if (hasCashierAccess()) return "cashier";
     if (hasManagerAccess()) return "manager";
     if (hasInventoryAccess()) return "inventory";

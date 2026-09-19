@@ -200,7 +200,7 @@ it.each([
   expect(sidebarLinks[sidebarLinks.length - 1]).toBe(articleLinks[0]);
 });
 
-it('keeps Repairer accounts out of Staff attendance and opens Articles from the logo', () => {
+it('shows attendance for Repairer accounts and opens Articles from the logo', () => {
   state.url = '/erp/repairer/articles';
   state.role = 'REPAIRER';
   state.roles = ['REPAIRER'];
@@ -213,7 +213,10 @@ it('keeps Repairer accounts out of Staff attendance and opens Articles from the 
     'href',
     '/erp/repairer/articles',
   );
-  expect(screen.queryByRole('link', { name: /log attendance/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /log attendance/i })).toHaveAttribute(
+    'href',
+    '/erp/time-in',
+  );
   expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveAttribute(
     'href',
     '/erp/repairer/articles',

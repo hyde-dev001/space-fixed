@@ -1391,8 +1391,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     <>
       <Head title={isResubmission ? "Shop Owner Resubmission" : "Shop Owner Registration"} />
       <CustomerFooterReveal>
-      <div className="userside-shop-owner-registration-page min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-        <Navigation />
+      <div className="userside-shop-owner-registration-page userside-auth-page userside-auth-pattern relative min-h-screen font-outfit antialiased">
+        <Navigation hidePromoBar hideSearchAndCart />
         <div className="max-w-6xl mx-auto px-4 lg:px-8 pt-24 pb-8 md:pt-28 md:pb-12 lg:pt-32">
           {/* Header Section */}
           <div className="text-center mb-8 md:mb-10 lg:mb-12 px-1">

@@ -11,6 +11,10 @@ const landingPageSource = readFileSync(
   resolve('resources/js/Pages/UserSide/Products/LandingPage.tsx'),
   'utf8',
 );
+const shopOwnerRegistrationSource = readFileSync(
+  resolve('resources/js/Pages/UserSide/Auth/ShopOwnerRegistration.tsx'),
+  'utf8',
+);
 const standaloneAccountMenuSources = [
   'resources/js/Pages/UserSide/Products/Products.tsx',
   'resources/js/Pages/UserSide/Products/ProductShow.tsx',
@@ -225,5 +229,16 @@ describe('user-side navigation shell', () => {
     expect(supportingLabelSources.repairs).toContain('<Head title="Repairs" />');
     expect(supportingLabelSources.paymentSuccess).toContain('View Orders');
     expect(supportingLabelSources.productDetails).toContain('label="Add to Cart"');
+  });
+
+  it('supports scoped registration chrome without changing the shared default', () => {
+    expect(navigationSource).toContain('hidePromoBar?: boolean;');
+    expect(navigationSource).toContain('hideSearchAndCart?: boolean;');
+    expect(navigationSource).toContain('hidePromoBar = false');
+    expect(navigationSource).toContain('hideSearchAndCart = false');
+    expect(navigationSource).toContain('hidden={hidePromoBar}');
+    expect(navigationSource).toContain('hidden={hideSearchAndCart}');
+    expect(shopOwnerRegistrationSource).toContain('userside-auth-page userside-auth-pattern');
+    expect(shopOwnerRegistrationSource).toContain('<Navigation hidePromoBar hideSearchAndCart />');
   });
 });

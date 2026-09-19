@@ -62,6 +62,8 @@ const resolveCategoryFromSearchQuery = (value: string): string | null => {
 type NavigationProps = {
   mobileMenuTriggerIcon?: 'people' | 'hamburger';
   landingSidebar?: boolean;
+  hidePromoBar?: boolean;
+  hideSearchAndCart?: boolean;
 };
 
 type QuickCartItem = {
@@ -97,7 +99,12 @@ const PROMO_MESSAGES = [
   'Shop the latest drops',
 ] as const;
 
-const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people', landingSidebar = true }) => {
+const Navigation: React.FC<NavigationProps> = ({
+  mobileMenuTriggerIcon = 'people',
+  landingSidebar = true,
+  hidePromoBar = false,
+  hideSearchAndCart = false,
+}) => {
   const { cartCount, isLoading: cartLoading } = useCart();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [landingSidebarOpen, setLandingSidebarOpen] = useState(false);
@@ -435,6 +442,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
   const isMobileAccountActive = currentRoute === 'login';
 
   const isMyProfileActive = cleanUrl.startsWith('/customer-profile');
+  const navTopClass = hidePromoBar ? 'top-0' : (isPromoTickerAtTop ? 'top-10' : 'top-0');
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -731,7 +739,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
   return (
     <>
-      <div className="relative z-[40] h-10 overflow-hidden border-b border-white/15 bg-[#111111] text-white" aria-label="Latest offers">
+      <div hidden={hidePromoBar} className="relative z-[40] h-10 overflow-hidden border-b border-white/15 bg-[#111111] text-white" aria-label="Latest offers">
         <div className="landing-marquee flex h-full min-w-max items-center gap-12 py-3 text-[11px] font-semibold uppercase tracking-[0.22em] motion-reduce:animate-none sm:gap-20 sm:text-xs">
           {[...PROMO_MESSAGES, ...PROMO_MESSAGES].map((message, index) => (
             <span key={`${message}-${index}`} className="inline-flex items-center gap-12 whitespace-nowrap sm:gap-20">
@@ -742,7 +750,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
       </div>
       <nav
         data-landing-nav
-        className={`fixed left-0 right-0 z-50 w-full transition-[top,background-color,border-color] duration-300 ${isPromoTickerAtTop ? 'top-10' : 'top-0'} ${
+        className={`fixed left-0 right-0 z-50 w-full transition-[top,background-color,border-color] duration-300 ${navTopClass} ${
           landingSidebar || isTransparentNav
             ? 'bg-transparent'
             : 'border-b border-gray-200/70 bg-white/95 backdrop-blur'
@@ -782,11 +790,12 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
           <div className={`absolute right-0 flex items-center gap-3 ${landingSidebar ? 'top-3 sm:top-5 2xl:hidden' : '2xl:hidden'}`} ref={mobileUserMenuRef}>
             {landingSidebar && (
-              <button type="button" onClick={() => setIsSearchFocused(true)} className={headerIconButtonClasses} aria-label="Open search">
+              <button hidden={hideSearchAndCart} type="button" onClick={() => setIsSearchFocused(true)} className={headerIconButtonClasses} aria-label="Open search">
                 <svg className={headerIconSvgClasses} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
               </button>
             )}
             <Link
+              hidden={hideSearchAndCart}
               href="/checkout"
               className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
               aria-label="Shopping cart"
@@ -1084,6 +1093,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
             {landingSidebar ? (
               <>
                 <button
+                  hidden={hideSearchAndCart}
                   type="button"
                   onClick={() => setIsSearchFocused((focused) => !focused)}
                   className={headerIconButtonClasses}
@@ -1096,7 +1106,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
                 </button>
               </>
             ) : (
-              <form onSubmit={handleSearch} className="relative w-full">
+              <form hidden={hideSearchAndCart} onSubmit={handleSearch} className="relative w-full">
                 <span className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none transition-colors duration-300 ${searchIconClasses}`}>
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35m1.6-5.4a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1255,6 +1265,7 @@ const Navigation: React.FC<NavigationProps> = ({ mobileMenuTriggerIcon = 'people
 
             {/* Shopping Cart Icon */}
             <Link
+              hidden={hideSearchAndCart}
               id="cart-icon"
               href="/checkout"
               className={`${headerIconButtonClasses} ${landingSidebar ? 'order-3' : ''}`}
