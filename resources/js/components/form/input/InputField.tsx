@@ -8,6 +8,7 @@ interface InputProps {
   placeholder?: string;
   value?: string | number;
   onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   "aria-describedby"?: string;
   className?: string;
   min?: string;
@@ -26,6 +27,7 @@ const Input: FC<InputProps> = ({
   placeholder,
   value,
   onChange,
+  inputMode,
   "aria-describedby": ariaDescribedBy,
   className = "",
   min,
@@ -57,6 +59,7 @@ const Input: FC<InputProps> = ({
         placeholder={placeholder}
         value={value}
         onChange={onChange}
+        inputMode={inputMode}
         aria-describedby={ariaDescribedBy}
         min={min}
         max={max}

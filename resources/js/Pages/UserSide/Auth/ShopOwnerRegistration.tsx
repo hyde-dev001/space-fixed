@@ -358,7 +358,19 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     }
 
     if (name === 'age') {
-      const digitsOnly = value.replace(/\D/g, '').slice(0, 3);
+      const digitsOnly = value.slice(0, 3);
+
+      if (value && (!/^\d+$/.test(value) || Number(digitsOnly) <= 0)) {
+        setFormData(prev => ({ ...prev, age: '' }));
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid age',
+          text: 'Age must be a positive whole number.',
+          confirmButtonColor: '#3085d6',
+        });
+        return;
+      }
+
       setFormData(prev => ({ ...prev, age: digitsOnly }));
 
       if (errors.age) {
@@ -1559,14 +1571,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                   <div>
                     <Label htmlFor="age">Age</Label>
                     <Input
-                      type="number"
+                      type="text"
                       id="age"
                       name="age"
                       value={formData.age}
                       onChange={handleInputChange}
                       inputMode="numeric"
-                      min="18"
-                      max="120"
                       placeholder="Enter age"
                       className={errors.age ? 'border-red-500' : ''}
                     />
