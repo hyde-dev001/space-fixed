@@ -10,9 +10,9 @@ describe('customer registration password guidance', () => {
     expect(isPasswordValid('short')).toBe(false);
     expect(isPasswordValid('lowercase8')).toBe(false);
     expect(isPasswordValid('Uppercase')).toBe(false);
-    expect(isPasswordValid('Uppercase8')).toBe(true);
-    expect(getPasswordRequirementState('Uppercase8')).toEqual([
-      { key: 'minLength', label: 'At least 8 characters', met: true },
+    expect(isPasswordValid('Uppercase123!')).toBe(true);
+    expect(getPasswordRequirementState('Uppercase123!')).toEqual([
+      { key: 'minLength', label: 'At least 12 characters', met: true },
       { key: 'uppercase', label: 'One uppercase letter', met: true },
       { key: 'lowercase', label: 'One lowercase letter', met: true },
       { key: 'number', label: 'One number', met: true },

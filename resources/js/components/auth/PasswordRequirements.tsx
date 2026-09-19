@@ -4,7 +4,7 @@ interface PasswordRequirementsProps {
 
 export default function PasswordRequirements({ password }: PasswordRequirementsProps) {
   const requirements = [
-    { met: password.length >= 8, text: "At least 8 characters" },
+    { met: password.length >= 12, text: "At least 12 characters" },
     { met: /[A-Z]/.test(password), text: "One uppercase letter (A-Z)" },
     { met: /[a-z]/.test(password), text: "One lowercase letter (a-z)" },
     { met: /[0-9]/.test(password), text: "One number (0-9)" },

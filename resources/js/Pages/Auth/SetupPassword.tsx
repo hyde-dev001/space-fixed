@@ -28,7 +28,7 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
     };
 
     const passwordRequirements = [
-        { met: data.password.length >= 8, text: 'At least 8 characters' },
+        { met: data.password.length >= 12, text: 'At least 12 characters' },
         { met: /[A-Z]/.test(data.password) && /[a-z]/.test(data.password), text: 'Mixed case letters (A-z)' },
         { met: /[0-9]/.test(data.password), text: 'At least one number (0-9)' },
         { met: /[^a-zA-Z0-9]/.test(data.password), text: 'At least one symbol (!@#$%^&*)' },
@@ -101,6 +101,7 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                                     <input
                                         id="password"
                                         type={showPassword ? 'text' : 'password'}
+                                        minLength={12}
                                         value={data.password}
                                         onChange={(e) => setData('password', e.target.value)}
                                         className={`userside-auth-input password-input w-full px-4 py-3 pr-12 border rounded-lg appearance-none focus:ring-2 focus:ring-black focus:border-black ${
@@ -141,6 +142,7 @@ export default function SetupPassword({ email, token, shopOwner }: SetupPassword
                                     <input
                                         id="password_confirmation"
                                         type={showConfirmPassword ? 'text' : 'password'}
+                                        minLength={12}
                                         value={data.password_confirmation}
                                         onChange={(e) => setData('password_confirmation', e.target.value)}
                                         className={`userside-auth-input password-input w-full px-4 py-3 pr-12 border rounded-lg appearance-none focus:ring-2 focus:ring-black focus:border-black ${

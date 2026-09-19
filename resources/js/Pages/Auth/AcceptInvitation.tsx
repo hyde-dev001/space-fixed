@@ -25,7 +25,7 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
     const expiresDate = new Date(expires_at).toLocaleString();
 
     const passwordRequirements = [
-        { met: data.password.length >= 8, text: 'At least 8 characters' },
+        { met: data.password.length >= 12, text: 'At least 12 characters' },
         { met: /[A-Z]/.test(data.password), text: 'One uppercase letter (A-Z)' },
         { met: /[a-z]/.test(data.password), text: 'One lowercase letter (a-z)' },
         { met: /\d/.test(data.password), text: 'One number (0-9)' },
@@ -76,6 +76,7 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
                             <div className="relative">
                                 <input
                                     type={showPassword ? 'text' : 'password'}
+                                    minLength={12}
                                     value={data.password}
                                     onChange={(e) => setData('password', e.target.value)}
                                     className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white dark:bg-gray-700 dark:text-white"
@@ -112,6 +113,7 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
                             <div className="relative">
                                 <input
                                     type={showConfirmPassword ? 'text' : 'password'}
+                                    minLength={12}
                                     value={data.password_confirmation}
                                     onChange={(e) => setData('password_confirmation', e.target.value)}
                                     className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white dark:bg-gray-700 dark:text-white"

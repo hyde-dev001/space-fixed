@@ -10,6 +10,7 @@ use App\Models\Employee;
 use App\Models\User;
 use App\Services\HR\EmployeeOperationalPolicy;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\Rules\Password;
 use Symfony\Component\HttpFoundation\Response;
 
 class AuthController extends Controller
@@ -21,7 +22,7 @@ class AuthController extends Controller
     public function register(Request $request) {
         $validator = Validator::make($request->all(), [
             'email' => 'required|email|unique:users,email',
-            'password' => 'required|confirmed'
+            'password' => ['required', 'string', 'confirmed', Password::min(12)],
         ]);
 
         if($validator->fails()) {
@@ -30,8 +31,8 @@ class AuthController extends Controller
                     'icon' => 'error',
                     'title' => 'Registration Error',
                     'html' => implode('<br>', $validator->errors()->all())
-                ], Response::HTTP_UNPROCESSABLE_ENTITY
-            ]);
+                ],
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
         } else {
             $user = User::create([
                 'name' => $request->name,

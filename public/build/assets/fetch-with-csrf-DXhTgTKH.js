@@ -1,1 +1,0 @@
-async function s(a,t={}){let e=document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");if(!e)try{e=(await(await fetch("/api/csrf-token")).json()).csrf_token}catch(c){console.warn("Could not get CSRF token",c)}const n=new Headers(t.headers);return e&&n.set("X-CSRF-TOKEN",e),fetch(a,{...t,headers:n,credentials:t.credentials||"include"})}export{s as f};

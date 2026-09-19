@@ -2167,24 +2167,24 @@ export default function JobOrdersPage() {
           )}
 
           {/* Table */}
-          <div className="h-135 overflow-y-auto overflow-x-auto">
-            <table className="w-full min-w-[1180px] table-fixed">
+          <div className="h-135 overflow-y-auto">
+            <table className="w-full table-fixed">
               <colgroup>
-                <col className="w-12" />
-                <col className="w-[17rem]" />
-                <col className="w-40" />
-                <col className="w-40" />
-                <col className="w-32" />
-                <col className="w-20" />
-                <col className="w-56" />
-                <col className="w-44" />
-                <col className="w-40" />
-                <col className="w-20" />
-                <col className="w-32" />
+                <col className="w-[3%]" />
+                <col className="w-[14%]" />
+                <col className="w-[10%]" />
+                <col className="w-[11%]" />
+                <col className="w-[8%]" />
+                <col className="w-[5%]" />
+                <col className="w-[14%]" />
+                <col className="w-[10%]" />
+                <col className="w-[8%]" />
+                <col className="w-[5%]" />
+                <col className="w-[12%]" />
               </colgroup>
               <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-10">
                 <tr>
-                  <th className="box-border px-5 py-4 text-left">
+                  <th className="box-border px-3 py-4 text-left">
                     <input
                       type="checkbox"
                       title="Select all orders on this page"
@@ -2198,34 +2198,34 @@ export default function JobOrdersPage() {
                       className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                     />
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Customer
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Payment Method
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Product
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Size / Color
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Quantity
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Amount Breakdown
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Status
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Refunded/Return
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     ETA
                   </th>
-                  <th className="box-border whitespace-nowrap px-5 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
+                  <th className="box-border whitespace-normal px-3 py-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Actions
                   </th>
                 </tr>
@@ -2237,7 +2237,7 @@ export default function JobOrdersPage() {
                       key={order.id}
                       className="align-top transition-colors hover:bg-gray-50 dark:hover:bg-gray-900/50"
                     >
-                      <td className="box-border px-5 py-5 align-top">
+                      <td className="box-border px-3 py-5 align-top">
                         <input
                           type="checkbox"
                           title={`Select order ${order.order_number}`}
@@ -2248,29 +2248,29 @@ export default function JobOrdersPage() {
                           className="rounded border-gray-300 dark:border-gray-700 text-blue-600 focus:ring-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       </td>
-                      <td className="box-border px-5 py-5 align-top">
+                      <td className="box-border px-3 py-5 align-top">
                         <div className="min-w-0 space-y-1">
                           <div className="truncate text-sm font-medium text-gray-900 dark:text-white">{order.customer}</div>
                           <div className="truncate text-xs text-gray-500 dark:text-gray-400">{order.email}</div>
                         </div>
                       </td>
-                      <td className="box-border px-5 py-5 align-top text-sm text-gray-700 dark:text-gray-300">
+                      <td className="box-border px-3 py-5 align-top text-sm text-gray-700 dark:text-gray-300">
                         {formatPaymentMethod(order.paymentMethod)}
                       </td>
-                      <td className="box-border px-5 py-5 align-top">
+                      <td className="box-border px-3 py-5 align-top">
                         <span className="block truncate text-sm text-gray-700 dark:text-gray-300">{order.product}</span>
                       </td>
-                      <td className="box-border px-5 py-5 text-center align-top">
+                      <td className="box-border px-3 py-5 text-center align-top">
                         <span className="inline-flex max-w-full rounded-lg bg-gray-50 px-2.5 py-1 text-left text-xs font-semibold text-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
                           {formatOrderSizeColor(order)}
                         </span>
                       </td>
-                      <td className="box-border px-5 py-5 text-center align-top">
+                      <td className="box-border px-3 py-5 text-center align-top">
                         <span className="inline-flex min-w-10 justify-center rounded-lg bg-gray-50 px-2.5 py-1 text-sm font-semibold text-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
                           {order.quantity}
                         </span>
                       </td>
-                      <td className="box-border px-5 py-5 text-left align-top">
+                      <td className="box-border px-3 py-5 text-left align-top">
                         <div className="rounded-xl bg-gray-50/80 p-3 dark:bg-gray-900/50">
                           <div className="space-y-2">
                             <div className="flex items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
@@ -2309,7 +2309,7 @@ export default function JobOrdersPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="box-border px-5 py-5 align-top">
+                      <td className="box-border px-3 py-5 align-top">
                         <div className="space-y-2">
                           <span className="inline-flex items-center text-xs font-semibold whitespace-nowrap text-gray-900 dark:text-gray-100">
                             {getOrderStatusPresentation(order.status).label}
@@ -2329,7 +2329,7 @@ export default function JobOrdersPage() {
                           ) : null)}
                         </div>
                       </td>
-                      <td className="box-border px-5 py-5 align-top">
+                      <td className="box-border px-3 py-5 align-top">
                         {(() => {
                           const refundReturn = getRefundReturnDisplay(order);
                           if (refundReturn.label === '-') {
@@ -2343,12 +2343,12 @@ export default function JobOrdersPage() {
                           );
                         })()}
                       </td>
-                      <td className="box-border px-5 py-5 align-top">
+                      <td className="box-border px-3 py-5 align-top">
                         <span className="inline-flex rounded-lg bg-gray-50 px-2.5 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-900/60 dark:text-gray-200">
                           {order.eta || '-'}
                         </span>
                       </td>
-                      <td className="box-border px-5 py-5 align-top">
+                      <td className="box-border px-3 py-5 align-top">
                         <div className="flex flex-nowrap items-center justify-start gap-2">
                           <button
                             type="button"

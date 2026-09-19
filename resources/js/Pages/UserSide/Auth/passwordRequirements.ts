@@ -1,8 +1,8 @@
 export const PASSWORD_REQUIREMENTS = [
   {
     key: 'minLength',
-    label: 'At least 8 characters',
-    test: (password: string) => password.length >= 8,
+    label: 'At least 12 characters',
+    test: (password: string) => password.length >= 12,
   },
   {
     key: 'uppercase',

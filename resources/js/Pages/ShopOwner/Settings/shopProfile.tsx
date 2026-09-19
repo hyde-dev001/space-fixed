@@ -1113,6 +1113,7 @@ const ShopProfile: React.FC = () => {
                   />
                   <input
                     type="password"
+                    minLength={12}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="New password"
@@ -1447,6 +1448,7 @@ const ShopProfile: React.FC = () => {
                   <div>
                     <input
                       type="password"
+                      minLength={12}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="New password"

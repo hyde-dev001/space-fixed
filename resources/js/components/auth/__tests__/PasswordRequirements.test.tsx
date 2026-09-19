@@ -6,7 +6,7 @@ describe("PasswordRequirements", () => {
   it("shows all requirements and marks a strong password complete", () => {
     const { rerender } = render(<PasswordRequirements password="" />);
 
-    expect(screen.getByText("At least 8 characters")).toBeInTheDocument();
+    expect(screen.getByText("At least 12 characters")).toBeInTheDocument();
     expect(screen.getByText("One uppercase letter (A-Z)")).toBeInTheDocument();
     expect(screen.getByText("One lowercase letter (a-z)")).toBeInTheDocument();
     expect(screen.getByText("One number (0-9)")).toBeInTheDocument();

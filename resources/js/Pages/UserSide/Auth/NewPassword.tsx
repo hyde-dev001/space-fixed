@@ -41,8 +41,8 @@ export default function NewPassword() {
 
 		if (!formData.password) {
 			newErrors.password = 'Enter a new password.';
-		} else if (formData.password.length < 8) {
-			newErrors.password = 'Password must be at least 8 characters';
+		} else if (formData.password.length < 12) {
+			newErrors.password = 'Password must be at least 12 characters';
 		}
 
 		if (!formData.confirmPassword) {
@@ -133,6 +133,7 @@ export default function NewPassword() {
 											type="password"
 											id="password"
 											name="password"
+											minLength={12}
 											placeholder="Enter your new password"
 											value={formData.password}
 											onChange={handleInputChange}
@@ -152,6 +153,7 @@ export default function NewPassword() {
 											type="password"
 											id="confirmPassword"
 											name="confirmPassword"
+											minLength={12}
 											placeholder="Confirm your new password"
 											value={formData.confirmPassword}
 											onChange={handleInputChange}

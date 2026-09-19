@@ -38,6 +38,21 @@ class CustomerApiEmailVerificationTest extends TestCase
         });
     }
 
+    public function test_api_registration_requires_at_least_twelve_characters(): void
+    {
+        $response = $this->postJson('/api/register', [
+            'name' => 'Short Password Customer',
+            'email' => 'short-api-password@example.test',
+            'password' => 'Password1!',
+            'password_confirmation' => 'Password1!',
+        ]);
+
+        $response->assertUnprocessable()
+            ->assertJsonPath('message.title', 'Registration Error');
+
+        $this->assertDatabaseMissing('users', ['email' => 'short-api-password@example.test']);
+    }
+
     public function test_api_login_does_not_issue_a_token_to_an_unverified_customer(): void
     {
         $customer = User::factory()->unverified()->create([
