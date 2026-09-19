@@ -13,6 +13,7 @@ use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Services\CodCollectionService;
 use App\Services\NotificationService;
 use App\Services\OrderRefundService;
 use App\Services\RepairDeliveryService;
@@ -67,6 +68,7 @@ class ShipmentLegService
         private NotificationService $notifications,
         private RepairDeliveryService $repairDelivery,
         private ArrivalService $arrivals,
+        private CodCollectionService $codCollections,
     ) {}
 
     public function markPickedUp(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
@@ -343,6 +345,7 @@ class ShipmentLegService
             if ($status === 'delivered') {
                 return $leg->fresh();
             }
+            $this->codCollections->assertCollectedBeforeDelivery($order);
             $this->assertTransitionAllowed($leg, ['in_transit'], 'delivered');
             $leg->update([
                 'status' => 'delivered',
@@ -388,6 +391,13 @@ class ShipmentLegService
 
             if (! $this->proofs->hasRequiredDeliveryProof($leg)) {
                 throw ValidationException::withMessages(['proof' => 'Delivery proof is required before marking this leg delivered.']);
+            }
+
+            if ($leg->shipment?->source_type === 'order' && $leg->shipment->purpose === 'retail_delivery') {
+                $order = Order::query()->find($leg->shipment->source_id);
+                if ($order) {
+                    $this->codCollections->assertCollectedBeforeDelivery($order);
+                }
             }
 
             $delivered = $this->transition($leg, 'delivered', [

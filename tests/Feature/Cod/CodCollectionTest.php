@@ -3,6 +3,7 @@
 namespace Tests\Feature\Cod;
 
 use App\Models\CodCollection;
+use App\Models\Logistics\HandoffProof;
 use App\Models\Order;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
@@ -12,6 +13,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Services\CodCollectionService;
+use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\Test;
@@ -64,6 +66,51 @@ class CodCollectionTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('collection.status', CodCollection::STATUS_CASH_COLLECTED)
             ->assertJsonPath('collection.expected_amount', '1170.00');
+    }
+
+    #[Test]
+    public function cod_delivery_cannot_be_marked_delivered_before_cash_is_collected(): void
+    {
+        [$order] = $this->fixture();
+        $leg = ShipmentLeg::query()
+            ->whereHas('shipment', fn ($query) => $query->where('source_id', $order->id))
+            ->firstOrFail();
+        $leg->update(['status' => 'awaiting_proof_approval']);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+        ]);
+
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('COD payment must be collected before delivery can be completed.');
+
+        app(ShipmentLegService::class)->markDelivered($leg->fresh());
+    }
+
+    #[Test]
+    public function cod_delivery_can_be_marked_delivered_after_cash_is_collected(): void
+    {
+        [$order, $rider] = $this->fixture();
+        $leg = ShipmentLeg::query()
+            ->whereHas('shipment', fn ($query) => $query->where('source_id', $order->id))
+            ->firstOrFail();
+        $leg->update(['status' => 'awaiting_proof_approval']);
+        HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+        ]);
+        app(CodCollectionService::class)->cashCollected($order, $rider, [
+            'amount' => '1170.00',
+            'idempotency_key' => 'cod-delivery-collection-1',
+        ]);
+
+        $delivered = app(ShipmentLegService::class)->markDelivered($leg->fresh());
+
+        $this->assertSame('delivered', $delivered->status->value);
     }
 
     #[Test]
