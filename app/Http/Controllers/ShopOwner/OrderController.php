@@ -11,6 +11,7 @@ use App\Enums\OrderStatus;
 use App\Enums\NotificationType;
 use App\Services\NotificationService;
 use App\Services\OrderRefundService;
+use App\Services\CodCollectionService;
 use App\Services\Orders\OrderFulfillmentService;
 use App\Services\Orders\OrderOwnerProjection;
 use App\Services\RetailPosRefundSummaryService;
@@ -31,6 +32,7 @@ class OrderController extends Controller
         private readonly OrderOwnerProjection $orderOwnerProjection,
         private readonly RetailPosRefundSummaryService $retailPosRefundSummaryService,
         private readonly NotificationService $notificationService,
+        private readonly CodCollectionService $codCollectionService,
     ) {
     }
 
@@ -54,6 +56,8 @@ class OrderController extends Controller
                 'items.product',
                 'customer',
                 'logisticsShipments.legs',
+                'codCollection.riderUser:id,name',
+                'codCollection.remittanceItem.remittance',
                 'refunds' => function ($refundQuery) use ($includeRefundItems) {
                     if ($includeRefundItems) {
                         $refundQuery->with('items.orderItem');
@@ -161,7 +165,7 @@ class OrderController extends Controller
                     'cancellation_note' => $order->cancellation_note,
                     'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
                     'payment_status' => $order->payment_status ?? 'pending',
-                    'payment_method' => $order->payment_method ?? '',
+                    ...$this->codCollectionService->projection($order),
                     'tracking_number' => $order->tracking_number ?? '',
                     'carrier_company' => $order->carrier_company ?? '',
                     'carrier_name' => $order->carrier_name ?? '',
@@ -262,6 +266,8 @@ class OrderController extends Controller
                 'items.product',
                 'customer',
                 'logisticsShipments.legs',
+                'codCollection.riderUser:id,name',
+                'codCollection.remittanceItem.remittance',
                 'refunds' => function ($refundQuery) use ($includeRefundItems) {
                     if ($includeRefundItems) {
                         $refundQuery->with('items.orderItem');
@@ -339,7 +345,7 @@ class OrderController extends Controller
             'cancellation_note' => $order->cancellation_note,
             'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
             'payment_status' => $order->payment_status ?? 'pending',
-            'payment_method' => $order->payment_method ?? '',
+            ...$this->codCollectionService->projection($order),
             'tracking_number' => $order->tracking_number ?? '',
             'carrier_company' => $order->carrier_company ?? '',
             'carrier_name' => $order->carrier_name ?? '',

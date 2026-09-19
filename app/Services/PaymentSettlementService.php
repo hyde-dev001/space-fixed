@@ -913,13 +913,20 @@ class PaymentSettlementService
 
     public function settleOrderRefunded(Order $order, ?string $refundId = null, ?string $reason = null, ?string $note = null): array
     {
+        $isCodOrder = in_array(strtolower((string) ($order->payment_method ?? '')), [
+            'cod',
+            'cash',
+            'cash_on_delivery',
+            'cash on delivery',
+        ], true);
+
         if ((string) ($order->payment_status ?? 'pending') === 'refunded') {
             if ($order->invoice_id) {
                 $invoice = Invoice::find($order->invoice_id);
                 if ($invoice && (string) $invoice->status !== 'cancelled') {
                     $invoice->update([
                         'status' => 'cancelled',
-                        'payment_method' => $invoice->payment_method ?? 'paymongo_refund',
+                        'payment_method' => $invoice->payment_method ?? ($isCodOrder ? 'cash_refund' : 'paymongo_refund'),
                     ]);
                 }
             }
@@ -958,7 +965,7 @@ class PaymentSettlementService
             if ($invoice) {
                 $invoice->update([
                     'status' => 'cancelled',
-                    'payment_method' => $invoice->payment_method ?? 'paymongo_refund',
+                    'payment_method' => $invoice->payment_method ?? ($isCodOrder ? 'cash_refund' : 'paymongo_refund'),
                 ]);
             }
         }
@@ -969,7 +976,9 @@ class PaymentSettlementService
                     userId: (int) $order->customer_id,
                     type: NotificationType::ORDER_STATUS_UPDATE,
                     title: 'Refund Completed',
-                    message: "Your refund for order #{$order->order_number} has been completed and returned to your original payment method.",
+                    message: $isCodOrder
+                        ? "Your COD refund for order #{$order->order_number} has been completed through Xendit."
+                        : "Your refund for order #{$order->order_number} has been completed and returned to your original payment method.",
                     data: [
                         'order_id' => $order->id,
                         'order_number' => $order->order_number,

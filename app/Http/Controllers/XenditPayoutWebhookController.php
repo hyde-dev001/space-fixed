@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\ShopPaymentIntegration;
+use App\Models\OrderRefund;
 use App\Models\SupplierPaymentAttempt;
+use App\Services\Finance\CodRefundPayoutService;
 use App\Services\Finance\SupplierPaymentService;
 use App\Support\Finance\FinanceDomainException;
 use Illuminate\Http\JsonResponse;
@@ -12,7 +14,10 @@ use Illuminate\Support\Facades\Log;
 
 final class XenditPayoutWebhookController extends Controller
 {
-    public function __construct(private readonly SupplierPaymentService $supplierPaymentService) {}
+    public function __construct(
+        private readonly SupplierPaymentService $supplierPaymentService,
+        private readonly CodRefundPayoutService $codRefundPayoutService,
+    ) {}
 
     public function handle(Request $request): JsonResponse
     {
@@ -39,7 +44,57 @@ final class XenditPayoutWebhookController extends Controller
             ->first();
 
         if (! $attempt) {
-            return response()->json(['received' => true, 'ignored' => true]);
+            $refund = OrderRefund::query()
+                ->where('refund_provider', CodRefundPayoutService::PROVIDER)
+                ->where(function ($query) use ($payoutId, $referenceId): void {
+                    if ($payoutId !== '') {
+                        $query->where('provider_payout_id', $payoutId);
+                    }
+                    if ($referenceId !== '') {
+                        $method = $payoutId !== '' ? 'orWhere' : 'where';
+                        $query->{$method}('provider_reference', $referenceId);
+                    }
+                })
+                ->first();
+
+            if (! $refund) {
+                return response()->json(['received' => true, 'ignored' => true]);
+            }
+
+            $integration = ShopPaymentIntegration::query()
+                ->forXenditMoneyOut((int) $refund->shop_owner_id)
+                ->first();
+            $expectedToken = trim((string) ($integration?->webhook_callback_token ?? ''));
+            $providedToken = trim((string) $request->header('x-callback-token', ''));
+
+            if ($expectedToken === '' || $providedToken === '' || ! hash_equals($expectedToken, $providedToken)) {
+                return response()->json(['message' => 'Invalid Xendit callback token.'], 401);
+            }
+
+            try {
+                $updated = $this->codRefundPayoutService->handleWebhook($refund, $payload);
+
+                return response()->json([
+                    'received' => true,
+                    'status' => (string) ($updated->payout_status ?? 'processing'),
+                ]);
+            } catch (FinanceDomainException $exception) {
+                return response()->json([
+                    'message' => $exception->getMessage(),
+                    'code' => $exception->errorCode,
+                ], $exception->httpStatus);
+            } catch (\Throwable $exception) {
+                Log::error('COD Xendit payout webhook processing failed.', [
+                    'refund_id' => (int) $refund->id,
+                    'shop_id' => (int) $refund->shop_owner_id,
+                    'exception_class' => $exception::class,
+                ]);
+
+                return response()->json([
+                    'message' => 'The COD refund payout webhook could not be processed.',
+                    'code' => 'INTERNAL_ERROR',
+                ], 500);
+            }
         }
 
         $integration = ShopPaymentIntegration::query()

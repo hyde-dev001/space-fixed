@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { BatchSuggestion, LogisticsModule } from '@/types/logistics';
+import type { BatchSuggestion, CodCollectionPageData, LogisticsModule } from '@/types/logistics';
 
 export const logisticsApi = {
   shipments: () => axios.get('/api/logistics/shipments'),
@@ -47,7 +47,18 @@ export const logisticsApi = {
   resolveIncident: (incidentId: number, payload: FormData | Record<string, unknown>) => axios.post(`/api/logistics/incidents/${incidentId}/resolve`, payload, payload instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined),
   createReturnToShop: (legId: number) => axios.post(`/api/logistics/legs/${legId}/return-to-shop`),
   confirmReturnHandoff: (legId: number, proofId: number) => axios.post(`/api/logistics/legs/${legId}/return-proofs/${proofId}/handoff`),
-  confirmReturnReceipt: (legId: number, proofId: number) => axios.post(`/api/logistics/legs/${legId}/return-proofs/${proofId}/receipt`),
+ confirmReturnReceipt: (legId: number, proofId: number) => axios.post(`/api/logistics/legs/${legId}/return-proofs/${proofId}/receipt`),
+ cashCollected: (orderId: number, amount: string, idempotencyKey: string) =>
+   axios.post(`/api/logistics/cod/orders/${orderId}/cash-collected`, {
+     amount,
+     idempotency_key: idempotencyKey,
+   }),
+  codCollections: () => axios.get<CodCollectionPageData>('/api/logistics/cod/collections'),
+  submitCodRemittance: (collectionIds: number[], idempotencyKey: string) =>
+    axios.post('/api/logistics/cod/remittances', {
+      collection_ids: collectionIds,
+      idempotency_key: idempotencyKey,
+    }),
   offerBatch: (id: number, riderProfileId: number, capacityOverrideReason?: string) => axios.post(`/api/logistics/batches/${id}/offer`, { rider_profile_id: riderProfileId, capacity_override_reason: capacityOverrideReason }),
   acceptBatch: (id: number) => axios.post(`/api/logistics/batches/${id}/accept`),
   rejectBatch: (id: number, rejectionReason: string) => axios.post(`/api/logistics/batches/${id}/reject`, { rejection_reason: rejectionReason }),

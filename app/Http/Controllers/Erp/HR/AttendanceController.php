@@ -59,7 +59,7 @@ class AttendanceController extends Controller
         if ($request->filled('date_from') && $request->filled('date_to')) {
             $query->whereBetween('date', [$request->date_from, $request->date_to]);
         } elseif ($request->filled('date')) {
-            $query->where('date', $request->date);
+            $query->whereDate('date', $request->date);
         }
 
         if ($request->filled('status')) {
@@ -125,7 +125,7 @@ class AttendanceController extends Controller
 
         // Check if attendance record already exists for this date
         $existingRecord = AttendanceRecord::forEmployee($request->employee_id)
-            ->where('date', $request->date)
+            ->whereDate('date', $request->date)
             ->first();
 
         if ($existingRecord) {
@@ -301,7 +301,7 @@ class AttendanceController extends Controller
 
         // Check if employee already checked in today
         $existingRecord = AttendanceRecord::forEmployee($request->employee_id)
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->first();
 
         if ($existingRecord && $existingRecord->check_in_time) {
@@ -371,7 +371,7 @@ class AttendanceController extends Controller
         $today = Carbon::today()->toDateString();
 
         $attendance = AttendanceRecord::forEmployee($request->employee_id)
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->first();
 
         if (!$attendance || !$attendance->check_in_time) {
@@ -458,7 +458,7 @@ class AttendanceController extends Controller
         $totalEmployees = Employee::forShopOwner($user->shop_owner_id)->active()->count();
 
         $todayAttendance = AttendanceRecord::forShopOwner($user->shop_owner_id)
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->get();
 
         $present = $todayAttendance->where('status', 'present')->count();
@@ -537,7 +537,7 @@ class AttendanceController extends Controller
 
         // Check if user already checked in today (and hasn't clocked out yet)
         $existingRecord = AttendanceRecord::where('employee_id', $employee->id)
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->first();
 
         if ($existingRecord && $existingRecord->check_in_time && !$existingRecord->check_out_time) {
@@ -758,7 +758,7 @@ class AttendanceController extends Controller
         }
 
         $attendance = AttendanceRecord::where('employee_id', $employee->id)
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->first();
 
         // Check if employee is on approved leave today
@@ -896,7 +896,7 @@ class AttendanceController extends Controller
         }
         
         $attendance = AttendanceRecord::where('employee_id', $employee->id)
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->first();
 
         // Check if employee has an approved leave that covers today.
@@ -1022,7 +1022,7 @@ class AttendanceController extends Controller
         }
 
         $attendance = AttendanceRecord::where('employee_id', $employee->id)
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->first();
 
         if (!$attendance || !$attendance->check_in_time) {
@@ -1076,7 +1076,7 @@ class AttendanceController extends Controller
         }
 
         $attendance = AttendanceRecord::where('employee_id', $employee->id)
-            ->where('date', $today)
+            ->whereDate('date', $today)
             ->first();
 
         if (!$attendance || !$attendance->lunch_break_start) {

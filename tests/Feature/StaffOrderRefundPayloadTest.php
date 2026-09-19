@@ -278,6 +278,30 @@ class StaffOrderRefundPayloadTest extends TestCase
         }
     }
 
+    public function test_staff_payload_keeps_proof_when_completed_shipment_has_a_legacy_leg_state(): void
+    {
+        [$shop, $staff, , $order] = $this->refundFixture();
+        $shipment = app(SourceShipmentService::class)->ensureRetailOrderShipment($order);
+        $shipment->update(['status' => 'completed']);
+        $leg = $shipment->legs()->firstOrFail();
+        $leg->update(['status' => 'in_transit', 'delivered_at' => now()]);
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'file_path' => 'logistics-proof/completed-delivery.jpg',
+            'review_status' => 'approved',
+        ]);
+
+        foreach ([
+            $this->actingAs($staff, 'user')->getJson('/api/staff/orders')->assertOk()->json('0.logistics'),
+            $this->actingAs($staff, 'user')->getJson("/api/staff/orders/{$order->id}")->assertOk()->json('logistics'),
+        ] as $payload) {
+            $this->assertSame('in_transit', $payload['leg_status']);
+            $this->assertSame($proof->id, $payload['proofs'][0]['id']);
+        }
+    }
+
     public function test_staff_payload_ignores_another_shops_shipment_for_same_order_id(): void
     {
         [, $staff, , $order] = $this->refundFixture();

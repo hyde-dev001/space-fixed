@@ -312,6 +312,20 @@ interface RefundRequest {
 	approvalStageLabel?: string | null;
 	returnStatus?: string | null;
 	canExecutePayout?: boolean;
+	isCod?: boolean;
+	originalPaymentMethod?: string | null;
+	codCollectedAmount?: number | null;
+	codSettledAmount?: number | null;
+	codCollectionStatus?: string | null;
+	codRemittanceStatus?: string | null;
+	refundDestinationType?: string | null;
+	refundDestination?: Record<string, string> | null;
+	refundProvider?: string | null;
+	payoutStatus?: string | null;
+	payoutFailureCode?: string | null;
+	payoutFailureMessage?: string | null;
+	providerPayoutId?: string | null;
+	payoutBlockingReason?: string | null;
 	refundExecutedAt?: string | null;
 	refundedAt?: string | null;
 	rejectionReason?: string;
@@ -462,15 +476,19 @@ export const canFinanceAuthorizeRefund = (request: RefundRequest): boolean => {
 			&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 	}
 
-	return shopOwnerStatus === "approved"
+	return (!requiresOwnerApproval || shopOwnerStatus === "approved")
 		&& (financeStatus === "pending"
 			|| (requiresOwnerApproval && financeStatus === "approved_initial"))
 		&& !["rejected", "failed", "succeeded", "completed", "paid"].includes(rawStatus);
 };
 
 export const getFinanceApprovalNotice = (
-	request: Pick<RefundRequest, "refundType">,
+	request: Pick<RefundRequest, "refundType"> & { isCod?: boolean },
 ): string => {
+	if (request.refundType === "order" && request.isCod === true) {
+		return "COD refunds may be reviewed now, but Xendit payout stays disabled until Finance settles the COD remittance.";
+	}
+
 	if (request.refundType === "repair") {
 		return "No retail item return or Staff inspection is required for this repair-service refund. Finance approval authorizes the refund; payout follows the existing repair payout stage.";
 	}
@@ -497,6 +515,17 @@ export const canExecuteRefundPayout = (request: RefundRequest): boolean => {
 		&& shopOwnerStatus === "approved"
 		&& String(request.returnStatus || "").toLowerCase() === "received"
 		&& !["processing", "succeeded", "completed", "paid", "refunded", "failed", "rejected"].includes(rawStatus);
+};
+
+const isCodRefund = (request: Pick<RefundRequest, "refundType" | "isCod">): boolean => request.refundType === "order" && request.isCod === true;
+
+const shouldShowCodExecuteAction = (request: RefundRequest): boolean => {
+	if (!isCodRefund(request)) return false;
+
+	return String(request.financeStatus || "").toLowerCase() === "approved"
+		&& String(request.shopOwnerStatus || "").toLowerCase() === "approved"
+		&& String(request.returnStatus || "").toLowerCase() === "received"
+		&& !["succeeded", "processing"].includes(String(request.payoutStatus || "").toLowerCase());
 };
 
 const formatPayoutChannelLabel = (channel?: string): string => {
@@ -668,6 +697,8 @@ export default function RefundApproval() {
 	const [currentPage, setCurrentPage] = useState(1);
 	const [viewModalOpen, setViewModalOpen] = useState(false);
 	const [selectedRequest, setSelectedRequest] = useState<RefundRequest | null>(null);
+	const [revealedRefundDestinations, setRevealedRefundDestinations] = useState<Record<number, Record<string, string>>>({});
+	const [revealingRefundDestinationId, setRevealingRefundDestinationId] = useState<number | null>(null);
 	const [activeImage, setActiveImage] = useState<string | null>(null);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [statusFilter, setStatusFilter] = useState("All");
@@ -694,7 +725,8 @@ export default function RefundApproval() {
 	}, [selectedExecutionProofPreviews]);
 
 	const isVideoEvidence = (src: string): boolean => {
-		return /\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(src);
+		return /[?&]media_kind=video(?:&|$)/i.test(src)
+			|| /\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i.test(src);
 	};
 
 	useEffect(() => {
@@ -885,7 +917,51 @@ export default function RefundApproval() {
 		setViewModalOpen(true);
 	};
 
+	const toggleCodRefundDestination = async (request: RefundRequest) => {
+		if (revealedRefundDestinations[request.id]) {
+			setRevealedRefundDestinations((previous) => {
+				const next = { ...previous };
+				delete next[request.id];
+				return next;
+			});
+			return;
+		}
+
+		setRevealingRefundDestinationId(request.id);
+		try {
+			const response = await fetch(`/api/finance/refunds/${request.id}/destination/reveal`, {
+				credentials: "include",
+				headers: { Accept: "application/json" },
+			});
+			const data = await response.json();
+			if (!response.ok) {
+				throw new Error(data?.message || "Unable to reveal the refund destination.");
+			}
+
+			setRevealedRefundDestinations((previous) => ({
+				...previous,
+				[request.id]: data.destination || {},
+			}));
+		} catch (error) {
+			await Swal.fire({
+				title: "Unable to reveal destination",
+				text: error instanceof Error ? error.message : "Please try again.",
+				icon: "error",
+				confirmButtonColor: "#2563eb",
+			});
+		} finally {
+			setRevealingRefundDestinationId(null);
+		}
+	};
+
 	const handleCloseModal = () => {
+		if (selectedRequest) {
+			setRevealedRefundDestinations((previous) => {
+				const next = { ...previous };
+				delete next[selectedRequest.id];
+				return next;
+			});
+		}
 		setViewModalOpen(false);
 		setSelectedRequest(null);
 		setActiveImage(null);
@@ -1518,7 +1594,7 @@ export default function RefundApproval() {
 										</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.customerName}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{getPayoutAmountDisplay(request)}</td>
-										<td className="py-4 text-gray-700 dark:text-gray-300">{request.refundMethod}</td>
+										<td className="py-4 text-gray-700 dark:text-gray-300">{isCodRefund(request) ? "COD · Xendit" : request.refundMethod}</td>
 										<td className="py-4 text-gray-700 dark:text-gray-300">{request.requestedBy}</td>
 										<td className="py-4">
 											<div className="flex flex-wrap items-center gap-2">
@@ -1717,6 +1793,48 @@ export default function RefundApproval() {
 									</div>
 								</div>
 
+								{isCodRefund(selectedRequest) && (
+									<div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-900/20 dark:text-amber-100">
+										<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+											<div><span className="font-semibold">Original Payment:</span> COD</div>
+											<div><span className="font-semibold">Refund Provider:</span> {String(selectedRequest.refundProvider || "Xendit").toUpperCase()}</div>
+											<div><span className="font-semibold">COD Collected:</span> ₱{Number(selectedRequest.codCollectedAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+											<div><span className="font-semibold">COD Settlement:</span> {String(selectedRequest.codRemittanceStatus || "Not submitted").replace(/_/g, " ")}</div>
+											<div><span className="font-semibold">Destination:</span> {String(selectedRequest.refundDestinationType || "Not provided").toUpperCase()}</div>
+										<div><span className="font-semibold">Payout Status:</span> {String(selectedRequest.payoutStatus || "not started").replace(/_/g, " ")}</div>
+									</div>
+									{selectedRequest.refundDestination && (
+											<div className="mt-3 space-y-2">
+												<div className="flex flex-wrap items-center justify-between gap-2">
+													<p>
+														<span className="font-semibold">{revealedRefundDestinations[selectedRequest.id] ? "Full destination:" : "Masked destination:"}</span>{" "}
+														{Object.entries(revealedRefundDestinations[selectedRequest.id] || selectedRequest.refundDestination)
+															.map(([key, value]) => `${key.replace(/_/g, " ")}: ${value}`).join(" · ")}
+													</p>
+													<button
+														type="button"
+														className="rounded border border-amber-700 px-2 py-1 text-xs font-semibold hover:bg-amber-100 disabled:opacity-60"
+														onClick={() => void toggleCodRefundDestination(selectedRequest)}
+														disabled={revealingRefundDestinationId === selectedRequest.id}
+														aria-label={revealedRefundDestinations[selectedRequest.id] ? "Hide full refund destination" : "Show full refund destination"}
+														title={revealedRefundDestinations[selectedRequest.id] ? "Hide full refund destination" : "Show full refund destination"}
+													>
+														{revealedRefundDestinations[selectedRequest.id] ? "Hide" : revealingRefundDestinationId === selectedRequest.id ? "Loading…" : "View"}
+													</button>
+												</div>
+											</div>
+									)}
+									{selectedRequest.payoutBlockingReason && (
+										<p className="mt-3 font-semibold">{selectedRequest.payoutBlockingReason}</p>
+									)}
+									{selectedRequest.payoutFailureMessage && (
+										<p className="mt-3 font-semibold text-rose-700 dark:text-rose-300">
+											{selectedRequest.payoutFailureMessage}
+										</p>
+									)}
+									</div>
+								)}
+
 								{selectedRequest.refundType === "repair" && selectedRequest.refundComponents && (
 									<div>
 										<p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Refund Components</p>
@@ -1814,13 +1932,14 @@ export default function RefundApproval() {
 									{String(selectedRequest.financeStatus || "").toLowerCase() === "approved_initial" ? "Finalize Approval" : "Approve"}
 								</button>
 							)}
-							{canExecuteGatewayRefund(selectedRequest) && (
+							{(canExecuteGatewayRefund(selectedRequest) || shouldShowCodExecuteAction(selectedRequest)) && (
 								<button
 									onClick={() => handleExecuteGatewayRefund(selectedRequest)}
-									disabled={isActionProcessing}
+									disabled={!canExecuteGatewayRefund(selectedRequest) || isActionProcessing}
+									title={selectedRequest.payoutBlockingReason || undefined}
 									className="px-5 py-2.5 text-sm font-semibold rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
 								>
-									{getExecuteActionLabel(selectedRequest)}
+									{isCodRefund(selectedRequest) ? "Execute Xendit Refund" : getExecuteActionLabel(selectedRequest)}
 								</button>
 							)}
 							{canFinanceReject(selectedRequest) && (
@@ -1844,7 +1963,9 @@ export default function RefundApproval() {
 						<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
 							<div>
 								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-									{executeMode === "gateway" ? "Execute PayMongo Refund" : "Execute Repair Refund Payout"}
+									{isCodRefund(executeRequest)
+										? "Execute Xendit Refund"
+										: executeMode === "gateway" ? "Execute PayMongo Refund" : "Execute Repair Refund Payout"}
 								</h3>
 								<p className="text-sm text-gray-500 dark:text-gray-400">Request #{executeRequest.id}</p>
 							</div>

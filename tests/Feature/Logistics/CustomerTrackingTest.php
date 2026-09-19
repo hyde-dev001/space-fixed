@@ -10,6 +10,7 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
+use App\Models\OrderRefund;
 use App\Models\RepairRequest;
 use App\Models\User;
 use App\Services\Logistics\CustomerTrackingService;
@@ -440,6 +441,30 @@ class CustomerTrackingTest extends TestCase
         ], $legs->firstWhere('id', $missingLeg->id)['delivery_proof']);
     }
 
+    public function test_customer_payload_keeps_proof_when_completed_shipment_has_a_legacy_leg_state(): void
+    {
+        Storage::fake('local');
+        $shipment = Shipment::factory()->create(['status' => 'completed']);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'in_transit',
+            'delivered_at' => '2026-07-15 19:13:54',
+        ]);
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'file_path' => 'logistics-proof/completed.jpg',
+        ]);
+        Storage::disk('local')->put($proof->file_path, 'completed-proof');
+
+        $deliveryProof = app(CustomerTrackingService::class)->payload($shipment)['legs'][0]['delivery_proof'];
+
+        $this->assertSame($proof->id, $deliveryProof['id']);
+        $this->assertTrue($deliveryProof['available']);
+    }
+
     public function test_only_owner_can_receive_sanitized_approved_delivery_proof(): void
     {
         if (! extension_loaded('gd')) {
@@ -455,10 +480,12 @@ class CustomerTrackingTest extends TestCase
             'shop_owner_id' => $order->shop_owner_id,
             'source_type' => 'order',
             'source_id' => $order->id,
+            'status' => 'completed',
         ]);
         $leg = ShipmentLeg::factory()->create([
             'shipment_id' => $shipment->id,
-            'status' => 'delivered',
+            'status' => 'in_transit',
+            'delivered_at' => now(),
         ]);
         $path = "logistics-proof/{$leg->id}/proof.jpg";
         $original = $this->jpegWithSentinel();
@@ -490,7 +517,7 @@ class CustomerTrackingTest extends TestCase
             ->assertOk()
             ->assertHeader('Content-Type', 'image/jpeg')
             ->assertHeader('Content-Disposition', "inline; filename=\"delivery-proof-{$proof->id}.jpeg\"")
-            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertHeader('Cache-Control', 'private, no-store')
             ->assertHeader('X-Content-Type-Options', 'nosniff');
         $this->assertStringNotContainsString('GPS-SENTINEL', $response->getContent());
         $this->assertStringNotContainsString('PUBLIC-DUPLICATE', $response->getContent());
@@ -533,6 +560,84 @@ class CustomerTrackingTest extends TestCase
 
         Storage::disk('local')->delete($path);
         $this->actingAs($customer, 'user')->get($url)->assertNotFound();
+    }
+
+    public function test_customer_can_receive_approved_delivery_and_return_proofs_without_gd(): void
+    {
+        if (extension_loaded('gd')) {
+            $this->markTestSkipped('This fallback is only needed when GD is unavailable.');
+        }
+
+        Storage::fake('local');
+        $customer = User::factory()->create();
+        $order = Order::factory()->create(['customer_id' => $customer->id]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'status' => 'completed',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'in_transit',
+            'delivered_at' => now(),
+        ]);
+        $path = "logistics-proof/{$leg->id}/proof.png";
+        $contents = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', true);
+        Storage::disk('local')->put($path, $contents);
+        $proof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'handoff_type' => 'delivery',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'file_path' => $path,
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->get("/tracking/shipments/{$shipment->id}/proofs/{$proof->id}")
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('Content-Disposition', "inline; filename=\"delivery-proof-{$proof->id}.png\"")
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertStreamedContent($contents);
+
+        $refund = OrderRefund::factory()->create([
+            'order_id' => $order->id,
+            'customer_id' => $customer->id,
+            'shop_owner_id' => $order->shop_owner_id,
+        ]);
+        $returnShipment = Shipment::factory()->create([
+            'shop_owner_id' => $order->shop_owner_id,
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+            'status' => 'completed',
+        ]);
+        $returnLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => $returnShipment->id,
+            'leg_type' => 'return_to_shop',
+            'status' => 'in_transit',
+            'delivered_at' => now(),
+        ]);
+        $returnPath = "logistics-proof/{$returnLeg->id}/return.png";
+        Storage::disk('local')->put($returnPath, $contents);
+        $returnProof = HandoffProof::factory()->create([
+            'shipment_leg_id' => $returnLeg->id,
+            'handoff_type' => 'receive',
+            'proof_type' => 'photo',
+            'review_status' => 'approved',
+            'file_path' => $returnPath,
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->get("/tracking/shipments/{$returnShipment->id}/proofs/{$returnProof->id}")
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/png')
+            ->assertHeader('Content-Disposition', "inline; filename=\"delivery-proof-{$returnProof->id}.png\"")
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertHeader('X-Content-Type-Options', 'nosniff')
+            ->assertStreamedContent($contents);
     }
 
     public function test_only_the_owning_customer_can_view_failed_attempt_proof(): void

@@ -1,8 +1,8 @@
 const PAYMENT_METHOD_LABELS: Record<string, string> = {
-  cash: 'Cash',
   cod: 'Cash on Delivery (COD)',
   cash_on_delivery: 'Cash on Delivery (COD)',
   'cash on delivery': 'Cash on Delivery (COD)',
+  cash: 'Cash on Delivery (COD)',
   gcash: 'GCash',
   paymaya: 'PayMaya',
   pay_maya: 'PayMaya',

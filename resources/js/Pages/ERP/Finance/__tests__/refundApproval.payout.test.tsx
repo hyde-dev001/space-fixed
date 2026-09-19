@@ -146,4 +146,72 @@ describe("Finance canonical retail refund payout", () => {
     expect(screen.getByText("Pickup / Intake Fee Refund")).toBeInTheDocument();
     expect(screen.getByText("Return / Delivery Fee Refund")).toBeInTheDocument();
   });
+
+  it("reveals and hides a COD refund destination only after an explicit Finance action", async () => {
+    mocks.fetch.mockImplementation((url: string) => {
+      if (url.startsWith("/api/finance/refunds?")) {
+        return response({
+          data: [{
+            id: 13,
+            orderNumber: "ORD-13",
+            customerName: "John Paul Yambai",
+            refundAmount: "₱1,500.00",
+            refundAmountValue: 1500,
+            payoutAmount: "₱1,500.00",
+            payoutAmountValue: 1500,
+            refundMethod: "Customer Selected",
+            requestedBy: "John Paul Yambai",
+            requestDate: "2026-09-19",
+            refundReason: "Delivery Dispute",
+            reason: "Delivery Dispute",
+            status: "Approved",
+            rawStatus: "pending_approval",
+            isCod: true,
+            shopOwnerStatus: "approved",
+            financeStatus: "approved",
+            returnStatus: "received",
+            refundDestinationType: "e_wallet",
+            refundDestination: {
+              account_name: "John Paul Yambai",
+              channel: "GCash",
+              account_number: "*******6785",
+            },
+            payoutStatus: "not_started",
+            canExecutePayout: true,
+            media: [],
+          }],
+        });
+      }
+      if (url === "/api/finance/refunds/13/destination/reveal") {
+        return response({
+          destination: {
+            account_name: "John Paul Yambai",
+            channel: "GCash",
+            channel_code: "PH_GCASH",
+            account_number: "09123456785",
+          },
+        });
+      }
+      if (url.startsWith("/api/finance/repair-refunds?")) return response({ data: [] });
+      if (url.startsWith("/api/finance/repair-delivery-reconciliations?")) return response({ data: [] });
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    render(<RefundApproval />);
+
+    fireEvent.click(await screen.findByTitle("View Details"));
+    expect(screen.getByText(/account number: \*\*\*\*\*\*\*6785/)).toBeInTheDocument();
+    const showButton = screen.getByRole("button", { name: "Show full refund destination" });
+    fireEvent.click(showButton);
+
+    await waitFor(() => expect(screen.getByText(/account number: 09123456785/)).toBeInTheDocument());
+    expect(mocks.fetch).toHaveBeenCalledWith(
+      "/api/finance/refunds/13/destination/reveal",
+      expect.objectContaining({ credentials: "include", headers: { Accept: "application/json" } }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide full refund destination" }));
+    expect(screen.queryByText(/account number: 09123456785/)).not.toBeInTheDocument();
+    expect(screen.getByText(/account number: \*\*\*\*\*\*\*6785/)).toBeInTheDocument();
+  });
 });

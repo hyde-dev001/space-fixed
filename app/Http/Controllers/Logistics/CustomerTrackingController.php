@@ -70,8 +70,10 @@ class CustomerTrackingController extends Controller
         if ((int) $proof->leg?->shipment_id !== (int) $shipment->id) {
             abort(403);
         }
+        $deliveryCompleted = $proof->leg->status->value === 'delivered'
+            || ($proof->leg->shipment?->status?->value === 'completed' && $proof->leg->delivered_at !== null);
         abort_unless(
-            $proof->leg->status->value === 'delivered'
+            $deliveryCompleted
             && in_array($proof->handoff_type, ['delivery', 'receive'], true)
             && $proof->proof_type === 'photo'
             && $proof->review_status === 'approved',
@@ -80,7 +82,6 @@ class CustomerTrackingController extends Controller
 
         $disk = Storage::disk('local');
         abort_unless($proof->file_path && $disk->exists($proof->file_path), 404);
-        abort_unless(extension_loaded('gd'), 503);
 
         $mime = $disk->mimeType($proof->file_path);
         $format = match ($mime) {
@@ -89,6 +90,21 @@ class CustomerTrackingController extends Controller
             'image/webp' => 'webp',
             default => abort(404),
         };
+
+        if (! extension_loaded('gd')) {
+            $disposition = request()->boolean('download') ? 'attachment' : 'inline';
+
+            return $disk->response(
+                $proof->file_path,
+                "delivery-proof-{$proof->id}.{$format}",
+                [
+                    'Content-Type' => $mime,
+                    'Content-Disposition' => "{$disposition}; filename=\"delivery-proof-{$proof->id}.{$format}\"",
+                    'Cache-Control' => 'no-store, private',
+                    'X-Content-Type-Options' => 'nosniff',
+                ],
+            );
+        }
 
         try {
             $encoded = Image::useImageDriver(ImageDriverEnum::Gd)

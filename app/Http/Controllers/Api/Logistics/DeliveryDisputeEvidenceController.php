@@ -55,7 +55,8 @@ class DeliveryDisputeEvidenceController extends Controller
         abort_unless(
             $user->can('access-staff-job-orders')
             || $user->can('resolve-logistics-exceptions')
-            || $user->can('assign-logistics-deliveries'),
+            || $user->can('assign-logistics-deliveries')
+            || $user->can('access-refund-approval'),
             403,
         );
 

@@ -107,6 +107,12 @@ const arrivalResultLabel = (value: unknown): string | null => ({
 const isCompactViewport = () =>
   typeof window !== 'undefined' && window.innerWidth < 1280;
 
+const isCodPaymentMethod = (value?: string | null): boolean =>
+  ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'].includes(String(value ?? '').trim().toLowerCase());
+
+const formatCodAmount = (value: string | number): string =>
+  Number(value).toLocaleString('en-PH', { style: 'currency', currency: 'PHP' });
+
 type PickerOption = readonly [string, string];
 
 function CompactModalPicker({
@@ -761,8 +767,9 @@ function DeliveryActions({
   const [arrivalNotes, setArrivalNotes] = useState('');
   const arrivalEvidence = useRef<Record<string, unknown> | null>(null);
   const issueKeys = useRef<Record<string, string>>({});
-  const proofKeys = useRef<Record<string, string>>({});
-  const mutationDisabled = locked || !online || pendingAction !== null;
+ const proofKeys = useRef<Record<string, string>>({});
+  const cashCollectionKeys = useRef<Record<number, string>>({});
+ const mutationDisabled = locked || !online || pendingAction !== null;
   const buttonClass =
     'min-h-12 w-full touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11';
   const compactPrimaryButtonClass =
@@ -815,10 +822,66 @@ function DeliveryActions({
   const issueKey = `${isRepairPickup ? 'pickup-issue' : 'issue'}:${delivery.id}`;
   const issueRequestKey = `${isRepairPickup ? 'pickup' : 'delivery'}:${delivery.id}:${assignment?.id ?? 'none'}`;
   const issueOptions = isRepairPickup ? pickupIssueReasons : deliveryIssueReasons;
-  const deliveryReference =
-    item.kind === 'batch'
-      ? `stop ${delivery.stop_sequence ?? delivery.id} in batch #${item.id}`
-      : `delivery #${deliveryNumber(delivery)}`;
+ const deliveryReference =
+   item.kind === 'batch'
+     ? `stop ${delivery.stop_sequence ?? delivery.id} in batch #${item.id}`
+     : `delivery #${deliveryNumber(delivery)}`;
+  const codSummary = delivery.shipment?.source_type === 'order'
+    && isCodPaymentMethod(delivery.shipment.order_summary?.payment_method)
+    ? delivery.shipment.order_summary
+    : null;
+  const codOrderId = codSummary?.order_id ?? null;
+  const codAmount = codSummary?.cod_expected_amount ?? null;
+  const codCollectionStatus = codSummary?.cod_collection_status ?? null;
+  const cashCollectionKey = codOrderId ? `cash-collected:${codOrderId}` : null;
+  const cashCollectionIdempotencyKey = codOrderId
+    ? (cashCollectionKeys.current[codOrderId] ??= crypto.randomUUID())
+    : null;
+  const codIsPending = Boolean(codSummary && codAmount && codOrderId
+    && canUpdateStatus
+    && !['cash_collected', 'settled'].includes(codCollectionStatus ?? ''));
+  const codCollectionEligible = ['in_transit', 'delivery_attempted', 'awaiting_proof_approval', 'proof_correction_required']
+    .includes(delivery.status);
+ const recordCashCollected = () => {
+    if (!codSummary || !codAmount || !codOrderId || !codCollectionEligible || !canUpdateStatus
+      || !cashCollectionKey || !cashCollectionIdempotencyKey
+    ) return;
+
+    runAction(cashCollectionKey, () => logisticsApi.cashCollected(
+      codOrderId,
+      codAmount,
+      cashCollectionIdempotencyKey,
+    ), {
+      title: `Record ${formatCodAmount(codAmount)} cash collected?`,
+      text: 'Confirm that you received the exact cash amount from the customer. Finance will settle it after physical cash is verified.',
+      confirmButtonText: 'Cash collected',
+    });
+  };
+  const cashCollectionPanel = codCollectionEligible && codSummary && codAmount ? (
+    <div className='space-y-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-50'>
+      <div className='flex flex-wrap items-start justify-between gap-3'>
+        <div>
+          <p className='text-xs font-bold uppercase tracking-[0.14em] text-amber-800 dark:text-amber-200'>Cash on delivery</p>
+          <p className='mt-1 text-sm font-semibold'>Collect the exact amount before handing over the order.</p>
+        </div>
+        <p className='text-xl font-extrabold tabular-nums'>{formatCodAmount(codAmount)}</p>
+      </div>
+      {codIsPending ? (
+        <button
+          type='button'
+          disabled={mutationDisabled || pendingAction === cashCollectionKey}
+          onClick={recordCashCollected}
+          className='min-h-12 w-full touch-manipulation rounded-xl bg-amber-900 px-4 text-sm font-bold text-white transition-colors hover:bg-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-900 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100 xl:min-h-11'
+        >
+          {pendingAction === cashCollectionKey ? 'Recording cash collection…' : 'Cash collected'}
+        </button>
+      ) : (
+        <p role='status' className='rounded-xl bg-white/70 p-3 text-sm font-semibold dark:bg-black/20'>
+          Cash collected · waiting for remittance settlement
+        </p>
+      )}
+    </div>
+  ) : null;
 
   if (isStagedRetry) {
     const scheduledDate = delivery.scheduled_delivery_date?.slice(0, 10) ?? null;
@@ -1314,8 +1377,10 @@ function DeliveryActions({
     );
   }
 
-  if (delivery.status !== 'in_transit') return null;
-  if (!arrival) {
+ if (delivery.status !== 'in_transit') {
+   return cashCollectionPanel ? <div className='space-y-3'>{cashCollectionPanel}</div> : null;
+ }
+ if (!arrival) {
     if (!canUpdateStatus && !canReportIssue) return null;
     return (
       <div className="space-y-3">
@@ -1359,9 +1424,10 @@ function DeliveryActions({
   };
 
   return (
-    <div className="space-y-3">
-      {arrivalSummary}
-      {canRecordProof && (
+   <div className="space-y-3">
+     {arrivalSummary}
+      {cashCollectionPanel}
+     {canRecordProof && (
         <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
           <DeliveryPhotoUpload
             inputId={`delivery-proof-photo-${delivery.id}`}

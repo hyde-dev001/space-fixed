@@ -337,7 +337,7 @@ describe('MyOrders delivery tracking', () => {
     expect(screen.queryByText(/July 18, 2026/)).not.toBeInTheDocument();
   });
 
-  it('reveals the online-payment refund explanation on keyboard focus', () => {
+  it('reveals the COD refund explanation on keyboard focus', () => {
     order.status = 'completed';
     order.carrier_company = 'Third-party Logistics';
     order.is_shop_owned_delivery = false;
@@ -348,14 +348,14 @@ describe('MyOrders delivery tracking', () => {
     fireEvent.focus(eligibilityTrigger);
 
     expect(screen.getByRole('tooltip')).toHaveTextContent(
-      'Only online-paid orders are eligible for refund requests.',
+      'There is no collected COD cash to refund.',
     );
 
     fireEvent.blur(eligibilityTrigger, { relatedTarget: document.body });
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
     fireEvent.mouseEnter(eligibilityTrigger);
     expect(screen.getByRole('tooltip')).toHaveTextContent(
-      'Only online-paid orders are eligible for refund requests.',
+      'There is no collected COD cash to refund.',
     );
     fireEvent.mouseLeave(eligibilityTrigger);
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument();
@@ -482,5 +482,115 @@ describe('MyOrders delivery tracking', () => {
 
     expect(screen.getByRole('button', { name: 'REFUND', exact: true })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'REPORT ORDER', exact: true })).not.toBeInTheDocument();
+  });
+
+  it('hides Report Order while a refund workflow is still active', () => {
+    Object.assign(order, {
+      status: 'delivered',
+      payment_method: 'cash_on_delivery',
+      can_report_delivery_issue: true,
+      active_delivery_dispute: null,
+      refund_stage: {
+        id: 9,
+        status: 'approved',
+        shop_owner_status: 'approved',
+        finance_status: 'approved',
+        return_status: 'received',
+        payout_status: 'not_started',
+      },
+    });
+
+    render(<MyOrders />);
+
+    expect(screen.queryByRole('button', { name: 'REPORT ORDER', exact: true })).not.toBeInTheDocument();
+  });
+
+  it('lets a customer provide a COD refund destination after finance approval', async () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 9,
+      is_cod: true,
+      awaiting_refund_destination: true,
+      status: 'pending_approval',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'pending_customer_shipment',
+    };
+    swalFireMock
+      .mockResolvedValueOnce({ isConfirmed: true, value: 'e_wallet' })
+      .mockResolvedValueOnce({ isConfirmed: true, value: 'PH_MAYA' })
+      .mockResolvedValueOnce({
+        isConfirmed: true,
+        value: {
+          account_name: 'Maria Santos',
+          account_number: '09123456789',
+        },
+      });
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          banks: [{ channel_code: 'PH_BDO', channel_name: 'Banco De Oro Unibank, Inc.' }],
+          e_wallets: [{ channel_code: 'PH_MAYA', channel_name: 'Maya' }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: () => Promise.resolve({
+          success: true,
+          refund: {
+            id: 9,
+            refund_destination_type: 'e_wallet',
+            refund_destination: { channel: 'Maya', account_name: 'Maria Santos', number: '*******6789' },
+          },
+        }),
+      });
+
+    render(<MyOrders />);
+    fireEvent.click(screen.getByRole('button', { name: 'PROVIDE REFUND DESTINATION' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/orders/refunds/9/cod-destination-options',
+      expect.objectContaining({ method: 'GET' }),
+    ));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      '/orders/refunds/9/cod-destination',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          destination_type: 'e_wallet',
+          channel_code: 'PH_MAYA',
+          account_name: 'Maria Santos',
+          account_number: '09123456789',
+        }),
+      }),
+    ));
+  });
+
+  it('shows a saved masked COD destination and allows editing before payout starts', () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 9,
+      is_cod: true,
+      awaiting_refund_destination: false,
+      status: 'pending_approval',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'received',
+      payout_status: 'not_started',
+      refund_destination_type: 'e_wallet',
+      refund_destination: {
+        channel: 'Maya',
+        account_name: 'Maria Santos',
+        account_number: '*******6789',
+      },
+    };
+
+    render(<MyOrders />);
+
+    expect(screen.getByText('Refund destination saved')).toBeInTheDocument();
+    expect(screen.getByText(/Maya/)).toBeInTheDocument();
+    expect(screen.getByText(/\*\*\*\*\*\*\*6789/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'EDIT REFUND DESTINATION', exact: true })).toBeInTheDocument();
   });
 });

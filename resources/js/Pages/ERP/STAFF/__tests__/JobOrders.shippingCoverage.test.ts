@@ -711,8 +711,8 @@ describe('staff refund visibility', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Refund (1)' }));
     fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
 
-    expect(screen.getByText('Refund Evidence')).toBeInTheDocument();
-    expect(screen.getByAltText('Refund evidence 1')).toHaveAttribute('src', '/storage/refunds/customer-evidence.jpg');
+    expect(screen.queryByText('Refund Evidence')).not.toBeInTheDocument();
+    expect(screen.queryByAltText('Refund evidence 1')).not.toBeInTheDocument();
     expect(screen.getByText('Customer Report Proof')).toBeInTheDocument();
     expect(screen.getByLabelText('opening.mp4')).toHaveAttribute(
       'src',

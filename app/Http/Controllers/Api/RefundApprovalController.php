@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Models\CodCollection;
 use App\Models\OrderRefund;
 use App\Services\OrderRefundService;
 use Illuminate\Http\Request;
@@ -25,6 +26,15 @@ class RefundApprovalController extends Controller
         $query = $this->baseListQuery($request)
             ->where('shop_owner_id', (int) ($user->shop_owner_id ?? 0))
             ->where(function ($builder) {
+                $builder->whereDoesntHave('order', function ($orderQuery) {
+                    $orderQuery->whereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash']);
+                })->orWhere(function ($nested) {
+                    $nested->whereHas('order', function ($orderQuery) {
+                        $orderQuery->whereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash']);
+                    })->where('status', 'pending_approval');
+                })->orWhere('shop_owner_status', 'approved');
+            })
+            ->where(function ($builder) {
                 $builder->where('reason_code', '!=', 'delivery_attempts_exhausted')
                     ->orWhereNull('reason_code')
                     ->orWhere('return_status', 'received');
@@ -41,7 +51,9 @@ class RefundApprovalController extends Controller
         }
 
         $paginated = $query->paginate((int) $request->get('per_page', 50));
-        $paginated->setCollection($paginated->getCollection()->map(fn (OrderRefund $refund) => $this->transformRefund($refund)));
+        $paginated->setCollection($paginated->getCollection()->map(function (OrderRefund $refund) {
+            return $this->transformRefund($this->orderRefundService->reconcileCodRefundPayout($refund));
+        }));
 
         return response()->json($paginated);
     }
@@ -57,16 +69,29 @@ class RefundApprovalController extends Controller
         $isIndividualRegistration = $registrationType === 'individual';
 
         $query = $this->baseListQuery($request)
-            ->where('shop_owner_id', (int) $shopOwner->id);
+            ->where('shop_owner_id', (int) $shopOwner->id)
+            ->where(function ($builder) {
+                $builder->whereNull('requires_owner_approval')
+                    ->orWhere('requires_owner_approval', true);
+            });
 
         if (strtolower((string) $request->get('status', '')) === 'pending') {
             $query->where('shop_owner_status', 'pending');
 
-            if ($isIndividualRegistration) {
-                $query->whereIn('finance_status', ['pending', 'approved_initial']);
-            } else {
-                $query->where('finance_status', 'approved_initial');
-            }
+            $financeStatuses = $isIndividualRegistration
+                ? ['pending', 'approved_initial']
+                : ['approved_initial'];
+            $query->where(function ($builder) use ($financeStatuses) {
+                $builder->where(function ($codQuery) {
+                    $codQuery->whereHas('order', function ($orderQuery) {
+                        $orderQuery->whereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash']);
+                    })->where('status', 'pending_approval')->where('finance_status', 'approved_initial');
+                })->orWhere(function ($nonCodQuery) use ($financeStatuses) {
+                    $nonCodQuery->whereDoesntHave('order', function ($orderQuery) {
+                        $orderQuery->whereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash']);
+                    })->whereIn('finance_status', $financeStatuses);
+                });
+            });
         }
 
         $paginated = $query->paginate((int) $request->get('per_page', 50));
@@ -84,6 +109,10 @@ class RefundApprovalController extends Controller
 
         $refund = $this->baseListQuery($request)
             ->where('shop_owner_id', (int) $shopOwner->id)
+            ->where(function ($builder) {
+                $builder->whereNull('requires_owner_approval')
+                    ->orWhere('requires_owner_approval', true);
+            })
             ->whereKey($id)
             ->first();
 
@@ -275,6 +304,53 @@ class RefundApprovalController extends Controller
         ]);
     }
 
+    public function revealCodRefundDestination(Request $request, int $id)
+    {
+        $user = Auth::guard('user')->user();
+        if (!$user) {
+            return response()->json(['message' => 'Unauthorized'], 401);
+        }
+
+        $refund = OrderRefund::query()
+            ->with('order:id,payment_method')
+            ->where('id', $id)
+            ->where('flow_type', 'request_approval')
+            ->where('shop_owner_id', (int) ($user->shop_owner_id ?? 0))
+            ->first();
+
+        if (!$refund || !$this->isCodRefund($refund)) {
+            return response()->json(['message' => 'COD refund destination not found.'], 404);
+        }
+
+        $destination = is_array($refund->refund_destination) ? $refund->refund_destination : [];
+        $accountNumber = trim((string) ($destination['account_number'] ?? $destination['number'] ?? ''));
+        if ($accountNumber === '') {
+            return response()->json(['message' => 'COD refund destination not provided.'], 404);
+        }
+
+        activity('sensitive_refund_destinations')
+            ->causedBy($user)
+            ->performedOn($refund)
+            ->withProperties([
+                'refund_id' => (int) $refund->id,
+                'shop_id' => (int) $refund->shop_owner_id,
+                'destination_type' => (string) ($refund->refund_destination_type ?? ''),
+            ])
+            ->log('cod_refund_destination_revealed');
+
+        return response()->json([
+            'destination' => array_filter([
+                'type' => $destination['type'] ?? null,
+                'channel_code' => $destination['channel_code'] ?? null,
+                'channel' => $destination['channel'] ?? $destination['bank'] ?? null,
+                'account_name' => $destination['account_name'] ?? $destination['account_holder_name'] ?? null,
+                'account_number' => $accountNumber,
+            ], static fn (mixed $value): bool => filled($value)),
+        ])
+            ->header('Cache-Control', 'no-store, private')
+            ->header('Pragma', 'no-cache');
+    }
+
     public function shopOwnerExecuteGatewayRefund(Request $request, int $id)
     {
         $shopOwner = Auth::guard('shop_owner')->user();
@@ -327,7 +403,12 @@ class RefundApprovalController extends Controller
     private function baseListQuery(Request $request)
     {
         $query = OrderRefund::query()
-            ->with(['order:id,order_number,total_amount,shipping_fee', 'customer:id,name'])
+            ->with([
+                'order:id,order_number,total_amount,shipping_fee,payment_method,total,grand_total,vat_amount',
+                'order.deliveryDisputes:id,order_id,order_refund_id,evidence_media',
+                'order.codCollection.remittanceItem.remittance',
+                'customer:id,name',
+            ])
             ->where('flow_type', 'request_approval');
 
         $statusFilter = strtolower((string) $request->get('status', ''));
@@ -358,10 +439,52 @@ class RefundApprovalController extends Controller
 
     private function transformRefund(OrderRefund $refund): array
     {
-        $refund->loadMissing(['order', 'customer', 'items']);
+        $refund->loadMissing([
+            'order.codCollection.remittanceItem.remittance',
+            'order.deliveryDisputes:id,order_id,order_refund_id,evidence_media',
+            'customer',
+            'items',
+        ]);
 
         $order = $refund->order;
+        $refundDispute = $order?->deliveryDisputes?->first(
+            fn ($dispute): bool => (int) $dispute->order_refund_id === (int) $refund->id,
+        );
+        $evidenceSource = is_array($refund->evidence_media) && $refund->evidence_media !== []
+            ? $refund->evidence_media
+            : ($refundDispute?->evidence_media ?? []);
+        $evidenceMedia = collect($evidenceSource)
+            ->map(function (mixed $entry) use ($refundDispute): ?string {
+                if (is_string($entry) && $entry !== '') {
+                    return $entry;
+                }
+
+                if (! is_array($entry) || ! $refundDispute) {
+                    return null;
+                }
+
+                $mediaId = trim((string) ($entry['id'] ?? ''));
+                if ($mediaId === '') {
+                    return null;
+                }
+
+                $url = route('api.logistics.delivery-disputes.evidence', [
+                    'dispute' => $refundDispute->id,
+                    'mediaId' => $mediaId,
+                ]);
+
+                return strtolower((string) ($entry['kind'] ?? '')) === 'video'
+                    ? $url . '?media_kind=video'
+                    : $url;
+            })
+            ->filter()
+            ->values()
+            ->all();
         $status = strtolower((string) $refund->status);
+        $payoutFailureMessage = $refund->payout_failure_message;
+        if (is_string($payoutFailureMessage) && str_contains($payoutFailureMessage, 'API_VALIDATION_ERROR')) {
+            $payoutFailureMessage = 'Xendit rejected the COD payout details. Verify the selected channel and account number, then retry the payout.';
+        }
         $shopOwnerStatus = strtolower((string) ($refund->shop_owner_status ?? 'pending'));
         $financeStatus = strtolower((string) ($refund->finance_status ?? 'pending'));
         $reasonLabel = $this->humanizeReason((string) $refund->reason_code);
@@ -384,9 +507,23 @@ class RefundApprovalController extends Controller
             && str_contains($cleanReasonNote, OrderRefundService::FINANCE_SHIPPING_DECISION_MARKER);
 
         $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+        $paymentMethod = strtolower(trim((string) ($order?->payment_method ?? '')));
+        $isCod = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
+        $codCollection = $order?->codCollection;
+        $codRemittance = $codCollection?->remittanceItem?->remittance;
+        $canExecutePayout = $this->orderRefundService->canExecuteApprovedRefund($refund);
+        $codHasCollectedCash = $isCod && (float) ($codCollection?->collected_amount ?? 0) > 0;
+        $codRemittanceIsSettled = $isCod
+            && (string) ($codCollection?->status ?? '') === CodCollection::STATUS_SETTLED
+            && (string) ($codRemittance?->status ?? '') === 'settled';
+        $codHasRefundDestination = $isCod
+            && is_array($refund->refund_destination)
+            && $refund->refund_destination !== [];
 
         $approvalStage = 'none';
-        if ($financeStatus === 'pending') {
+        if ($isCod && $status === 'requested' && $shopOwnerStatus === 'pending') {
+            $approvalStage = 'staff';
+        } elseif ($financeStatus === 'pending') {
             $approvalStage = 'finance_initial';
         } elseif ($financeStatus === 'approved_initial' && $shopOwnerStatus === 'pending') {
             $approvalStage = 'shop_owner';
@@ -422,6 +559,21 @@ class RefundApprovalController extends Controller
                 : $effectiveAmount,
             'shippingFee' => $shippingFee,
             'refundMethod' => $this->humanizeRefundMethod($refund->requested_refund_method),
+            'originalPaymentMethod' => $isCod ? 'COD' : 'PayMongo',
+            'isCod' => $isCod,
+            'codCollectedAmount' => $isCod ? round((float) ($codCollection?->collected_amount ?? 0), 2) : null,
+            'codCollectionStatus' => $isCod ? (string) ($codCollection?->status ?? 'not_collected') : null,
+            'codRemittanceStatus' => $isCod ? (string) ($codRemittance?->status ?? 'not_submitted') : null,
+            'codSettledAmount' => $isCod && (string) ($codRemittance?->status ?? '') === 'settled'
+                ? round((float) ($codCollection?->collected_amount ?? 0), 2)
+                : 0.0,
+            'refundDestinationType' => $isCod ? (string) ($refund->refund_destination_type ?? '') : null,
+            'refundDestination' => $isCod ? $refund->maskedRefundDestination() : null,
+            'refundProvider' => $isCod ? (string) ($refund->refund_provider ?? 'xendit') : null,
+            'payoutStatus' => (string) ($refund->payout_status ?? 'not_started'),
+            'payoutFailureCode' => $refund->payout_failure_code,
+            'payoutFailureMessage' => $payoutFailureMessage,
+            'providerPayoutId' => $refund->provider_payout_id,
             'requestedBy' => (string) ($refund->customer?->name ?? 'Customer'),
             'requestDate' => optional($refund->requested_at)->format('Y-m-d') ?? optional($refund->created_at)->format('Y-m-d'),
             'refundReason' => $reasonLabel,
@@ -435,7 +587,16 @@ class RefundApprovalController extends Controller
             'requiresOwnerApproval' => $requiresOwnerApproval,
             'approvalStage' => $approvalStage,
             'returnStatus' => (string) ($refund->return_status ?? 'awaiting_approval'),
-            'canExecutePayout' => $this->orderRefundService->canExecuteApprovedRefund($refund),
+            'canExecutePayout' => $canExecutePayout,
+            'payoutBlockingReason' => $isCod && ! $canExecutePayout
+                ? (! $codHasCollectedCash
+                    ? 'No COD cash was collected; there is nothing to refund.'
+                    : (! $codRemittanceIsSettled
+                        ? 'COD remittance has not been settled by Finance.'
+                        : (! $codHasRefundDestination
+                            ? 'Customer has not provided a refund destination yet.'
+                            : 'COD refund still requires both approvals and a received return.')))
+                : null,
             'returnSource' => (string) ($refund->return_source ?? 'customer'),
             'refundExecutedAt' => optional($refund->refund_executed_at)->toDateTimeString(),
             'refundedAt' => optional($refund->refunded_at)->toDateTimeString(),
@@ -454,7 +615,7 @@ class RefundApprovalController extends Controller
             'returnArrangedByStaffAt' => optional($refund->return_arranged_by_staff_at)->toDateTimeString(),
             'returnConfirmedAt' => optional($refund->return_confirmed_at)->toDateTimeString(),
             'rejectionReason' => $refund->rejection_reason,
-            'media' => is_array($refund->evidence_media) ? $refund->evidence_media : [],
+            'media' => $evidenceMedia,
         ];
     }
 
@@ -465,6 +626,13 @@ class RefundApprovalController extends Controller
         }
 
         return ucwords(str_replace('_', ' ', strtolower($reasonCode)));
+    }
+
+    private function isCodRefund(OrderRefund $refund): bool
+    {
+        $paymentMethod = strtolower(trim((string) ($refund->order?->payment_method ?? '')));
+
+        return in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
     }
 
     private function humanizeRefundMethod(?string $method): string

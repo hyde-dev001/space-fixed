@@ -126,6 +126,11 @@ final class ReadPageController extends Controller
         return $this->renderFinanceSection('expense-tracking');
     }
 
+    public function financeCodRemittances(): Response|RedirectResponse
+    {
+        return $this->renderEmployeePage('ERP/Finance/CodRemittances');
+    }
+
     public function hrDashboard(): Response|RedirectResponse
     {
         if ($redirect = $this->employeePasswordRedirect()) {

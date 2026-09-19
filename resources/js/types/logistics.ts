@@ -57,10 +57,64 @@ export type LogisticsOrderSummary = {
   available: boolean;
   order_id: number;
   order_number?: string | null;
+  payment_method?: string | null;
+  cod_expected_amount?: string | null;
+  cod_collection_status?: 'pending' | 'cash_collected' | 'settled' | string | null;
+  cod_collected_amount?: string | null;
+  cod_collection_reference?: string | null;
+  cod_collected_at?: string | null;
+  cod_rider_name?: string | null;
+  cod_remittance_status?: 'not_submitted' | 'submitted' | 'settled' | 'disputed' | string | null;
+  cod_remittance_reference?: string | null;
   items: LogisticsOrderItemSummary[];
   total_quantity: number;
   variant_count: number;
   model_count: number;
+};
+
+export type CodCollectionView = {
+  id: number;
+  order_id: number;
+  order_number?: string | null;
+  expected_amount: string;
+  collected_amount: string;
+  status: 'pending' | 'cash_collected' | 'settled' | string;
+  collected_at?: string | null;
+  remittance_reference?: string | null;
+};
+
+export type CodRemittanceView = {
+  id: number;
+  reference: string;
+  rider_user_id?: number | null;
+  rider_name?: string | null;
+  expected_amount: string;
+  submitted_amount: string;
+  received_amount?: string | null;
+  variance_amount?: string | null;
+  status: 'submitted' | 'settled' | 'disputed' | string;
+  submitted_at?: string | null;
+  confirmed_at?: string | null;
+  dispute_reason?: string | null;
+  items?: Array<{
+    id: number;
+    cod_collection_id: number;
+    expected_amount: string;
+    collected_amount: string;
+    collection_status: string;
+    order_id?: number | null;
+    order_number?: string | null;
+  }>;
+};
+
+export type CodCollectionPageData = {
+  summary: {
+    cash_currently_held: string;
+    pending_remittance_count: number;
+  };
+  pending_remittance: CodCollectionView[];
+  submitted_remittances: Array<Pick<CodRemittanceView, 'id' | 'reference' | 'expected_amount' | 'submitted_amount' | 'received_amount' | 'variance_amount' | 'status' | 'submitted_at' | 'dispute_reason'>>;
+  settled_history: CodCollectionView[];
 };
 
 export const logisticsSourceLabel = (shipment?: {

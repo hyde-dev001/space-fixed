@@ -288,6 +288,16 @@ const financeItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 10h18M5 10v8m4-8v8m6-8v8m4-8v8M3 20h18M4 6h16l-2-3H6L4 6Z" />
+      </svg>
+    ),
+    name: "COD Remittances",
+    route: "finance.cod-remittances",
+    moduleKey: "finance",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"></path>
       </svg>
     ),
@@ -817,6 +827,16 @@ const staffItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 7h18v13H3z"></path><path d="M7 7V5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2"></path><path d="M7 12h10"></path><path d="M9 16h6"></path>
+      </svg>
+    ),
+    name: "My COD Collections",
+    route: "erp.logistics.cod-collections",
+    moduleKey: "logistics",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
         <circle cx="9" cy="7" r="4"></circle>
         <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
@@ -1108,6 +1128,7 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.logistics.shipments": "/erp/logistics/shipments",
     "erp.logistics.batches": "/erp/logistics/batches",
     "erp.logistics.deliveries": "/erp/logistics/deliveries",
+    "erp.logistics.cod-collections": "/erp/logistics/cod-collections",
     "erp.logistics.riders": "/erp/logistics/riders",
     "erp.logistics.settings": "/erp/logistics/settings",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
@@ -1137,6 +1158,7 @@ const EmployeeSidebarERP: React.FC = () => {
     // Finance section routes
     "finance.index": "/finance",
     "finance.dashboard": "/finance/dashboard",
+    "finance.cod-remittances": "/finance/cod-remittances",
     "finance.create-invoice": "/create-invoice",
     "erp.finance.audit-logs": "/erp/finance/audit-logs",
     // CRM section routes
@@ -1200,6 +1222,7 @@ const EmployeeSidebarERP: React.FC = () => {
     "erp.logistics.shipments": "/erp/logistics/shipments",
     "erp.logistics.batches": "/erp/logistics/batches",
     "erp.logistics.deliveries": "/erp/logistics/deliveries",
+    "erp.logistics.cod-collections": "/erp/logistics/cod-collections",
     "erp.logistics.riders": "/erp/logistics/riders",
     "erp.logistics.settings": "/erp/logistics/settings",
     "erp.staff.stocks-overview": "/erp/staff/stocks-overview",
@@ -1497,6 +1520,10 @@ const EmployeeSidebarERP: React.FC = () => {
       if (item.route === "finance.index" && item.params?.section === "invoice-generation") {
         return permissions.includes('access-finance-invoices');
       }
+
+      if (item.route === "finance.cod-remittances") {
+        return permissions.includes('access-cod-remittances');
+      }
       
       // Expenses - check simplified permission
       if (item.route === "finance.index" && item.params?.section === "expense-tracking") {
@@ -1564,6 +1591,7 @@ const EmployeeSidebarERP: React.FC = () => {
       'access-finance-dashboard',
       'access-finance-expenses',
       'access-finance-invoices',
+      'access-cod-remittances',
       'access-purchase-request-approval',
       'access-approval-workflow',
       'access-payslip-approval',
@@ -1734,6 +1762,7 @@ const EmployeeSidebarERP: React.FC = () => {
       'access-finance-dashboard',
       'access-finance-expenses',
       'access-finance-invoices',
+      'access-cod-remittances',
       'access-repair-price-approval',
       'access-shoe-price-approval',
       'access-approval-workflow',
@@ -2065,6 +2094,10 @@ const EmployeeSidebarERP: React.FC = () => {
         return permissions.includes('operate-logistics-deliveries');
       }
 
+      if (item.route === "erp.logistics.cod-collections") {
+        return permissions.includes('operate-logistics-deliveries');
+      }
+
       if (item.route === "erp.logistics.riders") {
         return permissions.includes('manage-logistics-riders');
       }
@@ -2093,6 +2126,10 @@ const EmployeeSidebarERP: React.FC = () => {
       }
 
       if (item.route === "erp.logistics.deliveries") {
+        return hasLogisticsRiderRole || permissions.includes('operate-logistics-deliveries');
+      }
+
+      if (item.route === "erp.logistics.cod-collections") {
         return hasLogisticsRiderRole || permissions.includes('operate-logistics-deliveries');
       }
 

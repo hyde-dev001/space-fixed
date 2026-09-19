@@ -810,11 +810,13 @@ it('opens a completed delivery proof in an in-page image modal and restores focu
   setDispatcherLeg({
     id: 2,
     leg_type: 'outbound',
-    status: 'delivered',
+    status: 'in_transit',
+    delivered_at: '2026-07-15T19:13:54Z',
     assignments: [],
     proofs: [{ id: 17, handoff_type: 'delivery', review_status: 'approved', proof_url: '/api/logistics/proofs/17/file' }],
     attempts: [],
   });
+  mocks.props.shipments.data[0].status = 'completed';
 
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
@@ -1274,6 +1276,39 @@ it('offers only supported dispute resolutions after investigation starts', async
       report_rejected: 'Reject report',
     },
   })));
+});
+
+it('continues from a selected customer dispute resolution to the resolution note', async () => {
+  setDispatcherLeg({
+    ...defaultProps().shipments.data[0].legs[0],
+    status: 'delivered',
+  });
+  mocks.props.canResolveDisputes = true;
+  mocks.props.shipments.data[0].customer_disputes = [{
+    id: 54,
+    status: 'investigating',
+    reason: 'damaged',
+    notes: 'Customer reported damage.',
+    reported_at: '2026-07-21T10:00:00Z',
+    resolution: null,
+  }];
+  (Swal.fire as any)
+    .mockResolvedValueOnce({ isConfirmed: true, value: 'refund_required' })
+    .mockResolvedValueOnce({ isConfirmed: true, value: 'Refund workflow required.' });
+
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
+
+  await waitFor(() => expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({
+    title: 'Resolution note',
+    input: 'textarea',
+  })));
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+    '/api/logistics/delivery-disputes/54/resolve',
+    { resolution: 'refund_required', resolution_note: 'Refund workflow required.' },
+    undefined,
+  ));
 });
 
 it('keeps customer confirmation available for an item-not-received dispute', async () => {

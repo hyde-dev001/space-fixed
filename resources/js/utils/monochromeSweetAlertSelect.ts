@@ -38,10 +38,15 @@ export const enhanceSweetAlertSelect = (select: HTMLSelectElement) => {
   select.dataset.monochromeSelectEnhanced = 'true';
 
   const parent = select.parentElement;
+  const keepsSweetAlertInputLookup = select.classList.contains('swal2-select')
+    && parent.classList.contains('swal2-popup');
   const wrapper = document.createElement('div');
   wrapper.className = 'relative w-full';
-  parent.replaceChild(wrapper, select);
-  wrapper.appendChild(select);
+  if (keepsSweetAlertInputLookup) parent.insertBefore(wrapper, select);
+  else {
+    parent.replaceChild(wrapper, select);
+    wrapper.appendChild(select);
+  }
 
   const trigger = document.createElement('button');
   trigger.type = 'button';

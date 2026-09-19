@@ -1525,7 +1525,7 @@ class CheckoutController extends Controller
                         ->where('total_amount', $expectedOrderNetSubtotal)
                         ->where('status', 'pending')
                         ->where('payment_status', 'pending')
-                        ->whereRaw('LOWER(COALESCE(payment_method, ?)) = ?', ['paymongo', $requestedPaymentMethod])
+                        ->whereRaw('LOWER(COALESCE(payment_method, ?)) = ?', ['paymongo', $canonicalPaymentMethod])
                         ->whereNull('payment_expired_at')
                         ->where('created_at', '>=', now()->subMinutes(5));
 
@@ -1745,7 +1745,9 @@ class CheckoutController extends Controller
 
                     if ($isCodCheckout) {
                         $this->codCollectionService->ensureForOrder($order);
-                        $this->autoGenerateInvoice($order);
+                        if (! $this->autoGenerateInvoice($order)) {
+                            throw new \RuntimeException('The COD invoice could not be created.');
+                        }
                     }
 
                     foreach ($appliedVouchers as $voucherToRedeem) {
@@ -2173,7 +2175,7 @@ class CheckoutController extends Controller
             }
 
             $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-            if (in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true)) {
+            if (in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This is a Cash on Delivery order and does not require online payment.',
@@ -2702,7 +2704,7 @@ class CheckoutController extends Controller
                 $invoiceStatus = 'paid';
                 $paymentDate = now();
                 $dueDate = null;
-            } elseif (in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash'])) {
+            } elseif (in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true)) {
                 $invoiceStatus = 'sent';
                 $dueDate = now()->addDays(7); // COD: due on delivery
             } elseif ($paymentMethod === 'check') {
@@ -2727,7 +2729,9 @@ class CheckoutController extends Controller
                 'tax_amount' => $taxAmount,
                 'status' => $invoiceStatus,
                 'payment_date' => $paymentDate,
-                'payment_method' => in_array($paymentMethod, ['cod', 'cash_on_delivery']) ? 'cod' : $paymentMethod,
+                'payment_method' => in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true)
+                    ? 'cod'
+                    : $paymentMethod,
                 'job_order_id' => $order->id,
                 'notes' => "Auto-generated from Order #{$order->order_number}",
                 'meta' => [

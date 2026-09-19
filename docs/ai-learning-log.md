@@ -101,3 +101,16 @@
 - Keep employer statutory shares in the snapshot and UI as separate non-deduction values; only employee deductions reduce net pay.
 - In a multi-level payslip workflow, derive the queue stage from the centralized approval's current approver role; the payroll row can remain `pending` while Finance has already forwarded it to the Shop Owner.
 - Scheduled auto-clockout must persist both the checkout time and its diagnostic marker; otherwise a legitimate closing-time checkout appears indistinguishable from a manual one.
+
+## 2026-09-19 - COD Xendit wallet payout payload
+
+- Xendit v3 domestic wallet payouts need the customer recipient address and wallet mobile details in addition to `WALLET` plus the selected `PH_*` channel; build those fields from the immutable order snapshot and keep the saved destination encrypted and masked outside the payout request.
+
+## 2026-09-19 - Provider payout and completed delivery reconciliation
+
+- A payout accepted by Xendit can remain `processing` locally when a webhook cannot reach a local environment; reconcile the stored payout ID from Xendit's status endpoint before rendering Finance and customer order state.
+- Keep approved delivery proof available from the completed shipment state as a legacy-data fallback, while preserving customer ownership and proof approval checks.
+
+## 2026-09-19 - Customer proof delivery without GD
+
+- Customer proof URLs can appear valid while the file endpoint fails with 503 when PHP GD is disabled; serve the validated private image directly as a local-environment fallback while keeping approval, ownership, MIME, and no-store checks.

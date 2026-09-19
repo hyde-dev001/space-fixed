@@ -74,6 +74,14 @@ type Order = {
   grand_total: number;
   paymentStatus: string;
   paymentMethod?: string;
+  codExpectedAmount?: string | null;
+  codCollectionStatus?: string | null;
+  codCollectedAmount?: string | null;
+  codCollectionReference?: string | null;
+  codCollectedAt?: string | null;
+  codRiderName?: string | null;
+  codRemittanceStatus?: string | null;
+  codRemittanceReference?: string | null;
   status: OrderStatus;
   isPosOrder?: boolean;
   customerReceiptStatus?: 'pending' | 'confirmed' | 'disputed' | string;
@@ -606,6 +614,14 @@ export default function JobOrdersPage() {
       grand_total: grandTotal,
       paymentStatus: order.payment_status || 'pending',
       paymentMethod: order.payment_method || '',
+      codExpectedAmount: order.cod_expected_amount ?? null,
+      codCollectionStatus: order.cod_collection_status ?? null,
+      codCollectedAmount: order.cod_collected_amount ?? null,
+      codCollectionReference: order.cod_collection_reference ?? null,
+      codCollectedAt: order.cod_collected_at ?? null,
+      codRiderName: order.cod_rider_name ?? null,
+      codRemittanceStatus: order.cod_remittance_status ?? null,
+      codRemittanceReference: order.cod_remittance_reference ?? null,
       status: order.status as Order['status'],
       isPosOrder: order.is_pos_order === true,
       customerReceiptStatus: order.customer_receipt_status || 'pending',
@@ -870,7 +886,13 @@ export default function JobOrdersPage() {
 
   const isCodOrder = (order: Pick<Order, 'paymentMethod'>) => {
     const normalized = (order.paymentMethod || '').toLowerCase();
-    return normalized === 'cod' || normalized === 'cash_on_delivery' || normalized === 'cash on delivery';
+    return normalized === 'cod' || normalized === 'cash_on_delivery' || normalized === 'cash on delivery' || normalized === 'cash';
+  };
+
+  const getCodPaymentLabel = (order: Pick<Order, 'codCollectionStatus' | 'codRemittanceStatus'>): string => {
+    if (String(order.codRemittanceStatus || '').toLowerCase() === 'settled') return 'COD settled · remittance received';
+    if (String(order.codCollectionStatus || '').toLowerCase() === 'cash_collected') return 'Cash collected · remittance pending';
+    return 'COD pending collection';
   };
 
   const isOrderPaid = (order: Pick<Order, 'paymentStatus'>) => {
@@ -2681,10 +2703,31 @@ export default function JobOrdersPage() {
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Payment Status</p>
                     <p className="text-sm text-gray-900 dark:text-white capitalize">
                       {isCodOrder(viewOrder)
-                        ? (isOrderPaid(viewOrder) ? 'Paid (COD)' : 'Pending (COD)')
+                        ? getCodPaymentLabel(viewOrder)
                         : (viewOrder.paymentStatus || '-')}
                     </p>
                   </div>
+                  {isCodOrder(viewOrder) && (
+                    <>
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">COD Amount Due</p>
+                        <p className="text-sm text-gray-900 dark:text-white">₱{Number(viewOrder.codExpectedAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Rider Collection</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{viewOrder.codRiderName || 'Not collected'}</p>
+                        {viewOrder.codCollectedAt && <p className="mt-1 text-xs text-gray-500">{new Date(viewOrder.codCollectedAt).toLocaleString()}</p>}
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Collection Reference</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{viewOrder.codCollectionReference || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Remittance Status</p>
+                        <p className="text-sm text-gray-900 dark:text-white capitalize">{viewOrder.codRemittanceStatus || 'Not submitted'}</p>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Address</p>
                     <p className="text-sm text-gray-900 dark:text-white">{viewOrder.shippingAddress}</p>
@@ -2829,18 +2872,6 @@ export default function JobOrdersPage() {
                         </div>
                       );
                     })()}
-                  </div>
-                )}
-                {Array.isArray(viewOrder.latest_refund?.evidence_media) && viewOrder.latest_refund.evidence_media.length > 0 && (
-                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
-                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Refund Evidence</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {viewOrder.latest_refund.evidence_media.map((mediaUrl, index) => (
-                        <a key={`${mediaUrl}-${index}`} href={mediaUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700">
-                          <img src={mediaUrl} alt={`Refund evidence ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
-                        </a>
-                      ))}
-                    </div>
                   </div>
                 )}
                 {Array.isArray(viewOrder.latest_refund?.customer_dispute_evidence) && viewOrder.latest_refund.customer_dispute_evidence.length > 0 && (

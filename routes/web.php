@@ -200,6 +200,10 @@ Route::post('/orders/{order}/delivery-disputes', [OrderController::class, 'repor
 Route::post('/orders/cancel', [OrderController::class, 'cancel'])->middleware('auth:user')->name('orders.cancel');
 Route::post('/orders/request-refund', [OrderController::class, 'requestRefund'])->middleware('auth:user')->name('orders.request-refund');
 Route::post('/orders/refunds/{id}/mark-shipped-return', [OrderController::class, 'markRefundReturnShipped'])->middleware('auth:user')->name('orders.refunds.mark-shipped-return');
+Route::get('/orders/refunds/{id}/cod-destination-options', [OrderController::class, 'codRefundDestinationOptions'])
+    ->middleware(['auth:user', 'throttle:30,1'])
+    ->name('orders.refunds.cod-destination-options');
+Route::post('/orders/refunds/{id}/cod-destination', [OrderController::class, 'submitCodRefundDestination'])->middleware('auth:user')->name('orders.refunds.cod-destination');
 Route::get('/customer-profile', [CustomerProfileController::class, 'show'])->middleware('auth:user')->name('customer-profile');
 Route::post('/customer-profile', [CustomerProfileController::class, 'update'])->middleware('auth:user')->name('customer-profile.update');
 Route::post('/customer-profile/password', [CustomerProfileController::class, 'updatePassword'])->middleware(['auth:user', 'throttle:5,1'])->name('customer-profile.password');
@@ -595,6 +599,12 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
     Route::post('/legs/{leg}/return-to-shop', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'createReturn']);
     Route::post('/legs/{leg}/return-proofs/{proof}/handoff', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnHandoff']);
     Route::post('/legs/{leg}/return-proofs/{proof}/receipt', [\App\Http\Controllers\Api\Logistics\ShipmentController::class, 'confirmReturnReceipt']);
+    Route::post('/cod/orders/{order}/cash-collected', [\App\Http\Controllers\Api\Logistics\CodCollectionController::class, 'cashCollected'])
+        ->name('logistics.api.cod.cash-collected');
+    Route::get('/cod/collections', [\App\Http\Controllers\Api\Logistics\CodCollectionController::class, 'index'])
+        ->name('logistics.api.cod.collections.index');
+    Route::post('/cod/remittances', [\App\Http\Controllers\Api\Logistics\CodRemittanceController::class, 'store'])
+        ->name('logistics.api.cod.remittances.store');
     Route::get('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'index'])
         ->name('logistics.api.riders.index');
     Route::post('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'store']);
@@ -2240,6 +2250,7 @@ Route::prefix('erp/logistics')->name('erp.logistics.')->middleware(['auth:user',
     Route::get('/', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'dashboard'])->name('dashboard');
     Route::get('/shipments', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'shipments'])->name('shipments');
     Route::get('/deliveries', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'deliveries'])->name('deliveries');
+    Route::get('/cod-collections', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'codCollections'])->name('cod-collections');
     Route::get('/riders', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'riders'])->name('riders');
     Route::get('/settings', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'settings'])->name('settings');
     Route::get('/batches', [\App\Http\Controllers\Logistics\ErpLogisticsController::class, 'batches'])->name('batches');
@@ -2351,6 +2362,10 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
 Route::get('/erp/finance/audit-logs', [\App\Http\Controllers\Erp\ReadPageController::class, 'financeAuditLogs'])
     ->middleware(['auth:user', 'shop.isolation', 'permission:access-audit-logs'])
     ->name('erp.finance.audit-logs');
+
+Route::get('/finance/cod-remittances', [\App\Http\Controllers\Erp\ReadPageController::class, 'financeCodRemittances'])
+    ->middleware(['auth:user', 'check.suspension', 'shop.isolation', 'permission:access-cod-remittances'])
+    ->name('finance.cod-remittances');
 
 // Approval Workflow page removed (frontend page deleted)
 

@@ -2,8 +2,12 @@
 
 namespace App\Services\Finance;
 
+use App\Models\CodCollection;
+use App\Models\CodRemittance;
+use App\Models\CodRemittanceItem;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoicePayment;
+use App\Models\Order;
 use App\Models\User;
 use App\Support\Finance\FinanceDomainException;
 use Carbon\CarbonImmutable;
@@ -132,6 +136,133 @@ final class InvoicePaymentService
             return [
                 'payment' => $payment->fresh(),
                 'invoice' => $this->state($lockedInvoice->fresh(), $shopId),
+                'replayed' => false,
+            ];
+        }, 3);
+    }
+
+    /**
+     * Append the final Finance history entry for one Finance-confirmed COD
+     * collection. Generic Finance payment entry points must not call this.
+     *
+     * @return array{payment: InvoicePayment, invoice: array, replayed: bool}
+     */
+    public function recordCodOrderPayment(
+        Order $order,
+        CodRemittance $remittance,
+        CodCollection $collection,
+        User $actor,
+    ): array {
+        $shopId = (int) ($actor->shop_owner_id ?? 0);
+        $amount = $this->normalizeAmount($collection->collected_amount);
+        $idempotencyKey = "cod-remittance:{$remittance->id}:order:{$order->id}";
+        $reference = "COD-REMITTANCE-{$remittance->reference}-{$order->order_number}";
+
+        return DB::transaction(function () use (
+            $order,
+            $remittance,
+            $collection,
+            $actor,
+            $shopId,
+            $amount,
+            $idempotencyKey,
+            $reference,
+        ): array {
+            if ($shopId <= 0) {
+                throw new FinanceDomainException('A Finance shop context is required.', 'TENANT_CONTEXT_REQUIRED', 403);
+            }
+
+            $lockedOrder = Order::query()->whereKey($order->getKey())->lockForUpdate()->firstOrFail();
+            if ((int) $lockedOrder->shop_owner_id !== $shopId || ! $this->isCodPaymentMethod($lockedOrder->payment_method)) {
+                throw new FinanceDomainException('The COD order is not available in this shop.', 'FORBIDDEN', 403);
+            }
+
+            $lockedRemittance = CodRemittance::query()
+                ->whereKey($remittance->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $lockedCollection = CodCollection::query()
+                ->whereKey($collection->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if (
+                (int) $lockedRemittance->shop_owner_id !== $shopId
+                || (int) $lockedCollection->shop_owner_id !== $shopId
+                || (string) $lockedCollection->status !== CodCollection::STATUS_CASH_COLLECTED
+                || ! CodRemittanceItem::query()
+                    ->where('cod_remittance_id', $lockedRemittance->id)
+                    ->where('cod_collection_id', $lockedCollection->id)
+                    ->exists()
+            ) {
+                throw new FinanceDomainException('The COD remittance does not match the order collection.', 'INVALID_STATE', 422);
+            }
+
+            $invoice = Invoice::query()
+                ->whereKey($lockedOrder->invoice_id)
+                ->lockForUpdate()
+                ->first();
+            if (! $invoice || (int) $invoice->shop_id !== $shopId || (int) $invoice->job_order_id !== (int) $lockedOrder->id) {
+                throw new FinanceDomainException('The COD order invoice is unavailable for settlement.', 'INVALID_STATE', 422);
+            }
+
+            $existing = InvoicePayment::query()
+                ->where('shop_owner_id', $shopId)
+                ->where('idempotency_key', $idempotencyKey)
+                ->lockForUpdate()
+                ->first();
+            if ($existing) {
+                if (
+                    (int) $existing->invoice_id !== (int) $invoice->id
+                    || $this->toCents($existing->amount) !== $this->toCents($amount)
+                    || (string) $existing->source !== InvoicePayment::SOURCE_COD_REMITTANCE
+                ) {
+                    throw new FinanceDomainException('The COD payment idempotency key was already used with different details.', 'DUPLICATE_SUBMISSION', 409);
+                }
+
+                return [
+                    'payment' => $existing->fresh(),
+                    'invoice' => $this->state($invoice, $shopId),
+                    'replayed' => true,
+                ];
+            }
+
+            $amountCents = $this->toCents($amount);
+            $invoiceCents = $this->toCents($invoice->total);
+            if ($amountCents <= 0 || $amountCents !== $invoiceCents) {
+                throw new FinanceDomainException('The collected COD amount does not match the invoice total.', 'AMOUNT_MISMATCH', 422);
+            }
+
+            if (InvoicePayment::validPaidAmountForInvoice((int) $invoice->id) !== '0.00') {
+                throw new FinanceDomainException('The COD invoice already has Finance payment history.', 'DUPLICATE_SUBMISSION', 409);
+            }
+
+            $payment = InvoicePayment::create([
+                'shop_owner_id' => $shopId,
+                'invoice_id' => $invoice->id,
+                'entry_type' => InvoicePayment::ENTRY_PAYMENT,
+                'amount' => $amount,
+                'payment_method' => 'cash',
+                'reference' => $reference,
+                'received_at' => now(),
+                'recorded_by_user_id' => $actor->id,
+                'idempotency_key' => $idempotencyKey,
+                'source' => InvoicePayment::SOURCE_COD_REMITTANCE,
+            ]);
+
+            $invoice->update([
+                'status' => 'paid',
+                'payment_date' => now()->toDateString(),
+                'payment_method' => 'cod',
+            ]);
+            $lockedOrder->update([
+                'payment_status' => 'paid',
+                'paid_at' => now(),
+            ]);
+
+            return [
+                'payment' => $payment->fresh(),
+                'invoice' => $this->state($invoice->fresh(), $shopId),
                 'replayed' => false,
             ];
         }, 3);
@@ -273,5 +404,15 @@ final class InvoicePaymentService
     private function fromCents(int $cents): string
     {
         return number_format($cents / 100, 2, '.', '');
+    }
+
+    private function isCodPaymentMethod(mixed $value): bool
+    {
+        return in_array(strtolower(trim((string) $value)), [
+            'cod',
+            'cash_on_delivery',
+            'cash on delivery',
+            'cash',
+        ], true);
     }
 }
