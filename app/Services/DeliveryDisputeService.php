@@ -189,7 +189,7 @@ class DeliveryDisputeService
                 $refund = $this->ensureRefundRequest($locked);
                 if (! $refund) {
                     throw ValidationException::withMessages([
-                        'resolution' => 'A paid refund workflow could not be created for this order. Keep the dispute open while payment eligibility is reviewed.',
+                        'resolution' => 'A refund workflow could not be created for this order. Keep the dispute open while payment eligibility is reviewed.',
                     ]);
                 }
             }
@@ -258,8 +258,8 @@ class DeliveryDisputeService
 
         $order = $dispute->order->loadMissing(['items', 'shopOwner']);
         $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-        $isOnlinePayment = ! in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
-        if (! $isOnlinePayment || ! in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
+        $isCodPayment = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
+        if (! $isCodPayment && ! in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
             return null;
         }
 
@@ -294,12 +294,15 @@ class DeliveryDisputeService
             'shop_owner_status' => 'pending',
             'finance_status' => 'pending',
             'return_status' => 'awaiting_approval',
-            'payment_gateway' => 'paymongo',
-            'paymongo_payment_id' => $order->paymongo_payment_id,
+            'payment_gateway' => $isCodPayment ? 'xendit' : 'paymongo',
+            'paymongo_payment_id' => $isCodPayment ? null : $order->paymongo_payment_id,
             'currency' => 'PHP',
-            'requested_refund_method' => 'original_payment_method',
+            'requested_refund_method' => $isCodPayment ? 'customer_selected' : 'original_payment_method',
+            'refund_provider' => $isCodPayment ? 'xendit' : null,
+            'defer_cod_collection' => $isCodPayment,
             'reason_code' => 'delivery_dispute',
             'reason_note' => 'Refund request created from customer delivery dispute.',
+            'evidence_media' => is_array($dispute->evidence_media) ? array_values($dispute->evidence_media) : [],
             'idempotency_key' => "delivery-dispute-refund:{$dispute->id}",
             'requested_at' => now(),
         ], $lines, $amount);
@@ -366,7 +369,11 @@ class DeliveryDisputeService
 
         return OrderRefund::query()
             ->where('order_id', $order->id)
-            ->whereIn('status', ['requested', 'pending_approval', 'processing', 'succeeded'])
+            ->where(function ($query): void {
+                $query
+                    ->whereIn('status', ['requested', 'pending_approval', 'approved', 'processing', 'failed', 'succeeded'])
+                    ->orWhereIn('payout_status', ['processing', 'failed', 'succeeded']);
+            })
             ->exists();
     }
 

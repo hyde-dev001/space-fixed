@@ -1142,7 +1142,7 @@ class ShipmentLegService
     {
         $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
 
-        return ! in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true)
+        return ! in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true)
             && in_array((string) ($order->payment_status ?? ''), ['paid', 'completed'], true);
     }
 

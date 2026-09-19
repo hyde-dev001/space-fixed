@@ -92,6 +92,11 @@ type Order = {
   review_submitted?: boolean;
   payment_status?: string;
   payment_method?: string;
+  cod_expected_amount?: string | null;
+  cod_collection_status?: string | null;
+  cod_collected_amount?: string | null;
+  cod_remittance_status?: string | null;
+  cod_remittance_reference?: string | null;
   refund_status?: 'processing' | 'refunded' | null;
   refund_status_note?: string | null;
   total_amount: number;
@@ -175,6 +180,11 @@ type Order = {
     return_confirmed_at?: string | null;
     refund_executed_at?: string | null;
     rejection_reason?: string | null;
+    is_cod?: boolean;
+    refund_destination_type?: 'gcash' | 'bank' | 'bank_account' | 'e_wallet' | null;
+    refund_destination?: Record<string, string> | null;
+    payout_status?: string | null;
+    awaiting_refund_destination?: boolean;
     can_mark_return_shipped?: boolean;
     is_refunded?: boolean;
   } | null;
@@ -234,6 +244,10 @@ const MyOrders: React.FC = () => {
   const [refundRequestType, setRefundRequestType] = useState<'full' | 'partial'>('full');
   const [refundLineQtyByItemId, setRefundLineQtyByItemId] = useState<Record<number, number>>({});
   const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
+  const [refundDestinationType, setRefundDestinationType] = useState<'gcash' | 'bank'>('gcash');
+  const [refundAccountName, setRefundAccountName] = useState('');
+  const [refundAccountNumber, setRefundAccountNumber] = useState('');
+  const [refundBankChannel, setRefundBankChannel] = useState('');
   const [refundNote, setRefundNote] = useState<string>('');
   const [refundOtherReasonNote, setRefundOtherReasonNote] = useState<string>('');
   const [isSubmittingRefund, setIsSubmittingRefund] = useState(false);
@@ -312,6 +326,17 @@ const MyOrders: React.FC = () => {
       || refundStatus === 'refunded'
       || paymentStatus === 'refunded'
       || ['requested', 'pending_approval', 'processing', 'succeeded', 'rejected'].includes(stageStatus);
+  };
+
+  const isRefundWorkflowBlockingDeliveryReport = (order: Order): boolean => {
+    const stageStatus = String(order.refund_stage?.status || '').toLowerCase();
+    const payoutStatus = String(order.refund_stage?.payout_status || '').toLowerCase();
+    const paymentStatus = String(order.payment_status || '').toLowerCase();
+
+    return paymentStatus === 'refunded'
+      || ['requested', 'pending_approval', 'approved', 'processing', 'failed', 'succeeded'].includes(stageStatus)
+      || ['processing', 'failed', 'succeeded'].includes(payoutStatus)
+      || ['processing', 'failed'].includes(String(order.refund_status || '').toLowerCase());
   };
 
   const mapStatusToTab = (status: string): OrderTab => {
@@ -854,6 +879,177 @@ const MyOrders: React.FC = () => {
     }
   };
 
+  const provideCodRefundDestination = async (order: Order) => {
+    const refundId = order.refund_stage?.id;
+    if (!refundId) return;
+    const isEditing = Boolean(order.refund_stage?.refund_destination);
+
+    let channelData: {
+      banks?: Array<{ channel_code?: string; channel_name?: string }>;
+      e_wallets?: Array<{ channel_code?: string; channel_name?: string }>;
+      message?: string;
+    } | null = null;
+    try {
+      const channelResponse = await fetch('/orders/refunds/' + refundId + '/cod-destination-options', {
+        method: 'GET',
+        credentials: 'include',
+        headers: { 'Accept': 'application/json' },
+      });
+      channelData = await channelResponse.json().catch(() => null);
+      if (!channelResponse.ok) {
+        throw new Error(channelData?.message || 'Unable to load refund destinations (' + channelResponse.status + ').');
+      }
+    } catch (error) {
+      void Swal.fire({
+        icon: 'error',
+        title: 'Unable to load destinations',
+        text: error instanceof Error ? error.message : 'Please try again.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    const typeResult = await Swal.fire({
+      title: isEditing ? 'Update COD refund destination' : 'COD refund destination',
+      input: 'select',
+      inputOptions: {
+        e_wallet: 'E-wallet',
+        bank_account: 'Bank account',
+      },
+      inputPlaceholder: 'Choose a destination type',
+      inputValidator: (value) => value ? undefined : 'Choose a bank account or e-wallet.',
+      showCancelButton: true,
+      confirmButtonText: 'Continue',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#000000',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (!typeResult.isConfirmed) return;
+
+    const destinationType = String(typeResult.value || '').toLowerCase();
+    const isWallet = destinationType === 'e_wallet';
+    const validChannels = (isWallet ? channelData?.e_wallets : channelData?.banks)
+      ?.filter((channel) => channel.channel_code && channel.channel_name) || [];
+    if (validChannels.length === 0) {
+      void Swal.fire({
+        icon: 'error',
+        title: 'No supported destinations',
+        text: 'No supported ' + (isWallet ? 'e-wallets' : 'banks') + ' are available for this refund.',
+        confirmButtonColor: '#000000',
+      });
+      return;
+    }
+
+    const channelResult = await Swal.fire({
+      title: isWallet ? 'Choose e-wallet' : 'Choose bank',
+      input: 'select',
+      inputOptions: Object.fromEntries(validChannels.map((channel) => [
+        String(channel.channel_code),
+        String(channel.channel_name),
+      ])),
+      inputPlaceholder: 'Select a ' + (isWallet ? 'wallet provider' : 'bank'),
+      inputValidator: (value) => value ? undefined : 'Choose a ' + (isWallet ? 'wallet provider' : 'bank') + '.',
+      showCancelButton: true,
+      confirmButtonText: 'Continue',
+      cancelButtonText: 'Back',
+      confirmButtonColor: '#000000',
+      cancelButtonColor: '#6b7280',
+    });
+
+    if (!channelResult.isConfirmed) return;
+
+    const selectedChannelCode = String(channelResult.value || '').toUpperCase();
+    const selectedChannel = validChannels.find((channel) => channel.channel_code === selectedChannelCode);
+    if (!selectedChannel) return;
+
+    const detailsResult = await Swal.fire({
+      title: String(selectedChannel.channel_name) + ' refund details',
+      html: '<input id="cod-refund-account-name" class="swal2-input" placeholder="Account holder name" maxlength="120" autocomplete="off"><input id="cod-refund-account-number" class="swal2-input" placeholder="Account or mobile number" maxlength="34" autocomplete="off">',
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: isEditing ? 'Update destination' : 'Save destination',
+      cancelButtonText: 'Back',
+      confirmButtonColor: '#000000',
+      cancelButtonColor: '#6b7280',
+      preConfirm: () => {
+        const readValue = (id: string): string => (
+          (document.getElementById(id) as HTMLInputElement | null)?.value || ''
+        ).trim();
+        const accountName = readValue('cod-refund-account-name');
+        const accountNumber = readValue('cod-refund-account-number');
+
+        if (!accountName) {
+          Swal.showValidationMessage('Enter the account holder name.');
+          return false;
+        }
+        if (!/^[A-Za-z0-9+()\- ]{4,34}$/.test(accountNumber)) {
+          Swal.showValidationMessage('Enter a valid account or mobile number.');
+          return false;
+        }
+
+        return {
+          account_name: accountName,
+          account_number: accountNumber,
+        };
+      },
+    });
+
+    if (!detailsResult.isConfirmed || !detailsResult.value) return;
+
+    try {
+      const response = await fetch(`/orders/refunds/${refundId}/cod-destination`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+        },
+        body: JSON.stringify({
+          destination_type: destinationType,
+          channel_code: selectedChannelCode,
+          account_name: detailsResult.value.account_name,
+          account_number: detailsResult.value.account_number,
+        }),
+      });
+      const raw = await response.text();
+      let data: any = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch {
+        data = null;
+      }
+      if (!response.ok) {
+        throw new Error(data?.message || `Unable to save refund destination (${response.status}).`);
+      }
+
+      setOrders((prev) => prev.map((currentOrder) => currentOrder.id === order.id ? {
+        ...currentOrder,
+        refund_stage: currentOrder.refund_stage ? {
+          ...currentOrder.refund_stage,
+          refund_destination_type: data?.refund?.refund_destination_type || destinationType,
+          refund_destination: data?.refund?.refund_destination || null,
+          awaiting_refund_destination: false,
+        } : currentOrder.refund_stage,
+      } : currentOrder));
+
+      void Swal.fire({
+        icon: 'success',
+        title: isEditing ? 'Refund destination updated' : 'Refund destination saved',
+        text: 'Finance can release the Xendit payout after COD collection and remittance settlement.',
+        confirmButtonColor: '#000000',
+      });
+    } catch (error) {
+      void Swal.fire({
+        icon: 'error',
+        title: 'Unable to save destination',
+        text: error instanceof Error ? error.message : 'Please try again.',
+        confirmButtonColor: '#000000',
+      });
+    }
+  };
+
   const cancelOrder = async (
     orderId: number,
     reason?: string,
@@ -1155,7 +1351,20 @@ const MyOrders: React.FC = () => {
 
   const isOnlinePaymentOrder = (order: Order): boolean => {
     const paymentMethod = String(order.payment_method || '').toLowerCase();
-    return !['cod', 'cash_on_delivery', 'cash on delivery'].includes(paymentMethod);
+    return !['cod', 'cash_on_delivery', 'cash on delivery', 'cash'].includes(paymentMethod);
+  };
+
+  const isCodOrder = (order: Order): boolean => !isOnlinePaymentOrder(order);
+
+  const getCodPaymentLabel = (order: Order): string => {
+    if (String(order.cod_remittance_status || '').toLowerCase() === 'settled') {
+      return 'COD settled';
+    }
+    if (String(order.cod_collection_status || '').toLowerCase() === 'cash_collected') {
+      return 'Cash collected · remittance pending';
+    }
+
+    return 'COD due';
   };
 
   const isShopOwnerRejectedRefund = (order: Order): boolean => {
@@ -1313,12 +1522,12 @@ const MyOrders: React.FC = () => {
       return false;
     }
 
-    if (!isOnlinePaymentOrder(order)) {
+    const paymentStatus = String(order.payment_status || '').toLowerCase();
+    const codCollected = parseAmount(order.cod_collected_amount);
+    if (isCodOrder(order) && codCollected <= 0) {
       return false;
     }
-
-    const paymentStatus = String(order.payment_status || '').toLowerCase();
-    if (!['paid', 'completed'].includes(paymentStatus)) {
+    if (isOnlinePaymentOrder(order) && !['paid', 'completed'].includes(paymentStatus)) {
       return false;
     }
 
@@ -1351,12 +1560,11 @@ const MyOrders: React.FC = () => {
       return 'Only delivered or completed orders can request a refund.';
     }
 
-    if (!isOnlinePaymentOrder(order)) {
-      return 'Only online-paid orders are eligible for refund requests.';
-    }
-
     const paymentStatus = String(order.payment_status || '').toLowerCase();
-    if (!['paid', 'completed'].includes(paymentStatus)) {
+    if (isCodOrder(order) && parseAmount(order.cod_collected_amount) <= 0) {
+      return 'There is no collected COD cash to refund.';
+    }
+    if (isOnlinePaymentOrder(order) && !['paid', 'completed'].includes(paymentStatus)) {
       return 'Order payment is not eligible for refund processing yet.';
     }
 
@@ -1496,18 +1704,19 @@ const MyOrders: React.FC = () => {
       return;
     }
 
-    if (!isOnlinePaymentOrder(currentRefundOrder)) {
+    const codRefund = isCodOrder(currentRefundOrder);
+    if (codRefund && parseAmount(currentRefundOrder.cod_collected_amount) <= 0) {
       Swal.fire({
         icon: 'warning',
         title: 'Refund Not Eligible',
-        text: 'Only online-paid orders are eligible for gateway refund requests.',
+        text: 'There is no collected COD cash to refund.',
         confirmButtonColor: '#000000',
       });
       return;
     }
 
     const currentPaymentStatus = String(currentRefundOrder.payment_status || '').toLowerCase();
-    if (!['paid', 'completed'].includes(currentPaymentStatus)) {
+    if (!codRefund && !['paid', 'completed'].includes(currentPaymentStatus)) {
       Swal.fire({
         icon: 'warning',
         title: 'Refund Not Eligible',
@@ -1515,6 +1724,27 @@ const MyOrders: React.FC = () => {
         confirmButtonColor: '#000000',
       });
       return;
+    }
+
+    if (codRefund) {
+      const accountName = refundAccountName.trim();
+      const accountNumber = refundAccountNumber.trim();
+      const validGcash = refundDestinationType === 'gcash' && /^09\d{9}$/.test(accountNumber) && accountName.length > 0;
+      const validBank = refundDestinationType === 'bank'
+        && refundBankChannel.trim().length > 0
+        && accountName.length > 0
+        && /^[A-Za-z0-9\- ]{4,34}$/.test(accountNumber);
+      if (!validGcash && !validBank) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Refund Destination Required',
+          text: refundDestinationType === 'gcash'
+            ? 'Enter the account name and a valid 11-digit GCash number.'
+            : 'Enter the bank/channel, account holder name, and a valid account number.',
+          confirmButtonColor: '#000000',
+        });
+        return;
+      }
     }
 
     const effectiveRequestType = canChooseRefundScope ? refundRequestType : 'full';
@@ -1546,7 +1776,9 @@ const MyOrders: React.FC = () => {
     // Show confirmation before submitting
     const result = await Swal.fire({
       title: 'Submit Refund Request?',
-      text: 'Your refund will be returned to your original payment method after approval. Please review your details before submitting.',
+      text: codRefund
+        ? 'Your COD refund will be sent through Xendit after Finance approval and COD remittance settlement. Please review your destination details.'
+        : 'Your refund will be returned to your original payment method after approval. Please review your details before submitting.',
       icon: 'question',
       showCancelButton: true,
       confirmButtonText: 'Yes, Submit',
@@ -1564,6 +1796,14 @@ const MyOrders: React.FC = () => {
       formData.append('order_id', refundOrderId.toString());
       formData.append('reason', refundReason);
       formData.append('refund_method', refundMethod || 'original_payment_method');
+      if (codRefund) {
+        formData.append('refund_destination_type', refundDestinationType);
+        formData.append('refund_account_name', refundAccountName.trim());
+        formData.append('refund_account_number', refundAccountNumber.trim());
+        if (refundDestinationType === 'bank') {
+          formData.append('refund_bank_channel', refundBankChannel.trim());
+        }
+      }
       formData.append('request_type', effectiveRequestType);
       if (effectiveRequestType === 'partial') {
         formData.append('requested_amount', refundAmountToRequest.toFixed(2));
@@ -1628,6 +1868,10 @@ const MyOrders: React.FC = () => {
       setRefundLineQtyByItemId({});
       setRefundNote('');
       setRefundOtherReasonNote('');
+      setRefundDestinationType('gcash');
+      setRefundAccountName('');
+      setRefundAccountNumber('');
+      setRefundBankChannel('');
 
       setOrders((prev) =>
         prev.map((order) =>
@@ -1656,7 +1900,9 @@ const MyOrders: React.FC = () => {
       Swal.fire({
         icon: 'success',
         title: 'Refund Request Submitted',
-        text: 'Your refund request has been submitted successfully. Your refund will be returned to your original payment method after approval.',
+        text: codRefund
+          ? 'Your COD refund request was submitted. Finance can release the Xendit payout after the COD remittance is settled.'
+          : 'Your refund request has been submitted successfully. Your refund will be returned to your original payment method after approval.',
         confirmButtonColor: '#000000',
       });
     } catch (error) {
@@ -1808,6 +2054,12 @@ const MyOrders: React.FC = () => {
     'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
+  const refundIsCod = Boolean(refundTargetOrder && isCodOrder(refundTargetOrder));
+  const refundDestinationReady = refundDestinationType === 'gcash'
+    ? refundAccountName.trim().length > 0 && /^09\d{9}$/.test(refundAccountNumber.trim())
+    : refundBankChannel.trim().length > 0
+      && refundAccountName.trim().length > 0
+      && /^[A-Za-z0-9\- ]{4,34}$/.test(refundAccountNumber.trim());
   const refundLineCount = refundTargetOrder
     ? (refundTargetOrder.items || []).length
     : 0;
@@ -1863,6 +2115,7 @@ const MyOrders: React.FC = () => {
     !!refundReason
     && (!isOtherReason(refundReason) || !!refundOtherReasonNote.trim())
     && isMediaRequirementMet()
+    && (!refundIsCod || refundDestinationReady)
     && isPartialRefundSelectionValid;
   const mobileHeroFilterButtonBaseClass =
     'relative inline-flex min-w-[96px] shrink-0 flex-col items-center justify-center gap-1.5 overflow-visible rounded-2xl border pl-3 pr-5 py-3 text-[10px] font-semibold tracking-[0.01em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2';
@@ -2016,6 +2269,12 @@ const MyOrders: React.FC = () => {
                   const orderVatAmount = resolveOrderVatAmount(order);
                   const orderVatRate = resolveOrderVatRate(order);
                   const orderGrandTotal = resolveOrderGrandTotal(order);
+                  const codOrder = isCodOrder(order);
+                  const codCollectedAmount = parseAmount(order.cod_collected_amount);
+                  const orderPaymentSummaryLabel = codOrder ? getCodPaymentLabel(order) : 'Total Paid';
+                  const orderPaymentSummaryAmount = codOrder && codCollectedAmount > 0 && String(order.cod_remittance_status || '').toLowerCase() === 'settled'
+                    ? codCollectedAmount
+                    : orderGrandTotal;
                   const orderTotalPaid = parseAmount(order.total_paid) > 0 ? parseAmount(order.total_paid) : orderGrandTotal;
                   const displayStatus = getDisplayStatus(order);
                   const refundStageText = getRefundStageText(order);
@@ -2034,6 +2293,21 @@ const MyOrders: React.FC = () => {
                     order.refund_stage?.return_delivery_method
                       || (order.refund_stage?.is_shop_owned_return || order.refund_stage?.logistics_shipment_id ? 'shop_owned' : 'third_party'),
                   ).toLowerCase();
+                  const refundDestination = order.refund_stage?.refund_destination;
+                  const refundDestinationType = String(order.refund_stage?.refund_destination_type || '').toLowerCase();
+                  const refundDestinationLabel = String(
+                    refundDestination?.channel
+                      || (refundDestinationType === 'e_wallet' ? 'E-wallet' : 'Bank account'),
+                  );
+                  const refundDestinationName = String(
+                    refundDestination?.account_name || refundDestination?.account_holder_name || '',
+                  );
+                  const refundDestinationAccount = String(
+                    refundDestination?.account_number || refundDestination?.number || '',
+                  );
+                  const canEditRefundDestination = Boolean(refundDestination)
+                    && !['processing', 'succeeded', 'rejected'].includes(String(order.refund_stage?.status || '').toLowerCase())
+                    && !['processing', 'succeeded'].includes(String(order.refund_stage?.payout_status || '').toLowerCase());
                   const thirdPartyReturnTrackingLink = returnDeliveryMethodForAction === 'third_party'
                     ? getSafeExternalTrackingLink(
                       order.refund_stage?.customer_return_tracking_link || order.refund_stage?.staff_return_tracking_link,
@@ -2055,6 +2329,10 @@ const MyOrders: React.FC = () => {
                         initializeRefundLineQty(order.items || []);
                         setRefundNote('');
                         setRefundOtherReasonNote('');
+                        setRefundDestinationType('gcash');
+                        setRefundAccountName('');
+                        setRefundAccountNumber('');
+                        setRefundBankChannel('');
                         setShowRefundModal(true);
                       }}
                       title={refundFrozen ? 'Refund requests are temporarily paused for maintenance.' : canRefund ? 'Request refund' : undefined}
@@ -2260,10 +2538,10 @@ const MyOrders: React.FC = () => {
                                   <span className="text-right text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
                                 </div>
                               </div>
-                              <p className="mb-2 text-center text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
+                              <p className="mb-2 text-center text-[11px] text-gray-500 uppercase tracking-[0.16em]">{orderPaymentSummaryLabel}</p>
                               <div className="flex items-center justify-center text-black">
                                 <span className="text-xl font-extrabold">
-                                  {formatPeso(orderTotalPaid)}
+                                  {formatPeso(codOrder ? orderPaymentSummaryAmount : orderTotalPaid)}
                                 </span>
                               </div>
                             </div>
@@ -2286,10 +2564,10 @@ const MyOrders: React.FC = () => {
                                   <span className="text-right text-gray-700">{orderVatAmount !== null ? formatPeso(orderVatAmount) : 'N/A'}</span>
                                 </div>
                               </div>
-                              <p className="mb-2 text-center text-[11px] text-gray-500 uppercase tracking-[0.16em]">Total Paid</p>
+                              <p className="mb-2 text-center text-[11px] text-gray-500 uppercase tracking-[0.16em]">{orderPaymentSummaryLabel}</p>
                               <div className="flex items-center justify-center text-black">
                                 <span className="text-xl font-extrabold">
-                                  {formatPeso(orderTotalPaid)}
+                                  {formatPeso(codOrder ? orderPaymentSummaryAmount : orderTotalPaid)}
                                 </span>
                               </div>
                             </div>
@@ -2471,6 +2749,44 @@ const MyOrders: React.FC = () => {
 
                       {/* Order Actions */}
                       <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:pt-6 sm:gap-3">
+                        {order.refund_stage?.awaiting_refund_destination === true && (
+                          <div className="flex w-full flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-amber-950">COD refund approved</p>
+                              <p className="mt-1 text-xs text-amber-900">Choose your bank or e-wallet details so Finance can prepare the Xendit payout.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => void provideCodRefundDestination(order)}
+                              className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
+                            >
+                              PROVIDE REFUND DESTINATION
+                            </button>
+                          </div>
+                        )}
+                        {order.refund_stage?.awaiting_refund_destination !== true && refundDestination && (
+                          <div className="flex w-full flex-col gap-3 rounded-xl border border-emerald-300 bg-emerald-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-sm font-semibold text-emerald-950">Refund destination saved</p>
+                              <p className="mt-1 text-xs text-emerald-900">
+                                {refundDestinationLabel}{refundDestinationName ? ` - ${refundDestinationName}` : ''}
+                              </p>
+                              {refundDestinationAccount && (
+                                <p className="mt-1 text-xs text-emerald-900">Account: {refundDestinationAccount}</p>
+                              )}
+                              <p className="mt-1 text-xs text-emerald-900">Finance will use this destination for the Xendit payout.</p>
+                            </div>
+                            {canEditRefundDestination && (
+                              <button
+                                type="button"
+                                onClick={() => void provideCodRefundDestination(order)}
+                                className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
+                              >
+                                EDIT REFUND DESTINATION
+                              </button>
+                            )}
+                          </div>
+                        )}
                         {shipmentId != null && (
                           <button
                             type="button"
@@ -2555,7 +2871,9 @@ const MyOrders: React.FC = () => {
                             REPORT {order.active_delivery_dispute.status === 'open' ? 'SUBMITTED' : 'UNDER INVESTIGATION'}
                           </span>
                         )}
-                        {isShopOwnedDeliveryOrder(order) && order.can_report_delivery_issue === true && (
+                        {isShopOwnedDeliveryOrder(order)
+                          && order.can_report_delivery_issue === true
+                          && !isRefundWorkflowBlockingDeliveryReport(order) && (
                           <button
                             type="button"
                             onClick={() => openReportModal(order.id)}
@@ -2979,6 +3297,10 @@ const MyOrders: React.FC = () => {
                 setRefundLineQtyByItemId({});
                 setRefundNote('');
                 setRefundOtherReasonNote('');
+                setRefundDestinationType('gcash');
+                setRefundAccountName('');
+                setRefundAccountNumber('');
+                setRefundBankChannel('');
               }}
             ></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-5xl w-full max-h-[90vh] flex flex-col">
@@ -3246,25 +3568,86 @@ const MyOrders: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Refund Method - Always Original Payment Method */}
+                    {/* COD uses an encrypted Xendit destination; online orders retain PayMongo refunds. */}
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-3">
-                        Refund Method
+                        Refund Destination
                       </label>
-                      
-                      <div className="border border-green-300 rounded-lg p-6 bg-green-50">
-                        <div className="flex items-center justify-between mb-4">
-                          <h4 className="text-base font-semibold text-green-900">Secure Refund to Original Payment Method</h4>
-                          <div className="flex items-center gap-2">
-                            <img src="/images/payment-logo/visa.png" alt="Visa" className="h-6" />
-                            <img src="/images/payment-logo/MAYA.png" alt="Maya" className="h-6" />
-                            <img src="/images/payment-logo/GCASH.png" alt="GCash" className="h-6" />
+                      {refundIsCod ? (
+                        <div className="space-y-4 rounded-lg border border-amber-300 bg-amber-50 p-6">
+                          <p className="text-sm text-amber-900">
+                            Original payment: <span className="font-semibold">Cash on Delivery</span>. Xendit can release this refund only after Finance settles the COD remittance.
+                          </p>
+                          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                            {(['gcash', 'bank'] as const).map((destination) => (
+                              <label key={destination} className="flex items-center gap-3 rounded-lg border border-amber-200 bg-white p-3">
+                                <input
+                                  type="radio"
+                                  name="refund_destination_type"
+                                  value={destination}
+                                  checked={refundDestinationType === destination}
+                                  onChange={() => setRefundDestinationType(destination)}
+                                  className="form-radio h-4 w-4 text-black"
+                                />
+                                <span className="text-sm font-semibold text-gray-900">{destination === 'gcash' ? 'GCash' : 'Bank'}</span>
+                              </label>
+                            ))}
                           </div>
+                          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600">
+                                {refundDestinationType === 'gcash' ? 'Account Name' : 'Account Holder Name'}
+                              </label>
+                              <input
+                                value={refundAccountName}
+                                onChange={(event) => setRefundAccountName(event.target.value)}
+                                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
+                                maxLength={120}
+                                autoComplete="off"
+                              />
+                            </div>
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600">
+                                {refundDestinationType === 'gcash' ? 'GCash Number' : 'Account Number'}
+                              </label>
+                              <input
+                                value={refundAccountNumber}
+                                onChange={(event) => setRefundAccountNumber(event.target.value)}
+                                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
+                                maxLength={34}
+                                inputMode={refundDestinationType === 'gcash' ? 'numeric' : 'text'}
+                                autoComplete="off"
+                              />
+                            </div>
+                          </div>
+                          {refundDestinationType === 'bank' && (
+                            <div>
+                              <label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-gray-600">Bank / Channel</label>
+                              <input
+                                value={refundBankChannel}
+                                onChange={(event) => setRefundBankChannel(event.target.value)}
+                                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-gray-400 focus:outline-none"
+                                maxLength={80}
+                                autoComplete="off"
+                              />
+                            </div>
+                          )}
                         </div>
-                        <p className="text-sm text-gray-700">
-                          <span className="font-semibold">Your refund will be processed securely to the same payment method you used for this order.</span> If you paid with GCash, Maya, or Credit Card, your refund will go back to that account within 2-4 business days after approval.
-                        </p>
-                      </div>
+                      ) : (
+                        <div className="border border-green-300 rounded-lg p-6 bg-green-50">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-base font-semibold text-green-900">Secure Refund to Original Payment Method</h4>
+                            <div className="flex items-center gap-2">
+                              <img src="/images/payment-logo/visa.png" alt="Visa" className="h-6" />
+                              <img src="/images/payment-logo/MAYA.png" alt="Maya" className="h-6" />
+                              <img src="/images/payment-logo/GCASH.png" alt="GCash" className="h-6" />
+                            </div>
+                          </div>
+                          <p className="text-sm text-gray-700">
+                            <span className="font-semibold">Your refund will be processed securely to the same payment method you used for this order.</span> If you paid with GCash, Maya, or Credit Card, your refund will go back to that account within 2-4 business days after approval.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Additional Note */}
@@ -3307,6 +3690,10 @@ const MyOrders: React.FC = () => {
                         setRefundLineQtyByItemId({});
                         setRefundNote('');
                         setRefundOtherReasonNote('');
+                        setRefundDestinationType('gcash');
+                        setRefundAccountName('');
+                        setRefundAccountNumber('');
+                        setRefundBankChannel('');
                       }}
                       className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                     >

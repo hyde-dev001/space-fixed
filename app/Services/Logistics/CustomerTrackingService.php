@@ -95,7 +95,9 @@ class CustomerTrackingService
             'legs' => $shipment->legs->map(function ($leg) use ($shipment, $liveTracking, $retailDelivery) {
                 $deliveryType = $this->deliveryTypes->resolve($shipment, $leg);
                 $attempt = $leg->attempts->first();
-                $proof = $leg->status->value === 'delivered'
+                $deliveryCompleted = $leg->status->value === 'delivered'
+                    || ($shipment->status->value === 'completed' && $leg->delivered_at !== null);
+                $proof = $deliveryCompleted
                     ? $leg->proofs->first()
                     : null;
                 $proofAvailable = $proof?->file_path

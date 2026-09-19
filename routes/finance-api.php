@@ -28,6 +28,7 @@ use App\Http\Controllers\Erp\SupplierAdjustmentController;
 use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\Api\RefundApprovalController;
+use App\Http\Controllers\Api\Finance\CodRemittanceController;
 
 /**
  * Finance Module Routes - Audit Logs (requires view-finance-audit-logs permission)
@@ -229,6 +230,14 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::post('/{id}/approve', [RefundApprovalController::class, 'financeApprove'])->name('finance.refunds.approve');
         Route::post('/{id}/reject', [RefundApprovalController::class, 'financeReject'])->name('finance.refunds.reject');
         Route::post('/{id}/execute-gateway-refund', [RefundApprovalController::class, 'financeExecuteGatewayRefund'])->name('finance.refunds.execute');
+        Route::get('/{id}/destination/reveal', [RefundApprovalController::class, 'revealCodRefundDestination'])->name('finance.refunds.destination.reveal');
+    });
+
+    Route::prefix('cod-remittances')->middleware('permission:access-cod-remittances')->group(function () {
+        Route::get('/', [CodRemittanceController::class, 'index'])->name('finance.cod-remittances.index');
+        Route::post('/{remittance}/confirm', [CodRemittanceController::class, 'confirm'])
+            ->whereNumber('remittance')
+            ->name('finance.cod-remittances.confirm');
     });
 });
 

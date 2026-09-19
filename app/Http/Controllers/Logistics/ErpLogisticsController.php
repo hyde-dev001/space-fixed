@@ -24,6 +24,7 @@ use App\Services\Logistics\DeliveryTypeResolver;
 use App\Services\Logistics\LogisticsActorPolicy;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\RiderProfileSyncService;
+use App\Services\CodCollectionService;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\JsonResponse;
@@ -45,6 +46,7 @@ class ErpLogisticsController extends Controller
         private DeliveryTypeResolver $deliveryTypes,
         private LogisticsActorPolicy $logisticsPolicy,
         private ProofService $proofs,
+        private CodCollectionService $codCollections,
     ) {}
 
     public function dashboard(): Response|RedirectResponse
@@ -429,6 +431,16 @@ class ErpLogisticsController extends Controller
             ])->max_delivery_attempts,
             'today' => now($shopTimezone)->toDateString(),
         ]);
+    }
+
+    public function codCollections(): Response
+    {
+        $user = Auth::guard('user')->user();
+        if (! $user || ! $user->shop_owner_id || ! $user->can('operate-logistics-deliveries')) {
+            abort(403);
+        }
+
+        return Inertia::render('ERP/Logistics/CodCollections');
     }
 
     private function batchWorkItem(DeliveryBatch $batch, RiderProfile $rider): ?array
@@ -1332,7 +1344,7 @@ class ErpLogisticsController extends Controller
         }
 
         $orders = Order::query()
-            ->with(['items.product' => fn ($products) => $products
+            ->with(['codCollection:id,order_id,status,expected_amount,collected_amount,rider_user_id,collection_reference,collected_at', 'codCollection.riderUser:id,name', 'codCollection.remittanceItem.remittance:id,reference,status', 'items.product' => fn ($products) => $products
                 ->where('shop_owner_id', $shopOwnerId)
                 ->select('id', 'brand')])
             ->where('shop_owner_id', $shopOwnerId)
@@ -1343,11 +1355,21 @@ class ErpLogisticsController extends Controller
         $shipments->each(function (Shipment $shipment) use ($orders): void {
             $order = $orders->get($shipment->source_id);
             $items = $order?->items ?? collect();
+            $isCod = $order && $this->codCollections->isCodOrder($order);
 
             $shipment->setAttribute('order_summary', [
                 'available' => (bool) $order,
                 'order_id' => (int) $shipment->source_id,
                 'order_number' => $order?->order_number,
+                'payment_method' => $order?->payment_method,
+                'cod_expected_amount' => $isCod ? $this->codCollections->expectedAmount($order) : null,
+                'cod_collection_status' => $isCod ? $order->codCollection?->status : null,
+                'cod_collected_amount' => $isCod ? $order->codCollection?->collected_amount : null,
+                'cod_collection_reference' => $isCod ? $order->codCollection?->collection_reference : null,
+                'cod_collected_at' => $isCod ? optional($order->codCollection?->collected_at)->toISOString() : null,
+                'cod_rider_name' => $isCod ? $order->codCollection?->riderUser?->name : null,
+                'cod_remittance_status' => $isCod ? $order->codCollection?->remittanceItem?->remittance?->status : null,
+                'cod_remittance_reference' => $isCod ? $order->codCollection?->remittanceItem?->remittance?->reference : null,
                 'items' => $items->map(fn ($item) => [
                     'id' => (int) $item->id,
                     'brand' => $item->product?->brand,

@@ -48,7 +48,6 @@ class OrderReceiptService
             $deliveryCompleted = false;
             if ($isLegacyThirdPartyReceipt) {
                 $lockedOrder->status = OrderStatus::DELIVERED;
-                $this->markCodPaymentPaid($lockedOrder);
                 $deliveryCompleted = true;
             }
 
@@ -130,20 +129,6 @@ class OrderReceiptService
             ->where('order_id', $order->id)
             ->whereIn('status', ['open', 'investigating'])
             ->exists();
-    }
-
-    private function markCodPaymentPaid(Order $order): void
-    {
-        $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-        $isCodOrder = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
-
-        if ($isCodOrder && ! in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
-            $order->payment_status = 'paid';
-            $order->paid_at = now();
-            $order->payment_failed_at = null;
-            $order->payment_failure_reason = null;
-            $order->payment_expired_at = null;
-        }
     }
 
     private function orderStatus(Order $order): string

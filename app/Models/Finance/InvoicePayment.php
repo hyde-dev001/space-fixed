@@ -13,6 +13,7 @@ class InvoicePayment extends Model
     public const ENTRY_REVERSAL = 'reversal';
     public const SOURCE_MANUAL = 'manual';
     public const SOURCE_LEGACY_MIGRATION = 'legacy_migration';
+    public const SOURCE_COD_REMITTANCE = 'cod_remittance';
 
     protected $table = 'finance_invoice_payments';
 

@@ -43,6 +43,14 @@ type Order = {
   grand_total: number;
   paymentStatus: string;
   paymentMethod?: string;
+  codExpectedAmount?: string | null;
+  codCollectionStatus?: string | null;
+  codCollectedAmount?: string | null;
+  codCollectionReference?: string | null;
+  codCollectedAt?: string | null;
+  codRiderName?: string | null;
+  codRemittanceStatus?: string | null;
+  codRemittanceReference?: string | null;
   status: OrderStatus;
   availableActions?: OrderAction[];
   ownerProjection?: {
@@ -408,6 +416,14 @@ export default function JobOrdersPage() {
             grand_total: grandTotal,
             paymentStatus: order.payment_status || 'pending',
             paymentMethod: order.payment_method || '',
+            codExpectedAmount: order.cod_expected_amount ?? null,
+            codCollectionStatus: order.cod_collection_status ?? null,
+            codCollectedAmount: order.cod_collected_amount ?? null,
+            codCollectionReference: order.cod_collection_reference ?? null,
+            codCollectedAt: order.cod_collected_at ?? null,
+            codRiderName: order.cod_rider_name ?? null,
+            codRemittanceStatus: order.cod_remittance_status ?? null,
+            codRemittanceReference: order.cod_remittance_reference ?? null,
             status: order.status as OrderStatus,
             availableActions: parseOrderActions(order.available_actions),
             ownerProjection: order.owner_projection || undefined,
@@ -590,7 +606,13 @@ export default function JobOrdersPage() {
 
   const isCodOrder = (order: Pick<Order, 'paymentMethod'>) => {
     const normalized = (order.paymentMethod || '').toLowerCase();
-    return normalized === 'cod' || normalized === 'cash_on_delivery' || normalized === 'cash on delivery';
+    return normalized === 'cod' || normalized === 'cash_on_delivery' || normalized === 'cash on delivery' || normalized === 'cash';
+  };
+
+  const getCodPaymentLabel = (order: Pick<Order, 'codCollectionStatus' | 'codRemittanceStatus'>): string => {
+    if (String(order.codRemittanceStatus || '').toLowerCase() === 'settled') return 'COD settled · remittance received';
+    if (String(order.codCollectionStatus || '').toLowerCase() === 'cash_collected') return 'Cash collected · remittance pending';
+    return 'COD pending collection';
   };
 
   const isOrderPaid = (order: Pick<Order, 'paymentStatus'>) => {
@@ -1016,6 +1038,14 @@ export default function JobOrdersPage() {
             grand_total: grandTotal,
             paymentStatus: item.payment_status || 'pending',
             paymentMethod: item.payment_method || '',
+            codExpectedAmount: item.cod_expected_amount ?? null,
+            codCollectionStatus: item.cod_collection_status ?? null,
+            codCollectedAmount: item.cod_collected_amount ?? null,
+            codCollectionReference: item.cod_collection_reference ?? null,
+            codCollectedAt: item.cod_collected_at ?? null,
+            codRiderName: item.cod_rider_name ?? null,
+            codRemittanceStatus: item.cod_remittance_status ?? null,
+            codRemittanceReference: item.cod_remittance_reference ?? null,
             status: item.status as any,
             cancellation_reason: item.cancellation_reason || null,
             cancellation_note: item.cancellation_note || null,
@@ -1233,6 +1263,14 @@ export default function JobOrdersPage() {
             grand_total: grandTotal,
             paymentStatus: item.payment_status || 'pending',
             paymentMethod: item.payment_method || '',
+            codExpectedAmount: item.cod_expected_amount ?? null,
+            codCollectionStatus: item.cod_collection_status ?? null,
+            codCollectedAmount: item.cod_collected_amount ?? null,
+            codCollectionReference: item.cod_collection_reference ?? null,
+            codCollectedAt: item.cod_collected_at ?? null,
+            codRiderName: item.cod_rider_name ?? null,
+            codRemittanceStatus: item.cod_remittance_status ?? null,
+            codRemittanceReference: item.cod_remittance_reference ?? null,
             status: item.status as any,
             cancellation_reason: item.cancellation_reason || null,
             cancellation_note: item.cancellation_note || null,
@@ -1568,6 +1606,14 @@ export default function JobOrdersPage() {
               grand_total: grandTotal,
               paymentStatus: order.payment_status || 'pending',
               paymentMethod: order.payment_method || '',
+              codExpectedAmount: order.cod_expected_amount ?? null,
+              codCollectionStatus: order.cod_collection_status ?? null,
+              codCollectedAmount: order.cod_collected_amount ?? null,
+              codCollectionReference: order.cod_collection_reference ?? null,
+              codCollectedAt: order.cod_collected_at ?? null,
+              codRiderName: order.cod_rider_name ?? null,
+              codRemittanceStatus: order.cod_remittance_status ?? null,
+              codRemittanceReference: order.cod_remittance_reference ?? null,
               status: order.status as any,
               cancellation_reason: order.cancellation_reason || null,
               cancellation_note: order.cancellation_note || null,
@@ -2625,6 +2671,31 @@ export default function JobOrdersPage() {
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Payment Method</p>
                     <p className="text-sm text-gray-900 dark:text-white">{formatPaymentMethod(viewOrder.paymentMethod)}</p>
                   </div>
+                  {isCodOrder(viewOrder) && (
+                    <>
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">COD Amount Due</p>
+                        <p className="text-sm text-gray-900 dark:text-white">₱{Number(viewOrder.codExpectedAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">COD Collection Status</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{getCodPaymentLabel(viewOrder)}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Rider Collection</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{viewOrder.codRiderName || 'Not collected'}</p>
+                        {viewOrder.codCollectedAt && <p className="mt-1 text-xs text-gray-500">{new Date(viewOrder.codCollectedAt).toLocaleString()}</p>}
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Collection Reference</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{viewOrder.codCollectionReference || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Remittance Status</p>
+                        <p className="text-sm text-gray-900 dark:text-white">{String(viewOrder.codRemittanceStatus || 'not submitted').replaceAll('_', ' ')}</p>
+                      </div>
+                    </>
+                  )}
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Address</p>
                     <p className="text-sm text-gray-900 dark:text-white">{viewOrder.shippingAddress}</p>

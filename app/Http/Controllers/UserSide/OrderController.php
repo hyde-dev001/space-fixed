@@ -14,6 +14,7 @@ use App\Models\PosTransaction;
 use App\Models\ProductReview;
 use App\Models\Product;
 use App\Models\ProductVariant;
+use App\Models\ShopPaymentIntegration;
 use App\Models\StockMovement;
 use App\Enums\OrderStatus;
 use App\Models\DeliveryDispute;
@@ -21,8 +22,10 @@ use App\Services\NotificationService;
 use App\Services\Orders\OrderFulfillmentService;
 use App\Services\OrderReceiptService;
 use App\Services\OrderRefundService;
+use App\Services\CodCollectionService;
 use App\Services\DeliveryDisputeService;
 use App\Services\DeliveryDisputeEvidenceService;
+use App\Services\Finance\XenditPayoutService;
 use App\Services\PaymongoRefundService;
 use App\Services\PaymentSettlementService;
 use App\Services\RefundLineCalculatorService;
@@ -35,6 +38,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Database\QueryException;
 use Illuminate\Validation\ValidationException;
+use App\Support\Finance\FinanceDomainException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -49,6 +53,7 @@ class OrderController extends Controller
     protected OrderReceiptService $orderReceiptService;
     protected DeliveryDisputeService $deliveryDisputeService;
     protected DeliveryDisputeEvidenceService $deliveryDisputeEvidenceService;
+    protected CodCollectionService $codCollectionService;
     private ?array $orderRefundColumns = null;
     private bool $orderRefundColumnIntrospectionFailed = false;
 
@@ -62,6 +67,7 @@ class OrderController extends Controller
         OrderReceiptService $orderReceiptService,
         DeliveryDisputeService $deliveryDisputeService,
         DeliveryDisputeEvidenceService $deliveryDisputeEvidenceService,
+        CodCollectionService $codCollectionService,
     )
     {
         $this->notificationService = $notificationService;
@@ -73,6 +79,7 @@ class OrderController extends Controller
         $this->orderReceiptService = $orderReceiptService;
         $this->deliveryDisputeService = $deliveryDisputeService;
         $this->deliveryDisputeEvidenceService = $deliveryDisputeEvidenceService;
+        $this->codCollectionService = $codCollectionService;
     }
     /**
      * Display user's orders
@@ -107,6 +114,8 @@ class OrderController extends Controller
                 'shopOwner',
                 'refunds' => fn ($query) => $query->orderByDesc('id'),
                 'deliveryDisputes' => fn ($query) => $query->latest('id'),
+                'codCollection.riderUser:id,name',
+                'codCollection.remittanceItem.remittance',
             ])
             ->orderBy('created_at', 'desc')
             ->get();
@@ -213,10 +222,16 @@ class OrderController extends Controller
                 $totalPaid = max($grandTotal, $legacyGrandTotal, $itemSubtotal);
 
                 $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-                $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
+                $isCodPayment = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
+                $isOnlinePayment = ! $isCodPayment;
                 $latestRefund = $order->refunds->first();
 
-                if ($isOnlinePayment && $latestRefund) {
+                if ($isCodPayment && $latestRefund && (string) ($latestRefund->payout_status ?? '') === 'processing') {
+                    $this->orderRefundService->reconcileCodRefundPayout($latestRefund);
+                    $order->refresh();
+                    $order->loadMissing(['refunds' => fn ($query) => $query->orderByDesc('id')]);
+                    $latestRefund = $order->refunds->first();
+                } elseif ($isOnlinePayment && $latestRefund) {
                     $this->reconcileRefundWithGateway($order, $latestRefund);
                     $order->refresh();
                     $order->loadMissing(['refunds' => fn ($query) => $query->orderByDesc('id')]);
@@ -228,6 +243,11 @@ class OrderController extends Controller
                     ? ($refundShipmentLookup[(int) $latestRefund->id] ?? null)
                     : null;
                 $isShopOwnedReturn = $returnDeliveryMethod === 'shop_owned';
+                $latestRefundStatus = strtolower((string) ($latestRefund?->status ?? ''));
+                $awaitingRefundDestination = $isCodPayment
+                    && $latestRefund
+                    && $this->orderRefundService->canAcceptCodRefundDestination($latestRefund)
+                    && (! is_array($latestRefund->refund_destination) || $latestRefund->refund_destination === []);
 
                 $refundStatus = null;
                 $refundStatusNote = null;
@@ -286,7 +306,7 @@ class OrderController extends Controller
                     'order_number' => $order->order_number,
                     'status' => $order->status,
                     'payment_status' => $order->payment_status ?? 'pending',
-                    'payment_method' => $order->payment_method ?? 'paymongo',
+                    ...$this->codCollectionService->projection($order),
                     'total_amount' => $itemSubtotal,
                     'shipping_fee' => $shippingFee,
                     'vat_amount' => $vatAmount,
@@ -386,6 +406,11 @@ class OrderController extends Controller
                         'return_confirmed_at' => optional($latestRefund->return_confirmed_at)->toDateTimeString(),
                         'refund_executed_at' => optional($latestRefund->refund_executed_at)->toDateTimeString(),
                         'rejection_reason' => $latestRefund->rejection_reason,
+                        'is_cod' => $isCodPayment,
+                        'refund_destination_type' => $latestRefund->refund_destination_type,
+                        'refund_destination' => $latestRefund->maskedRefundDestination(),
+                        'payout_status' => $latestRefund->payout_status,
+                        'awaiting_refund_destination' => $awaitingRefundDestination,
                         'can_mark_return_shipped' => strtolower((string) ($latestRefund->return_source ?? 'customer')) !== 'staff'
                             && (string) ($latestRefund->return_status ?? 'awaiting_approval') === 'pending_customer_shipment'
                             && (string) ($latestRefund->shop_owner_status ?? 'pending') === 'approved'
@@ -496,7 +521,7 @@ class OrderController extends Controller
         }
 
         $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-        $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
+        $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
         if (!$isOnlinePayment) {
             return;
         }
@@ -818,6 +843,10 @@ class OrderController extends Controller
                 'order_id' => 'required|integer',
                 'reason' => 'required|string|max:255',
                 'refund_method' => 'nullable|string|max:100',
+                'refund_destination_type' => 'nullable|string|in:gcash,bank',
+                'refund_account_name' => 'nullable|string|max:120',
+                'refund_account_number' => 'nullable|string|max:34',
+                'refund_bank_channel' => 'nullable|string|max:80',
                 'request_type' => 'nullable|string|in:full,partial',
                 'requested_amount' => 'nullable|numeric|min:0.01',
                 'requested_item_ids' => 'nullable|array|min:1',
@@ -843,7 +872,7 @@ class OrderController extends Controller
             }
 
             $order = Order::query()
-                ->with(['items', 'shopOwner'])
+                ->with(['items', 'shopOwner', 'codCollection.remittanceItem.remittance'])
                 ->where('id', (int) $validated['order_id'])
                 ->where('customer_id', (int) $user->id)
                 ->first();
@@ -888,15 +917,26 @@ class OrderController extends Controller
             }
 
             $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-            $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
-            if (!$isOnlinePayment) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Only online-paid orders are eligible for gateway refund requests.',
-                ], 422);
+            $isCodPayment = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
+
+            $refundDestination = null;
+            if ($isCodPayment) {
+                $refundDestination = $this->buildCodRefundDestination(
+                    $validated['refund_destination_type'] ?? null,
+                    $validated['refund_account_name'] ?? null,
+                    $validated['refund_account_number'] ?? null,
+                    $validated['refund_bank_channel'] ?? null,
+                );
+
+                if (! $order->codCollection || (float) ($order->codCollection->collected_amount ?? 0) <= 0) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'There is no collected COD cash to refund.',
+                    ], 422);
+                }
             }
 
-            if (!in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
+            if (!$isCodPayment && !in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Order payment is not eligible for refund processing.',
@@ -972,9 +1012,9 @@ class OrderController extends Controller
             );
 
             $capturedPaymentAmount = null;
-            $paymongoSecretKey = trim((string) ($order->shopOwner?->paymongo_secret_key ?? ''));
+            $paymongoSecretKey = $isCodPayment ? '' : trim((string) ($order->shopOwner?->paymongo_secret_key ?? ''));
             $paymongoPaymentId = trim((string) ($order->paymongo_payment_id ?? ''));
-            if ($paymongoSecretKey !== '' && $paymongoPaymentId !== '') {
+            if (!$isCodPayment && $paymongoSecretKey !== '' && $paymongoPaymentId !== '') {
                 $capturedAmountInCentavos = $this->paymongoRefundService->getPaymentAmountInCentavos(
                     $paymongoSecretKey,
                     $paymongoPaymentId,
@@ -1230,11 +1270,11 @@ class OrderController extends Controller
                 ], 422);
             }
 
-            // Keep the captured amount on the reservation for the existing
-            // payout resolver, which removes shipping at gateway execution.
-            $reservationAmount = $requestType === 'full'
-                ? ($capturedPaymentAmount ?? $localCapturedAmount)
-                : $amount;
+            // COD refunds pay the requested collected-cash amount directly;
+            // online refunds keep the existing captured-amount calculation.
+            $reservationAmount = $isCodPayment
+                ? $amount
+                : ($requestType === 'full' ? ($capturedPaymentAmount ?? $localCapturedAmount) : $amount);
 
             $reasonCode = Str::slug((string) $validated['reason'], '_');
             $baseReasonNote = trim((string) (($validated['reason'] ?? '') . (!empty($validated['note']) ? "\n\n" . $validated['note'] : '')));
@@ -1246,11 +1286,14 @@ class OrderController extends Controller
                 'shop_owner_id' => $order->shop_owner_id,
                 'flow_type' => 'request_approval',
                 'status' => 'pending_approval',
-                'payment_gateway' => 'paymongo',
-                'paymongo_payment_id' => $order->paymongo_payment_id,
+                'payment_gateway' => $isCodPayment ? 'xendit' : 'paymongo',
+                'paymongo_payment_id' => $isCodPayment ? null : $order->paymongo_payment_id,
                 'amount' => round($reservationAmount, 2),
                 'currency' => 'PHP',
                 'requested_refund_method' => $resolvedRefundMethod,
+                'refund_destination_type' => $isCodPayment ? $refundDestination['type'] : null,
+                'refund_destination' => $isCodPayment ? $refundDestination : null,
+                'refund_provider' => $isCodPayment ? 'xendit' : null,
                 'reason_code' => $reasonCode,
                 'reason_note' => $reasonNote,
                 'other_reason_note' => trim((string) ($validated['other_reason_note'] ?? '')) ?: null,
@@ -1294,6 +1337,227 @@ class OrderController extends Controller
                 'message' => 'Unable to submit refund request right now. Please try again in a moment.',
             ], 500);
         }
+    }
+
+    public function codRefundDestinationOptions(int $id, XenditPayoutService $payouts)
+    {
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $refund = OrderRefund::query()
+            ->whereKey($id)
+            ->where('customer_id', (int) $user->id)
+            ->with('order')
+            ->first();
+        if (! $refund) {
+            return response()->json(['success' => false, 'message' => 'Refund not found.'], 404);
+        }
+
+        if (! $this->isCodRefundOrder($refund)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A COD refund destination is only available for COD orders.',
+            ], 422);
+        }
+
+        if (! $this->orderRefundService->canAcceptCodRefundDestination($refund)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'COD refund is not ready for payout yet.',
+            ], 422);
+        }
+
+        try {
+            return response()->json($this->loadCodRefundPayoutChannels($refund, $payouts));
+        } catch (FinanceDomainException $exception) {
+            return response()->json([
+                'success' => false,
+                'message' => $exception->getMessage(),
+                'code' => $exception->errorCode,
+            ], $exception->httpStatus);
+        }
+    }
+
+    public function submitCodRefundDestination(Request $request, int $id, XenditPayoutService $payouts)
+    {
+        $validated = $request->validate([
+            'destination_type' => 'required|string|in:gcash,bank,bank_account,e_wallet',
+            'account_name' => 'required|string|max:120',
+            'account_number' => 'required|string|max:34',
+            'channel_code' => 'nullable|string|max:32',
+            'bank_channel' => 'nullable|string|max:80',
+        ]);
+
+        $user = Auth::guard('user')->user();
+        if (! $user) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $refund = OrderRefund::query()
+            ->whereKey($id)
+            ->where('customer_id', (int) $user->id)
+            ->with('order')
+            ->first();
+        if (! $refund) {
+            return response()->json(['success' => false, 'message' => 'Refund not found.'], 404);
+        }
+
+        if (! $this->orderRefundService->canAcceptCodRefundDestination($refund)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'COD refund is not ready for payout yet.',
+            ], 422);
+        }
+
+        $payoutChannels = null;
+        if (in_array($validated['destination_type'], ['bank_account', 'e_wallet'], true)) {
+            try {
+                $payoutChannels = $this->loadCodRefundPayoutChannels($refund, $payouts);
+            } catch (FinanceDomainException $exception) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $exception->getMessage(),
+                    'code' => $exception->errorCode,
+                ], $exception->httpStatus);
+            }
+        }
+
+        $destination = $this->buildCodRefundDestination(
+            $validated['destination_type'],
+            $validated['account_name'],
+            $validated['account_number'],
+            $validated['channel_code'] ?? $validated['bank_channel'] ?? null,
+            $payoutChannels,
+        );
+        $result = $this->orderRefundService->submitCodRefundDestination($refund, $destination);
+
+        if (($result['result'] ?? null) === 'invalid_state') {
+            return response()->json([
+                'success' => false,
+                'message' => $result['message'],
+            ], 422);
+        }
+
+        /** @var OrderRefund $updatedRefund */
+        $updatedRefund = $result['refund'];
+
+        return response()->json([
+            'success' => true,
+            'message' => $result['message'],
+            'refund' => [
+                'id' => (int) $updatedRefund->id,
+                'refund_destination_type' => $updatedRefund->refund_destination_type,
+                'refund_destination' => $updatedRefund->maskedRefundDestination(),
+            ],
+        ]);
+    }
+
+    private function buildCodRefundDestination(
+        mixed $type,
+        mixed $accountName,
+        mixed $accountNumber,
+        mixed $channel,
+        ?array $payoutChannels = null,
+    ): array {
+        $destinationType = strtolower(trim((string) $type));
+        $normalizedAccountName = trim((string) $accountName);
+        $normalizedAccountNumber = trim((string) $accountNumber);
+
+        if (in_array($destinationType, ['bank_account', 'e_wallet'], true)) {
+            $channelCode = strtoupper(trim((string) $channel));
+            $expectedCategory = $destinationType === 'e_wallet' ? 'EWALLET' : 'BANK';
+            $options = $destinationType === 'e_wallet'
+                ? ($payoutChannels['e_wallets'] ?? [])
+                : ($payoutChannels['banks'] ?? []);
+            $selectedChannel = collect($options)->first(
+                fn (mixed $option): bool => is_array($option)
+                    && strtoupper(trim((string) ($option['channel_code'] ?? ''))) === $channelCode
+                    && strtoupper(trim((string) ($option['channel_category'] ?? ''))) === $expectedCategory,
+            );
+
+            if (! is_array($selectedChannel)
+                || $normalizedAccountName === ''
+                || ! preg_match('/^[A-Za-z0-9+()\- ]{4,34}$/', $normalizedAccountNumber)) {
+                throw ValidationException::withMessages([
+                    'refund_destination' => ['Choose a supported Xendit channel and enter a valid account name and account number.'],
+                ]);
+            }
+
+            return [
+                'type' => $destinationType,
+                'channel_code' => strtoupper((string) $selectedChannel['channel_code']),
+                'channel' => trim((string) $selectedChannel['channel_name']),
+                'account_name' => $normalizedAccountName,
+                'account_number' => $normalizedAccountNumber,
+            ];
+        }
+
+        if ($destinationType === 'gcash') {
+            if ($normalizedAccountName === '' || ! preg_match('/^09\d{9}$/', $normalizedAccountNumber)) {
+                throw ValidationException::withMessages([
+                    'refund_destination' => ['Enter a valid GCash account name and 11-digit GCash number.'],
+                ]);
+            }
+
+            return [
+                'type' => 'gcash',
+                'account_name' => $normalizedAccountName,
+                'number' => $normalizedAccountNumber,
+            ];
+        }
+
+        if ($destinationType === 'bank') {
+            $normalizedBankChannel = trim((string) $channel);
+            if ($normalizedBankChannel === ''
+                || $normalizedAccountName === ''
+                || ! preg_match('/^[A-Za-z0-9\- ]{4,34}$/', $normalizedAccountNumber)) {
+                throw ValidationException::withMessages([
+                    'refund_destination' => ['Enter the bank/channel, account holder name, and a valid account number.'],
+                ]);
+            }
+
+            return [
+                'type' => 'bank',
+                'channel' => $normalizedBankChannel,
+                'account_holder_name' => $normalizedAccountName,
+                'account_number' => $normalizedAccountNumber,
+            ];
+        }
+
+        throw ValidationException::withMessages([
+            'refund_destination_type' => ['Choose a supported Xendit bank or e-wallet for a COD refund destination.'],
+        ]);
+    }
+
+    private function loadCodRefundPayoutChannels(OrderRefund $refund, XenditPayoutService $payouts): array
+    {
+        $integration = ShopPaymentIntegration::query()
+            ->forXenditMoneyOut((int) $refund->shop_owner_id)
+            ->first();
+        if (! $integration || ! $integration->isConnected()) {
+            throw new FinanceDomainException(
+                'Xendit customer refunds are not configured for this shop.',
+                'XENDIT_NOT_CONFIGURED',
+                422,
+            );
+        }
+
+        return $payouts->getPayoutChannels(
+            (string) $integration->secret_key,
+            (int) $refund->shop_owner_id,
+        );
+    }
+
+    private function isCodRefundOrder(OrderRefund $refund): bool
+    {
+        return in_array(strtolower(trim((string) ($refund->order?->payment_method ?? ''))), [
+            'cod',
+            'cash_on_delivery',
+            'cash on delivery',
+            'cash',
+        ], true);
     }
 
     private function filterOrderRefundPayload(array $payload): array
@@ -1725,7 +1989,7 @@ class OrderController extends Controller
             }
 
             $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-            $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
+        $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
             $isPaidOnlineOrder = $isOnlinePayment && in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true);
 
             if ($isPaidOnlineOrder && !empty($validated['order_item_id'])) {

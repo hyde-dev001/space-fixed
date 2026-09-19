@@ -3,6 +3,7 @@
 namespace Tests\Feature\HR;
 
 use App\Models\Employee;
+use App\Models\HR\AttendanceRecord;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Carbon\Carbon;
@@ -97,6 +98,42 @@ class EmployeeClockInAccessTest extends TestCase
         $this->actingAs($user, 'user')
             ->postJson('/api/staff/attendance/check-in')
             ->assertOk();
+    }
+
+    public function test_self_check_in_recognizes_an_existing_eloquent_date_record(): void
+    {
+        config(['app.shop_timezone' => 'Asia/Manila']);
+        Carbon::setTestNow(Carbon::create(2026, 9, 3, 12, 0, 0, 'Asia/Manila'));
+
+        $shop = ShopOwner::factory()->create([
+            'thursday_open' => '08:00:00',
+            'thursday_close' => '20:00:00',
+        ]);
+        $user = User::factory()->for($shop)->create(['status' => 'active']);
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $shop->id,
+            'email' => $user->email,
+        ]);
+
+        AttendanceRecord::create([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $shop->id,
+            'date' => '2026-09-03',
+            'check_in_time' => '08:00',
+            'status' => 'present',
+        ]);
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/staff/attendance/check-in')
+            ->assertStatus(422)
+            ->assertJsonPath('error', 'You have already checked in and have not clocked out yet');
+
+        $this->assertSame(
+            1,
+            AttendanceRecord::where('employee_id', $employee->id)
+                ->whereDate('date', '2026-09-03')
+                ->count(),
+        );
     }
 
     public function test_check_in_rejects_the_minute_after_configured_close(): void

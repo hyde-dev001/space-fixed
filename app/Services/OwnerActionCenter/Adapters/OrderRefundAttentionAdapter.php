@@ -34,6 +34,7 @@ final class OrderRefundAttentionAdapter implements OwnerAttentionAdapter
         $financeStatuses = $registrationType === 'individual'
             ? ['pending', 'approved_initial']
             : ['approved_initial'];
+        $codPaymentMethods = ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'];
 
         $baseQuery = OrderRefund::query()
             ->select([
@@ -55,13 +56,34 @@ final class OrderRefundAttentionAdapter implements OwnerAttentionAdapter
                 $orderQuery->where('shop_owner_id', (int) $owner->getKey());
             })
             ->where('flow_type', 'request_approval')
-            ->whereIn('status', ['requested', 'pending_approval'])
+            ->where(function ($query) use ($codPaymentMethods): void {
+                $query->where(function ($codQuery) use ($codPaymentMethods): void {
+                    $codQuery->whereHas('order', fn ($orderQuery) => $orderQuery
+                        ->whereIn('payment_method', $codPaymentMethods))
+                        ->where('status', 'pending_approval')
+                        ->where('finance_status', 'approved_initial');
+                })->orWhere(function ($nonCodQuery) use ($codPaymentMethods): void {
+                    $nonCodQuery->whereDoesntHave('order', fn ($orderQuery) => $orderQuery
+                        ->whereIn('payment_method', $codPaymentMethods))
+                        ->whereIn('status', ['requested', 'pending_approval']);
+                });
+            })
             ->where(function ($query): void {
                 $query->whereNull('requires_owner_approval')
                     ->orWhere('requires_owner_approval', true);
             })
             ->where('shop_owner_status', 'pending')
-            ->whereIn('finance_status', $financeStatuses)
+            ->where(function ($query) use ($codPaymentMethods, $financeStatuses): void {
+                $query->where(function ($codQuery) use ($codPaymentMethods): void {
+                    $codQuery->whereHas('order', fn ($orderQuery) => $orderQuery
+                        ->whereIn('payment_method', $codPaymentMethods))
+                        ->where('finance_status', 'approved_initial');
+                })->orWhere(function ($nonCodQuery) use ($codPaymentMethods, $financeStatuses): void {
+                    $nonCodQuery->whereDoesntHave('order', fn ($orderQuery) => $orderQuery
+                        ->whereIn('payment_method', $codPaymentMethods))
+                        ->whereIn('finance_status', $financeStatuses);
+                });
+            })
             ->orderByDesc('requested_at')
             ->orderByDesc('id');
 

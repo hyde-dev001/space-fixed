@@ -2,12 +2,14 @@
 
 namespace App\Services;
 
-use App\Models\Logistics\ShipmentLeg;
 use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShipmentLeg;
+use App\Models\CodCollection;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\User;
 use App\Enums\NotificationType;
+use App\Services\Finance\CodRefundPayoutService;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -38,6 +40,7 @@ class OrderRefundService
         private readonly PaymentSettlementService $paymentSettlementService,
         private readonly ShopOwnerApprovalPolicyService $shopOwnerApprovalPolicyService,
         private readonly NotificationService $notificationService,
+        private readonly CodRefundPayoutService $codRefundPayoutService,
         private readonly ?OrderRefundRecoveryService $orderRefundRecoveryService = null,
     ) {
     }
@@ -148,7 +151,11 @@ class OrderRefundService
         return DB::transaction(function () use ($order, $payload, $lines, $capturedAmount) {
             $lockedOrder = Order::query()->with('items')->lockForUpdate()->findOrFail($order->id);
             $excludeShippingFee = (bool) ($payload['exclude_shipping_fee'] ?? false);
+            $deferCodCollection = (bool) ($payload['defer_cod_collection'] ?? false)
+                && ($payload['flow_type'] ?? null) === 'request_approval'
+                && ($payload['reason_code'] ?? null) === 'delivery_dispute';
             unset($payload['exclude_shipping_fee']);
+            unset($payload['defer_cod_collection']);
             $idempotencyKey = trim((string) ($payload['idempotency_key'] ?? ''));
 
             $sameReservation = $idempotencyKey !== ''
@@ -182,9 +189,31 @@ class OrderRefundService
             $capturedTotal = $capturedAmount === null
                 ? $this->resolveOrderCapturedAmount($lockedOrder)
                 : round(max(0, $capturedAmount), 2);
+            $isCodOrder = $this->isCodOrder($lockedOrder);
+            $codCollection = $isCodOrder
+                ? CodCollection::query()->where('order_id', $lockedOrder->id)->lockForUpdate()->first()
+                : null;
+            if ($isCodOrder && ! $deferCodCollection) {
+                $collectedAmount = round(max(0, (float) ($codCollection?->collected_amount ?? 0)), 2);
+                if (! $codCollection
+                    || ! in_array((string) $codCollection->status, [
+                        CodCollection::STATUS_CASH_COLLECTED,
+                        CodCollection::STATUS_SETTLED,
+                    ], true)
+                    || $collectedAmount <= 0) {
+                    return [
+                        'result' => 'collision',
+                        'message' => 'There is no collected COD cash to refund.',
+                        'refund' => null,
+                    ];
+                }
+                $capturedTotal = $collectedAmount;
+            }
             $succeededAmount = (float) OrderRefund::query()
                 ->where('order_id', $lockedOrder->id)
-                ->where('status', 'succeeded')
+                ->whereIn('status', $isCodOrder
+                    ? ['processing', 'succeeded', 'requested', 'pending_approval']
+                    : ['succeeded'])
                 ->lockForUpdate()
                 ->sum('amount');
             $availableAmount = round(max(0, $capturedTotal - $succeededAmount), 2);
@@ -219,6 +248,58 @@ class OrderRefundService
                 'result' => 'reserved',
                 'message' => 'Refund amount reserved.',
                 'refund' => $refund->fresh('items'),
+            ];
+        });
+    }
+
+    public function submitCodRefundDestination(OrderRefund $refund, array $destination): array
+    {
+        return DB::transaction(function () use ($refund, $destination): array {
+            $lockedRefund = OrderRefund::query()
+                ->with('order')
+                ->lockForUpdate()
+                ->findOrFail($refund->id);
+            $order = $lockedRefund->order;
+
+            if (! $this->isCodOrder($order)) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'A COD refund destination is only available for COD orders.',
+                    'refund' => $lockedRefund,
+                ];
+            }
+
+            if (! $this->canAcceptCodRefundDestination($lockedRefund)) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'COD refund is not ready for payout yet.',
+                    'refund' => $lockedRefund,
+                ];
+            }
+
+            $hadExistingDestination = is_array($lockedRefund->refund_destination)
+                && $lockedRefund->refund_destination !== [];
+
+            $lockedRefund->update([
+                'refund_destination_type' => $destination['type'],
+                'refund_destination' => $destination,
+                'refund_provider' => 'xendit',
+                'requested_refund_method' => 'customer_selected',
+            ]);
+            $refundId = (int) $lockedRefund->id;
+            DB::afterCommit(function () use ($refundId): void {
+                $updatedRefund = OrderRefund::query()->find($refundId);
+                if ($updatedRefund) {
+                    $this->notifyFinancePayoutReady($updatedRefund);
+                }
+            });
+
+            return [
+                'result' => $hadExistingDestination ? 'updated' : 'submitted',
+                'message' => $hadExistingDestination
+                    ? 'COD refund destination updated. Finance can release the payout after COD remittance settlement.'
+                    : 'COD refund destination submitted. Finance can release the payout after COD remittance settlement.',
+                'refund' => $lockedRefund->fresh(),
             ];
         });
     }
@@ -458,7 +539,10 @@ class OrderRefundService
             ];
         }
 
-        $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+        $isCodRefund = $this->isCodOrder($order);
+        $requiresOwnerApproval = $refund->requires_owner_approval === null
+            ? $isCodRefund
+            : (bool) $refund->requires_owner_approval;
         if ($isExhaustedDeliveryRefund) {
             $requiresOwnerApproval = false;
         }
@@ -468,7 +552,6 @@ class OrderRefundService
         );
         $isCompanyCustomerRefund = strtolower(trim((string) ($order->shopOwner?->registration_type ?? ''))) === 'company'
             && !$isExhaustedDeliveryRefund;
-
         $payload = [
             'approved_at' => $refund->approved_at ?? now(),
             'processed_by' => $processedBy,
@@ -476,6 +559,16 @@ class OrderRefundService
         $previousFinanceStatus = (string) ($refund->finance_status ?? 'pending');
         $previousShopOwnerStatus = (string) ($refund->shop_owner_status ?? 'pending');
         $wasPayoutExecutable = $this->canExecuteApprovedRefund($refund);
+
+        if ($stageNormalized === 'finance'
+            && $isCodRefund
+            && (string) ($refund->status ?? '') === 'requested') {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Staff acceptance is required before Finance initial approval.',
+                'refund' => $refund,
+            ];
+        }
 
         if ($stageNormalized === 'finance' && $financeShippingDecisionRequired) {
             $fullAmount = round((float) ($refund->amount ?? 0), 2);
@@ -517,10 +610,10 @@ class OrderRefundService
         }
 
         if ($stageNormalized === 'staff') {
-            if (!$isCompanyCustomerRefund) {
+            if (!$isCompanyCustomerRefund && !$isCodRefund) {
                 return [
                     'result' => 'invalid_state',
-                    'message' => 'Staff review is only available for company customer refunds.',
+                    'message' => 'Staff review is only available for company or COD customer refunds.',
                     'refund' => $refund,
                 ];
             }
@@ -533,9 +626,19 @@ class OrderRefundService
                 ];
             }
 
-            $payload['shop_owner_status'] = 'approved';
-            $payload['shop_owner_approved_at'] = now();
-            $payload['shop_owner_approved_by'] = $processedBy;
+            if ($isCodRefund) {
+                if ((string) ($refund->status ?? '') !== 'requested') {
+                    return [
+                        'result' => 'invalid_state',
+                        'message' => 'Staff has already accepted this COD refund request.',
+                        'refund' => $refund,
+                    ];
+                }
+            } else {
+                $payload['shop_owner_status'] = 'approved';
+                $payload['shop_owner_approved_at'] = now();
+                $payload['shop_owner_approved_by'] = $processedBy;
+            }
         }
 
         if ($stageNormalized === 'shop_owner') {
@@ -550,7 +653,7 @@ class OrderRefundService
             $financeStatus = (string) ($refund->finance_status ?? 'pending');
             $financePreapproved = $financeStatus === 'approved_initial';
 
-            if (!$isIndividualRegistration && !$financePreapproved) {
+            if (($isCodRefund || !$isIndividualRegistration) && !$financePreapproved) {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Shop owner approval requires finance initial approval first.',
@@ -570,7 +673,7 @@ class OrderRefundService
             $payload['shop_owner_approved_at'] = now();
             $payload['shop_owner_approved_by'] = $processedBy;
 
-            if ($isIndividualRegistration && $financeStatus !== 'approved') {
+            if ($isIndividualRegistration && !$isCodRefund && $financeStatus !== 'approved') {
                 $payload['finance_status'] = 'approved';
                 $payload['finance_approved_at'] = now();
                 $payload['finance_approved_by'] = null;
@@ -580,7 +683,37 @@ class OrderRefundService
         if ($stageNormalized === 'finance') {
             $financeStatus = (string) ($refund->finance_status ?? 'pending');
 
-            if ($isCompanyCustomerRefund) {
+            if ($isCodRefund && $requiresOwnerApproval) {
+                if ($financeStatus === 'pending') {
+                    $payload['finance_status'] = 'approved_initial';
+                    $payload['finance_approved_at'] = now();
+                    $payload['finance_approved_by'] = $processedBy;
+                } elseif ($financeStatus === 'approved_initial') {
+                    if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
+                        return [
+                            'result' => 'invalid_state',
+                            'message' => 'Shop owner approval is required before Finance final approval.',
+                            'refund' => $refund,
+                        ];
+                    }
+
+                    $payload['finance_status'] = 'approved';
+                    $payload['finance_approved_at'] = now();
+                    $payload['finance_approved_by'] = $processedBy;
+                } elseif ($financeStatus === 'approved') {
+                    return [
+                        'result' => 'already_approved',
+                        'message' => 'Finance has already finalized this refund request.',
+                        'refund' => $refund,
+                    ];
+                } else {
+                    return [
+                        'result' => 'invalid_state',
+                        'message' => 'Refund request cannot be approved in its current finance state.',
+                        'refund' => $refund,
+                    ];
+                }
+            } elseif ($isCompanyCustomerRefund) {
                 if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
                     return [
                         'result' => 'invalid_state',
@@ -691,11 +824,15 @@ class OrderRefundService
                 $nextMessage = 'Finance final approval recorded. Awaiting product return confirmation before payout.';
             }
         } elseif ($stageNormalized === 'staff') {
-            $nextMessage = 'Staff approval recorded. Awaiting Finance authorization.';
+            $nextMessage = $isCodRefund
+                ? 'Staff acceptance recorded. Awaiting Finance initial approval.'
+                : 'Staff approval recorded. Awaiting Finance authorization.';
         } elseif ($stageNormalized === 'shop_owner') {
-            $nextMessage = $isIndividualRegistration
+            $nextMessage = $isCodRefund
+                ? 'Shop owner approval recorded. Awaiting Finance final approval.'
+                : ($isIndividualRegistration
                 ? 'Shop owner approval recorded. Awaiting customer return shipment.'
-                : 'Shop owner approval recorded. Awaiting finance final approval.';
+                : 'Shop owner approval recorded. Awaiting finance final approval.');
         }
 
         return [
@@ -728,16 +865,18 @@ class OrderRefundService
 
         $isCompanyCustomerRefund = strtolower(trim((string) ($refund->order?->shopOwner?->registration_type ?? ''))) === 'company'
             && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted';
+        $isCodRefund = $this->isCodOrder($refund->order);
         $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
         if ((string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted') {
             $requiresOwnerApproval = false;
         }
 
         if ($stageNormalized === 'finance') {
-            if ($isCompanyCustomerRefund && (string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
+            if (($isCompanyCustomerRefund || $isCodRefund)
+                && (string) ($refund->status ?? '') === 'requested') {
                 return [
                     'result' => 'invalid_state',
-                    'message' => 'Staff approval is required before Finance review.',
+                    'message' => 'Staff acceptance is required before Finance review.',
                     'refund' => $refund,
                 ];
             }
@@ -750,13 +889,24 @@ class OrderRefundService
                     'refund' => $refund,
                 ];
             }
+
+            if ($isCodRefund
+                && $requiresOwnerApproval
+                && $financeStatus === 'approved_initial'
+                && (string) ($refund->shop_owner_status ?? 'pending') !== 'approved') {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'Shop owner approval is required before Finance final review.',
+                    'refund' => $refund,
+                ];
+            }
         }
 
         if ($stageNormalized === 'staff') {
-            if (!$isCompanyCustomerRefund) {
+            if (!$isCompanyCustomerRefund && !$isCodRefund) {
                 return [
                     'result' => 'invalid_state',
-                    'message' => 'Staff review is only available for company customer refunds.',
+                    'message' => 'Staff review is only available for company or COD customer refunds.',
                     'refund' => $refund,
                 ];
             }
@@ -1394,6 +1544,39 @@ class OrderRefundService
                 ->exists();
     }
 
+    public function canAcceptCodRefundDestination(OrderRefund $refund): bool
+    {
+        $order = $refund->relationLoaded('order') ? $refund->order : $refund->order()->first();
+        if (! $this->isCodOrder($order)) {
+            return false;
+        }
+
+        $status = (string) ($refund->status ?? '');
+        $recoveryStatus = (string) ($refund->recovery_status ?? '');
+        if (($status === 'failed' && in_array($recoveryStatus, [
+            OrderRefund::RECOVERY_STATUS_RESOLVED,
+            OrderRefund::RECOVERY_STATUS_SUPERSEDED,
+        ], true)) || in_array($status, ['processing', 'succeeded', 'rejected', 'completed', 'paid'], true)) {
+            return false;
+        }
+
+        if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved'
+            || (string) ($refund->finance_status ?? 'pending') !== 'approved'
+            || (string) ($refund->return_status ?? 'awaiting_approval') !== 'received'
+            || in_array((string) ($refund->payout_status ?? 'not_started'), ['processing', 'succeeded'], true)) {
+            return false;
+        }
+
+        $collection = CodCollection::query()
+            ->where('order_id', $order->id)
+            ->with('remittanceItem.remittance')
+            ->first();
+
+        return $collection !== null
+            && (string) $collection->status === CodCollection::STATUS_SETTLED
+            && (string) ($collection->remittanceItem?->remittance?->status ?? '') === 'settled';
+    }
+
     public function canExecuteApprovedRefund(OrderRefund $refund): bool
     {
         $status = (string) ($refund->status ?? '');
@@ -1406,7 +1589,7 @@ class OrderRefundService
             return false;
         }
 
-        return (string) ($refund->shop_owner_status ?? 'pending') === 'approved'
+        $eligible = (string) ($refund->shop_owner_status ?? 'pending') === 'approved'
             && (string) ($refund->finance_status ?? 'pending') === 'approved'
             && (string) ($refund->return_status ?? 'awaiting_approval') === 'received'
             && !in_array($status, [
@@ -1416,6 +1599,28 @@ class OrderRefundService
                 'completed',
                 'paid',
             ], true);
+
+        if (! $eligible) {
+            return $eligible;
+        }
+
+        $order = $refund->relationLoaded('order') ? $refund->order : $refund->order()->first();
+        if (! $this->isCodOrder($order)) {
+            return true;
+        }
+
+        if (! $this->canAcceptCodRefundDestination($refund)) {
+            return false;
+        }
+
+        return $this->codRefundPayoutService->hasValidDestination(
+            is_array($refund->refund_destination) ? $refund->refund_destination : null,
+        );
+    }
+
+    public function reconcileCodRefundPayout(OrderRefund $refund): OrderRefund
+    {
+        return $this->codRefundPayoutService->reconcileWithProvider($refund);
     }
 
     public function executeApprovedRefund(OrderRefund $refund, ?int $processedBy = null, ?string $executionNote = null): array
@@ -1455,12 +1660,36 @@ class OrderRefundService
             ];
         }
 
+        if ($this->isCodOrder($order)
+            && $this->canAcceptCodRefundDestination($refund)
+            && ! $this->codRefundPayoutService->hasValidDestination(
+                is_array($refund->refund_destination) ? $refund->refund_destination : null,
+            )) {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Customer must provide a refund destination before the Xendit refund payout can execute.',
+                'refund' => $refund,
+            ];
+        }
+
         if (!$this->canExecuteApprovedRefund($refund)) {
+            if ($this->isCodOrder($order)) {
+                return [
+                    'result' => 'invalid_state',
+                    'message' => 'COD remittance must be settled before the Xendit refund payout can execute.',
+                    'refund' => $refund,
+                ];
+            }
+
             return [
                 'result' => 'invalid_state',
                 'message' => 'This refund payout is no longer eligible for execution.',
                 'refund' => $refund,
             ];
+        }
+
+        if ($this->isCodOrder($order)) {
+            return $this->codRefundPayoutService->execute($refund, $processedBy, $executionNote);
         }
 
         return $this->executeGatewayRefund($refund, $order, $processedBy, $executionNote);
@@ -1469,6 +1698,10 @@ class OrderRefundService
     public function resolvePayoutAmount(OrderRefund $refund, ?Order $order = null): float
     {
         $amount = round(max(0, (float) ($refund->amount ?? 0)), 2);
+        $order ??= $refund->relationLoaded('order') ? $refund->order : $refund->order()->first();
+        if ($this->isCodOrder($order)) {
+            return CodRefundPayoutService::resolveAmount($amount, $order);
+        }
         if ((string) ($refund->reason_code ?? '') === 'delivery_attempts_exhausted') {
             return $amount;
         }
@@ -1481,7 +1714,6 @@ class OrderRefundService
             return $lineAmount;
         }
 
-        $order ??= $refund->relationLoaded('order') ? $refund->order : $refund->order()->first();
         $shipping = round(max(0, (float) ($order?->shipping_fee ?? 0)), 2);
         if ($amount > 0) {
             return round(max(0, $amount - min($shipping, $amount)), 2);
@@ -1859,10 +2091,23 @@ class OrderRefundService
 
     private function isEligibleForOnlineRefund(Order $order): bool
     {
-        $paymentMethod = strtolower((string) ($order->payment_method ?? 'paymongo'));
-        $isOnlinePayment = !in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true);
+        $isOnlinePayment = ! $this->isCodOrder($order);
 
         return $isOnlinePayment && in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true);
+    }
+
+    private function isCodOrder(?Order $order): bool
+    {
+        if (! $order) {
+            return false;
+        }
+
+        return in_array(strtolower(trim((string) ($order->payment_method ?? ''))), [
+            'cod',
+            'cash_on_delivery',
+            'cash on delivery',
+            'cash',
+        ], true);
     }
 
     private function resolvePaymentId(Order $order, string $secretKey): ?string
@@ -2004,11 +2249,41 @@ class OrderRefundService
 
     private function notifyFinancePayoutReady(OrderRefund $refund): void
     {
+        $refund->loadMissing('order.shopOwner', 'customer');
+        $isCodRefund = $this->isCodOrder($refund->order);
+        $hasRefundDestination = $this->codRefundPayoutService->hasValidDestination(
+            is_array($refund->refund_destination) ? $refund->refund_destination : null,
+        );
+
+        if ($isCodRefund && $this->canAcceptCodRefundDestination($refund) && ! $hasRefundDestination) {
+            $customerId = (int) ($refund->customer_id ?? 0);
+            if ($customerId > 0) {
+                $data = $this->buildRefundNotificationData($refund, [
+                    'stage' => 'refund_destination_required',
+                    'awaiting_refund_destination' => true,
+                    'can_execute_payout' => false,
+                ]);
+                $this->notificationService->sendToUser(
+                    userId: $customerId,
+                    type: NotificationType::ORDER_STATUS_UPDATE,
+                    title: 'COD Refund Destination Required',
+                    message: 'Your COD refund is ready for payout. Open My Orders to provide your GCash or bank details before Finance can release the refund.',
+                    data: $data,
+                    actionUrl: '/my-orders?tab=return_refund',
+                    shopId: (int) ($refund->shop_owner_id ?? 0),
+                    priority: 'high',
+                    groupKey: 'cod-refund-destination:order:' . (int) ($refund->id ?? 0),
+                    requiresAction: true,
+                );
+            }
+
+            return;
+        }
+
         if (!$this->canExecuteApprovedRefund($refund)) {
             return;
         }
 
-        $refund->loadMissing('order.shopOwner');
         $orderNumber = (string) ($refund->order?->order_number ?? ('#' . (int) ($refund->order_id ?? 0)));
         $payoutAmount = $this->resolvePayoutAmount($refund, $refund->order);
         $data = $this->buildRefundNotificationData($refund, [
@@ -2017,7 +2292,7 @@ class OrderRefundService
             'payout_amount' => number_format($payoutAmount, 2, '.', ''),
         ]);
 
-        if ($this->isIndividualRegistrationType((string) ($refund->order?->shopOwner?->registration_type ?? ''))) {
+        if (!$isCodRefund && $this->isIndividualRegistrationType((string) ($refund->order?->shopOwner?->registration_type ?? ''))) {
             $this->notificationService->sendToShopOwner(
                 shopOwnerId: (int) ($refund->shop_owner_id ?? 0),
                 type: NotificationType::REFUND_REQUEST,
@@ -2065,9 +2340,14 @@ class OrderRefundService
         }
 
         $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+        $isCodRefund = $this->isCodOrder($order);
         $isIndividualRegistration = $this->isIndividualRegistrationType(
             (string) ($order->shopOwner?->registration_type ?? '')
         );
+
+        if ($isCodRefund) {
+            return;
+        }
 
         $data = $this->buildRefundNotificationData($refund, [
             'stage' => 'submitted',
@@ -2097,6 +2377,11 @@ class OrderRefundService
 
     }
 
+    public function notifyPayoutReadyIfEligible(OrderRefund $refund): void
+    {
+        $this->notifyFinancePayoutReady($refund);
+    }
+
     private function dispatchRefundApprovalNotifications(
         OrderRefund $refund,
         Order $order,
@@ -2113,6 +2398,7 @@ class OrderRefundService
         $refund->loadMissing('customer', 'order.shopOwner');
         $currentFinanceStatus = (string) ($refund->finance_status ?? 'pending');
         $currentShopOwnerStatus = (string) ($refund->shop_owner_status ?? 'pending');
+        $isCodRefund = $this->isCodOrder($order);
         $data = $this->buildRefundNotificationData($refund, [
             'stage' => $stage,
             'requires_owner_approval' => $requiresOwnerApproval,
@@ -2127,6 +2413,22 @@ class OrderRefundService
             return;
         }
 
+        if ($stage === 'staff' && $isCodRefund && $previousFinanceStatus === 'pending' && $currentFinanceStatus === 'pending') {
+            $this->notificationService->sendToErpRole(
+                'Finance',
+                (int) ($refund->shop_owner_id ?? 0),
+                NotificationType::REFUND_REQUEST,
+                'COD Refund Initial Approval Required',
+                "Staff accepted the COD refund for order #{$data['order_number']}. Finance initial approval is required.",
+                $data,
+                '/finance?section=refund-approvals',
+                'high',
+                null,
+                true
+            );
+            return;
+        }
+
         if ($stage === 'finance' && $requiresOwnerApproval && $currentFinanceStatus === 'approved_initial') {
             $this->notificationService->sendToShopOwner(
                 shopOwnerId: (int) ($refund->shop_owner_id ?? 0),
@@ -2137,6 +2439,22 @@ class OrderRefundService
                 actionUrl: $this->notificationService->ownerApprovalActionUrl('order_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
+            );
+            return;
+        }
+
+        if ($stage === 'shop_owner' && $isCodRefund && $previousShopOwnerStatus !== 'approved' && $currentShopOwnerStatus === 'approved') {
+            $this->notificationService->sendToErpRole(
+                'Finance',
+                (int) ($refund->shop_owner_id ?? 0),
+                NotificationType::REFUND_REQUEST,
+                'COD Refund Final Approval Required',
+                "Shop owner approved the COD refund for order #{$data['order_number']}. Finance final approval is required.",
+                $data,
+                '/finance?section=refund-approvals',
+                'high',
+                null,
+                true
             );
             return;
         }
@@ -2157,7 +2475,7 @@ class OrderRefundService
             return;
         }
 
-        if ($stage === 'shop_owner' && $isIndividualRegistration && $previousShopOwnerStatus !== 'approved' && $currentShopOwnerStatus === 'approved') {
+        if ($stage === 'shop_owner' && $isIndividualRegistration && !$isCodRefund && $previousShopOwnerStatus !== 'approved' && $currentShopOwnerStatus === 'approved') {
             $this->notificationService->sendToShopOwner(
                 shopOwnerId: (int) ($refund->shop_owner_id ?? 0),
                 type: NotificationType::REFUND_REQUEST,
@@ -2219,13 +2537,20 @@ class OrderRefundService
             return;
         }
 
+        $awaitingCodDestination = $this->canAcceptCodRefundDestination($refund)
+            && (! is_array($refund->refund_destination) || $refund->refund_destination === []);
+        if ($awaitingCodDestination) {
+            $data['awaiting_refund_destination'] = true;
+            $message = 'Your COD refund is ready for payout. Open My Orders to provide your GCash or bank details so Finance can release the Xendit payout.';
+        }
+
         $this->notificationService?->sendToUser(
             userId: $customerId,
             type: NotificationType::ORDER_STATUS_UPDATE,
-            title: 'Refund Approved',
+            title: $awaitingCodDestination ? 'COD Refund Approved' : 'Refund Approved',
             message: $message,
             data: $data,
-            actionUrl: '/my-orders',
+            actionUrl: $awaitingCodDestination ? '/my-orders?tab=return_refund' : '/my-orders',
             shopId: (int) ($refund->shop_owner_id ?? 0),
             priority: 'high',
         );

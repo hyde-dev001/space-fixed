@@ -54,6 +54,13 @@ class ShopPaymentIntegration extends Model
             ->where('purpose', self::PURPOSE_SUPPLIER_PAYOUT);
     }
 
+    public function scopeForXenditMoneyOut(Builder $query, int $shopId): Builder
+    {
+        return $query
+            ->where('shop_owner_id', $shopId)
+            ->where('provider', self::PROVIDER_XENDIT);
+    }
+
     public function isConnected(): bool
     {
         return $this->status === self::STATUS_CONNECTED

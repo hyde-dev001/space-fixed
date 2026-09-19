@@ -11,6 +11,7 @@ use App\Models\PosTransaction;
 use App\Models\User;
 use App\Services\Logistics\DeliveryScheduleService;
 use App\Services\OrderRefundService;
+use App\Services\CodCollectionService;
 use App\Services\Orders\OrderFulfillmentService;
 use App\Services\Orders\OrderOwnerProjection;
 use App\Services\RetailPosRefundSummaryService;
@@ -45,6 +46,7 @@ class StaffOrderController extends Controller
         private readonly OrderOwnerProjection $orderOwnerProjection,
         private readonly RetailPosRefundSummaryService $retailPosRefundSummaryService,
         private readonly DeliveryScheduleService $deliveryScheduleService,
+        private readonly CodCollectionService $codCollectionService,
     ) {}
 
     public function index(Request $request)
@@ -71,6 +73,8 @@ class StaffOrderController extends Controller
             'customer',
             'address',
             'shopOwner.logisticsSetting',
+            'codCollection.riderUser:id,name',
+            'codCollection.remittanceItem.remittance',
             'deliveryDisputes' => fn ($disputeQuery) => $disputeQuery->latest('id'),
             'refunds' => function ($refundQuery) use ($includeRefundItems) {
                 if ($includeRefundItems) {
@@ -198,7 +202,7 @@ class StaffOrderController extends Controller
                 'cancellation_note' => $order->cancellation_note,
                 'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
                 'payment_status' => $order->payment_status ?? 'pending',
-                'payment_method' => $order->payment_method ?? '',
+                ...$this->codCollectionService->projection($order),
                 'tracking_number' => $order->tracking_number ?? '',
                 'carrier_company' => $order->carrier_company ?? '',
                 'carrier_name' => $order->carrier_name ?? '',
@@ -274,6 +278,8 @@ class StaffOrderController extends Controller
             'customer',
             'address',
             'shopOwner.logisticsSetting',
+            'codCollection.riderUser:id,name',
+            'codCollection.remittanceItem.remittance',
             'deliveryDisputes' => fn ($disputeQuery) => $disputeQuery->latest('id'),
             'refunds' => function ($refundQuery) use ($includeRefundItems) {
                 if ($includeRefundItems) {
@@ -380,7 +386,7 @@ class StaffOrderController extends Controller
             'cancellation_note' => $order->cancellation_note,
             'cancellation_other_reason_note' => $order->cancellation_other_reason_note,
             'payment_status' => $order->payment_status ?? 'pending',
-            'payment_method' => $order->payment_method ?? '',
+            ...$this->codCollectionService->projection($order),
             'tracking_number' => $order->tracking_number ?? '',
             'carrier_company' => $order->carrier_company ?? '',
             'carrier_name' => $order->carrier_name ?? '',
@@ -541,7 +547,11 @@ class StaffOrderController extends Controller
             ->whereIn('status', ['assigned', 'accepted', 'completed'])
             ->sortByDesc('id')
             ->first();
-        $proofs = $leg && $leg->status->value === 'delivered'
+        $deliveryCompleted = $leg && (
+            $leg->status->value === 'delivered'
+            || ($shipment->status->value === 'completed' && $leg->delivered_at !== null)
+        );
+        $proofs = $deliveryCompleted
             ? $leg->proofs
                 ->filter(fn ($proof) => $proof->review_status === 'approved'
                     && trim((string) ($proof->file_path ?? '')) !== '')

@@ -30,6 +30,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-approval-workflow',
             'access-payslip-approval',
             'access-refund-approval',
+            'access-cod-remittances',
             'access-repair-price-approval',
             'access-shoe-price-approval',
             
@@ -213,6 +214,7 @@ class RolesAndPermissionsSeeder extends Seeder
             'access-approval-workflow',
             'access-payslip-approval',
             'access-refund-approval',
+            'access-cod-remittances',
             'access-repair-price-approval',
             'access-shoe-price-approval',
             'procurement.review_purchase_requests',

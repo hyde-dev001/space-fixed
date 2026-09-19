@@ -26,10 +26,14 @@ const request = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("Finance customer refund gates", () => {
-  it("waits for Staff eligibility approval before authorization", () => {
-    expect(canFinanceAuthorizeRefund(request())).toBe(false);
-    expect(canFinanceAuthorizeRefund(request({ shopOwnerStatus: "approved" }))).toBe(true);
-  });
+	it("waits for Staff eligibility approval before authorization", () => {
+		expect(canFinanceAuthorizeRefund(request())).toBe(false);
+		expect(canFinanceAuthorizeRefund(request({ shopOwnerStatus: "approved" }))).toBe(true);
+	});
+
+	it("lets Finance approve directly when shop-owner approval is disabled", () => {
+		expect(canFinanceAuthorizeRefund(request({ requiresOwnerApproval: false }))).toBe(true);
+	});
 
   it("releases money only after Staff receipt and inspection", () => {
     expect(canExecuteRefundPayout(request({

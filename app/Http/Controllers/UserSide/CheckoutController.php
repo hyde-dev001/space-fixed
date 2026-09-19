@@ -20,6 +20,7 @@ use App\Models\VoucherClaim;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
+use App\Services\CodCollectionService;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Services\PolicyAcceptanceService;
@@ -41,15 +42,18 @@ class CheckoutController extends Controller
     protected NotificationService $notificationService;
     protected PromoPricingService $promoPricingService;
     protected ShippingVoucherService $shippingVoucherService;
+    protected CodCollectionService $codCollectionService;
 
     public function __construct(
         NotificationService $notificationService,
         PromoPricingService $promoPricingService,
         ShippingVoucherService $shippingVoucherService,
+        CodCollectionService $codCollectionService,
     ) {
         $this->notificationService = $notificationService;
         $this->promoPricingService = $promoPricingService;
         $this->shippingVoucherService = $shippingVoucherService;
+        $this->codCollectionService = $codCollectionService;
     }
 
     private function normalizeSizeSystem(?string $rawSystem): string
@@ -1385,9 +1389,14 @@ class CheckoutController extends Controller
             $shopIndex = 0;
             $ordersHasShippingFee = Schema::hasColumn('orders', 'shipping_fee');
             $requestedPaymentMethod = strtolower((string) ($validated['payment_method'] ?? 'paymongo'));
+            $canonicalPaymentMethod = in_array(
+                $requestedPaymentMethod,
+                ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'],
+                true,
+            ) ? 'cod' : $requestedPaymentMethod;
             $vatRatePercent = 12.0;
 
-            $isCodCheckout = in_array($requestedPaymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
+            $isCodCheckout = $canonicalPaymentMethod === 'cod';
             if (!$isCodCheckout && !empty($shopOwnerIds)) {
                 $shopsMissingPaymongoCount = ShopOwner::query()
                     ->whereIn('id', $shopOwnerIds)
@@ -1516,7 +1525,7 @@ class CheckoutController extends Controller
                         ->where('total_amount', $expectedOrderNetSubtotal)
                         ->where('status', 'pending')
                         ->where('payment_status', 'pending')
-                        ->whereRaw('LOWER(COALESCE(payment_method, ?)) = ?', ['paymongo', $requestedPaymentMethod])
+                        ->whereRaw('LOWER(COALESCE(payment_method, ?)) = ?', ['paymongo', $canonicalPaymentMethod])
                         ->whereNull('payment_expired_at')
                         ->where('created_at', '>=', now()->subMinutes(5));
 
@@ -1565,7 +1574,7 @@ class CheckoutController extends Controller
                         'customer_email' => $validated['customer_email'],
                         'customer_phone' => $validated['customer_phone'] ?? null,
                         'customer_address' => $validated['shipping_address'],
-                        'payment_method' => $validated['payment_method'] ?? 'paymongo',
+                        'payment_method' => $canonicalPaymentMethod,
                         'payment_status' => 'pending',
                         // Store structured address data
                         'address_id' => $validated['address_id'] ?? null,
@@ -1733,6 +1742,13 @@ class CheckoutController extends Controller
                         'vat_rate' => $vatRatePercent,
                         'total' => $orderGrandTotal,
                     ]));
+
+                    if ($isCodCheckout) {
+                        $this->codCollectionService->ensureForOrder($order);
+                        if (! $this->autoGenerateInvoice($order)) {
+                            throw new \RuntimeException('The COD invoice could not be created.');
+                        }
+                    }
 
                     foreach ($appliedVouchers as $voucherToRedeem) {
                         $claimToRedeem = VoucherClaim::query()
@@ -2159,7 +2175,7 @@ class CheckoutController extends Controller
             }
 
             $paymentMethod = strtolower((string) ($order->payment_method ?? ''));
-            if (in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery'], true)) {
+            if (in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'This is a Cash on Delivery order and does not require online payment.',
@@ -2688,7 +2704,7 @@ class CheckoutController extends Controller
                 $invoiceStatus = 'paid';
                 $paymentDate = now();
                 $dueDate = null;
-            } elseif (in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash'])) {
+            } elseif (in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true)) {
                 $invoiceStatus = 'sent';
                 $dueDate = now()->addDays(7); // COD: due on delivery
             } elseif ($paymentMethod === 'check') {
@@ -2713,7 +2729,9 @@ class CheckoutController extends Controller
                 'tax_amount' => $taxAmount,
                 'status' => $invoiceStatus,
                 'payment_date' => $paymentDate,
-                'payment_method' => in_array($paymentMethod, ['cod', 'cash_on_delivery']) ? 'cod' : $paymentMethod,
+                'payment_method' => in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true)
+                    ? 'cod'
+                    : $paymentMethod,
                 'job_order_id' => $order->id,
                 'notes' => "Auto-generated from Order #{$order->order_number}",
                 'meta' => [

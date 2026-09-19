@@ -8,17 +8,18 @@ use App\Models\SupplierPaymentAttempt;
 use App\Models\SupplierPaymentProfile;
 use App\Support\Finance\FinanceDomainException;
 use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
 
 final class XenditPayoutService
 {
+    public function __construct(private readonly XenditClient $xenditClient) {}
+
     public function verifyCredentials(string $secretKey, ?int $shopId = null): void
     {
         try {
-            $response = $this->client($secretKey)->get($this->endpoint('/balance'), [
+            $response = $this->xenditClient->request($secretKey)->get($this->xenditClient->endpoint('/balance'), [
                 'account_type' => 'CASH',
                 'currency' => 'PHP',
             ]);
@@ -55,9 +56,9 @@ final class XenditPayoutService
         }
 
         try {
-            $response = $this->client($secretKey)
+            $response = $this->xenditClient->request($secretKey)
                 ->retry(2, 200)
-                ->get($this->endpoint('/payouts_channels'), ['currency' => 'PHP']);
+                ->get($this->xenditClient->endpoint('/payouts_channels'), ['currency' => 'PHP']);
         } catch (Throwable) {
             $this->logFailure('list_payout_channels', $shopId, null, null);
 
@@ -145,9 +146,9 @@ final class XenditPayoutService
         $testMode = strtolower(trim((string) $integration->environment)) === 'test';
 
         try {
-            $response = $this->client($secretKey)
+            $response = $this->xenditClient->request($secretKey)
                 ->withHeaders(['Idempotency-key' => (string) $attempt->idempotency_key])
-                ->post($this->endpoint('/v3/payouts'), $payload);
+                ->post($this->xenditClient->endpoint('/v3/payouts'), $payload);
         } catch (Throwable) {
             $this->logFailure('create_payout', (int) $integration->shop_owner_id, (int) $attempt->id, null);
 
@@ -301,20 +302,6 @@ final class XenditPayoutService
             'purpose_code' => 'TRADES',
             'description' => Str::limit('Supplier payment '.$attempt->internal_reference, 100, ''),
         ];
-    }
-
-    private function client(string $secretKey): \Illuminate\Http\Client\PendingRequest
-    {
-        return Http::withBasicAuth($secretKey, '')
-            ->acceptJson()
-            ->withHeaders(['Api-version' => (string) config('services.xendit.api_version', '2025-09-01')])
-            ->connectTimeout(5)
-            ->timeout(15);
-    }
-
-    private function endpoint(string $path): string
-    {
-        return rtrim((string) config('services.xendit.base_url', 'https://api.xendit.co'), '/').$path;
     }
 
     private function walletRoutingValue(string $provider): string

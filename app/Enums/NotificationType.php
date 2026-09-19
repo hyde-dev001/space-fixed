@@ -92,6 +92,9 @@ enum NotificationType: string
     case SUPPLIER_REFUND_PROOF_SUBMITTED = 'supplier_refund_proof_submitted';
     case SUPPLIER_REFUND_CONFIRMED = 'supplier_refund_confirmed';
     case SUPPLIER_PAYMENT_PROFILE_DISABLED = 'supplier_payment_profile_disabled';
+    case COD_REMITTANCE_SUBMITTED = 'cod_remittance_submitted';
+    case COD_REMITTANCE_DISPUTED = 'cod_remittance_disputed';
+    case COD_REMITTANCE_SETTLED = 'cod_remittance_settled';
     
     // ==================== SUPER ADMIN NOTIFICATIONS ====================
     case SHOP_REGISTRATION_PENDING = 'shop_registration_pending';
@@ -217,6 +220,9 @@ enum NotificationType: string
             self::SUPPLIER_REFUND_PROOF_SUBMITTED => 'Supplier Refund Proof Submitted',
             self::SUPPLIER_REFUND_CONFIRMED => 'Supplier Refund Confirmed',
             self::SUPPLIER_PAYMENT_PROFILE_DISABLED => 'Supplier Payment Profile Disabled',
+            self::COD_REMITTANCE_SUBMITTED => 'COD Remittance Submitted',
+            self::COD_REMITTANCE_DISPUTED => 'COD Remittance Disputed',
+            self::COD_REMITTANCE_SETTLED => 'COD Remittance Settled',
             
             // Super admin notifications
             self::SHOP_REGISTRATION_PENDING => 'New Shop Registration',
@@ -280,7 +286,9 @@ enum NotificationType: string
             self::SUPPLIER_ISSUE_REPORTED, self::SUPPLIER_REPLACEMENT_REQUESTED,
             self::SUPPLIER_PAYMENT_AWAITING_VERIFICATION, self::SUPPLIER_PAYMENT_VERIFIED,
             self::SUPPLIER_PAYMENT_REJECTED, self::SUPPLIER_REFUND_PROOF_SUBMITTED,
-            self::SUPPLIER_REFUND_CONFIRMED, self::SUPPLIER_PAYMENT_PROFILE_DISABLED => 'finance',
+            self::SUPPLIER_REFUND_CONFIRMED, self::SUPPLIER_PAYMENT_PROFILE_DISABLED,
+            self::COD_REMITTANCE_SUBMITTED, self::COD_REMITTANCE_DISPUTED,
+            self::COD_REMITTANCE_SETTLED => 'finance',
             
             self::LEAVE_APPROVAL, self::LEAVE_REQUEST_PENDING,
             self::LEAVE_SUBMITTED, self::LEAVE_REQUEST_APPROVED, self::LEAVE_REQUEST_REJECTED,
@@ -365,6 +373,9 @@ enum NotificationType: string
             self::BUSINESS_UPGRADE_REQUEST_APPROVED,
             self::BUSINESS_UPGRADE_REQUEST_REJECTED,
             self::SUPPLIER_PAYMENT_AWAITING_VERIFICATION,
+            self::COD_REMITTANCE_SUBMITTED,
+            self::COD_REMITTANCE_DISPUTED,
+            self::COD_REMITTANCE_SETTLED,
         ]);
     }
 
@@ -403,6 +414,8 @@ enum NotificationType: string
             self::SUPPLIER_ISSUE_REPORTED,
             self::SUPPLIER_REPLACEMENT_REQUESTED,
             self::SUPPLIER_PAYMENT_PROFILE_DISABLED,
+            self::COD_REMITTANCE_SUBMITTED,
+            self::COD_REMITTANCE_DISPUTED,
         ]);
     }
 

@@ -132,7 +132,12 @@ interface PromoPreviewData {
   voucher_error?: string | null;
 }
 
-type PaymentMethod = 'paymongo';
+type PaymentMethod = 'paymongo' | 'cod';
+
+const normalizePaymentMethod = (value: unknown): PaymentMethod => {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  return ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'].includes(normalized) ? 'cod' : 'paymongo';
+};
 
 const toFiniteNumber = (value: unknown, fallback = 0): number => {
   if (typeof value === 'number') {
@@ -189,7 +194,6 @@ const voucherEligibilityClass = (eligibility: VoucherEligibility): string => {
 const Payment: React.FC = () => {
   const { auth } = usePage().props as any;
   const { isRouteFrozen } = useMaintenance();
-  const paymentInitiationFrozen = isRouteFrozen('checkout.create-order') || isRouteFrozen('payments.paymongo.create');
   const user = auth?.user;
   const searchParams = new URLSearchParams(window.location.search);
   const repairIdParam = searchParams.get('repair_id');
@@ -209,6 +213,8 @@ const Payment: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethod>('paymongo');
+  const paymentInitiationFrozen = selectedPaymentMethod === 'paymongo'
+    && (isRouteFrozen('checkout.create-order') || isRouteFrozen('payments.paymongo.create'));
 
   // Local state for editable fields
   const [customerEmail, setCustomerEmail] = useState('');
@@ -833,7 +839,7 @@ const Payment: React.FC = () => {
             throw new Error('Invalid checkout payload');
           }
           setCheckoutData(data);
-          setSelectedPaymentMethod('paymongo');
+          setSelectedPaymentMethod(normalizePaymentMethod(data.payment_method));
           // Sync local state with loaded data
           setCustomerEmail(data.customer_email || '');
           setCustomerName(data.customer_name || '');
@@ -2176,6 +2182,19 @@ const Payment: React.FC = () => {
       const orderId = orderResult.order?.id || orderResult.order_id;
       sessionStorage.setItem('pendingOrderId', orderId);
 
+      if (selectedPaymentMethod === 'cod') {
+        sessionStorage.removeItem('pendingOrderId');
+        sessionStorage.removeItem('checkoutData');
+        await Swal.fire({
+          icon: 'success',
+          title: 'Order placed',
+          text: 'Your order is confirmed. Please prepare the exact cash-on-delivery amount for the rider.',
+          confirmButtonColor: '#000000',
+        });
+        router.visit('/my-orders', { replace: true });
+        return;
+      }
+
       // Create a dedicated payment retry session that also persists fresh link metadata.
       const response = await fetch(`/api/orders/${orderId}/retry-payment-session`, {
         method: 'POST',
@@ -2617,7 +2636,26 @@ const Payment: React.FC = () => {
                 />
               </label>
 
-              <div className="pt-3">
+              <label
+                className={`mt-3 flex items-center justify-between px-3 py-3 border rounded-xl cursor-pointer transition-colors ${
+                  selectedPaymentMethod === 'cod' ? 'border-gray-900 bg-gray-50' : 'border-gray-200 bg-white'
+                }`}
+              >
+                <div>
+                  <p className="text-base font-medium text-black leading-tight">Cash on delivery</p>
+                  <p className="text-xs text-gray-500 mt-1">Pay the rider in cash when your order arrives.</p>
+                </div>
+                <input
+                  type="radio"
+                  name="mobile-payment-method"
+                  value="cod"
+                  checked={selectedPaymentMethod === 'cod'}
+                  onChange={() => setSelectedPaymentMethod('cod')}
+                  className="h-5 w-5 accent-indigo-600"
+                />
+              </label>
+
+              <div className={selectedPaymentMethod === 'paymongo' ? 'pt-3' : 'hidden'}>
                 <p className="text-xs font-medium uppercase tracking-wide text-gray-500 mb-2">Supported</p>
                 <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-2 py-2 w-fit">
                   <span className="inline-flex items-center justify-center w-10 h-7 bg-gray-50 rounded border border-gray-200">
@@ -3479,8 +3517,23 @@ const Payment: React.FC = () => {
                   </div>
                 </label>
 
+                <label className="flex items-center gap-3 px-4 py-3 border border-gray-300 rounded-lg cursor-pointer mb-4 bg-white">
+                  <input
+                    type="radio"
+                    name="payment-method"
+                    value="cod"
+                    checked={selectedPaymentMethod === 'cod'}
+                    onChange={() => setSelectedPaymentMethod('cod')}
+                    className="w-5 h-5 shrink-0"
+                  />
+                  <div className="flex-1">
+                    <span className="text-base font-semibold text-black block">Cash on delivery</span>
+                    <p className="text-sm text-gray-600">Pay the rider in cash when your order arrives.</p>
+                  </div>
+                </label>
+
                 {/* Secure Payments Box */}
-                <div className="border border-gray-300 rounded-lg overflow-hidden">
+                <div className={selectedPaymentMethod === 'paymongo' ? 'border border-gray-300 rounded-lg overflow-hidden' : 'hidden'}>
                   <div className="bg-white px-4 py-3 border-b border-gray-200">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold text-black">Secure Payments via PayMongo</span>
@@ -3549,7 +3602,7 @@ const Payment: React.FC = () => {
                   (isProcessing || (isPolicyAcceptanceRequired && !policyAccepted) || paymentInitiationFrozen) ? 'bg-gray-400 cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800'
                 }`}
               >
-                {isProcessing ? 'Processing...' : 'Pay now'}
+                {isProcessing ? 'Processing...' : selectedPaymentMethod === 'cod' ? 'Place COD order' : 'Pay now'}
               </button>
               {paymentInitiationFrozen && <p className="-mt-4 mb-8 text-center text-xs text-amber-700">Payment initiation is temporarily paused for maintenance.</p>}
 

@@ -22,6 +22,12 @@ const ProductImage = ({ path, alt }: { path?: string | null; alt: string }) => {
     : <span aria-label="No product image" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-gray-400"><Package size={20} /></span>;
 };
 
+const isCod = (value?: string | null) => ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'].includes((value ?? '').toLowerCase());
+
+const formatCodAmount = (value?: string | null) => value
+  ? Number(value).toLocaleString('en-PH', { style: 'currency', currency: 'PHP' })
+  : null;
+
 export default function RetailOrderSummary({ summary, expanded = false, instructions, allowModelWrap = false }: Props) {
   if (!summary) return null;
   if (!summary.available) return <p className="text-sm font-medium text-amber-700">Order details unavailable</p>;
@@ -39,6 +45,11 @@ export default function RetailOrderSummary({ summary, expanded = false, instruct
           {summary.total_quantity} {summary.total_quantity === 1 ? 'pair' : 'pairs'}
         </span>
       </div>
+      {isCod(summary.payment_method) && formatCodAmount(summary.cod_expected_amount) && (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+          Cash on delivery · {formatCodAmount(summary.cod_expected_amount)}
+        </p>
+      )}
       {summary.items.map((item) => (
         <div key={item.id} className="flex min-w-0 items-start gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/40 dark:shadow-none sm:p-4 xl:rounded-xl xl:bg-transparent xl:p-3 xl:shadow-none">
           <ProductImage path={item.image} alt={item.model} />
@@ -65,6 +76,9 @@ export default function RetailOrderSummary({ summary, expanded = false, instruct
         {summary.total_quantity} {summary.total_quantity === 1 ? 'pair' : 'pairs'} · {summary.variant_count} {summary.variant_count === 1 ? 'variant' : 'variants'}
         {more > 0 ? ` · +${more} more` : ''}
       </p>
+      {isCod(summary.payment_method) && formatCodAmount(summary.cod_expected_amount) && (
+        <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">Cash on delivery · {formatCodAmount(summary.cod_expected_amount)}</p>
+      )}
       {instructions && <p className="text-xs font-medium text-blue-700">Delivery instructions</p>}
     </div>
   </div>;
