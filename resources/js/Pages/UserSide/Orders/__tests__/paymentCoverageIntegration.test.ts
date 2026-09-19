@@ -39,6 +39,12 @@ describe('payment shop-owned coverage integration', () => {
     expect(paymentSource).toContain('shipping_fee: computedShippingFee');
   });
 
+  it('offers COD only after the selected address is confirmed inside shop coverage', () => {
+    expect(paymentSource).toContain("const isCodAvailable = !isPremiumPayment && !isRepairPayment && shopOwnedCoverage?.available === true;");
+    expect(paymentSource).toContain("if (selectedPaymentMethod === 'cod' && !isCodAvailable)");
+    expect(paymentSource.match(/\{isCodAvailable && \(/g)?.length).toBe(2);
+  });
+
   it('refreshes preview coverage from the latest draft pin with stale-response protection', () => {
     expect(paymentSource).toContain('const shippingEstimateRequestRef = useRef(0);');
     expect(paymentSource).toContain('const requestId = ++shippingEstimateRequestRef.current;');

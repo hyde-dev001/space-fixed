@@ -21,11 +21,12 @@ use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
 use App\Services\CodCollectionService;
+use App\Services\Logistics\DeliveryScheduleService;
+use App\Services\Logistics\ShippingVoucherService;
 use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Services\PolicyAcceptanceService;
 use App\Services\PromoPricingService;
-use App\Services\Logistics\ShippingVoucherService;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -43,17 +44,20 @@ class CheckoutController extends Controller
     protected PromoPricingService $promoPricingService;
     protected ShippingVoucherService $shippingVoucherService;
     protected CodCollectionService $codCollectionService;
+    protected DeliveryScheduleService $deliveryScheduleService;
 
     public function __construct(
         NotificationService $notificationService,
         PromoPricingService $promoPricingService,
         ShippingVoucherService $shippingVoucherService,
         CodCollectionService $codCollectionService,
+        DeliveryScheduleService $deliveryScheduleService,
     ) {
         $this->notificationService = $notificationService;
         $this->promoPricingService = $promoPricingService;
         $this->shippingVoucherService = $shippingVoucherService;
         $this->codCollectionService = $codCollectionService;
+        $this->deliveryScheduleService = $deliveryScheduleService;
     }
 
     private function normalizeSizeSystem(?string $rawSystem): string
@@ -1221,12 +1225,8 @@ class CheckoutController extends Controller
             $shippingAddress = ! empty($validated['address_id'])
                 ? $user->addresses()->find((int) $validated['address_id'])
                 : null;
-            $shippingLatitude = array_key_exists('shipping_latitude', $validated)
-                ? (float) $validated['shipping_latitude']
-                : $shippingAddress?->latitude;
-            $shippingLongitude = array_key_exists('shipping_longitude', $validated)
-                ? (float) $validated['shipping_longitude']
-                : $shippingAddress?->longitude;
+            $shippingLatitude = $validated['shipping_latitude'] ?? $shippingAddress?->latitude;
+            $shippingLongitude = $validated['shipping_longitude'] ?? $shippingAddress?->longitude;
             $disableVoucher = (bool) ($validated['disable_voucher'] ?? false);
             $voucherSelectionReferences = $this->voucherSelectionReferences($validated);
             $hasVoucherSelectionIntent = $voucherSelectionReferences['has_intent'];
@@ -1397,6 +1397,29 @@ class CheckoutController extends Controller
             $vatRatePercent = 12.0;
 
             $isCodCheckout = $canonicalPaymentMethod === 'cod';
+            if ($isCodCheckout && count($shopOwnerIds) === 1) {
+                $shopOwner = ShopOwner::query()
+                    ->with('logisticsSetting')
+                    ->find((int) $shopOwnerIds[0]);
+                $coverage = $shopOwner
+                    ? $this->deliveryScheduleService->coverage(
+                        $shopOwner,
+                        $shippingLatitude !== null ? (float) $shippingLatitude : null,
+                        $shippingLongitude !== null ? (float) $shippingLongitude : null,
+                    )
+                    : ['available' => false, 'reason' => 'shop_unavailable'];
+
+                if (! ($coverage['available'] ?? false)) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => ($coverage['reason'] ?? null) === 'outside_coverage'
+                            ? 'cod_outside_delivery_radius'
+                            : 'cod_delivery_coverage_unavailable',
+                        'message' => 'Cash on Delivery is available only within this shop\'s delivery radius. Please choose online payment for this address.',
+                    ], 422);
+                }
+            }
+
             if (!$isCodCheckout && !empty($shopOwnerIds)) {
                 $shopsMissingPaymongoCount = ShopOwner::query()
                     ->whereIn('id', $shopOwnerIds)
