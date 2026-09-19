@@ -145,7 +145,7 @@ class RepairIntakeHandoffTest extends TestCase
             ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
                 'leg' => 'intake',
                 'carrier' => 'LBC',
-                'tracking_number' => 'LBC-INTAKE-001',
+                'tracking_number' => '12345678901',
                 'tracking_url' => 'https://tracker.example/LBC-INTAKE-001',
                 'rider_name' => 'LBC Rider',
                 'rider_contact' => '09171234567',

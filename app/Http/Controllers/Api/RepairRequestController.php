@@ -2083,14 +2083,17 @@ class RepairRequestController extends Controller
         $trackingUrlRules = $request->input('leg') === 'intake'
             ? ['required', 'url', 'max:500']
             : ['nullable', 'url', 'max:500'];
+        $trackingNumberRules = $request->input('leg') === 'intake'
+            ? ['required', 'string', 'regex:/^[0-9]+$/', 'max:100']
+            : ['required', 'string', 'max:100'];
 
         $validated = $request->validate([
             'leg' => ['required', 'in:intake,return'],
             'carrier' => ['required', 'string', 'max:100'],
-            'tracking_number' => ['required', 'string', 'max:100'],
+            'tracking_number' => $trackingNumberRules,
             'tracking_url' => $trackingUrlRules,
-            'rider_name' => ['nullable', 'required_if:leg,intake', 'string', 'max:255'],
-            'rider_contact' => ['nullable', 'required_if:leg,intake', 'string', 'max:30'],
+            'rider_name' => ['nullable', 'required_if:leg,intake', 'string', 'max:255', "regex:/^[\\pL\\s.'-]+$/u"],
+            'rider_contact' => ['nullable', 'required_if:leg,intake', 'string', 'regex:/^[0-9]{1,11}$/'],
         ]);
 
         $repair = DB::transaction(function () use ($id, $user, $validated, $settlementService): RepairRequest {
