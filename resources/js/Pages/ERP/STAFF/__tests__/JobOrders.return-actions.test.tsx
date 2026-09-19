@@ -29,7 +29,7 @@ describe("staff customer refund actions", () => {
   const refund = (overrides: Record<string, unknown> = {}) => ({
     latest_refund: {
       id: 2,
-      status: "pending_approval",
+      status: "requested",
       shop_owner_status: "pending",
       finance_status: "pending",
       return_status: "awaiting_approval",

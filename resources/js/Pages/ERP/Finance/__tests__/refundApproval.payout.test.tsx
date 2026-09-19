@@ -147,6 +147,46 @@ describe("Finance canonical retail refund payout", () => {
     expect(screen.getByText("Return / Delivery Fee Refund")).toBeInTheDocument();
   });
 
+  it("keeps COD Finance decisions available before the customer provides a destination", async () => {
+    mocks.fetch.mockImplementation((url: string) => {
+      if (url.startsWith("/api/finance/refunds?")) {
+        return response({
+          data: [{
+            id: 14,
+            orderNumber: "ORD-14",
+            customerName: "John Paul Yambai",
+            refundAmount: "â‚±1,500.00",
+            refundAmountValue: 1500,
+            payoutAmount: "â‚±1,500.00",
+            payoutAmountValue: 1500,
+            refundMethod: "Customer Selected",
+            requestedBy: "John Paul Yambai",
+            requestDate: "2026-09-19",
+            refundReason: "Delivery Dispute",
+            reason: "Delivery Dispute",
+            status: "Pending",
+            rawStatus: "pending_approval",
+            isCod: true,
+            shopOwnerStatus: "pending",
+            financeStatus: "pending",
+            returnStatus: "awaiting_approval",
+            payoutStatus: "not_started",
+            media: [],
+          }],
+        });
+      }
+      if (url.startsWith("/api/finance/repair-refunds?")) return response({ data: [] });
+      if (url.startsWith("/api/finance/repair-delivery-reconciliations?")) return response({ data: [] });
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    render(<RefundApproval />);
+
+    fireEvent.click(await screen.findByTitle("View Details"));
+    expect(await screen.findByRole("button", { name: "Approve" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reject" })).toBeInTheDocument();
+  });
+
   it("reveals and hides a COD refund destination only after an explicit Finance action", async () => {
     mocks.fetch.mockImplementation((url: string) => {
       if (url.startsWith("/api/finance/refunds?")) {

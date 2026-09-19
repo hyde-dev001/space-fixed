@@ -792,7 +792,9 @@ class OrderRefundService
 
         if ($isDualApproved && in_array((string) ($refund->return_status ?? 'awaiting_approval'), ['awaiting_approval', 'not_required'], true)) {
             $payload['return_status'] = 'pending_customer_shipment';
-            $payload['return_source'] = $payload['return_source'] ?? 'customer';
+            $payload['return_source'] = $isCodRefund
+                ? 'staff'
+                : ($payload['return_source'] ?? 'customer');
         }
 
         $this->updateOrderRefundCompat($refund, $payload);
@@ -817,11 +819,15 @@ class OrderRefundService
         if ($stageNormalized === 'finance') {
             $newFinanceStatus = (string) ($payload['finance_status'] ?? $refund->finance_status);
             if (!$requiresOwnerApproval) {
-                $nextMessage = 'Finance final approval recorded. Awaiting product return confirmation before payout.';
+                $nextMessage = $isCodRefund
+                    ? 'Finance final approval recorded. Staff will arrange the return pickup before payout.'
+                    : 'Finance final approval recorded. Awaiting product return confirmation before payout.';
             } elseif ($newFinanceStatus === 'approved_initial') {
                 $nextMessage = 'Finance initial approval recorded. Awaiting shop owner approval.';
             } else {
-                $nextMessage = 'Finance final approval recorded. Awaiting product return confirmation before payout.';
+                $nextMessage = $isCodRefund
+                    ? 'Finance final approval recorded. Staff will arrange the return pickup before payout.'
+                    : 'Finance final approval recorded. Awaiting product return confirmation before payout.';
             }
         } elseif ($stageNormalized === 'staff') {
             $nextMessage = $isCodRefund
@@ -975,6 +981,17 @@ class OrderRefundService
 
     public function markCustomerReturnShipped(OrderRefund $refund, array $shipmentData): array
     {
+        $refund->loadMissing('order');
+
+        if ($this->isCodOrder($refund->order)
+            || strtolower(trim((string) ($refund->return_source ?? ''))) === 'staff') {
+            return [
+                'result' => 'invalid_state',
+                'message' => 'Staff/Logistics must arrange the return pickup before the customer hands over the item.',
+                'refund' => $refund,
+            ];
+        }
+
         if ((string) ($refund->shop_owner_status ?? 'pending') !== 'approved' || (string) ($refund->finance_status ?? 'pending') !== 'approved') {
             return [
                 'result' => 'invalid_state',

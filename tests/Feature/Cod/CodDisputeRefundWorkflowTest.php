@@ -93,6 +93,28 @@ class CodDisputeRefundWorkflowTest extends TestCase
             ->assertOk()
             ->assertJsonPath('refund.financeStatus', 'approved');
 
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refundId,
+            'return_status' => 'pending_customer_shipment',
+            'return_source' => 'staff',
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->get('/my-orders')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('orders.0.refund_stage.return_source', 'staff')
+                ->where('orders.0.refund_stage.can_mark_return_shipped', false));
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/orders/refunds/{$refundId}/mark-shipped-return", [
+                'delivery_method' => 'third_party',
+                'tracking_number' => 'CUSTOMER-MUST-NOT-SHIP',
+                'carrier' => 'LBC',
+                'tracking_link' => 'https://track.example/CUSTOMER-MUST-NOT-SHIP',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Staff/Logistics must arrange the return pickup before the customer hands over the item.');
+
         $notification = Notification::query()
             ->where('user_id', $customer->id)
             ->where('title', 'Refund Approved')

@@ -181,6 +181,25 @@ describe('MyOrders delivery tracking', () => {
     ));
   });
 
+  it('does not offer COD customers a return-shipment action', () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 5,
+      status: 'pending_approval',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'pending_customer_shipment',
+      return_source: 'staff',
+      is_cod: true,
+      can_mark_return_shipped: false,
+    };
+
+    render(<MyOrders />);
+
+    expect(screen.getByText('Awaiting Staff Pickup')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'SHIP RETURNED ITEM' })).not.toBeInTheDocument();
+  });
+
   it('keeps the third-party return tracking flow', async () => {
     order.status = 'delivered';
     order.refund_stage = {

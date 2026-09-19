@@ -1398,7 +1398,11 @@ const MyOrders: React.FC = () => {
     if (order.payment_status === 'refunded' || stage.is_refunded || status === 'succeeded') return 'Refunded';
     if (status === 'rejected' || shopOwnerStatus === 'rejected' || financeStatus === 'rejected') return 'Refund Rejected';
     if (returnStatus === 'pending_staff_pickup') return 'Staff Pickup Scheduled';
-    if (returnStatus === 'pending_customer_shipment') return 'Ship Defective Product';
+    if (returnStatus === 'pending_customer_shipment') {
+      return stage.is_cod === true || returnSource === 'staff'
+        ? 'Awaiting Staff Pickup'
+        : 'Ship Defective Product';
+    }
     if (returnStatus === 'in_transit' && returnSource === 'staff') return 'Picked Up by Staff Rider';
     if (['in_transit', 'received'].includes(returnStatus) && shopOwnerStatus === 'approved' && financeStatus === 'approved') {
       return 'Awaiting Finance Refund Release';

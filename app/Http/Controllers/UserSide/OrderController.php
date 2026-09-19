@@ -411,7 +411,8 @@ class OrderController extends Controller
                         'refund_destination' => $latestRefund->maskedRefundDestination(),
                         'payout_status' => $latestRefund->payout_status,
                         'awaiting_refund_destination' => $awaitingRefundDestination,
-                        'can_mark_return_shipped' => strtolower((string) ($latestRefund->return_source ?? 'customer')) !== 'staff'
+                        'can_mark_return_shipped' => !$isCodPayment
+                            && strtolower((string) ($latestRefund->return_source ?? 'customer')) !== 'staff'
                             && (string) ($latestRefund->return_status ?? 'awaiting_approval') === 'pending_customer_shipment'
                             && (string) ($latestRefund->shop_owner_status ?? 'pending') === 'approved'
                             && (string) ($latestRefund->finance_status ?? 'pending') === 'approved',

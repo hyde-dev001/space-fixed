@@ -522,7 +522,7 @@ export const canStaffReviewRefund = (order: Pick<Order, "latest_refund">) => {
   if (!refund || String(refund.flow_type || '').toLowerCase() !== 'request_approval') return false;
 
   return String(refund.shop_owner_status || '').toLowerCase() === 'pending'
-    && !['rejected', 'failed', 'succeeded'].includes(String(refund.status || '').toLowerCase());
+    && String(refund.status || '').toLowerCase() === 'requested';
 };
 
 export const canArrangeReturnPickup = (order: Pick<Order, "latest_refund">) => {
@@ -1005,9 +1005,23 @@ export default function JobOrdersPage() {
         };
       }
 
-      if (shopOwnerStatus !== 'approved') {
+      if (refundStatus === 'requested') {
         return {
           label: 'Awaiting Staff Review',
+          className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
+        };
+      }
+
+      if (financeStatus === 'pending') {
+        return {
+          label: 'Awaiting Finance',
+          className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
+        };
+      }
+
+      if (shopOwnerStatus !== 'approved') {
+        return {
+          label: 'Awaiting Shop Owner',
           className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
         };
       }
