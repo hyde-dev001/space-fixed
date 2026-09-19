@@ -15,6 +15,10 @@ const shopOwnerRegistrationSource = readFileSync(
   resolve('resources/js/Pages/UserSide/Auth/ShopOwnerRegistration.tsx'),
   'utf8',
 );
+const servicesSource = readFileSync(
+  resolve('resources/js/Pages/UserSide/Shared/Services.tsx'),
+  'utf8',
+);
 const standaloneAccountMenuSources = [
   'resources/js/Pages/UserSide/Products/Products.tsx',
   'resources/js/Pages/UserSide/Products/ProductShow.tsx',
@@ -269,5 +273,23 @@ describe('user-side navigation shell', () => {
     expect(personalAddressSource).not.toContain('disabled');
     expect(shopOwnerRegistrationSource).toContain('gpsButtonLabel="Use My GPS"');
     expect(shopOwnerRegistrationSource).toContain('onChange={handlePersonalAddressChange}');
+  });
+
+  it('removes the requested hero copy and confirms before a new registration', () => {
+    expect(servicesSource).not.toContain('Exclusive for Shop Owners &amp; Repairers');
+    expect(servicesSource).not.toContain('Premium Benefits');
+    expect(servicesSource).not.toContain('Unlock exclusive advantages designed specifically for shop owners and repairers in our premium program.');
+
+    const registrationHeaderStart = shopOwnerRegistrationSource.indexOf('{isResubmission && (');
+    const registrationHeaderEnd = shopOwnerRegistrationSource.indexOf('{/* Progress Indicator */}', registrationHeaderStart);
+    const registrationHeaderSource = shopOwnerRegistrationSource.slice(registrationHeaderStart, registrationHeaderEnd);
+
+    expect(registrationHeaderSource).not.toContain('Shop Owner Registration');
+    expect(registrationHeaderSource).not.toContain('Join our platform and reach more customers');
+    expect(shopOwnerRegistrationSource).not.toContain("{isResubmission ? 'Shop Owner Application Resubmission' : 'Shop Owner Registration'}");
+    expect(shopOwnerRegistrationSource).toContain("title: 'Before You Proceed'");
+    expect(shopOwnerRegistrationSource).toContain("confirmButtonText: 'Proceed'");
+    expect(shopOwnerRegistrationSource).toContain("cancelButtonText: 'Cancel'");
+    expect(shopOwnerRegistrationSource).toContain("router.visit(route('services'))");
   });
 });

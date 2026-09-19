@@ -94,18 +94,6 @@ const Services: React.FC<Props> = () => {
             Home / Services
           </div>
 
-          <section className="rounded-3xl border border-gray-200 bg-white px-5 py-6 shadow-[0_12px_30px_-20px_rgba(15,23,42,0.35)] xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none">
-            <p className="mb-2 text-[11px] text-black/40 uppercase tracking-[0.16em] font-semibold xl:mb-0">
-              Exclusive for Shop Owners &amp; Repairers
-            </p>
-            <h1 className="text-3xl font-bold text-black mb-3 tracking-tight uppercase leading-tight xl:text-6xl xl:mb-4">
-              Premium Benefits
-            </h1>
-            <p className="text-sm sm:text-base text-black/65 max-w-3xl leading-relaxed font-light">
-              Unlock exclusive advantages designed specifically for shop owners and repairers in our premium program.
-            </p>
-          </section>
-
           {/* Pricing Plans */}
           <div className="mb-12 mt-8 xl:mt-0 xl:mb-16">
             <div className="mb-4 flex items-end justify-between px-1 xl:mb-6 xl:px-0">

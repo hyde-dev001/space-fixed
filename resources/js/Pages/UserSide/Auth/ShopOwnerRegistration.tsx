@@ -291,6 +291,32 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     return () => document.removeEventListener('mousedown', closeCityDropdown);
   }, []);
 
+  useEffect(() => {
+    if (isResubmission) return;
+
+    let isMounted = true;
+
+    void Swal.fire({
+      icon: 'question',
+      title: 'Before You Proceed',
+      text: 'This account is intended for shop owners and repairers applying for SoleSpace services. Please continue only if you have a business or repair service to register.',
+      showCancelButton: true,
+      confirmButtonText: 'Proceed',
+      cancelButtonText: 'Cancel',
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+    }).then((result) => {
+      if (isMounted && !result.isConfirmed) {
+        router.visit(route('services'));
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      Swal.close();
+    };
+  }, [isResubmission]);
+
   const businessTypeOptions = [
     { value: "retail", label: "Retail" },
     { value: "repair", label: "Repair" },
@@ -1399,17 +1425,19 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
         <Navigation hidePromoBar hideSearchAndCart />
         <div className="max-w-6xl mx-auto px-4 lg:px-8 pt-24 pb-8 md:pt-28 md:pb-12 lg:pt-32">
           {/* Header Section */}
-          <div className="text-center mb-8 md:mb-10 lg:mb-12 px-1">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-3 md:mb-4 tracking-tight leading-tight">
-              {isResubmission ? 'Shop Owner Application Resubmission' : 'Shop Owner Registration'}
-            </h1>
-            <p className="text-base sm:text-lg text-gray-600 max-w-2xl mx-auto mb-1.5 md:mb-2">
-              {isResubmission ? 'Update your details and submit for another review' : 'Join our platform and reach more customers'}
-            </p>
-            <p className="text-xs sm:text-sm text-gray-500">
-              Complete your registration to start selling products and services
-            </p>
-          </div>
+          {isResubmission && (
+            <div className="text-center mb-8 md:mb-10 lg:mb-12 px-1">
+              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-3 md:mb-4 tracking-tight leading-tight">
+                Shop Owner Application Resubmission
+              </h1>
+              <p className="text-base sm:text-lg text-gray-600 max-w-2xl mx-auto mb-1.5 md:mb-2">
+                Update your details and submit for another review
+              </p>
+              <p className="text-xs sm:text-sm text-gray-500">
+                Complete your registration to start selling products and services
+              </p>
+            </div>
+          )}
 
           {/* Progress Indicator */}
           <div className="mb-6 md:mb-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-5 lg:p-6">
