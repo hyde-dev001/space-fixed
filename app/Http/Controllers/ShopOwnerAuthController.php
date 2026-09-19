@@ -12,6 +12,7 @@ use App\Models\ShopDocument;
 use App\Models\Employee;
 use App\Models\User;
 use App\Services\EmployeeMfaService;
+use App\Services\NominatimService;
 use App\Services\ShopOwnerDocumentRequirementService;
 use App\Services\ShopDocumentLifecycleService;
 use Illuminate\Http\Request;
@@ -44,6 +45,7 @@ class ShopOwnerAuthController extends Controller
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
         private readonly ShopDocumentLifecycleService $documentLifecycle,
         private readonly EmployeeMfaService $mfa,
+        private readonly NominatimService $nominatim,
     ) {}
 
     private const MAX_RESUBMISSION_ATTEMPTS = 3;
@@ -138,6 +140,16 @@ class ShopOwnerAuthController extends Controller
                     'lastName' => (string) ($shopOwner->last_name ?? ''),
                     'email' => (string) ($shopOwner->email ?? ''),
                     'phone' => (string) ($shopOwner->phone ?? ''),
+                    'suffix' => (string) ($shopOwner->suffix ?? ''),
+                    'age' => $shopOwner->age,
+                    'address' => (string) ($shopOwner->address ?? ''),
+                    'addressRegion' => (string) ($shopOwner->address_region ?? ''),
+                    'addressProvince' => (string) ($shopOwner->address_province ?? ''),
+                    'addressCity' => (string) ($shopOwner->address_city ?? ''),
+                    'addressBarangay' => (string) ($shopOwner->address_barangay ?? ''),
+                    'addressPostalCode' => (string) ($shopOwner->address_postal_code ?? ''),
+                    'addressLatitude' => $shopOwner->address_latitude,
+                    'addressLongitude' => $shopOwner->address_longitude,
                     'businessName' => (string) ($shopOwner->business_name ?? ''),
                     'businessAddress' => (string) ($shopOwner->business_address ?? ''),
                     'postalCode' => (string) ($shopOwner->postal_code ?? ''),
@@ -238,6 +250,7 @@ class ShopOwnerAuthController extends Controller
                 'first_name' => 'required|string|max:255|min:2',
                 'last_name' => 'required|string|max:255|min:2',
                 'phone' => ['required', 'regex:/^\d{11}$/'],
+                ...$this->personalAddressRules(),
                 'business_name' => 'required|string|max:255',
                 'business_address' => 'required|string|max:500',
                 'postal_code' => 'nullable|string|max:20',
@@ -269,6 +282,8 @@ class ShopOwnerAuthController extends Controller
                 'other_document_metadata.*.expires_on' => 'nullable|date_format:Y-m-d',
                 'other_document_metadata.*.issued_on' => 'nullable|date_format:Y-m-d',
             ]);
+
+            $validated = $this->normalizePersonalAddress($validated);
 
             $caviteLocationPolicy->assertRegistrationLocation(
                 $validated['shop_latitude'] ?? null,
@@ -314,6 +329,16 @@ class ShopOwnerAuthController extends Controller
                     'first_name' => $validated['first_name'],
                     'last_name' => $validated['last_name'],
                     'phone' => $validated['phone'],
+                    'suffix' => $validated['suffix'] ?? null,
+                    'age' => $validated['age'],
+                    'address' => $validated['address'],
+                    'address_region' => $validated['address_region'],
+                    'address_province' => $validated['address_province'],
+                    'address_city' => $validated['address_city'],
+                    'address_barangay' => $validated['address_barangay'],
+                    'address_postal_code' => $validated['address_postal_code'] ?? null,
+                    'address_latitude' => $validated['address_latitude'],
+                    'address_longitude' => $validated['address_longitude'],
                     'business_name' => $validated['business_name'],
                     'business_address' => $validated['business_address'],
                     'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
@@ -378,6 +403,71 @@ class ShopOwnerAuthController extends Controller
 
             return back()->withErrors(['message' => 'Resubmission failed. Please try again.'])->withInput();
         }
+    }
+
+    private function personalAddressRules(): array
+    {
+        return [
+            'suffix' => 'nullable|string|max:20',
+            'age' => 'required|integer|min:18|max:120',
+            'address' => 'required|string|max:500',
+            'address_region' => 'required|string|max:255',
+            'address_province' => 'required|string|max:255',
+            'address_city' => 'required|string|max:255',
+            'address_barangay' => 'required|string|max:255',
+            'address_postal_code' => 'nullable|string|max:10',
+            'address_latitude' => 'required|numeric|between:4.5,21.5',
+            'address_longitude' => 'required|numeric|between:116,127',
+        ];
+    }
+
+    private function normalizePersonalAddress(array $validated): array
+    {
+        try {
+            $resolvedAddress = $this->nominatim->reverse(
+                (float) $validated['address_latitude'],
+                (float) $validated['address_longitude'],
+            )['address'] ?? [];
+        } catch (\Throwable) {
+            throw ValidationException::withMessages([
+                'address_latitude' => ['Please select a verified location within the Philippines.'],
+            ]);
+        }
+
+        $resolvedProvince = $resolvedAddress['province'] ?? $resolvedAddress['state'] ?? '';
+        $resolvedRegion = $resolvedAddress['region'] ?? $resolvedAddress['state'] ?? $resolvedProvince;
+        $resolvedCity = $resolvedAddress['city']
+            ?? $resolvedAddress['municipality']
+            ?? $resolvedAddress['town']
+            ?? $resolvedAddress['county']
+            ?? '';
+        $resolvedBarangay = $resolvedAddress['suburb']
+            ?? $resolvedAddress['quarter']
+            ?? $resolvedAddress['neighbourhood']
+            ?? $resolvedAddress['village']
+            ?? '';
+
+        if (
+            strtolower((string) ($resolvedAddress['country_code'] ?? '')) !== 'ph'
+            || ! $resolvedRegion
+            || ! $resolvedProvince
+            || ! $resolvedCity
+            || ! $resolvedBarangay
+        ) {
+            throw ValidationException::withMessages([
+                'address_latitude' => ['Please select a verified location within the Philippines.'],
+            ]);
+        }
+
+        $validated['address_region'] = $resolvedRegion;
+        $validated['address_province'] = $resolvedProvince;
+        $validated['address_city'] = $resolvedCity;
+        $validated['address_barangay'] = $resolvedBarangay;
+        $validated['address_postal_code'] = $resolvedAddress['postcode']
+            ?? $validated['address_postal_code']
+            ?? null;
+
+        return $validated;
     }
 
     private function resubmissionResponse(Request $request, bool $idempotent = false)
@@ -557,6 +647,7 @@ class ShopOwnerAuthController extends Controller
                 'last_name' => 'required|string|max:255|min:2',
                 'email' => ['required', 'string', 'email', 'max:255', new NotDisposableEmail()],
                 'phone' => ['required', 'regex:/^\d{11}$/'],
+                ...$this->personalAddressRules(),
                 'business_name' => 'required|string|max:255',
                 'business_address' => 'required|string|max:500',
                 'postal_code' => 'nullable|string|max:20',
@@ -602,6 +693,20 @@ class ShopOwnerAuthController extends Controller
                 'email.email' => 'Please enter a valid email address (example: name@email.com).',
                 'phone.required' => 'Please enter your phone number.',
                 'phone.regex' => 'Phone number must be exactly 11 digits (example: 09171234567).',
+                'age.required' => 'Please enter your age.',
+                'age.integer' => 'Age must be a whole number.',
+                'age.min' => 'You must be at least 18 years old to register.',
+                'age.max' => 'Please enter a valid age (120 or below).',
+                'address.required' => 'Please enter your personal address.',
+                'address.max' => 'Personal address is too long. Maximum allowed is 500 characters.',
+                'address_region.required' => 'Please select a complete personal address on the map.',
+                'address_province.required' => 'Please select a complete personal address on the map.',
+                'address_city.required' => 'Please select a city or municipality on the map.',
+                'address_barangay.required' => 'Please select a barangay on the map.',
+                'address_latitude.required' => 'Please select your personal location on the map.',
+                'address_longitude.required' => 'Please select your personal location on the map.',
+                'address_latitude.between' => 'Please select a personal location within the Philippines.',
+                'address_longitude.between' => 'Please select a personal location within the Philippines.',
                 'business_name.required' => 'Please enter your shop name.',
                 'business_address.required' => 'Please enter your shop address.',
                 'business_type.required' => 'Please select your shop type.',
@@ -650,6 +755,8 @@ class ShopOwnerAuthController extends Controller
 
             $this->assertRegistrationEmailVerified($normalizedEmail);
 
+            $validated = $this->normalizePersonalAddress($validated);
+
             $rejectedShopOwnerId = isset($availability['rejected_shop_owner_id'])
                 ? (int) $availability['rejected_shop_owner_id']
                 : 0;
@@ -691,6 +798,16 @@ class ShopOwnerAuthController extends Controller
                         'last_name' => $validated['last_name'],
                         'email' => $normalizedEmail,
                         'phone' => $validated['phone'],
+                        'suffix' => $validated['suffix'] ?? null,
+                        'age' => $validated['age'],
+                        'address' => $validated['address'],
+                        'address_region' => $validated['address_region'],
+                        'address_province' => $validated['address_province'],
+                        'address_city' => $validated['address_city'],
+                        'address_barangay' => $validated['address_barangay'],
+                        'address_postal_code' => $validated['address_postal_code'] ?? null,
+                        'address_latitude' => $validated['address_latitude'],
+                        'address_longitude' => $validated['address_longitude'],
                         'password' => null,
                         'business_name' => $validated['business_name'],
                         'business_address' => $validated['business_address'],
@@ -712,6 +829,16 @@ class ShopOwnerAuthController extends Controller
                         'last_name' => $validated['last_name'],
                         'email' => $normalizedEmail,
                         'phone' => $validated['phone'],
+                        'suffix' => $validated['suffix'] ?? null,
+                        'age' => $validated['age'],
+                        'address' => $validated['address'],
+                        'address_region' => $validated['address_region'],
+                        'address_province' => $validated['address_province'],
+                        'address_city' => $validated['address_city'],
+                        'address_barangay' => $validated['address_barangay'],
+                        'address_postal_code' => $validated['address_postal_code'] ?? null,
+                        'address_latitude' => $validated['address_latitude'],
+                        'address_longitude' => $validated['address_longitude'],
                         'password' => null,
                         'business_name' => $validated['business_name'],
                         'business_address' => $validated['business_address'],

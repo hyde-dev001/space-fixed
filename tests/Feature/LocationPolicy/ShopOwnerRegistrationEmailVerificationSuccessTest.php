@@ -5,6 +5,7 @@ namespace Tests\Feature\LocationPolicy;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -14,6 +15,26 @@ class ShopOwnerRegistrationEmailVerificationSuccessTest extends TestCase
 
     private const LAT_DASMARINAS = 14.3294;
     private const LNG_DASMARINAS = 120.9367;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::fake([
+            'nominatim.openstreetmap.org/*' => Http::response([
+                'lat' => '14.3294',
+                'lon' => '120.9367',
+                'address' => [
+                    'country_code' => 'ph',
+                    'region' => 'Cavite',
+                    'province' => 'Cavite',
+                    'city' => 'Dasmarinas',
+                    'suburb' => 'Salitran I',
+                    'postcode' => '4114',
+                ],
+            ]),
+        ]);
+    }
 
     private function docs(): array
     {
@@ -41,6 +62,16 @@ class ShopOwnerRegistrationEmailVerificationSuccessTest extends TestCase
             'last_name' => 'Santos',
             'email' => 'verified-register@solespaceph.com',
             'phone' => '09171234567',
+            'suffix' => 'Ms.',
+            'age' => 29,
+            'address' => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region' => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city' => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
+            'address_latitude' => self::LAT_DASMARINAS,
+            'address_longitude' => self::LNG_DASMARINAS,
             'business_name' => 'Ana Repair Hub',
             'business_address' => 'Dasmarinas, Cavite',
             'business_type' => 'repair',

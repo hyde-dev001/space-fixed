@@ -15,6 +15,7 @@ export type CustomerAddressMapPickerProps = {
   allowIncompleteAddress?: boolean;
   embeddedInForm?: boolean;
   disabled?: boolean;
+  gpsButtonLabel?: string;
 };
 
 const PHILIPPINES_CENTER: [number, number] = [12.8797, 121.774];
@@ -47,6 +48,7 @@ export default function CustomerAddressMapPicker({
   allowIncompleteAddress = false,
   embeddedInForm = false,
   disabled = false,
+  gpsButtonLabel = 'Use My Location',
 }: CustomerAddressMapPickerProps) {
   const searchId = useId();
   const mapElementRef = useRef<HTMLDivElement>(null);
@@ -399,7 +401,7 @@ export default function CustomerAddressMapPicker({
           onClick={useMyLocation}
           type="button"
         >
-          {locating ? 'Locating…' : 'Use My Location'}
+          {locating ? 'Locating…' : gpsButtonLabel}
         </button>
       </SearchContainer>
 

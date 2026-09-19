@@ -135,6 +135,14 @@ interface Registration {
   lastName: string;
   email: string;
   phone: string;
+  suffix?: string | null;
+  age?: number | null;
+  address?: string | null;
+  addressRegion?: string | null;
+  addressProvince?: string | null;
+  addressCity?: string | null;
+  addressBarangay?: string | null;
+  addressPostalCode?: string | null;
   businessName: string;
   businessAddress: string;
   businessType: string;
@@ -854,6 +862,26 @@ export default function ShopOwnerRegistrationView({
                             <div>
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Phone</label>
                               <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.phone}</p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Suffix</label>
+                              <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.suffix || '—'}</p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Age</label>
+                              <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.age ?? '—'}</p>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Personal Address</label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {[
+                                  selectedRegistration.address,
+                                  selectedRegistration.addressBarangay,
+                                  selectedRegistration.addressCity,
+                                  selectedRegistration.addressProvince,
+                                  selectedRegistration.addressPostalCode,
+                                ].filter(Boolean).join(', ') || '—'}
+                              </p>
                             </div>
                           </div>
                         </div>

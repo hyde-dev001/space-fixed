@@ -6,6 +6,7 @@ use App\Services\CaviteLocationPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -18,6 +19,26 @@ class ShopOwnerFullRegistrationLocationTest extends TestCase
     private const LAT_MAKATI = 14.5547;
     private const LNG_MAKATI = 121.0244;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::fake([
+            'nominatim.openstreetmap.org/*' => Http::response([
+                'lat' => '14.3294',
+                'lon' => '120.9367',
+                'address' => [
+                    'country_code' => 'ph',
+                    'region' => 'Cavite',
+                    'province' => 'Cavite',
+                    'city' => 'Dasmarinas',
+                    'suburb' => 'Salitran I',
+                    'postcode' => '4114',
+                ],
+            ]),
+        ]);
+    }
+
     private function payload(array $overrides = []): array
     {
         return array_merge([
@@ -25,6 +46,16 @@ class ShopOwnerFullRegistrationLocationTest extends TestCase
             'last_name' => 'Reyes',
             'email' => 'full-register@solespaceph.com',
             'phone' => '09179876543',
+            'suffix' => 'III',
+            'age' => 36,
+            'address' => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region' => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city' => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
+            'address_latitude' => self::LAT_DASMARINAS,
+            'address_longitude' => self::LNG_DASMARINAS,
             'business_name' => 'Maria Footwear Works',
             'business_address' => 'Imus, Cavite',
             'business_type' => 'repair',

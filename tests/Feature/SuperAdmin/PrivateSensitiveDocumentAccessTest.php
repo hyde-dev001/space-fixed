@@ -33,6 +33,20 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
 
         Storage::fake('local');
         Storage::fake('public');
+        Http::fake([
+            'nominatim.openstreetmap.org/*' => Http::response([
+                'lat' => '14.3294',
+                'lon' => '120.9367',
+                'address' => [
+                    'country_code' => 'ph',
+                    'region' => 'Cavite',
+                    'province' => 'Cavite',
+                    'city' => 'Dasmarinas',
+                    'suburb' => 'Salitran I',
+                    'postcode' => '4114',
+                ],
+            ]),
+        ]);
     }
 
     public function test_disk_metadata_defaults_to_public_for_legacy_and_new_rows(): void
@@ -115,6 +129,16 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             'last_name' => 'Dela Cruz',
             'email' => $email,
             'phone' => '09171234567',
+            'suffix' => '',
+            'age' => 31,
+            'address' => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region' => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city' => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
+            'address_latitude' => 14.3294,
+            'address_longitude' => 120.9367,
             'business_name' => 'Juan Shoes',
             'business_address' => 'Dasmarinas, Cavite',
             'business_type' => 'repair',
