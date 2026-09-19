@@ -55,4 +55,14 @@ describe('Products page layout', () => {
     expect(productsSource).toContain('selectedColors');
     expect(productsSource).toContain('pendingColors');
   });
+
+  it('uses the named-color catalog through a search-only color picker', () => {
+    expect(productsSource).toContain("import { NAMED_COLORS } from '@/data/namedColors';");
+    expect(productsSource).toContain('Search named colors');
+    expect(productsSource).toContain('role="listbox"');
+    expect(productsSource).not.toContain('Search custom colors');
+    expect(productsSource).not.toContain('>Quick Select</h3>');
+    expect(productsSource).not.toContain('>Custom colors</h3>');
+    expect(productsSource).not.toContain('>Selected colors</h3>');
+  });
 });
