@@ -33,6 +33,7 @@ interface RepairService {
   description: string;
   category: string;
   duration: string;
+  image_url?: string | null;
 }
 
 interface RepairPackage {
@@ -960,7 +961,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     return (
                       <div
                         key={service.id}
-                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all snap-start ${
+                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-auto min-h-62.5 sm:min-h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all snap-start ${
                           isSelected
                             ? 'border-black shadow-md'
                             : 'border-gray-200 hover:border-gray-300 hover:shadow-lg cursor-pointer'
@@ -968,13 +969,37 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         onClick={() => handleServiceToggle(service.id)}
                       >
                         <div className="flex flex-col h-full">
+                          <div className="relative -mx-5 -mt-5 xl:-mx-6 xl:-mt-6 mb-5 aspect-video overflow-hidden rounded-t-2xl bg-gray-100">
+                            {service.image_url ? (
+                              <img
+                                src={service.image_url}
+                                alt={`${service.title} service`}
+                                loading="lazy"
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div
+                                role="img"
+                                aria-label={`${service.title} service image unavailable`}
+                                className="flex h-full w-full flex-col items-center justify-center bg-gray-100 text-gray-500"
+                              >
+                                <svg aria-hidden="true" className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                                  <circle cx="8.5" cy="9" r="1.5" />
+                                  <path d="m21 15-4.5-4.5L7 20" />
+                                </svg>
+                                <span className="mt-2 text-xs font-medium">No image yet</span>
+                              </div>
+                            )}
+                            <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2 py-1 text-[11px] font-medium text-gray-700">
+                              {service.category}
+                            </span>
+                          </div>
+
                           <div className="flex items-start justify-between gap-2 xl:gap-3 mb-3">
                             <div className="flex-1 min-w-0">
-                              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 mb-2">
+                              <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2 mb-2">
                                 <h3 className="text-base xl:text-lg font-bold text-black leading-snug wrap-break-word min-w-0">{service.title}</h3>
-                                <span className="text-[11px] xl:text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium whitespace-nowrap shrink-0">
-                                  {service.category}
-                                </span>
                               </div>
                             </div>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${

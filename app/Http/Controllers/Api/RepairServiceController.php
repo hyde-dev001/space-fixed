@@ -12,9 +12,11 @@ use App\Services\ShopOwnerApprovalPolicyService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
 use Spatie\Activitylog\Models\Activity;
+use Throwable;
 
 class RepairServiceController extends Controller
 {
@@ -185,6 +187,7 @@ class RepairServiceController extends Controller
             'duration' => 'required|string|max:255',
             'description' => 'nullable|string',
             'status' => 'nullable|in:Active,Inactive,Pending',
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'material_templates' => 'required|array|min:1',
             'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
             'material_templates.*.default_quantity' => 'required|integer|min:1',
@@ -231,17 +234,25 @@ class RepairServiceController extends Controller
             'status' => $normalizedInputStatus ?? 'Active',
             'shop_owner_id' => $shopOwnerId,
             'created_by' => $createdBy,
+            'image_path' => null,
         ]);
 
         try {
             $this->syncMaterialTemplates($service, (array) $request->input('material_templates', []));
+            $this->applyServiceImageChange($service, $request, (int) $shopOwnerId);
         } catch (ValidationException $e) {
+            $this->deleteStoredServiceImage($service->image_path);
             $service->delete();
 
             return response()->json([
                 'success' => false,
                 'errors' => $e->errors(),
             ], 422);
+        } catch (Throwable $e) {
+            $this->deleteStoredServiceImage($service->image_path);
+            $service->delete();
+
+            throw $e;
         }
 
         return response()->json([
@@ -321,6 +332,8 @@ class RepairServiceController extends Controller
             'reason' => 'sometimes|string|max:1000',
             'status' => 'sometimes|in:Active,Inactive,Pending,Under Review,Rejected',
             'rejection_reason' => 'nullable|string',
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'remove_image' => ['sometimes', 'boolean'],
             'material_templates' => 'sometimes|array|min:1',
             'material_templates.*.inventory_item_id' => 'required|integer|exists:inventory_items,id',
             'material_templates.*.default_quantity' => 'required|integer|min:1',
@@ -387,6 +400,8 @@ class RepairServiceController extends Controller
                     ], 422);
                 }
             }
+
+            $this->applyServiceImageChange($service, $request, (int) $service->shop_owner_id);
 
             // Activity log for price change request
             activity()
@@ -463,13 +478,18 @@ class RepairServiceController extends Controller
             }
         }
 
+        $this->applyServiceImageChange($service, $request, (int) $service->shop_owner_id);
+
         // Activity log for non-price updates
         activity()
             ->causedBy(Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user())
             ->performedOn($service)
             ->withProperties([
                 'service_name' => $service->name,
-                'updated_fields' => array_keys($updateData),
+                'updated_fields' => array_values(array_unique([
+                    ...array_keys($updateData),
+                    ...($request->hasFile('image') || $request->boolean('remove_image') ? ['image'] : []),
+                ])),
             ])
             ->log('Repair service updated');
 
@@ -1740,6 +1760,48 @@ class RepairServiceController extends Controller
         }
 
         return null;
+    }
+
+    private function applyServiceImageChange(
+        RepairService $service,
+        Request $request,
+        int $shopOwnerId,
+    ): void {
+        if (!$request->hasFile('image') && !$request->boolean('remove_image')) {
+            return;
+        }
+
+        $disk = Storage::disk('public');
+        $oldPath = $service->image_path;
+
+        if ($request->hasFile('image')) {
+            $newPath = $request->file('image')->store("repair-services/{$shopOwnerId}", 'public');
+
+            try {
+                $service->forceFill(['image_path' => $newPath])->save();
+            } catch (Throwable $e) {
+                $disk->delete($newPath);
+                throw $e;
+            }
+
+            if ($oldPath && $oldPath !== $newPath) {
+                $disk->delete($oldPath);
+            }
+
+            return;
+        }
+
+        if ($oldPath) {
+            $service->forceFill(['image_path' => null])->save();
+            $disk->delete($oldPath);
+        }
+    }
+
+    private function deleteStoredServiceImage(?string $path): void
+    {
+        if ($path) {
+            Storage::disk('public')->delete($path);
+        }
     }
 
     private function syncMaterialTemplates(RepairService $service, array $materialTemplates): void

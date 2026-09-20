@@ -15,6 +15,7 @@ type Service = {
   duration: string;
   description: string | null;
   status: "Active" | "Inactive" | "Pending";
+  image_url?: string | null;
   material_templates?: MaterialTemplateLine[];
 };
 
@@ -93,6 +94,62 @@ const ClockIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
+type ServiceImageFieldProps = {
+  inputId: string;
+  preview: string;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: () => void;
+};
+
+const ServiceImageField: React.FC<ServiceImageFieldProps> = ({ inputId, preview, onChange, onRemove }) => (
+  <div>
+    <label htmlFor={inputId} className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+      Service image (optional)
+    </label>
+    <div className="relative overflow-hidden rounded-xl border border-dashed border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60">
+      <input
+        id={inputId}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={onChange}
+        className="sr-only"
+      />
+      {preview ? (
+        <div className="relative aspect-video min-h-40 bg-gray-900">
+          <img src={preview} alt="Selected service image preview" className="h-full w-full object-cover" />
+          <div className="absolute inset-x-3 bottom-3 flex justify-end gap-2">
+            <label
+              htmlFor={inputId}
+              className="cursor-pointer rounded-lg border border-white/70 bg-black/80 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-black"
+            >
+              Replace
+            </label>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-semibold text-black transition-colors hover:bg-gray-100"
+            >
+              Remove image
+            </button>
+          </div>
+        </div>
+      ) : (
+        <label
+          htmlFor={inputId}
+          className="flex min-h-40 cursor-pointer flex-col items-center justify-center px-5 py-8 text-center outline-none transition-colors hover:border-gray-900 hover:bg-white focus-within:ring-2 focus-within:ring-black dark:hover:bg-gray-900"
+        >
+          <UploadIcon className="mb-3 h-10 w-10 text-gray-400" />
+          <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Drop image here or browse</span>
+          <span className="mt-1 text-xs text-gray-500 dark:text-gray-400">Use one clear photo that represents this service.</span>
+        </label>
+      )}
+    </div>
+    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+      JPG, PNG, or WEBP / Maximum 5 MB / Recommended ratio 16:9
+    </p>
+  </div>
+);
+
 // Professional Metric Card Component
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
@@ -147,6 +204,9 @@ export default function UploadService() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<"services" | "packages">("services");
   const [showArchivedServices, setShowArchivedServices] = useState(false);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [removeExistingImage, setRemoveExistingImage] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -165,6 +225,14 @@ export default function UploadService() {
       default_quantity: string;
     }>,
   });
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview.startsWith('blob:') && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  }, [imagePreview]);
 
   // Fetch services from backend
   const fetchServices = async (archived = showArchivedServices) => {
@@ -333,6 +401,38 @@ export default function UploadService() {
     return `${fromValue} ${formatUnit(fromValue)}`;
   };
 
+  const buildServiceFormData = (
+    method: 'POST' | 'PUT',
+    effectiveCategory: string,
+    durationValue: string,
+    priceValue?: string,
+  ): FormData => {
+    const payload = new FormData();
+    payload.append('_method', method);
+    payload.append('name', formData.name);
+    payload.append('category', effectiveCategory);
+    payload.append('duration', durationValue);
+    payload.append('description', formData.description);
+    payload.append('status', method === 'POST' ? 'Active' : formData.status);
+
+    if (method === 'POST') {
+      payload.append('price', priceValue ?? '');
+    }
+
+    formData.material_templates.forEach((line, index) => {
+      payload.append(`material_templates[${index}][inventory_item_id]`, String(line.inventory_item_id));
+      payload.append(`material_templates[${index}][default_quantity]`, String(Number(line.default_quantity)));
+    });
+
+    if (selectedImageFile) {
+      payload.append('image', selectedImageFile);
+    } else if (method === 'PUT' && removeExistingImage) {
+      payload.append('remove_image', '1');
+    }
+
+    return payload;
+  };
+
   const serviceCategoryOptions = ["Care", "Repair", "Restoration"];
 
   const getEffectiveCategory = () => (
@@ -340,6 +440,52 @@ export default function UploadService() {
       ? formData.categoryCustom.trim()
       : formData.category
   );
+
+  const handleServiceImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+
+    if (!file) {
+      return;
+    }
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      event.target.value = '';
+      Swal.fire({
+        icon: 'error',
+        title: 'Invalid image',
+        text: 'Choose a JPG, PNG, or WEBP image.',
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      event.target.value = '';
+      Swal.fire({
+        icon: 'error',
+        title: 'Image is too large',
+        text: 'The service image must be 5 MB or smaller.',
+      });
+      return;
+    }
+
+    setSelectedImageFile(file);
+    setRemoveExistingImage(false);
+
+    if (typeof URL.createObjectURL === 'function') {
+      setImagePreview(URL.createObjectURL(file));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setImagePreview(typeof reader.result === 'string' ? reader.result : '');
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveServiceImage = () => {
+    setSelectedImageFile(null);
+    setImagePreview('');
+    setRemoveExistingImage(true);
+  };
 
   const normalizePriceInput = (value: string): string => {
     const cleaned = value.replace(/[^\d.]/g, "");
@@ -430,18 +576,10 @@ export default function UploadService() {
       // Remove peso sign and parse price
       const priceValue = formData.price.replace(/[₱,]/g, '');
       
-      const response = await axios.post('/api/repair-services', {
-        name: formData.name,
-        category: effectiveCategory,
-        price: priceValue,
-        duration: durationValue,
-        description: formData.description,
-        status: 'Active', // New services are always Active, no approval needed
-        material_templates: formData.material_templates.map((line) => ({
-          inventory_item_id: Number(line.inventory_item_id),
-          default_quantity: Number(line.default_quantity),
-        })),
-      });
+      const response = await axios.post(
+        '/api/repair-services',
+        buildServiceFormData('POST', effectiveCategory, durationValue, priceValue),
+      );
 
       if (response.data.success) {
         setIsAddModalOpen(false);
@@ -510,18 +648,10 @@ export default function UploadService() {
     }
 
     try {
-      const response = await axios.put(`/api/repair-services/${selectedService.id}`, {
-        name: formData.name,
-        category: effectiveCategory,
-        // Price is not sent - can only be changed via pricing approval workflow
-        duration: durationValue,
-        description: formData.description,
-        status: formData.status,
-        material_templates: formData.material_templates.map((line) => ({
-          inventory_item_id: Number(line.inventory_item_id),
-          default_quantity: Number(line.default_quantity),
-        })),
-      });
+      const response = await axios.post(
+        `/api/repair-services/${selectedService.id}`,
+        buildServiceFormData('PUT', effectiveCategory, durationValue),
+      );
 
       if (response.data.success) {
         setIsEditModalOpen(false);
@@ -623,6 +753,9 @@ export default function UploadService() {
     const parsedDuration = parseDurationValue(service.duration);
 
     setSelectedService(service);
+    setSelectedImageFile(null);
+    setImagePreview(service.image_url ?? '');
+    setRemoveExistingImage(false);
     setFormData({
       name: service.name,
       category: serviceCategoryOptions.includes(service.category) ? service.category : "Others",
@@ -643,6 +776,9 @@ export default function UploadService() {
   };
 
   const resetForm = () => {
+    setSelectedImageFile(null);
+    setImagePreview('');
+    setRemoveExistingImage(false);
     setFormData({
       name: "",
       category: "",
@@ -1183,6 +1319,13 @@ export default function UploadService() {
                 )}
               </div>
 
+              <ServiceImageField
+                inputId="add-service-image"
+                preview={imagePreview}
+                onChange={handleServiceImageChange}
+                onRemove={handleRemoveServiceImage}
+              />
+
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates (Required)</h3>
@@ -1430,6 +1573,13 @@ export default function UploadService() {
                   </div>
                 )}
               </div>
+
+              <ServiceImageField
+                inputId="edit-service-image"
+                preview={imagePreview}
+                onChange={handleServiceImageChange}
+                onRemove={handleRemoveServiceImage}
+              />
 
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
                 <div className="flex items-center justify-between">
