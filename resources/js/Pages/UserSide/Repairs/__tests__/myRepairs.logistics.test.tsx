@@ -540,13 +540,34 @@ describe("MyRepairs repair cancellation", () => {
 
     expect(screen.queryByRole("region", { name: "Intake courier tracking" })).not.toBeInTheDocument();
   });
+
+  it("hides intake tracking for new requests", async () => {
+    mocks.repair = repair({
+      status: "new_request",
+      intake_delivery_method: "customer_delivery",
+      conversation_id: null,
+      logistics_shipments: [],
+    });
+
+    render(<MyRepairs />);
+    const newRequestTabs = await screen.findAllByRole("button", { name: /New Request/i });
+    fireEvent.click(newRequestTabs[0]);
+
+    expect(screen.queryByRole("region", { name: "Intake courier tracking" })).not.toBeInTheDocument();
+  });
 });
 
 describe("MyRepairs return logistics", () => {
   it("shows the server return plan, exact amount, and purpose-specific tracking events", async () => {
     await renderReadyRepair();
     expect(screen.queryByRole("dialog", { name: "Return delivery plan" })).not.toBeInTheDocument();
-    openReturnDeliveryPlan();
+    const readyStatus = screen.getByTitle(/Ready for Pickup/i);
+    const returnPlanButton = screen.getByRole("button", { name: "Open return delivery plan" });
+    expect(readyStatus.parentElement).toContainElement(returnPlanButton);
+
+    const returnPlanDialog = openReturnDeliveryPlan();
+    expect(returnPlanDialog.parentElement).toHaveClass("fixed", "inset-0", "z-[100]");
+    expect(returnPlanDialog.parentElement?.parentElement).toBe(document.body);
 
     expect(screen.getByRole("heading", { name: "Return delivery plan" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Customer pickup at shop/i })).toBeEnabled();
