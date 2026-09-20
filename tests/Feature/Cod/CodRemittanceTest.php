@@ -5,10 +5,15 @@ namespace Tests\Feature\Cod;
 use App\Models\CodCollection;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoicePayment;
+use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
+use App\Models\OrderRefund;
 use App\Models\ShopOwner;
 use App\Models\User;
-use App\Models\Logistics\RiderProfile;
+use App\Services\CodCollectionService;
+use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
@@ -50,6 +55,57 @@ class CodRemittanceTest extends TestCase
         $this->assertDatabaseCount('cod_remittances', 1);
         $this->assertDatabaseCount('cod_remittance_items', 1);
         $this->assertDatabaseCount('finance_invoice_payments', 0);
+    }
+
+    public function test_confirmed_cod_loss_creates_a_refund_claim_and_blocks_rider_remittance(): void
+    {
+        [$shop, $rider, , $collection] = $this->makeContext();
+        $order = $collection->order()->firstOrFail();
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'purpose' => 'retail_delivery',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'status' => 'in_transit',
+        ]);
+        $collection->update([
+            'shipment_id' => $shipment->id,
+            'shipment_leg_id' => $leg->id,
+        ]);
+
+        app(ShipmentLegService::class)->confirmLoss($leg, 'Investigation confirmed the COD parcel was lost.');
+
+        $claim = OrderRefund::query()
+            ->where('order_id', $order->id)
+            ->where('reason_code', 'delivery_loss_confirmed')
+            ->firstOrFail();
+
+        $this->assertSame('requested', $claim->status);
+        $this->assertSame('pending', $claim->finance_status);
+        $this->assertSame('pending', $claim->shop_owner_status);
+        $this->assertSame('not_required', $claim->return_status);
+        $this->assertSame('xendit', $claim->payment_gateway);
+        $this->assertDatabaseHas('cod_collections', [
+            'id' => $collection->id,
+            'status' => CodCollection::STATUS_REFUND_PENDING,
+        ]);
+        $projection = app(CodCollectionService::class)->riderCollections($rider);
+        $this->assertSame('100.00', $projection['summary']['cash_currently_held']);
+        $this->assertSame(0, $projection['summary']['pending_remittance_count']);
+
+        $this->actingAs($rider, 'user')
+            ->postJson('/api/logistics/cod/remittances', [
+                'collection_ids' => [$collection->id],
+                'idempotency_key' => 'cod-remittance-loss-'.$collection->id,
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Only your exact, cash-collected COD records can be remitted.');
+
+        $this->assertDatabaseCount('cod_remittances', 0);
+        $this->assertDatabaseCount('cod_remittance_items', 0);
     }
 
     public function test_finance_mismatch_disputes_without_creating_ledger_history(): void

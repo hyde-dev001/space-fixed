@@ -16,6 +16,7 @@ class CodCollection extends Model
 
     public const STATUS_PENDING = 'pending';
     public const STATUS_CASH_COLLECTED = 'cash_collected';
+    public const STATUS_REFUND_PENDING = 'refund_pending';
     public const STATUS_SETTLED = 'settled';
 
     protected $fillable = [

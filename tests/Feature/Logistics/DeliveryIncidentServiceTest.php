@@ -6,15 +6,19 @@ use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\Notification;
 use App\Models\Order;
 use App\Models\OrderItem;
+use App\Models\OrderRefund;
 use App\Models\Product;
 use App\Models\ProductVariant;
-use App\Models\OrderRefund;
 use App\Models\ShopOwner;
+use App\Models\User;
 use App\Services\Logistics\DeliveryIncidentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 class DeliveryIncidentServiceTest extends TestCase
@@ -44,10 +48,90 @@ class DeliveryIncidentServiceTest extends TestCase
         ]);
     }
 
-    public function test_confirmed_loss_creates_an_idempotent_refund_claim_for_a_paid_retail_order(): void
+    public function test_open_incident_is_singleton_per_delivery_and_enters_dispatcher_resolution(): void
     {
         $shop = ShopOwner::factory()->create();
-        $customer = \App\Models\User::factory()->create();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'in_transit',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
+        $service = app(DeliveryIncidentService::class);
+
+        $incident = $service->report($leg, $rider, [
+            'type' => 'vehicle_problem',
+            'notes' => 'Motorcycle puncture on route.',
+            'photo_paths' => ['incident-evidence/leg-incident/report.jpg'],
+        ]);
+
+        $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+        $this->assertSame($incident->id, $service->report($leg, $rider, [
+            'type' => 'vehicle_problem',
+            'notes' => 'Retry of the same report.',
+            'photo_paths' => ['incident-evidence/leg-incident/retry.jpg'],
+        ])->id);
+
+        try {
+            $service->report($leg, $rider, [
+                'type' => 'damaged',
+                'notes' => 'A second open incident.',
+                'photo_paths' => ['incident-evidence/leg-incident/second.jpg'],
+            ]);
+            $this->fail('A second open incident was accepted.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('incident', $exception->errors());
+        }
+
+        $this->assertSame(1, $leg->incidents()->count());
+
+        app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Vehicle issue resolved; retry approved.');
+
+        $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+        $this->assertSame('retry', $leg->fresh()->resolution_type);
+    }
+
+    public function test_dismissing_an_incident_resumes_the_delivery(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
+            'status' => 'in_transit',
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => $rider->id,
+            'status' => 'accepted',
+        ]);
+
+        $incident = app(DeliveryIncidentService::class)->report($leg, $rider, [
+            'type' => 'vehicle_problem',
+            'notes' => 'Vehicle issue reported.',
+            'photo_paths' => ['incident-evidence/leg-incident/resume.jpg'],
+        ]);
+
+        app(DeliveryIncidentService::class)->resolve(
+            $incident,
+            $shop,
+            'dismissed',
+            'Issue was checked and the rider may continue.',
+        );
+
+        $this->assertSame('in_transit', $leg->fresh()->status->value);
+        $this->assertNull($leg->fresh()->resolution_type);
+    }
+
+    public function test_confirmed_loss_creates_an_idempotent_refund_claim_for_a_paid_retail_order(): void
+    {
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $customer = User::factory()->create();
+        $finance = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $finance->assignRole(Role::findOrCreate('Finance', 'user'));
         $product = Product::create([
             'shop_owner_id' => $shop->id,
             'name' => 'Lost parcel shoe',
@@ -111,6 +195,24 @@ class DeliveryIncidentServiceTest extends TestCase
         $this->assertSame('not_required', $claim->return_status);
         $this->assertSame('pending', $claim->finance_status);
         $this->assertSame(1, OrderRefund::query()->where('reason_code', 'delivery_loss_confirmed')->count());
+        $claim->update(['finance_status' => 'approved']);
+        $this->assertTrue(app(\App\Services\OrderRefundService::class)->canExecuteApprovedRefund($claim->fresh()));
+
+        DB::commit();
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $finance->id,
+            'type' => 'refund_request',
+            'title' => 'New Refund Approval Request',
+            'action_url' => '/finance?section=refund-approvals',
+            'requires_action' => true,
+        ]);
+        $notification = Notification::query()
+            ->where('user_id', $finance->id)
+            ->where('type', 'refund_request')
+            ->latest('id')
+            ->firstOrFail();
+        $this->assertSame($claim->id, (int) data_get($notification->data, 'refund_id'));
     }
 
     public function test_service_rejects_client_supplied_paths_outside_the_incident_evidence_prefix(): void

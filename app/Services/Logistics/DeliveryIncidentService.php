@@ -37,12 +37,22 @@ class DeliveryIncidentService
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
             if (!$leg->assignments()->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted'])->exists()
                 || $rider->shop_owner_id !== $leg->shipment->shop_owner_id) abort(403);
-            $existing = $leg->incidents()->where('type', $data['type'])->whereIn('status', ['reported', 'under_review'])->first();
-            if ($existing) return $existing;
+            $existing = $leg->incidents()
+                ->whereIn('status', ['reported', 'under_review'])
+                ->latest('id')
+                ->first();
+            if ($existing) {
+                if ($existing->type === $data['type']) return $existing;
+
+                throw ValidationException::withMessages([
+                    'incident' => 'This delivery already has an incident awaiting dispatcher review.',
+                ]);
+            }
             $incident = $leg->incidents()->create([
                 'shop_owner_id' => $leg->shipment->shop_owner_id, 'reporting_rider_profile_id' => $rider->id,
                 'type' => $data['type'], 'notes' => $data['notes'], 'photo_paths' => array_values($photoPaths),
             ]);
+            $leg->update(['status' => 'needs_resolution']);
             $this->events->record($leg->shipment, $leg, ['event_type' => 'delivery_incident_reported', 'message' => 'A delivery incident requires review.', 'metadata' => ['incident_id' => $incident->id, 'type' => $incident->type]]);
             return $incident;
         });
@@ -71,11 +81,15 @@ class DeliveryIncidentService
                 throw ValidationException::withMessages(['resolution' => 'Confirmed loss requires a lost incident, investigation note, and evidence.']);
             }
             $incident->update(['status' => 'resolved', 'resolution' => $resolution, 'notes' => $note, 'photo_paths' => array_values(array_unique([...($incident->photo_paths ?? []), ...$evidence])), 'resolved_at' => now()]);
+            $leg = $incident->leg;
+            if ($resolution === 'dismissed' && $leg->status->value === 'needs_resolution' && $leg->resolution_type === null) {
+                $leg->update(['status' => 'in_transit']);
+            }
             match ($resolution) {
-                'loss_confirmed' => $this->legs->confirmLoss($incident->leg, $note),
-                'retry' => $this->legs->resolveRetry($incident->leg, $note),
-                'return_required' => $this->legs->requireReturn($incident->leg, $note),
-                default => $this->events->record($incident->leg->shipment, $incident->leg, [
+                'loss_confirmed' => $this->legs->confirmLoss($leg, $note),
+                'retry' => $this->legs->resolveRetry($leg, $note),
+                'return_required' => $this->legs->requireReturn($leg, $note),
+                default => $this->events->record($leg->shipment, $leg, [
                     'event_type' => 'delivery_incident_resolved',
                     'message' => 'Delivery incident resolved.',
                     'metadata' => ['resolution' => $resolution, 'incident_id' => $incident->id],

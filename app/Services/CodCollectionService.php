@@ -199,6 +199,10 @@ final class CodCollectionService
             && ! $collection->remittanceItem
         );
         $held = $collections->filter(function (CodCollection $collection): bool {
+            if ($collection->status === CodCollection::STATUS_REFUND_PENDING) {
+                return true;
+            }
+
             if ($collection->status !== CodCollection::STATUS_CASH_COLLECTED) {
                 return false;
             }

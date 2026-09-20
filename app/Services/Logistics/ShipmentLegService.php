@@ -3,6 +3,7 @@
 namespace App\Services\Logistics;
 
 use App\Enums\Logistics\RiderProgressState;
+use App\Models\CodCollection;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryAttempt;
 use App\Models\Logistics\DeliveryBatch;
@@ -19,6 +20,7 @@ use App\Services\OrderRefundService;
 use App\Services\RepairDeliveryService;
 use App\Services\RepairPosRefundService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class ShipmentLegService
@@ -474,6 +476,38 @@ class ShipmentLegService
                 $order = Order::query()->find($leg->shipment->source_id);
                 if ($order) {
                     $recovery = $this->refunds->reserveConfirmedLossRefund($order, $leg, $reason);
+
+                    if ($this->codCollections->isCodOrder($order)
+                        && in_array($recovery['result'] ?? null, ['reserved', 'recovered'], true)) {
+                        CodCollection::query()
+                            ->where('order_id', $order->id)
+                            ->where('status', CodCollection::STATUS_CASH_COLLECTED)
+                            ->lockForUpdate()
+                            ->get()
+                            ->each(fn (CodCollection $collection) => $collection->update([
+                                'status' => CodCollection::STATUS_REFUND_PENDING,
+                            ]));
+                    }
+
+                    if (!$this->codCollections->isCodOrder($order)
+                        && ($recovery['result'] ?? null) === 'reserved') {
+                        $refundId = (int) data_get($recovery, 'refund.id');
+                        if ($refundId > 0) {
+                            DB::afterCommit(function () use ($refundId): void {
+                                try {
+                                    $refund = OrderRefund::query()->find($refundId);
+                                    if ($refund) {
+                                        $this->refunds->notifyRefundApprovalRequested($refund);
+                                    }
+                                } catch (\Throwable $exception) {
+                                    Log::warning('Loss refund notification failed after commit.', [
+                                        'refund_id' => $refundId,
+                                        'error' => $exception->getMessage(),
+                                    ]);
+                                }
+                            });
+                        }
+                    }
                 }
             }
 
