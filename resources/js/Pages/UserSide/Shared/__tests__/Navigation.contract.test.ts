@@ -89,7 +89,7 @@ describe('user-side navigation shell', () => {
     expect(signInIndex).toBeGreaterThan(-1);
     expect(servicesIndex).toBeGreaterThan(signInIndex);
     expect(servicesIndex).toBeLessThan(downloadIndex);
-    expect(servicesLinkSource).toContain('<svg className="h-5 w-5"');
+    expect(servicesLinkSource).toContain('<Wrench className="h-5 w-5"');
   });
 
   it('renders the shared moving offers ticker with reduced-motion support', () => {
