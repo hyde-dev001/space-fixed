@@ -27,6 +27,39 @@ final class IdentityDocumentClassifierTest extends TestCase
         $this->assertSame('drivers_license', $decision['document_type']);
     }
 
+    public function test_student_id_requires_both_sides_and_always_queues_manual_review(): void
+    {
+        $decision = app(IdentityDocumentClassifier::class)->classifySubmission(
+            'student_id',
+            [
+                'front' => $this->side('front', 'student_id'),
+                'back' => $this->side('back', 'student_id'),
+            ],
+            'none',
+            'physical_card',
+            true,
+            'screening_passed',
+        );
+
+        $this->assertSame('manual_review_required', $decision['outcome']);
+        $this->assertSame(IdentityVerification::SCREENING_MANUAL_REVIEW_REQUIRED, $decision['screening_status']);
+        $this->assertSame(IdentityVerification::REVIEW_PENDING, $decision['review_status']);
+        $this->assertSame('manual_review_only', $decision['failure_reason']);
+        $this->assertArrayHasKey('back', $decision['side_results']);
+    }
+
+    public function test_student_id_without_a_back_side_is_rejected(): void
+    {
+        $decision = app(IdentityDocumentClassifier::class)->classifySubmission(
+            'student_id',
+            ['front' => $this->side('front', 'student_id')],
+        );
+
+        $this->assertSame('reject_upload', $decision['outcome']);
+        $this->assertSame('missing_required_side', $decision['failure_reason']);
+        $this->assertSame('back', $decision['failure_side']);
+    }
+
     public function test_a_rejected_side_maps_to_reject_upload_without_manual_review(): void
     {
         $decision = app(IdentityDocumentClassifier::class)->classifySubmission(

@@ -128,7 +128,7 @@ class CustomerEmailVerificationAccessTest extends TestCase
         $this->actingAs($authenticatedCustomer, 'user')
             ->get($verificationUrl)
             ->assertRedirect(route('login'))
-            ->assertSessionHas('success');
+            ->assertSessionHas('success', 'Email verified successfully. You may now sign in.');
 
         $this->assertTrue($target->fresh()->hasVerifiedEmail());
         $this->assertFalse($authenticatedCustomer->fresh()->hasVerifiedEmail());
@@ -183,7 +183,7 @@ class CustomerEmailVerificationAccessTest extends TestCase
 
         $this->get($verificationUrl)
             ->assertRedirect(route('login'))
-            ->assertSessionHas('success');
+            ->assertSessionHas('success', 'Your email is already verified.');
 
         $this->assertEquals($verifiedAt?->timestamp, $customer->fresh()->email_verified_at?->timestamp);
     }

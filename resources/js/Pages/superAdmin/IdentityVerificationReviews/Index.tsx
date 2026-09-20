@@ -66,7 +66,9 @@ const REJECTION_REASONS: Array<[string, string]> = [
 ];
 
 const label = (value: string | null | undefined): string => (
-	(value || 'N/A').replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
+	value === 'student_id'
+		? 'Student ID'
+		: (value || 'N/A').replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
 );
 
 const dateLabel = (value?: string | null): string => {
@@ -457,6 +459,7 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 									<p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Automated screening</p>
 									<p className="mt-2 text-sm font-semibold text-gray-900">{selected.screening_label}</p>
 									<p className="mt-1 text-xs text-gray-500">Document: {label(selected.document_type)}</p>
+									{selected.document_type === 'student_id' && <p className="mt-2 text-xs font-medium text-orange-700">Manual review only. OCR is not used for Student ID submissions.</p>}
 									{selected.failure_reason && <p className="mt-1 text-xs text-gray-500">Flag: {label(selected.failure_reason)}</p>}
 								</div>
 								<div className="rounded-xl bg-gray-50 p-4">

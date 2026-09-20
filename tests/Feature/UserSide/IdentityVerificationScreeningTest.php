@@ -41,6 +41,25 @@ final class IdentityVerificationScreeningTest extends TestCase
         $this->assertDatabaseCount('identity_verifications', 1);
     }
 
+    public function test_student_id_is_stored_privately_and_downgraded_to_manual_review(): void
+    {
+        Storage::fake('local');
+
+        $verification = app(IdentityVerificationService::class)->screen(
+            $this->customer(),
+            $this->validPng('student-front.png', 'student-front'),
+            $this->passedMetadata('student_id'),
+            $this->validPng('student-back.png', 'student-back'),
+        );
+
+        $this->assertSame('student_id', $verification->document_type);
+        $this->assertSame(IdentityVerification::SCREENING_MANUAL_REVIEW_REQUIRED, $verification->screening_status);
+        $this->assertSame(IdentityVerification::REVIEW_PENDING, $verification->review_status);
+        $this->assertSame('manual_review_only', $verification->failure_reason);
+        Storage::disk('local')->assertExists($verification->file_path);
+        Storage::disk('local')->assertExists($verification->back_file_path);
+    }
+
     public function test_name_read_failure_is_stored_for_manual_review_instead_of_blocking_account_flow(): void
     {
         Storage::fake('local');
