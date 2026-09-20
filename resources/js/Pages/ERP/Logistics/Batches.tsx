@@ -1,4 +1,3 @@
-import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import { Plus } from 'lucide-react';
@@ -6,7 +5,6 @@ import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { logisticsApi } from '@/services/logisticsApi';
 import {
   logisticsModuleForSourceType,
-  logisticsModuleLabel,
   logisticsSourceLabel,
   type BatchSuggestion,
   type DeliveryBatchPageProps,
@@ -178,11 +176,15 @@ export default function Batches() {
     setHistoryOpen(false);
     setTimeout(() => historyTriggerRef.current?.focus(), 0);
   };
-  const changeSlot = (nextDate: string, nextWindow: string) => {
+  const changeSlot = (nextDate: string, nextWindow: string, nextModule = module) => {
     setSuggestions([]);
     setSuggestionsLoading(false);
     setSuggestionsError('');
-    if (scheduledThisAttempt.length) {
+    if (nextModule !== module) {
+      setModule(nextModule);
+      setSelectedIds([]);
+      setScheduledThisAttempt([]);
+    } else if (scheduledThisAttempt.length) {
       setSelectedIds([]);
       setScheduledThisAttempt([]);
       router.reload({ only: ['pool', 'unscheduled'] });
@@ -193,7 +195,7 @@ export default function Batches() {
     }
     setDate(nextDate);
     setWindow(nextWindow);
-    router.get(batchesPath, { module, date: nextDate || undefined, window: nextWindow }, {
+    router.get(batchesPath, { module: nextModule, date: nextDate || undefined, window: nextWindow }, {
       only: ['batches', 'pool', 'unscheduled', 'filters'],
       preserveScroll: true,
       preserveState: true,
@@ -212,7 +214,7 @@ export default function Batches() {
   const clearFilters = () => {
     setSearch('');
     setStatus('all');
-    changeSlot('', 'morning');
+    changeSlot('', 'morning', showModuleFilter ? 'all' : module);
   };
   const toggle = (id: number, checked: boolean) => setSelectedIds((ids) => {
     if (!checked) return ids.filter((selectedId) => selectedId !== id);
@@ -436,15 +438,6 @@ export default function Batches() {
     <div className="flex min-w-0 flex-wrap items-start justify-end gap-3">
       <h1 className="sr-only">Delivery Batches</h1>
       <div data-testid="batch-page-header-controls" className="flex w-full min-w-0 flex-wrap items-center gap-2 xl:w-auto">
-        {showModuleFilter && <MonochromeSelect
-          aria-label="Filter batches by module"
-          value={module}
-          onChange={(event) => changeModule(event.target.value as 'all' | LogisticsModule)}
-          className="min-h-11 min-w-0 flex-1 rounded-xl border border-gray-300 bg-white px-3 text-sm font-semibold xl:flex-none"
-        >
-          <option value="all">All modules</option>
-          {availableModules.map((available) => <option key={available} value={available}>{logisticsModuleLabel(available)}</option>)}
-        </MonochromeSelect>}
         <button type="button" onClick={startNewBatch} className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-gray-950 px-4 font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black xl:flex-none"><Plus size={18} />New Batch</button>
       </div>
     </div>
@@ -453,9 +446,10 @@ export default function Batches() {
       <AvailableDeliveriesPanel
         rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds} loading={refreshing}
         selectedModule={selectedModule}
+        module={module} availableModules={availableModules} showModuleFilter={showModuleFilter}
         collapsed={deliveriesCollapsed} onCollapse={() => setDeliveriesCollapsed(true)} onExpand={() => setDeliveriesCollapsed(false)}
         search={search} date={date} today={today} logisticsSchedule={logisticsSchedule} window={window} status={status}
-        onSearchChange={setSearch} onDateChange={(value) => changeSlot(value, window)} onWindowChange={(value) => changeSlot(date, value)} onStatusChange={setStatus}
+        onSearchChange={setSearch} onDateChange={(value) => changeSlot(value, window)} onWindowChange={(value) => changeSlot(date, value)} onModuleChange={changeModule} onStatusChange={setStatus}
         onToggle={toggle} onSelectAll={selectAll} onClearFilters={clearFilters}
       />
       {building || selectedBatch ? <BatchWorkspace

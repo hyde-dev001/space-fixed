@@ -20,6 +20,9 @@ type Props = {
   loading?: boolean;
   selectedIds: number[];
   selectedModule?: LogisticsModule | null;
+  module: 'all' | LogisticsModule;
+  availableModules: LogisticsModule[];
+  showModuleFilter: boolean;
   search: string;
   date: string;
   today: string;
@@ -31,6 +34,7 @@ type Props = {
   onExpand: () => void;
   onDateChange: (value: string) => void;
   onWindowChange: (value: string) => void;
+  onModuleChange: (value: 'all' | LogisticsModule) => void;
   onStatusChange: (value: string) => void;
   onToggle: (id: number, checked: boolean) => void;
   onSelectAll: (checked: boolean) => void;
@@ -38,8 +42,8 @@ type Props = {
 };
 
 export default function AvailableDeliveriesPanel({
-  rows, totalRows, selectedIds, selectedModule, collapsed, search, date, today, window, status, loading = false,
-  onSearchChange, onCollapse, onExpand, onDateChange, onWindowChange, onStatusChange,
+  rows, totalRows, selectedIds, selectedModule, module, availableModules, showModuleFilter, collapsed, search, date, today, window, status, loading = false,
+  onSearchChange, onCollapse, onExpand, onDateChange, onWindowChange, onModuleChange, onStatusChange,
   logisticsSchedule,
   onToggle, onSelectAll, onClearFilters,
 }: Props) {
@@ -71,12 +75,16 @@ export default function AvailableDeliveriesPanel({
         <Search className="absolute left-3 top-3 text-gray-400" size={18} />
         <input aria-label="Search deliveries" value={search} onChange={(event) => onSearchChange(event.target.value)} placeholder="Order, customer, phone, address, or product" className="min-h-11 w-full rounded-xl border border-gray-300 py-2 pl-10 pr-3 text-sm" />
       </label>
-      <div data-testid="batch-filter-grid" className="mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div data-testid="batch-filter-grid" className={`mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 ${showModuleFilter ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
         <DeliveryDatePicker value={date} minDate={today} operatingDays={logisticsSchedule?.operating_days} blackoutDates={logisticsSchedule?.blackout_dates} onChange={onDateChange} />
         <MonochromeSelect aria-label="Delivery window" value={window} onChange={(event) => onWindowChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
           <option value="morning">Morning</option>
           <option value="afternoon">Afternoon</option>
         </MonochromeSelect>
+        {showModuleFilter && <MonochromeSelect aria-label="Filter deliveries by module" value={module} onChange={(event) => onModuleChange(event.target.value as 'all' | LogisticsModule)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
+          <option value="all">All modules</option>
+          {availableModules.map((available) => <option key={available} value={available}>{logisticsModuleLabel(available)}</option>)}
+        </MonochromeSelect>}
         <MonochromeSelect aria-label="Schedule status" value={status} onChange={(event) => onStatusChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
           <option value="all">All statuses</option>
           <option value="unscheduled">Needs scheduling</option>
