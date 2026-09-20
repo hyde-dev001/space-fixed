@@ -1073,6 +1073,7 @@ class LandingPageController extends Controller
                         'description' => $service->description ?? 'Professional ' . strtolower($service->category) . ' service',
                         'category' => $service->category,
                         'duration' => $service->duration,
+                        'image_url' => $service->image_url,
                     ];
                 })
                 ->values()
@@ -1198,6 +1199,7 @@ class LandingPageController extends Controller
                     'description' => $service->description ?? 'Professional ' . strtolower($service->category) . ' service',
                     'category' => $service->category,
                     'duration' => $service->duration,
+                    'image_url' => $service->image_url,
                 ];
             });
 

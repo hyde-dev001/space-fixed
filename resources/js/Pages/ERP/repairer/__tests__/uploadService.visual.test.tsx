@@ -5,6 +5,9 @@ import UploadService from '../uploadService';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
@@ -16,7 +19,12 @@ vi.mock('@inertiajs/react', () => ({
   }),
 }));
 vi.mock('axios', () => ({
-  default: { get: mocks.get },
+  default: {
+    get: mocks.get,
+    post: mocks.post,
+    put: mocks.put,
+    delete: mocks.delete,
+  },
 }));
 vi.mock('sweetalert2', () => ({
   default: { fire: vi.fn() },
@@ -87,5 +95,21 @@ describe('Repair services visual controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
 
     expect(screen.getByText('Edit Service')).toBeInTheDocument();
+  });
+
+  it('previews and removes an optional service image in the add modal', async () => {
+    render(<UploadService />);
+
+    await screen.findByRole('table');
+    fireEvent.click(screen.getByRole('button', { name: 'Add Service' }));
+
+    const imageInput = screen.getByLabelText('Service image (optional)');
+    const image = new File(['service-image'], 'service.jpg', { type: 'image/jpeg' });
+
+    fireEvent.change(imageInput, { target: { files: [image] } });
+
+    expect(await screen.findByAltText('Selected service image preview')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove image' }));
+    expect(screen.queryByAltText('Selected service image preview')).not.toBeInTheDocument();
   });
 });

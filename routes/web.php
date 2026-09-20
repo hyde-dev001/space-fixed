@@ -1409,7 +1409,7 @@ Route::prefix('api/repair-services')->group(function () {
             ->middleware('permission:access-upload-service|access-pricing-services');
 
         // Update repair service (Staff, Manager, and Repairer)
-        Route::put('{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'update'])
+        Route::match(['put', 'post'], '{id}', [\App\Http\Controllers\Api\RepairServiceController::class, 'update'])
             ->middleware('permission:access-upload-service|access-pricing-services');
 
         // Delete repair service (Staff, Manager, and Repairer)
