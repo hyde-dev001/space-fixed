@@ -2769,16 +2769,15 @@ const MyOrders: React.FC = () => {
                           </div>
                         )}
                         {order.refund_stage?.awaiting_refund_destination !== true && refundDestination && (
-                          <div className="flex w-full flex-col gap-3 rounded-xl border border-emerald-300 bg-emerald-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex w-full flex-col gap-3 rounded-xl border border-black bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
                             <div>
-                              <p className="text-sm font-semibold text-emerald-950">Refund destination saved</p>
-                              <p className="mt-1 text-xs text-emerald-900">
+                              <p className="text-sm font-semibold text-black">Refund destination saved</p>
+                              <p className="mt-1 text-xs text-black">
                                 {refundDestinationLabel}{refundDestinationName ? ` - ${refundDestinationName}` : ''}
                               </p>
                               {refundDestinationAccount && (
-                                <p className="mt-1 text-xs text-emerald-900">Account: {refundDestinationAccount}</p>
+                                <p className="mt-1 text-xs text-black">Account: {refundDestinationAccount}</p>
                               )}
-                              <p className="mt-1 text-xs text-emerald-900">Finance will use this destination for the Xendit payout.</p>
                             </div>
                             {canEditRefundDestination && (
                               <button

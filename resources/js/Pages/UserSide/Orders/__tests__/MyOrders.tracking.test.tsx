@@ -612,4 +612,34 @@ describe('MyOrders delivery tracking', () => {
     expect(screen.getByText(/\*\*\*\*\*\*\*6789/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'EDIT REFUND DESTINATION', exact: true })).toBeInTheDocument();
   });
+
+  it('uses a monochrome saved refund destination notice without payout helper text', () => {
+    order.status = 'delivered';
+    order.refund_stage = {
+      id: 9,
+      is_cod: true,
+      awaiting_refund_destination: false,
+      status: 'pending_approval',
+      shop_owner_status: 'approved',
+      finance_status: 'approved',
+      return_status: 'received',
+      payout_status: 'not_started',
+      refund_destination_type: 'e_wallet',
+      refund_destination: {
+        channel: 'Maya',
+        account_name: 'Maria Santos',
+        account_number: '*******6789',
+      },
+    };
+
+    render(<MyOrders />);
+
+    const title = screen.getByText('Refund destination saved');
+    const notice = title.parentElement?.parentElement;
+
+    expect(notice).toHaveClass('border-black', 'bg-white');
+    expect(notice).not.toHaveClass('bg-emerald-50');
+    expect(title).toHaveClass('text-black');
+    expect(screen.queryByText('Finance will use this destination for the Xendit payout.')).not.toBeInTheDocument();
+  });
 });

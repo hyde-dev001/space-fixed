@@ -307,6 +307,7 @@ export default function Profile({ user, requiresPasswordChange, security }: Page
                             enabled={security.totp_enabled}
                             activity={security.activity}
                             active_sessions={security.active_sessions}
+                            showSessions={false}
                         />
                     </div>
                 )}
