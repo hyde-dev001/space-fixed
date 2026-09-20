@@ -39,6 +39,7 @@ interface RepairPackage {
   id: number;
   name: string;
   description?: string | null;
+  duration?: string | null;
   package_price: number;
   service_count: number;
   services_total_price: number;
@@ -922,6 +923,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
                           <div className="text-sm text-gray-600 space-y-1">
                             <p>Includes {pkg.service_count} service{pkg.service_count !== 1 ? 's' : ''}</p>
+                            <p>Duration: {pkg.duration || 'Not set'}</p>
                             <p>Save ₱{Number(pkg.savings_amount || 0).toLocaleString()}</p>
                           </div>
 

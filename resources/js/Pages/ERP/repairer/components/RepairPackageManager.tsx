@@ -16,10 +16,9 @@ type RepairPackage = {
   id: number;
   name: string;
   description?: string | null;
+  duration?: string | null;
   package_price: number;
   status: "active" | "inactive";
-  starts_at?: string | null;
-  ends_at?: string | null;
   service_count: number;
   services_total_price: number;
   savings_amount: number;
@@ -89,10 +88,11 @@ type PackageAnalytics = {
 type PackageFormState = {
   name: string;
   description: string;
+  durationFrom: string;
+  durationTo: string;
+  durationUnit: "minutes" | "hours" | "days";
   package_price: string;
   status: "active" | "inactive";
-  starts_at: string;
-  ends_at: string;
   service_ids: number[];
   material_templates: Array<{
     inventory_item_id: number;
@@ -103,10 +103,11 @@ type PackageFormState = {
 const defaultFormState: PackageFormState = {
   name: "",
   description: "",
+  durationFrom: "",
+  durationTo: "",
+  durationUnit: "hours",
   package_price: "",
   status: "active",
-  starts_at: "",
-  ends_at: "",
   service_ids: [],
   material_templates: [],
 };
@@ -124,6 +125,55 @@ const formatDateTime = (value?: string | null) => {
     day: "numeric",
     year: "numeric",
   }).format(new Date(value));
+};
+
+const parseDurationValue = (value?: string | null): Pick<PackageFormState, "durationFrom" | "durationTo" | "durationUnit"> => {
+  const normalized = String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const rangeMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(minutes?|hours?|days?)$/i);
+
+  if (rangeMatch) {
+    return {
+      durationFrom: rangeMatch[1],
+      durationTo: rangeMatch[2],
+      durationUnit: rangeMatch[3].startsWith("day")
+        ? "days"
+        : rangeMatch[3].startsWith("minute")
+          ? "minutes"
+          : "hours",
+    };
+  }
+
+  const singleMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(minutes?|hours?|days?)$/i);
+  if (singleMatch) {
+    return {
+      durationFrom: singleMatch[1],
+      durationTo: "",
+      durationUnit: singleMatch[2].startsWith("day")
+        ? "days"
+        : singleMatch[2].startsWith("minute")
+          ? "minutes"
+          : "hours",
+    };
+  }
+
+  return { durationFrom: "", durationTo: "", durationUnit: "hours" };
+};
+
+const buildDurationValue = (
+  durationFrom: string,
+  durationTo: string,
+  durationUnit: "minutes" | "hours" | "days",
+) => {
+  const fromValue = Number(durationFrom);
+  if (!Number.isFinite(fromValue) || fromValue <= 0) return "";
+
+  if (durationTo.trim()) {
+    const toValue = Number(durationTo);
+    if (!Number.isFinite(toValue) || toValue < fromValue) return "";
+    return `${fromValue} to ${toValue} ${durationUnit}`;
+  }
+
+  return `${fromValue} ${fromValue === 1 ? durationUnit.slice(0, -1) : durationUnit}`;
 };
 
 const EditIcon = ({ className }: { className?: string }) => (
@@ -287,10 +337,9 @@ export default function RepairPackageManager({
     setFormState({
       name: pkg.name,
       description: pkg.description || "",
+      ...parseDurationValue(pkg.duration),
       package_price: String(pkg.package_price),
       status: pkg.status,
-      starts_at: pkg.starts_at ? pkg.starts_at.slice(0, 16) : "",
-      ends_at: pkg.ends_at ? pkg.ends_at.slice(0, 16) : "",
       service_ids: pkg.services.map((service) => service.id),
       material_templates: (pkg.material_templates || []).map((line) => ({
         inventory_item_id: line.inventory_item_id,
@@ -385,6 +434,10 @@ export default function RepairPackageManager({
       return "Package price must be a valid amount greater than zero.";
     }
 
+    if (!buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit)) {
+      return "Please enter a valid duration estimate.";
+    }
+
     return null;
   };
 
@@ -403,10 +456,12 @@ export default function RepairPackageManager({
       }));
 
       const payload = {
-        ...formState,
+        name: formState.name,
+        description: formState.description,
+        duration: buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit),
         package_price: Number(formState.package_price),
-        starts_at: formState.starts_at || null,
-        ends_at: formState.ends_at || null,
+        status: formState.status,
+        service_ids: formState.service_ids,
         material_templates: materialTemplatesPayload,
       };
 
@@ -441,10 +496,12 @@ export default function RepairPackageManager({
       }));
 
       const payload = {
-        ...formState,
+        name: formState.name,
+        description: formState.description,
+        duration: buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit),
         package_price: Number(formState.package_price),
-        starts_at: formState.starts_at || null,
-        ends_at: formState.ends_at || null,
+        status: formState.status,
+        service_ids: formState.service_ids,
         material_templates: materialTemplatesPayload,
       };
 
@@ -520,7 +577,7 @@ export default function RepairPackageManager({
     const isEditMode = mode === "edit";
 
     return (
-      <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
+      <div className="fixed inset-0 z-999999 bg-black/25 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b border-gray-200 dark:border-gray-800">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{title}</h2>
@@ -606,25 +663,48 @@ export default function RepairPackageManager({
                   )}
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Starts At (optional)</label>
-                <input
-                  type="datetime-local"
-                  title="Package start date and time"
-                  value={formState.starts_at}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, starts_at: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Ends At (optional)</label>
-                <input
-                  type="datetime-local"
-                  title="Package end date and time"
-                  value={formState.ends_at}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, ends_at: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                />
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Duration Estimate *</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    title="Minimum duration"
+                    value={formState.durationFrom}
+                    onChange={(e) => setFormState((prev) => ({ ...prev, durationFrom: e.target.value }))}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    placeholder="2"
+                  />
+                  <input
+                    type="number"
+                    min={formState.durationFrom ? Number(formState.durationFrom) : 1}
+                    step="1"
+                    title="Maximum duration (optional)"
+                    value={formState.durationTo}
+                    onChange={(e) => setFormState((prev) => ({ ...prev, durationTo: e.target.value }))}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    placeholder="3"
+                  />
+                  <MonochromeSelect
+                    title="Select duration unit"
+                    value={formState.durationUnit}
+                    onChange={(e) => setFormState((prev) => ({ ...prev, durationUnit: e.target.value as PackageFormState["durationUnit"] }))}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                  </MonochromeSelect>
+                </div>
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Leave the second box empty for an exact estimate. Fill both for a range like 30 to 45 minutes, 2 to 3 hours, or 1 to 2 days.
+                </p>
+                {buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit) && (
+                  <p className="mt-2 text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Preview: {buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit)}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -967,6 +1047,7 @@ export default function RepairPackageManager({
                 <td className="px-6 py-4 align-top">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">{pkg.name}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{pkg.description || "No description"}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Duration: {pkg.duration || "Not set"}</p>
                 </td>
                 <td className="px-6 py-4 align-top text-sm text-gray-700 dark:text-gray-200">
                   {pkg.service_count} service{pkg.service_count !== 1 ? "s" : ""}

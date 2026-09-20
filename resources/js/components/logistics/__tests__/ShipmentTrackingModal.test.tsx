@@ -56,7 +56,7 @@ describe('ShipmentTrackingModal', () => {
     expect(dialog).toHaveClass(
       'userside-tracking-modal',
       'erp-modal-backdrop',
-      'bg-black/60',
+      'bg-black/25',
       'fixed',
       'inset-0',
       'z-[99999]',

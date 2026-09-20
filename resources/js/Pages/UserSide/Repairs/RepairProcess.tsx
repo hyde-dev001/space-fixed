@@ -23,6 +23,7 @@ interface RepairPackage {
   id: number;
   name: string;
   description?: string | null;
+  duration?: string | null;
   package_price: number;
   effective_package_price?: number;
   proposed_package_price?: number;
@@ -1552,6 +1553,7 @@ const RepairProcess: React.FC = () => {
                                   <div>
                                     <p className="text-sm font-semibold text-black">{pkg.name}</p>
                                     <p className="text-xs text-gray-600">{pkg.description || 'Package offer'}</p>
+                                    <p className="text-xs text-gray-500">Duration: {pkg.duration || 'Not set'}</p>
                                     <p className="text-xs text-gray-500 mt-1">
                                       Includes {pkg.service_count} service{pkg.service_count !== 1 ? 's' : ''} • Save ₱{Number(pkg.savings_amount || 0).toLocaleString()}
                                     </p>

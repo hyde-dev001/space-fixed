@@ -71,6 +71,7 @@ class RepairPackageController extends Controller
                 'shop_owner_id' => $package->shop_owner_id,
                 'name' => $package->name,
                 'description' => $package->description,
+                'duration' => $package->duration,
                 'package_price' => $effectivePrice,
                 'effective_package_price' => $effectivePrice,
                 'proposed_package_price' => (float) $package->package_price,
@@ -147,6 +148,7 @@ class RepairPackageController extends Controller
                 'shop_owner_id' => $package->shop_owner_id,
                 'name' => $package->name,
                 'description' => $package->description,
+                'duration' => $package->duration,
                 'package_price' => $effectivePrice,
                 'effective_package_price' => $effectivePrice,
                 'proposed_package_price' => (float) $package->package_price,
@@ -358,6 +360,7 @@ class RepairPackageController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'duration' => 'nullable|string|max:255',
             'package_price' => 'required|numeric|min:0.01',
             'status' => 'nullable|in:active,inactive',
             'starts_at' => 'nullable|date',
@@ -384,6 +387,7 @@ class RepairPackageController extends Controller
             'shop_owner_id' => $shopOwnerId,
             'name' => $request->name,
             'description' => $request->description,
+            'duration' => $request->duration,
             'package_price' => $request->package_price,
             'status' => $request->status ?? 'active',
             'starts_at' => $request->starts_at,
@@ -557,6 +561,7 @@ class RepairPackageController extends Controller
         $rules = [
             'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
+            'duration' => 'nullable|string|max:255',
             'status' => 'sometimes|in:active,inactive',
             'starts_at' => 'nullable|date',
             'ends_at' => 'nullable|date|after_or_equal:starts_at',
@@ -582,7 +587,7 @@ class RepairPackageController extends Controller
             ], 422);
         }
 
-        $updateData = $request->only(['name', 'description', 'status', 'starts_at', 'ends_at']);
+        $updateData = $request->only(['name', 'description', 'duration', 'status', 'starts_at', 'ends_at']);
         if ($isPriceChange && $isIndividualShop) {
             $updateData = array_merge($updateData, [
                 'old_package_price' => $package->package_price,

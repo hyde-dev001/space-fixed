@@ -68,6 +68,11 @@ describe('shop owner order state contract', () => {
     expect(staffSource).toContain('formatPaymentMethod(viewOrder.paymentMethod)');
   });
 
+  it('humanizes persisted refund reason codes in both order details modals', () => {
+    expect(source).toContain('humanizeRefundReason(viewOrder.latest_refund?.reason_code)');
+    expect(staffSource).toContain('humanizeRefundReason(viewOrder.latest_refund?.reason_code)');
+  });
+
   it('opens focused refund orders without filtering the order list', () => {
     expect(source).not.toContain('setSearchTerm(matchedOrder.order_number);');
     expect(source).toContain("params.delete('focus_order');");
