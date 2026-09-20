@@ -14,11 +14,11 @@ interface FormErrors {
 
 type LoginPageProps = {
   csrf_token?: string;
-  flash?: { success?: string };
+  success?: string;
 };
 
 export default function UserLogin() {
-  const { csrf_token, flash = {} } = usePage<LoginPageProps>().props;
+  const { csrf_token, success } = usePage<LoginPageProps>().props;
 
   const [formData, setFormData] = useState({
     email: '',
@@ -31,17 +31,17 @@ export default function UserLogin() {
   const [showPassword, setShowPassword] = useState(false);
   const authInputClasses = 'userside-auth-input h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70';
 
-  // Show flash success message (e.g. after accepting invitation)
+  // Show server flash messages (e.g. after email verification or accepting an invitation).
   useEffect(() => {
-    if (flash.success) {
+    if (success) {
       Swal.fire({
         icon: 'success',
-        title: 'Account Activated',
-        text: 'Your account is ready to use. Sign in now to get started.',
+        title: 'Success',
+        text: success,
         confirmButtonText: 'Sign in now',
       });
     }
-  }, [flash.success]);
+  }, [success]);
 
   useEffect(() => router.on('invalid', (event) => {
     if (event.detail.response.status !== 429) return;

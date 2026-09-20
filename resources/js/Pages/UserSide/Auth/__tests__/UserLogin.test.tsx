@@ -35,7 +35,7 @@ import UserLogin from '../UserLogin';
 const pageState = {
   props: {
     csrf_token: 'csrf-token',
-    flash: {},
+    success: undefined as string | undefined,
   },
 };
 
@@ -48,7 +48,7 @@ beforeEach(() => {
   swalFireMock.mockReset();
   pageState.props = {
     csrf_token: 'csrf-token',
-    flash: {},
+    success: undefined,
   };
   usePageMock.mockReturnValue(pageState);
   (globalThis as { route?: (name: string) => string }).route = (name: string) => ({
@@ -59,6 +59,17 @@ beforeEach(() => {
 });
 
 describe('unified sign-in', () => {
+  it('shows the server success message after email verification', () => {
+    pageState.props.success = 'Email verified successfully. You may now sign in.';
+
+    render(<UserLogin />);
+
+    expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      icon: 'success',
+      text: 'Email verified successfully. You may now sign in.',
+    }));
+  });
+
   it('renders the geometric background treatment on the login page', () => {
     render(<UserLogin />);
 

@@ -79,6 +79,12 @@ const DOCUMENT_OPTIONS: Array<{
 		guidance: 'Upload one clear landscape image of the complete UMID front.',
 		slots: ['front'],
 	},
+	{
+		value: 'student_id',
+		label: 'Student ID',
+		guidance: 'Upload clear front and back images of your Student ID. An authorized admin will review both images manually; OCR is not used.',
+		slots: ['front', 'back'],
+	},
 ];
 
 const ACCEPT = 'image/jpeg,image/png,image/webp';
@@ -93,7 +99,9 @@ const REJECTION_LABELS: Record<string, string> = {
 };
 
 const statusLabel = (value: string): string => (
-	value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
+	value === 'student_id'
+		? 'Student ID'
+		: value.replaceAll('_', ' ').replace(/\b\w/g, character => character.toUpperCase())
 );
 
 const screeningLabel = (value: string): string => {

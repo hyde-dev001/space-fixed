@@ -104,6 +104,10 @@ final class IdentityVerificationService
             ]);
         }
 
+        if ($metadata['document_type'] === 'student_id') {
+            $metadata['outcome'] = 'manual_review_required';
+        }
+
         return $metadata;
     }
 

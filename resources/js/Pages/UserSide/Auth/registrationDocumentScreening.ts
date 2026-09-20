@@ -52,7 +52,7 @@ export interface RegistrationDocumentRejection {
   message: string;
 }
 
-const DOCUMENT_TYPES = ['national_id', 'drivers_license', 'passport', 'umid'] as const;
+const DOCUMENT_TYPES = ['national_id', 'drivers_license', 'passport', 'umid', 'student_id'] as const;
 
 const OBVIOUS_NON_DOCUMENT_SIGNALS = [
   'receipt',
@@ -229,6 +229,23 @@ const sideResult = (
   fingerprint: fingerprint?.exact ?? null,
   imageFingerprint: fingerprint,
   validationNotes: notes,
+});
+
+const studentIdSideResult = (
+  side: RegistrationDocumentSide,
+  fingerprint: RegistrationImageFingerprint | null,
+): RegistrationDocumentSideResult => ({
+  side,
+  outcome: side === 'front' || side === 'back' ? 'plausible' : 'reject_upload',
+  ocrText: '',
+  ocrConfidence: 0,
+  detectedDocumentFamily: 'student_id',
+  detectedAnchorKeys: ['manual_review_only'],
+  confidenceBand: null,
+  qrDetected: false,
+  fingerprint: fingerprint?.exact ?? null,
+  imageFingerprint: fingerprint,
+  validationNotes: ['manual_review_only'],
 });
 
 const rejectSide = (
@@ -555,6 +572,8 @@ export const screenRegistrationDocumentSide = (
   fingerprint: RegistrationImageFingerprint | null = null,
   nationalIdFormat: RegistrationNationalIdFormat = 'physical_card',
 ): RegistrationDocumentSideResult => {
+  if (documentType === 'student_id') return studentIdSideResult(side, fingerprint);
+
   const text = normalize(ocr.text);
 
   if (!DOCUMENT_TYPES.includes(documentType as typeof DOCUMENT_TYPES[number])) {
@@ -620,6 +639,8 @@ export async function screenRegistrationDocumentSideFromFile(
 ): Promise<RegistrationDocumentSideResult> {
   try {
     const fingerprint = await fingerprintRegistrationImage(file);
+    if (documentType === 'student_id') return studentIdSideResult(side, fingerprint);
+
     const ocr = await readRegistrationId(file, onStage, {
       includeIdentityTextPasses: (side === 'front'
         && ['national_id', 'umid', 'drivers_license'].includes(documentType))
@@ -710,6 +731,17 @@ export const screenRegistrationSubmission = (
         message: rejectionMessage(side, 'insufficient_document_evidence'),
       };
     }
+  }
+
+  if (documentType === 'student_id') {
+    return {
+      documentType,
+      outcome: 'manual_review_required',
+      duplicateKind,
+      failureSide: 'front',
+      message: 'Student ID images received. An admin will manually review both sides before transaction access is enabled.',
+      ...sideResults,
+    };
   }
 
   const families = requiredSides

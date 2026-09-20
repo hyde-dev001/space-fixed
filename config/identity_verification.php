@@ -236,6 +236,16 @@ return [
                 'supporting_fields' => ['name_detected', 'birth_date_detected', 'id_number_detected'],
             ],
         ],
+        'student_id' => [
+            'label' => 'Student ID',
+            'requires_back' => true,
+            'required_slots' => ['front', 'back'],
+            'manual_review_only' => true,
+            'upload_guidance' => [
+                'instruction' => 'Upload clear front and back images of the Student ID. Both sides require manual admin review; OCR is not used.',
+                'visual_checks' => ['photo', 'complete_document'],
+            ],
+        ],
     ],
 
     'obvious_non_document_signals' => [

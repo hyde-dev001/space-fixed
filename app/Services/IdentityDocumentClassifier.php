@@ -51,6 +51,7 @@ final class IdentityDocumentClassifier
             $documentType,
             $nationalIdFormat,
         );
+        $manualReviewOnly = ($definitions[$documentType]['manual_review_only'] ?? false) === true;
         $allowedSlots = ['front', 'back', 'biodata'];
         $unexpectedSlots = array_values(array_diff(array_map('strval', array_keys($sideResults)), $allowedSlots));
 
@@ -124,6 +125,16 @@ final class IdentityDocumentClassifier
             }
 
             $normalizedSides[$slot] = $result;
+        }
+
+        if ($manualReviewOnly) {
+            return $this->manualReview(
+                'manual_review_only',
+                $attentionSide ?? ($documentType === 'passport' ? 'biodata' : 'front'),
+                $documentType,
+                $nationalIdFormat,
+                $normalizedSides,
+            );
         }
 
         $families = array_values(array_unique(array_filter(array_map(

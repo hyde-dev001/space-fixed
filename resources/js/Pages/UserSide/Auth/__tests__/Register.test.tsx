@@ -127,8 +127,8 @@ const goToIdStep = async () => {
   await waitFor(() => expect(screen.getByLabelText('Age')).toBeInTheDocument());
   fireEvent.change(screen.getByLabelText('Age'), { target: { value: '25' } });
   fireEvent.change(screen.getByLabelText('Address'), { target: { value: '123 Rizal Street' } });
-  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'Password1' } });
-  fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'Password1' } });
+  fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'Password1234' } });
+  fireEvent.change(screen.getByLabelText('Confirm Password'), { target: { value: 'Password1234' } });
   await act(async () => {
     fireEvent.click(screen.getByRole('button', { name: 'Use My GPS' }));
     await Promise.resolve();

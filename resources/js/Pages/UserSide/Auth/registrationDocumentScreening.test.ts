@@ -60,6 +60,22 @@ describe('registration document plausibility screening', () => {
     },
   );
 
+  it('skips OCR for Student ID front and back images and routes the pair to review', async () => {
+    mockedReadRegistrationId.mockClear();
+    const frontFile = new File(['front'], 'student-front.jpg', { type: 'image/jpeg' });
+    const backFile = new File(['back'], 'student-back.jpg', { type: 'image/jpeg' });
+
+    const front = await screenRegistrationDocumentSideFromFile('student_id', 'front', frontFile);
+    const back = await screenRegistrationDocumentSideFromFile('student_id', 'back', backFile);
+    const submission = screenRegistrationSubmission('student_id', { front, back });
+
+    expect(mockedReadRegistrationId).not.toHaveBeenCalled();
+    expect(front.outcome).toBe('plausible');
+    expect(back.outcome).toBe('plausible');
+    expect(front.detectedDocumentFamily).toBe('student_id');
+    expect(submission.outcome).toBe('manual_review_required');
+  });
+
   it('requires Philippine/LTO and driver-specific evidence on a license front', () => {
     const result = screenRegistrationDocumentSide(
       'drivers_license',

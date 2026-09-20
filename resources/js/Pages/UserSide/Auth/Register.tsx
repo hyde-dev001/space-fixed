@@ -63,6 +63,12 @@ const DOCUMENT_TYPE_OPTIONS = [
     guidance: 'Upload one clear landscape image of the complete UMID front. The back is not required. Automated screening checks document plausibility; it does not verify chips, holograms, or other authenticity features.',
     slots: ['front'] as RegistrationDocumentSide[],
   },
+  {
+    value: 'student_id',
+    label: 'Student ID',
+    guidance: 'Upload clear front and back images of your Student ID. An authorized admin will review both images manually; OCR is not used.',
+    slots: ['front', 'back'] as RegistrationDocumentSide[],
+  },
 ] as const;
 
 const ADDRESS_LOOKUP_TIMEOUT_MS = 15_000;
@@ -297,12 +303,13 @@ export default function Register() {
   const requiredSlots: RegistrationDocumentSide[] = selectedDocumentOption?.slots ?? [];
   const requiresBack = requiredSlots.includes('back');
   const isPassport = selectedDocumentOption?.value === 'passport';
+  const isStudentId = selectedDocumentOption?.value === 'student_id';
   const nationalIdFormat: RegistrationNationalIdFormat = formData.documentType === 'national_id'
     ? 'digital_image'
     : 'physical_card';
   const nameEvidenceSlot: RegistrationDocumentSide = isPassport ? 'biodata' : 'front';
   const nameEvidenceSide = sideResults[nameEvidenceSlot];
-  const nameMatchResult = nameEvidenceSide?.outcome === 'plausible'
+  const nameMatchResult: RegistrationNameMatchOutcome = !isStudentId && nameEvidenceSide?.outcome === 'plausible'
     ? matchRegistrationName(formData.firstName, formData.lastName, nameEvidenceSide.ocrText)
     : null;
 
@@ -332,7 +339,9 @@ export default function Register() {
     const readySlots = requiredSlots.filter(slot => sideStatuses[slot] === 'ready');
     if (readySlots.length === requiredSlots.length && requiredSlots.length > 0) {
       if (decision.outcome === 'manual_review_required') {
-        return 'ID images received. We\'ll review your identity before transaction access is enabled.';
+        return isStudentId
+          ? 'Student ID images received. An admin will manually review both sides before transaction access is enabled.'
+          : 'ID images received. We\'ll review your identity before transaction access is enabled.';
       }
 
       return isPassport
@@ -469,7 +478,7 @@ export default function Register() {
       }
 
       if (requiredSlots.includes('front') && !formData.validId) {
-        newErrors.validId = errors.validId || 'Please upload a supported government-issued ID (JPG, JPEG, PNG, or WEBP up to 5MB).';
+        newErrors.validId = errors.validId || 'Please upload a supported ID image (JPG, JPEG, PNG, or WEBP up to 5MB).';
       }
 
       if (requiredSlots.includes('biodata') && !formData.validId) {
@@ -975,7 +984,7 @@ export default function Register() {
 
               <h3>2. Information We Request</h3>
               <p>
-                We ask for your basic personal details and a supported government-issued ID for document screening, account security, and marketplace protection.
+                We ask for your basic personal details and a supported identity document for document screening, account security, and marketplace protection.
               </p>
 
               <h3>3. Security and Anti-Fraud Policy</h3>
@@ -1471,7 +1480,9 @@ export default function Register() {
                         {requiresBack
                           ? formData.documentType === 'national_id'
                             ? NATIONAL_ID_UPLOAD_GUIDANCE
-                            : 'Upload a clear front and back image of the same ID.'
+                            : isStudentId
+                              ? 'Upload clear front and back images of your Student ID. Both sides are reviewed manually; OCR is not used.'
+                              : 'Upload a clear front and back image of the same ID.'
                           : isPassport
                             ? 'Upload the passport biodata page, including the complete machine-readable zone.'
                             : 'Select an ID type, then upload the required image.'}
@@ -1556,10 +1567,12 @@ export default function Register() {
                     <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
                       <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-700">Why we ask for a valid ID</p>
                       <p className="mt-1 text-[12px] leading-5 text-gray-600">
-                        We require a government-issued ID to help prevent fake accounts, fraud, and abuse. Your ID is stored privately, and access by authorized personnel is audited.
+                        We require an identity document to help prevent fake accounts, fraud, and abuse. Your ID is stored privately, and access by authorized personnel is audited.
                       </p>
                       <p className="mt-1 text-[12px] leading-5 text-gray-600">
-                        Automated screening checks whether the document matches the selected ID type but does not prove authenticity.
+                        {isStudentId
+                          ? 'Student ID images are not processed with OCR. An authorized admin manually checks both sides before approval.'
+                          : 'Automated screening checks whether the document matches the selected ID type but does not prove authenticity.'}
                       </p>
                       <p className="mt-1 text-[12px] leading-5 text-gray-600">
                         Supported formats: JPG, JPEG, PNG, and WEBP. Maximum size: 5MB.
