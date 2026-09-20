@@ -15,6 +15,7 @@ class RepairPackage extends Model
         'shop_owner_id',
         'name',
         'description',
+        'duration',
         'package_price',
         'old_package_price',
         'change_reason',

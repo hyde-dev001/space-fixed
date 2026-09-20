@@ -163,6 +163,7 @@ class RepairPackageApiTest extends TestCase
                 'name' => 'Individual Restore Bundle',
                 'description' => 'Includes two services',
                 'package_price' => 1000,
+                'duration' => '2 to 3 hours',
                 'status' => 'active',
                 'service_ids' => [$s1->id, $s2->id],
                 'material_templates' => [[
@@ -173,11 +174,13 @@ class RepairPackageApiTest extends TestCase
                 ]],
             ])
             ->assertCreated()
-            ->assertJsonPath('data.name', 'Individual Restore Bundle');
+            ->assertJsonPath('data.name', 'Individual Restore Bundle')
+            ->assertJsonPath('data.duration', '2 to 3 hours');
 
         $this->assertDatabaseHas('repair_packages', [
             'shop_owner_id' => $shopOwner->id,
             'name' => 'Individual Restore Bundle',
+            'duration' => '2 to 3 hours',
         ]);
     }
 
@@ -209,6 +212,7 @@ class RepairPackageApiTest extends TestCase
             ->putJson("/api/repair-packages/{$package->id}", [
                 'name' => $package->name,
                 'description' => $package->description,
+                'duration' => '3 days',
                 'package_price' => 1250,
                 'status' => 'active',
                 'service_ids' => [$s1->id, $s2->id],
@@ -223,6 +227,7 @@ class RepairPackageApiTest extends TestCase
         $this->assertDatabaseHas('repair_packages', [
             'id' => $package->id,
             'package_price' => 1250,
+            'duration' => '3 days',
             'approval_status' => 'finalized',
         ]);
         $this->assertSame(1000.0, (float) $booking->fresh()->package_price);
@@ -311,6 +316,7 @@ class RepairPackageApiTest extends TestCase
             'shop_owner_id' => $shopA->id,
             'name' => 'Active A',
             'package_price' => 900,
+            'duration' => '1 day',
             'status' => 'active',
         ]);
         $activeA->syncIncludedServices([$a1->id, $a2->id]);
@@ -340,6 +346,7 @@ class RepairPackageApiTest extends TestCase
         $this->assertContains('Active A', $names);
         $this->assertNotContains('Inactive A', $names);
         $this->assertNotContains('Active B', $names);
+        $this->assertSame('1 day', collect($response->json('data'))->firstWhere('name', 'Active A')['duration']);
     }
 
     public function test_customer_can_submit_repair_request_using_selected_package(): void

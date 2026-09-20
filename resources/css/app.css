@@ -5119,8 +5119,8 @@ body .erp-modal-backdrop:not([class~='opacity-0']) {
 }
 
 body .userside-tracking-modal.erp-modal-backdrop {
-  background: rgba(0, 0, 0, 0.6) !important;
-  background-color: rgba(0, 0, 0, 0.6) !important;
+  background: rgba(0, 0, 0, 0.25) !important;
+  background-color: rgba(0, 0, 0, 0.25) !important;
 }
 
 #app .erp-theme .live-tracking-map .leaflet-container img.leaflet-tile,

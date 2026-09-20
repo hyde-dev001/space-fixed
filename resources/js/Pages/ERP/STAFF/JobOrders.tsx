@@ -226,6 +226,17 @@ const parseAmount = (value: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const humanizeRefundReason = (value: string | null | undefined): string => {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) return "";
+
+  return normalized
+    .replace(/[_-]+/g, " ")
+    .split(/\s+/)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+};
+
 const roundCurrency = (value: number): number => {
   return Math.round(Math.max(0, value) * 100) / 100;
 };
@@ -2483,7 +2494,7 @@ export default function JobOrdersPage() {
 
         {/* Shipping Modal */}
         {isShippingModalOpen && selectedOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
+          <div className="fixed inset-0 z-[999999] bg-black/25 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ship Order</h2>
@@ -2683,7 +2694,7 @@ export default function JobOrdersPage() {
 
         {/* View Order Modal */}
         {isViewModalOpen && viewOrder && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 erp-modal-backdrop">
+          <div className="fixed inset-0 z-[999999] bg-black/25 backdrop-blur-sm flex items-center justify-center px-4 erp-modal-backdrop">
             <div className="relative bg-white dark:bg-gray-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
               <div className="px-6 py-5 border-b border-gray-200 dark:border-gray-700 flex items-start justify-between">
                 <div>
@@ -2877,7 +2888,7 @@ export default function JobOrdersPage() {
                       ).trim();
                       const refundMessage = String(
                         viewOrder.latest_refund?.other_reason_note
-                          || viewOrder.latest_refund?.reason_code
+                          || humanizeRefundReason(viewOrder.latest_refund?.reason_code)
                           || ''
                       ).trim();
 

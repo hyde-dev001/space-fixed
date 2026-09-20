@@ -67,6 +67,19 @@ afterEach(() => {
 });
 
 describe("RepairPackageManager service selection", () => {
+  it("uses a duration estimate instead of package start and end dates", async () => {
+    render(<RepairPackageManager />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Add Package/i }));
+
+    expect(screen.getByText("Duration Estimate *")).toBeInTheDocument();
+    expect(screen.getByTitle("Minimum duration")).toHaveAttribute("type", "number");
+    expect(screen.getByTitle("Maximum duration (optional)")).toHaveAttribute("type", "number");
+    expect(screen.getByTitle("Select duration unit")).toBeInTheDocument();
+    expect(screen.queryByText("Starts At (optional)")).not.toBeInTheDocument();
+    expect(screen.queryByText("Ends At (optional)")).not.toBeInTheDocument();
+  });
+
   it("keeps a selected service card readable instead of using a dark theme state", async () => {
     render(<RepairPackageManager />);
 
