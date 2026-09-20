@@ -216,6 +216,36 @@ beforeEach(() => {
 });
 
 describe('customer registration document screening UI', () => {
+  it('shows and hides both registration password fields', async () => {
+    render(<Register />);
+    fireEvent.change(screen.getByLabelText('First Name'), { target: { value: 'Juan' } });
+    fireEvent.change(screen.getByLabelText('Last Name'), { target: { value: 'Dela Cruz' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'juan@example.com' } });
+    fireEvent.change(screen.getByLabelText('Phone Number'), { target: { value: '09171234567' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getByLabelText('Age')).toBeInTheDocument());
+
+    const password = screen.getByLabelText('Password');
+    const confirmPassword = screen.getByLabelText('Confirm Password');
+    expect(password).toHaveAttribute('type', 'password');
+    expect(confirmPassword).toHaveAttribute('type', 'password');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Show password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Show confirm password' }));
+    expect(password).toHaveAttribute('type', 'text');
+    expect(confirmPassword).toHaveAttribute('type', 'text');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Hide password' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Hide confirm password' }));
+    expect(password).toHaveAttribute('type', 'password');
+    expect(confirmPassword).toHaveAttribute('type', 'password');
+  });
+
   it('checks email and phone together and keeps a duplicate phone on Step 1', async () => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

@@ -2,6 +2,7 @@ import MonochromeSelect from "@/components/form/Select";
 import { useEffect, useRef, useState } from 'react';
 import 'leaflet/dist/leaflet.css';
 import { Head, router } from '@inertiajs/react';
+import { Eye, EyeOff } from 'lucide-react';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 import AuthBrand from '../Shared/AuthBrand';
 import Label from '../../../components/form/Label';
@@ -283,6 +284,8 @@ export default function Register() {
 
   const [errors, setErrors] = useState<Record<string, string | undefined>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [addressLocation, setAddressLocation] = useState<RegistrationAddress | null>(null);
   const [addressSearch, setAddressSearch] = useState('');
   const [geoError, setGeoError] = useState('');
@@ -1227,6 +1230,15 @@ export default function Register() {
   return (
     <>
       <Head title="Register" />
+      <style>{`
+        input[type="password"]::-webkit-reveal-password-button,
+        input[type="password"]::-webkit-credentials-auto-fill-button {
+          display: none;
+        }
+        input[type="password"]::-ms-reveal {
+          display: none;
+        }
+      `}</style>
       <div className="userside-auth-page userside-auth-pattern relative min-h-screen font-outfit antialiased">
         <AuthBrand />
         <DocumentScreeningOverlay side={screeningSlot} status={screeningStatus} />
@@ -1395,7 +1407,7 @@ export default function Register() {
                     <div className="relative">
                       <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
-                        type="password"
+                        type={showPassword ? 'text' : 'password'}
                         id="password"
                         name="password"
                         minLength={12}
@@ -1403,8 +1415,17 @@ export default function Register() {
                         value={formData.password}
                         onChange={handleInputChange}
                         aria-describedby="password-requirements"
-                        className={`pl-10 ${authInputClasses} ${errors.password ? 'border-red-500' : ''}`}
+                        className={`pl-10 pr-12 ${authInputClasses} ${errors.password ? 'border-red-500' : ''}`}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-gray-400 transition-colors hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                        aria-pressed={showPassword}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                      </button>
                     </div>
                     <div
                       id="password-requirements"
@@ -1433,15 +1454,24 @@ export default function Register() {
                     <div className="relative">
                       <LockIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                       <Input
-                        type="password"
+                        type={showConfirmPassword ? 'text' : 'password'}
                         id="confirmPassword"
                         name="confirmPassword"
                         minLength={12}
                         placeholder="Confirm your password"
                         value={formData.confirmPassword}
                         onChange={handleInputChange}
-                        className={`pl-10 ${authInputClasses} ${errors.confirmPassword ? 'border-red-500' : ''}`}
+                        className={`pl-10 pr-12 ${authInputClasses} ${errors.confirmPassword ? 'border-red-500' : ''}`}
                       />
+                      <button
+                        type="button"
+                        onClick={() => setShowConfirmPassword((prev) => !prev)}
+                        className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-lg text-gray-400 transition-colors hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400"
+                        aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                        aria-pressed={showConfirmPassword}
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                      </button>
                     </div>
                     {errors.confirmPassword && <p className="mt-1 text-sm text-red-600">{errors.confirmPassword}</p>}
                   </div>
