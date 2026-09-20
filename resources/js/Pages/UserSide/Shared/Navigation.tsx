@@ -344,6 +344,7 @@ const Navigation: React.FC<NavigationProps> = ({
   const megaMenuVisibleClasses = 'opacity-100 translate-y-0 pointer-events-auto';
 
   const navItems = getCustomerNavItems(isAuthenticated);
+  const sidebarNavItems = navItems.filter((item) => item.label !== 'Services');
 
   let activeIndex = -1;
 
@@ -1548,7 +1549,7 @@ const Navigation: React.FC<NavigationProps> = ({
             </div>
             <nav className="flex-1 px-6 py-7 sm:px-8">
               <div className="space-y-1">
-                {navItems.map((item) => {
+                {sidebarNavItems.map((item) => {
                   const hasChildren = Boolean(item.dropdownKey);
                   const href = route(item.route, item.params ?? undefined);
                   const isExpanded = landingSidebarExpanded === item.dropdownKey;
@@ -1579,11 +1580,6 @@ const Navigation: React.FC<NavigationProps> = ({
                     </div>
                   );
                 })}
-                {isAuthenticated && (
-                  <Link href={route('shop-owner-register')} onClick={() => setLandingSidebarOpen(false)} className={`flex min-h-12 items-center text-lg font-semibold tracking-[-0.02em] transition-opacity hover:opacity-55 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] sm:text-xl ${isMobileServicesActive ? 'text-gray-900 dark:text-white' : ''}`}>
-                    <span>Join Our Team</span>
-                  </Link>
-                )}
               </div>
             </nav>
             <div className="relative border-t border-[#cacacb] px-6 py-6 sm:px-8 dark:border-slate-700">
@@ -1595,10 +1591,15 @@ const Navigation: React.FC<NavigationProps> = ({
                   </Link>
                 </>
               ) : (
-                <Link href={route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55">
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>
-                  Sign in
-                </Link>
+                <>
+                  <Link href={route('login')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="8" r="3" strokeWidth={2}/><path strokeLinecap="round" strokeWidth={2} d="M5 20a7 7 0 0 1 14 0"/></svg>
+                    Sign in
+                  </Link>
+                  <Link href={route('services')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55">
+                    <span>Services</span>
+                  </Link>
+                </>
               )}
               <Link href={route('download')} onClick={() => setLandingSidebarOpen(false)} className="flex min-h-12 items-center gap-3 text-base font-medium hover:opacity-55"><svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg><span>Download</span></Link>
               {isAuthenticated && (

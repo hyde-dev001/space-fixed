@@ -5919,7 +5919,7 @@ const MyRepairs: React.FC = () => {
                       ))}
                     </div>
                     {warrantyIntakeMethod !== 'walk_in' && warrantyIntakeAddress && (
-                      <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                      <p className="mt-2 rounded-lg border border-black bg-white px-3 py-2 text-xs text-black">
                         Pinned intake address: {formatRepairAddress(warrantyIntakeAddress)}
                       </p>
                     )}
@@ -5963,7 +5963,7 @@ const MyRepairs: React.FC = () => {
                       ))}
                     </div>
                     {warrantyReceiveMethod !== 'walk_in' && warrantyReturnAddress && (
-                      <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                      <p className="mt-2 rounded-lg border border-black bg-white px-3 py-2 text-xs text-black">
                         Pinned return address: {formatRepairAddress(warrantyReturnAddress)}
                       </p>
                     )}

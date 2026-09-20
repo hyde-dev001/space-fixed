@@ -26,4 +26,14 @@ describe('Repair shop information and rating layout', () => {
     expect(repairShowSource).not.toContain('border-blue-100 bg-blue-50/70');
     expect(repairShowSource).not.toContain('bg-yellow-400');
   });
+
+  it('keeps the already-reviewed notice monochrome', () => {
+    const eligibilityStart = repairShowSource.indexOf('{/* Eligibility Messages */}');
+    const eligibilitySource = repairShowSource.slice(eligibilityStart, repairShowSource.indexOf('<div className="mb-8">', eligibilityStart));
+
+    expect(eligibilitySource).toContain('bg-white border border-black');
+    expect(eligibilitySource).toContain('text-black');
+    expect(eligibilitySource).not.toContain('bg-amber-50');
+    expect(eligibilitySource).not.toContain('text-amber-800');
+  });
 });
