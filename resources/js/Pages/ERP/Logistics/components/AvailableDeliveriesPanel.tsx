@@ -77,15 +77,15 @@ export default function AvailableDeliveriesPanel({
       </label>
       <div data-testid="batch-filter-grid" className={`mt-3 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 ${showModuleFilter ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
         <DeliveryDatePicker value={date} minDate={today} operatingDays={logisticsSchedule?.operating_days} blackoutDates={logisticsSchedule?.blackout_dates} onChange={onDateChange} />
-        <MonochromeSelect aria-label="Delivery window" value={window} onChange={(event) => onWindowChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
+        <MonochromeSelect aria-label="Delivery window" value={window} onChange={(event) => onWindowChange(event.target.value)} className="min-h-11 w-full rounded-xl border border-gray-300 px-3 text-sm">
           <option value="morning">Morning</option>
           <option value="afternoon">Afternoon</option>
         </MonochromeSelect>
-        {showModuleFilter && <MonochromeSelect aria-label="Filter deliveries by module" value={module} onChange={(event) => onModuleChange(event.target.value as 'all' | LogisticsModule)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
+        {showModuleFilter && <MonochromeSelect aria-label="Filter deliveries by module" value={module} onChange={(event) => onModuleChange(event.target.value as 'all' | LogisticsModule)} className="min-h-11 w-full rounded-xl border border-gray-300 px-3 text-sm">
           <option value="all">All modules</option>
           {availableModules.map((available) => <option key={available} value={available}>{logisticsModuleLabel(available)}</option>)}
         </MonochromeSelect>}
-        <MonochromeSelect aria-label="Schedule status" value={status} onChange={(event) => onStatusChange(event.target.value)} className="min-h-11 rounded-xl border border-gray-300 px-3 text-sm">
+        <MonochromeSelect aria-label="Schedule status" value={status} onChange={(event) => onStatusChange(event.target.value)} className="min-h-11 w-full rounded-xl border border-gray-300 px-3 text-sm">
           <option value="all">All statuses</option>
           <option value="unscheduled">Needs scheduling</option>
           <option value="scheduled">Scheduled</option>

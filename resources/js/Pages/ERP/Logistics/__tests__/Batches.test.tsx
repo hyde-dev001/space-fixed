@@ -134,6 +134,8 @@ it('opens a responsive new-batch workspace without compact overflow', () => {
   expect(screen.getByTestId('batch-workspace')).toHaveClass('xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
   expect(screen.getByTestId('batch-workspace')).not.toHaveClass('lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]');
   expect(screen.getByTestId('batch-filter-grid')).toHaveClass('grid-cols-1');
+  expect(screen.getByRole('combobox', { name: 'Delivery window' })).toHaveClass('w-full');
+  expect(screen.getByRole('combobox', { name: 'Schedule status' })).toHaveClass('w-full');
   expect(screen.getByRole('heading', { name: 'Available deliveries' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'New batch' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Save Draft' })).toHaveClass('w-full', 'sm:w-auto');
