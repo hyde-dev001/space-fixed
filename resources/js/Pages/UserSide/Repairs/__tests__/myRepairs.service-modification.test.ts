@@ -41,4 +41,9 @@ describe('My Repairs service modification integration', () => {
     expect(packageNotice).not.toContain('text-amber-900');
     expect(packageNotice).not.toContain('text-amber-950');
   });
+
+  it('keeps pinned warranty addresses monochrome', () => {
+    expect(source).toContain('rounded-lg border border-black bg-white px-3 py-2 text-xs text-black');
+    expect(source).not.toContain('rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800');
+  });
 });

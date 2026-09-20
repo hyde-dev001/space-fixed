@@ -1085,8 +1085,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   </p>
                 </div>
               ) : isAuthenticated && reviewEligibility && !canReview ? (
-                <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                  <p className="text-amber-800">
+                <div className="mb-6 p-4 bg-white border border-black rounded-xl">
+                  <p className="text-black">
                     {reviewEligibility.message || "You can only review this repair after pickup"}
                     {reviewEligibility.review && (
                       <span className="block mt-2 text-sm">
@@ -1100,8 +1100,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   </p>
                 </div>
               ) : isAuthenticated && !reviewEligibility ? (
-                <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                  <p className="text-amber-800">
+                <div className="mb-6 p-4 bg-white border border-black rounded-xl">
+                  <p className="text-black">
                     You can only review shops where you have completed a purchase or repair service
                   </p>
                 </div>

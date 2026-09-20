@@ -66,23 +66,27 @@ describe('user-side navigation shell', () => {
     );
   });
 
-  it('keeps authenticated sidebar actions in the requested order without Cart', () => {
+  it('removes Join Our Team for authenticated customers and places guest Services below Sign in', () => {
     const sidebarStart = navigationSource.indexOf('aria-label="Site menu"');
     const sidebarSource = navigationSource.slice(sidebarStart, navigationSource.indexOf('</aside>', sidebarStart));
     const primaryNavEnd = sidebarSource.indexOf('</nav>');
     const joinTeamIndex = sidebarSource.indexOf('<span>Join Our Team</span>');
     const editProfileIndex = sidebarSource.indexOf('<span>Edit Profile</span>');
+    const signInIndex = sidebarSource.indexOf('Sign in');
+    const servicesIndex = sidebarSource.indexOf('<span>Services</span>');
     const downloadIndex = sidebarSource.indexOf("href={route('download')}");
     const logoutIndex = sidebarSource.indexOf('<span>Log out</span>');
 
     expect(sidebarSource).not.toContain('>Cart');
     expect(sidebarSource).not.toContain('>Account');
     expect(sidebarSource).not.toContain('id="customer-account-menu"');
-    expect(joinTeamIndex).toBeGreaterThan(-1);
-    expect(joinTeamIndex).toBeLessThan(primaryNavEnd);
+    expect(joinTeamIndex).toBe(-1);
     expect(editProfileIndex).toBeGreaterThan(primaryNavEnd);
     expect(editProfileIndex).toBeLessThan(downloadIndex);
     expect(downloadIndex).toBeLessThan(logoutIndex);
+    expect(signInIndex).toBeGreaterThan(-1);
+    expect(servicesIndex).toBeGreaterThan(signInIndex);
+    expect(servicesIndex).toBeLessThan(downloadIndex);
   });
 
   it('renders the shared moving offers ticker with reduced-motion support', () => {
