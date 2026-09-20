@@ -51,6 +51,7 @@ class DeliveryIncidentControllerTest extends TestCase
             ->assertJsonPath('incident.photo_paths', null);
 
         $incident = DeliveryIncident::query()->findOrFail($response->json('incident.id'));
+        $this->assertSame('needs_resolution', $leg->fresh()->status->value);
         $path = $incident->photo_paths[0];
         $this->assertStringStartsWith('incident-evidence/leg-', $path);
         Storage::disk('local')->assertExists($path);

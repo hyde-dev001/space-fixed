@@ -1190,6 +1190,7 @@ it('lets staff confirm a rider-confirmed return receipt', async () => {
 it('shows dispatcher incident details and saves a resolution', async () => {
   setDispatcherLeg({
     ...defaultProps().shipments.data[0].legs[0],
+    status: 'needs_resolution',
     incidents: [{
       id: 41,
       type: 'customer_dispute',
@@ -1206,6 +1207,8 @@ it('shows dispatcher incident details and saves a resolution', async () => {
   expect(screen.getByText(/Incident #41/)).toBeInTheDocument();
   expect(screen.getByText('Customer disputes the handoff location.')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'View evidence 1' })).toHaveAttribute('href', '/api/logistics/incidents/41/evidence/0');
+  expect(screen.getByRole('option', { name: 'Authorize retry' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Require return to shop' })).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText('Resolution for incident 41'), { target: { value: 'dismissed' } });
   fireEvent.change(screen.getByLabelText('Resolution note for incident 41'), { target: { value: 'Dispatcher reviewed the customer claim.' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save incident resolution' }));

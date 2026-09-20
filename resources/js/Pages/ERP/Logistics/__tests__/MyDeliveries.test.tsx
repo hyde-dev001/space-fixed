@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(() => Promise.resolve()),
   confirm: vi.fn(() => Promise.resolve({ isConfirmed: true })),
+  success: vi.fn(() => Promise.resolve()),
   acceptBatch: vi.fn(() => Promise.resolve()),
   rejectBatch: vi.fn(() => Promise.resolve()),
   acceptLeg: vi.fn(() => Promise.resolve()),
@@ -61,7 +62,7 @@ vi.mock('@/layout/AppLayout_ERP', () => ({
 }));
 vi.mock('axios', () => ({ default: { post: mocks.post } }));
 vi.mock('@/utils/workflowFeedback', () => ({
-  workflowFeedback: { confirm: mocks.confirm },
+  workflowFeedback: { confirm: mocks.confirm, success: mocks.success },
 }));
 vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   acceptBatch: mocks.acceptBatch,
@@ -1006,6 +1007,9 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Submit issue' }));
 
     await waitFor(() => expect(mocks.reportIssue).toHaveBeenCalledWith(5, expect.any(FormData)));
+    await waitFor(() => expect(mocks.success).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Issue submitted successfully',
+    })));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit issue' })).toBeEnabled());
   });
 
@@ -1369,6 +1373,9 @@ describe('MyDeliveries rider interactions', () => {
     expect((form as FormData).get('type')).toBe('vehicle_problem');
     expect((form as FormData).get('notes')).toBe('Motorcycle puncture on route.');
     expect((form as FormData).get('photo_files[]')).toBe(photo);
+    await waitFor(() => expect(mocks.success).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Incident submitted successfully',
+    })));
   });
 
   it('shows and submits a replacement proof after dispatcher rejection', async () => {

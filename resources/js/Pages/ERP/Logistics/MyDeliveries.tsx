@@ -945,7 +945,16 @@ function DeliveryActions({
     if (issueFile) form.append('proof_file', issueFile);
     runAction(
       issueKey,
-      () => logisticsApi.reportIssue(delivery.id, form),
+      async () => {
+        const response = await logisticsApi.reportIssue(delivery.id, form);
+        await workflowFeedback.success({
+          title: isRepairPickup ? 'Failed pickup submitted successfully' : 'Issue submitted successfully',
+          text: 'The dispatcher will review this report.',
+          timer: 1800,
+          showConfirmButton: false,
+        });
+        return response;
+      },
       {
         title: isRepairPickup
           ? `Submit failed pickup for ${deliveryReference}?`
@@ -965,7 +974,16 @@ function DeliveryActions({
     form.append('photo_files[]', incidentFile);
     runAction(
       `incident:${delivery.id}`,
-      () => logisticsApi.reportIncident(delivery.id, form),
+      async () => {
+        const response = await logisticsApi.reportIncident(delivery.id, form);
+        await workflowFeedback.success({
+          title: 'Incident submitted successfully',
+          text: 'The dispatcher will review it and choose the next resolution.',
+          timer: 1800,
+          showConfirmButton: false,
+        });
+        return response;
+      },
       {
         title: `Report incident for ${deliveryReference}?`,
         text: 'The dispatcher will review this incident and choose the next resolution.',
