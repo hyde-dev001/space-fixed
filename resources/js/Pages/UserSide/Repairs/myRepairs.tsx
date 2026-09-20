@@ -1525,7 +1525,7 @@ const CustomerExternalTrackingCard: React.FC<{
     setRiderContact(tracking?.rider_contact ?? '');
   }, [usesStructuredCourierDetails, tracking?.carrier, tracking?.tracking_number, tracking?.tracking_url, tracking?.rider_name, tracking?.rider_contact]);
 
-  if (!enabled || (isIntake && ['new_request', 'assigned_to_repairer', 'cancelled'].includes(order.status))) return null;
+  if (!enabled || (isIntake && ['new_request', 'assigned_to_repairer', 'ready_for_pickup', 'shipped', 'cancelled'].includes(order.status))) return null;
 
   const save = async () => {
     if (unpaidThirdPartyReturn) {

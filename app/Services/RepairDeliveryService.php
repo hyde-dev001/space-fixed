@@ -874,6 +874,7 @@ final class RepairDeliveryService
         }
 
         return [
+            'external_tracking' => data_get($repair->intake_address, 'external_tracking'),
             'shipment_id' => $state['shipment']?->id,
             'shipment_status' => $state['shipment']?->status?->value,
             'leg_id' => $state['leg']?->id,

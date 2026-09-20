@@ -555,6 +555,21 @@ describe("MyRepairs repair cancellation", () => {
 
     expect(screen.queryByRole("region", { name: "Intake courier tracking" })).not.toBeInTheDocument();
   });
+
+  it("hides intake tracking when the repair is ready for pickup", async () => {
+    mocks.repair = repair({
+      status: "ready_for_pickup",
+      intake_delivery_method: "customer_delivery",
+      conversation_id: null,
+      logistics_shipments: [],
+    });
+
+    render(<MyRepairs />);
+    const readyTabs = await screen.findAllByRole("button", { name: /Ready for Pickup/i });
+    fireEvent.click(readyTabs[0]);
+
+    expect(screen.queryByRole("region", { name: "Intake courier tracking" })).not.toBeInTheDocument();
+  });
 });
 
 describe("MyRepairs return logistics", () => {

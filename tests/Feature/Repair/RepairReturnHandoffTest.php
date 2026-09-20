@@ -309,7 +309,7 @@ class RepairReturnHandoffTest extends TestCase
 
     public function test_customer_can_save_intake_tracking_only_for_customer_delivery_before_lock(): void
     {
-        [$repair, $customer] = $this->repairFixture('walk_in', 'pending');
+        [$repair, $customer, $repairer] = $this->repairFixture('walk_in', 'pending');
         $repair->update([
             'intake_delivery_method' => 'customer_delivery',
             'intake_address' => ['version' => 'intake-v1', 'address_line' => '1 Customer Street'],
@@ -331,6 +331,14 @@ class RepairReturnHandoffTest extends TestCase
         $this->assertSame('123456789012', data_get($repair->intake_address, 'external_tracking.tracking_number'));
         $this->assertSame('Juan Rider', data_get($repair->intake_address, 'external_tracking.rider_name'));
         $this->assertSame('09171234567', data_get($repair->intake_address, 'external_tracking.rider_contact'));
+
+        $this->actingAs($repairer, 'user')
+            ->getJson('/api/repairer/repairs')
+            ->assertOk()
+            ->assertJsonPath('data.0.intake_handoff.external_tracking.carrier', 'J&T')
+            ->assertJsonPath('data.0.intake_handoff.external_tracking.tracking_number', '123456789012')
+            ->assertJsonPath('data.0.intake_handoff.external_tracking.rider_name', 'Juan Rider')
+            ->assertJsonPath('data.0.intake_handoff.external_tracking.rider_contact', '09171234567');
         $this->assertDatabaseMissing('shipments', [
             'source_type' => 'repair_request',
             'source_id' => $repair->id,
