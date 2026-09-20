@@ -1479,6 +1479,7 @@ const CustomerExternalTrackingCard: React.FC<{
   const enabled = isIntake
     ? order.intake_delivery_method === 'customer_delivery'
     : getReturnMethod(order) === 'customer_pickup';
+  const usesStructuredCourierDetails = isIntake || enabled;
   const snapshot = isIntake ? order.intake_address : order.return_address;
   const tracking = snapshot?.external_tracking;
   const locked = Boolean(isIntake
@@ -1498,7 +1499,7 @@ const CustomerExternalTrackingCard: React.FC<{
   const currentCarrier = tracking?.carrier ?? '';
   const [carrier, setCarrier] = useState(currentCarrier);
   const [carrierChoice, setCarrierChoice] = useState(
-    isIntake && currentCarrier && !INTAKE_CARRIER_OPTIONS.includes(currentCarrier)
+    usesStructuredCourierDetails && currentCarrier && !INTAKE_CARRIER_OPTIONS.includes(currentCarrier)
       ? 'Other'
       : currentCarrier,
   );
@@ -1514,7 +1515,7 @@ const CustomerExternalTrackingCard: React.FC<{
     const nextCarrier = tracking?.carrier ?? '';
     setCarrier(nextCarrier);
     setCarrierChoice(
-      isIntake && nextCarrier && !INTAKE_CARRIER_OPTIONS.includes(nextCarrier)
+      usesStructuredCourierDetails && nextCarrier && !INTAKE_CARRIER_OPTIONS.includes(nextCarrier)
         ? 'Other'
         : nextCarrier,
     );
@@ -1522,7 +1523,7 @@ const CustomerExternalTrackingCard: React.FC<{
     setTrackingUrl(tracking?.tracking_url ?? '');
     setRiderName(tracking?.rider_name ?? '');
     setRiderContact(tracking?.rider_contact ?? '');
-  }, [isIntake, tracking?.carrier, tracking?.tracking_number, tracking?.tracking_url, tracking?.rider_name, tracking?.rider_contact]);
+  }, [usesStructuredCourierDetails, tracking?.carrier, tracking?.tracking_number, tracking?.tracking_url, tracking?.rider_name, tracking?.rider_contact]);
 
   if (!enabled || (isIntake && ['new_request', 'assigned_to_repairer', 'cancelled'].includes(order.status))) return null;
 
@@ -1541,7 +1542,7 @@ const CustomerExternalTrackingCard: React.FC<{
         carrier: carrier.trim(),
         tracking_number: trackingNumber.trim(),
         tracking_url: trackingUrl.trim() || null,
-        ...(isIntake ? {
+        ...(usesStructuredCourierDetails ? {
           rider_name: riderName.trim(),
           rider_contact: riderContact.trim(),
         } : {}),
@@ -1589,13 +1590,13 @@ const CustomerExternalTrackingCard: React.FC<{
               <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">Tracking number</dt>
               <dd className="mt-1 font-semibold text-gray-900">{tracking.tracking_number}</dd>
             </div>
-            {isIntake && tracking.rider_name && (
+            {tracking.rider_name && (
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">Rider name</dt>
                 <dd className="mt-1 font-semibold text-gray-900">{tracking.rider_name}</dd>
               </div>
             )}
-            {isIntake && tracking.rider_contact && (
+            {tracking.rider_contact && (
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wider text-gray-500">Rider contact</dt>
                 <dd className="mt-1 font-semibold text-gray-900">{tracking.rider_contact}</dd>
@@ -1619,7 +1620,7 @@ const CustomerExternalTrackingCard: React.FC<{
         )
       ) : (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {isIntake ? (
+          {usesStructuredCourierDetails ? (
             <label className="text-sm font-semibold text-gray-700">
               Carrier <span className="font-normal text-gray-500">(required)</span>
               <select
@@ -1649,7 +1650,7 @@ const CustomerExternalTrackingCard: React.FC<{
               />
             </label>
           )}
-          {isIntake && carrierChoice === 'Other' && (
+          {usesStructuredCourierDetails && carrierChoice === 'Other' && (
             <label className="text-sm font-semibold text-gray-700">
               Other carrier <span className="font-normal text-gray-500">(required)</span>
               <input
@@ -1667,25 +1668,25 @@ const CustomerExternalTrackingCard: React.FC<{
               aria-label={`${fieldPrefix} tracking number`}
               value={trackingNumber}
               onChange={(event) => setTrackingNumber(
-                isIntake ? event.target.value.replace(/\D/g, '') : event.target.value,
+                usesStructuredCourierDetails ? event.target.value.replace(/\D/g, '') : event.target.value,
               )}
               className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
-              inputMode={isIntake ? 'numeric' : undefined}
-              required={isIntake}
+              inputMode={usesStructuredCourierDetails ? 'numeric' : undefined}
+              required={usesStructuredCourierDetails}
             />
           </label>
           <label className="text-sm font-semibold text-gray-700 sm:col-span-2">
-            Tracking link <span className="font-normal text-gray-500">({isIntake ? 'required' : 'optional'})</span>
+            Tracking link <span className="font-normal text-gray-500">({usesStructuredCourierDetails ? 'required' : 'optional'})</span>
             <input
               type="url"
               aria-label={`${fieldPrefix} tracking link`}
               value={trackingUrl}
               onChange={(event) => setTrackingUrl(event.target.value)}
               className="mt-1 w-full rounded-xl border border-gray-300 px-3 py-2 font-normal text-gray-900"
-              required={isIntake}
+              required={usesStructuredCourierDetails}
             />
           </label>
-          {isIntake && (
+          {usesStructuredCourierDetails && (
             <>
               <label className="text-sm font-semibold text-gray-700">
                 Rider name <span className="font-normal text-gray-500">(required)</span>
@@ -1718,7 +1719,7 @@ const CustomerExternalTrackingCard: React.FC<{
             disabled={saving
               || !carrier.trim()
               || !trackingNumber.trim()
-              || (isIntake && (!trackingUrl.trim() || !riderName.trim() || !riderContact.trim()))}
+              || (usesStructuredCourierDetails && (!trackingUrl.trim() || !riderName.trim() || !riderContact.trim()))}
             className="rounded-full bg-[#16233b] px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-fit"
           >
             {saving ? 'Saving...' : `Save ${leg} tracking`}

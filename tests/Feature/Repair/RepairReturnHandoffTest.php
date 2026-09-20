@@ -27,12 +27,16 @@ class RepairReturnHandoffTest extends TestCase
             ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
                 'leg' => 'return',
                 'carrier' => 'Lalamove',
-                'tracking_number' => 'RETURN-123',
+                'tracking_number' => '123456789012',
                 'tracking_url' => 'https://tracker.example/RETURN-123',
+                'rider_name' => 'Juan Rider',
+                'rider_contact' => '09171234567',
             ])
             ->assertOk();
 
-        $this->assertSame('RETURN-123', data_get($repair->fresh()->return_address, 'external_tracking.tracking_number'));
+        $this->assertSame('123456789012', data_get($repair->fresh()->return_address, 'external_tracking.tracking_number'));
+        $this->assertSame('Juan Rider', data_get($repair->fresh()->return_address, 'external_tracking.rider_name'));
+        $this->assertSame('09171234567', data_get($repair->fresh()->return_address, 'external_tracking.rider_contact'));
         $this->assertDatabaseMissing('shipments', [
             'source_type' => 'repair_request',
             'source_id' => $repair->id,
@@ -61,7 +65,10 @@ class RepairReturnHandoffTest extends TestCase
             ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
                 'leg' => 'return',
                 'carrier' => 'Grab Express',
-                'tracking_number' => 'CHANGED',
+                'tracking_number' => '987654321001',
+                'tracking_url' => 'https://tracker.example/CHANGED',
+                'rider_name' => 'Changed Rider',
+                'rider_contact' => '09170000000',
             ])
             ->assertUnprocessable();
 
@@ -441,6 +448,34 @@ class RepairReturnHandoffTest extends TestCase
         $this->assertNull(data_get($repair->fresh()->intake_address, 'external_tracking'));
     }
 
+    public function test_customer_return_tracking_requires_link_and_rider_details(): void
+    {
+        [$repair, $customer] = $this->repairFixture('customer_pickup');
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'return',
+                'carrier' => 'Borzo',
+                'tracking_number' => '1234567890',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['tracking_url', 'rider_name', 'rider_contact']);
+
+        $this->assertNull(data_get($repair->fresh()->return_address, 'external_tracking'));
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'return',
+                'carrier' => 'Borzo',
+                'tracking_number' => 'RETURN-123',
+                'tracking_url' => 'https://tracker.example/RETURN-123',
+                'rider_name' => 'Rider123',
+                'rider_contact' => '091712345678',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['tracking_number', 'rider_name', 'rider_contact']);
+    }
+
     public function test_sponsored_customer_pickup_plan_lock_allows_tracking_before_staff_handoff(): void
     {
         [$repair, $customer] = $this->repairFixture('customer_pickup');
@@ -454,13 +489,16 @@ class RepairReturnHandoffTest extends TestCase
             ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
                 'leg' => 'return',
                 'carrier' => 'Lalamove',
-                'tracking_number' => 'WARRANTY-RETURN-123',
+                'tracking_number' => '123456789011',
+                'tracking_url' => 'https://tracker.example/WARRANTY-RETURN-123',
+                'rider_name' => 'Warranty Rider',
+                'rider_contact' => '09171234567',
             ])
             ->assertOk();
 
         $repair->refresh();
         $this->assertSame(
-            'WARRANTY-RETURN-123',
+            '123456789011',
             data_get($repair->return_address, 'external_tracking.tracking_number'),
         );
         $this->assertNotNull($repair->return_logistics_locked_at);
@@ -484,7 +522,10 @@ class RepairReturnHandoffTest extends TestCase
             ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
                 'leg' => 'return',
                 'carrier' => 'Lalamove',
-                'tracking_number' => 'PAID-RETURN-123',
+                'tracking_number' => '123456789010',
+                'tracking_url' => 'https://tracker.example/PAID-RETURN-123',
+                'rider_name' => 'Paid Rider',
+                'rider_contact' => '09171234567',
             ])
             ->assertOk();
 
@@ -504,7 +545,10 @@ class RepairReturnHandoffTest extends TestCase
             ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
                 'leg' => 'return',
                 'carrier' => 'Grab Express',
-                'tracking_number' => 'CHANGED-AFTER-HANDOFF',
+                'tracking_number' => '987654321002',
+                'tracking_url' => 'https://tracker.example/CHANGED-AFTER-HANDOFF',
+                'rider_name' => 'Changed Rider',
+                'rider_contact' => '09170000000',
             ])
             ->assertUnprocessable();
     }
@@ -525,7 +569,10 @@ class RepairReturnHandoffTest extends TestCase
             ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
                 'leg' => 'return',
                 'carrier' => 'Lalamove',
-                'tracking_number' => 'RETURN-PAYMENT-123',
+                'tracking_number' => '123456789009',
+                'tracking_url' => 'https://tracker.example/RETURN-PAYMENT-123',
+                'rider_name' => 'Payment Rider',
+                'rider_contact' => '09171234567',
             ])
             ->assertOk();
 
@@ -547,7 +594,10 @@ class RepairReturnHandoffTest extends TestCase
             ->postJson('/api/customer/repairs/' . $repair->id . '/external-tracking', [
                 'leg' => 'return',
                 'carrier' => 'Lalamove',
-                'tracking_number' => 'INDIVIDUAL-RETURN-123',
+                'tracking_number' => '123456789008',
+                'tracking_url' => 'https://tracker.example/INDIVIDUAL-RETURN-123',
+                'rider_name' => 'Individual Rider',
+                'rider_contact' => '09171234567',
             ])
             ->assertOk();
 

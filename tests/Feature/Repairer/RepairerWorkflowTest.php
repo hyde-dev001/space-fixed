@@ -895,8 +895,10 @@ class RepairerWorkflowTest extends TestCase
             [
                 'leg' => 'return',
                 'carrier' => 'Lalamove',
-                'tracking_number' => 'SHIP-12345',
+                'tracking_number' => '123456789006',
                 'tracking_url' => 'https://tracker.example.com/SHIP-12345',
+                'rider_name' => 'Courier Rider',
+                'rider_contact' => '09171234567',
             ]
         );
 
@@ -907,7 +909,7 @@ class RepairerWorkflowTest extends TestCase
         $this->assertSame('ready_for_pickup', $repairRequest->status);
         $this->assertNull($repairRequest->shipped_at);
         $this->assertFalse((bool) $repairRequest->pickup_enabled);
-        $this->assertSame('SHIP-12345', data_get($repairRequest->return_address, 'external_tracking.tracking_number'));
+        $this->assertSame('123456789006', data_get($repairRequest->return_address, 'external_tracking.tracking_number'));
         $this->assertSame('Lalamove', data_get($repairRequest->return_address, 'external_tracking.carrier'));
         $this->assertDatabaseMissing('shipments', [
             'source_type' => 'repair_request',
