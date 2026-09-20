@@ -1,5 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Head, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
@@ -983,7 +984,9 @@ const CustomerReturnRecoveryActions: React.FC<{
 const ReturnDeliveryPlanCard: React.FC<{
   order: RepairOrder;
   onRefresh: () => Promise<unknown>;
-}> = ({ order, onRefresh }) => {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+}> = ({ order, onRefresh, isOpen, onOpenChange }) => {
   const initialMethod = getReturnMethod(order);
   const initialSameAsIntake = order.same_as_intake_address ?? true;
   const initialAddress = initialSameAsIntake ? order.intake_address : order.return_address;
@@ -1022,7 +1025,6 @@ const ReturnDeliveryPlanCard: React.FC<{
   const [confirmedLocally, setConfirmedLocally] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [showPlanModal, setShowPlanModal] = useState(false);
   const coverageRequestKeyRef = useRef<string | null>(null);
 
   const locked = Boolean(order.return_logistics_locked_at);
@@ -1233,24 +1235,12 @@ const ReturnDeliveryPlanCard: React.FC<{
 
   return (
     <>
-      <div className="mt-6 flex justify-end">
-        <button
-          type="button"
-          aria-label="Open return delivery plan"
-          title="Return delivery plan"
-          onClick={() => setShowPlanModal(true)}
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-gray-300 bg-white p-3 text-[#16233b] shadow-sm transition hover:border-gray-500 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#16233b]/20"
-        >
-          <Route aria-hidden="true" size={20} />
-        </button>
-      </div>
-
-      {showPlanModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {isOpen && typeof document !== 'undefined' && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
           <div
             className="absolute inset-0 bg-black/50"
             aria-hidden="true"
-            onClick={() => setShowPlanModal(false)}
+            onClick={() => onOpenChange(false)}
           />
           <section
             role="dialog"
@@ -1281,7 +1271,7 @@ const ReturnDeliveryPlanCard: React.FC<{
           type="button"
           aria-label="Close return delivery plan"
           title="Close"
-          onClick={() => setShowPlanModal(false)}
+          onClick={() => onOpenChange(false)}
           className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:border-gray-500 hover:text-black focus:outline-none focus:ring-2 focus:ring-[#16233b]/20"
         >
           <X aria-hidden="true" size={18} />
@@ -1473,7 +1463,8 @@ const ReturnDeliveryPlanCard: React.FC<{
               : 'Confirm address & delivery'}
       </button>
           </section>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
@@ -1533,7 +1524,7 @@ const CustomerExternalTrackingCard: React.FC<{
     setRiderContact(tracking?.rider_contact ?? '');
   }, [isIntake, tracking?.carrier, tracking?.tracking_number, tracking?.tracking_url, tracking?.rider_name, tracking?.rider_contact]);
 
-  if (!enabled || (isIntake && order.status === 'cancelled')) return null;
+  if (!enabled || (isIntake && ['new_request', 'assigned_to_repairer', 'cancelled'].includes(order.status))) return null;
 
   const save = async () => {
     if (unpaidThirdPartyReturn) {
@@ -2027,6 +2018,7 @@ const MyRepairs: React.FC = () => {
   const [scheduleVisibleMonthKey, setScheduleVisibleMonthKey] = useState<string>('');
   const [shopClosedDayNumbers, setShopClosedDayNumbers] = useState<Set<number>>(new Set());
   const [isSubmittingSchedule, setIsSubmittingSchedule] = useState(false);
+  const [openReturnPlanOrderId, setOpenReturnPlanOrderId] = useState<number | null>(null);
 
   // Derived calendar data for the schedule modal
   const scheduleCalendarData = useMemo(() => {
@@ -4498,6 +4490,19 @@ const MyRepairs: React.FC = () => {
 
                         <div className="flex items-center justify-end gap-2">
 
+                        {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status)
+                          && (!order.return_recovery || order.return_recovery.state === 'awaiting_payment') && (
+                          <button
+                            type="button"
+                            onClick={() => setOpenReturnPlanOrderId(order.id)}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-[#16233b] transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#16233b]/20"
+                            title="Return delivery plan"
+                            aria-label="Open return delivery plan"
+                          >
+                            <Route aria-hidden="true" size={18} />
+                          </button>
+                        )}
+
                         {(['repairer_accepted', 'pending'].includes(order.status)) &&
                           (getIntakeMethod(order) === 'walk_in' || order.conversation_id) &&
                           !order.estimated_completion && (
@@ -4837,6 +4842,8 @@ const MyRepairs: React.FC = () => {
                       && (!order.return_recovery || order.return_recovery.state === 'awaiting_payment') && (
                       <ReturnDeliveryPlanCard
                         order={order}
+                        isOpen={openReturnPlanOrderId === order.id}
+                        onOpenChange={(open) => setOpenReturnPlanOrderId(open ? order.id : null)}
                         onRefresh={() => fetchRepairs({ silent: true })}
                       />
                     )}
