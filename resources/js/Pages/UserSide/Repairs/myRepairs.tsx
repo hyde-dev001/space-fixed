@@ -1481,11 +1481,8 @@ const CustomerExternalTrackingCard: React.FC<{
     : getReturnMethod(order) === 'customer_pickup';
   const snapshot = isIntake ? order.intake_address : order.return_address;
   const tracking = snapshot?.external_tracking;
-  const readyForPickupIntakeEdit = isIntake
-    && ['ready_for_pickup', 'ready-for-pickup'].includes(order.status);
   const locked = Boolean(isIntake
     ? order.intake_logistics_locked_at
-      && !readyForPickupIntakeEdit
       && (!isWarrantyNoChargeOrder(order) || order.received_at)
     : order.pickup_enabled);
   const unpaidThirdPartyReturn = !isIntake
