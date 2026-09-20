@@ -912,6 +912,34 @@ describe("MyRepairs return logistics", () => {
     ));
   });
 
+  it("keeps ready-for-pickup intake tracking editable like the pending form", async () => {
+    mocks.repair = repair({
+      intake_delivery_method: "customer_delivery",
+      intake_address: {
+        address_id: 5,
+        version: "intake-v1",
+        external_tracking: {
+          carrier: "Lalamove",
+          tracking_number: "123456789012",
+          tracking_url: "https://tracker.example/INTAKE-123",
+          rider_name: "Juan Rider",
+          rider_contact: "09171234567",
+        },
+      },
+    });
+
+    await renderReadyRepair();
+
+    const tracking = screen.getByRole("region", { name: "Intake courier tracking" });
+    expect(within(tracking).queryByText("Locked after handoff")).not.toBeInTheDocument();
+    expect(within(tracking).getByLabelText("Intake carrier")).toHaveValue("Lalamove");
+    expect(within(tracking).getByLabelText("Intake tracking number")).toHaveValue("123456789012");
+    expect(within(tracking).getByLabelText("Intake tracking link")).toHaveValue("https://tracker.example/INTAKE-123");
+    expect(within(tracking).getByLabelText("Intake rider name")).toHaveValue("Juan Rider");
+    expect(within(tracking).getByLabelText("Intake rider contact")).toHaveValue("09171234567");
+    expect(within(tracking).getByRole("button", { name: "Save intake tracking" })).toBeEnabled();
+  });
+
   it("shows locked customer tracking read-only and uses an explicit receipt confirmation label", async () => {
     mocks.repair = repair({
       status: "ready_for_pickup",

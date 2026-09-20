@@ -343,6 +343,46 @@ class RepairReturnHandoffTest extends TestCase
             ->assertUnprocessable();
     }
 
+    public function test_customer_can_update_intake_tracking_on_ready_for_pickup(): void
+    {
+        [$repair, $customer] = $this->repairFixture('walk_in', 'ready_for_pickup');
+        $repair->update([
+            'intake_delivery_method' => 'customer_delivery',
+            'intake_address' => [
+                'version' => 'intake-v1',
+                'address_line' => '1 Customer Street',
+                'external_tracking' => [
+                    'carrier' => 'Lalamove',
+                    'tracking_number' => '123456789012',
+                    'tracking_url' => 'https://tracker.example/INTAKE-123',
+                    'rider_name' => 'Juan Rider',
+                    'rider_contact' => '09171234567',
+                ],
+            ],
+            'intake_logistics_locked_at' => now(),
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/external-tracking", [
+                'leg' => 'intake',
+                'carrier' => 'J&T',
+                'tracking_number' => '9876543210',
+                'tracking_url' => 'https://tracker.example/INTAKE-UPDATED',
+                'rider_name' => 'Changed Rider',
+                'rider_contact' => '09170000000',
+            ])
+            ->assertOk();
+
+        $this->assertSame(
+            '9876543210',
+            data_get($repair->fresh()->intake_address, 'external_tracking.tracking_number'),
+        );
+        $this->assertSame(
+            'Changed Rider',
+            data_get($repair->fresh()->intake_address, 'external_tracking.rider_name'),
+        );
+    }
+
     public function test_customer_intake_tracking_requires_link_and_rider_details(): void
     {
         [$repair, $customer] = $this->repairFixture('walk_in', 'pending');

@@ -2136,11 +2136,14 @@ class RepairRequestController extends Controller
             $sponsoredReturnAwaitingHandoff = ! $isIntake
                 && ! (bool) $repair->pickup_enabled
                 && $shopSponsoredWarranty;
+            $readyForPickupIntakeEdit = $isIntake
+                && in_array((string) $repair->status, ['ready_for_pickup', 'ready-for-pickup'], true);
             $trackingLocked = $isIntake
                 ? $repair->{$lockField} !== null
                 : (bool) $repair->pickup_enabled
                     || ($repair->{$lockField} !== null && $method !== 'customer_pickup');
             if ($trackingLocked
+                && ! $readyForPickupIntakeEdit
                 && ! $sponsoredIntakeAwaitingReceipt
                 && ! $sponsoredReturnAwaitingHandoff) {
                 throw \Illuminate\Validation\ValidationException::withMessages([
