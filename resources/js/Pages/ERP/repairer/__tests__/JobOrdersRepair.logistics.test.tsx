@@ -294,7 +294,15 @@ describe('JobOrdersRepair intake logistics', () => {
       ...repair('customer_delivery'),
       status: 'ready_for_pickup',
       return_delivery_method: 'customer_pickup',
-      intake_handoff: null,
+      intake_handoff: {
+        external_tracking: {
+          carrier: 'J&T',
+          tracking_number: 'INTAKE-123',
+          tracking_url: 'https://tracker.example/INTAKE-123',
+          rider_name: 'Miguel Bato',
+          rider_contact: '09179998888',
+        },
+      },
       return_handoff: {
         method: 'customer_pickup',
         can_release: true,
@@ -305,6 +313,8 @@ describe('JobOrdersRepair intake logistics', () => {
           carrier: 'Lalamove',
           tracking_number: 'RETURN-123',
           tracking_url: 'https://tracker.example/RETURN-123',
+          rider_name: 'Juan Rider',
+          rider_contact: '09170000000',
         },
         events: [],
       },
@@ -320,9 +330,16 @@ describe('JobOrdersRepair intake logistics', () => {
 
     fireEvent.click(screen.getByTitle('View details'));
     await screen.findByRole('heading', { name: 'Repair Service Details' });
+    expect(screen.getByText('Intake courier tracking')).toBeInTheDocument();
+    expect(screen.getByText('J&T')).toBeInTheDocument();
+    expect(screen.getByText('INTAKE-123')).toBeInTheDocument();
+    expect(screen.getByText('Miguel Bato')).toBeInTheDocument();
+    expect(screen.getByText('09179998888')).toBeInTheDocument();
     expect(screen.getByText('Customer courier tracking')).toBeInTheDocument();
     expect(screen.getByText('Lalamove')).toBeInTheDocument();
     expect(screen.getByText('RETURN-123')).toBeInTheDocument();
+    expect(screen.getByText('Juan Rider')).toBeInTheDocument();
+    expect(screen.getByText('09170000000')).toBeInTheDocument();
     expect(screen.queryByLabelText(/carrier|tracking number/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole('button', { name: 'Confirm courier handoff' })[0]);

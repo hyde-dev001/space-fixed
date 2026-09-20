@@ -24,6 +24,13 @@ type IntakeHandoffEvent = {
 };
 
 type IntakeHandoff = {
+  external_tracking?: {
+    carrier?: string | null;
+    tracking_number?: string | null;
+    tracking_url?: string | null;
+    rider_name?: string | null;
+    rider_contact?: string | null;
+  } | null;
   shipment_id?: number | null;
   shipment_status?: string | null;
   leg_id?: number | null;
@@ -54,6 +61,8 @@ type ReturnHandoff = {
     carrier?: string | null;
     tracking_number?: string | null;
     tracking_url?: string | null;
+    rider_name?: string | null;
+    rider_contact?: string | null;
   } | null;
   events?: IntakeHandoffEvent[];
   recovery?: {
@@ -3433,6 +3442,64 @@ export default function JobOrdersRepair() {
                   </div>
                 )}
 
+                {viewOrder.intakeDeliveryMethod === 'customer_delivery' && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
+                      Intake courier tracking
+                    </p>
+                    <div className="rounded-lg border border-gray-200 bg-white p-4 text-sm dark:border-gray-700 dark:bg-gray-900">
+                      {viewOrder.intakeHandoff?.external_tracking?.tracking_number ? (
+                        <dl className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                          <div>
+                            <dt className="text-xs text-gray-500 dark:text-gray-400">Carrier</dt>
+                            <dd className="font-medium text-gray-900 dark:text-white">
+                              {viewOrder.intakeHandoff.external_tracking.carrier || 'Not provided'}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-gray-500 dark:text-gray-400">Tracking number</dt>
+                            <dd className="font-medium text-gray-900 dark:text-white">
+                              {viewOrder.intakeHandoff.external_tracking.tracking_number}
+                            </dd>
+                          </div>
+                          {viewOrder.intakeHandoff.external_tracking.rider_name && (
+                            <div>
+                              <dt className="text-xs text-gray-500 dark:text-gray-400">Rider name</dt>
+                              <dd className="font-medium text-gray-900 dark:text-white">
+                                {viewOrder.intakeHandoff.external_tracking.rider_name}
+                              </dd>
+                            </div>
+                          )}
+                          {viewOrder.intakeHandoff.external_tracking.rider_contact && (
+                            <div>
+                              <dt className="text-xs text-gray-500 dark:text-gray-400">Rider contact</dt>
+                              <dd className="font-medium text-gray-900 dark:text-white">
+                                {viewOrder.intakeHandoff.external_tracking.rider_contact}
+                              </dd>
+                            </div>
+                          )}
+                          {viewOrder.intakeHandoff.external_tracking.tracking_url && (
+                            <div className="sm:col-span-2">
+                              <a
+                                href={viewOrder.intakeHandoff.external_tracking.tracking_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-semibold text-purple-700 underline dark:text-purple-300"
+                              >
+                                Open courier tracking
+                              </a>
+                            </div>
+                          )}
+                        </dl>
+                      ) : (
+                        <p className="text-gray-600 dark:text-gray-300">
+                          The customer has not provided tracking details yet.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {viewOrder.returnHandoff && viewOrder.returnHandoff.visible !== false && (
                   <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">
@@ -3502,6 +3569,22 @@ export default function JobOrdersRepair() {
                                   {viewOrder.returnHandoff.external_tracking.tracking_number}
                                 </dd>
                               </div>
+                              {viewOrder.returnHandoff.external_tracking.rider_name && (
+                                <div>
+                                  <dt className="text-xs text-gray-500 dark:text-gray-400">Rider name</dt>
+                                  <dd className="font-medium text-gray-900 dark:text-white">
+                                    {viewOrder.returnHandoff.external_tracking.rider_name}
+                                  </dd>
+                                </div>
+                              )}
+                              {viewOrder.returnHandoff.external_tracking.rider_contact && (
+                                <div>
+                                  <dt className="text-xs text-gray-500 dark:text-gray-400">Rider contact</dt>
+                                  <dd className="font-medium text-gray-900 dark:text-white">
+                                    {viewOrder.returnHandoff.external_tracking.rider_contact}
+                                  </dd>
+                                </div>
+                              )}
                               {viewOrder.returnHandoff.external_tracking.tracking_url && (
                                 <div className="sm:col-span-2">
                                   <a
