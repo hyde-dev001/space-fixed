@@ -56,4 +56,29 @@ describe("ERP profile password requirements", () => {
     expect(screen.getByText("At least 12 characters")).toBeInTheDocument();
     expect(screen.getByText("One special character")).toBeInTheDocument();
   });
+
+  it("hides active sessions from employee profiles", () => {
+    (globalThis as { route?: (name: string) => string }).route = (name: string) => `/${name}`;
+
+    render(
+      <Profile
+        user={{
+          id: 1,
+          name: "Test Employee",
+          email: "employee@example.com",
+          role: "STAFF",
+        }}
+        requiresPasswordChange={false}
+        security={{
+          is_employee: true,
+          totp_enabled: false,
+          activity: [],
+          active_sessions: [{ device: "Opera / Windows", last_active_at: "2026-09-20T07:28:31Z", current: true }],
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("Active Sessions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Log Out Other Sessions")).not.toBeInTheDocument();
+  });
 });
