@@ -258,7 +258,10 @@ class RepairWarrantyClaimFlowTest extends TestCase
             ->postJson("/api/customer/repairs/{$linked->id}/external-tracking", [
                 'leg' => 'return',
                 'carrier' => 'Customer courier',
-                'tracking_number' => 'WARRANTY-RETURN-001',
+                'tracking_number' => '123456789007',
+                'tracking_url' => 'https://tracker.example/WARRANTY-RETURN-001',
+                'rider_name' => 'Warranty Rider',
+                'rider_contact' => '09171234567',
             ])
             ->assertOk();
 

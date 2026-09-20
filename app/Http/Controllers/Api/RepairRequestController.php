@@ -2080,20 +2080,16 @@ class RepairRequestController extends Controller
         $user = Auth::guard('user')->user();
         abort_unless($user, 401);
 
-        $trackingUrlRules = $request->input('leg') === 'intake'
-            ? ['required', 'url', 'max:500']
-            : ['nullable', 'url', 'max:500'];
-        $trackingNumberRules = $request->input('leg') === 'intake'
-            ? ['required', 'string', 'regex:/^[0-9]+$/', 'max:100']
-            : ['required', 'string', 'max:100'];
+        $trackingUrlRules = ['required', 'url', 'max:500'];
+        $trackingNumberRules = ['required', 'string', 'regex:/^[0-9]+$/', 'max:100'];
 
         $validated = $request->validate([
             'leg' => ['required', 'in:intake,return'],
             'carrier' => ['required', 'string', 'max:100'],
             'tracking_number' => $trackingNumberRules,
             'tracking_url' => $trackingUrlRules,
-            'rider_name' => ['nullable', 'required_if:leg,intake', 'string', 'max:255', "regex:/^[\\pL\\s.'-]+$/u"],
-            'rider_contact' => ['nullable', 'required_if:leg,intake', 'string', 'regex:/^[0-9]{1,11}$/'],
+            'rider_name' => ['required', 'string', 'max:255', "regex:/^[\\pL\\s.'-]+$/u"],
+            'rider_contact' => ['required', 'string', 'regex:/^[0-9]{1,11}$/'],
         ]);
 
         $repair = DB::transaction(function () use ($id, $user, $validated, $settlementService): RepairRequest {
@@ -2155,10 +2151,8 @@ class RepairRequestController extends Controller
                 'tracking_url' => $validated['tracking_url'] ?? null,
                 'updated_at' => now()->toISOString(),
             ];
-            if ($isIntake) {
-                $externalTracking['rider_name'] = $validated['rider_name'];
-                $externalTracking['rider_contact'] = $validated['rider_contact'];
-            }
+            $externalTracking['rider_name'] = $validated['rider_name'];
+            $externalTracking['rider_contact'] = $validated['rider_contact'];
             $snapshot['external_tracking'] = $externalTracking;
             $repair->update([$addressField => $snapshot]);
 

@@ -799,10 +799,12 @@ describe("MyRepairs return logistics", () => {
 
     expect(screen.getByRole("heading", { name: "Return courier tracking" })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Return carrier"), { target: { value: "Lalamove" } });
-    fireEvent.change(screen.getByLabelText("Return tracking number"), { target: { value: "RETURN-123" } });
+    fireEvent.change(screen.getByLabelText("Return tracking number"), { target: { value: "123" } });
     fireEvent.change(screen.getByLabelText("Return tracking link"), {
       target: { value: "https://tracker.example/RETURN-123" },
     });
+    fireEvent.change(screen.getByLabelText("Return rider name"), { target: { value: "Juan Rider" } });
+    fireEvent.change(screen.getByLabelText("Return rider contact"), { target: { value: "09171234567" } });
     fireEvent.click(screen.getByRole("button", { name: "Save return tracking" }));
 
     await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
@@ -810,11 +812,77 @@ describe("MyRepairs return logistics", () => {
       {
         leg: "return",
         carrier: "Lalamove",
-        tracking_number: "RETURN-123",
+        tracking_number: "123",
         tracking_url: "https://tracker.example/RETURN-123",
+        rider_name: "Juan Rider",
+        rider_contact: "09171234567",
       },
     ));
     expect(await screen.findByText("Tracking details saved.")).toBeInTheDocument();
+  });
+
+  it("requires structured courier details for customer-arranged return tracking", async () => {
+    mocks.repair = repair({
+      return_delivery_method: "customer_pickup",
+      return_delivery_fee: 0,
+      return_logistics_quote: null,
+      same_as_intake_address: false,
+      collection_summary: {
+        collectible: false,
+        due_type: null,
+        phase: null,
+        collectible_amount: 0,
+        outstanding_balance: 0,
+        service_amount: 1500,
+        delivery_amount: 0,
+        total_paid_amount: 1500,
+        grand_total: 1500,
+        fully_paid: true,
+      },
+    });
+    mocks.post.mockResolvedValueOnce({
+      data: { success: true, message: "Tracking details saved." },
+    });
+
+    await renderReadyRepair();
+
+    const tracking = screen.getByRole("region", { name: "Return courier tracking" });
+    fireEvent.change(within(tracking).getByLabelText("Return carrier"), {
+      target: { value: "Other" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return other carrier"), {
+      target: { value: "Ninja Van" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return tracking number"), {
+      target: { value: "9876543210abc" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return rider name"), {
+      target: { value: "Maria123 Rider" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return rider contact"), {
+      target: { value: "091812345678" },
+    });
+
+    expect(within(tracking).getByLabelText("Return tracking number")).toHaveValue("9876543210");
+    expect(within(tracking).getByLabelText("Return rider name")).toHaveValue("Maria Rider");
+    expect(within(tracking).getByLabelText("Return rider contact")).toHaveValue("09181234567");
+
+    fireEvent.change(within(tracking).getByLabelText("Return tracking link"), {
+      target: { value: "https://tracker.example/9876543210" },
+    });
+    fireEvent.click(within(tracking).getByRole("button", { name: "Save return tracking" }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/external-tracking",
+      {
+        leg: "return",
+        carrier: "Ninja Van",
+        tracking_number: "9876543210",
+        tracking_url: "https://tracker.example/9876543210",
+        rider_name: "Maria Rider",
+        rider_contact: "09181234567",
+      },
+    ));
   });
 
   it("shows a clean saving label and restores the return tracking action", async () => {
@@ -850,7 +918,16 @@ describe("MyRepairs return logistics", () => {
       target: { value: "Lalamove" },
     });
     fireEvent.change(within(tracking).getByLabelText("Return tracking number"), {
-      target: { value: "RETURN-SAVING-123" },
+      target: { value: "123" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return tracking link"), {
+      target: { value: "https://tracker.example/RETURN-SAVING-123" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return rider name"), {
+      target: { value: "Juan Rider" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return rider contact"), {
+      target: { value: "09171234567" },
     });
 
     fireEvent.click(within(tracking).getByRole("button", { name: "Save return tracking" }));
@@ -895,7 +972,16 @@ describe("MyRepairs return logistics", () => {
       target: { value: "Lalamove" },
     });
     fireEvent.change(within(tracking).getByLabelText("Return tracking number"), {
-      target: { value: "RETURN-PAID-123" },
+      target: { value: "123" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return tracking link"), {
+      target: { value: "https://tracker.example/RETURN-PAID-123" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return rider name"), {
+      target: { value: "Juan Rider" },
+    });
+    fireEvent.change(within(tracking).getByLabelText("Return rider contact"), {
+      target: { value: "09171234567" },
     });
 
     expect(saveButton).toBeEnabled();
@@ -906,8 +992,10 @@ describe("MyRepairs return logistics", () => {
       {
         leg: "return",
         carrier: "Lalamove",
-        tracking_number: "RETURN-PAID-123",
-        tracking_url: null,
+        tracking_number: "123",
+        tracking_url: "https://tracker.example/RETURN-PAID-123",
+        rider_name: "Juan Rider",
+        rider_contact: "09171234567",
       },
     ));
   });
@@ -1330,7 +1418,16 @@ describe("MyRepairs warranty logistics", () => {
       target: { value: "Lalamove" },
     });
     fireEvent.change(within(editableTracking).getByLabelText("Return tracking number"), {
-      target: { value: "WARRANTY-RETURN-123" },
+      target: { value: "123" },
+    });
+    fireEvent.change(within(editableTracking).getByLabelText("Return tracking link"), {
+      target: { value: "https://tracker.example/WARRANTY-RETURN-123" },
+    });
+    fireEvent.change(within(editableTracking).getByLabelText("Return rider name"), {
+      target: { value: "Warranty Rider" },
+    });
+    fireEvent.change(within(editableTracking).getByLabelText("Return rider contact"), {
+      target: { value: "09171234567" },
     });
     fireEvent.click(within(editableTracking).getByRole("button", { name: "Save return tracking" }));
 
@@ -1339,8 +1436,10 @@ describe("MyRepairs warranty logistics", () => {
       {
         leg: "return",
         carrier: "Lalamove",
-        tracking_number: "WARRANTY-RETURN-123",
-        tracking_url: null,
+        tracking_number: "123",
+        tracking_url: "https://tracker.example/WARRANTY-RETURN-123",
+        rider_name: "Warranty Rider",
+        rider_contact: "09171234567",
       },
     ));
 
@@ -1351,8 +1450,10 @@ describe("MyRepairs warranty logistics", () => {
       return_address: {
         external_tracking: {
           carrier: "Lalamove",
-          tracking_number: "WARRANTY-RETURN-123",
-          tracking_url: null,
+          tracking_number: "123",
+          tracking_url: "https://tracker.example/WARRANTY-RETURN-123",
+          rider_name: "Warranty Rider",
+          rider_contact: "09171234567",
         },
       },
     });
@@ -1361,7 +1462,7 @@ describe("MyRepairs warranty logistics", () => {
 
     const lockedTracking = screen.getByRole("region", { name: "Return courier tracking" });
     expect(within(lockedTracking).getByText("Locked after handoff")).toBeInTheDocument();
-    expect(within(lockedTracking).getByText("WARRANTY-RETURN-123")).toBeInTheDocument();
+    expect(within(lockedTracking).getByText("123")).toBeInTheDocument();
     expect(within(lockedTracking).queryByLabelText("Return carrier")).not.toBeInTheDocument();
     expect(within(lockedTracking).queryByRole("button", { name: "Save return tracking" })).not.toBeInTheDocument();
   });
