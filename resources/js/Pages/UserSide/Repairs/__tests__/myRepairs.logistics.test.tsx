@@ -275,6 +275,11 @@ const renderReadyRepair = async () => {
   await screen.findAllByText("Scuffed sneakers");
 };
 
+const openReturnDeliveryPlan = () => {
+  fireEvent.click(screen.getByRole("button", { name: "Open return delivery plan" }));
+  return screen.getByRole("dialog", { name: "Return delivery plan" });
+};
+
 describe("MyRepairs loading performance", () => {
   it("shows the primary repair list without waiting for optional metadata", async () => {
     mocks.get.mockImplementation(async (url: string) => {
@@ -540,6 +545,8 @@ describe("MyRepairs repair cancellation", () => {
 describe("MyRepairs return logistics", () => {
   it("shows the server return plan, exact amount, and purpose-specific tracking events", async () => {
     await renderReadyRepair();
+    expect(screen.queryByRole("dialog", { name: "Return delivery plan" })).not.toBeInTheDocument();
+    openReturnDeliveryPlan();
 
     expect(screen.getByRole("heading", { name: "Return delivery plan" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /Customer pickup at shop/i })).toBeEnabled();
@@ -553,6 +560,9 @@ describe("MyRepairs return logistics", () => {
     expect(within(returnPlanSummary).getByText("₱135")).toBeInTheDocument();
     expect(within(returnPlanSummary).getByText("Final amount")).toBeInTheDocument();
     expect(within(returnPlanSummary).getByText("₱635")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close return delivery plan" }));
+    expect(screen.queryByRole("dialog", { name: "Return delivery plan" })).not.toBeInTheDocument();
 
     const intakeTimeline = await screen.findByRole("region", { name: "Intake pickup tracking" });
     const returnTimeline = screen.getByRole("region", { name: "Return delivery tracking" });
@@ -581,6 +591,7 @@ describe("MyRepairs return logistics", () => {
     });
 
     await renderReadyRepair();
+    openReturnDeliveryPlan();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Same as intake address" }));
     fireEvent.click(await screen.findByRole("button", { name: "Use saved return address" }));
@@ -651,6 +662,7 @@ describe("MyRepairs return logistics", () => {
     });
 
     await renderReadyRepair();
+    openReturnDeliveryPlan();
     fireEvent.click(screen.getByRole("checkbox", { name: "Same as intake address" }));
     fireEvent.click(await screen.findByRole("button", { name: "Use saved return address" }));
 
@@ -728,6 +740,7 @@ describe("MyRepairs return logistics", () => {
     });
 
     await renderReadyRepair();
+    openReturnDeliveryPlan();
 
     expect(screen.getByRole("radio", { name: /Shop rider delivery/i })).toBeEnabled();
     fireEvent.click(screen.getByRole("radio", { name: /Customer-arranged courier/i }));
@@ -924,6 +937,7 @@ describe("MyRepairs return logistics", () => {
     });
 
     await renderReadyRepair();
+    openReturnDeliveryPlan();
 
     expect(screen.getByRole("checkbox", { name: "Same as intake address" })).toBeDisabled();
     expect(screen.getByRole("radio", { name: /Customer pickup at shop/i })).toBeDisabled();
@@ -1032,6 +1046,7 @@ describe("MyRepairs return logistics", () => {
     });
 
     await renderReadyRepair();
+    openReturnDeliveryPlan();
 
     const recovery = screen.getByRole("region", { name: "Repair return recovery" });
     expect(within(recovery).getByText(/confirm your return address, then pay the new delivery fee/i)).toBeInTheDocument();

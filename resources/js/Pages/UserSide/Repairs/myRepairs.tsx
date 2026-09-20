@@ -13,6 +13,7 @@ import type { PreferredReturnChannel } from './refundPayloadBuilder';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 import { useScrollReveal } from '../Shared/useScrollReveal';
 import { useMaintenance } from '../../../providers/MaintenanceProvider';
+import { Route, X } from 'lucide-react';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -1021,6 +1022,7 @@ const ReturnDeliveryPlanCard: React.FC<{
   const [confirmedLocally, setConfirmedLocally] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [showPlanModal, setShowPlanModal] = useState(false);
   const coverageRequestKeyRef = useRef<string | null>(null);
 
   const locked = Boolean(order.return_logistics_locked_at);
@@ -1230,10 +1232,40 @@ const ReturnDeliveryPlanCard: React.FC<{
   };
 
   return (
-    <section className="mt-6 rounded-2xl border border-gray-200 bg-gray-50 p-4 sm:p-6">
+    <>
+      <div className="mt-6 flex justify-end">
+        <button
+          type="button"
+          aria-label="Open return delivery plan"
+          title="Return delivery plan"
+          onClick={() => setShowPlanModal(true)}
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-gray-300 bg-white p-3 text-[#16233b] shadow-sm transition hover:border-gray-500 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#16233b]/20"
+        >
+          <Route aria-hidden="true" size={20} />
+        </button>
+      </div>
+
+      {showPlanModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-black/50"
+            aria-hidden="true"
+            onClick={() => setShowPlanModal(false)}
+          />
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`return-delivery-plan-title-${order.id}`}
+            className="relative z-50 max-h-[calc(100dvh-2rem)] w-full max-w-3xl overflow-y-auto rounded-2xl border border-gray-200 bg-gray-50 p-4 shadow-2xl sm:p-6"
+          >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h4 className="text-lg font-bold text-black">Return delivery plan</h4>
+          <h4
+            id={`return-delivery-plan-title-${order.id}`}
+            className="text-lg font-bold text-black"
+          >
+            Return delivery plan
+          </h4>
           <p className="mt-1 text-sm text-gray-600">
             {order.redelivery_payment_due
               ? 'Confirm your return address, then pay the new delivery fee.'
@@ -1245,6 +1277,15 @@ const ReturnDeliveryPlanCard: React.FC<{
             Locked after payment
           </span>
         )}
+        <button
+          type="button"
+          aria-label="Close return delivery plan"
+          title="Close"
+          onClick={() => setShowPlanModal(false)}
+          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 transition hover:border-gray-500 hover:text-black focus:outline-none focus:ring-2 focus:ring-[#16233b]/20"
+        >
+          <X aria-hidden="true" size={18} />
+        </button>
       </div>
 
       <fieldset className="mt-5 space-y-3">
@@ -1431,7 +1472,10 @@ const ReturnDeliveryPlanCard: React.FC<{
               ? 'Save & review delivery plan'
               : 'Confirm address & delivery'}
       </button>
-    </section>
+          </section>
+        </div>
+      )}
+    </>
   );
 };
 
