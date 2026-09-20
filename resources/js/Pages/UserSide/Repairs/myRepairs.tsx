@@ -3345,7 +3345,7 @@ const MyRepairs: React.FC = () => {
         `,
         icon: 'info',
         showCancelButton: true,
-        confirmButtonText: 'Proceed to PayMongo',
+        confirmButtonText: 'Proceed',
         cancelButtonText: 'Cancel',
         confirmButtonColor: '#000000',
         cancelButtonColor: '#6b7280',

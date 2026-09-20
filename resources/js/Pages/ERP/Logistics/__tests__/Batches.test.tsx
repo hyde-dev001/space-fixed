@@ -231,6 +231,25 @@ it('filters by schedule status and clears all filters', () => {
   expect(screen.getByText('Order #81')).toBeInTheDocument();
 });
 
+it('clears the module filter with the other delivery filters', () => {
+  mocks.props = {
+    ...mocks.props,
+    availableModules: ['retail', 'repair'],
+    showModuleFilter: true,
+  };
+  render(<Batches />);
+
+  fireEvent.change(screen.getByLabelText('Filter deliveries by module'), { target: { value: 'repair' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Clear filters' }));
+
+  expect(screen.getByLabelText('Filter deliveries by module')).toHaveValue('all');
+  expect(mocks.get).toHaveBeenLastCalledWith('/erp/logistics/batches', {
+    module: 'all',
+    date: undefined,
+    window: 'morning',
+  }, expect.objectContaining({ only: ['batches', 'pool', 'unscheduled', 'filters'] }));
+});
+
 it('selects only matching eligible deliveries and reports the count', () => {
   mocks.props.pool = [scheduledLeg, { ...scheduledLeg, id: 9, scheduled_delivery_date: '2026-07-16', shipment: { id: 90, source_type: 'order', source_id: 90 } }];
   render(<Batches />);
@@ -250,7 +269,12 @@ it('requires two compatible deliveries and disables the other module', () => {
     showModuleFilter: true,
   };
   render(<Batches />);
-  expect(screen.getByLabelText('Filter batches by module')).toBeInTheDocument();
+  const moduleFilter = screen.getByLabelText('Filter deliveries by module');
+  expect(screen.getByRole('option', { name: 'All modules' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Retail' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'Repair' })).toBeInTheDocument();
+  expect(screen.queryByLabelText('Filter batches by module')).not.toBeInTheDocument();
+  expect(screen.getByTestId('batch-filter-grid')).toContainElement(moduleFilter);
 
   openBuilder();
   expect(screen.getByText('Select at least 2 deliveries')).toBeInTheDocument();
@@ -273,7 +297,7 @@ it('requests backend-filtered batch data for the selected module and slot', () =
   };
   render(<Batches />);
 
-  fireEvent.change(screen.getByLabelText('Filter batches by module'), { target: { value: 'repair' } });
+  fireEvent.change(screen.getByLabelText('Filter deliveries by module'), { target: { value: 'repair' } });
   expect(mocks.get).toHaveBeenLastCalledWith('/erp/logistics/batches', {
     module: 'repair',
     date: undefined,
