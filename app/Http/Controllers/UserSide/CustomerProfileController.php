@@ -47,6 +47,7 @@ class CustomerProfileController extends Controller
                 'id' => $user->id,
                 'first_name' => $user->first_name,
                 'last_name' => $user->last_name,
+                'suffix' => $user->suffix,
                 'name' => $user->name,
                 'email' => $user->email,
                 'phone' => $user->phone,
@@ -223,6 +224,7 @@ class CustomerProfileController extends Controller
         $validated = $request->validate([
             'first_name' => 'required|string|max:255',
             'last_name' => 'required|string|max:255',
+            'suffix' => 'nullable|string|max:50',
             'phone' => 'nullable|string|max:20',
             'address' => 'nullable|string|max:500',
             'profile_photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
@@ -237,7 +239,7 @@ class CustomerProfileController extends Controller
             $validated['profile_photo'] = $path;
         }
 
-        $validated['name'] = trim(($validated['first_name'] ?? '') . ' ' . ($validated['last_name'] ?? ''));
+        $validated['name'] = trim(($validated['first_name'] ?? '') . ' ' . ($validated['last_name'] ?? '') . ' ' . ($validated['suffix'] ?? ''));
 
         $user->update($validated);
 
@@ -247,6 +249,7 @@ class CustomerProfileController extends Controller
                 'user' => [
                     'first_name' => $user->first_name,
                     'last_name' => $user->last_name,
+                    'suffix' => $user->suffix,
                     'name' => $user->name,
                     'email' => $user->email,
                     'phone' => $user->phone,
