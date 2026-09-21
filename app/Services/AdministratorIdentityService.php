@@ -22,6 +22,7 @@ final class AdministratorIdentityService
         private readonly PrivilegedSessionService $sessions,
         private readonly PrivilegedAudit $audit,
         private readonly PrivilegedMailDispatcher $privilegedMailDispatcher,
+        private readonly AdminPageAccessService $pageAccess,
     ) {
     }
 
@@ -73,8 +74,12 @@ final class AdministratorIdentityService
                 'role' => $validated['role'],
                 'status' => SuperAdmin::STATUS_PENDING_SETUP,
             ]);
+            $pageChanges = $this->pageAccess->replace($admin, $validated['page_access'] ?? []);
             $issued = $this->tokens->issue($admin, PrivilegedSecurityToken::PURPOSE_SETUP, $actor);
             $this->audit->privilegedInvitationCreated($request, $actor, $admin);
+            if ($pageChanges['new'] !== []) {
+                $this->audit->privilegedAdminPageAccessChanged($request, $actor, $admin, $pageChanges);
+            }
 
             $this->privilegedMailDispatcher->dispatch(
                 type: PrivilegedDeliveryType::PRIVILEGED_ADMIN_SETUP,
@@ -227,6 +232,9 @@ final class AdministratorIdentityService
                     && $target->hasCompletedMfaSetup();
                 $this->assertFinalSuperAdminRemains($admins, $target, $remainsQualified);
                 $fromRole = (string) $target->role;
+                $pageChanges = $role === SuperAdmin::ROLE_SUPER_ADMIN
+                    ? $this->pageAccess->replace($target, [])
+                    : null;
                 $target->forceFill([
                     'role' => $role,
                     'security_version' => (int) $target->security_version + 1,
@@ -238,12 +246,58 @@ final class AdministratorIdentityService
                     $fromRole,
                     $role,
                 );
+                if ($pageChanges !== null && $pageChanges['removed'] !== []) {
+                    $this->audit->privilegedAdminPageAccessChanged($request, $lockedActor, $target, $pageChanges);
+                }
 
                 return ['admin' => $target, 'setup_token' => null];
             },
         );
 
         return $this->finalize($result);
+    }
+
+    /** @param array<int, mixed> $pageKeys @return array{admin: SuperAdmin, page_access: array<int, string>} */
+    public function updatePageAccess(
+        Request $request,
+        SuperAdmin $actor,
+        int $targetId,
+        array $pageKeys,
+    ): array {
+        return DB::transaction(function () use ($request, $actor, $targetId, $pageKeys): array {
+            $admins = SuperAdmin::query()->orderBy('id')->lockForUpdate()->get();
+            $lockedActor = $admins->first(fn (SuperAdmin $candidate): bool => (int) $candidate->getKey() === (int) $actor->getKey());
+            $target = $admins->first(fn (SuperAdmin $candidate): bool => (int) $candidate->getKey() === $targetId);
+
+            if (! $lockedActor instanceof SuperAdmin
+                || ! $lockedActor->isActive()
+                || $lockedActor->role !== SuperAdmin::ROLE_SUPER_ADMIN
+                || ! $lockedActor->hasCapability(SuperAdmin::CAP_MANAGE_ADMINISTRATORS)) {
+                throw new AuthorizationException('The security operation is not permitted.');
+            }
+
+            if (! $target instanceof SuperAdmin) {
+                throw new RuntimeException('The administrator was not found.');
+            }
+
+            if ((int) $target->getKey() === (int) $lockedActor->getKey()) {
+                throw new AuthorizationException('Self-management is not permitted.');
+            }
+
+            if ($target->role !== SuperAdmin::ROLE_ADMIN) {
+                throw new AuthorizationException('Super Admin page access is implicit and cannot be edited.');
+            }
+
+            $changes = $this->pageAccess->replace($target, $pageKeys);
+            if ($changes['old'] !== $changes['new']) {
+                $this->audit->privilegedAdminPageAccessChanged($request, $lockedActor, $target, $changes);
+            }
+
+            return [
+                'admin' => $target,
+                'page_access' => $changes['new'],
+            ];
+        });
     }
 
     public function resetMfa(Request $request, SuperAdmin $actor, int $targetId): SuperAdmin

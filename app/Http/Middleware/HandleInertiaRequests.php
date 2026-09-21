@@ -2,15 +2,18 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\AdminPage;
 use App\Enums\OwnerShellSelectionReason;
 use App\Models\CartItem;
 use App\Models\ConversationMessage;
 use App\Models\Employee;
 use App\Models\Notification;
 use App\Models\ShopOwner;
+use App\Models\SuperAdmin;
 use App\Models\User;
 use App\Services\ErpRouteCatalog;
 use App\Services\ErpWorkspaceNavigationService;
+use App\Services\AdminPageAccessService;
 use App\Services\OwnerShell\CanonicalOwnerShellService;
 use App\Services\ShopModuleAccessService;
 use App\Support\Erp\ErpActorContext;
@@ -30,6 +33,7 @@ class HandleInertiaRequests extends Middleware
         private readonly ShopModuleAccessService $shopModuleAccess,
         private readonly ErpRouteCatalog $erpRouteCatalog,
         private readonly ErpWorkspaceNavigationService $erpWorkspaceNavigation,
+        private readonly AdminPageAccessService $adminPageAccess,
     ) {}
 
     /**
@@ -231,6 +235,9 @@ class HandleInertiaRequests extends Middleware
                     'email' => $superAdmin->email,
                     'role' => $superAdmin->role,
                     'capabilities' => $superAdmin->capabilities(),
+                    'page_permissions' => $superAdmin instanceof SuperAdmin
+                        ? $this->adminPageAccess->pageKeys($superAdmin)
+                        : AdminPage::assignableKeys(),
                 ] : null,
 
                 'shop_owner' => Auth::guard('shop_owner')->check() ? [

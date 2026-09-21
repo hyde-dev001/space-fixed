@@ -14,6 +14,7 @@ type NavItem = {
   icon: React.ReactNode;
   route?: string;
   capability?: string;
+  pageKey?: string;
   subItems?: {
     name: string;
     route: string;
@@ -21,6 +22,7 @@ type NavItem = {
     pro?: boolean;
     new?: boolean;
     capability?: string;
+    pageKey?: string;
   }[];
 };
 
@@ -44,7 +46,15 @@ const routeFallbacks: Record<string, string> = {
 const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu } = useSidebar();
   const { url, props } = usePage();
-  const auth = (props as { auth?: { super_admin?: { capabilities?: unknown[] } } }).auth;
+  const auth = (props as {
+    auth?: {
+      super_admin?: {
+        role?: string;
+        capabilities?: unknown[];
+        page_permissions?: unknown[];
+      };
+    };
+  }).auth;
   const capabilities = new Set(
     Array.isArray(auth?.super_admin?.capabilities)
       ? auth.super_admin.capabilities.filter((capability): capability is string => typeof capability === 'string')
@@ -54,6 +64,25 @@ const AppSidebar: React.FC = () => {
   const hasCapability = useCallback(
     (capability?: string) => capability === undefined || capabilities.has(capability),
     [capabilities],
+  );
+  const pagePermissions = new Set(
+    Array.isArray(auth?.super_admin?.page_permissions)
+      ? auth.super_admin.page_permissions.filter((page): page is string => typeof page === 'string')
+      : [],
+  );
+  const hasPagePermissionPayload = Array.isArray(auth?.super_admin?.page_permissions);
+  const hasPage = useCallback(
+    (pageKey?: string) => {
+      if (pageKey === undefined) return true;
+      if (auth?.super_admin?.role === 'super_admin') return true;
+      if (pageKey === 'dashboard') return true;
+      // Keep capability-only rendering for older test shells; every real admin
+      // response includes page_permissions and remains server-authorized.
+      return !hasPagePermissionPayload
+        ? true
+        : pagePermissions.has(pageKey);
+    },
+    [auth?.super_admin?.role, hasPagePermissionPayload, pagePermissions],
   );
 
   const resolveRouteHref = useCallback((routeName: string): string | null => {
@@ -83,6 +112,7 @@ const AppSidebar: React.FC = () => {
         name: "Dashboard",
         route: "admin.system-monitoring",
         capability: "view_monitoring",
+        pageKey: "dashboard",
       },
       {
         icon: (
@@ -95,16 +125,16 @@ const AppSidebar: React.FC = () => {
         ),
         name: "Account Management",
         subItems: [
-          { name: "Admin Management", route: "admin.administrators.index", capability: "manage_administrators", pro: false },
-          { name: "User Management", route: "admin.users.index", capability: "intervene_accounts", pro: false },
-          { name: "Shop Management", route: "admin.registrations.index", capability: "review_registrations", pro: false },
-          { name: "Document Renewals", route: "admin.document-renewals.index", capability: "review_registrations", pro: false },
-          { name: "Business Upgrade Requests", route: "admin.business-upgrade-requests.index", capability: "review_registrations", pro: false },
-          { name: "Shop Reports", route: "admin.shop-reports", capability: "moderate_reports", pro: false },
-          { name: "Suspension Appeals", route: "admin.suspension-appeals", capability: "view_appeals", pro: false },
-          { name: "System Maintenance", route: "admin.maintenance.index", capability: "view_platform_maintenance", pro: false },
-          { name: "Platform Fees", route: "admin.platform-fees.index", capability: "manage_platform_fees", pro: false },
-          { name: "Audit History", route: "admin.audit", capability: "view_privileged_audit", pro: false },
+          { name: "Admin Management", route: "admin.administrators.index", capability: "manage_administrators", pageKey: "admin_management", pro: false },
+          { name: "User Management", route: "admin.users.index", capability: "intervene_accounts", pageKey: "user_management", pro: false },
+          { name: "Shop Management", route: "admin.registrations.index", capability: "review_registrations", pageKey: "shop_management", pro: false },
+          { name: "Document Renewals", route: "admin.document-renewals.index", capability: "review_registrations", pageKey: "document_renewals", pro: false },
+          { name: "Business Upgrade Requests", route: "admin.business-upgrade-requests.index", capability: "review_registrations", pageKey: "business_upgrade_requests", pro: false },
+          { name: "Shop Reports", route: "admin.shop-reports", capability: "moderate_reports", pageKey: "shop_reports", pro: false },
+          { name: "Suspension Appeals", route: "admin.suspension-appeals", capability: "view_appeals", pageKey: "suspension_appeals", pro: false },
+          { name: "System Maintenance", route: "admin.maintenance.index", capability: "view_platform_maintenance", pageKey: "system_maintenance", pro: false },
+          { name: "Platform Fees", route: "admin.platform-fees.index", capability: "manage_platform_fees", pageKey: "platform_fees", pro: false },
+          { name: "Audit History", route: "admin.audit", capability: "view_privileged_audit", pageKey: "audit_history", pro: false },
         ],
       },
       {
@@ -119,6 +149,7 @@ const AppSidebar: React.FC = () => {
         name: "Registered Shops",
         route: "admin.shops.index",
         capability: "intervene_accounts",
+        pageKey: "registered_shops",
       },
       {
         icon: (
@@ -132,16 +163,17 @@ const AppSidebar: React.FC = () => {
         name: "Subscription Management",
         route: "admin.subscriptions.index",
         capability: "manage_plans",
+        pageKey: "subscription_management",
       },
     ];
 
     return items.reduce<NavItem[]>((visibleItems, item) => {
-      if (!hasCapability(item.capability)) {
+      if (!hasCapability(item.capability) || !hasPage(item.pageKey)) {
         return visibleItems;
       }
 
       if (item.subItems) {
-        const subItems = item.subItems.filter((subItem) => hasCapability(subItem.capability));
+        const subItems = item.subItems.filter((subItem) => hasCapability(subItem.capability) && hasPage(subItem.pageKey));
         if (subItems.length === 0) {
           return visibleItems;
         }
@@ -152,7 +184,7 @@ const AppSidebar: React.FC = () => {
 
       visibleItems.push(item);
       return visibleItems;
-    }, []);
+    }, [hasCapability, hasPage]);
   };
 
   const navItems = getNavItems();
@@ -245,7 +277,7 @@ const AppSidebar: React.FC = () => {
     return (
       <ul className="flex flex-col gap-4">
         {items.map((nav, index) => {
-          const subItems = nav.subItems?.filter((s) => s.name !== "Create Admin" && hasCapability(s.capability));
+          const subItems = nav.subItems?.filter((s) => s.name !== "Create Admin" && hasCapability(s.capability) && hasPage(s.pageKey));
           if (nav.subItems && (!subItems || subItems.length === 0)) {
             return null;
           }

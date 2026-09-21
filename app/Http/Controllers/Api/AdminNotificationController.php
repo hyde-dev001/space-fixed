@@ -5,12 +5,17 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Enums\NotificationType;
 use App\Models\Notification;
+use App\Services\AdminPageAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 
 class AdminNotificationController extends Controller
 {
+    public function __construct(private readonly AdminPageAccessService $pageAccess)
+    {
+    }
+
     /**
      * Get all notifications for the authenticated super admin.
      */
@@ -23,8 +28,7 @@ class AdminNotificationController extends Controller
         ]) ?: 20;
         $perPage = min($perPage, 100);
 
-        $query = Notification::query()
-            ->forSuperAdmin((int) $admin->getKey())
+        $query = $this->pageAccess->visibleAdminNotifications($admin)
             ->orderByDesc('created_at')
             ->orderByDesc('id');
 
@@ -45,8 +49,7 @@ class AdminNotificationController extends Controller
                 'total'        => $notifications->total(),
                 'last_page'    => $notifications->lastPage(),
             ],
-            'unread_count' => Notification::query()
-                ->forSuperAdmin((int) $admin->getKey())
+            'unread_count' => $this->pageAccess->visibleAdminNotifications($admin)
                 ->where('is_read', false)
                 ->count(),
         ]);
@@ -60,8 +63,7 @@ class AdminNotificationController extends Controller
         $admin = Auth::guard('super_admin')->user();
 
         return response()->json([
-            'count' => Notification::query()
-                ->forSuperAdmin((int) $admin->getKey())
+            'count' => $this->pageAccess->visibleAdminNotifications($admin)
                 ->where('is_read', false)
                 ->count(),
         ]);
@@ -74,8 +76,7 @@ class AdminNotificationController extends Controller
     {
         $admin = Auth::guard('super_admin')->user();
 
-        $notification = Notification::query()
-            ->forSuperAdmin((int) $admin->getKey())
+        $notification = $this->pageAccess->visibleAdminNotifications($admin)
             ->whereKey($id)
             ->first();
 
@@ -87,8 +88,7 @@ class AdminNotificationController extends Controller
 
         return response()->json([
             'message'      => 'Notification marked as read',
-            'unread_count' => Notification::query()
-                ->forSuperAdmin((int) $admin->getKey())
+            'unread_count' => $this->pageAccess->visibleAdminNotifications($admin)
                 ->where('is_read', false)
                 ->count(),
         ]);
@@ -101,8 +101,7 @@ class AdminNotificationController extends Controller
     {
         $admin = Auth::guard('super_admin')->user();
 
-        $count = Notification::query()
-            ->forSuperAdmin((int) $admin->getKey())
+        $count = $this->pageAccess->visibleAdminNotifications($admin)
             ->where('is_read', false)
             ->update(['is_read' => true, 'read_at' => now()]);
 
@@ -119,8 +118,7 @@ class AdminNotificationController extends Controller
     {
         $admin = Auth::guard('super_admin')->user();
 
-        $notification = Notification::query()
-            ->forSuperAdmin((int) $admin->getKey())
+        $notification = $this->pageAccess->visibleAdminNotifications($admin)
             ->whereKey($id)
             ->first();
 
@@ -132,8 +130,7 @@ class AdminNotificationController extends Controller
 
         return response()->json([
             'message'      => 'Notification dismissed',
-            'unread_count' => Notification::query()
-                ->forSuperAdmin((int) $admin->getKey())
+            'unread_count' => $this->pageAccess->visibleAdminNotifications($admin)
                 ->where('is_read', false)
                 ->count(),
         ]);

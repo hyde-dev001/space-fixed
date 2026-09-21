@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
+use App\Enums\AdminPage;
 use App\Enums\NotificationType;
+use App\Models\AdminPagePermission;
 use App\Models\Notification;
 use App\Models\SuperAdmin;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -76,6 +78,7 @@ final class AdminNotificationInboxTest extends TestCase
     public function test_pending_shop_registration_notification_reaches_every_active_super_admin(): void
     {
         $admin = SuperAdmin::factory()->admin()->mfaEnrolled()->create();
+        AdminPagePermission::grant($admin, AdminPage::SHOP_MANAGEMENT);
 
         Notification::notifyAllSuperAdmins(
             type: NotificationType::SHOP_REGISTRATION_PENDING,
@@ -97,6 +100,49 @@ final class AdminNotificationInboxTest extends TestCase
             ->assertOk()
             ->assertJsonPath('unread_count', 1)
             ->assertJsonPath('notifications.0.action_url', '/admin/registrations?status=pending');
+    }
+
+    public function test_regular_admin_only_receives_notifications_for_assigned_pages(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->mfaEnrolled()->create();
+        $restricted = Notification::query()->create([
+            'super_admin_id' => $admin->id,
+            'type' => NotificationType::PLATFORM_BALANCE_ALERT->value,
+            'title' => 'Platform fee paid',
+            'message' => 'A shop paid its balance.',
+            'action_url' => '/admin/platform-fees',
+            'is_read' => false,
+            'requires_action' => true,
+        ]);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->getJson('/api/admin/notifications')
+            ->assertOk()
+            ->assertJsonPath('pagination.total', 0)
+            ->assertJsonPath('unread_count', 0);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson("/api/admin/notifications/{$restricted->id}/read")
+            ->assertNotFound();
+    }
+
+    public function test_super_admin_sees_platform_notifications_without_permission_rows(): void
+    {
+        $admin = SuperAdmin::factory()->superAdmin()->mfaEnrolled()->create();
+        $notification = Notification::query()->create([
+            'super_admin_id' => $admin->id,
+            'type' => NotificationType::PLATFORM_BALANCE_ALERT->value,
+            'title' => 'Platform fee paid',
+            'message' => 'A shop paid its balance.',
+            'action_url' => '/admin/platform-fees',
+            'is_read' => false,
+            'requires_action' => true,
+        ]);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->getJson('/api/admin/notifications')
+            ->assertOk()
+            ->assertJsonPath('notifications.0.id', $notification->id);
     }
 
     public function test_unread_filter_and_response_serialization_are_explicit_and_safe(): void
@@ -222,9 +268,11 @@ final class AdminNotificationInboxTest extends TestCase
     /** @param array<string, mixed> $overrides */
     private function notification(SuperAdmin $admin, array $overrides = []): Notification
     {
+        AdminPagePermission::grant($admin, AdminPage::AUDIT_HISTORY);
+
         return Notification::query()->create(array_merge([
             'super_admin_id' => $admin->id,
-            'type' => NotificationType::SHOP_REGISTRATION_PENDING->value,
+            'type' => NotificationType::PAYMENT_RECEIVED->value,
             'title' => 'Notification',
             'message' => 'An operational event requires review.',
             'data' => ['internal_id' => 7],

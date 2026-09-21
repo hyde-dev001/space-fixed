@@ -81,6 +81,8 @@ final class PrivilegedAuditVisibility
         'shop_owner_upgrade_reviewed' => 'Shop owner upgrade reviewed',
         'shop_owner_upgrade_superseded' => 'Shop owner upgrade superseded',
         'privileged_capability_denied' => 'Privileged capability denied',
+        'privileged_page_denied' => 'Privileged page access denied',
+        'privileged_admin_page_access_changed' => 'Administrator page access changed',
         'privileged_workflow_conflict' => 'Privileged workflow conflict',
         'privileged_workflow_failed' => 'Privileged workflow failed',
     ];

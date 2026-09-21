@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\SuperAdmin;
 
 use App\Mail\PrivilegedSetupLinkMail;
+use App\Enums\AdminPage;
 use App\Enums\PrivilegedDeliveryType;
 use App\Jobs\SendPrivilegedWorkflowMail;
 use App\Models\PrivilegedSecurityToken;
@@ -143,6 +144,7 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
             'email' => 'invited@example.test',
             'phone' => '09171234567',
             'role' => SuperAdmin::ROLE_ADMIN,
+            'page_access' => [AdminPage::PLATFORM_FEES->value],
         ]);
 
         $response->assertRedirect(route('admin.administrators.index'));
@@ -152,6 +154,10 @@ final class PrivilegedBootstrapAndInvitationTest extends TestCase
         self::assertDatabaseHas('privileged_security_tokens', [
             'super_admin_id' => $invited->id,
             'purpose' => PrivilegedSecurityToken::PURPOSE_SETUP,
+        ]);
+        self::assertDatabaseHas('admin_page_permissions', [
+            'super_admin_id' => $invited->id,
+            'page_key' => AdminPage::PLATFORM_FEES->value,
         ]);
         self::assertDatabaseHas('activity_log', ['event' => 'privileged_invitation_created']);
 

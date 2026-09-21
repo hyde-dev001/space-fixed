@@ -10,6 +10,13 @@ interface InviteForm {
   email: string;
   phone: string;
   role: 'admin' | 'super_admin';
+  page_access: string[];
+}
+
+interface PageOption {
+  key: string;
+  label: string;
+  group: string;
 }
 
 type InviteErrors = Record<string, string | string[] | undefined>;
@@ -21,13 +28,14 @@ function errorText(errors: InviteErrors, key: string): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default function CreateAdmin() {
+export default function CreateAdmin({ pageOptions = [] }: { pageOptions?: PageOption[] }) {
   const [form, setForm] = useState<InviteForm>({
     first_name: '',
     last_name: '',
     email: '',
     phone: '',
     role: 'admin',
+    page_access: [],
   });
   const [errors, setErrors] = useState<InviteErrors>({});
   const [processing, setProcessing] = useState(false);
@@ -68,7 +76,10 @@ export default function CreateAdmin() {
 
     setErrors({});
     setProcessing(true);
-    router.post('/admin/administrators', form, {
+    const payload = form.page_access.length > 0
+      ? form
+      : (({ page_access: _pageAccess, ...withoutPageAccess }) => withoutPageAccess)(form);
+    router.post('/admin/administrators', payload, {
       onError: (serverErrors) => setErrors(serverErrors as InviteErrors),
       onFinish: () => setProcessing(false),
     });
@@ -126,12 +137,53 @@ export default function CreateAdmin() {
 
             <div>
               <label htmlFor="invite-role" className="mb-2 block text-sm font-semibold text-gray-800 dark:text-gray-200">Administrator role</label>
-              <MonochromeSelect id="invite-role" value={form.role} onChange={(event) => update('role', event.target.value)} className={inputClassName}>
+              <MonochromeSelect id="invite-role" value={form.role} onChange={(event) => setForm((current) => ({
+                ...current,
+                role: event.target.value as InviteForm['role'],
+                page_access: event.target.value === 'admin' ? current.page_access : [],
+              }))} className={inputClassName}>
                 <option value="admin">Admin</option>
                 <option value="super_admin">Super Admin</option>
               </MonochromeSelect>
               {errorText(errors, 'role') && <p className="mt-1 text-sm text-red-600">{errorText(errors, 'role')}</p>}
             </div>
+
+            {form.role === 'admin' && (
+              <fieldset className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/40">
+                <legend className="px-1 text-sm font-semibold text-gray-900 dark:text-white">Page access</legend>
+                <p className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+                  Dashboard is always available. Select the pages this administrator may open and manage.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {pageOptions.filter((page) => page.key !== 'dashboard').map((page) => (
+                    <label key={page.key} className="flex items-start gap-3 rounded-lg border border-gray-200 bg-white p-3 text-sm dark:border-gray-700 dark:bg-gray-800">
+                      <input
+                        type="checkbox"
+                        checked={form.page_access.includes(page.key)}
+                        onChange={(event) => setForm((current) => ({
+                          ...current,
+                          page_access: event.target.checked
+                            ? [...current.page_access, page.key]
+                            : current.page_access.filter((key) => key !== page.key),
+                        }))}
+                        className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                      />
+                      <span>
+                        <span className="block font-medium text-gray-900 dark:text-white">{page.label}</span>
+                        <span className="block text-xs text-gray-500 dark:text-gray-400">{page.group}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                {errorText(errors, 'page_access') && <p className="mt-2 text-sm text-red-600">{errorText(errors, 'page_access')}</p>}
+              </fieldset>
+            )}
+
+            {form.role === 'super_admin' && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                Super Admin receives all privileged pages automatically, including administrator management and system maintenance.
+              </div>
+            )}
 
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm leading-6 text-gray-800 shadow-sm">
               No password is collected here. The invitation recipient creates a server-validated password and completes MFA from the one-time link.

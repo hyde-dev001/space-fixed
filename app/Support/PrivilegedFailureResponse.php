@@ -33,6 +33,23 @@ final class PrivilegedFailureResponse
         );
     }
 
+    public function pageDenied(Request $request, SuperAdmin $actor, string $pageKey): Response
+    {
+        $correlationId = $this->audit->correlationId($request);
+
+        $this->safeAudit(function () use ($request, $actor, $pageKey): void {
+            $this->audit->privilegedPageDenied($request, $actor, $pageKey);
+        });
+
+        return $this->render(
+            request: $request,
+            status: 403,
+            message: 'This admin page is not assigned to your account.',
+            code: 'privileged_page_denied',
+            correlationId: $correlationId,
+        );
+    }
+
     public function conflict(
         Request $request,
         string $operation,

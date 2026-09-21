@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Requests\Privileged;
 
 use App\Models\SuperAdmin;
+use App\Enums\AdminPage;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -38,6 +39,13 @@ final class InviteAdministratorRequest extends FormRequest
                 SuperAdmin::ROLE_ADMIN,
                 SuperAdmin::ROLE_SUPER_ADMIN,
             ])],
+            'page_access' => [
+                'sometimes',
+                'array',
+                'max:'.count(AdminPage::assignableKeys()),
+                Rule::prohibitedIf(fn (): bool => $this->input('role') === SuperAdmin::ROLE_SUPER_ADMIN),
+            ],
+            'page_access.*' => ['string', Rule::in(AdminPage::assignableKeys())],
             'password' => ['prohibited'],
             'password_confirmation' => ['prohibited'],
         ];

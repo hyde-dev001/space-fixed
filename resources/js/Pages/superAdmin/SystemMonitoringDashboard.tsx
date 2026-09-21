@@ -49,6 +49,8 @@ interface DashboardPayload {
   recent_activity?: Array<{ activity: string; time: string; status: string }>;
   performance_metrics?: Array<{ metric: string; value: string; status: string }>;
   systems_operational?: boolean;
+  can_view_audit?: boolean;
+  can_view_system_health?: boolean;
 }
 
 
@@ -128,30 +130,33 @@ export default function SystemMonitoringDashboard() {
   const systemHealthRows = dashboard?.system_health || [];
   const recentActivityRows = dashboard?.recent_activity || [];
   const performanceRows = dashboard?.performance_metrics || [];
+  const canViewAudit = dashboard?.can_view_audit ?? true;
+  const canViewSystemHealth = dashboard?.can_view_system_health ?? true;
+  const showSystemStatus = typeof dashboard?.systems_operational === 'boolean';
   const systemsOperational = dashboard?.systems_operational === true;
 
   const metricsData: MetricData[] = [
-    {
+    ...(metrics.total_users !== undefined ? [{
       title: "Total Users",
       value: Number(metrics.total_users || 0),
       icon: GroupIcon,
       color: 'success',
       description: "Active registered users"
-    },
-    {
+    }] : []),
+    ...(metrics.total_admins !== undefined ? [{
       title: "Total Admin Accounts",
       value: Number(metrics.total_admins || 0),
       icon: BoxIconLine,
       color: 'success',
       description: "Accounts with admin access"
-    },
-    {
+    }] : []),
+    ...(metrics.suspended_admins !== undefined ? [{
       title: "Suspended Admin Accounts",
       value: Number(metrics.suspended_admins || 0),
       icon: TaskIcon,
       color: 'warning',
       description: "Currently restricted admin accounts"
-    }
+    }] : [])
   ];
 
   return (
@@ -170,12 +175,14 @@ export default function SystemMonitoringDashboard() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <div className={`flex items-center gap-2 rounded-lg px-4 py-2 ${systemsOperational ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
-              <div className={`h-2 w-2 rounded-full ${systemsOperational ? 'bg-green-500' : 'bg-red-500'}`}></div>
-              <span className={`text-sm font-medium ${systemsOperational ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
-                {systemsOperational ? 'Database connected' : 'Database attention required'}
-              </span>
-            </div>
+            {showSystemStatus && (
+              <div className={`flex items-center gap-2 rounded-lg px-4 py-2 ${systemsOperational ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
+                <div className={`h-2 w-2 rounded-full ${systemsOperational ? 'bg-green-500' : 'bg-red-500'}`}></div>
+                <span className={`text-sm font-medium ${systemsOperational ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
+                  {systemsOperational ? 'Database connected' : 'Database attention required'}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -188,7 +195,7 @@ export default function SystemMonitoringDashboard() {
 
         {/* Additional Insights Section */}
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
+          {canViewSystemHealth && <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
             <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">System Health</h4>
@@ -216,19 +223,19 @@ export default function SystemMonitoringDashboard() {
                 </TableBody>
               </Table>
             </div>
-          </div>
+          </div>}
 
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
             <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">Recent Activity</h4>
               </div>
-              <Link
-                href="/admin/audit"
-                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200"
-              >
-                View Audit History
-              </Link>
+              {canViewAudit && <Link
+                  href="/admin/audit"
+                  className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-theme-sm font-medium text-gray-700 shadow-theme-xs hover:bg-gray-50 hover:text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-white/[0.03] dark:hover:text-gray-200"
+                >
+                  View Audit History
+                </Link>}
             </div>
             <div className="max-w-full overflow-x-auto">
               <Table>
@@ -261,7 +268,7 @@ export default function SystemMonitoringDashboard() {
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
+          {canViewSystemHealth && <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white px-4 pb-3 pt-4 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6">
             <div className="flex flex-col gap-2 mb-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h4 className="text-lg font-semibold text-gray-800 dark:text-white/90">Current operational snapshots</h4>
@@ -289,7 +296,7 @@ export default function SystemMonitoringDashboard() {
                 </TableBody>
               </Table>
             </div>
-          </div>
+          </div>}
         </div>
       </div>
     </AppLayout>

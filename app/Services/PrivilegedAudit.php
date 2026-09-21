@@ -1246,6 +1246,44 @@ class PrivilegedAudit
         );
     }
 
+    public function privilegedPageDenied(
+        Request $request,
+        SuperAdmin $actor,
+        string $pageKey,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_page_denied',
+            request: $request,
+            actor: $actor,
+            subject: $actor,
+            properties: [
+                'page_key' => $pageKey,
+                'route' => $request->route()?->getName(),
+            ],
+        );
+    }
+
+    /** @param array<string, mixed> $changes */
+    public function privilegedAdminPageAccessChanged(
+        Request $request,
+        SuperAdmin $actor,
+        SuperAdmin $subject,
+        array $changes,
+    ): void {
+        $this->writeSecurity(
+            event: 'privileged_admin_page_access_changed',
+            request: $request,
+            actor: $actor,
+            subject: $subject,
+            properties: [
+                'old_page_access' => array_values($changes['old'] ?? []),
+                'new_page_access' => array_values($changes['new'] ?? []),
+                'added_page_access' => array_values($changes['added'] ?? []),
+                'removed_page_access' => array_values($changes['removed'] ?? []),
+            ],
+        );
+    }
+
     public function privilegedWorkflowConflict(
         Request $request,
         ?SuperAdmin $actor,

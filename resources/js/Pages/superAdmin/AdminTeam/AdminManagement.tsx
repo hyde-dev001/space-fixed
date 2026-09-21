@@ -15,6 +15,13 @@ interface Administrator {
   recovery_code_count?: number;
   createdAt?: string;
   lastLogin?: string | null;
+  page_access?: string[];
+}
+
+interface PageOption {
+  key: string;
+  label: string;
+  group: string;
 }
 
 interface PaginationMeta {
@@ -36,6 +43,7 @@ interface AdminManagementProps {
   admins?: Administrator[] | AdministratorPage;
   stats?: Record<string, number>;
   filters?: { search?: string | null; role?: string | null; status?: string | null };
+  pageOptions?: PageOption[];
 }
 
 type ActionState = { key: string; error?: string } | null;
@@ -87,12 +95,14 @@ const emptyPage: AdministratorPage = {
   links: {},
 };
 
-export default function AdminManagement({ admins = [], stats = {}, filters = {} }: AdminManagementProps) {
+export default function AdminManagement({ admins = [], stats = {}, filters = {}, pageOptions = [] }: AdminManagementProps) {
   const [filter, setFilter] = useState(filters.status || 'all');
   const [roleFilter, setRoleFilter] = useState(filters.role || 'all');
   const [search, setSearch] = useState(filters.search || '');
   const [action, setAction] = useState<ActionState>(null);
   const [actionError, setActionError] = useState<string>();
+  const [accessAdmin, setAccessAdmin] = useState<Administrator | null>(null);
+  const [selectedPageKeys, setSelectedPageKeys] = useState<string[]>([]);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isServerPaginated = !Array.isArray(admins);
@@ -150,6 +160,41 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
       onError: (errors) => {
         setActionError(errorMessage(errors));
         setAction({ key, error: errorMessage(errors) });
+      },
+      onFinish: () => setAction(null),
+    });
+  };
+
+  const openAccessEditor = (admin: Administrator) => {
+    setActionError(undefined);
+    setAccessAdmin(admin);
+    setSelectedPageKeys(admin.page_access ?? []);
+  };
+
+  const savePageAccess = () => {
+    if (!accessAdmin) return;
+
+    const key = `${accessAdmin.id}:page-access`;
+    setActionError(undefined);
+    setAction({ key });
+    router.patch(`/admin/administrators/${accessAdmin.id}/page-access`, {
+      page_access: selectedPageKeys,
+    }, {
+      preserveScroll: true,
+      onSuccess: async () => {
+        setAccessAdmin(null);
+        await Swal.fire({
+          title: 'Access updated',
+          text: 'The administrator page access was saved.',
+          icon: 'success',
+          confirmButtonColor: '#111827',
+        });
+      },
+      onError: (errors) => {
+        const message = errorMessage(errors);
+        setActionError(message);
+        setAction({ key, error: message });
+        void Swal.fire({ title: 'Unable to save access', text: message, icon: 'error', confirmButtonColor: '#111827' });
       },
       onFinish: () => setAction(null),
     });
@@ -239,6 +284,7 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
                     <th className="px-5 py-4">Administrator</th>
                     <th className="px-5 py-4">Status</th>
                     <th className="px-5 py-4">Role</th>
+                    <th className="px-5 py-4">Page access</th>
                     <th className="px-5 py-4">MFA and recovery</th>
                     <th className="px-5 py-4">Lifecycle actions</th>
                   </tr>
@@ -265,6 +311,25 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
                             <option value="super_admin">Super Admin</option>
                           </MonochromeSelect>
                           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">Current: {roleLabel(admin.role)}</p>
+                        </td>
+                        <td className="px-5 py-5 align-top">
+                          {admin.role === 'super_admin' ? (
+                            <span className="text-sm font-semibold text-gray-800 dark:text-gray-200">All privileged pages</span>
+                          ) : (
+                            <>
+                              <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                                {(admin.page_access ?? []).filter((page) => page !== 'dashboard').length} assigned
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => openAccessEditor(admin)}
+                                disabled={actionBusy}
+                                className="mt-2 rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-800 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-700"
+                              >
+                                Manage access
+                              </button>
+                            </>
+                          )}
                         </td>
                         <td className="px-5 py-5 align-top">
                           <p className={mfaComplete ? 'font-semibold text-emerald-700' : 'font-semibold text-amber-700'}>{mfaComplete ? 'MFA enabled' : 'MFA setup required'}</p>
@@ -332,6 +397,53 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {} 
             High-risk changes may ask for fresh reauthentication. Finish that step, then deliberately retry the action; no lifecycle mutation is replayed automatically.
           </p>
         </div>
+
+        {accessAdmin && (
+          <div className="erp-modal-backdrop fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4" role="presentation">
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="admin-page-access-title"
+              className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="admin-page-access-title" className="text-xl font-bold text-gray-900 dark:text-white">Manage page access</h2>
+                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                    {accessAdmin.firstName} {accessAdmin.lastName} · Dashboard is always available.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setAccessAdmin(null)} className="rounded-lg px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700">Close</button>
+              </div>
+
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                {pageOptions.filter((page) => page.key !== 'dashboard').map((page) => (
+                  <label key={page.key} className="flex items-start gap-3 rounded-xl border border-gray-200 p-3 text-sm dark:border-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={selectedPageKeys.includes(page.key)}
+                      onChange={(event) => setSelectedPageKeys((current) => event.target.checked
+                        ? [...current, page.key]
+                        : current.filter((key) => key !== page.key))}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                    />
+                    <span>
+                      <span className="block font-medium text-gray-900 dark:text-white">{page.label}</span>
+                      <span className="block text-xs text-gray-500 dark:text-gray-400">{page.group}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="mt-6 flex justify-end gap-3">
+                <button type="button" onClick={() => setAccessAdmin(null)} className="rounded-xl border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-800 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-700">Cancel</button>
+                <button type="button" onClick={savePageAccess} disabled={action?.key === `${accessAdmin.id}:page-access`} className="rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-black disabled:cursor-not-allowed disabled:bg-gray-400">
+                  {action?.key === `${accessAdmin.id}:page-access` ? 'Saving…' : 'Save access'}
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
       </main>
     </AppLayout>
   );

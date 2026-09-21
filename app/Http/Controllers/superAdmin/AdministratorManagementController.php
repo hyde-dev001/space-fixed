@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\superAdmin;
 
+use App\Enums\AdminPage;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Privileged\InviteAdministratorRequest;
+use App\Http\Requests\Privileged\UpdateAdminPageAccessRequest;
 use App\Models\SuperAdmin;
 use App\Services\AdministratorIdentityService;
+use App\Services\AdminPageAccessService;
 use App\Support\PrivilegedFailureResponse;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
@@ -22,6 +25,7 @@ final class AdministratorManagementController extends Controller
 {
     public function __construct(
         private readonly AdministratorIdentityService $identity,
+        private readonly AdminPageAccessService $pageAccess,
         private readonly PrivilegedFailureResponse $failures,
     ) {
     }
@@ -47,6 +51,7 @@ final class AdministratorManagementController extends Controller
 
         $baseQuery = SuperAdmin::query()->whereKeyNot($currentAdminId);
         $query = (clone $baseQuery)
+            ->with('pagePermissions:id,super_admin_id,page_key')
             ->select([
                 'id',
                 'first_name',
@@ -85,6 +90,9 @@ final class AdministratorManagementController extends Controller
                     'firstName' => $admin->first_name,
                     'lastName' => $admin->last_name,
                     'role' => $admin->role,
+                    'page_access' => $admin->role === SuperAdmin::ROLE_SUPER_ADMIN
+                        ? AdminPage::assignableKeys()
+                        : $this->pageAccess->pageKeys($admin),
                     'email' => $admin->email,
                     'status' => $admin->status,
                     'mfa_complete' => $admin->hasCompletedMfaSetup(),
@@ -111,6 +119,7 @@ final class AdministratorManagementController extends Controller
                 'role' => $validated['role'] ?? null,
                 'status' => $validated['status'] ?? null,
             ],
+            'pageOptions' => AdminPage::options(),
         ]);
     }
 
@@ -126,7 +135,9 @@ final class AdministratorManagementController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('superAdmin/AdminTeam/CreateAdmin');
+        return Inertia::render('superAdmin/AdminTeam/CreateAdmin', [
+            'pageOptions' => AdminPage::options(),
+        ]);
     }
 
     public function store(InviteAdministratorRequest $request)
@@ -241,6 +252,30 @@ final class AdministratorManagementController extends Controller
             $admin = $this->identity->resetMfa($request, $this->currentPrivilegedActor(), $administrator);
 
             return $this->identityMutationResponse($request, $admin, 'Administrator MFA reset successfully.');
+        } catch (Throwable $exception) {
+            return $this->identityMutationFailure($request, $exception);
+        }
+    }
+
+    public function updatePageAccess(UpdateAdminPageAccessRequest $request, int $administrator)
+    {
+        try {
+            $result = $this->identity->updatePageAccess(
+                $request,
+                $this->currentPrivilegedActor(),
+                $administrator,
+                $request->validated('page_access'),
+            );
+
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'id' => (int) $result['admin']->getKey(),
+                    'page_access' => $result['page_access'],
+                    'message' => 'Administrator page access updated successfully.',
+                ]);
+            }
+
+            return redirect()->back()->with('success', 'Administrator page access updated successfully.');
         } catch (Throwable $exception) {
             return $this->identityMutationFailure($request, $exception);
         }
