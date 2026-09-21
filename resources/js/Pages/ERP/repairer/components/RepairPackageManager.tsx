@@ -719,7 +719,9 @@ export default function RepairPackageManager({
                       <circle cx="8.5" cy="9" r="1.5" />
                       <path d="m21 15-4.5-4.5L7 20" />
                     </svg>
-                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Drop image here or browse</span>
+                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                      Drop image here or <span className="underline underline-offset-2">browse</span>
+                    </span>
                     <span className="mt-1 text-xs text-gray-500 dark:text-gray-400">Use one clear photo that represents this package.</span>
                   </label>
                 )}
@@ -761,7 +763,7 @@ export default function RepairPackageManager({
                         onClick={() => {
                           setFormState((prev) => ({ ...prev, package_price: String(selectedServicesTotal.toFixed(2)) }));
                         }}
-                        className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        className="cursor-pointer text-xs text-blue-600 underline underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                       >
                         Apply reference price
                       </button>
