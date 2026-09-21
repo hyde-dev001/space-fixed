@@ -320,6 +320,26 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
+        $request->validate([
+            'filter.price_min' => ['nullable', 'numeric', 'min:0'],
+            'filter.price_max' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $priceMin = $request->input('filter.price_min');
+        $priceMax = $request->input('filter.price_max');
+
+        if ($priceMin !== null && $priceMax !== null && (float) $priceMin > (float) $priceMax) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The minimum price must be less than or equal to the maximum price.',
+                'errors' => [
+                    'filter.price_min' => [
+                        'The minimum price must be less than or equal to the maximum price.',
+                    ],
+                ],
+            ], 422);
+        }
+
         try {
             $query = QueryBuilder::for(Product::class)
                 ->allowedFilters([
@@ -362,6 +382,12 @@ class ProductController extends Controller
                                 });
                             }
                         });
+                    }),
+                    AllowedFilter::callback('price_min', function ($query, $value) {
+                        $query->where('price', '>=', (float) $value);
+                    }),
+                    AllowedFilter::callback('price_max', function ($query, $value) {
+                        $query->where('price', '<=', (float) $value);
                     }),
                 ])
                 ->allowedSorts(['price', 'name', 'created_at', 'sales_count'])
