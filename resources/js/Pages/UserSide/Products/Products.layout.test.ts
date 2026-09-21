@@ -46,10 +46,13 @@ describe('Products page layout', () => {
 
   it('places the multi-select color filter after the newest-date sort option', () => {
     const newestDateIndex = productsSource.indexOf('Date, new to old');
+    const priceIndex = productsSource.indexOf('data-testid="price-filter-menu-item"');
     const colorIndex = productsSource.indexOf('data-testid="color-filter-menu-item"');
 
     expect(newestDateIndex).toBeGreaterThanOrEqual(0);
+    expect(priceIndex).toBeGreaterThan(newestDateIndex);
     expect(colorIndex).toBeGreaterThan(newestDateIndex);
+    expect(colorIndex).toBeGreaterThan(priceIndex);
     expect(productsSource).toContain('filter[color]');
     expect(productsSource).toContain('available_colors');
     expect(productsSource).toContain('selectedColors');
