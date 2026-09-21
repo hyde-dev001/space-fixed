@@ -10,6 +10,7 @@ type PageState = {
       super_admin?: {
         role?: string;
         capabilities?: string[];
+        page_permissions?: string[];
       };
     };
   };
@@ -82,10 +83,10 @@ function openAccountManagement(): void {
   fireEvent.click(screen.getByRole('button', { name: /account management/i }));
 }
 
-function setRole(role: string, capabilities: string[] = []): void {
+function setRole(role: string, capabilities: string[] = [], pagePermissions?: string[]): void {
   pageState.props = {
     auth: {
-      super_admin: { role, capabilities },
+      super_admin: { role, capabilities, page_permissions: pagePermissions },
     },
   };
 }
@@ -124,6 +125,25 @@ it('hides administrator and plan management from a regular admin', () => {
   openAccountManagement();
 
   expect(screen.queryByRole('link', { name: /admin management/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /subscription management/i })).not.toBeInTheDocument();
+});
+
+it('hides every optional page when the server sends an empty page-access list', () => {
+  setRole('admin', [
+    'intervene_accounts',
+    'review_registrations',
+    'moderate_reports',
+    'view_appeals',
+    'view_privileged_audit',
+    'view_monitoring',
+    'view_platform_maintenance',
+  ], []);
+
+  render(<AppSidebar />);
+
+  expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /account management/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /registered shops/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /subscription management/i })).not.toBeInTheDocument();
 });
 

@@ -259,6 +259,11 @@ class SuperAdmin extends Authenticatable
         return $this->hasMany(PrivilegedSession::class);
     }
 
+    public function pagePermissions(): HasMany
+    {
+        return $this->hasMany(AdminPagePermission::class, 'super_admin_id');
+    }
+
     /**
      * Get the guard that should be used for authentication
      * 

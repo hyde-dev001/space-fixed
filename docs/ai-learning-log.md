@@ -115,6 +115,12 @@
 
 - Customer proof URLs can appear valid while the file endpoint fails with 503 when PHP GD is disabled; serve the validated private image directly as a local-environment fallback while keeping approval, ownership, MIME, and no-store checks.
 
+## 2026-09-22 - Privileged page access boundaries
+
+- Keep admin page access as a server-side boundary layered after account, MFA, capability, and reauthentication checks; sidebar filtering is presentation only.
+- Treat Dashboard as an always-available landing page, but omit restricted module metrics and audit activity unless the corresponding page is assigned.
+- Filter privileged notifications with the same page catalog before pagination and unread counts so the shared notification route cannot become a deep-link bypass.
+
 ## 2026-09-21 - Individual owner refund approval routing
 
 - Payment settlement notifications should resolve the persisted shop display name at the notification boundary so admin alerts identify the paying shop instead of using a generic message.

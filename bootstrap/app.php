@@ -11,6 +11,7 @@ use App\Http\Middleware\Authenticate;
 use App\Http\Middleware\AttachPrivilegedCorrelationId;
 use App\Http\Middleware\EnsurePrivilegedAccountIsActive;
 use App\Http\Middleware\EnsurePrivilegedCapability;
+use App\Http\Middleware\EnsurePrivilegedPageAccess;
 use App\Http\Middleware\EnsurePrivilegedMfaComplete;
 use App\Http\Middleware\EnsureErpAudience;
 use App\Http\Middleware\ResolveErpActorContext;
@@ -172,6 +173,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'privileged.no-store' => \App\Http\Middleware\NoStorePrivilegedSecurityResponse::class,
             'super_admin.role' => \App\Http\Middleware\CheckSuperAdminRole::class,
             'privileged.capability' => \App\Http\Middleware\EnsurePrivilegedCapability::class,
+            'privileged.page' => EnsurePrivilegedPageAccess::class,
             'shop.isolation' => \App\Http\Middleware\ShopIsolationMiddleware::class,
             'customer.account' => \App\Http\Middleware\EnsureCustomerAccount::class,
             'customer.identity.approved' => \App\Http\Middleware\EnsureCustomerIdentityIsApproved::class,
@@ -209,6 +211,7 @@ return Application::configure(basePath: dirname(__DIR__))
             EnsurePrivilegedAccountIsActive::class,
             EnsurePrivilegedMfaComplete::class,
             EnsurePrivilegedCapability::class,
+            EnsurePrivilegedPageAccess::class,
             EnsureErpAudience::class,
             Authenticate::class,
             \Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests::class,

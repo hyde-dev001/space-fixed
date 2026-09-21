@@ -25,14 +25,13 @@ class PlatformMaintenanceManagementTest extends TestCase
         });
     }
 
-    public function test_admin_can_view_maintenance_but_cannot_mutate_it(): void
+    public function test_regular_admin_cannot_open_or_mutate_maintenance(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
 
         $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.maintenance.index'))
-            ->assertOk()
-            ->assertInertia(fn ($page) => $page->where('can_manage', false));
+            ->assertForbidden();
 
         $this->postJson(route('admin.maintenance.store'), [
             'title' => 'Maintenance',
@@ -76,7 +75,7 @@ class PlatformMaintenanceManagementTest extends TestCase
         ])->assertOk()->assertJsonPath('success', true);
 
         $window = MaintenanceWindow::query()->firstOrFail();
-        $startsAt = Carbon::parse('2026-09-15 10:00:00', 'UTC');
+        $startsAt = Carbon::now('UTC')->addDay()->setTime(10, 0);
 
         $this->postJson(route('admin.maintenance.schedule', $window), [
             'starts_at' => $startsAt->toISOString(),
@@ -131,7 +130,7 @@ class PlatformMaintenanceManagementTest extends TestCase
 
     public function test_admin_routes_remain_reachable_during_active_maintenance(): void
     {
-        $admin = SuperAdmin::factory()->admin()->create();
+        $admin = SuperAdmin::factory()->superAdmin()->create();
         $now = Carbon::parse('2026-09-14 10:00:00', 'UTC');
         Carbon::setTestNow($now);
         MaintenanceWindow::factory()->active()->create([
