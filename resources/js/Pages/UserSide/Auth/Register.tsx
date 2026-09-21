@@ -270,6 +270,7 @@ export default function Register() {
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
+    suffix: '',
     email: '',
     phone: '',
     age: '',
@@ -411,6 +412,7 @@ export default function Register() {
     if (step === 1) {
       const firstName = formData.firstName.trim();
       const lastName = formData.lastName.trim();
+      const suffix = formData.suffix.trim();
       const email = formData.email.trim();
       const phone = formData.phone.trim();
 
@@ -424,6 +426,10 @@ export default function Register() {
         newErrors.lastName = 'Please enter your last name.';
       } else if (lastName.length < 2) {
         newErrors.lastName = 'Last name must be at least 2 characters.';
+      }
+
+      if (suffix.length > 50) {
+        newErrors.suffix = 'Suffix must be 50 characters or fewer.';
       }
 
       if (!email) {
@@ -509,7 +515,7 @@ export default function Register() {
   };
 
   const getFirstInvalidStep = (validationErrors: FormErrors): number => {
-    if (validationErrors.firstName || validationErrors.lastName || validationErrors.email || validationErrors.phone) {
+    if (validationErrors.firstName || validationErrors.lastName || validationErrors.suffix || validationErrors.email || validationErrors.phone) {
       return 1;
     }
 
@@ -1120,6 +1126,7 @@ export default function Register() {
       const payload = new FormData();
       payload.append('first_name', formData.firstName);
       payload.append('last_name', formData.lastName);
+      if (formData.suffix.trim()) payload.append('suffix', formData.suffix.trim());
       payload.append('email', formData.email.trim());
       payload.append('phone', formData.phone);
       payload.append('age', formData.age);
@@ -1286,6 +1293,25 @@ export default function Register() {
                       />
                     </div>
                     {errors.lastName && <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>}
+                  </div>
+
+                  <div className="relative">
+                    <Label htmlFor="suffix" className="text-[12px] font-medium text-gray-700 mb-1.5">Suffix (Optional)</Label>
+                    <div className="relative">
+                      <UserIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input
+                        type="text"
+                        id="suffix"
+                        name="suffix"
+                        placeholder="e.g. Jr., Sr., III"
+                        value={formData.suffix}
+                        onChange={handleInputChange}
+                        autoComplete="honorific-suffix"
+                        maxLength={50}
+                        className={`pl-10 ${authInputClasses} ${errors.suffix ? 'border-red-500' : ''}`}
+                      />
+                    </div>
+                    {errors.suffix && <p className="mt-1 text-sm text-red-600">{errors.suffix}</p>}
                   </div>
 
                   <div className="relative">
