@@ -188,6 +188,17 @@ final class CanonicalOwnerShellService
             $activeMatching,
         )];
 
+        $platformBalanceUrl = $this->canonicalUrl('shop-owner.shell.platform-balance');
+        $items[] = new OwnerShellItem(
+            'platform-balance',
+            'Platform Balance',
+            $platformBalanceUrl,
+            true,
+            null,
+            null,
+            [$platformBalanceUrl],
+        );
+
         if ($includeAssistCenter) {
             $assistCenterUrl = $this->canonicalUrl('shop-owner.dss-insights');
             $this->assertOwnerRoute('shop-owner.dss-insights');

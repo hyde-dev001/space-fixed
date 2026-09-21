@@ -26,6 +26,9 @@ final class PrivilegedRecentReauthenticationTest extends TestCase
         Route::middleware(['web', 'super_admin.auth', 'privileged.active', 'privileged.mfa', 'privileged.recent'])
             ->get('/admin/__tests/privileged-reauth', static fn () => response()->json(['ok' => true]))
             ->name('tests.privileged.reauth.recent');
+        Route::middleware(['web', 'super_admin.auth', 'privileged.active', 'privileged.mfa', 'privileged.recent'])
+            ->post('/admin/__tests/privileged-reauth-post', static fn () => response()->json(['ok' => true]))
+            ->name('tests.privileged.reauth.recent.post');
     }
 
     protected function tearDown(): void
@@ -201,6 +204,17 @@ final class PrivilegedRecentReauthenticationTest extends TestCase
             ->where('intended', '/admin/__tests/privileged-reauth'));
 
         self::assertNull(session('privileged_reauth_intended'));
+    }
+
+    public function test_recent_middleware_uses_the_referring_admin_page_for_post_reauthentication(): void
+    {
+        $admin = SuperAdmin::factory()->mfaEnrolled()->create();
+        $this->actingAsCompletedPrivileged($admin)
+            ->from('/admin/platform-fees')
+            ->post('/admin/__tests/privileged-reauth-post')
+            ->assertRedirect('/admin/reauthenticate');
+
+        self::assertSame('/admin/platform-fees', session('privileged_reauth_intended'));
     }
 
     public function test_reauthentication_audit_failure_rolls_back_totp_consumption_and_grant(): void

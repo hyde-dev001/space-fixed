@@ -143,6 +143,7 @@ it('hides disabled owner modules while keeping core dashboard visible', () => {
 
   expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveAttribute('href', '/shop-owner.dashboard');
   expect(document.querySelector('a[href="/shop-owner.dashboard"]')).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Platform Balance$/i })).toBeInTheDocument();
   expect(screen.queryByText('Employee Modules', { exact: true })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /^Logistics$/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Job Orders Repair' })).not.toBeInTheDocument();

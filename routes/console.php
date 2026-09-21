@@ -66,3 +66,8 @@ Schedule::command('shop-documents:send-expiry-reminders')
     ->dailyAt('01:00')
     ->timezone(config('app.shop_timezone'))
     ->withoutOverlapping();
+
+Schedule::command('platform:reliability-recalculate')
+    ->dailyAt('02:00')
+    ->withoutOverlapping()
+    ->onOneServer();

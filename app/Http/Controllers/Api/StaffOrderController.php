@@ -85,6 +85,14 @@ class StaffOrderController extends Controller
             },
         ])
             ->where('shop_owner_id', $shopOwnerId)
+            ->whereNull('payment_failed_at')
+            ->where(function ($paymentQuery) {
+                $paymentQuery
+                    ->whereNull('payment_method')
+                    ->orWhereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'])
+                    ->orWhereNotNull('paymongo_link_id')
+                    ->orWhereIn('payment_status', ['paid', 'refunded']);
+            })
             ->orderBy('created_at', 'desc')
             ->get();
 

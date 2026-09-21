@@ -123,6 +123,29 @@ final class OrderOwnerProjectionTest extends TestCase
         );
     }
 
+    #[Test]
+    public function a_failed_payment_has_no_fulfillment_actions(): void
+    {
+        $order = $this->order('pending', [
+            'payment_status' => 'pending',
+            'payment_failed_at' => now(),
+        ]);
+
+        $this->assertSame([], (new OrderOwnerProjection())->availableActions($order));
+    }
+
+    #[Test]
+    public function an_unlinked_online_payment_has_no_fulfillment_actions(): void
+    {
+        $order = $this->order('pending', [
+            'payment_method' => 'paymongo',
+            'payment_status' => 'pending',
+            'paymongo_link_id' => null,
+        ]);
+
+        $this->assertSame([], (new OrderOwnerProjection())->availableActions($order));
+    }
+
     private function order(string $status, array $attributes = [], array $refunds = []): Order
     {
         $order = Order::make(array_merge([

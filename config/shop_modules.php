@@ -2679,6 +2679,28 @@ if (isset($routes['shop-owner.shell.audit'])) {
     $routes['shop-owner.shell.audit']['supporting_routes'] = ['shop_owner.audit.index'];
 }
 
+// Platform balance is an owner self-service page, not the company Finance
+// workspace. Its APIs enforce the payment workflow and tenant scope.
+$platformBalanceRoute = $routeEntry(
+    modules: $modules,
+    classification: 'core',
+    mode: null,
+    moduleKeys: [],
+    methods: ['GET'],
+    audience: 'shop_owner',
+    actorGuard: 'shop_owner',
+    action: 'view',
+    ownerDenialReason: 'platform_balance_owner_only',
+    navigationGroup: null,
+    selfService: true,
+);
+$platformBalanceRoute['registration_types'] = ['company', 'individual'];
+$platformBalanceRoute['business_types'] = ['retail', 'repair', 'both'];
+$platformBalanceRoute['owner_access'] = 'allowed';
+$platformBalanceRoute['owner_denial_reason'] = null;
+$platformBalanceRoute['actor_persistence'] = 'server_resolved_shop_owner';
+$routes['shop-owner.shell.platform-balance'] = $platformBalanceRoute;
+
 // Articles are a read-only core page. Keep the owner catalog outside the
 // module gates so every approved owner variant can open its own guides.
 $ownerArticlesRoute = $routeEntry(

@@ -40,7 +40,15 @@ final class ManagerOrderService
     {
         $query = Order::query()
             ->with(['assignedStaff', 'assignedByUser'])
-            ->where('shop_owner_id', $shopOwnerId);
+            ->where('shop_owner_id', $shopOwnerId)
+            ->whereNull('payment_failed_at')
+            ->where(function ($paymentQuery) {
+                $paymentQuery
+                    ->whereNull('payment_method')
+                    ->orWhereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'])
+                    ->orWhereNotNull('paymongo_link_id')
+                    ->orWhereIn('payment_status', ['paid', 'refunded']);
+            });
 
         $this->applyFilters($query, $filters, $shopOwnerId);
 

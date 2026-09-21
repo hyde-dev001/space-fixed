@@ -2115,6 +2115,7 @@ const Payment: React.FC = () => {
 
     setIsProcessing(true);
     setPayError(null);
+    let createdOrderId: number | null = null;
 
     try {
       const savedAddressId = await saveAddressToAccount();
@@ -2188,6 +2189,7 @@ const Payment: React.FC = () => {
       console.log('Order created successfully:', orderResult);
 
       const orderId = orderResult.order?.id || orderResult.order_id;
+      createdOrderId = Number(orderId);
       sessionStorage.setItem('pendingOrderId', orderId);
 
       if (selectedPaymentMethod === 'cod') {
@@ -2223,7 +2225,7 @@ const Payment: React.FC = () => {
         if (errorData.error === 'shop_payment_not_configured') {
           throw new Error('This shop has not set up online payments yet. Please contact the shop owner.');
         }
-        throw new Error(errorData.error || 'Failed to create payment link');
+        throw new Error(errorData.message || errorData.error || 'Failed to create payment link');
       }
 
       const paymentData = await response.json();
@@ -2238,6 +2240,13 @@ const Payment: React.FC = () => {
     } catch (err: any) {
       console.error('Payment error:', err);
       const errorMessage = err?.message || 'Unable to process payment';
+      if (selectedPaymentMethod !== 'cod' && createdOrderId && createdOrderId > 0) {
+        setPaymentRecovery({
+          scope: 'order',
+          id: createdOrderId,
+          reason: 'failed',
+        });
+      }
       setPayError(errorMessage);
       setIsProcessing(false);
 

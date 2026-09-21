@@ -404,7 +404,8 @@ class RefundApprovalController extends Controller
     {
         $query = OrderRefund::query()
             ->with([
-                'order:id,order_number,total_amount,shipping_fee,payment_method,vat_amount',
+                'order:id,order_number,total_amount,shipping_fee,payment_method,vat_amount,shop_owner_id',
+                'order.shopOwner:id,registration_type',
                 'order.deliveryDisputes:id,order_id,order_refund_id,evidence_media',
                 'order.codCollection.remittanceItem.remittance',
                 'customer:id,name',
@@ -441,6 +442,7 @@ class RefundApprovalController extends Controller
     {
         $refund->loadMissing([
             'order.codCollection.remittanceItem.remittance',
+            'order.shopOwner:id,registration_type',
             'order.deliveryDisputes:id,order_id,order_refund_id,evidence_media',
             'customer',
             'items',
@@ -507,11 +509,14 @@ class RefundApprovalController extends Controller
             && str_contains($cleanReasonNote, OrderRefundService::FINANCE_SHIPPING_DECISION_MARKER);
 
         $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+        $isIndividualRegistration = strtolower(trim((string) ($order?->shopOwner?->registration_type ?? ''))) === 'individual';
         $paymentMethod = strtolower(trim((string) ($order?->payment_method ?? '')));
         $isCod = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
-        $isThirdPartyCustomerRefund = (string) ($refund->flow_type ?? '') === 'request_approval'
-            && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted'
-            && $order?->resolvedDeliveryMethod() === 'third_party';
+        $isThirdPartyCustomerRefund = $this->orderRefundService->isThirdPartyCustomerRefund(
+            $refund,
+            $order,
+            $isExhaustedDeliveryRefund,
+        );
         $staffApprovalStatus = $isThirdPartyCustomerRefund
             ? ($refund->staff_approved_by !== null
                 || ((string) ($refund->shop_owner_status ?? 'pending') === 'pending' && $refund->shop_owner_approved_by !== null)
@@ -532,6 +537,9 @@ class RefundApprovalController extends Controller
         $approvalStage = 'none';
         if (($isCod || $isThirdPartyCustomerRefund) && $status === 'requested' && $shopOwnerStatus === 'pending') {
             $approvalStage = 'staff';
+        } elseif ($isIndividualRegistration && !$isCod && $requiresOwnerApproval
+            && $financeStatus === 'pending' && $shopOwnerStatus === 'pending') {
+            $approvalStage = 'shop_owner';
         } elseif ($financeStatus === 'pending') {
             $approvalStage = 'finance_initial';
         } elseif ($financeStatus === 'approved_initial' && $shopOwnerStatus === 'pending') {

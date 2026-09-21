@@ -52,6 +52,14 @@ class OrderController extends Controller
         $includeRefundItems = Schema::hasTable('order_refund_items');
 
         $query = Order::where('shop_owner_id', $shopOwner->id)
+            ->whereNull('payment_failed_at')
+            ->where(function ($paymentQuery) {
+                $paymentQuery
+                    ->whereNull('payment_method')
+                    ->orWhereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'])
+                    ->orWhereNotNull('paymongo_link_id')
+                    ->orWhereIn('payment_status', ['paid', 'refunded']);
+            })
             ->with([
                 'items.product',
                 'customer',

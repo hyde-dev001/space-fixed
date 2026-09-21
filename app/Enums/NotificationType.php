@@ -95,6 +95,7 @@ enum NotificationType: string
     case COD_REMITTANCE_SUBMITTED = 'cod_remittance_submitted';
     case COD_REMITTANCE_DISPUTED = 'cod_remittance_disputed';
     case COD_REMITTANCE_SETTLED = 'cod_remittance_settled';
+    case PLATFORM_BALANCE_ALERT = 'platform_balance_alert';
     
     // ==================== SUPER ADMIN NOTIFICATIONS ====================
     case SHOP_REGISTRATION_PENDING = 'shop_registration_pending';
@@ -223,6 +224,7 @@ enum NotificationType: string
             self::COD_REMITTANCE_SUBMITTED => 'COD Remittance Submitted',
             self::COD_REMITTANCE_DISPUTED => 'COD Remittance Disputed',
             self::COD_REMITTANCE_SETTLED => 'COD Remittance Settled',
+            self::PLATFORM_BALANCE_ALERT => 'Platform Balance Alert',
             
             // Super admin notifications
             self::SHOP_REGISTRATION_PENDING => 'New Shop Registration',
@@ -288,7 +290,7 @@ enum NotificationType: string
             self::SUPPLIER_PAYMENT_REJECTED, self::SUPPLIER_REFUND_PROOF_SUBMITTED,
             self::SUPPLIER_REFUND_CONFIRMED, self::SUPPLIER_PAYMENT_PROFILE_DISABLED,
             self::COD_REMITTANCE_SUBMITTED, self::COD_REMITTANCE_DISPUTED,
-            self::COD_REMITTANCE_SETTLED => 'finance',
+            self::COD_REMITTANCE_SETTLED, self::PLATFORM_BALANCE_ALERT => 'finance',
             
             self::LEAVE_APPROVAL, self::LEAVE_REQUEST_PENDING,
             self::LEAVE_SUBMITTED, self::LEAVE_REQUEST_APPROVED, self::LEAVE_REQUEST_REJECTED,
@@ -376,6 +378,7 @@ enum NotificationType: string
             self::COD_REMITTANCE_SUBMITTED,
             self::COD_REMITTANCE_DISPUTED,
             self::COD_REMITTANCE_SETTLED,
+            self::PLATFORM_BALANCE_ALERT,
         ]);
     }
 

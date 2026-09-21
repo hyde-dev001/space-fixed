@@ -26,6 +26,7 @@ use App\Services\RepairDeliveryService;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
+use App\Services\PlatformRestrictionService;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -43,6 +44,7 @@ class RepairRequestController extends Controller
         Request $request,
         PolicyAcceptanceService $policyAcceptanceService,
         RepairDeliveryService $repairDeliveryService,
+        PlatformRestrictionService $platformRestrictionService,
     ) {
         if (! Auth::guard('user')->check()) {
             return response()->json([
@@ -138,6 +140,10 @@ class RepairRequestController extends Controller
         $shopOwner = $request->filled('shop_owner_id')
             ? ShopOwner::find((int) $request->input('shop_owner_id'))
             : null;
+
+        if ($shopOwner) {
+            $platformRestrictionService->assertMarketplaceAllowed((int) $shopOwner->getKey());
+        }
         $intakeSavedAddress = null;
         $returnSavedAddress = null;
 
@@ -457,6 +463,7 @@ class RepairRequestController extends Controller
                     'brand' => $request->brand,
                     'description' => $request->description,
                     'shop_owner_id' => $request->shop_owner_id,
+                    'origin_channel' => 'marketplace',
                     'repair_package_id' => $selectedPackage?->id,
                     'user_id' => $userId,
                     'images' => json_encode($imagePaths),

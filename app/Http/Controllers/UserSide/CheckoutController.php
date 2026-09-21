@@ -27,6 +27,7 @@ use App\Services\NotificationService;
 use App\Services\PaymentSettlementService;
 use App\Services\PolicyAcceptanceService;
 use App\Services\PromoPricingService;
+use App\Services\PlatformRestrictionService;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -45,6 +46,7 @@ class CheckoutController extends Controller
     protected ShippingVoucherService $shippingVoucherService;
     protected CodCollectionService $codCollectionService;
     protected DeliveryScheduleService $deliveryScheduleService;
+    protected PlatformRestrictionService $platformRestrictionService;
 
     public function __construct(
         NotificationService $notificationService,
@@ -52,12 +54,14 @@ class CheckoutController extends Controller
         ShippingVoucherService $shippingVoucherService,
         CodCollectionService $codCollectionService,
         DeliveryScheduleService $deliveryScheduleService,
+        PlatformRestrictionService $platformRestrictionService,
     ) {
         $this->notificationService = $notificationService;
         $this->promoPricingService = $promoPricingService;
         $this->shippingVoucherService = $shippingVoucherService;
         $this->codCollectionService = $codCollectionService;
         $this->deliveryScheduleService = $deliveryScheduleService;
+        $this->platformRestrictionService = $platformRestrictionService;
     }
 
     private function normalizeSizeSystem(?string $rawSystem): string
@@ -1253,6 +1257,10 @@ class CheckoutController extends Controller
                 ], 422);
             }
 
+            foreach ($selectedShopOwnerIds as $selectedShopOwnerId) {
+                $this->platformRestrictionService->assertMarketplaceAllowed((int) $selectedShopOwnerId);
+            }
+
             $activePolicyVersion = null;
             if ($selectedShopOwnerIds->count() === 1) {
                 $singleShopOwnerId = (int) $selectedShopOwnerIds->first();
@@ -1603,6 +1611,7 @@ class CheckoutController extends Controller
                     // Create the order
                     $orderPayload = [
                         'shop_owner_id' => $shopOwnerId,
+                        'origin_channel' => 'marketplace',
                         'customer_id' => $customerId,
                         'order_number' => Order::generateOrderNumber($shopOwnerId),
                         'total_amount' => 0, // Item subtotal, updated after items
@@ -2175,6 +2184,8 @@ class CheckoutController extends Controller
      */
     public function retryPaymentSession(Request $request, $orderId)
     {
+        $order = null;
+
         try {
             $validated = $request->validate([
                 'shipping_fee' => 'nullable|numeric|min:0',
@@ -2201,6 +2212,7 @@ class CheckoutController extends Controller
                 ], 404);
             }
 
+            $settlementService = app(PaymentSettlementService::class);
             $paymentStatus = $order->payment_status instanceof \BackedEnum
                 ? $order->payment_status->value
                 : (string) $order->payment_status;
@@ -2233,6 +2245,8 @@ class CheckoutController extends Controller
 
             $apiKey = $order->shopOwner?->paymongo_secret_key;
             if (!$apiKey) {
+                $settlementService->recordOrderPaymentFailure($order, 'paymongo_configuration_missing');
+
                 return response()->json([
                     'success' => false,
                     'error' => 'shop_payment_not_configured',
@@ -2312,6 +2326,8 @@ class CheckoutController extends Controller
 
             $amount = $itemSubtotal + $shippingFee + $vatAmount;
             if ($amount <= 0) {
+                $settlementService->recordOrderPaymentFailure($order, 'paymongo_invalid_amount');
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid payable amount',
@@ -2336,10 +2352,12 @@ class CheckoutController extends Controller
                 ];
             }
 
-            $paymentResponse = \Illuminate\Support\Facades\Http::withHeaders([
-                'Content-Type' => 'application/json',
-                'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
-            ])->post('https://api.paymongo.com/v1/checkout_sessions', [
+            $paymentResponse = \Illuminate\Support\Facades\Http::timeout(15)
+                ->connectTimeout(5)
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Basic ' . base64_encode($apiKey . ':'),
+                ])->post('https://api.paymongo.com/v1/checkout_sessions', [
                 'data' => [
                     'attributes' => [
                         'success_url' => $successUrl,
@@ -2357,6 +2375,7 @@ class CheckoutController extends Controller
             if ($paymentResponse->failed()) {
                 $errorMsg = $paymentResponse->json('message') ?? $paymentResponse->json('error') ?? 'PayMongo API failed';
                 $errors = $paymentResponse->json('errors');
+                $settlementService->recordOrderPaymentFailure($order, 'paymongo_session_creation_failed');
 
                 Log::error('Order retry payment session creation failed', [
                     'order_id' => $order->id,
@@ -2368,7 +2387,7 @@ class CheckoutController extends Controller
 
                 return response()->json([
                     'success' => false,
-                    'message' => $errors[0]['detail'] ?? $errorMsg ?? 'Failed to create payment session',
+                    'message' => 'Unable to create payment session. Please try again.',
                 ], $paymentResponse->status());
             }
 
@@ -2377,6 +2396,8 @@ class CheckoutController extends Controller
             $linkId = $responseData['data']['id'] ?? null;
 
             if (!$checkoutUrl || !$linkId) {
+                $settlementService->recordOrderPaymentFailure($order, 'paymongo_session_incomplete');
+
                 Log::error('Order retry payment session missing checkout data', [
                     'order_id' => $order->id,
                     'response' => $responseData,
@@ -2404,6 +2425,10 @@ class CheckoutController extends Controller
                 'order_id' => $order->id,
             ]);
         } catch (\Exception $e) {
+            if ($order instanceof Order) {
+                app(PaymentSettlementService::class)->recordOrderPaymentFailure($order, 'paymongo_session_creation_error');
+            }
+
             Log::error('Retry payment session failed for order', [
                 'order_id' => $orderId,
                 'error' => $e->getMessage(),

@@ -61,10 +61,12 @@ final class BusinessScalingSchemaTest extends TestCase
         }
 
         $requestIndexes = Schema::getIndexes('shop_owner_upgrade_requests');
+        $documentIndexes = Schema::getIndexes('shop_owner_upgrade_request_documents');
         $moduleIndexes = Schema::getIndexes('shop_owner_modules');
 
         $this->assertTrue($this->hasIndex($requestIndexes, ['status', 'created_at']));
         $this->assertTrue($this->hasIndex($requestIndexes, ['shop_owner_id']));
+        $this->assertContains('sourd_request_document_type_idx', array_column($documentIndexes, 'name'));
         $this->assertTrue($this->hasIndex($moduleIndexes, ['shop_owner_id', 'module_key'], unique: true));
     }
 

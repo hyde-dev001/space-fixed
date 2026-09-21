@@ -30,6 +30,7 @@ use App\Http\Controllers\Erp\UploadInventoryController;
 use App\Http\Controllers\Api\Finance\ExpenseController as FinanceExpenseController;
 use App\Http\Controllers\Api\Finance\InvoiceController as FinanceInvoiceController;
 use App\Http\Controllers\Api\Finance\FinanceSummaryController;
+use App\Http\Controllers\Api\Finance\PlatformFeeController;
 use App\Http\Controllers\Api\Finance\TaxRateController as FinanceTaxRateController;
 use App\Http\Controllers\ShopOwner\SupplierPaymentController;
 use App\Http\Controllers\Erp\HR\AttendanceController as HrAttendanceController;
@@ -77,6 +78,22 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
     Route::prefix('finance')->group(function () {
         Route::get('/dashboard', FinanceSummaryController::class)
             ->name('shop_owner.finance.dashboard.summary');
+        Route::get('/platform-balance', [PlatformFeeController::class, 'ownerIndex'])
+            ->name('shop_owner.finance.platform-balance.index');
+        Route::get('/platform-balance/payment-requests', [PlatformFeeController::class, 'ownerPaymentRequests'])
+            ->name('shop_owner.finance.platform-balance.payment-requests.index');
+        Route::post('/platform-balance/payment-requests/{id}/approve', [PlatformFeeController::class, 'approvePaymentRequest'])
+            ->whereNumber('id')
+            ->name('shop_owner.finance.platform-balance.payment-requests.approve');
+        Route::post('/platform-balance/payment-requests/{id}/reject', [PlatformFeeController::class, 'rejectPaymentRequest'])
+            ->whereNumber('id')
+            ->name('shop_owner.finance.platform-balance.payment-requests.reject');
+        Route::post('/platform-balance/pay', [PlatformFeeController::class, 'ownerPay'])
+            ->name('shop_owner.finance.platform-balance.pay');
+        Route::post('/platform-balance/reconcile', [PlatformFeeController::class, 'ownerReconcile'])
+            ->name('shop_owner.finance.platform-balance.reconcile');
+        Route::post('/platform-balance/terms/accept', [PlatformFeeController::class, 'acceptTerms'])
+            ->name('shop_owner.finance.platform-balance.terms.accept');
 
         Route::prefix('invoices')->middleware(['erp.audience', 'erp.actor'])->group(function () {
             Route::get('/', [FinanceInvoiceController::class, 'index'])->name('shop_owner.finance.invoices.index');

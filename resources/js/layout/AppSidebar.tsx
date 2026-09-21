@@ -36,6 +36,7 @@ const routeFallbacks: Record<string, string> = {
   'admin.suspension-appeals': '/admin/appeals',
   'admin.shops.index': '/admin/shops',
   'admin.subscriptions.index': '/admin/subscriptions',
+  'admin.platform-fees.index': '/admin/platform-fees',
   'admin.users.index': '/admin/users',
   landing: '/',
 };
@@ -102,6 +103,7 @@ const AppSidebar: React.FC = () => {
           { name: "Shop Reports", route: "admin.shop-reports", capability: "moderate_reports", pro: false },
           { name: "Suspension Appeals", route: "admin.suspension-appeals", capability: "view_appeals", pro: false },
           { name: "System Maintenance", route: "admin.maintenance.index", capability: "view_platform_maintenance", pro: false },
+          { name: "Platform Fees", route: "admin.platform-fees.index", capability: "manage_platform_fees", pro: false },
           { name: "Audit History", route: "admin.audit", capability: "view_privileged_audit", pro: false },
         ],
       },

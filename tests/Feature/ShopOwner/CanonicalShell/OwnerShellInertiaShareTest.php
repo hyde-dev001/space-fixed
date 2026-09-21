@@ -94,6 +94,28 @@ final class OwnerShellInertiaShareTest extends TestCase
         $this->assertNotContains('settings', array_column($ownerShell['groups'], 'key'));
     }
 
+    public function test_individual_owner_receives_platform_balance_in_the_canonical_sidebar_metadata(): void
+    {
+        config([
+            'owner_shell.enabled' => true,
+            'owner_shell.allowlisted_shop_ids' => [],
+            'shop_modules.enforcement_enabled' => false,
+        ]);
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+
+        $ownerShell = $this->shareFor($owner, 'shop_owner')['ownerShell'];
+        $homeGroup = collect($ownerShell['groups'])->firstWhere('key', 'home');
+        $platformBalance = collect($homeGroup['items'] ?? [])->firstWhere('key', 'platform-balance');
+
+        $this->assertSame('canonical', $ownerShell['presentation']);
+        $this->assertSame('Platform Balance', $platformBalance['label'] ?? null);
+        $this->assertTrue($platformBalance['available'] ?? false);
+        $this->assertSame('/shop-owner/platform-balance', $platformBalance['canonical_url'] ?? null);
+    }
+
     public function test_invalid_registration_context_returns_complete_existing_presentation(): void
     {
         config([
@@ -192,6 +214,7 @@ final class OwnerShellInertiaShareTest extends TestCase
     {
         return [
             'shop-owner.shell.home' => '/shop-owner/home',
+            'shop-owner.shell.platform-balance' => '/shop-owner/platform-balance',
             'shop-owner.shell.operate.retail' => '/shop-owner/operate/retail',
             'shop-owner.shell.operate.repair' => '/shop-owner/operate/repair',
             'shop-owner.shell.operate.customers' => '/shop-owner/operate/customers',
