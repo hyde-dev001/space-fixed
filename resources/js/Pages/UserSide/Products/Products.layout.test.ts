@@ -65,4 +65,16 @@ describe('Products page layout', () => {
     expect(productsSource).not.toContain('>Custom colors</h3>');
     expect(productsSource).not.toContain('>Selected colors</h3>');
   });
+
+  it('adds an apply-driven price range filter with URL-backed API parameters', () => {
+    expect(productsSource).toContain('data-testid="price-filter-menu-item"');
+    expect(productsSource).toContain('Minimum price');
+    expect(productsSource).toContain('Maximum price');
+    expect(productsSource).toContain('filter[price_min]');
+    expect(productsSource).toContain('filter[price_max]');
+    expect(productsSource).toContain("params.set('min_price'");
+    expect(productsSource).toContain("params.set('max_price'");
+    expect(productsSource).toContain("event.key === 'Escape'");
+    expect(productsSource).toContain('The minimum price must be less than or equal to the maximum price.');
+  });
 });

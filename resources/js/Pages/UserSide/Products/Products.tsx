@@ -52,6 +52,11 @@ type ColorOption = {
   code: string | null;
 };
 
+type PriceRange = {
+  min: string;
+  max: string;
+};
+
 const parseColorSelection = (value: string | null): string[] =>
   Array.from(
     new Map(
@@ -62,6 +67,18 @@ const parseColorSelection = (value: string | null): string[] =>
         .map((color) => [color.toLowerCase(), color]),
     ).values(),
   );
+
+const parsePriceValue = (value: string | null): string => {
+  const normalized = value?.trim() ?? '';
+  const numericValue = Number(normalized);
+
+  return normalized && Number.isFinite(numericValue) && numericValue >= 0 ? normalized : '';
+};
+
+const parsePriceRange = (params: URLSearchParams): PriceRange => ({
+  min: parsePriceValue(params.get('min_price')),
+  max: parsePriceValue(params.get('max_price')),
+});
 
 interface Props {
   // will accept products from backend later
@@ -106,6 +123,7 @@ const Products: React.FC<Props> = () => {
     ? rawCategoryParam
     : '';
   const colorParam = parseColorSelection(urlParams.get('colors'));
+  const priceRangeParam = parsePriceRange(urlParams);
   
   const [products, setProducts] = useState<Product[]>([]);
   const [shopResults, setShopResults] = useState<ShopSearchResult[]>([]);
@@ -118,6 +136,10 @@ const Products: React.FC<Props> = () => {
   const [selectedColors, setSelectedColors] = useState<string[]>(colorParam);
   const [pendingColors, setPendingColors] = useState<string[]>(colorParam);
   const [availableColors, setAvailableColors] = useState<ColorOption[]>([]);
+  const [isPriceFilterOpen, setIsPriceFilterOpen] = useState(false);
+  const [priceRange, setPriceRange] = useState<PriceRange>(priceRangeParam);
+  const [pendingPriceRange, setPendingPriceRange] = useState<PriceRange>(priceRangeParam);
+  const [priceRangeError, setPriceRangeError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState(searchParam);
   const [activeCategory, setActiveCategory] = useState(categoryParam);
   const [mobileSearchQuery, setMobileSearchQuery] = useState(searchParam);
@@ -140,6 +162,7 @@ const Products: React.FC<Props> = () => {
   const mobileSearchAbortRef = useRef<AbortController | null>(null);
   const hoverTimersRef = useRef<Record<number, number>>({});
   const quickViewTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const priceMinInputRef = useRef<HTMLInputElement | null>(null);
   const revealRootRef = useRef<HTMLDivElement | null>(null);
   useScrollReveal(revealRootRef);
 
@@ -156,11 +179,15 @@ const Products: React.FC<Props> = () => {
     );
     setSelectedColors(parseColorSelection(params.get('colors')));
     setPendingColors(parseColorSelection(params.get('colors')));
+    const nextPriceRange = parsePriceRange(params);
+    setPriceRange(nextPriceRange);
+    setPendingPriceRange(nextPriceRange);
+    setPriceRangeError(null);
   }, [window.location.search]);
 
   useEffect(() => {
     fetchProducts();
-  }, [sortBy, currentPage, searchQuery, activeCategory, selectedColors]);
+  }, [sortBy, currentPage, searchQuery, activeCategory, selectedColors, priceRange]);
 
   useEffect(() => {
     const fetchShops = async () => {
@@ -329,6 +356,14 @@ const Products: React.FC<Props> = () => {
         params.append('filter[color]', selectedColors.join(','));
       }
 
+      if (priceRange.min) {
+        params.append('filter[price_min]', priceRange.min);
+      }
+
+      if (priceRange.max) {
+        params.append('filter[price_max]', priceRange.max);
+      }
+
       const response = await fetch(`/api/products/?${params.toString()}`, {
         headers: { 'Accept': 'application/json' }
       });
@@ -486,6 +521,99 @@ const Products: React.FC<Props> = () => {
     setIsSortOpen(false);
     setIsColorFilterOpen(true);
   };
+
+  const updatePriceRangeQueryParam = (range: PriceRange) => {
+    const params = new URLSearchParams(window.location.search);
+    if (range.min) {
+      params.set('min_price', range.min);
+    } else {
+      params.delete('min_price');
+    }
+    if (range.max) {
+      params.set('max_price', range.max);
+    } else {
+      params.delete('max_price');
+    }
+
+    const query = params.toString();
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+    );
+  };
+
+  const closePriceFilter = () => {
+    setPendingPriceRange(priceRange);
+    setPriceRangeError(null);
+    setIsPriceFilterOpen(false);
+  };
+
+  const openPriceFilter = () => {
+    setPendingPriceRange(priceRange);
+    setPriceRangeError(null);
+    setIsSortOpen(false);
+    setIsPriceFilterOpen(true);
+  };
+
+  const applyPriceFilter = () => {
+    const min = pendingPriceRange.min.trim();
+    const max = pendingPriceRange.max.trim();
+    const minValue = min === '' ? null : Number(min);
+    const maxValue = max === '' ? null : Number(max);
+
+    if (
+      (minValue !== null && (!Number.isFinite(minValue) || minValue < 0)) ||
+      (maxValue !== null && (!Number.isFinite(maxValue) || maxValue < 0))
+    ) {
+      setPriceRangeError('Enter valid prices greater than or equal to ₱0.');
+      return;
+    }
+
+    if (minValue !== null && maxValue !== null && minValue > maxValue) {
+      setPriceRangeError('The minimum price must be less than or equal to the maximum price.');
+      return;
+    }
+
+    const nextRange = { min, max };
+    setPriceRange(nextRange);
+    setPendingPriceRange(nextRange);
+    setCurrentPage(1);
+    updatePriceRangeQueryParam(nextRange);
+    setPriceRangeError(null);
+    setIsPriceFilterOpen(false);
+  };
+
+  const clearPendingPriceFilter = () => {
+    setPendingPriceRange({ min: '', max: '' });
+    setPriceRangeError(null);
+  };
+
+  const formatPriceRangeValue = (value: string) =>
+    `₱${Number(value).toLocaleString('en-PH', { maximumFractionDigits: 2 })}`;
+
+  const priceRangeLabel = priceRange.min && priceRange.max
+    ? `${formatPriceRangeValue(priceRange.min)} – ${formatPriceRangeValue(priceRange.max)}`
+    : priceRange.min
+      ? `${formatPriceRangeValue(priceRange.min)}+`
+      : priceRange.max
+        ? `Up to ${formatPriceRangeValue(priceRange.max)}`
+        : '';
+
+  useEffect(() => {
+    if (!isPriceFilterOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closePriceFilter();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    priceMinInputRef.current?.focus();
+
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isPriceFilterOpen, priceRange]);
 
   const getProductImages = (product: Product) => {
     const images = [product.main_image, ...(product.gallery_images ?? [])].filter(Boolean) as string[];
@@ -901,7 +1029,7 @@ const Products: React.FC<Props> = () => {
                 </button>
 
                 {isSortOpen && (
-                  <div className="absolute right-0 left-auto z-40 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-56" role="menu">
+                  <div className="absolute right-0 left-auto z-40 mt-3 w-[min(92vw,14.5rem)] rounded-2xl border border-gray-300 bg-white py-3 shadow-[0_20px_40px_-24px_rgba(15,23,42,0.55)] xl:w-72" role="menu">
                     {sortOptions.map((option) => {
                       const isActive = sortBy === option.value;
 
@@ -941,6 +1069,19 @@ const Products: React.FC<Props> = () => {
                       <span className={`relative inline-block ${selectedColors.length > 0 ? 'text-black font-semibold' : 'text-black/75'}`}>
                         Color{selectedColors.length > 0 ? ` (${selectedColors.length})` : ''}
                         <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${selectedColors.length > 0 ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="price-filter-menu-item"
+                      aria-haspopup="dialog"
+                      onClick={openPriceFilter}
+                      className="group w-full px-5 py-2.5 text-left text-sm"
+                    >
+                      <span className={`relative inline-block ${priceRangeLabel ? 'text-black font-semibold' : 'text-black/75'}`}>
+                        Price range{priceRangeLabel ? ` (${priceRangeLabel})` : ''}
+                        <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${priceRangeLabel ? 'w-full' : 'w-0 group-hover:w-full'}`} />
                       </span>
                     </button>
                   </div>
@@ -1063,6 +1204,133 @@ const Products: React.FC<Props> = () => {
                     className="min-h-11 rounded-lg bg-gray-900 px-5 text-sm font-semibold text-white transition hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
                   >
                     Apply{pendingColors.length > 0 ? ` (${pendingColors.length})` : ''}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isPriceFilterOpen && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center px-4 py-6 sm:px-6">
+              <div
+                className="absolute inset-0 bg-black/40"
+                aria-hidden="true"
+                onClick={closePriceFilter}
+              />
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="price-filter-title"
+                aria-describedby="price-filter-description"
+                data-testid="price-filter-modal"
+                className="relative z-10 flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl"
+              >
+                <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 sm:px-6">
+                  <div>
+                    <h2 id="price-filter-title" className="text-lg font-semibold text-gray-900">Price range</h2>
+                    <p id="price-filter-description" className="mt-1 text-xs text-gray-500">
+                      Set a minimum, maximum, or both to narrow your shoe search.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closePriceFilter}
+                    className="flex h-10 w-10 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                    aria-label="Close price filter"
+                  >
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
+
+                <div className="grid gap-4 px-5 py-5 sm:grid-cols-2 sm:px-6">
+                  <div>
+                    <label htmlFor="price-filter-min" className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                      Minimum price
+                    </label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">₱</span>
+                      <input
+                        ref={priceMinInputRef}
+                        id="price-filter-min"
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        value={pendingPriceRange.min}
+                        onChange={(event) => {
+                          setPendingPriceRange((current) => ({ ...current, min: event.target.value }));
+                          setPriceRangeError(null);
+                        }}
+                        placeholder="e.g. 2000"
+                        autoComplete="off"
+                        aria-invalid={Boolean(priceRangeError)}
+                        aria-describedby="price-filter-hint"
+                        className="min-h-11 w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-8 pr-3 text-sm text-gray-900 outline-none transition focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="price-filter-max" className="mb-2 block text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+                      Maximum price
+                    </label>
+                    <div className="relative">
+                      <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500">₱</span>
+                      <input
+                        id="price-filter-max"
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        value={pendingPriceRange.max}
+                        onChange={(event) => {
+                          setPendingPriceRange((current) => ({ ...current, max: event.target.value }));
+                          setPriceRangeError(null);
+                        }}
+                        placeholder="e.g. 3000"
+                        autoComplete="off"
+                        aria-invalid={Boolean(priceRangeError)}
+                        aria-describedby="price-filter-hint"
+                        className="min-h-11 w-full rounded-xl border border-gray-300 bg-white py-2.5 pl-8 pr-3 text-sm text-gray-900 outline-none transition focus:border-gray-900 focus:ring-2 focus:ring-gray-900/10"
+                      />
+                    </div>
+                  </div>
+
+                  <p id="price-filter-hint" className="text-xs leading-relaxed text-gray-500 sm:col-span-2">
+                    Prices are inclusive. Leave either field blank for an open-ended range.
+                  </p>
+                  {priceRangeError && (
+                    <p role="alert" aria-live="polite" className="text-sm font-medium text-red-600 sm:col-span-2">
+                      {priceRangeError}
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 border-t border-gray-200 px-5 py-4 sm:px-6">
+                  {(pendingPriceRange.min || pendingPriceRange.max) && (
+                    <button
+                      type="button"
+                      onClick={clearPendingPriceFilter}
+                      className="mr-auto rounded-md px-2 py-1 text-xs font-semibold text-gray-700 underline underline-offset-2 hover:text-gray-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={closePriceFilter}
+                    className="min-h-11 rounded-lg border border-gray-300 px-4 text-sm font-semibold text-gray-700 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyPriceFilter}
+                    className="min-h-11 rounded-lg bg-gray-900 px-5 text-sm font-semibold text-white transition hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
+                  >
+                    Apply
                   </button>
                 </div>
               </div>
