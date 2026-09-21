@@ -97,10 +97,15 @@ describe('identity review queue controls', () => {
 		expect(screen.getByRole('button', { name: 'Approve 1 reviewed' })).toBeEnabled();
 	});
 
-	it('hides the screening and human review filter controls from the queue UI', () => {
+	it('keeps the screening and human review filters while hiding only their labels', () => {
 		render(<IdentityReviewQueue {...props()} />);
 
-		expect(screen.queryAllByRole('combobox')).toHaveLength(0);
+		const screeningFilter = screen.getByRole('combobox', { name: 'Screening' });
+		const humanReviewFilter = screen.getByRole('combobox', { name: 'Human review' });
+
+		expect(screen.getAllByRole('combobox')).toHaveLength(2);
+		expect(screeningFilter.closest('label')?.querySelector('.sr-only')).not.toBeNull();
+		expect(humanReviewFilter.closest('label')?.querySelector('.sr-only')).not.toBeNull();
 		expect(screen.getByRole('textbox', { name: 'Search customer' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Apply filters' })).toBeInTheDocument();
 	});
