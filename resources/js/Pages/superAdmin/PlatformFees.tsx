@@ -1,5 +1,5 @@
 import { Head, router, usePage } from '@inertiajs/react';
-import { BadgeCheck, CircleDollarSign, Clock3, ReceiptText, WalletCards } from 'lucide-react';
+import { BadgeCheck, CircleDollarSign, Clock3, WalletCards } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import Swal, { type SweetAlertOptions } from 'sweetalert2';
 import { DashboardMetricCard } from '../../components/dashboard';
@@ -75,12 +75,12 @@ type AdminCreditMovement = CreditMovement & {
 };
 
 const CREDIT_MOVEMENT_PAGE_SIZE = 10;
+const SHOP_PAGE_SIZE = 15;
 
 type AdminProps = {
     shops: ShopRow[];
     metrics: {
         platform_fee_earned: string;
-        total_billed: string;
         collected: string;
         outstanding: string;
         pending_payments: number;
@@ -101,6 +101,15 @@ type AdminProps = {
             tiers: Array<Record<string, unknown>>;
         };
     };
+};
+
+type LimitEditorState = {
+    shopId: number;
+    shopName: string;
+    value: string;
+    score: string | null;
+    recommendedLimit: string | null;
+    recommendationTier: string | null;
 };
 
 type SettingForm = {
@@ -170,23 +179,51 @@ const platformFeeAlert = (options: SweetAlertOptions) => Swal.fire({
     },
 });
 
+const postPlatformFeeAction = (url: string, title: string, text: string, successText: string) => {
+    void platformFeeAlert({
+        icon: 'question',
+        title,
+        text,
+        showCancelButton: true,
+        confirmButtonText: 'Continue',
+        cancelButtonText: 'Cancel',
+    }).then((result) => {
+        if (!result.isConfirmed) return;
+
+        router.post(url, {}, {
+            preserveScroll: true,
+            onSuccess: (page) => {
+                if (page.component === 'superAdmin/Auth/PrivilegedReauthenticate') return;
+
+                void platformFeeAlert({
+                    icon: 'success',
+                    title: 'Done',
+                    text: successText,
+                    timer: 1800,
+                    showConfirmButton: false,
+                });
+            },
+            onError: () => {
+                void platformFeeAlert({
+                    icon: 'error',
+                    title: 'Action failed',
+                    text: 'The request could not be completed. Please try again.',
+                });
+            },
+        });
+    });
+};
+
 export default function PlatformFeesPage() {
     const { shops, metrics, settings, defaults } = usePage<AdminProps>().props;
     const [scope, setScope] = useState<'platform' | 'shop_type'>('shop_type');
     const [shopType, setShopType] = useState<'individual' | 'business'>('individual');
     const [form, setForm] = useState<SettingForm>(() => emptyForm(defaults, 'individual'));
-    const [adjustment, setAdjustment] = useState({ shopId: '', adjustmentType: 'credit_adjustment', amount: '', reason: '' });
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [creditMovementModalOpen, setCreditMovementModalOpen] = useState(false);
     const [creditMovementPage, setCreditMovementPage] = useState(1);
-    const [limitEditor, setLimitEditor] = useState<{
-        shopId: number;
-        shopName: string;
-        value: string;
-        score: string | null;
-        recommendedLimit: string | null;
-        recommendationTier: string | null;
-    } | null>(null);
+    const [shopPage, setShopPage] = useState(1);
+    const [limitEditor, setLimitEditor] = useState<LimitEditorState | null>(null);
 
     const selectedSetting = useMemo(
         () => settings.find((setting) => setting.scope === scope && (scope === 'platform' || setting.shop_type === shopType)) ?? null,
@@ -206,6 +243,11 @@ export default function PlatformFeesPage() {
         (creditMovementPage - 1) * CREDIT_MOVEMENT_PAGE_SIZE,
         creditMovementPage * CREDIT_MOVEMENT_PAGE_SIZE,
     );
+    const shopPageCount = Math.max(1, Math.ceil(shops.length / SHOP_PAGE_SIZE));
+    const visibleShops = useMemo(
+        () => shops.slice((shopPage - 1) * SHOP_PAGE_SIZE, shopPage * SHOP_PAGE_SIZE),
+        [shops, shopPage],
+    );
 
     useEffect(() => {
         setForm(fromSetting(selectedSetting, defaults, shopType));
@@ -214,6 +256,10 @@ export default function PlatformFeesPage() {
     useEffect(() => {
         setCreditMovementPage((current) => Math.min(current, creditMovementPageCount));
     }, [creditMovementPageCount]);
+
+    useEffect(() => {
+        setShopPage((current) => Math.min(current, shopPageCount));
+    }, [shopPageCount]);
 
     useEffect(() => {
         if (!settingsOpen) return;
@@ -339,90 +385,6 @@ export default function PlatformFeesPage() {
         });
     };
 
-    const post = (url: string, title: string, text: string, successText: string) => {
-        void platformFeeAlert({
-            icon: 'question',
-            title,
-            text,
-            showCancelButton: true,
-            confirmButtonText: 'Continue',
-            cancelButtonText: 'Cancel',
-        }).then((result) => {
-            if (!result.isConfirmed) return;
-
-            router.post(url, {}, {
-                preserveScroll: true,
-                onSuccess: (page) => {
-                    if (page.component === 'superAdmin/Auth/PrivilegedReauthenticate') return;
-
-                    void platformFeeAlert({
-                        icon: 'success',
-                        title: 'Done',
-                        text: successText,
-                        timer: 1800,
-                        showConfirmButton: false,
-                    });
-                },
-                onError: () => {
-                    void platformFeeAlert({
-                        icon: 'error',
-                        title: 'Action failed',
-                        text: 'The request could not be completed. Please try again.',
-                    });
-                },
-            });
-        });
-    };
-
-    const saveAdjustment = (event: React.FormEvent) => {
-        event.preventDefault();
-        if (!adjustment.shopId || !adjustment.amount || !adjustment.reason) {
-            void platformFeeAlert({
-                icon: 'warning',
-                title: 'Complete the adjustment form',
-                text: 'Select a shop and provide an amount and reason.',
-            });
-            return;
-        }
-
-        void platformFeeAlert({
-            icon: 'question',
-            title: 'Record this balance adjustment?',
-            text: 'This creates a permanent audited ledger entry.',
-            showCancelButton: true,
-            confirmButtonText: 'Record adjustment',
-            cancelButtonText: 'Cancel',
-        }).then((result) => {
-            if (!result.isConfirmed) return;
-
-            router.post(`/admin/platform-fees/shops/${adjustment.shopId}/adjustments`, {
-                adjustment_type: adjustment.adjustmentType,
-                amount: adjustment.amount,
-                reason: adjustment.reason,
-            }, {
-                preserveScroll: true,
-                onSuccess: (page) => {
-                    if (page.component === 'superAdmin/Auth/PrivilegedReauthenticate') return;
-
-                    setAdjustment((current) => ({ ...current, amount: '', reason: '' }));
-                    void platformFeeAlert({
-                        icon: 'success',
-                        title: 'Adjustment recorded',
-                        timer: 1600,
-                        showConfirmButton: false,
-                    });
-                },
-                onError: () => {
-                    void platformFeeAlert({
-                        icon: 'error',
-                        title: 'Could not record adjustment',
-                        text: 'Please check the amount and reason, then try again.',
-                    });
-                },
-            });
-        });
-    };
-
     const saveShopLimit = (event: React.FormEvent) => {
         event.preventDefault();
         if (!limitEditor || limitEditor.value.trim() === '' || Number(limitEditor.value) < 0) {
@@ -480,9 +442,8 @@ export default function PlatformFeesPage() {
                     <p className="mt-2 text-gray-600 dark:text-gray-400">Review marketplace balances, reliability recommendations, and fee policy.</p>
                 </header>
 
-                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label="Platform fee summary">
+                <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Platform fee summary">
                     <DashboardMetricCard testId="platform-fees-generated-card" label="Platform Fees Generated" value={money(metrics.platform_fee_earned)} description="Finalized charges less finalized reversals; confirmed payments are tracked separately." context="Platform" icon={CircleDollarSign} tone="success" />
-                    <DashboardMetricCard testId="platform-fee-billed-card" label="Total billed" value={money(metrics.total_billed)} description="Marketplace charges" context="Charges" icon={ReceiptText} />
                     <DashboardMetricCard testId="platform-fee-collected-card" label="Collected" value={money(metrics.collected)} description="Paid by shop owners" context="Collected" icon={BadgeCheck} tone="success" />
                     <DashboardMetricCard testId="platform-fee-net-payable-card" label="Net Payable" value={money(metrics.outstanding)} description="Outstanding charges after available credits" context="Receivable" icon={WalletCards} tone="warning" />
                     <DashboardMetricCard testId="platform-fee-pending-card" label="Pending payments" value={String(metrics.pending_payments)} description="Awaiting confirmation" context="Pending" icon={Clock3} tone="warning" />
@@ -687,37 +648,11 @@ export default function PlatformFeesPage() {
                     </div>
                 )}
 
-                <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/20" aria-labelledby="platform-fee-adjustment-heading">
-                    <h2 id="platform-fee-adjustment-heading" className="text-lg font-semibold text-gray-900 dark:text-white">Audited balance adjustment</h2>
-                    <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Adjustments are append-only, require a reason, and never overwrite the fee ledger.</p>
-                    <form onSubmit={saveAdjustment} className="mt-4 grid gap-4 md:grid-cols-4">
-                        <label className="text-sm text-gray-700 dark:text-gray-200">
-                            Shop
-                            <select value={adjustment.shopId} onChange={(event) => setAdjustment((current) => ({ ...current, shopId: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
-                                <option value="">Select shop</option>
-                                {shops.map((shop) => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
-                            </select>
-                        </label>
-                        <label className="text-sm text-gray-700 dark:text-gray-200">
-                            Type
-                            <select value={adjustment.adjustmentType} onChange={(event) => setAdjustment((current) => ({ ...current, adjustmentType: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900">
-                                <option value="credit_adjustment">Credit adjustment</option>
-                                <option value="debit_adjustment">Debit adjustment</option>
-                            </select>
-                        </label>
-                        <Field label="Amount" value={adjustment.amount} onChange={(value) => setAdjustment((current) => ({ ...current, amount: value }))} />
-                        <label className="text-sm text-gray-700 dark:text-gray-200">
-                            Reason
-                            <input required value={adjustment.reason} onChange={(event) => setAdjustment((current) => ({ ...current, reason: event.target.value }))} className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 dark:border-gray-700 dark:bg-gray-900" />
-                        </label>
-                        <div className="md:col-span-4 flex justify-end">
-                            <button type="submit" disabled={!adjustment.shopId || !adjustment.amount || !adjustment.reason} className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Record adjustment</button>
-                        </div>
-                    </form>
-                </section>
-
-                <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="platform-fee-shops-heading">
+                {!settingsOpen && <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="platform-fee-shops-heading">
                     <h2 id="platform-fee-shops-heading" className="text-lg font-semibold text-gray-900 dark:text-white">Shop Platform Balance overview</h2>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                        Showing shops {shops.length === 0 ? 0 : (shopPage - 1) * SHOP_PAGE_SIZE + 1}-{Math.min(shopPage * SHOP_PAGE_SIZE, shops.length)} of {shops.length}
+                    </p>
                     <div className="mt-4 overflow-x-auto">
                         <table className="min-w-full text-left text-sm">
                             <thead className="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500 dark:border-gray-800 dark:text-gray-400">
@@ -726,7 +661,7 @@ export default function PlatformFeesPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {shops.map((shop) => (
+                                {visibleShops.map((shop) => (
                                     <tr key={shop.id} className="border-b border-gray-100 last:border-0 dark:border-gray-900">
                                         <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{shop.name}</td>
                                         <td className="px-3 py-3 capitalize">{shop.shop_type}</td>
@@ -738,10 +673,10 @@ export default function PlatformFeesPage() {
                                         <td className="px-3 py-3">{shop.active_request_status ?? 'None'}</td>
                                         <td className="px-3 py-3">
                                             <div className="flex flex-wrap gap-2">
-                                                {shop.recommendation && <button type="button" onClick={() => post(`/admin/platform-fees/recommendations/${shop.recommendation?.id}/approve`, 'Approve this recommendation?', 'The recommended Platform Balance limit will be applied to this shop.', 'Recommendation approved.')} className="rounded border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700">Approve {money(shop.recommendation.recommended_limit)}</button>}
+                                                {shop.recommendation && <button type="button" onClick={() => postPlatformFeeAction(`/admin/platform-fees/recommendations/${shop.recommendation?.id}/approve`, 'Approve this recommendation?', 'The recommended Platform Balance limit will be applied to this shop.', 'Recommendation approved.')} className="rounded border border-emerald-300 px-2 py-1 text-xs font-semibold text-emerald-700">Approve {money(shop.recommendation.recommended_limit)}</button>}
                                                 <button type="button" aria-label={`Change limit for ${shop.name}`} onClick={() => setLimitEditor({ shopId: shop.id, shopName: shop.name, value: shop.balance_limit, score: shop.reliability_score, recommendedLimit: shop.score_recommendation?.recommended_limit ?? shop.recommendation?.recommended_limit ?? null, recommendationTier: shop.score_recommendation?.tier ?? shop.recommendation?.tier ?? null })} className="rounded border border-violet-300 px-2 py-1 text-xs font-semibold text-violet-700">Change limit</button>
-                                                <button type="button" onClick={() => post(`/admin/platform-fees/shops/${shop.id}/recalculate`, 'Recalculate this shop?', 'The reliability score and balance recommendation will be refreshed.', 'Shop balance recalculated.')} className="rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700">Recalculate</button>
-                                                <button type="button" onClick={() => post(`/admin/platform-fees/shops/${shop.id}/remind`, 'Send a payment reminder?', 'The shop owner will be notified about the outstanding Platform Balance.', 'Payment reminder sent.')} className="rounded border border-amber-300 px-2 py-1 text-xs font-semibold text-amber-700">Remind</button>
+                                                <button type="button" onClick={() => postPlatformFeeAction(`/admin/platform-fees/shops/${shop.id}/recalculate`, 'Recalculate this shop?', 'The reliability score and balance recommendation will be refreshed.', 'Shop balance recalculated.')} className="rounded border border-blue-300 px-2 py-1 text-xs font-semibold text-blue-700">Recalculate</button>
+                                                <button type="button" onClick={() => postPlatformFeeAction(`/admin/platform-fees/shops/${shop.id}/remind`, 'Send a payment reminder?', 'The shop owner will be notified about the outstanding Platform Balance.', 'Payment reminder sent.')} className="rounded border border-amber-300 px-2 py-1 text-xs font-semibold text-amber-700">Remind</button>
                                             </div>
                                         </td>
                                     </tr>
@@ -750,7 +685,14 @@ export default function PlatformFeesPage() {
                         </table>
                         {shops.length === 0 && <p className="py-6 text-sm text-gray-500">No approved shops found.</p>}
                     </div>
-                </section>
+                    {shopPageCount > 1 && (
+                        <nav aria-label="Shop balance pages" className="mt-4 flex items-center justify-between gap-3">
+                            <button type="button" aria-label="Previous shop page" onClick={() => setShopPage((current) => Math.max(1, current - 1))} disabled={shopPage === 1} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Previous</button>
+                            <span className="text-sm text-gray-600 dark:text-gray-400" aria-live="polite">Page {shopPage} of {shopPageCount}</span>
+                            <button type="button" aria-label="Next shop page" onClick={() => setShopPage((current) => Math.min(shopPageCount, current + 1))} disabled={shopPage === shopPageCount} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">Next</button>
+                        </nav>
+                    )}
+                </section>}
 
                 <Modal isOpen={limitEditor !== null} onClose={() => setLimitEditor(null)} size="md" showCloseButton={false} zIndex={1000000}>
                     {limitEditor && (

@@ -97,6 +97,7 @@ vi.mock('sweetalert2', () => ({
 }));
 
 beforeEach(() => {
+    pageProps.shops = [pageProps.shops[0]];
     routerPost.mockReset();
     swalFire.mockReset();
     swalFire.mockResolvedValue({ isConfirmed: true });
@@ -106,10 +107,11 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
     render(<PlatformFeesPage />);
 
     const summary = screen.getByRole('region', { name: 'Platform fee summary' });
-    expect(summary.querySelectorAll('article')).toHaveLength(5);
+    expect(summary.querySelectorAll('article')).toHaveLength(4);
     expect(summary.querySelector('article')).toHaveClass('metrics-card', 'border-gray-200', 'bg-white');
     expect(screen.getByRole('article', { name: 'Platform Fees Generated' })).toHaveTextContent('125.00');
     expect(screen.getByRole('article', { name: 'Platform Fees Generated' })).toHaveTextContent('Finalized charges less finalized reversals; confirmed payments are tracked separately.');
+    expect(screen.queryByRole('article', { name: 'Total billed' })).not.toBeInTheDocument();
     expect(screen.getByRole('article', { name: 'Net Payable' })).toHaveTextContent('0.00');
     expect(screen.queryByRole('article', { name: 'Credits issued' })).not.toBeInTheDocument();
     expect(screen.queryByRole('article', { name: 'Credits applied' })).not.toBeInTheDocument();
@@ -120,6 +122,7 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
     fireEvent.click(screen.getByRole('button', { name: 'Open fee settings' }));
     expect(screen.getByRole('dialog').parentElement).toHaveClass('z-[1000000]');
     expect(screen.getByRole('heading', { name: 'Reliability scoring' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Shop Platform Balance overview' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Payment history weight (%)')).toHaveValue(35);
     expect(screen.getByText('Total: 100%')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add tier' })).toBeInTheDocument();
@@ -129,6 +132,7 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
     expect(movementRegion).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'View credit movement history' })).toBeInTheDocument();
     expect(movementRegion).not.toHaveTextContent('Credit Movement Shop');
+    expect(screen.queryByRole('heading', { name: 'Audited balance adjustment' })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Payment history weight (%)'), { target: { value: '40' } });
     fireEvent.change(screen.getByLabelText('Settlement timeliness weight (%)'), { target: { value: '20' } });
@@ -155,30 +159,6 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
 
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-});
-
-it('does not show adjustment success when the request redirects to reauthentication', async () => {
-    render(<PlatformFeesPage />);
-
-    fireEvent.change(screen.getByLabelText('Shop'), { target: { value: '1' } });
-    fireEvent.change(screen.getByLabelText('Amount'), { target: { value: '10.00' } });
-    fireEvent.change(screen.getByLabelText('Reason'), { target: { value: 'Test correction' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Record adjustment' }));
-
-    expect(swalFire).toHaveBeenCalledWith(expect.objectContaining({
-        customClass: expect.objectContaining({ container: 'platform-fee-swal2-container' }),
-    }));
-
-    await waitFor(() => expect(routerPost).toHaveBeenCalledWith(
-        '/admin/platform-fees/shops/1/adjustments',
-        expect.any(Object),
-        expect.objectContaining({ preserveScroll: true }),
-    ));
-
-    const options = routerPost.mock.calls.at(-1)?.[2] as { onSuccess?: (page: { component: string }) => void };
-    options.onSuccess?.({ component: 'superAdmin/Auth/PrivilegedReauthenticate' });
-
-    expect(swalFire).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Adjustment recorded' }));
 });
 
 it('submits a per-shop balance limit change', async () => {
@@ -216,4 +196,25 @@ it('keeps admin credit movement history in a paginated modal', () => {
     expect(screen.queryByText('Order refund #12')).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Close credit movement history' }));
     expect(screen.queryByRole('heading', { name: 'Credit movement history' })).not.toBeInTheDocument();
+});
+
+it('paginates the shop balance overview', () => {
+    const baseShop = pageProps.shops[0];
+    pageProps.shops = Array.from({ length: 16 }, (_, index) => ({
+        ...baseShop,
+        id: index + 1,
+        name: `Shop ${index + 1}`,
+    }));
+
+    render(<PlatformFeesPage />);
+
+    expect(screen.getByText('Showing shops 1-15 of 16')).toBeInTheDocument();
+    expect(screen.getByText('Shop 1')).toBeInTheDocument();
+    expect(screen.queryByText('Shop 16')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next shop page' }));
+
+    expect(screen.getByText('Showing shops 16-16 of 16')).toBeInTheDocument();
+    expect(screen.getByText('Shop 16')).toBeInTheDocument();
+    expect(screen.queryByText('Shop 1')).not.toBeInTheDocument();
 });
