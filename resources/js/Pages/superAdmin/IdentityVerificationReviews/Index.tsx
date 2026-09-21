@@ -1,4 +1,3 @@
-import MonochromeSelect from "@/components/form/Select";
 import React, { useState } from 'react';
 import { Head, Link, router } from '@inertiajs/react';
 import { AlertTriangle, CheckCircle2, Clock3, Files, ScanSearch, XCircle } from 'lucide-react';
@@ -353,23 +352,6 @@ const IdentityReviewQueue: React.FC<Props> = ({ reviews, stats, filters }) => {
 						<label className="min-w-60 flex-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
 							Search customer
 							<input value={search} onChange={event => setSearch(event.target.value)} placeholder="Name, email, or phone" className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-normal text-gray-900 focus:border-gray-500 focus:outline-none" />
-						</label>
-						<label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-							Screening
-							<MonochromeSelect value={filters.screening || 'all'} onChange={event => router.get('/admin/identity-verification-reviews', { q: filters.q || undefined, screening: event.target.value, status: filters.status || 'pending' }, { preserveState: true, preserveScroll: true, replace: true })} className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-900">
-								<option value="all">All screening</option>
-								<option value="passed">Screening passed</option>
-								<option value="needs_review">Needs review</option>
-							</MonochromeSelect>
-						</label>
-						<label className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-							Human review
-							<MonochromeSelect value={filters.status || 'pending'} onChange={event => router.get('/admin/identity-verification-reviews', { q: filters.q || undefined, screening: filters.screening || 'all', status: event.target.value }, { preserveState: true, preserveScroll: true, replace: true })} className="mt-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-normal text-gray-900">
-								<option value="pending">Pending</option>
-								<option value="approved">Approved</option>
-								<option value="rejected">Rejected</option>
-								<option value="all">All statuses</option>
-							</MonochromeSelect>
 						</label>
 						<button type="submit" className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500">Apply filters</button>
 					</form>

@@ -97,6 +97,14 @@ describe('identity review queue controls', () => {
 		expect(screen.getByRole('button', { name: 'Approve 1 reviewed' })).toBeEnabled();
 	});
 
+	it('hides the screening and human review filter controls from the queue UI', () => {
+		render(<IdentityReviewQueue {...props()} />);
+
+		expect(screen.queryAllByRole('combobox')).toHaveLength(0);
+		expect(screen.getByRole('textbox', { name: 'Search customer' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: 'Apply filters' })).toBeInTheDocument();
+	});
+
 	it('refreshes the queue after a pending record is inspected', async () => {
 		render(<IdentityReviewQueue {...props([review({ inspected_at: null })])} />);
 
