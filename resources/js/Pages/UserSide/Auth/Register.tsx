@@ -527,6 +527,10 @@ export default function Register() {
       return 3;
     }
 
+    if (validationErrors.form) {
+      return currentStep;
+    }
+
     return 1;
   };
 
@@ -1080,6 +1084,8 @@ export default function Register() {
 
   const mapBackendErrorsToFrontend = (backendErrors: Record<string, unknown>): FormErrors => {
     const keyMap: Record<string, string> = {
+      message: 'form',
+      error: 'form',
       first_name: 'firstName',
       last_name: 'lastName',
       password_confirmation: 'confirmPassword',
@@ -1103,6 +1109,10 @@ export default function Register() {
       const targetKey = keyMap[key] || key;
       mapped[targetKey] = Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '');
     });
+
+    if (!Object.values(mapped).some(Boolean)) {
+      mapped.form = 'We could not complete your registration. Please try again.';
+    }
 
     return mapped;
   };
@@ -1257,6 +1267,17 @@ export default function Register() {
             <div className="mb-4 text-center">
               <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Step {currentStep} of 3</p>
             </div>
+
+            {errors.form && (
+              <div
+                className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-700"
+                role="alert"
+                aria-live="assertive"
+                data-testid="registration-form-error"
+              >
+                {errors.form}
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
               {currentStep === 1 && (
@@ -1529,27 +1550,28 @@ export default function Register() {
                     )}
                   </div>
 
-                  <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5" data-testid="registration-id-upload-section">
-                    <div className="flex flex-col gap-1">
-                      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-800">Upload valid ID</p>
-                      <p className="text-[12px] leading-5 text-gray-600">
-                        {requiresBack
-                          ? formData.documentType === 'national_id'
-                            ? NATIONAL_ID_UPLOAD_GUIDANCE
-                            : isStudentId
-                              ? 'Upload clear front and back images of your Student ID. Both sides are reviewed manually; OCR is not used.'
-                              : 'Upload a clear front and back image of the same ID.'
-                          : isPassport
-                            ? 'Upload the passport biodata page, including the complete machine-readable zone.'
-                            : 'Select an ID type, then upload the required image.'}
-                      </p>
-                    </div>
+                  {selectedDocumentOption && (
+                    <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5" data-testid="registration-id-upload-section">
+                      <div className="flex flex-col gap-1">
+                        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-800">Upload valid ID</p>
+                        <p className="text-[12px] leading-5 text-gray-600">
+                          {requiresBack
+                            ? formData.documentType === 'national_id'
+                              ? NATIONAL_ID_UPLOAD_GUIDANCE
+                              : isStudentId
+                                ? 'Upload clear front and back images of your Student ID. Both sides are reviewed manually; OCR is not used.'
+                                : 'Upload a clear front and back image of the same ID.'
+                            : isPassport
+                              ? 'Upload the passport biodata page, including the complete machine-readable zone.'
+                              : 'Select an ID type, then upload the required image.'}
+                        </p>
+                      </div>
 
-                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">Valid ID photos</p>
-                    <div
-                      className={requiresBack ? 'mt-2 grid gap-3 md:grid-cols-2' : 'mt-2 grid gap-3 md:grid-cols-1'}
-                      data-testid="registration-id-photo-grid"
-                    >
+                      <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">Valid ID photos</p>
+                      <div
+                        className={requiresBack ? 'mt-2 grid gap-3 md:grid-cols-2' : 'mt-2 grid gap-3 md:grid-cols-1'}
+                        data-testid="registration-id-photo-grid"
+                      >
                       <div className="min-w-0 [&>label]:sr-only">
                         <div className="mb-2 flex min-h-6 items-center justify-between gap-2">
                           <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-gray-700">
@@ -1619,33 +1641,34 @@ export default function Register() {
                           />
                         </div>
                       )}
-                    </div>
-                    <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
-                      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-700">Why we ask for a valid ID</p>
-                      <p className="mt-1 text-[12px] leading-5 text-gray-600">
-                        We require an identity document to help prevent fake accounts, fraud, and abuse. Your ID is stored privately, and access by authorized personnel is audited.
-                      </p>
-                      <p className="mt-1 text-[12px] leading-5 text-gray-600">
-                        {isStudentId
-                          ? 'Student ID images are not processed with OCR. An authorized admin manually checks both sides before approval.'
-                          : 'Automated screening checks whether the document matches the selected ID type but does not prove authenticity.'}
-                      </p>
-                      <p className="mt-1 text-[12px] leading-5 text-gray-600">
-                        Supported formats: JPG, JPEG, PNG, and WEBP. Maximum size: 5MB.
-                      </p>
-                      {documentScreeningMessage && (
-                        <p
-                          className="mt-3 border-l-2 border-gray-300 pl-3 text-[12px] leading-5 text-gray-700"
-                          role="status"
-                          aria-live="polite"
-                          data-testid="registration-id-note"
-                        >
-                          <span className="font-semibold uppercase tracking-[0.08em]">Note: </span>
-                          {documentScreeningMessage}
+                      </div>
+                      <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-700">Why we ask for a valid ID</p>
+                        <p className="mt-1 text-[12px] leading-5 text-gray-600">
+                          We require an identity document to help prevent fake accounts, fraud, and abuse. Your ID is stored privately, and access by authorized personnel is audited.
                         </p>
-                      )}
+                        <p className="mt-1 text-[12px] leading-5 text-gray-600">
+                          {isStudentId
+                            ? 'Student ID images are not processed with OCR. An authorized admin manually checks both sides before approval.'
+                            : 'Automated screening checks whether the document matches the selected ID type but does not prove authenticity.'}
+                        </p>
+                        <p className="mt-1 text-[12px] leading-5 text-gray-600">
+                          Supported formats: JPG, JPEG, PNG, and WEBP. Maximum size: 5MB.
+                        </p>
+                        {documentScreeningMessage && (
+                          <p
+                            className="mt-3 border-l-2 border-gray-300 pl-3 text-[12px] leading-5 text-gray-700"
+                            role="status"
+                            aria-live="polite"
+                            data-testid="registration-id-note"
+                          >
+                            <span className="font-semibold uppercase tracking-[0.08em]">Note: </span>
+                            {documentScreeningMessage}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="flex items-center">
                     <input
