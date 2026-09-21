@@ -270,6 +270,7 @@ export default function Register() {
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
+    suffix: '',
     email: '',
     phone: '',
     age: '',
@@ -411,6 +412,7 @@ export default function Register() {
     if (step === 1) {
       const firstName = formData.firstName.trim();
       const lastName = formData.lastName.trim();
+      const suffix = formData.suffix.trim();
       const email = formData.email.trim();
       const phone = formData.phone.trim();
 
@@ -424,6 +426,10 @@ export default function Register() {
         newErrors.lastName = 'Please enter your last name.';
       } else if (lastName.length < 2) {
         newErrors.lastName = 'Last name must be at least 2 characters.';
+      }
+
+      if (suffix.length > 50) {
+        newErrors.suffix = 'Suffix must be 50 characters or fewer.';
       }
 
       if (!email) {
@@ -509,7 +515,7 @@ export default function Register() {
   };
 
   const getFirstInvalidStep = (validationErrors: FormErrors): number => {
-    if (validationErrors.firstName || validationErrors.lastName || validationErrors.email || validationErrors.phone) {
+    if (validationErrors.firstName || validationErrors.lastName || validationErrors.suffix || validationErrors.email || validationErrors.phone) {
       return 1;
     }
 
@@ -519,6 +525,10 @@ export default function Register() {
 
     if (validationErrors.documentType || validationErrors.validId || validationErrors.validIdBack || validationErrors.ocr || validationErrors.termsAccepted) {
       return 3;
+    }
+
+    if (validationErrors.form) {
+      return currentStep;
     }
 
     return 1;
@@ -1074,6 +1084,8 @@ export default function Register() {
 
   const mapBackendErrorsToFrontend = (backendErrors: Record<string, unknown>): FormErrors => {
     const keyMap: Record<string, string> = {
+      message: 'form',
+      error: 'form',
       first_name: 'firstName',
       last_name: 'lastName',
       password_confirmation: 'confirmPassword',
@@ -1098,6 +1110,10 @@ export default function Register() {
       mapped[targetKey] = Array.isArray(value) ? String(value[0] ?? '') : String(value ?? '');
     });
 
+    if (!Object.values(mapped).some(Boolean)) {
+      mapped.form = 'We could not complete your registration. Please try again.';
+    }
+
     return mapped;
   };
 
@@ -1120,6 +1136,7 @@ export default function Register() {
       const payload = new FormData();
       payload.append('first_name', formData.firstName);
       payload.append('last_name', formData.lastName);
+      if (formData.suffix.trim()) payload.append('suffix', formData.suffix.trim());
       payload.append('email', formData.email.trim());
       payload.append('phone', formData.phone);
       payload.append('age', formData.age);
@@ -1251,6 +1268,17 @@ export default function Register() {
               <p className="text-[11px] uppercase tracking-[0.18em] text-gray-500">Step {currentStep} of 3</p>
             </div>
 
+            {errors.form && (
+              <div
+                className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-5 text-red-700"
+                role="alert"
+                aria-live="assertive"
+                data-testid="registration-form-error"
+              >
+                {errors.form}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
               {currentStep === 1 && (
                 <>
@@ -1286,6 +1314,25 @@ export default function Register() {
                       />
                     </div>
                     {errors.lastName && <p className="mt-1 text-sm text-red-600">{errors.lastName}</p>}
+                  </div>
+
+                  <div className="relative">
+                    <Label htmlFor="suffix" className="text-[12px] font-medium text-gray-700 mb-1.5">Suffix (Optional)</Label>
+                    <div className="relative">
+                      <UserIcon className="absolute left-3.5 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+                      <Input
+                        type="text"
+                        id="suffix"
+                        name="suffix"
+                        placeholder="e.g. Jr., Sr., III"
+                        value={formData.suffix}
+                        onChange={handleInputChange}
+                        autoComplete="honorific-suffix"
+                        maxLength={50}
+                        className={`pl-10 ${authInputClasses} ${errors.suffix ? 'border-red-500' : ''}`}
+                      />
+                    </div>
+                    {errors.suffix && <p className="mt-1 text-sm text-red-600">{errors.suffix}</p>}
                   </div>
 
                   <div className="relative">
@@ -1503,27 +1550,28 @@ export default function Register() {
                     )}
                   </div>
 
-                  <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5" data-testid="registration-id-upload-section">
-                    <div className="flex flex-col gap-1">
-                      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-800">Upload valid ID</p>
-                      <p className="text-[12px] leading-5 text-gray-600">
-                        {requiresBack
-                          ? formData.documentType === 'national_id'
-                            ? NATIONAL_ID_UPLOAD_GUIDANCE
-                            : isStudentId
-                              ? 'Upload clear front and back images of your Student ID. Both sides are reviewed manually; OCR is not used.'
-                              : 'Upload a clear front and back image of the same ID.'
-                          : isPassport
-                            ? 'Upload the passport biodata page, including the complete machine-readable zone.'
-                            : 'Select an ID type, then upload the required image.'}
-                      </p>
-                    </div>
+                  {selectedDocumentOption && (
+                    <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5" data-testid="registration-id-upload-section">
+                      <div className="flex flex-col gap-1">
+                        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-800">Upload valid ID</p>
+                        <p className="text-[12px] leading-5 text-gray-600">
+                          {requiresBack
+                            ? formData.documentType === 'national_id'
+                              ? NATIONAL_ID_UPLOAD_GUIDANCE
+                              : isStudentId
+                                ? 'Upload clear front and back images of your Student ID. Both sides are reviewed manually; OCR is not used.'
+                                : 'Upload a clear front and back image of the same ID.'
+                            : isPassport
+                              ? 'Upload the passport biodata page, including the complete machine-readable zone.'
+                              : 'Select an ID type, then upload the required image.'}
+                        </p>
+                      </div>
 
-                    <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">Valid ID photos</p>
-                    <div
-                      className={requiresBack ? 'mt-2 grid gap-3 md:grid-cols-2' : 'mt-2 grid gap-3 md:grid-cols-1'}
-                      data-testid="registration-id-photo-grid"
-                    >
+                      <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500">Valid ID photos</p>
+                      <div
+                        className={requiresBack ? 'mt-2 grid gap-3 md:grid-cols-2' : 'mt-2 grid gap-3 md:grid-cols-1'}
+                        data-testid="registration-id-photo-grid"
+                      >
                       <div className="min-w-0 [&>label]:sr-only">
                         <div className="mb-2 flex min-h-6 items-center justify-between gap-2">
                           <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-gray-700">
@@ -1593,33 +1641,34 @@ export default function Register() {
                           />
                         </div>
                       )}
-                    </div>
-                    <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
-                      <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-700">Why we ask for a valid ID</p>
-                      <p className="mt-1 text-[12px] leading-5 text-gray-600">
-                        We require an identity document to help prevent fake accounts, fraud, and abuse. Your ID is stored privately, and access by authorized personnel is audited.
-                      </p>
-                      <p className="mt-1 text-[12px] leading-5 text-gray-600">
-                        {isStudentId
-                          ? 'Student ID images are not processed with OCR. An authorized admin manually checks both sides before approval.'
-                          : 'Automated screening checks whether the document matches the selected ID type but does not prove authenticity.'}
-                      </p>
-                      <p className="mt-1 text-[12px] leading-5 text-gray-600">
-                        Supported formats: JPG, JPEG, PNG, and WEBP. Maximum size: 5MB.
-                      </p>
-                      {documentScreeningMessage && (
-                        <p
-                          className="mt-3 border-l-2 border-gray-300 pl-3 text-[12px] leading-5 text-gray-700"
-                          role="status"
-                          aria-live="polite"
-                          data-testid="registration-id-note"
-                        >
-                          <span className="font-semibold uppercase tracking-[0.08em]">Note: </span>
-                          {documentScreeningMessage}
+                      </div>
+                      <div className="mt-3 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5">
+                        <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-gray-700">Why we ask for a valid ID</p>
+                        <p className="mt-1 text-[12px] leading-5 text-gray-600">
+                          We require an identity document to help prevent fake accounts, fraud, and abuse. Your ID is stored privately, and access by authorized personnel is audited.
                         </p>
-                      )}
+                        <p className="mt-1 text-[12px] leading-5 text-gray-600">
+                          {isStudentId
+                            ? 'Student ID images are not processed with OCR. An authorized admin manually checks both sides before approval.'
+                            : 'Automated screening checks whether the document matches the selected ID type but does not prove authenticity.'}
+                        </p>
+                        <p className="mt-1 text-[12px] leading-5 text-gray-600">
+                          Supported formats: JPG, JPEG, PNG, and WEBP. Maximum size: 5MB.
+                        </p>
+                        {documentScreeningMessage && (
+                          <p
+                            className="mt-3 border-l-2 border-gray-300 pl-3 text-[12px] leading-5 text-gray-700"
+                            role="status"
+                            aria-live="polite"
+                            data-testid="registration-id-note"
+                          >
+                            <span className="font-semibold uppercase tracking-[0.08em]">Note: </span>
+                            {documentScreeningMessage}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="flex items-center">
                     <input

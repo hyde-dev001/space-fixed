@@ -114,6 +114,35 @@ class CustomerRegistrationAddressTest extends TestCase
         $this->assertSame(2, User::query()->whereNull('phone')->count());
     }
 
+    public function test_registration_stores_optional_suffix_in_user_and_default_address_names(): void
+    {
+        Notification::fake();
+        Storage::fake('local');
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response([
+            'lat' => '14.5832',
+            'lon' => '120.9822',
+            'address' => [
+                'country_code' => 'ph',
+                'region' => 'National Capital Region',
+                'state' => 'Metro Manila',
+                'city' => 'Manila',
+                'suburb' => 'Ermita',
+                'postcode' => '1000',
+            ],
+        ])]);
+
+        $this->post('/user/register', $this->payload([
+            'email' => 'suffix-registration@example.test',
+            'suffix' => 'Jr.',
+        ]))->assertRedirect(route('verification.notice'));
+
+        $user = User::query()->where('email', 'suffix-registration@example.test')->firstOrFail();
+
+        $this->assertSame('Jr.', $user->suffix);
+        $this->assertSame('Juan Dela Cruz Jr.', $user->name);
+        $this->assertSame('Juan Dela Cruz Jr.', $user->addresses()->where('is_default', true)->value('name'));
+    }
+
     public function test_registration_availability_and_submit_routes_are_throttled(): void
     {
         foreach (['auth.check-email-availability', 'auth.check-phone-availability', 'user.register'] as $routeName) {
