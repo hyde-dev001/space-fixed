@@ -1829,6 +1829,10 @@ html.userside-dark #app .userside-auth-ghost:hover {
   z-index: 11000000 !important;
 }
 
+.platform-fee-swal2-container {
+  z-index: 11000001 !important;
+}
+
 .swal2-container.swal2-backdrop-show,
 .swal2-container.user-swal2-backdrop-show,
 .swal2-backdrop-show.user-swal2-backdrop-show {

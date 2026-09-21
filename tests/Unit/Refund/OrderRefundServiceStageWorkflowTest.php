@@ -8,6 +8,7 @@ use App\Enums\NotificationType;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\ShopOwner;
+use App\Services\Finance\CodRefundPayoutService;
 use App\Services\NotificationService;
 use App\Services\OrderRefundService;
 use App\Services\PaymentSettlementService;
@@ -52,6 +53,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
             paymentSettlementService: $this->paymentSettlementService,
             shopOwnerApprovalPolicyService: $this->shopOwnerApprovalPolicyService,
             notificationService: $this->notificationService,
+            codRefundPayoutService: app(CodRefundPayoutService::class),
         );
     }
 
@@ -66,6 +68,54 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
         $this->assertSame('pending', $refund->shop_owner_status);
         $this->assertSame('pending', $refund->finance_status);
         $this->assertSame('awaiting_approval', $refund->return_status);
+    }
+
+    #[Test]
+    public function individual_shop_owner_can_approve_an_online_third_party_refund_without_finance_initial(): void
+    {
+        $refund = $this->makeRefund(['flow_type' => 'request_approval'], registrationType: 'individual');
+        $refund->order->setAttribute('delivery_method', 'third_party');
+
+        $result = $this->service->approveRequestedRefund($refund, stage: 'shop_owner', processedBy: null);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('approved', $refund->shop_owner_status);
+        $this->assertSame('approved', $refund->finance_status);
+    }
+
+    #[Test]
+    public function individual_online_refund_can_use_owner_stage_when_snapshot_is_false(): void
+    {
+        $refund = $this->makeRefund([
+            'flow_type' => 'request_approval',
+            'requires_owner_approval' => false,
+        ], registrationType: 'individual');
+
+        $result = $this->service->approveRequestedRefund($refund, stage: 'shop_owner', processedBy: null);
+
+        $this->assertSame('approved', $result['result']);
+        $this->assertSame('approved', $refund->shop_owner_status);
+        $this->assertSame('approved', $refund->finance_status);
+    }
+
+    #[Test]
+    public function individual_refund_request_notifies_owner_when_policy_snapshot_is_false(): void
+    {
+        $this->notificationService
+            ->expects($this->once())
+            ->method('notifyRefundRequest')
+            ->with(
+                202,
+                $this->callback(fn (array $data): bool => ($data['requires_owner_approval'] ?? null) === true),
+            );
+
+        $refund = $this->makeRefund([
+            'flow_type' => 'request_approval',
+            'requires_owner_approval' => false,
+        ], registrationType: 'individual');
+        $refund->setAttribute('shop_owner_id', 202);
+
+        $this->service->notifyRefundApprovalRequested($refund);
     }
 
     #[Test]

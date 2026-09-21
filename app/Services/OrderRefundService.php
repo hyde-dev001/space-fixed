@@ -151,7 +151,7 @@ class OrderRefundService
     public function reserveOrderRefund(Order $order, array $payload, array $lines = [], ?float $capturedAmount = null): array
     {
         return DB::transaction(function () use ($order, $payload, $lines, $capturedAmount) {
-            $lockedOrder = Order::query()->with('items')->lockForUpdate()->findOrFail($order->id);
+            $lockedOrder = Order::query()->with(['items', 'shopOwner'])->lockForUpdate()->findOrFail($order->id);
             $excludeShippingFee = (bool) ($payload['exclude_shipping_fee'] ?? false);
             $deferCodCollection = (bool) ($payload['defer_cod_collection'] ?? false)
                 && ($payload['flow_type'] ?? null) === 'request_approval'
@@ -238,11 +238,15 @@ class OrderRefundService
             $payload['customer_id'] = $payload['customer_id'] ?? $lockedOrder->customer_id;
             $payload['shop_owner_id'] = $payload['shop_owner_id'] ?? $lockedOrder->shop_owner_id;
             $payload['amount'] = $requestedAmount;
-            $payload['requires_owner_approval'] = $this->resolveRefundApprovalSnapshot(
+            $requiresOwnerApproval = $this->resolveRefundApprovalSnapshot(
                 $payload,
                 (int) $payload['shop_owner_id'],
                 $requestedAmount,
             );
+            if (!$isCodOrder && $this->isIndividualRegistrationType((string) ($lockedOrder->shopOwner?->registration_type ?? ''))) {
+                $requiresOwnerApproval = true;
+            }
+            $payload['requires_owner_approval'] = $requiresOwnerApproval;
             $refund = $this->createReservedRefund($payload, $lockedOrder->id);
             $this->reconcileRefundLines($refund, $lines);
 
@@ -553,6 +557,12 @@ class OrderRefundService
         $isIndividualRegistration = $this->isIndividualRegistrationType(
             (string) ($order->shopOwner?->registration_type ?? '')
         );
+        if ($isIndividualRegistration
+            && !$isCodRefund
+            && !$isExhaustedDeliveryRefund
+            && (string) ($refund->flow_type ?? '') !== 'cancel_auto') {
+            $requiresOwnerApproval = true;
+        }
         $isCompanyCustomerRefund = strtolower(trim((string) ($order->shopOwner?->registration_type ?? ''))) === 'company'
             && !$isExhaustedDeliveryRefund;
         $isThirdPartyCustomerRefund = $this->isThirdPartyCustomerRefund($refund, $order, $isExhaustedDeliveryRefund);
@@ -2216,7 +2226,7 @@ class OrderRefundService
         ], true);
     }
 
-    private function isThirdPartyCustomerRefund(
+    public function isThirdPartyCustomerRefund(
         OrderRefund $refund,
         ?Order $order = null,
         ?bool $isExhaustedDeliveryRefund = null,
@@ -2231,8 +2241,16 @@ class OrderRefundService
         }
 
         $order ??= $refund->relationLoaded('order') ? $refund->order : $refund->order()->first();
+        if (!$order) {
+            return false;
+        }
 
-        return $order?->resolvedDeliveryMethod() === 'third_party';
+        $order->loadMissing('shopOwner');
+        if ($this->isIndividualRegistrationType((string) ($order->shopOwner?->registration_type ?? ''))) {
+            return false;
+        }
+
+        return $order->resolvedDeliveryMethod() === 'third_party';
     }
 
     private function thirdPartyStaffApprovalId(OrderRefund $refund): ?int
@@ -2487,6 +2505,13 @@ class OrderRefundService
             (string) ($order->shopOwner?->registration_type ?? '')
         );
         $isThirdPartyCustomerRefund = $this->isThirdPartyCustomerRefund($refund, $order);
+        $isIndividualOwnerRefund = $isIndividualRegistration
+            && !$isCodRefund
+            && (string) ($refund->flow_type ?? '') !== 'cancel_auto'
+            && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted';
+        if ($isIndividualOwnerRefund) {
+            $requiresOwnerApproval = true;
+        }
 
         if ($isCodRefund) {
             return;
@@ -2513,7 +2538,7 @@ class OrderRefundService
                 true,
                 'access-staff-job-orders',
             );
-        } elseif ($isIndividualRegistration && $requiresOwnerApproval) {
+        } elseif ($isIndividualOwnerRefund) {
             $this->notificationService->notifyRefundRequest(
                 (int) ($refund->shop_owner_id ?? 0),
                 $data,

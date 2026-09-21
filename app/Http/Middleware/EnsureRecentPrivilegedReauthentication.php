@@ -34,11 +34,24 @@ final class EnsureRecentPrivilegedReauthentication
                 return response()->json(['message' => 'Recent reauthentication required.'], Response::HTTP_LOCKED);
             }
 
-            $request->session()->put('privileged_reauth_intended', $request->getPathInfo());
+            $request->session()->put('privileged_reauth_intended', $this->intendedDestination($request));
 
             return redirect('/admin/reauthenticate');
         }
 
         return $next($request);
+    }
+
+    private function intendedDestination(Request $request): string
+    {
+        if ($request->isMethodSafe()) {
+            return $request->getPathInfo();
+        }
+
+        $refererPath = parse_url((string) $request->headers->get('referer'), PHP_URL_PATH);
+
+        return is_string($refererPath) && str_starts_with($refererPath, '/admin/')
+            ? $refererPath
+            : '/admin/security';
     }
 }

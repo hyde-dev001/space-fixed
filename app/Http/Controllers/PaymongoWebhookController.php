@@ -74,9 +74,12 @@ class PaymongoWebhookController extends Controller
                 return $this->handleCheckoutSessionPaid($eventData);
             }
 
-            // Handle checkout session payment failed
-            if ($eventType === 'checkout_session.payment.failed') {
-                return $this->handleCheckoutSessionFailed($eventData);
+            // Handle checkout session payment failure or expiration
+            if (in_array($eventType, ['checkout_session.payment.failed', 'checkout_session.expired'], true)) {
+                return $this->handleCheckoutSessionFailed(
+                    $eventData,
+                    $eventType === 'checkout_session.expired' ? 'paymongo_checkout_expired' : 'paymongo_payment_failed',
+                );
             }
 
             if (is_string($eventType) && str_contains($eventType, 'refund')) {
@@ -391,6 +394,20 @@ class PaymongoWebhookController extends Controller
         $paidAmount = $this->extractPaidAmount($attributes, $paymentAttributes);
         $providerCurrency = strtoupper((string) ($paymentAttributes['currency'] ?? $attributes['currency'] ?? ''));
 
+        $platformPayment = app(\App\Services\PlatformFeePaymentService::class)->settleFromWebhook(
+            checkoutId: (string) ($sessionId ?? ''),
+            providerPaymentId: is_string($paymentId) ? $paymentId : null,
+            currency: $providerCurrency,
+            amount: $paidAmount !== null ? number_format($paidAmount, 2, '.', '') : null,
+        );
+        if ($platformPayment) {
+            return response()->json([
+                'message' => $platformPayment->status === 'paid'
+                    ? 'Platform Balance payment processed'
+                    : 'Platform Balance payment was already resolved',
+            ], 200);
+        }
+
         $repairSession = RepairPaymentSession::query()
             ->with('repairRequest')
             ->where('provider_link_id', $sessionId)
@@ -604,10 +621,18 @@ class PaymongoWebhookController extends Controller
      *
      * Idempotent: only updates rows that are currently 'pending'.
      */
-    private function handleCheckoutSessionFailed($eventData)
+    private function handleCheckoutSessionFailed($eventData, string $reason = 'paymongo_payment_failed')
     {
         $sessionId = $eventData['id'] ?? null;
         $metadata  = $eventData['attributes']['metadata'] ?? [];
+
+        $platformPayment = app(\App\Services\PlatformFeePaymentService::class)->failFromWebhook(
+            checkoutId: (string) ($sessionId ?? ''),
+            reason: $reason,
+        );
+        if ($platformPayment) {
+            return response()->json(['message' => 'Platform Balance payment failure recorded'], 200);
+        }
 
         $repairSession = RepairPaymentSession::query()
             ->with('repairRequest')
@@ -627,7 +652,7 @@ class PaymongoWebhookController extends Controller
                 ]);
                 app(PaymentSettlementService::class)->recordRepairPaymentFailure(
                     $repairSession->repairRequest,
-                    'paymongo_payment_failed',
+                    $reason,
                 );
             });
 

@@ -69,7 +69,10 @@ return new class extends Migration
             $table->string('source_status', 32);
             $table->timestamps();
 
-            $table->index(['shop_owner_upgrade_request_id', 'document_type']);
+            $table->index(
+                ['shop_owner_upgrade_request_id', 'document_type'],
+                'sourd_request_document_type_idx',
+            );
         });
     }
 

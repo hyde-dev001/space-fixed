@@ -76,6 +76,9 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'tax_id',               // Tax identification number
         'business_type',        // Type: retail, repair, or both
         'registration_type',    // Individual or company registration
+        'platform_fee_terms_version',
+        'platform_fee_terms_accepted_by',
+        'platform_fee_terms_accepted_at',
         'high_value_threshold', // Approval threshold for high value repairs
         'require_two_way_approval', // Require owner approval on high value repairs
         'repair_payment_policy', // full_upfront; deposit_50 is legacy-only
@@ -160,6 +163,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'shop_owner_totp_enabled_at' => 'datetime',
         'shop_owner_totp_recovery_codes' => 'encrypted:array',
         'shop_owner_totp_last_used_timestep' => 'integer',
+        'platform_fee_terms_accepted_at' => 'datetime',
     ];
 
     public function hasTotpEnabled(): bool
@@ -200,6 +204,11 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     public function modules(): HasMany
     {
         return $this->hasMany(ShopOwnerModule::class, 'shop_owner_id');
+    }
+
+    public function reliabilityScores(): HasMany
+    {
+        return $this->hasMany(PlatformReliabilityScore::class, 'shop_owner_id');
     }
 
     public function paymentIntegrations(): HasMany

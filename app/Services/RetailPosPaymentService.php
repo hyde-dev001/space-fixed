@@ -131,6 +131,7 @@ class RetailPosPaymentService
 
             $order = Order::create([
                 'shop_owner_id' => $shopOwnerId,
+                'origin_channel' => 'pos',
                 'customer_id' => (string) ($payload['customer_type'] ?? 'walk_in') === 'registered'
                     ? (int) ($payload['customer_id'] ?? 0)
                     : null,

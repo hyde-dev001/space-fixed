@@ -1286,7 +1286,7 @@ class OrderController extends Controller
                 'customer_id' => $order->customer_id,
                 'shop_owner_id' => $order->shop_owner_id,
                 'flow_type' => 'request_approval',
-                // Direct third-party returns always start with Staff review.
+                // The service determines whether this shop owner needs Staff review.
                 'status' => 'requested',
                 'shop_owner_status' => 'pending',
                 'finance_status' => 'pending',
@@ -1608,6 +1608,7 @@ class OrderController extends Controller
         }
 
         try {
+            $requiresStaffReview = $this->orderRefundService->isThirdPartyCustomerRefund($refundRequest, $order);
             $customerName = trim((string) ($user->name ?? ''));
             if ($customerName === '') {
                 $customerName = trim((string) (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')));
@@ -1619,10 +1620,10 @@ class OrderController extends Controller
                 'amount' => number_format((float) ($refundRequest->amount ?? 0), 2, '.', ''),
                 'customer_name' => $customerName,
                 'refund_id' => (int) ($refundRequest->id ?? 0),
-                'stage' => $order->resolvedDeliveryMethod() === 'third_party' ? 'staff_review' : 'submitted',
+                'stage' => $requiresStaffReview ? 'staff_review' : 'submitted',
             ];
 
-            if ($order->resolvedDeliveryMethod() === 'third_party') {
+            if ($requiresStaffReview) {
                 $this->notificationService->sendToErpRole(
                     'Staff',
                     $shopOwnerId,

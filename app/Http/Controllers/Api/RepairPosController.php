@@ -276,6 +276,7 @@ class RepairPosController extends Controller
             'brand' => null,
             'description' => $snapshotServiceName,
             'shop_owner_id' => $shopOwnerId,
+            'origin_channel' => 'pos',
             'user_id' => null,
             'images' => [],
             'total' => $resolvedBaseTotal,

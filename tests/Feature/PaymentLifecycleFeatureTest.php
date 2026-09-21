@@ -10,7 +10,9 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Enums\OrderStatus;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class PaymentLifecycleFeatureTest extends TestCase
@@ -152,6 +154,103 @@ class PaymentLifecycleFeatureTest extends TestCase
         $this->assertSame('pending', $order->payment_status);
         $this->assertNotNull($order->payment_failed_at);
         $this->assertSame('paymongo_payment_failed', $order->payment_failure_reason);
+    }
+
+    #[Test]
+    public function failed_checkout_session_is_recorded_and_hidden_from_shop_owner_orders(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $customer = User::factory()->create();
+        $order = $this->createOrder($shopOwner, $customer, [
+            'paymongo_link_id' => null,
+            'payment_link_created_at' => now(),
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/orders')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        Http::fake([
+            'https://api.paymongo.com/*' => Http::response([
+                'errors' => [[
+                    'detail' => 'The provider rejected this checkout session.',
+                ]],
+            ], 422),
+        ]);
+
+        $response = $this->actingAs($customer, 'user')
+            ->postJson("/api/orders/{$order->id}/retry-payment-session", [
+                'shipping_fee' => 100,
+                'subtotal_amount' => 1200,
+            ])
+            ->assertStatus(422)
+            ->assertJson([
+                'success' => false,
+                'message' => 'Unable to create payment session. Please try again.',
+            ]);
+
+        $this->assertStringNotContainsString(
+            'The provider rejected this checkout session.',
+            (string) $response->getContent(),
+        );
+
+        $order->refresh();
+        $this->assertNotNull($order->payment_failed_at);
+        $this->assertSame('paymongo_session_creation_failed', $order->payment_failure_reason);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/orders')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+
+        $staff = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'role' => 'STAFF',
+        ]);
+        $staff->givePermissionTo(Permission::findOrCreate('access-staff-job-orders', 'user'));
+
+        $this->actingAs($staff, 'user')
+            ->getJson('/api/staff/orders')
+            ->assertOk()
+            ->assertJsonCount(0);
+    }
+
+    #[Test]
+    public function successful_retry_clears_the_failure_and_restores_the_owner_order(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $customer = User::factory()->create();
+        $order = $this->createOrder($shopOwner, $customer, [
+            'payment_failed_at' => now()->subMinute(),
+            'payment_failure_reason' => 'paymongo_session_creation_failed',
+        ]);
+
+        Http::fake([
+            'https://api.paymongo.com/*' => Http::response([
+                'data' => [
+                    'id' => 'cs_order_retry_success',
+                    'attributes' => [
+                        'checkout_url' => 'https://checkout.test/order-retry-success',
+                    ],
+                ],
+            ]),
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->postJson("/api/orders/{$order->id}/retry-payment-session")
+            ->assertOk()
+            ->assertJsonPath('checkout_url', 'https://checkout.test/order-retry-success');
+
+        $order->refresh();
+        $this->assertNull($order->payment_failed_at);
+        $this->assertNull($order->payment_failure_reason);
+        $this->assertSame('cs_order_retry_success', $order->paymongo_link_id);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->getJson('/api/shop-owner/orders')
+            ->assertOk()
+            ->assertJsonCount(1, 'data');
     }
 
     #[Test]

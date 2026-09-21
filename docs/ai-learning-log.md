@@ -114,3 +114,9 @@
 ## 2026-09-19 - Customer proof delivery without GD
 
 - Customer proof URLs can appear valid while the file endpoint fails with 503 when PHP GD is disabled; serve the validated private image directly as a local-environment fallback while keeping approval, ownership, MIME, and no-store checks.
+
+## 2026-09-21 - Individual owner refund approval routing
+
+- Payment settlement notifications should resolve the persisted shop display name at the notification boundary so admin alerts identify the paying shop instead of using a generic message.
+
+- Delivery method alone must not route an individual shop owner’s online refund through Staff and Finance; centralize the third-party workflow classification and reuse it for approval, notifications, and API stage projections.

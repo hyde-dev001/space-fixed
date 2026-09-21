@@ -39,6 +39,7 @@ use App\Http\Controllers\superAdmin\SubscriptionInterventionController;
 use App\Http\Controllers\superAdmin\SubscriptionManagementController;
 use App\Http\Controllers\superAdmin\SystemMonitoringDashboardController;
 use App\Http\Controllers\superAdmin\MaintenanceController;
+use App\Http\Controllers\superAdmin\PlatformFeeAdminController;
 use App\Http\Controllers\superAdmin\UserInterventionController;
 use App\Http\Controllers\SuperAdminAuthController;
 use App\Http\Controllers\UserController;
@@ -1968,6 +1969,35 @@ Route::middleware([
         ->middleware(['privileged.capability:manage_platform_maintenance', 'privileged.recent'])
         ->name('maintenance.end');
 
+    Route::get('/platform-fees', [PlatformFeeAdminController::class, 'index'])
+        ->middleware('privileged.capability:manage_platform_fees')
+        ->name('platform-fees.index');
+    Route::post('/platform-fees/settings', [PlatformFeeAdminController::class, 'updateSettings'])
+        ->middleware(['privileged.capability:manage_platform_fees', 'privileged.recent'])
+        ->name('platform-fees.settings.update');
+    Route::post('/platform-fees/recommendations/{recommendation}/approve', [PlatformFeeAdminController::class, 'approveRecommendation'])
+        ->middleware(['privileged.capability:manage_platform_fees', 'privileged.recent'])
+        ->name('platform-fees.recommendations.approve');
+    Route::post('/platform-fees/recommendations/{recommendation}/reject', [PlatformFeeAdminController::class, 'rejectRecommendation'])
+        ->middleware(['privileged.capability:manage_platform_fees', 'privileged.recent'])
+        ->name('platform-fees.recommendations.reject');
+    Route::post('/platform-fees/shops/{shopOwner}/recalculate', [PlatformFeeAdminController::class, 'recalculate'])
+        ->whereNumber('shopOwner')
+        ->middleware(['privileged.capability:manage_platform_fees', 'privileged.recent'])
+        ->name('platform-fees.shops.recalculate');
+    Route::post('/platform-fees/shops/{shopOwner}/remind', [PlatformFeeAdminController::class, 'remind'])
+        ->whereNumber('shopOwner')
+        ->middleware(['privileged.capability:manage_platform_fees', 'privileged.recent'])
+        ->name('platform-fees.shops.remind');
+    Route::post('/platform-fees/shops/{shopOwner}/adjustments', [PlatformFeeAdminController::class, 'adjust'])
+        ->whereNumber('shopOwner')
+        ->middleware(['privileged.capability:manage_platform_fees', 'privileged.recent'])
+        ->name('platform-fees.shops.adjustments.store');
+    Route::post('/platform-fees/shops/{shopOwner}/limit', [PlatformFeeAdminController::class, 'updateShopLimit'])
+        ->whereNumber('shopOwner')
+        ->middleware(['privileged.capability:manage_platform_fees', 'privileged.recent'])
+        ->name('platform-fees.shops.limit.update');
+
     // Administrator management owns all privileged identity mutations.
     Route::get('/administrators', [AdministratorManagementController::class, 'index'])
         ->middleware('privileged.capability:manage_administrators')
@@ -2345,6 +2375,10 @@ Route::prefix('finance')->name('finance.')->middleware(['auth:user', 'role_or_pe
         return Inertia::render('ERP/Finance/Dashboard');
 
     })->name('dashboard');
+
+    Route::get('/platform-balance', function () {
+        return Inertia::render('ERP/Finance/PlatformBalance');
+    })->middleware('permission:access-finance-dashboard')->name('platform-balance');
 
     Route::get('/purchase-request-approval', function () {
         if (Auth::guard('user')->user()?->force_password_change) {

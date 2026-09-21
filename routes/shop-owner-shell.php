@@ -21,6 +21,12 @@ Route::prefix('shop-owner')
             ->defaults('canonical_home', true)
             ->name('home');
 
+        Route::middleware(['erp.audience', 'erp.actor'])->group(function (): void {
+            Route::get('/platform-balance', function (): \Inertia\Response {
+                return \Inertia\Inertia::render('ERP/Finance/PlatformBalance', ['ownerMode' => true]);
+            })->name('platform-balance');
+        });
+
         Route::middleware(['erp.audience', 'erp.actor', 'shop.module'])->group(function (): void {
             Route::get('/operate/retail', [WorkspaceController::class, 'module'])
                 ->defaults('module', 'retail')
@@ -31,8 +37,8 @@ Route::prefix('shop-owner')
             Route::get('/operate/customers', [WorkspaceController::class, 'module'])
                 ->defaults('module', 'crm')
                 ->name('operate.customers');
-            Route::get('/operate/payments', CanonicalOwnerPaymentsController::class)
-                ->name('operate.payments');
+        Route::get('/operate/payments', CanonicalOwnerPaymentsController::class)
+            ->name('operate.payments');
 
             Route::get('/oversee/finance', [WorkspaceController::class, 'module'])
                 ->defaults('module', 'finance')

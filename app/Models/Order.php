@@ -49,6 +49,7 @@ class Order extends Model
 
     protected $fillable = [
         'shop_owner_id',
+        'origin_channel',
         'customer_id',
         'order_number',
         'total_amount',
@@ -280,6 +281,13 @@ class Order extends Model
     public function refunds(): HasMany
     {
         return $this->hasMany(OrderRefund::class);
+    }
+
+    public function platformFeeCharge(): HasOne
+    {
+        return $this->hasOne(PlatformFeeCharge::class, 'source_id')
+            ->where('source_type', 'order')
+            ->where('source_origin', 'marketplace');
     }
 
     public function codCollection(): HasOne

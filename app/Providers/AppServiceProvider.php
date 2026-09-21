@@ -4,6 +4,14 @@ namespace App\Providers;
 
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Models\Order;
+use App\Models\OrderRefund;
+use App\Models\PosRefund;
+use App\Models\RepairRequest;
+use App\Observers\OrderPlatformFeeObserver;
+use App\Observers\OrderRefundPlatformFeeObserver;
+use App\Observers\PosRefundPlatformFeeObserver;
+use App\Observers\RepairRequestPlatformFeeObserver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Http\Request;
@@ -48,6 +56,11 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        Order::observe($this->app->make(OrderPlatformFeeObserver::class));
+        RepairRequest::observe($this->app->make(RepairRequestPlatformFeeObserver::class));
+        OrderRefund::observe($this->app->make(OrderRefundPlatformFeeObserver::class));
+        PosRefund::observe($this->app->make(PosRefundPlatformFeeObserver::class));
+
         VerifyEmail::createUrlUsing(static function (object $notifiable): string {
             $accountType = match (true) {
                 $notifiable instanceof User => 'user',

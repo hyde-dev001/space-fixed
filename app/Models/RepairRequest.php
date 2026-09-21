@@ -23,6 +23,7 @@ class RepairRequest extends Model
         'brand',
         'description',
         'shop_owner_id',
+        'origin_channel',
         'repair_package_id',
         'user_id',
         'assigned_repairer_id',

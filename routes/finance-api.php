@@ -29,6 +29,7 @@ use App\Http\Controllers\Api\PriceChangeRequestController;
 use App\Http\Controllers\Api\RepairServiceController;
 use App\Http\Controllers\Api\RefundApprovalController;
 use App\Http\Controllers\Api\Finance\CodRemittanceController;
+use App\Http\Controllers\Api\Finance\PlatformFeeController;
 
 /**
  * Finance Module Routes - Audit Logs (requires view-finance-audit-logs permission)
@@ -64,6 +65,12 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:manage
 
 Route::prefix('api/finance')->middleware(['web', 'auth:user', 'permission:access-finance-dashboard', 'shop.isolation'])->group(function () {
     Route::get('/dashboard', FinanceSummaryController::class)->name('finance.dashboard.summary');
+    Route::get('/platform-balance', [PlatformFeeController::class, 'index'])->name('finance.platform-balance.index');
+    Route::post('/platform-balance/reconcile', [PlatformFeeController::class, 'reconcile'])->name('finance.platform-balance.reconcile');
+    Route::post('/platform-balance/payment-requests', [PlatformFeeController::class, 'createPaymentRequest'])->name('finance.platform-balance.payment-requests.store');
+    Route::post('/platform-balance/payment-requests/{id}/execute', [PlatformFeeController::class, 'executePaymentRequest'])
+        ->whereNumber('id')
+        ->name('finance.platform-balance.payment-requests.execute');
 });
 
 /**

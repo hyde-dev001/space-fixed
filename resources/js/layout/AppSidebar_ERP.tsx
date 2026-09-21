@@ -272,6 +272,17 @@ const financeItems: NavItem[] = [
   {
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M3 6h18M3 12h18M3 18h18" />
+        <path d="M7 3v18M17 3v18" />
+      </svg>
+    ),
+    name: "Platform Balance",
+    route: "finance.platform-balance",
+    moduleKey: "finance",
+  },
+  {
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
         <polyline points="14 2 14 8 20 8"></polyline>
         <line x1="16" y1="13" x2="8" y2="13"></line>
@@ -1158,6 +1169,7 @@ const EmployeeSidebarERP: React.FC = () => {
     // Finance section routes
     "finance.index": "/finance",
     "finance.dashboard": "/finance/dashboard",
+    "finance.platform-balance": "/finance/platform-balance",
     "finance.cod-remittances": "/finance/cod-remittances",
     "finance.create-invoice": "/create-invoice",
     "erp.finance.audit-logs": "/erp/finance/audit-logs",
@@ -1514,6 +1526,12 @@ const EmployeeSidebarERP: React.FC = () => {
       // Dashboard - check simplified permission
       if (item.route === "finance.dashboard") {
         return permissions.includes('access-finance-dashboard');
+      }
+
+      if (item.route === "finance.platform-balance") {
+        return permissions.includes('access-finance-dashboard')
+          || normalizedRoles.includes('SHOP OWNER')
+          || normalizedRole === 'SHOP OWNER';
       }
       
       // Invoices - check simplified permission
