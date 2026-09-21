@@ -16,6 +16,7 @@ type RepairPackage = {
   id: number;
   name: string;
   description?: string | null;
+  image_url?: string | null;
   duration?: string | null;
   package_price: number;
   status: "active" | "inactive";
@@ -226,6 +227,17 @@ export default function RepairPackageManager({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<RepairPackage | null>(null);
   const [formState, setFormState] = useState<PackageFormState>(defaultFormState);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [removeExistingImage, setRemoveExistingImage] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview.startsWith("blob:") && typeof URL.revokeObjectURL === "function") {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  }, [imagePreview]);
 
   const loadData = async (archived = showArchived) => {
     try {
@@ -312,6 +324,9 @@ export default function RepairPackageManager({
   const resetAndCloseModal = () => {
     setFormState(defaultFormState);
     setSelectedPackage(null);
+    setSelectedImageFile(null);
+    setImagePreview("");
+    setRemoveExistingImage(false);
     setIsAddModalOpen(false);
     setIsEditModalOpen(false);
   };
@@ -319,6 +334,9 @@ export default function RepairPackageManager({
   const openAddModal = () => {
     setFormState(defaultFormState);
     setSelectedPackage(null);
+    setSelectedImageFile(null);
+    setImagePreview("");
+    setRemoveExistingImage(false);
     setIsAddModalOpen(true);
   };
 
@@ -334,6 +352,9 @@ export default function RepairPackageManager({
 
   const openEditModal = (pkg: RepairPackage) => {
     setSelectedPackage(pkg);
+    setSelectedImageFile(null);
+    setImagePreview(pkg.image_url || "");
+    setRemoveExistingImage(false);
     setFormState({
       name: pkg.name,
       description: pkg.description || "",
@@ -347,6 +368,42 @@ export default function RepairPackageManager({
       })),
     });
     setIsEditModalOpen(true);
+  };
+
+  const handlePackageImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+
+    if (!file) return;
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      event.target.value = "";
+      Swal.fire({
+        icon: "error",
+        title: "Invalid image",
+        text: "Choose a JPG, PNG, or WEBP image.",
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      event.target.value = "";
+      Swal.fire({
+        icon: "error",
+        title: "Image is too large",
+        text: "The package image must be 5 MB or smaller.",
+      });
+      return;
+    }
+
+    setSelectedImageFile(file);
+    setRemoveExistingImage(false);
+    setImagePreview(typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : "");
+  };
+
+  const handleRemovePackageImage = () => {
+    setSelectedImageFile(null);
+    setImagePreview("");
+    setRemoveExistingImage(true);
   };
 
   const toggleService = (serviceId: number) => {
@@ -441,6 +498,33 @@ export default function RepairPackageManager({
     return null;
   };
 
+  const buildPackageFormData = (method: "POST" | "PUT"): FormData => {
+    const payload = new FormData();
+    payload.append("_method", method);
+    payload.append("name", formState.name);
+    payload.append("description", formState.description);
+    payload.append("duration", buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit));
+    payload.append("package_price", formState.package_price);
+    payload.append("status", formState.status);
+
+    formState.service_ids.forEach((serviceId, index) => {
+      payload.append(`service_ids[${index}]`, String(serviceId));
+    });
+
+    formState.material_templates.forEach((line, index) => {
+      payload.append(`material_templates[${index}][inventory_item_id]`, String(line.inventory_item_id));
+      payload.append(`material_templates[${index}][default_quantity]`, String(Number(line.default_quantity)));
+    });
+
+    if (selectedImageFile) {
+      payload.append("image", selectedImageFile);
+    } else if (method === "PUT" && removeExistingImage) {
+      payload.append("remove_image", "1");
+    }
+
+    return payload;
+  };
+
   const submitCreate = async () => {
     const validationError = validateBeforeSubmit();
     if (validationError) {
@@ -450,22 +534,7 @@ export default function RepairPackageManager({
 
     setSubmitting(true);
     try {
-      const materialTemplatesPayload = formState.material_templates.map((line) => ({
-        inventory_item_id: Number(line.inventory_item_id),
-        default_quantity: Number(line.default_quantity),
-      }));
-
-      const payload = {
-        name: formState.name,
-        description: formState.description,
-        duration: buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit),
-        package_price: Number(formState.package_price),
-        status: formState.status,
-        service_ids: formState.service_ids,
-        material_templates: materialTemplatesPayload,
-      };
-
-      const response = await axios.post("/api/repair-packages", payload);
+      const response = await axios.post("/api/repair-packages", buildPackageFormData("POST"));
       if (response.data?.success) {
         await loadData(showArchived);
         resetAndCloseModal();
@@ -490,22 +559,10 @@ export default function RepairPackageManager({
 
     setSubmitting(true);
     try {
-      const materialTemplatesPayload = formState.material_templates.map((line) => ({
-        inventory_item_id: Number(line.inventory_item_id),
-        default_quantity: Number(line.default_quantity),
-      }));
-
-      const payload = {
-        name: formState.name,
-        description: formState.description,
-        duration: buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit),
-        package_price: Number(formState.package_price),
-        status: formState.status,
-        service_ids: formState.service_ids,
-        material_templates: materialTemplatesPayload,
-      };
-
-      const response = await axios.put(`/api/repair-packages/${selectedPackage.id}`, payload);
+      const response = await axios.post(
+        `/api/repair-packages/${selectedPackage.id}`,
+        buildPackageFormData("PUT"),
+      );
       if (response.data?.success) {
         await loadData(showArchived);
         resetAndCloseModal();
@@ -619,6 +676,55 @@ export default function RepairPackageManager({
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
                 placeholder="Describe what this package includes"
               />
+            </div>
+
+            <div>
+              <label htmlFor="package-image" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Package image (optional)
+              </label>
+              <div className="relative overflow-hidden rounded-xl border border-dashed border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60">
+                <input
+                  id="package-image"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handlePackageImageChange}
+                  className="sr-only"
+                />
+                {imagePreview ? (
+                  <div className="relative aspect-video min-h-40 bg-gray-900">
+                    <img src={imagePreview} alt="Selected package image preview" className="h-full w-full object-cover" />
+                    <div className="absolute inset-x-3 bottom-3 flex justify-end gap-2">
+                      <label
+                        htmlFor="package-image"
+                        className="cursor-pointer rounded-lg border border-white/70 bg-black/80 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-black"
+                      >
+                        Replace
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleRemovePackageImage}
+                        className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-semibold text-black transition-colors hover:bg-gray-100"
+                      >
+                        Remove image
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label
+                    htmlFor="package-image"
+                    className="flex min-h-40 cursor-pointer flex-col items-center justify-center px-5 py-8 text-center outline-none transition-colors hover:border-gray-900 hover:bg-white focus-within:ring-2 focus-within:ring-black dark:hover:bg-gray-900"
+                  >
+                    <svg aria-hidden="true" className="mb-3 h-10 w-10 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                      <rect x="3" y="4" width="18" height="16" rx="2" />
+                      <circle cx="8.5" cy="9" r="1.5" />
+                      <path d="m21 15-4.5-4.5L7 20" />
+                    </svg>
+                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Drop image here or browse</span>
+                    <span className="mt-1 text-xs text-gray-500 dark:text-gray-400">Use one clear photo that represents this package.</span>
+                  </label>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">JPG, PNG, or WEBP / Maximum 5 MB / Recommended ratio 16:9</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

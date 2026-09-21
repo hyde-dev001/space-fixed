@@ -4,11 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
+  post: vi.fn(),
   fire: vi.fn(),
 }));
 
 vi.mock("axios", () => ({
-  default: { get: mocks.get },
+  default: { get: mocks.get, post: mocks.post },
 }));
 
 vi.mock("sweetalert2", () => ({
@@ -51,7 +52,12 @@ beforeEach(() => {
     }
 
     if (url === "/api/repairer/materials") {
-      return { data: { success: true, data: [] } };
+      return {
+        data: {
+          success: true,
+          data: [{ id: 9, name: "Cleaning solution", available_quantity: 20 }],
+        },
+      };
     }
 
     if (url === "/api/repair-packages/analytics") {
@@ -59,6 +65,10 @@ beforeEach(() => {
     }
 
     throw new Error(`Unexpected GET ${url}`);
+  });
+
+  mocks.post.mockResolvedValue({
+    data: { success: true, data: [] },
   });
 });
 
@@ -96,5 +106,35 @@ describe("RepairPackageManager service selection", () => {
     });
     expect(serviceCard).not.toHaveClass("bg-blue-50");
     expect(firstService).toHaveClass("text-gray-900");
+  });
+
+  it("submits the optional package image as multipart form data", async () => {
+    render(<RepairPackageManager />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Add Package/i }));
+    fireEvent.change(screen.getByPlaceholderText("e.g. Full Restore Bundle"), {
+      target: { value: "Image package" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("e.g. 948.00"), {
+      target: { value: "900" },
+    });
+    fireEvent.change(screen.getByTitle("Minimum duration"), { target: { value: "2" } });
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getAllByRole("checkbox")[1]);
+    fireEvent.click(screen.getByRole("button", { name: /Add Material/i }));
+    fireEvent.change(screen.getByTitle("Select inventory material"), { target: { value: "9" } });
+
+    const image = new File(["package image"], "package.jpg", { type: "image/jpeg" });
+    fireEvent.change(screen.getByLabelText(/Package image/i), { target: { files: [image] } });
+    fireEvent.click(screen.getByRole("button", { name: "Create Package" }));
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/repair-packages",
+      expect.any(FormData),
+    ));
+
+    const payload = mocks.post.mock.calls[0][1] as FormData;
+    expect(payload.get("image")).toBe(image);
+    expect(payload.get("name")).toBe("Image package");
   });
 });

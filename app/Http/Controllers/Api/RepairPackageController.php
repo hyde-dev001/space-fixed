@@ -13,8 +13,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class RepairPackageController extends Controller
 {
@@ -71,6 +73,7 @@ class RepairPackageController extends Controller
                 'shop_owner_id' => $package->shop_owner_id,
                 'name' => $package->name,
                 'description' => $package->description,
+                'image_url' => $package->image_url,
                 'duration' => $package->duration,
                 'package_price' => $effectivePrice,
                 'effective_package_price' => $effectivePrice,
@@ -148,6 +151,7 @@ class RepairPackageController extends Controller
                 'shop_owner_id' => $package->shop_owner_id,
                 'name' => $package->name,
                 'description' => $package->description,
+                'image_url' => $package->image_url,
                 'duration' => $package->duration,
                 'package_price' => $effectivePrice,
                 'effective_package_price' => $effectivePrice,
@@ -360,6 +364,7 @@ class RepairPackageController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
             'duration' => 'nullable|string|max:255',
             'package_price' => 'required|numeric|min:0.01',
             'status' => 'nullable|in:active,inactive',
@@ -387,6 +392,7 @@ class RepairPackageController extends Controller
             'shop_owner_id' => $shopOwnerId,
             'name' => $request->name,
             'description' => $request->description,
+            'image_path' => null,
             'duration' => $request->duration,
             'package_price' => $request->package_price,
             'status' => $request->status ?? 'active',
@@ -399,13 +405,20 @@ class RepairPackageController extends Controller
         try {
             $package->syncIncludedServices((array) $request->service_ids);
             $this->syncMaterialTemplates($package, (array) $request->input('material_templates', []));
+            $this->applyPackageImageChange($package, $request, (int) $shopOwnerId);
         } catch (ValidationException $e) {
+            $this->deleteStoredPackageImage($package->image_path);
             $package->delete();
 
             return response()->json([
                 'success' => false,
                 'errors' => $e->errors(),
             ], 422);
+        } catch (Throwable $e) {
+            $this->deleteStoredPackageImage($package->image_path);
+            $package->delete();
+
+            throw $e;
         }
 
         return response()->json([
@@ -561,6 +574,8 @@ class RepairPackageController extends Controller
         $rules = [
             'name' => 'sometimes|required|string|max:255',
             'description' => 'nullable|string',
+            'image' => ['nullable', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            'remove_image' => ['sometimes', 'boolean'],
             'duration' => 'nullable|string|max:255',
             'status' => 'sometimes|in:active,inactive',
             'starts_at' => 'nullable|date',
@@ -632,6 +647,8 @@ class RepairPackageController extends Controller
                 ], 422);
             }
         }
+
+        $this->applyPackageImageChange($package, $request, (int) $package->shop_owner_id);
 
         return response()->json([
             'success' => true,
@@ -853,6 +870,48 @@ class RepairPackageController extends Controller
                 'created_by' => $createdBy,
             ]));
         });
+    }
+
+    private function applyPackageImageChange(
+        RepairPackage $package,
+        Request $request,
+        int $shopOwnerId,
+    ): void {
+        if (!$request->hasFile('image') && !$request->boolean('remove_image')) {
+            return;
+        }
+
+        $disk = Storage::disk('public');
+        $oldPath = $package->image_path;
+
+        if ($request->hasFile('image')) {
+            $newPath = $request->file('image')->store("repair-packages/{$shopOwnerId}", 'public');
+
+            try {
+                $package->forceFill(['image_path' => $newPath])->save();
+            } catch (Throwable $e) {
+                $disk->delete($newPath);
+                throw $e;
+            }
+
+            if ($oldPath && $oldPath !== $newPath) {
+                $disk->delete($oldPath);
+            }
+
+            return;
+        }
+
+        if ($oldPath) {
+            $package->forceFill(['image_path' => null])->save();
+            $disk->delete($oldPath);
+        }
+    }
+
+    private function deleteStoredPackageImage(?string $path): void
+    {
+        if ($path) {
+            Storage::disk('public')->delete($path);
+        }
     }
 
     private function materialTemplateItemSelectList(): string
