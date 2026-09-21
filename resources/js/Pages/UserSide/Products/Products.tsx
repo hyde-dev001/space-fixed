@@ -1061,19 +1061,6 @@ const Products: React.FC<Props> = () => {
                     <button
                       type="button"
                       role="menuitem"
-                      data-testid="color-filter-menu-item"
-                      aria-haspopup="dialog"
-                      onClick={openColorFilter}
-                      className="group w-full px-5 py-2.5 text-left text-sm"
-                    >
-                      <span className={`relative inline-block ${selectedColors.length > 0 ? 'text-black font-semibold' : 'text-black/75'}`}>
-                        Color{selectedColors.length > 0 ? ` (${selectedColors.length})` : ''}
-                        <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${selectedColors.length > 0 ? 'w-full' : 'w-0 group-hover:w-full'}`} />
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      role="menuitem"
                       data-testid="price-filter-menu-item"
                       aria-haspopup="dialog"
                       onClick={openPriceFilter}
@@ -1082,6 +1069,19 @@ const Products: React.FC<Props> = () => {
                       <span className={`relative inline-block ${priceRangeLabel ? 'text-black font-semibold' : 'text-black/75'}`}>
                         Price range{priceRangeLabel ? ` (${priceRangeLabel})` : ''}
                         <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${priceRangeLabel ? 'w-full' : 'w-0 group-hover:w-full'}`} />
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      data-testid="color-filter-menu-item"
+                      aria-haspopup="dialog"
+                      onClick={openColorFilter}
+                      className="group w-full px-5 py-2.5 text-left text-sm"
+                    >
+                      <span className={`relative inline-block ${selectedColors.length > 0 ? 'text-black font-semibold' : 'text-black/75'}`}>
+                        Color{selectedColors.length > 0 ? ` (${selectedColors.length})` : ''}
+                        <span className={`absolute bottom-0 left-0 h-[1.5px] bg-black transition-all duration-300 ${selectedColors.length > 0 ? 'w-full' : 'w-0 group-hover:w-full'}`} />
                       </span>
                     </button>
                   </div>
