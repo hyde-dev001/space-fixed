@@ -197,6 +197,7 @@ class UserController extends Controller
             $validated = $request->validate([
                 'first_name' => 'required|string|max:255|min:2',
                 'last_name' => 'required|string|max:255|min:2',
+                'suffix' => 'nullable|string|max:50',
                 'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email', new NotDisposableEmail],
                 'phone' => [
                     'required',
@@ -255,6 +256,7 @@ class UserController extends Controller
                 'first_name.min' => 'First name must be at least 2 characters.',
                 'last_name.required' => 'Please enter your last name.',
                 'last_name.min' => 'Last name must be at least 2 characters.',
+                'suffix.max' => 'Suffix must be 50 characters or fewer.',
                 'email.required' => 'Please enter your email address.',
                 'email.email' => 'Please enter a valid email address (example: name@email.com).',
                 'email.unique' => 'This email is already registered. Try another email or sign in instead.',
@@ -367,7 +369,8 @@ class UserController extends Controller
                 $user = User::create([
                     'first_name' => $validated['first_name'],
                     'last_name' => $validated['last_name'],
-                    'name' => $validated['first_name'].' '.$validated['last_name'],
+                    'suffix' => $validated['suffix'] ?? null,
+                    'name' => trim($validated['first_name'].' '.$validated['last_name'].' '.($validated['suffix'] ?? '')),
                     'email' => $validated['email'],
                     'email_verified_at' => null,
                     'phone' => $validated['phone'],

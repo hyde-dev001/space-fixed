@@ -426,6 +426,29 @@ describe('customer registration document screening UI', () => {
     expect(metadata.sides).not.toHaveProperty('back');
   });
 
+  it('includes the optional suffix in the registration payload', async () => {
+    mocks.readRegistrationId.mockResolvedValue({
+      text: 'UMID SSS NAME JUAN DELA CRUZ DATE OF BIRTH 01/02/1990',
+      confidence: 0.92,
+      qrDetected: false,
+    });
+
+    render(<Register />);
+    fireEvent.change(screen.getByLabelText('Suffix (Optional)'), { target: { value: 'Jr.' } });
+    await goToIdStep();
+    fireEvent.change(screen.getByLabelText('ID Type'), { target: { value: 'umid' } });
+    await selectFile('ID file', 'umid-front.png');
+    await waitFor(() => expect(screen.getByLabelText('Front image ready')).toBeInTheDocument());
+    await acceptTerms();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+
+    await waitFor(() => expect(mocks.routerPost).toHaveBeenCalledTimes(1));
+    const formData = mocks.routerPost.mock.calls[0][1] as FormData;
+
+    expect(formData.get('suffix')).toBe('Jr.');
+  });
+
   it('uses one front-and-back flow for a digital National ID and submits both screens', async () => {
     mocks.readRegistrationId.mockImplementation(async (file: File) => file.name.includes('back')
       ? {
