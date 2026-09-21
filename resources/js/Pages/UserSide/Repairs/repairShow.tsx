@@ -40,6 +40,7 @@ interface RepairPackage {
   id: number;
   name: string;
   description?: string | null;
+  image_url?: string | null;
   duration?: string | null;
   package_price: number;
   service_count: number;
@@ -898,13 +899,37 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         key={pkg.id}
                         type="button"
                         onClick={() => handlePackageToggle(pkg.id)}
-                        className={`repair-package-card w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
+                        className={`repair-package-card w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 min-h-62.5 sm:min-h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
                           isSelected
                             ? 'repair-package-card--selected border-black shadow-md dark:border-[#7da2ff] dark:bg-[#1b2f50]'
                             : 'border-gray-200 hover:border-gray-300 hover:shadow-lg dark:border-slate-700 dark:hover:border-slate-500'
                         }`}
                       >
                         <div className="flex flex-col h-full">
+                          <div className="relative -mx-5 -mt-5 xl:-mx-6 xl:-mt-6 mb-5 aspect-video overflow-hidden rounded-t-2xl bg-gray-100">
+                            {pkg.image_url ? (
+                              <img
+                                src={pkg.image_url}
+                                alt={`${pkg.name} package image`}
+                                loading="lazy"
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div
+                                role="img"
+                                aria-label="Package image unavailable"
+                                className="flex h-full w-full flex-col items-center justify-center bg-gray-100 text-gray-500"
+                              >
+                                <svg aria-hidden="true" className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                                  <circle cx="8.5" cy="9" r="1.5" />
+                                  <path d="m21 15-4.5-4.5L7 20" />
+                                </svg>
+                                <span className="mt-2 text-xs font-medium">No image yet</span>
+                              </div>
+                            )}
+                          </div>
+
                           <div className="flex items-start justify-between gap-2 xl:gap-3 mb-3">
                             <div className="flex-1 min-w-0">
                               <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium inline-block mb-2">

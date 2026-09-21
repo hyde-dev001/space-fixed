@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class RepairPackage extends Model
@@ -15,6 +16,7 @@ class RepairPackage extends Model
         'shop_owner_id',
         'name',
         'description',
+        'image_path',
         'duration',
         'package_price',
         'old_package_price',
@@ -44,6 +46,17 @@ class RepairPackage extends Model
         'finance_reviewed_at' => 'datetime',
         'owner_reviewed_at' => 'datetime',
     ];
+
+    protected $hidden = ['image_path'];
+
+    protected $appends = ['image_url'];
+
+    public function getImageUrlAttribute(): ?string
+    {
+        return $this->image_path
+            ? Storage::disk('public')->url($this->image_path)
+            : null;
+    }
 
     public function shopOwner()
     {

@@ -11,6 +11,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -182,6 +183,83 @@ class RepairPackageApiTest extends TestCase
             'name' => 'Individual Restore Bundle',
             'duration' => '2 to 3 hours',
         ]);
+    }
+
+    public function test_repair_package_image_is_scoped_and_exposed_as_a_public_url(): void
+    {
+        Storage::fake('public');
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+        $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean']);
+        $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue']);
+        $material = $this->createRepairMaterial($shopOwner);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')->post('/api/repair-packages', [
+            'name' => 'Image Package',
+            'description' => 'Package with a cover image',
+            'package_price' => 900,
+            'duration' => '2 to 3 hours',
+            'status' => 'active',
+            'service_ids' => [$s1->id, $s2->id],
+            'material_templates' => [[
+                'inventory_item_id' => $material->id,
+                'default_quantity' => 1,
+            ]],
+            'image' => UploadedFile::fake()->create('restore-package.jpg', 100, 'image/jpeg'),
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonMissingPath('data.image_path');
+
+        $package = RepairPackage::query()->where('name', 'Image Package')->firstOrFail();
+        $this->assertStringStartsWith("repair-packages/{$shopOwner->id}/", $package->image_path);
+        Storage::disk('public')->assertExists($package->image_path);
+        $response->assertJsonPath('data.image_url', Storage::disk('public')->url($package->image_path));
+    }
+
+    public function test_repair_package_image_can_be_replaced_and_removed_by_the_same_shop(): void
+    {
+        Storage::fake('public');
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
+        $s1 = $this->createService($shopOwner, ['name' => 'Deep Clean']);
+        $s2 = $this->createService($shopOwner, ['name' => 'Sole Reglue']);
+        $material = $this->createRepairMaterial($shopOwner);
+        $oldPath = UploadedFile::fake()->create('old-package.jpg', 100, 'image/jpeg')->store("repair-packages/{$shopOwner->id}", 'public');
+        $package = RepairPackage::create([
+            'shop_owner_id' => $shopOwner->id,
+            'name' => 'Editable Package',
+            'package_price' => 900,
+            'status' => 'active',
+            'image_path' => $oldPath,
+        ]);
+        $package->syncIncludedServices([$s1->id, $s2->id]);
+
+        $replaceResponse = $this->actingAs($shopOwner, 'shop_owner')->post("/api/repair-packages/{$package->id}", [
+            '_method' => 'PUT',
+            'material_templates' => [['inventory_item_id' => $material->id, 'default_quantity' => 1]],
+            'image' => UploadedFile::fake()->create('new-package.webp', 100, 'image/webp'),
+        ]);
+
+        $replaceResponse->assertOk()->assertJsonMissingPath('data.image_path');
+        $replacementPath = $package->fresh()->image_path;
+        $this->assertNotSame($oldPath, $replacementPath);
+        Storage::disk('public')->assertMissing($oldPath);
+        Storage::disk('public')->assertExists($replacementPath);
+
+        $removeResponse = $this->actingAs($shopOwner, 'shop_owner')->post("/api/repair-packages/{$package->id}", [
+            '_method' => 'PUT',
+            'material_templates' => [['inventory_item_id' => $material->id, 'default_quantity' => 1]],
+            'remove_image' => '1',
+        ]);
+
+        $removeResponse->assertOk()->assertJsonPath('data.image_url', null);
+        $this->assertNull($package->fresh()->image_path);
+        Storage::disk('public')->assertMissing($replacementPath);
     }
 
     public function test_individual_repair_shop_owner_can_update_package_price_without_changing_booking_snapshot(): void
