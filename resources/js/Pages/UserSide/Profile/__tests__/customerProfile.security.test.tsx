@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -49,6 +49,7 @@ describe("customer profile security card", () => {
           id: 1,
           first_name: "Test",
           last_name: "Customer",
+          suffix: "Jr.",
           name: "Test Customer",
           email: "customer@example.com",
           phone: null,
@@ -60,6 +61,19 @@ describe("customer profile security card", () => {
             id: 1,
             shop_owner_id: null,
           },
+        },
+        identity_verification: {
+          status: "pending_review",
+          current: {
+            id: 1,
+            document_type: "student_id",
+            screening_status: "manual_review_required",
+            review_status: "pending",
+            front_url: null,
+            back_url: null,
+          },
+          can_resubmit: false,
+          history: [],
         },
         security: {
           totp_enabled: false,
@@ -84,5 +98,28 @@ describe("customer profile security card", () => {
     expect(screen.getByRole("button", { name: "Enable Two-Factor Authentication" })).toBeInTheDocument();
     expect(screen.queryByText("Active Sessions")).not.toBeInTheDocument();
     expect(screen.queryByText("Log Out Other Sessions")).not.toBeInTheDocument();
+  });
+
+  it("renders the suffix returned by the customer profile", () => {
+    render(<CustomerProfile />);
+
+    expect(screen.getAllByText("Suffix").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Jr.").length).toBeGreaterThan(0);
+  });
+
+  it("keeps Change Password inside each Personal Information section", () => {
+    render(<CustomerProfile />);
+
+    screen.getAllByTestId("personal-information-section").forEach((section) => {
+      expect(within(section).getByText("Change Password")).toBeInTheDocument();
+    });
+  });
+
+  it("uses the neutral status background for Pending Review", () => {
+    render(<CustomerProfile />);
+
+    screen.getAllByText("Pending Review").forEach((badge) => {
+      expect(badge).toHaveClass("bg-gray-100");
+    });
   });
 });

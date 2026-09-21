@@ -320,6 +320,35 @@ final class IdentityVerificationScreeningTest extends TestCase
                 ->where('identity_verification.history.0.id', $verification->id));
     }
 
+    public function test_customer_profile_exposes_and_updates_suffix(): void
+    {
+        $user = $this->customer();
+        $user->forceFill([
+            'email_verified_at' => now(),
+            'suffix' => 'Jr.',
+        ])->save();
+
+        $this->actingAs($user, 'user')
+            ->get(route('customer-profile'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('UserSide/Profile/customerProfile', false)
+                ->where('user.suffix', 'Jr.'));
+
+        $this->actingAs($user, 'user')
+            ->post(route('customer-profile.update'), [
+                'first_name' => $user->first_name,
+                'last_name' => $user->last_name,
+                'suffix' => 'III',
+                'phone' => $user->phone,
+                'address' => $user->address,
+            ])
+            ->assertRedirect();
+
+        $updatedUser = $user->fresh();
+        $this->assertSame('III', $updatedUser?->suffix);
+        $this->assertSame($user->first_name.' '.$user->last_name.' III', $updatedUser?->name);
+    }
+
     public function test_customer_can_view_only_their_own_identity_evidence(): void
     {
         Storage::fake('local');
