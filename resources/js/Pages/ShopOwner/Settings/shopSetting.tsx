@@ -334,9 +334,11 @@ const ShopSetting: React.FC = () => {
 	const isIndividual = normalizedRegistrationType === 'individual'
 		|| normalizedRegistrationType.startsWith('individual_')
 		|| normalizedRegistrationType.endsWith('_individual');
+	const premiumIsEligible = Boolean(shop_settings.premium?.eligible);
+	const initialSettingsSection = normalizeInitialSection(initialSection);
 	const LAST_SHOP_OWNER_PAGE_KEY = 'shop_owner_last_sidebar_page';
 	const [activeSettingsSection, setActiveSettingsSection] = useState<SettingsSectionKey>(
-		() => normalizeInitialSection(initialSection),
+		() => initialSettingsSection === 'subscription' && !premiumIsEligible ? 'profile' : initialSettingsSection,
 	);
 	const settingsSectionRefs = useRef<Partial<Record<SettingsSectionKey, HTMLElement | null>>>({});
 	const [saveSuccess, setSaveSuccess] = useState(false);
@@ -653,7 +655,6 @@ const ShopSetting: React.FC = () => {
 			: 'Retail Shop';
 	const premiumStatus = shop_settings.premium?.status;
 	const premiumIsActive = Boolean(shop_settings.premium?.has_active);
-	const premiumIsEligible = Boolean(shop_settings.premium?.eligible);
 	const autoRenewalToggleDisabled = savingAutoRenewal || !premiumIsActive;
 	const formatPremiumDate = (value: string | null) => {
 		if (!value) return null;
@@ -1772,7 +1773,7 @@ const ShopSetting: React.FC = () => {
 							<p className="mt-1 text-sm font-medium text-gray-900">Manage your shop workspace</p>
 						</div>
 						<div className="flex flex-wrap gap-1 xl:flex-col xl:flex-nowrap xl:items-stretch xl:gap-0.5">
-							{SETTINGS_SECTION_OPTIONS.map((section) => (
+							{SETTINGS_SECTION_OPTIONS.filter((section) => section.key !== 'subscription' || premiumIsEligible).map((section) => (
 								<a
 									key={section.key}
 									href={`#settings-section-${section.key}`}
@@ -1848,6 +1849,7 @@ const ShopSetting: React.FC = () => {
 								</div>
 							</div>
 
+					{premiumIsEligible && (
 					<div
 						id="settings-section-subscription"
 						ref={setSettingsSectionRef('subscription')}
@@ -1930,6 +1932,7 @@ const ShopSetting: React.FC = () => {
 							)}
 						</div>
 					</div>
+					)}
 
 					<div
 						id="settings-section-modules-team"

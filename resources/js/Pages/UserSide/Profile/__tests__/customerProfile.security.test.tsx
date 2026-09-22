@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -83,10 +83,14 @@ describe("customer profile security card", () => {
     });
   });
 
-  it("shows Change Password even when personal info is not in edit mode", () => {
+  it("shows Change Password only after entering personal info edit mode", () => {
     render(<CustomerProfile />);
 
-    expect(screen.getAllByText(/change password/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Change Password")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+
+    expect(screen.getAllByText("Change Password").length).toBeGreaterThan(0);
     expect(screen.getAllByText("At least 12 characters").length).toBeGreaterThan(0);
     expect(screen.getAllByText("One special character").length).toBeGreaterThan(0);
   });
@@ -109,6 +113,7 @@ describe("customer profile security card", () => {
 
   it("keeps Change Password inside each Personal Information section", () => {
     render(<CustomerProfile />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
 
     screen.getAllByTestId("personal-information-section").forEach((section) => {
       expect(within(section).getByText("Change Password")).toBeInTheDocument();
