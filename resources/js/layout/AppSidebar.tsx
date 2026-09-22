@@ -51,7 +51,7 @@ const AppSidebar: React.FC = () => {
     isHovered,
     setIsHovered,
     sidebarScrollTop,
-    collapsedSections,
+    expandedSections,
     toggleSidebarSection,
   } = useSidebar();
   const sidebarScrollRef = useRef<HTMLDivElement>(null);
@@ -316,11 +316,11 @@ const AppSidebar: React.FC = () => {
     return (
       <div className="space-y-6">
         {sections.map((section) => {
-          const isOpen = !collapsedSections.has(section.label);
+          const isOpen = expandedSections.has(section.label);
           const sectionId = `super-admin-section-${section.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
           return (
-            <div key={section.label} className="space-y-3">
+            <div key={section.label}>
               {showSectionLabels ? (
                 <>
                   <button
@@ -328,19 +328,21 @@ const AppSidebar: React.FC = () => {
                     aria-expanded={isOpen}
                     aria-controls={sectionId}
                     onClick={() => toggleSidebarSection(section.label)}
-                    className="flex min-h-11 w-full items-center justify-between rounded px-2 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 transition-colors duration-200 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 dark:text-gray-500 dark:hover:text-gray-300 dark:focus-visible:ring-gray-500"
+                    className="flex min-h-9 w-full items-center justify-between rounded-lg px-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 transition-colors duration-200 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:hover:bg-gray-800 dark:focus-visible:ring-gray-300"
                   >
                     <span>{section.label}</span>
                     <ChevronDownIcon
                       className={[
-                        "h-4 w-4 transition-transform duration-200",
+                        "h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200",
                         isOpen ? "rotate-180" : "",
                       ].join(" ")}
                     />
                   </button>
-                  <div id={sectionId} hidden={!isOpen}>
-                    {isOpen ? renderMenuItems(section.items) : null}
-                  </div>
+                  {isOpen && (
+                    <div id={sectionId}>
+                      {renderMenuItems(section.items)}
+                    </div>
+                  )}
                 </>
               ) : renderMenuItems(section.items)}
             </div>
