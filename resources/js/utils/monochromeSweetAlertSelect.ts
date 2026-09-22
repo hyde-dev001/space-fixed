@@ -71,7 +71,7 @@ export const enhanceSweetAlertSelect = (select: HTMLSelectElement) => {
   const listbox = document.createElement('div');
   listbox.id = `${select.id || 'monochrome-select'}-listbox`;
   listbox.setAttribute('role', 'listbox');
-  listbox.className = 'absolute z-50 mt-1 max-h-60 w-full overflow-auto rounded-lg border border-gray-300 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900';
+  listbox.className = 'absolute z-50 mt-1 max-h-60 w-full overflow-auto no-scrollbar rounded-lg border border-gray-300 bg-white p-1 shadow-lg dark:border-gray-700 dark:bg-gray-900';
   listbox.hidden = true;
   trigger.setAttribute('aria-controls', listbox.id);
 
