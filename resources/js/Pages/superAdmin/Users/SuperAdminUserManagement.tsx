@@ -66,6 +66,7 @@ interface User {
   id: number;
   firstName: string;
   lastName: string;
+  suffix?: string | null;
   name: string;
   email: string;
   address: string;
@@ -1245,6 +1246,12 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                            Suffix
+                          </label>
+                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.suffix || 'Not provided'}</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
                             Email Address
                           </label>
                           <p className="text-base text-gray-900 dark:text-white">{selectedUser.email}</p>
@@ -1484,28 +1491,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                               </div>
                             )}
                           </div>
-                          <div className="flex flex-wrap gap-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-                            <Button
-                              onClick={() => confirmIdentityReview(selectedUser, 'approve')}
-                              disabled={isProcessingId === selectedUser.id
-                                || expandedDocuments.size === 0
-                                || !['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
-                                || !['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus)}
-                              className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Approve Review
-                            </Button>
-                            <Button
-                              onClick={() => confirmIdentityReview(selectedUser, 'reject')}
-                              disabled={isProcessingId === selectedUser.id
-                                || expandedDocuments.size === 0
-                                || !['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
-                                || !['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus)}
-                              className="bg-red-600 hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                              Reject Review
-                            </Button>
-                          </div>
                           <p className="text-xs text-gray-600 dark:text-gray-300">
                             Automated screening indicates document consistency only. Human review decisions do not by themselves establish government authenticity.
                           </p>
@@ -1515,7 +1500,31 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
 
                   </div>
 
-                  <div className="mt-10 flex justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <div className="mt-10 flex flex-wrap justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    {selectedUser.identityVerification && (
+                      <>
+                        <Button
+                          onClick={() => confirmIdentityReview(selectedUser, 'approve')}
+                          disabled={isProcessingId === selectedUser.id
+                            || expandedDocuments.size === 0
+                            || !['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
+                            || !['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Approve Review
+                        </Button>
+                        <Button
+                          onClick={() => confirmIdentityReview(selectedUser, 'reject')}
+                          disabled={isProcessingId === selectedUser.id
+                            || expandedDocuments.size === 0
+                            || !['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
+                            || !['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus)}
+                          className="bg-red-600 hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Reject Review
+                        </Button>
+                      </>
+                    )}
                     <Button
                       variant="outline"
                       onClick={() => {

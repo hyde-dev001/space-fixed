@@ -89,6 +89,39 @@ describe('SuperAdminUserManagement lifecycle controls', () => {
     expect(screen.getByRole('dialog')).toHaveClass('overflow-y-auto', 'no-scrollbar');
   });
 
+  it('displays the customer suffix in registration details', () => {
+    render(<SuperAdminUserManagement users={[user({ suffix: 'Jr.' })]} />);
+
+    fireEvent.click(screen.getByTitle('View Registration Details'));
+
+    expect(screen.getByText('Suffix')).toBeInTheDocument();
+    expect(screen.getByText('Jr.')).toBeInTheDocument();
+  });
+
+  it('keeps identity decisions beside the close button in the modal footer', () => {
+    render(
+      <SuperAdminUserManagement
+        users={[user({
+          validIdUrl: '/ids/front.jpg',
+          identityVerification: {
+            id: 7,
+            documentType: 'student_id',
+            screeningStatus: 'manual_review_required',
+            reviewStatus: 'pending',
+          },
+        })]}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('View Registration Details'));
+
+    const closeButton = screen.getByRole('button', { name: 'Close' });
+    const footer = closeButton.parentElement;
+
+    expect(footer).toContainElement(screen.getByRole('button', { name: 'Approve Review' }));
+    expect(footer).toContainElement(screen.getByRole('button', { name: 'Reject Review' }));
+  });
+
   it('keeps identity decisions disabled until a submitted document is viewed', () => {
     render(
       <SuperAdminUserManagement
