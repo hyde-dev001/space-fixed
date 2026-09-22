@@ -1,21 +1,23 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { Link, usePage } from "@inertiajs/react";
-import { ChevronDown } from "lucide-react";
-
 import {
-  AlertIcon,
-  CurrencyDollarIcon,
-  DocsIcon,
-  GroupIcon,
-  GridIcon,
-  HorizontaLDots,
-  LockIcon,
-  PieChartIcon,
-  ShootingStarIcon,
-  TaskIcon,
-  TimeIcon,
-  UserIcon,
-} from "../icons";
+  ArrowUpCircle,
+  BarChart3,
+  ChevronDown,
+  CircleDollarSign,
+  ClipboardCheck,
+  CreditCard,
+  FileText,
+  LayoutDashboard,
+  MessageSquareWarning,
+  ScrollText,
+  ShieldCheck,
+  Store,
+  Users,
+  Wrench,
+} from "lucide-react";
+
+import { HorizontaLDots, ShootingStarIcon } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 
 type NavItem = {
@@ -118,19 +120,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "OVERVIEW",
       name: "Dashboard",
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="1" />
-          <circle cx="19" cy="12" r="1" />
-          <circle cx="5" cy="12" r="1" />
-          <circle cx="12" cy="5" r="1" />
-          <circle cx="12" cy="19" r="1" />
-          <circle cx="17.66" cy="6.34" r="1" />
-          <circle cx="6.34" cy="17.66" r="1" />
-          <circle cx="17.66" cy="17.66" r="1" />
-          <circle cx="6.34" cy="6.34" r="1" />
-        </svg>
-      ),
+      icon: <LayoutDashboard className="h-5 w-5" />,
       route: "admin.system-monitoring",
       capability: "view_monitoring",
       pageKey: "dashboard",
@@ -138,7 +128,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "PEOPLE & ACCESS",
       name: "Admin Management",
-      icon: <GroupIcon className="w-5 h-5" />,
+      icon: <ShieldCheck className="h-5 w-5" />,
       route: "admin.administrators.index",
       capability: "manage_administrators",
       pageKey: "admin_management",
@@ -146,7 +136,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "PEOPLE & ACCESS",
       name: "User Management",
-      icon: <UserIcon className="w-5 h-5" />,
+      icon: <Users className="h-5 w-5" />,
       route: "admin.users.index",
       capability: "intervene_accounts",
       pageKey: "user_management",
@@ -154,7 +144,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "SHOP OPERATIONS",
       name: "Registered Shops",
-      icon: <GridIcon className="w-5 h-5" />,
+      icon: <Store className="h-5 w-5" />,
       route: "admin.shops.index",
       capability: "intervene_accounts",
       pageKey: "registered_shops",
@@ -162,7 +152,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "SHOP OWNER APPROVALS",
       name: "Shop Management",
-      icon: <GroupIcon className="w-5 h-5" />,
+      icon: <ClipboardCheck className="h-5 w-5" />,
       route: "admin.registrations.index",
       capability: "review_registrations",
       pageKey: "shop_management",
@@ -170,7 +160,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "SHOP OWNER APPROVALS",
       name: "Document Renewals",
-      icon: <DocsIcon className="w-5 h-5" />,
+      icon: <FileText className="h-5 w-5" />,
       route: "admin.document-renewals.index",
       capability: "review_registrations",
       pageKey: "document_renewals",
@@ -178,7 +168,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "SHOP OWNER APPROVALS",
       name: "Business Upgrade Requests",
-      icon: <TaskIcon className="w-5 h-5" />,
+      icon: <ArrowUpCircle className="h-5 w-5" />,
       route: "admin.business-upgrade-requests.index",
       capability: "review_registrations",
       pageKey: "business_upgrade_requests",
@@ -186,7 +176,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "USER APPROVALS & APPEALS",
       name: "Suspension Appeals",
-      icon: <AlertIcon className="w-5 h-5" />,
+      icon: <MessageSquareWarning className="h-5 w-5" />,
       route: "admin.suspension-appeals",
       capability: "view_appeals",
       pageKey: "suspension_appeals",
@@ -194,7 +184,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "REPORTS & AUDIT",
       name: "Shop Reports",
-      icon: <PieChartIcon className="w-5 h-5" />,
+      icon: <BarChart3 className="h-5 w-5" />,
       route: "admin.shop-reports",
       capability: "moderate_reports",
       pageKey: "shop_reports",
@@ -202,7 +192,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "REPORTS & AUDIT",
       name: "Audit History",
-      icon: <LockIcon className="w-5 h-5" />,
+      icon: <ScrollText className="h-5 w-5" />,
       route: "admin.audit",
       capability: "view_privileged_audit",
       pageKey: "audit_history",
@@ -210,7 +200,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "PLATFORM ADMINISTRATION",
       name: "System Maintenance",
-      icon: <TimeIcon className="w-5 h-5" />,
+      icon: <Wrench className="h-5 w-5" />,
       route: "admin.maintenance.index",
       capability: "view_platform_maintenance",
       pageKey: "system_maintenance",
@@ -218,14 +208,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "PLATFORM ADMINISTRATION",
       name: "Subscription Management",
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <rect x="3" y="5" width="18" height="14" rx="2" />
-          <path d="M3 7h18" />
-          <path d="M7 12h4" />
-          <path d="M7 16h4" />
-        </svg>
-      ),
+      icon: <CreditCard className="h-5 w-5" />,
       route: "admin.subscriptions.index",
       capability: "manage_plans",
       pageKey: "subscription_management",
@@ -233,7 +216,7 @@ const AppSidebar: React.FC = () => {
     {
       section: "PLATFORM ADMINISTRATION",
       name: "Platform Fees",
-      icon: <CurrencyDollarIcon className="w-5 h-5" />,
+      icon: <CircleDollarSign className="h-5 w-5" />,
       route: "admin.platform-fees.index",
       capability: "manage_platform_fees",
       pageKey: "platform_fees",
@@ -283,6 +266,7 @@ const AppSidebar: React.FC = () => {
               ].join(" ")}
             >
               <span
+                data-testid={`super-admin-page-icon-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                 className={[
                   "menu-item-icon-size w-6 h-6",
                   active ? "menu-item-icon-active" : "menu-item-icon-inactive",

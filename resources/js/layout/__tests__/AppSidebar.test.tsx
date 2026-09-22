@@ -140,6 +140,53 @@ it('organizes privileged pages into semantic navigation sections', () => {
   expect(userApprovals).toContainElement(screen.getByRole('link', { name: /suspension appeals/i }));
 });
 
+it('shows an icon beside every privileged page link', () => {
+  setRole('super_admin', [
+    'intervene_accounts',
+    'review_registrations',
+    'moderate_reports',
+    'view_appeals',
+    'view_privileged_audit',
+    'view_monitoring',
+    'view_platform_maintenance',
+    'manage_administrators',
+    'manage_plans',
+    'manage_platform_fees',
+  ]);
+
+  render(<AppSidebar />);
+
+  for (const section of [
+    'OVERVIEW',
+    'PEOPLE & ACCESS',
+    'SHOP OPERATIONS',
+    'SHOP OWNER APPROVALS',
+    'USER APPROVALS & APPEALS',
+    'REPORTS & AUDIT',
+    'PLATFORM ADMINISTRATION',
+  ]) {
+    fireEvent.click(screen.getByRole('button', { name: section }));
+  }
+
+  for (const page of [
+    'dashboard',
+    'admin-management',
+    'user-management',
+    'registered-shops',
+    'shop-management',
+    'document-renewals',
+    'business-upgrade-requests',
+    'suspension-appeals',
+    'shop-reports',
+    'audit-history',
+    'system-maintenance',
+    'subscription-management',
+    'platform-fees',
+  ]) {
+    expect(screen.getByTestId(`super-admin-page-icon-${page}`).querySelector('svg')).not.toBeNull();
+  }
+});
+
 it('restores the sidebar scroll position after the page layout remounts', () => {
   const firstRender = render(<AppSidebar />);
   const firstScrollRegion = screen.getByTestId('super-admin-sidebar-scroll-region');

@@ -219,6 +219,21 @@ final class IdentityVerificationReviewTest extends TestCase
                 ->missing('users.data.0.identityVerification.ocrConfidence'));
     }
 
+    public function test_admin_customer_list_exposes_customer_suffix(): void
+    {
+        $admin = $this->createAdmin();
+        User::factory()->create([
+            'shop_owner_id' => null,
+            'suffix' => 'Jr.',
+        ]);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.users.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('superAdmin/Users/SuperAdminUserManagement', false)
+                ->where('users.data.0.suffix', 'Jr.'));
+    }
+
     private function createAdmin(): SuperAdmin
     {
         return SuperAdmin::factory()->superAdmin()->create();
