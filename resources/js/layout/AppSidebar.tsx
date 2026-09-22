@@ -1,9 +1,9 @@
 import { useCallback, useLayoutEffect, useRef } from "react";
 import { Link, usePage } from "@inertiajs/react";
+import { ChevronDown } from "lucide-react";
 
 import {
   AlertIcon,
-  ChevronDownIcon,
   CurrencyDollarIcon,
   DocsIcon,
   GroupIcon,
@@ -331,7 +331,9 @@ const AppSidebar: React.FC = () => {
                     className="flex min-h-9 w-full items-center justify-between rounded-lg px-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 transition-colors duration-200 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:hover:bg-gray-800 dark:focus-visible:ring-gray-300"
                   >
                     <span>{section.label}</span>
-                    <ChevronDownIcon
+                    <ChevronDown
+                      data-testid={`super-admin-section-icon-${section.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+                      aria-hidden="true"
                       className={[
                         "h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200",
                         isOpen ? "rotate-180" : "",

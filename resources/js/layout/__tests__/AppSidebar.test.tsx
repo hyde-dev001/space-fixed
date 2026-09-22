@@ -127,6 +127,7 @@ it('organizes privileged pages into semantic navigation sections', () => {
   expect(screen.getByRole('button', { name: 'USER APPROVALS & APPEALS' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'REPORTS & AUDIT' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'PLATFORM ADMINISTRATION' })).toBeInTheDocument();
+  expect(screen.getByTestId('super-admin-section-icon-overview')).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'SHOP OWNER APPROVALS' }));
   const shopOwnerApprovals = screen.getByRole('button', { name: 'SHOP OWNER APPROVALS' }).parentElement;
