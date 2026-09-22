@@ -20,7 +20,9 @@ use App\Models\VoucherClaim;
 use App\Models\Finance\Invoice;
 use App\Models\Finance\InvoiceItem;
 use App\Models\AuditLog;
+use App\Exceptions\CodEligibilityException;
 use App\Services\CodCollectionService;
+use App\Services\CodEligibilityService;
 use App\Services\Logistics\DeliveryScheduleService;
 use App\Services\Logistics\ShippingVoucherService;
 use App\Services\NotificationService;
@@ -45,6 +47,7 @@ class CheckoutController extends Controller
     protected PromoPricingService $promoPricingService;
     protected ShippingVoucherService $shippingVoucherService;
     protected CodCollectionService $codCollectionService;
+    protected CodEligibilityService $codEligibilityService;
     protected DeliveryScheduleService $deliveryScheduleService;
     protected PlatformRestrictionService $platformRestrictionService;
 
@@ -53,6 +56,7 @@ class CheckoutController extends Controller
         PromoPricingService $promoPricingService,
         ShippingVoucherService $shippingVoucherService,
         CodCollectionService $codCollectionService,
+        CodEligibilityService $codEligibilityService,
         DeliveryScheduleService $deliveryScheduleService,
         PlatformRestrictionService $platformRestrictionService,
     ) {
@@ -60,6 +64,7 @@ class CheckoutController extends Controller
         $this->promoPricingService = $promoPricingService;
         $this->shippingVoucherService = $shippingVoucherService;
         $this->codCollectionService = $codCollectionService;
+        $this->codEligibilityService = $codEligibilityService;
         $this->deliveryScheduleService = $deliveryScheduleService;
         $this->platformRestrictionService = $platformRestrictionService;
     }
@@ -368,7 +373,7 @@ class CheckoutController extends Controller
 
                 return [
                     'product_id' => (int) $product->id,
-                    'price' => max(0.0, (float) ($item['price'] ?? 0)),
+                    'price' => max(0.0, (float) $product->price),
                     'qty' => max(1, (int) ($item['qty'] ?? 1)),
                 ];
             })
@@ -954,7 +959,7 @@ class CheckoutController extends Controller
 
         $products = Product::query()
             ->whereIn('id', $productIds)
-            ->get(['id', 'shop_owner_id'])
+            ->get(['id', 'shop_owner_id', 'price'])
             ->keyBy('id');
 
         if ($products->count() !== $productIds->count()) {
@@ -979,6 +984,13 @@ class CheckoutController extends Controller
         }
 
         $shopOwnerId = (int) $shopOwnerIds->first();
+        $shopOwner = ShopOwner::query()->find($shopOwnerId);
+        if (! $shopOwner) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Shop is no longer available for checkout.',
+            ], 404);
+        }
         $rawShippingFee = round(max(0.0, (float) ($validated['shipping_fee'] ?? 0)), 2);
         $shippingAddress = ! empty($validated['address_id'])
             ? $user->addresses()->find((int) $validated['address_id'])
@@ -991,9 +1003,12 @@ class CheckoutController extends Controller
             : $shippingAddress?->longitude;
 
         if (!$this->promoTablesReady()) {
-            $fallbackSubtotal = round(max(0.0, (float) $requestedItems->sum(fn ($item) => ((float) ($item['price'] ?? 0)) * ((int) ($item['qty'] ?? 1)))), 2);
+            $fallbackSubtotal = round(max(0.0, (float) $requestedItems->sum(
+                fn ($item) => ((float) ($products->get((int) ($item['pid'] ?? 0))?->price ?? 0)) * ((int) ($item['qty'] ?? 1)),
+            )), 2);
             $vatRatePercent = 12.0;
             $vatBreakdown = VatInclusiveCalculator::extract($fallbackSubtotal, $vatRatePercent);
+            $codEligibility = $this->codEligibilityService->evaluate($shopOwner, $fallbackSubtotal);
 
             return response()->json([
                 'success' => true,
@@ -1014,6 +1029,7 @@ class CheckoutController extends Controller
                     'available_vouchers' => [],
                     'voucher_code_suggestions' => [],
                     'voucher_error' => $hasVoucherSelectionIntent ? 'Voucher feature is not available right now.' : null,
+                    'cod_eligibility' => $codEligibility,
                 ],
             ]);
         }
@@ -1025,7 +1041,7 @@ class CheckoutController extends Controller
 
                 return [
                     'item' => [
-                        'price' => (float) ($item['price'] ?? 0),
+                        'price' => (float) ($product?->price ?? 0),
                         'qty' => (int) ($item['qty'] ?? 1),
                     ],
                     'product' => $product,
@@ -1073,14 +1089,6 @@ class CheckoutController extends Controller
             : null;
         $appliedShippingVoucher = null;
         $voucherError = $voucherSelectionError;
-
-        $shopOwner = ShopOwner::query()->find($shopOwnerId);
-        if (! $shopOwner) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Shop is no longer available for checkout.',
-            ], 404);
-        }
 
         $shippingVoucherResult = [
             'discount' => 0.0,
@@ -1144,6 +1152,10 @@ class CheckoutController extends Controller
 
         $vatRatePercent = 12.0;
         $vatBreakdown = VatInclusiveCalculator::extract((float) $pricing['final_subtotal'], $vatRatePercent);
+        $codEligibility = $this->codEligibilityService->evaluate(
+            $shopOwner,
+            (float) ($pricing['final_subtotal'] ?? 0),
+        );
 
         return response()->json([
             'success' => true,
@@ -1164,6 +1176,7 @@ class CheckoutController extends Controller
                 'available_vouchers' => $this->summarizeAvailableVouchers($availableVouchers, $voucherSummaryContext),
                 'voucher_code_suggestions' => $this->summarizeAvailableVouchers($voucherCodeSuggestions, $voucherSummaryContext),
                 'voucher_error' => $voucherError,
+                'cod_eligibility' => $codEligibility,
             ],
         ]);
     }
@@ -1201,6 +1214,7 @@ class CheckoutController extends Controller
                 'customer_phone' => 'nullable|string|max:20',
                 'shipping_address' => 'required|string|max:500',
                 'payment_method' => 'nullable|string|max:50',
+                'delivery_method' => ['nullable', 'string', Rule::in(['shop_owned', 'third_party'])],
                 // Structured address fields
                 'address_id' => [
                     'nullable',
@@ -1310,6 +1324,9 @@ class CheckoutController extends Controller
                     ], 404);
                 }
 
+                // The client price is display data only. Checkout pricing must use the current product price.
+                $item['price'] = max(0.0, (float) $product->price);
+
                 // Extract variant details from cart item
                 $options = isset($item['options']) ? (is_string($item['options']) ? json_decode($item['options'], true) : $item['options']) : [];
                 $itemSize = $item['size'] ?? null;
@@ -1392,7 +1409,9 @@ class CheckoutController extends Controller
             $createdOrders = [];
             $shopOwnerIds = array_keys($itemsByShop);
             $totalShops = count($shopOwnerIds);
-            $cartSubtotal = (float) collect($validated['items'])->sum(fn($item) => ((float) $item['price']) * ((int) $item['qty']));
+            $cartSubtotal = (float) collect($itemsByShop)
+                ->flatMap(fn (array $shopItems): array => $shopItems)
+                ->sum(fn (array $shopItem): float => ((float) $shopItem['item']['price']) * ((int) $shopItem['item']['qty']));
             $allocatedShippingFee = 0.0;
             $shopIndex = 0;
             $ordersHasShippingFee = Schema::hasColumn('orders', 'shipping_fee');
@@ -1402,25 +1421,48 @@ class CheckoutController extends Controller
                 ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'],
                 true,
             ) ? 'cod' : $requestedPaymentMethod;
+            $requestedDeliveryMethod = strtolower(trim((string) ($validated['delivery_method'] ?? '')));
+            $canonicalDeliveryMethod = $requestedDeliveryMethod === ''
+                ? null
+                : $requestedDeliveryMethod;
+            // The current checkout has no separate carrier selector; COD has always meant shop-owned delivery.
+            if ($canonicalDeliveryMethod === null && $canonicalPaymentMethod === 'cod') {
+                $canonicalDeliveryMethod = 'shop_owned';
+            }
             $vatRatePercent = 12.0;
 
             $isCodCheckout = $canonicalPaymentMethod === 'cod';
             if ($isCodCheckout && !empty($shopOwnerIds)) {
-                $hasIndividualRetailShop = ShopOwner::query()
-                    ->whereIn('id', $shopOwnerIds)
-                    ->get(['registration_type', 'business_type'])
-                    ->contains(fn (ShopOwner $shop): bool => ! $shop->supportsCashOnDelivery());
+                foreach ($shopOwnerIds as $shopOwnerId) {
+                    $shopOwner = ShopOwner::query()->find((int) $shopOwnerId);
+                    if (! $shopOwner) {
+                        return response()->json([
+                            'success' => false,
+                            'error' => 'shop_unavailable',
+                            'message' => 'One or more shops in your cart are no longer available.',
+                        ], 422);
+                    }
 
-                if ($hasIndividualRetailShop) {
-                    return response()->json([
-                        'success' => false,
-                        'error' => 'cod_not_available_for_individual_shop',
-                        'message' => 'Cash on Delivery is not available for individual retail shops. Please choose online payment.',
-                    ], 422);
+                    $baseCodAvailability = $this->codEligibilityService->baseAvailability($shopOwner);
+                    if (! ($baseCodAvailability['eligible'] ?? false)) {
+                        return response()->json([
+                            'success' => false,
+                            'error' => $baseCodAvailability['reason'],
+                            'message' => $baseCodAvailability['message'],
+                        ], 422);
+                    }
+
+                    if ($canonicalDeliveryMethod !== 'shop_owned') {
+                        return response()->json([
+                            'success' => false,
+                            'error' => 'cod_delivery_method_not_supported',
+                            'message' => 'Cash on Delivery is available only with Shop-owned Logistics.',
+                        ], 422);
+                    }
                 }
             }
 
-            if ($isCodCheckout && count($shopOwnerIds) === 1) {
+            if ($isCodCheckout && $canonicalDeliveryMethod === 'shop_owned' && count($shopOwnerIds) === 1) {
                 $shopOwner = ShopOwner::query()
                     ->with('logisticsSetting')
                     ->find((int) $shopOwnerIds[0]);
@@ -1509,6 +1551,21 @@ class CheckoutController extends Controller
 
                     $expectedRawTotal = collect($shopItems)->sum(fn ($si) => ((float) $si['item']['price']) * ((int) $si['item']['qty']));
                     $expectedItemInclusiveTotal = round(max(0.0, (float) ($pricingResult['final_subtotal'] ?? 0)), 2);
+                    if ($isCodCheckout) {
+                        $codEligibility = $this->codEligibilityService->evaluate(
+                            ShopOwner::query()->findOrFail((int) $shopOwnerId),
+                            $expectedItemInclusiveTotal,
+                            $canonicalDeliveryMethod,
+                            'retail',
+                        );
+
+                        if (! ($codEligibility['eligible'] ?? false)) {
+                            throw new CodEligibilityException(
+                                (string) ($codEligibility['reason'] ?? 'cod_unavailable'),
+                                (string) ($codEligibility['message'] ?? 'Cash on Delivery is not available for this order.'),
+                            );
+                        }
+                    }
                     $expectedVatBreakdown = VatInclusiveCalculator::extract($expectedItemInclusiveTotal, $vatRatePercent);
                     $expectedOrderNetSubtotal = (float) ($expectedVatBreakdown['net'] ?? 0);
                     /** @var PromoCampaign|null $appliedProductVoucher */
@@ -1622,6 +1679,7 @@ class CheckoutController extends Controller
                         'customer_phone' => $validated['customer_phone'] ?? null,
                         'customer_address' => $validated['shipping_address'],
                         'payment_method' => $canonicalPaymentMethod,
+                        'delivery_method' => $isCodCheckout ? $canonicalDeliveryMethod : ($validated['delivery_method'] ?? null),
                         'payment_status' => 'pending',
                         // Store structured address data
                         'address_id' => $validated['address_id'] ?? null,
@@ -2038,6 +2096,12 @@ class CheckoutController extends Controller
                 'success' => false,
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
+            ], 422);
+        } catch (CodEligibilityException $e) {
+            return response()->json([
+                'success' => false,
+                'error' => $e->error,
+                'message' => $e->getMessage(),
             ], 422);
         } catch (\RuntimeException $e) {
             return response()->json([

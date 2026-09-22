@@ -87,6 +87,8 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'repair_warranty_duration_unit', // Warranty period unit: days, weeks, or months
         'warranty_enabled', // Toggle warranty claim filing for this shop
         'order_refund_deadline_days', // Refund/cancellation eligibility window for product orders
+        'cod_enabled', // Allow Cash on Delivery for retail orders
+        'cod_order_threshold', // Maximum discounted merchandise amount eligible for COD
         'two_factor_email_enabled', // Require OTP code on login
         'paymongo_secret_key',  // Encrypted PayMongo secret key for this shop
         'operating_hours',      // JSON field storing weekly schedule
@@ -164,6 +166,8 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'repair_warranty_duration_unit' => 'string',
         'warranty_enabled' => 'boolean',
         'order_refund_deadline_days' => 'integer',
+        'cod_enabled' => 'boolean',
+        'cod_order_threshold' => 'decimal:2',
         'two_factor_email_enabled' => 'boolean',
         'shop_owner_totp_secret' => 'encrypted',
         'shop_owner_totp_enabled_at' => 'datetime',
@@ -512,10 +516,14 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
 
     public function supportsCashOnDelivery(): bool
     {
-        return !(
-            strtolower(trim((string) $this->registration_type)) === 'individual'
-            && strtolower(trim((string) $this->business_type)) === 'retail'
-        );
+        $businessType = strtolower(trim((string) $this->business_type));
+        $isRetailCapable = $businessType === 'retail'
+            || $businessType === 'both'
+            || str_contains($businessType, 'retail');
+
+        return $isRetailCapable
+            && (bool) ($this->cod_enabled ?? false)
+            && (float) ($this->cod_order_threshold ?? 5000) > 0;
     }
 
     /**

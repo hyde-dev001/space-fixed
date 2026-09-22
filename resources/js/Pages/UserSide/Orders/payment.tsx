@@ -77,6 +77,8 @@ interface ShippingEstimateData {
   shop_owned?: {
     available: boolean;
     cod_available?: boolean;
+    cod_order_threshold?: number | null;
+    cod_unavailable_reason?: string | null;
     reason: 'address_needs_pin' | 'shop_needs_pin' | 'outside_coverage' | 'logistics_unavailable' | null;
     distance_km: number | null;
     coverage_radius_km: number | null;
@@ -131,6 +133,13 @@ interface PromoPreviewData {
   available_vouchers?: AvailableVoucherOption[];
   voucher_code_suggestions?: AvailableVoucherOption[];
   voucher_error?: string | null;
+  cod_eligibility?: {
+    eligible: boolean;
+    reason: string | null;
+    threshold: number;
+    eligible_amount: number | null;
+    message: string | null;
+  };
 }
 
 type PaymentMethod = 'paymongo' | 'cod';
@@ -243,9 +252,13 @@ const Payment: React.FC = () => {
   const [isShippingEstimateLoading, setIsShippingEstimateLoading] = useState(false);
   const [shippingEstimateReason, setShippingEstimateReason] = useState<string | null>(null);
   const shippingEstimateRequestRef = useRef(0);
-  const isCodAvailable = !isPremiumPayment && !isRepairPayment && shopOwnedCoverage?.available === true && shopOwnedCoverage?.cod_available !== false;
   const [promoPreview, setPromoPreview] = useState<PromoPreviewData | null>(null);
   const [isPromoPreviewLoading, setIsPromoPreviewLoading] = useState(false);
+  const isCodAvailable = !isPremiumPayment
+    && !isRepairPayment
+    && shopOwnedCoverage?.available === true
+    && shopOwnedCoverage?.cod_available === true
+    && promoPreview?.cod_eligibility?.eligible === true;
   const [selectedVoucherCampaignIds, setSelectedVoucherCampaignIds] = useState<Record<'items' | 'shipping', number | null>>({
     items: null,
     shipping: null,
@@ -1211,6 +1224,9 @@ const Payment: React.FC = () => {
           reason: 'logistics_unavailable',
           distance_km: null,
           coverage_radius_km: null,
+          cod_available: false,
+          cod_order_threshold: null,
+          cod_unavailable_reason: 'logistics_unavailable',
         });
         setShippingEstimateReason(reason);
       }
@@ -2158,6 +2174,7 @@ const Payment: React.FC = () => {
         shipping_postal_code: shippingPostalCode,
         shipping_address_line: shippingAddressLine,
         payment_method: selectedPaymentMethod,
+        delivery_method: selectedPaymentMethod === 'cod' ? 'shop_owned' : null,
         disable_voucher: !isVoucherSelectionEnabled,
         voucher_campaign_id: selectedVoucherCampaignIdsForRequest[0] ?? null,
         voucher_code: appliedVoucherCode.trim() || null,
@@ -2379,6 +2396,9 @@ const Payment: React.FC = () => {
           : shopOwnedCoverage
             ? 'Shop-owned logistics is unavailable'
             : '';
+  const codUnavailableForAmount = shopOwnedCoverage?.available === true
+    && shopOwnedCoverage.cod_available === true
+    && promoPreview?.cod_eligibility?.reason === 'cod_exceeds_threshold';
   const shopOwnedCoverageNotice = shopOwnedCoverageLabel ? (
     <div
       role="status"
@@ -2393,6 +2413,9 @@ const Payment: React.FC = () => {
     >
       <span className="font-medium">{shopOwnedCoverageLabel}</span>
       {shopOwnedCoverageDetails && <span>{shopOwnedCoverageDetails}</span>}
+      {codUnavailableForAmount && shopOwnedCoverage?.cod_order_threshold != null && (
+        <span>Cash on Delivery is available up to ₱{shopOwnedCoverage.cod_order_threshold.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} in merchandise.</span>
+      )}
       {shopOwnedCoverage?.reason === 'address_needs_pin' && selectedSavedAddress && (
         <button
           type="button"

@@ -43,6 +43,11 @@ final class ShopModuleBackfillCommandTest extends TestCase
             'enabled' => 0,
         ]);
         $this->assertDatabaseHas('shop_owner_modules', [
+            'shop_owner_id' => $retailOwner->id,
+            'module_key' => 'logistics',
+            'enabled' => 0,
+        ]);
+        $this->assertDatabaseHas('shop_owner_modules', [
             'shop_owner_id' => $repairOwner->id,
             'module_key' => 'repair_operations',
             'enabled' => 1,

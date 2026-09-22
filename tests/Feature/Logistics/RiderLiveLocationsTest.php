@@ -11,12 +11,22 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class RiderLiveLocationsTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_current_location_received_at_has_a_database_default(): void
+    {
+        $columns = Schema::getColumns('rider_current_locations');
+        $receivedAt = collect($columns)->firstWhere('name', 'received_at');
+
+        $this->assertNotNull($receivedAt);
+        $this->assertNotNull($receivedAt['default']);
+    }
 
     public function test_dispatcher_only_receives_current_locations_for_active_deliveries_in_their_shop(): void
     {

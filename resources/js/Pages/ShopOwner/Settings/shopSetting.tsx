@@ -56,6 +56,10 @@ type ShopSettingsPayload = {
 	repair_warranty_duration: number;
 	repair_warranty_duration_unit: 'days' | 'weeks' | 'months';
 	order_refund_deadline_days: number;
+	cod_enabled: boolean;
+	cod_order_threshold: number;
+	cod_can_enable: boolean;
+	cod_enablement_message: string | null;
 	totp_enabled: boolean;
 	has_paymongo_key: boolean;
 	xendit_supplier_payouts?: XenditSupplierPayoutSettings;
@@ -423,6 +427,11 @@ const ShopSetting: React.FC = () => {
 	const [refundDeadlineInputValue, setRefundDeadlineInputValue] = useState<string>(String(shop_settings.order_refund_deadline_days ?? 7));
 	const [refundDeadlineInputError, setRefundDeadlineInputError] = useState<string | null>(null);
 	const [refundDeadlineSaveSuccess, setRefundDeadlineSaveSuccess] = useState(false);
+	const [codEnabled, setCodEnabled] = useState<boolean>(Boolean(shop_settings.cod_enabled ?? false));
+	const codCanEnable = Boolean(shop_settings.cod_can_enable ?? false);
+	const [codThresholdInputValue, setCodThresholdInputValue] = useState<string>(String(shop_settings.cod_order_threshold ?? 5000));
+	const [codSettingsError, setCodSettingsError] = useState<string | null>(null);
+	const [codSettingsSaveSuccess, setCodSettingsSaveSuccess] = useState(false);
 
 	// Geofence state
 	const [geofenceEnabled, setGeofenceEnabled] = useState(shop_settings.attendance_geofence_enabled ?? false);
@@ -1352,6 +1361,31 @@ const ShopSetting: React.FC = () => {
 		);
 	};
 
+	const handleSaveCodSettings = () => {
+		const parsed = Number(codThresholdInputValue);
+		if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 9999999.99) {
+			setCodSettingsError('Please enter a COD merchandise threshold greater than 0 and no more than ₱9,999,999.99.');
+			return;
+		}
+
+		setCodSettingsError(null);
+		router.put('/shop-owner/settings', {
+			cod_enabled: codEnabled,
+			cod_order_threshold: Number(parsed.toFixed(2)),
+		}, {
+			preserveScroll: true,
+			onSuccess: () => {
+				setCodThresholdInputValue(parsed.toFixed(2));
+				setCodSettingsSaveSuccess(true);
+				window.setTimeout(() => setCodSettingsSaveSuccess(false), 2200);
+			},
+			onError: (pageErrors) => {
+				const pageValidationErrors = pageErrors as Record<string, string | undefined>;
+				setCodSettingsError(pageValidationErrors.cod_order_threshold || 'Failed to save Cash on Delivery settings. Please try again.');
+			},
+		});
+	};
+
 	const handleSavePayrollCutoff = () => {
 		if (payCycle === 'monthly') {
 			setPayrollCutoffError(null);
@@ -2225,6 +2259,76 @@ const ShopSetting: React.FC = () => {
 								<p className="mt-3 text-xs text-gray-500">
 									Current refund deadline: <span className="font-semibold text-gray-700">{orderRefundDeadlineDays}</span> day(s).
 								</p>
+							</div>
+						</div>
+					)}
+
+					{hasRetailSignal && (
+						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3 xl:order-7 xl:shadow-none">
+							<div className="border-b border-gray-200 p-6">
+								<div className="flex flex-wrap items-start justify-between gap-4">
+									<div>
+										<h2 className="text-xl font-semibold text-gray-900">Cash on Delivery</h2>
+										<p className="mt-1 text-sm text-gray-600">
+											Allow customers to choose COD for Shop-owned Logistics when the discounted merchandise total is within your limit. COD becomes available only after Shop-owned Logistics is enabled and an active dispatcher and rider are set up.
+										</p>
+									</div>
+									<ToggleSwitch
+										enabled={codEnabled}
+										disabled={!codCanEnable && !codEnabled}
+										onChange={(enabled) => {
+											setCodEnabled(enabled);
+											setCodSettingsError(null);
+										}}
+										ariaLabel={codEnabled ? 'Disable Cash on Delivery' : 'Enable Cash on Delivery'}
+									/>
+									{!codCanEnable && !codEnabled && (
+										<p className="mt-2 text-xs text-amber-700">
+											{shop_settings.cod_enablement_message || 'Set up Shop-owned Logistics with an active dispatcher and rider before enabling COD.'}
+										</p>
+									)}
+								</div>
+							</div>
+							<div className="space-y-4 p-6">
+								<div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+									<label className="mb-1.5 block text-sm font-medium text-gray-700" htmlFor="cod-order-threshold">
+										Maximum merchandise total for COD
+									</label>
+									<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+										<div className="flex w-full items-center rounded-lg border border-gray-300 bg-white px-3 sm:max-w-sm">
+											<span className="text-sm font-medium text-gray-500">₱</span>
+											<input
+												id="cod-order-threshold"
+												type="number"
+												min={0.01}
+												max={9999999.99}
+												step={0.01}
+												value={codThresholdInputValue}
+												onChange={(event) => {
+													setCodThresholdInputValue(event.target.value);
+													if (codSettingsError) setCodSettingsError(null);
+												}}
+												className="w-full border-0 px-2 py-2 text-sm text-gray-900 focus:outline-none focus:ring-0"
+											/>
+										</div>
+										<button
+											type="button"
+											onClick={handleSaveCodSettings}
+											className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-black"
+										>
+											Save COD Settings
+										</button>
+									</div>
+									<p className="mt-2 text-xs text-gray-500">
+										Shipping is excluded. Discounts and vouchers are applied before this limit is checked. Turning COD off preserves the saved limit.
+									</p>
+									{codSettingsError && <p className="mt-2 text-xs text-red-600">{codSettingsError}</p>}
+									{codSettingsSaveSuccess && (
+										<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
+											<Check size={13} /> COD settings saved.
+										</p>
+									)}
+								</div>
 							</div>
 						</div>
 					)}

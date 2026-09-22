@@ -13,6 +13,7 @@ use App\Models\ShopPolicyVersion;
 use App\Models\ShopPaymentIntegration;
 use App\Models\SupplierPaymentAttempt;
 use App\Services\CaviteLocationPolicyService;
+use App\Services\CodEligibilityService;
 use App\Services\ShopModuleAccessService;
 use App\Services\ShopOwnerDocumentRequirementService;
 use App\Services\ShopDocumentValidityService;
@@ -63,6 +64,7 @@ class ShopSettingsController extends Controller
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
         private readonly ShopDocumentValidityService $documentValidity,
         private readonly ShopModuleAccessService $shopModuleAccess,
+        private readonly CodEligibilityService $codEligibility,
         private readonly XenditPayoutService $xenditPayoutService,
     ) {}
 
@@ -102,6 +104,7 @@ class ShopSettingsController extends Controller
         }
         $businessType = $this->normalizeBusinessType((string) $shopOwner->business_type);
         $isRetailCapable = in_array($businessType, ['retail', 'both'], true);
+        $codEnablement = $this->codEligibility->enablementStatus($shopOwner);
 
         $requiredDocuments = $this->documentRequirements->settingsPayload($shopOwner->documents);
         $documentCompliance = $this->documentCompliancePayload($shopOwner);
@@ -124,6 +127,10 @@ class ShopSettingsController extends Controller
                 'repair_warranty_duration' => (int) ($shopOwner->repair_warranty_days ?? 30),
                 'repair_warranty_duration_unit' => (string) ($shopOwner->repair_warranty_duration_unit ?? 'days'),
                 'order_refund_deadline_days' => (int) ($shopOwner->order_refund_deadline_days ?? 7),
+                'cod_enabled'          => (bool) ($shopOwner->cod_enabled ?? false),
+                'cod_order_threshold'  => (float) ($shopOwner->cod_order_threshold ?? 5000),
+                'cod_can_enable'       => $codEnablement['ready'],
+                'cod_enablement_message' => $codEnablement['message'],
                 'totp_enabled'          => $shopOwner->hasTotpEnabled(),
                 'has_paymongo_key'       => !empty($shopOwner->paymongo_secret_key),
                 'xendit_supplier_payouts' => $this->xenditIntegrationPayload((int) $shopOwner->id),
@@ -532,6 +539,8 @@ class ShopSettingsController extends Controller
     public function update(Request $request): RedirectResponse
     {
         $shopOwner = Auth::guard('shop_owner')->user();
+        $businessType = $this->normalizeBusinessType((string) $shopOwner->business_type);
+        $isRetailCapable = in_array($businessType, ['retail', 'both'], true);
         $procurementSettings = ProcurementSettings::getForShopOwner($shopOwner->id);
 
         $validated = $request->validate([
@@ -550,6 +559,8 @@ class ShopSettingsController extends Controller
             'repair_warranty_duration' => ['sometimes', 'integer', 'min:1', 'max:365'],
             'repair_warranty_duration_unit' => ['sometimes', 'string', Rule::in(array_keys(self::REPAIR_WARRANTY_DURATION_LIMITS))],
             'order_refund_deadline_days' => ['sometimes', 'integer', 'min:1', 'max:30'],
+            'cod_enabled' => ['sometimes', 'boolean'],
+            'cod_order_threshold' => ['sometimes', 'numeric', 'gt:0', 'max:9999999.99'],
             'pay_cycle' => ['sometimes', 'string', 'in:monthly,semi_monthly'],
             'pay_day_first' => ['sometimes', 'integer', 'min:1', 'max:31'],
             'pay_day_second' => ['sometimes', 'integer', 'min:1', 'max:31', 'gt:pay_day_first'],
@@ -566,6 +577,18 @@ class ShopSettingsController extends Controller
             : (bool) ($shopOwner->warranty_enabled ?? true);
         $warrantyDuration = (int) ($validated['repair_warranty_duration'] ?? ($shopOwner->repair_warranty_days ?? 30));
         $warrantyUnit = (string) ($validated['repair_warranty_duration_unit'] ?? ($shopOwner->repair_warranty_duration_unit ?? 'days'));
+
+        if ($isRetailCapable
+            && array_key_exists('cod_enabled', $validated)
+            && filter_var($validated['cod_enabled'], FILTER_VALIDATE_BOOLEAN)
+        ) {
+            $codEnablement = $this->codEligibility->enablementStatus($shopOwner);
+            if (! $codEnablement['ready']) {
+                throw ValidationException::withMessages([
+                    'cod_enabled' => [$codEnablement['message']],
+                ]);
+            }
+        }
 
         if ($hasWarrantyUpdate && $warrantyEnabled) {
             $maximumDuration = self::REPAIR_WARRANTY_DURATION_LIMITS[$warrantyUnit] ?? 0;
@@ -599,6 +622,12 @@ class ShopSettingsController extends Controller
         }
         if (isset($validated['order_refund_deadline_days'])) {
             $shopOwnerUpdates['order_refund_deadline_days'] = $validated['order_refund_deadline_days'];
+        }
+        if ($isRetailCapable && array_key_exists('cod_enabled', $validated)) {
+            $shopOwnerUpdates['cod_enabled'] = filter_var($validated['cod_enabled'], FILTER_VALIDATE_BOOLEAN);
+        }
+        if ($isRetailCapable && array_key_exists('cod_order_threshold', $validated)) {
+            $shopOwnerUpdates['cod_order_threshold'] = round((float) $validated['cod_order_threshold'], 2);
         }
         if ($hasWarrantyUpdate) {
             $shopOwnerUpdates['warranty_enabled'] = $warrantyEnabled;
