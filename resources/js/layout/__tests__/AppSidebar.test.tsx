@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AppSidebar from '../AppSidebar';
 
@@ -21,6 +21,8 @@ const pageState = vi.hoisted<PageState>(() => ({
   props: {},
 }));
 
+const sidebarScrollTop = vi.hoisted(() => ({ current: 0 }));
+
 vi.mock('@inertiajs/react', () => ({
   usePage: () => pageState,
   Link: ({ href, children, viewTransition, ...props }: React.PropsWithChildren<{ href: string; viewTransition?: boolean }>) => (
@@ -29,15 +31,29 @@ vi.mock('@inertiajs/react', () => ({
 }));
 
 vi.mock('../../context/SidebarContext', () => ({
-  useSidebar: () => ({
-    isExpanded: true,
-    isMobileOpen: false,
-    isHovered: false,
-    setIsHovered: vi.fn(),
-  }),
+  useSidebar: () => {
+    const [collapsedSections, setCollapsedSections] = React.useState<string[]>([]);
+
+    return {
+      isExpanded: true,
+      isMobileOpen: false,
+      isHovered: false,
+      setIsHovered: vi.fn(),
+      sidebarScrollTop,
+      collapsedSections: new Set(collapsedSections),
+      toggleSidebarSection: (section: string) => {
+        setCollapsedSections((current) => (
+          current.includes(section)
+            ? current.filter((item) => item !== section)
+            : [...current, section]
+        ));
+      },
+    };
+  },
 }));
 
 beforeEach(() => {
+  sidebarScrollTop.current = 0;
   pageState.url = '/admin/system-monitoring';
   pageState.props = {
     auth: {
@@ -101,21 +117,56 @@ it('shows truthful canonical operational links to both privileged roles', () => 
 it('organizes privileged pages into semantic navigation sections', () => {
   render(<AppSidebar />);
 
-  expect(screen.getByRole('heading', { name: 'OVERVIEW' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'PEOPLE & ACCESS' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'SHOP OPERATIONS' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'SHOP OWNER APPROVALS' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'USER APPROVALS & APPEALS' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'REPORTS & AUDIT' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'PLATFORM ADMINISTRATION' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'OVERVIEW' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'PEOPLE & ACCESS' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'SHOP OPERATIONS' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'SHOP OWNER APPROVALS' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'USER APPROVALS & APPEALS' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'REPORTS & AUDIT' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'PLATFORM ADMINISTRATION' })).toBeInTheDocument();
 
-  const shopOwnerApprovals = screen.getByRole('heading', { name: 'SHOP OWNER APPROVALS' }).parentElement;
+  const shopOwnerApprovals = screen.getByRole('button', { name: 'SHOP OWNER APPROVALS' }).parentElement;
   expect(shopOwnerApprovals).toContainElement(screen.getByRole('link', { name: /shop management/i }));
   expect(shopOwnerApprovals).toContainElement(screen.getByRole('link', { name: /document renewals/i }));
   expect(shopOwnerApprovals).toContainElement(screen.getByRole('link', { name: /business upgrade requests/i }));
 
-  const userApprovals = screen.getByRole('heading', { name: 'USER APPROVALS & APPEALS' }).parentElement;
+  const userApprovals = screen.getByRole('button', { name: 'USER APPROVALS & APPEALS' }).parentElement;
   expect(userApprovals).toContainElement(screen.getByRole('link', { name: /suspension appeals/i }));
+});
+
+it('restores the sidebar scroll position after the page layout remounts', () => {
+  const firstRender = render(<AppSidebar />);
+  const firstScrollRegion = screen.getByTestId('super-admin-sidebar-scroll-region');
+
+  firstScrollRegion.scrollTop = 120;
+  fireEvent.scroll(firstScrollRegion);
+  firstRender.unmount();
+
+  render(<AppSidebar />);
+
+  expect(screen.getByTestId('super-admin-sidebar-scroll-region')).toHaveProperty('scrollTop', 120);
+});
+
+it('toggles each navigation section without closing the other sections', () => {
+  render(<AppSidebar />);
+
+  const shopOwnerApprovals = screen.getByRole('button', { name: 'SHOP OWNER APPROVALS' });
+  const userApprovals = screen.getByRole('button', { name: 'USER APPROVALS & APPEALS' });
+
+  expect(shopOwnerApprovals).toHaveAttribute('aria-expanded', 'true');
+  expect(userApprovals).toHaveAttribute('aria-expanded', 'true');
+
+  fireEvent.click(shopOwnerApprovals);
+
+  expect(shopOwnerApprovals).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('link', { name: /shop management/i })).not.toBeInTheDocument();
+  expect(userApprovals).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: /suspension appeals/i })).toBeInTheDocument();
+
+  fireEvent.click(shopOwnerApprovals);
+
+  expect(shopOwnerApprovals).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: /shop management/i })).toBeInTheDocument();
 });
 
 it('marks direct super admin links for shared active-state transitions', () => {
@@ -150,7 +201,7 @@ it('hides every optional page when the server sends an empty page-access list', 
   render(<AppSidebar />);
 
   expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument();
-  expect(screen.queryByRole('heading', { name: /people & access/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /people & access/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /registered shops/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /subscription management/i })).not.toBeInTheDocument();
 });

@@ -1,8 +1,9 @@
-import { useCallback } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { Link, usePage } from "@inertiajs/react";
 
 import {
   AlertIcon,
+  ChevronDownIcon,
   CurrencyDollarIcon,
   DocsIcon,
   GroupIcon,
@@ -44,8 +45,31 @@ const routeFallbacks: Record<string, string> = {
 };
 
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
+  const {
+    isExpanded,
+    isMobileOpen,
+    isHovered,
+    setIsHovered,
+    sidebarScrollTop,
+    collapsedSections,
+    toggleSidebarSection,
+  } = useSidebar();
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const { url, props } = usePage();
+
+  useLayoutEffect(() => {
+    const node = sidebarScrollRef.current;
+    if (!node) return;
+
+    node.scrollTop = sidebarScrollTop.current;
+
+    const handleScroll = () => {
+      sidebarScrollTop.current = node.scrollTop;
+    };
+
+    node.addEventListener("scroll", handleScroll, { passive: true });
+    return () => node.removeEventListener("scroll", handleScroll);
+  }, [sidebarScrollTop]);
   const auth = (props as {
     auth?: {
       super_admin?: {
@@ -287,18 +311,41 @@ const AppSidebar: React.FC = () => {
       return groups;
     }, []);
 
+    const showSectionLabels = isExpanded || isHovered || isMobileOpen;
+
     return (
       <div className="space-y-6">
-        {sections.map((section) => (
-          <div key={section.label} className="space-y-3">
-            {(isExpanded || isHovered || isMobileOpen) && (
-              <h3 className="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
-                {section.label}
-              </h3>
-            )}
-            {renderMenuItems(section.items)}
-          </div>
-        ))}
+        {sections.map((section) => {
+          const isOpen = !collapsedSections.has(section.label);
+          const sectionId = `super-admin-section-${section.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
+          return (
+            <div key={section.label} className="space-y-3">
+              {showSectionLabels ? (
+                <>
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    aria-controls={sectionId}
+                    onClick={() => toggleSidebarSection(section.label)}
+                    className="flex min-h-11 w-full items-center justify-between rounded px-2 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 transition-colors duration-200 hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-400 dark:text-gray-500 dark:hover:text-gray-300 dark:focus-visible:ring-gray-500"
+                  >
+                    <span>{section.label}</span>
+                    <ChevronDownIcon
+                      className={[
+                        "h-4 w-4 transition-transform duration-200",
+                        isOpen ? "rotate-180" : "",
+                      ].join(" ")}
+                    />
+                  </button>
+                  <div id={sectionId} hidden={!isOpen}>
+                    {isOpen ? renderMenuItems(section.items) : null}
+                  </div>
+                </>
+              ) : renderMenuItems(section.items)}
+            </div>
+          );
+        })}
       </div>
     );
   };
@@ -336,7 +383,11 @@ const AppSidebar: React.FC = () => {
         </Link>
       </div>
 
-      <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
+      <div
+        ref={sidebarScrollRef}
+        data-testid="super-admin-sidebar-scroll-region"
+        className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar"
+      >
         <nav className="mb-6">
           <div className="flex flex-col gap-4">
             <div>

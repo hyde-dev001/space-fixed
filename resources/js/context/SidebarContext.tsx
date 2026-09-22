@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 
 type SidebarContextType = {
   isExpanded: boolean;
@@ -6,8 +6,11 @@ type SidebarContextType = {
   isHovered: boolean;
   activeItem: string | null;
   openSubmenu: string | null;
+  sidebarScrollTop: React.MutableRefObject<number>;
+  collapsedSections: Set<string>;
   toggleSidebar: () => void;
   toggleMobileSidebar: () => void;
+  toggleSidebarSection: (section: string) => void;
   setIsHovered: (isHovered: boolean) => void;
   setActiveItem: (item: string | null) => void;
   toggleSubmenu: (item: string) => void;
@@ -36,6 +39,8 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isMobile, setIsMobile] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [activeItem, setActiveItem] = useState<string | null>(null);
+  const sidebarScrollTop = useRef(0);
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
   const [openSubmenu, setOpenSubmenuState] = useState<string | null>(() => {
     const saved = localStorage.getItem('sidebarOpenSubmenu');
     return saved || null;
@@ -80,6 +85,18 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsMobileOpen((prev) => !prev);
   };
 
+  const toggleSidebarSection = useCallback((section: string) => {
+    setCollapsedSections((current) => {
+      const next = new Set(current);
+      if (next.has(section)) {
+        next.delete(section);
+      } else {
+        next.add(section);
+      }
+      return next;
+    });
+  }, []);
+
   const toggleSubmenu = useCallback((item: string) => {
     setOpenSubmenuState((prev) => (prev === item ? null : item));
   }, []);
@@ -96,8 +113,11 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
         isHovered,
         activeItem,
         openSubmenu,
+        sidebarScrollTop,
+        collapsedSections,
         toggleSidebar,
         toggleMobileSidebar,
+        toggleSidebarSection,
         setIsHovered,
         setActiveItem,
         toggleSubmenu,
