@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import AppSidebar from '../AppSidebar';
 
@@ -34,8 +34,6 @@ vi.mock('../../context/SidebarContext', () => ({
     isMobileOpen: false,
     isHovered: false,
     setIsHovered: vi.fn(),
-    openSubmenu: 'main-1',
-    toggleSubmenu: vi.fn(),
   }),
 }));
 
@@ -79,10 +77,6 @@ beforeEach(() => {
   };
 });
 
-function openAccountManagement(): void {
-  fireEvent.click(screen.getByRole('button', { name: /account management/i }));
-}
-
 function setRole(role: string, capabilities: string[] = [], pagePermissions?: string[]): void {
   pageState.props = {
     auth: {
@@ -94,8 +88,6 @@ function setRole(role: string, capabilities: string[] = [], pagePermissions?: st
 it('shows truthful canonical operational links to both privileged roles', () => {
   render(<AppSidebar />);
 
-  openAccountManagement();
-
   expect(screen.getByRole('link', { name: /dashboard/i })).toHaveAttribute('href', '/admin/system-monitoring');
   expect(screen.getByRole('link', { name: /audit history/i })).toHaveAttribute('href', '/admin/audit');
   expect(screen.getByRole('link', { name: /system maintenance/i })).toHaveAttribute('href', '/admin/maintenance');
@@ -106,10 +98,28 @@ it('shows truthful canonical operational links to both privileged roles', () => 
   expect(screen.queryAllByRole('link').some((link) => link.getAttribute('href')?.includes('/superAdmin/'))).toBe(false);
 });
 
-it('marks direct and nested super admin links for shared active-state transitions', () => {
+it('organizes privileged pages into semantic navigation sections', () => {
   render(<AppSidebar />);
 
-  openAccountManagement();
+  expect(screen.getByRole('heading', { name: 'OVERVIEW' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'PEOPLE & ACCESS' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'SHOP OPERATIONS' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'SHOP OWNER APPROVALS' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'USER APPROVALS & APPEALS' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'REPORTS & AUDIT' })).toBeInTheDocument();
+  expect(screen.getByRole('heading', { name: 'PLATFORM ADMINISTRATION' })).toBeInTheDocument();
+
+  const shopOwnerApprovals = screen.getByRole('heading', { name: 'SHOP OWNER APPROVALS' }).parentElement;
+  expect(shopOwnerApprovals).toContainElement(screen.getByRole('link', { name: /shop management/i }));
+  expect(shopOwnerApprovals).toContainElement(screen.getByRole('link', { name: /document renewals/i }));
+  expect(shopOwnerApprovals).toContainElement(screen.getByRole('link', { name: /business upgrade requests/i }));
+
+  const userApprovals = screen.getByRole('heading', { name: 'USER APPROVALS & APPEALS' }).parentElement;
+  expect(userApprovals).toContainElement(screen.getByRole('link', { name: /suspension appeals/i }));
+});
+
+it('marks direct super admin links for shared active-state transitions', () => {
+  render(<AppSidebar />);
 
   expect(screen.getByRole('link', { name: /dashboard/i }))
     .toHaveAttribute('data-view-transition', 'true');
@@ -121,8 +131,6 @@ it('marks direct and nested super admin links for shared active-state transition
 
 it('hides administrator and plan management from a regular admin', () => {
   render(<AppSidebar />);
-
-  openAccountManagement();
 
   expect(screen.queryByRole('link', { name: /admin management/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /subscription management/i })).not.toBeInTheDocument();
@@ -142,7 +150,7 @@ it('hides every optional page when the server sends an empty page-access list', 
   render(<AppSidebar />);
 
   expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: /account management/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: /people & access/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /registered shops/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /subscription management/i })).not.toBeInTheDocument();
 });
@@ -151,8 +159,6 @@ it('shows administrator and plan management only to a capable super admin', () =
   setRole('super_admin', ['manage_administrators', 'manage_plans']);
 
   render(<AppSidebar />);
-
-  openAccountManagement();
 
   expect(screen.getByRole('link', { name: /admin management/i })).toHaveAttribute('href', '/admin/administrators');
   expect(screen.getByRole('link', { name: /subscription management/i })).toHaveAttribute('href', '/admin/subscriptions');
