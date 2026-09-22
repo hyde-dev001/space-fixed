@@ -7,7 +7,7 @@ type SidebarContextType = {
   activeItem: string | null;
   openSubmenu: string | null;
   sidebarScrollTop: React.MutableRefObject<number>;
-  collapsedSections: Set<string>;
+  expandedSections: Set<string>;
   toggleSidebar: () => void;
   toggleMobileSidebar: () => void;
   toggleSidebarSection: (section: string) => void;
@@ -40,7 +40,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isHovered, setIsHovered] = useState(false);
   const [activeItem, setActiveItem] = useState<string | null>(null);
   const sidebarScrollTop = useRef(0);
-  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => new Set());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
   const [openSubmenu, setOpenSubmenuState] = useState<string | null>(() => {
     const saved = localStorage.getItem('sidebarOpenSubmenu');
     return saved || null;
@@ -86,7 +86,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const toggleSidebarSection = useCallback((section: string) => {
-    setCollapsedSections((current) => {
+    setExpandedSections((current) => {
       const next = new Set(current);
       if (next.has(section)) {
         next.delete(section);
@@ -114,7 +114,7 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
         activeItem,
         openSubmenu,
         sidebarScrollTop,
-        collapsedSections,
+        expandedSections,
         toggleSidebar,
         toggleMobileSidebar,
         toggleSidebarSection,

@@ -32,7 +32,7 @@ vi.mock('@inertiajs/react', () => ({
 
 vi.mock('../../context/SidebarContext', () => ({
   useSidebar: () => {
-    const [collapsedSections, setCollapsedSections] = React.useState<string[]>([]);
+    const [expandedSections, setExpandedSections] = React.useState<string[]>([]);
 
     return {
       isExpanded: true,
@@ -40,9 +40,9 @@ vi.mock('../../context/SidebarContext', () => ({
       isHovered: false,
       setIsHovered: vi.fn(),
       sidebarScrollTop,
-      collapsedSections: new Set(collapsedSections),
+      expandedSections: new Set(expandedSections),
       toggleSidebarSection: (section: string) => {
-        setCollapsedSections((current) => (
+        setExpandedSections((current) => (
           current.includes(section)
             ? current.filter((item) => item !== section)
             : [...current, section]
@@ -104,6 +104,9 @@ function setRole(role: string, capabilities: string[] = [], pagePermissions?: st
 it('shows truthful canonical operational links to both privileged roles', () => {
   render(<AppSidebar />);
 
+  ['OVERVIEW', 'PEOPLE & ACCESS', 'SHOP OPERATIONS', 'SHOP OWNER APPROVALS', 'REPORTS & AUDIT', 'PLATFORM ADMINISTRATION']
+    .forEach((section) => fireEvent.click(screen.getByRole('button', { name: section })));
+
   expect(screen.getByRole('link', { name: /dashboard/i })).toHaveAttribute('href', '/admin/system-monitoring');
   expect(screen.getByRole('link', { name: /audit history/i })).toHaveAttribute('href', '/admin/audit');
   expect(screen.getByRole('link', { name: /system maintenance/i })).toHaveAttribute('href', '/admin/maintenance');
@@ -125,11 +128,13 @@ it('organizes privileged pages into semantic navigation sections', () => {
   expect(screen.getByRole('button', { name: 'REPORTS & AUDIT' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'PLATFORM ADMINISTRATION' })).toBeInTheDocument();
 
+  fireEvent.click(screen.getByRole('button', { name: 'SHOP OWNER APPROVALS' }));
   const shopOwnerApprovals = screen.getByRole('button', { name: 'SHOP OWNER APPROVALS' }).parentElement;
   expect(shopOwnerApprovals).toContainElement(screen.getByRole('link', { name: /shop management/i }));
   expect(shopOwnerApprovals).toContainElement(screen.getByRole('link', { name: /document renewals/i }));
   expect(shopOwnerApprovals).toContainElement(screen.getByRole('link', { name: /business upgrade requests/i }));
 
+  fireEvent.click(screen.getByRole('button', { name: 'USER APPROVALS & APPEALS' }));
   const userApprovals = screen.getByRole('button', { name: 'USER APPROVALS & APPEALS' }).parentElement;
   expect(userApprovals).toContainElement(screen.getByRole('link', { name: /suspension appeals/i }));
 });
@@ -153,24 +158,35 @@ it('toggles each navigation section without closing the other sections', () => {
   const shopOwnerApprovals = screen.getByRole('button', { name: 'SHOP OWNER APPROVALS' });
   const userApprovals = screen.getByRole('button', { name: 'USER APPROVALS & APPEALS' });
 
-  expect(shopOwnerApprovals).toHaveAttribute('aria-expanded', 'true');
-  expect(userApprovals).toHaveAttribute('aria-expanded', 'true');
-
-  fireEvent.click(shopOwnerApprovals);
-
   expect(shopOwnerApprovals).toHaveAttribute('aria-expanded', 'false');
+  expect(userApprovals).toHaveAttribute('aria-expanded', 'false');
   expect(screen.queryByRole('link', { name: /shop management/i })).not.toBeInTheDocument();
-  expect(userApprovals).toHaveAttribute('aria-expanded', 'true');
-  expect(screen.getByRole('link', { name: /suspension appeals/i })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /suspension appeals/i })).not.toBeInTheDocument();
 
   fireEvent.click(shopOwnerApprovals);
 
   expect(shopOwnerApprovals).toHaveAttribute('aria-expanded', 'true');
   expect(screen.getByRole('link', { name: /shop management/i })).toBeInTheDocument();
+  expect(userApprovals).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('link', { name: /suspension appeals/i })).not.toBeInTheDocument();
+
+  fireEvent.click(userApprovals);
+
+  expect(userApprovals).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: /suspension appeals/i })).toBeInTheDocument();
+
+  fireEvent.click(shopOwnerApprovals);
+
+  expect(shopOwnerApprovals).toHaveAttribute('aria-expanded', 'false');
+  expect(userApprovals).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: /suspension appeals/i })).toBeInTheDocument();
 });
 
 it('marks direct super admin links for shared active-state transitions', () => {
   render(<AppSidebar />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'OVERVIEW' }));
+  fireEvent.click(screen.getByRole('button', { name: 'REPORTS & AUDIT' }));
 
   expect(screen.getByRole('link', { name: /dashboard/i }))
     .toHaveAttribute('data-view-transition', 'true');
@@ -200,6 +216,8 @@ it('hides every optional page when the server sends an empty page-access list', 
 
   render(<AppSidebar />);
 
+  fireEvent.click(screen.getByRole('button', { name: 'OVERVIEW' }));
+
   expect(screen.getByRole('link', { name: /dashboard/i })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: /people & access/i })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: /registered shops/i })).not.toBeInTheDocument();
@@ -210,6 +228,9 @@ it('shows administrator and plan management only to a capable super admin', () =
   setRole('super_admin', ['manage_administrators', 'manage_plans']);
 
   render(<AppSidebar />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'PEOPLE & ACCESS' }));
+  fireEvent.click(screen.getByRole('button', { name: 'PLATFORM ADMINISTRATION' }));
 
   expect(screen.getByRole('link', { name: /admin management/i })).toHaveAttribute('href', '/admin/administrators');
   expect(screen.getByRole('link', { name: /subscription management/i })).toHaveAttribute('href', '/admin/subscriptions');
