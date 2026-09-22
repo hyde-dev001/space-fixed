@@ -111,6 +111,11 @@ class RepairRequest extends Model
         'started_at',
         'completed_at',
         'picked_up_at',
+        'repair_warranty_issued',
+        'repair_warranty_started_at',
+        'repair_warranty_expires_at',
+        'repair_warranty_duration',
+        'repair_warranty_duration_unit',
         'received_at',
         'awaiting_parts_notes',
         'awaiting_parts_since',
@@ -124,10 +129,19 @@ class RepairRequest extends Model
         'shipped_at',
     ];
 
+    protected $attributes = [
+        'repair_warranty_issued' => false,
+    ];
+
     protected $casts = [
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
         'picked_up_at' => 'datetime',
+        'repair_warranty_issued' => 'boolean',
+        'repair_warranty_started_at' => 'datetime',
+        'repair_warranty_expires_at' => 'datetime',
+        'repair_warranty_duration' => 'integer',
+        'repair_warranty_duration_unit' => 'string',
         'received_at' => 'datetime',
         'awaiting_parts_since' => 'datetime',
         'shipped_at' => 'datetime',

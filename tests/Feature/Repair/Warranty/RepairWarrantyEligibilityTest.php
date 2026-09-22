@@ -41,7 +41,7 @@ class RepairWarrantyEligibilityTest extends TestCase
         $address = $this->addressFor($customer);
         $delivery = app(RepairDeliveryService::class);
 
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'status' => 'picked_up',
@@ -86,7 +86,7 @@ class RepairWarrantyEligibilityTest extends TestCase
             'repair_warranty_days' => 30,
         ]);
         $customer = User::factory()->create();
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'status' => 'received',
@@ -127,7 +127,7 @@ class RepairWarrantyEligibilityTest extends TestCase
             'repair_warranty_days' => 30,
         ]);
         $customer = User::factory()->create();
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'status' => 'picked_up',
@@ -169,7 +169,7 @@ class RepairWarrantyEligibilityTest extends TestCase
         /** @var User $customer */
         $customer = User::factory()->create();
 
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'status' => 'picked_up',
@@ -217,7 +217,7 @@ class RepairWarrantyEligibilityTest extends TestCase
         $delivery = app(RepairDeliveryService::class);
         $originalSnapshot = $delivery->snapshot($address, 'customer_pickup');
 
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'status' => 'picked_up',
@@ -262,7 +262,7 @@ class RepairWarrantyEligibilityTest extends TestCase
         /** @var User $customer */
         $customer = User::factory()->create();
 
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'status' => 'picked_up',
@@ -298,7 +298,7 @@ class RepairWarrantyEligibilityTest extends TestCase
         /** @var User $customer */
         $customer = User::factory()->create();
 
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'status' => 'picked_up',
@@ -351,7 +351,7 @@ class RepairWarrantyEligibilityTest extends TestCase
         /** @var User $customer */
         $customer = User::factory()->create();
 
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'status' => 'picked_up',
@@ -407,7 +407,7 @@ class RepairWarrantyEligibilityTest extends TestCase
         /** @var User $customer */
         $customer = User::factory()->create();
 
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => $customer->id,
             'status' => 'picked_up',
@@ -463,7 +463,7 @@ class RepairWarrantyEligibilityTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
         ]);
 
-        $repair = RepairRequest::factory()->create([
+        $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
             'user_id' => null,
             'request_id' => 'REP-POS-20260412-0001',
@@ -535,6 +535,15 @@ class RepairWarrantyEligibilityTest extends TestCase
 
         $mismatch->assertStatus(422)
             ->assertJsonPath('success', false);
+    }
+
+    private function createWarrantyRepair(array $attributes): RepairRequest
+    {
+        $repair = RepairRequest::factory()->create($attributes);
+
+        return $repair->picked_up_at
+            ? app(\App\Services\RepairWarrantyService::class)->issueAtHandover($repair)
+            : $repair;
     }
 
     private function addressFor(User $customer, array $overrides = []): UserAddress

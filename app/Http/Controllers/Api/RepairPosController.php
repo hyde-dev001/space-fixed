@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
+use App\Services\RepairWarrantyService;
 use App\Services\Manager\ManagerRepairService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -986,7 +987,7 @@ class RepairPosController extends Controller
         }
     }
 
-    public function updateManualQueueStatus(Request $request, int $repairId)
+    public function updateManualQueueStatus(Request $request, int $repairId, RepairWarrantyService $warrantyService)
     {
         $shopOwnerId = $this->resolveActorShopOwnerId($this->resolveActor());
         if ($shopOwnerId <= 0) {
@@ -1053,6 +1054,10 @@ class RepairPosController extends Controller
         }
 
         $repair->update($updates);
+
+        if ($targetStatus === 'picked_up') {
+            $warrantyService->issueAtHandover($repair);
+        }
 
         return response()->json([
             'success' => true,

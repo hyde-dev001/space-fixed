@@ -373,6 +373,7 @@ class RepairPosManualQueueTest extends TestCase
 
         $response->assertOk()->assertJsonPath('success', true);
         $this->assertSame('picked_up', (string) $repair->fresh()->status);
+        $this->assertTrue((bool) $repair->fresh()->repair_warranty_issued);
     }
 
     private function createRepairRequest(array $overrides = []): RepairRequest

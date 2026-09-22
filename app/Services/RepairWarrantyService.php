@@ -15,11 +15,13 @@ use Illuminate\Validation\ValidationException;
 
 class RepairWarrantyService
 {
-    private const DEFAULT_WARRANTY_DAYS = 30;
+    private const DEFAULT_WARRANTY_DURATION = 30;
 
-    private const MIN_WARRANTY_DAYS = 1;
-
-    private const MAX_WARRANTY_DAYS = 90;
+    private const WARRANTY_DURATION_LIMITS = [
+        'days' => 365,
+        'weeks' => 52,
+        'months' => 12,
+    ];
 
     private const MAX_EVIDENCE_IMAGES = 10;
 
@@ -31,8 +33,98 @@ class RepairWarrantyService
         $this->repairDeliveryService ??= app(RepairDeliveryService::class);
     }
 
+    public function issueAtHandover(RepairRequest $repair): RepairRequest
+    {
+        return DB::transaction(function () use ($repair): RepairRequest {
+            /** @var RepairRequest $lockedRepair */
+            $lockedRepair = RepairRequest::query()
+                ->with('shopOwner')
+                ->whereKey($repair->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ((bool) ($lockedRepair->is_warranty_job ?? false) || $this->hasWarranty($lockedRepair)) {
+                return $lockedRepair;
+            }
+
+            $configuration = $this->warrantyConfiguration($lockedRepair->shopOwner);
+            if ($configuration === null) {
+                return $lockedRepair;
+            }
+
+            $start = $lockedRepair->picked_up_at;
+            if ($start === null) {
+                return $lockedRepair;
+            }
+
+            $startedAt = Carbon::parse($start);
+            $expiresAt = $this->calculateExpiry(
+                $startedAt,
+                $configuration['duration'],
+                $configuration['unit'],
+            );
+
+            $lockedRepair->forceFill([
+                'repair_warranty_issued' => true,
+                'repair_warranty_started_at' => $startedAt,
+                'repair_warranty_expires_at' => $expiresAt,
+                'repair_warranty_duration' => $configuration['duration'],
+                'repair_warranty_duration_unit' => $configuration['unit'],
+            ])->save();
+
+            return $lockedRepair->fresh(['shopOwner']);
+        });
+    }
+
+    public function hasWarranty(RepairRequest $repair): bool
+    {
+        return (bool) ($repair->repair_warranty_issued ?? false)
+            && $repair->repair_warranty_started_at !== null
+            && $repair->repair_warranty_expires_at !== null;
+    }
+
     /**
-     * @return array{warranty_started_at: Carbon, warranty_expires_at: Carbon, warranty_days: int}
+     * @return array{issued: true, active: bool, started_at: string, expires_at: string, duration: int|null, duration_unit: string|null, days_remaining: int, can_claim: bool}|null
+     */
+    public function warrantyState(RepairRequest $repair, ?int $customerUserId = null): ?array
+    {
+        if (! $this->hasWarranty($repair)) {
+            return null;
+        }
+
+        $startedAt = Carbon::parse($repair->repair_warranty_started_at);
+        $expiresAt = Carbon::parse($repair->repair_warranty_expires_at);
+        $active = now()->lessThanOrEqualTo($expiresAt);
+
+        return [
+            'issued' => true,
+            'active' => $active,
+            'started_at' => $startedAt->toISOString(),
+            'expires_at' => $expiresAt->toISOString(),
+            'duration' => $repair->repair_warranty_duration === null
+                ? null
+                : (int) $repair->repair_warranty_duration,
+            'duration_unit' => $repair->repair_warranty_duration_unit
+                ? (string) $repair->repair_warranty_duration_unit
+                : null,
+            'days_remaining' => $active ? max(0, (int) now()->diffInDays($expiresAt, false)) : 0,
+            'can_claim' => $active && $this->canClaimWarranty($repair, $customerUserId),
+        ];
+    }
+
+    public function canClaimWarranty(RepairRequest $repair, ?int $customerUserId = null): bool
+    {
+        try {
+            $this->validateEligibility($repair, $customerUserId);
+
+            return true;
+        } catch (ValidationException) {
+            return false;
+        }
+    }
+
+    /**
+     * @return array{warranty_started_at: Carbon, warranty_expires_at: Carbon, warranty_days: int, warranty_duration: int, warranty_duration_unit: string}
      */
     public function validateEligibility(RepairRequest $originalRepair, ?int $customerUserId = null, ?int $ignoreClaimId = null): array
     {
@@ -42,16 +134,9 @@ class RepairWarrantyService
             ]);
         }
 
-        $shopOwner = $originalRepair->shopOwner ?: ShopOwner::query()->find($originalRepair->shop_owner_id);
-        if (! $shopOwner) {
+        if (! $originalRepair->shopOwner && ! ShopOwner::query()->whereKey($originalRepair->shop_owner_id)->exists()) {
             throw ValidationException::withMessages([
                 'repair' => ['Shop context could not be resolved for this repair request.'],
-            ]);
-        }
-
-        if ((bool) ($shopOwner->warranty_enabled ?? true) === false) {
-            throw ValidationException::withMessages([
-                'repair' => ['Warranty claims are currently disabled for this shop.'],
             ]);
         }
 
@@ -68,17 +153,14 @@ class RepairWarrantyService
             ]);
         }
 
-        $windowStart = $this->resolveWarrantyWindowStart($originalRepair);
-        if (! $windowStart) {
+        if (! $this->hasWarranty($originalRepair)) {
             throw ValidationException::withMessages([
-                'repair' => ['Warranty start date is not available for this repair request.'],
+                'repair' => ['Warranty was not issued for this repair request.'],
             ]);
         }
 
-        $days = (int) ($shopOwner->repair_warranty_days ?? self::DEFAULT_WARRANTY_DAYS);
-        $days = max(self::MIN_WARRANTY_DAYS, min(self::MAX_WARRANTY_DAYS, $days));
-
-        $windowExpiry = $windowStart->copy()->addDays($days)->endOfDay();
+        $windowStart = Carbon::parse($originalRepair->repair_warranty_started_at);
+        $windowExpiry = Carbon::parse($originalRepair->repair_warranty_expires_at);
         if (now()->greaterThan($windowExpiry)) {
             throw ValidationException::withMessages([
                 'repair' => ['Warranty period has already expired for this repair request.'],
@@ -129,7 +211,9 @@ class RepairWarrantyService
         return [
             'warranty_started_at' => $windowStart,
             'warranty_expires_at' => $windowExpiry,
-            'warranty_days' => $days,
+            'warranty_days' => (int) ($originalRepair->repair_warranty_duration ?? self::DEFAULT_WARRANTY_DURATION),
+            'warranty_duration' => (int) ($originalRepair->repair_warranty_duration ?? self::DEFAULT_WARRANTY_DURATION),
+            'warranty_duration_unit' => (string) ($originalRepair->repair_warranty_duration_unit ?? 'days'),
         ];
     }
 
@@ -933,16 +1017,38 @@ class RepairWarrantyService
         return $fallbackId > 0 ? $fallbackId : null;
     }
 
-    private function resolveWarrantyWindowStart(RepairRequest $repair): ?Carbon
+    /**
+     * @return array{duration: int, unit: string}|null
+     */
+    private function warrantyConfiguration(?ShopOwner $shopOwner): ?array
     {
-        foreach (['picked_up_at', 'received_at', 'customer_confirmed_at'] as $field) {
-            $value = $repair->{$field} ?? null;
-            if ($value !== null) {
-                return Carbon::parse($value);
-            }
+        if (! $shopOwner || ! (bool) ($shopOwner->warranty_enabled ?? true)) {
+            return null;
         }
 
-        return null;
+        $unit = strtolower(trim((string) ($shopOwner->repair_warranty_duration_unit ?? 'days')));
+        if (! array_key_exists($unit, self::WARRANTY_DURATION_LIMITS)) {
+            return null;
+        }
+
+        $duration = (int) ($shopOwner->repair_warranty_days ?? self::DEFAULT_WARRANTY_DURATION);
+        if ($duration < 1 || $duration > self::WARRANTY_DURATION_LIMITS[$unit]) {
+            return null;
+        }
+
+        return [
+            'duration' => $duration,
+            'unit' => $unit,
+        ];
+    }
+
+    private function calculateExpiry(Carbon $startedAt, int $duration, string $unit): Carbon
+    {
+        return match ($unit) {
+            'weeks' => $startedAt->copy()->addWeeks($duration)->endOfDay(),
+            'months' => $startedAt->copy()->addMonthsNoOverflow($duration)->endOfDay(),
+            default => $startedAt->copy()->addDays($duration)->endOfDay(),
+        };
     }
 
     private function generateClaimNo(): string
