@@ -1484,25 +1484,28 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                               </div>
                             )}
                           </div>
-                          {['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
-                            && ['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus) && (
-                              <div className="flex flex-wrap gap-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-                                <Button
-                                  onClick={() => confirmIdentityReview(selectedUser, 'approve')}
-                                  disabled={isProcessingId === selectedUser.id || expandedDocuments.size === 0}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  Approve Review
-                                </Button>
-                                <Button
-                                  onClick={() => confirmIdentityReview(selectedUser, 'reject')}
-                                  disabled={isProcessingId === selectedUser.id || expandedDocuments.size === 0}
-                                  className="bg-red-600 hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                >
-                                  Reject Review
-                                </Button>
-                              </div>
-                            )}
+                          <div className="flex flex-wrap gap-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                            <Button
+                              onClick={() => confirmIdentityReview(selectedUser, 'approve')}
+                              disabled={isProcessingId === selectedUser.id
+                                || expandedDocuments.size === 0
+                                || !['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
+                                || !['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus)}
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Approve Review
+                            </Button>
+                            <Button
+                              onClick={() => confirmIdentityReview(selectedUser, 'reject')}
+                              disabled={isProcessingId === selectedUser.id
+                                || expandedDocuments.size === 0
+                                || !['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
+                                || !['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus)}
+                              className="bg-red-600 hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Reject Review
+                            </Button>
+                          </div>
                           <p className="text-xs text-gray-600 dark:text-gray-300">
                             Automated screening indicates document consistency only. Human review decisions do not by themselves establish government authenticity.
                           </p>

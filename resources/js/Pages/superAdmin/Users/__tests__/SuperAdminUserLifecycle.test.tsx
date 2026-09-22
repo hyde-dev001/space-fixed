@@ -117,6 +117,34 @@ describe('SuperAdminUserManagement lifecycle controls', () => {
     expect(rejectButton).toBeEnabled();
   });
 
+  it('displays disabled identity decisions for an already decided review', () => {
+    render(
+      <SuperAdminUserManagement
+        users={[user({
+          validIdUrl: '/ids/front.jpg',
+          identityVerification: {
+            id: 7,
+            documentType: 'student_id',
+            screeningStatus: 'manual_review_required',
+            reviewStatus: 'rejected',
+          },
+        })]}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('View Registration Details'));
+
+    const approveButton = screen.getByRole('button', { name: 'Approve Review' });
+    const rejectButton = screen.getByRole('button', { name: 'Reject Review' });
+    expect(approveButton).toBeDisabled();
+    expect(rejectButton).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+
+    expect(approveButton).toBeDisabled();
+    expect(rejectButton).toBeDisabled();
+  });
+
   it('renders metric values without decorative period-change badges', () => {
     render(
       <SuperAdminUserManagement
