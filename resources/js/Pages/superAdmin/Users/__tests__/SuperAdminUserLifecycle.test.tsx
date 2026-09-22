@@ -56,6 +56,67 @@ beforeEach(() => {
 });
 
 describe('SuperAdminUserManagement lifecycle controls', () => {
+  it('hides the separate identity review queue shortcut', () => {
+    render(<SuperAdminUserManagement users={[user()]} />);
+
+    expect(screen.queryByRole('link', { name: 'Identity Review Queue' })).not.toBeInTheDocument();
+  });
+
+  it('orders account status before submitted documents and identity screening', () => {
+    render(
+      <SuperAdminUserManagement
+        users={[user({
+          validIdUrl: '/ids/front.jpg',
+          identityVerification: {
+            id: 7,
+            documentType: 'student_id',
+            screeningStatus: 'manual_review_required',
+            reviewStatus: 'pending',
+          },
+        })]}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('View Registration Details'));
+
+    expect(screen.getAllByRole('heading', { level: 4 }).map((heading) => heading.textContent)).toEqual([
+      'Personal Information',
+      'Address',
+      'Account Status',
+      'Submitted Documents',
+      'Identity Screening',
+    ]);
+    expect(screen.getByRole('dialog')).toHaveClass('overflow-y-auto', 'no-scrollbar');
+  });
+
+  it('keeps identity decisions disabled until a submitted document is viewed', () => {
+    render(
+      <SuperAdminUserManagement
+        users={[user({
+          validIdUrl: '/ids/front.jpg',
+          identityVerification: {
+            id: 7,
+            documentType: 'student_id',
+            screeningStatus: 'manual_review_required',
+            reviewStatus: 'pending',
+          },
+        })]}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('View Registration Details'));
+
+    const approveButton = screen.getByRole('button', { name: 'Approve Review' });
+    const rejectButton = screen.getByRole('button', { name: 'Reject Review' });
+    expect(approveButton).toBeDisabled();
+    expect(rejectButton).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+
+    expect(approveButton).toBeEnabled();
+    expect(rejectButton).toBeEnabled();
+  });
+
   it('renders metric values without decorative period-change badges', () => {
     render(
       <SuperAdminUserManagement
