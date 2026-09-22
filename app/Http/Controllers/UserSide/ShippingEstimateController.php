@@ -7,6 +7,7 @@ use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\UserAddress;
 use App\Services\AddressCoordinateService;
+use App\Services\CodEligibilityService;
 use App\Services\Logistics\DeliveryScheduleService;
 use App\Services\NominatimService;
 use App\Services\ShippingEstimateService;
@@ -22,6 +23,7 @@ class ShippingEstimateController extends Controller
     public function __construct(
         private readonly ShippingEstimateService $shippingEstimateService,
         private readonly AddressCoordinateService $coordinates,
+        private readonly CodEligibilityService $codEligibility,
         private readonly DeliveryScheduleService $deliverySchedules,
         private readonly NominatimService $nominatim,
     ) {}
@@ -161,6 +163,8 @@ class ShippingEstimateController extends Controller
 
     private function shopOwnedCoverage(ShopOwner $shopOwner, ?UserAddress $address, ?array $draftCoordinates): array
     {
+        $codAvailability = $this->codEligibility->baseAvailability($shopOwner);
+
         try {
             return [
                 ...$this->deliverySchedules->coverage(
@@ -168,7 +172,9 @@ class ShippingEstimateController extends Controller
                     $draftCoordinates['lat'] ?? ($address?->latitude !== null ? (float) $address->latitude : null),
                     $draftCoordinates['lng'] ?? ($address?->longitude !== null ? (float) $address->longitude : null),
                 ),
-                'cod_available' => $shopOwner->supportsCashOnDelivery(),
+                'cod_available' => $codAvailability['eligible'],
+                'cod_order_threshold' => $codAvailability['threshold'],
+                'cod_unavailable_reason' => $codAvailability['reason'],
             ];
         } catch (\Throwable $exception) {
             Log::warning('Shipping estimate logistics coverage failed', ['message' => $exception->getMessage()]);
@@ -178,7 +184,9 @@ class ShippingEstimateController extends Controller
                 'reason' => 'logistics_unavailable',
                 'distance_km' => null,
                 'coverage_radius_km' => null,
-                'cod_available' => $shopOwner->supportsCashOnDelivery(),
+                'cod_available' => $codAvailability['eligible'],
+                'cod_order_threshold' => $codAvailability['threshold'],
+                'cod_unavailable_reason' => $codAvailability['reason'],
             ];
         }
     }
@@ -261,6 +269,9 @@ class ShippingEstimateController extends Controller
                 'reason' => 'logistics_unavailable',
                 'distance_km' => null,
                 'coverage_radius_km' => null,
+                'cod_available' => false,
+                'cod_order_threshold' => null,
+                'cod_unavailable_reason' => 'logistics_unavailable',
             ],
         ]);
     }

@@ -72,7 +72,7 @@ $modules = [
         'label' => 'Logistics',
         'registration_types' => ['company'],
         'business_types' => ['retail', 'repair', 'both'],
-        'default_enabled' => true,
+        'default_enabled' => false,
         'backfill_enabled' => true,
         'actor_scope' => ['shop_owner', 'user'],
     ],

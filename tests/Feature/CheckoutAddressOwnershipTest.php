@@ -4,11 +4,14 @@ namespace Tests\Feature;
 
 use App\Models\Order;
 use App\Models\Logistics\LogisticsSetting;
+use App\Models\Logistics\RiderProfile;
 use App\Models\Product;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Models\UserAddress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class CheckoutAddressOwnershipTest extends TestCase
@@ -38,9 +41,13 @@ class CheckoutAddressOwnershipTest extends TestCase
         ]);
         $address = $this->addressFor($customer);
         $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+            'cod_enabled' => true,
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        $this->enableCodRequirements($shop);
         LogisticsSetting::create([
             'shop_owner_id' => $shop->id,
             'coverage_radius_km' => 20,
@@ -112,5 +119,25 @@ class CheckoutAddressOwnershipTest extends TestCase
             'shipping_address_line' => $address->address_line,
             'payment_method' => 'cod',
         ];
+    }
+
+    private function enableCodRequirements(ShopOwner $shop): void
+    {
+        ShopOwnerModule::create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+
+        $dispatcher = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'status' => 'active',
+        ]);
+        $dispatcher->givePermissionTo(Permission::findOrCreate('assign-logistics-deliveries', 'user'));
+
+        RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'active' => true,
+        ]);
     }
 }

@@ -14,7 +14,7 @@ final class ShopModuleProvisioningService
     ) {}
 
     /**
-     * Insert enabled rows for eligible modules that do not have persisted state.
+     * Insert configured rows for eligible modules that do not have persisted state.
      * Existing rows, including disabled choices, are never updated.
      *
      * @param  array<int, string>  $eligibleKeys
@@ -44,7 +44,7 @@ final class ShopModuleProvisioningService
         foreach (array_values(array_diff($eligibleKeys, $existingKeys)) as $moduleKey) {
             $module = $owner->modules()->firstOrCreate(
                 ['module_key' => $moduleKey],
-                ['enabled' => true],
+                ['enabled' => (bool) config("shop_modules.modules.{$moduleKey}.default_enabled", true)],
             );
 
             if ($module->wasRecentlyCreated) {

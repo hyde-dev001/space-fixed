@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Order;
+use App\Models\Logistics\RiderProfile;
 use App\Models\Product;
 use App\Models\PromoCampaign;
 use App\Models\ShopOwner;
@@ -14,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class CheckoutPromoPricingTest extends TestCase
@@ -39,6 +41,7 @@ class CheckoutPromoPricingTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create([
             'registration_type' => 'company',
             'business_type' => 'both',
+            'cod_enabled' => true,
             'paymongo_secret_key' => 'sk_test_checkout_shipping_voucher',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
@@ -48,6 +51,17 @@ class CheckoutPromoPricingTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'module_key' => 'logistics',
             'enabled' => true,
+        ]);
+
+        $dispatcher = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        $dispatcher->givePermissionTo(Permission::findOrCreate('assign-logistics-deliveries', 'user'));
+
+        RiderProfile::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'active' => true,
         ]);
 
         return $shopOwner;

@@ -5,13 +5,16 @@ namespace Tests\Feature\Cod;
 use App\Models\Order;
 use App\Models\Product;
 use App\Models\Logistics\LogisticsSetting;
+use App\Models\Logistics\RiderProfile;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Models\UserAddress;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class CodCheckoutTest extends TestCase
@@ -28,9 +31,12 @@ class CodCheckoutTest extends TestCase
         ]);
         $shopOwner = ShopOwner::factory()->approved()->create([
             'business_type' => 'both',
+            'registration_type' => 'company',
+            'cod_enabled' => true,
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        $this->enableCodRequirements($shopOwner);
         LogisticsSetting::create([
             'shop_owner_id' => $shopOwner->id,
             'coverage_radius_km' => 20,
@@ -119,9 +125,12 @@ class CodCheckoutTest extends TestCase
         ]);
         $shopOwner = ShopOwner::factory()->approved()->create([
             'business_type' => 'both',
+            'registration_type' => 'company',
+            'cod_enabled' => true,
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        $this->enableCodRequirements($shopOwner);
         LogisticsSetting::create([
             'shop_owner_id' => $shopOwner->id,
             'coverage_radius_km' => 1,
@@ -179,7 +188,7 @@ class CodCheckoutTest extends TestCase
     }
 
     #[Test]
-    public function cod_checkout_is_not_available_for_an_individual_retail_shop(): void
+    public function cod_checkout_rejects_an_individual_retail_shop_without_shop_owned_logistics(): void
     {
         Http::preventStrayRequests();
 
@@ -189,6 +198,7 @@ class CodCheckoutTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create([
             'business_type' => 'retail',
             'registration_type' => 'individual',
+            'cod_enabled' => true,
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
@@ -243,8 +253,27 @@ class CodCheckoutTest extends TestCase
                 'payment_method' => 'cash_on_delivery',
             ]);
 
-        $response->assertUnprocessable()
-            ->assertJsonPath('error', 'cod_not_available_for_individual_shop');
+        $response->assertUnprocessable()->assertJsonPath('error', 'logistics_module_unavailable');
         $this->assertDatabaseCount('orders', 0);
+    }
+
+    private function enableCodRequirements(ShopOwner $shopOwner): void
+    {
+        ShopOwnerModule::create([
+            'shop_owner_id' => $shopOwner->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
+
+        $dispatcher = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'active',
+        ]);
+        $dispatcher->givePermissionTo(Permission::findOrCreate('assign-logistics-deliveries', 'user'));
+
+        RiderProfile::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'active' => true,
+        ]);
     }
 }

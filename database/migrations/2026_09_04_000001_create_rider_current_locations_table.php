@@ -19,7 +19,7 @@ return new class extends Migration
             $table->decimal('speed_mps', 8, 3)->nullable();
             $table->decimal('heading_deg', 6, 2)->nullable();
             $table->timestamp('recorded_at');
-            $table->timestamp('received_at');
+            $table->timestamp('received_at')->useCurrent();
             $table->timestamps();
 
             $table->index(['rider_profile_id', 'updated_at']);
