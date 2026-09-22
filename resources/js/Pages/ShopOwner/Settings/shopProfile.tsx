@@ -123,15 +123,15 @@ const OPERATING_HOUR_ROWS = [
   { day: "Sunday", openKey: "sunday_open", closeKey: "sunday_close" },
 ] as const;
 
-const validateOperatingHours = (hours: OperatingHours): string | null => {
+export const validateOperatingHours = (hours: OperatingHours): string | null => {
   const normalizedHours = normalizeOperatingHours(hours);
 
   for (const row of OPERATING_HOUR_ROWS) {
     const open = normalizedHours[row.openKey as keyof OperatingHours];
     const close = normalizedHours[row.closeKey as keyof OperatingHours];
 
-    if (open && close && open >= close) {
-      return `${row.day}: Opening time must be before closing time`;
+    if (open && close && open === close) {
+      return `${row.day}: Opening and closing time must be different`;
     }
   }
 

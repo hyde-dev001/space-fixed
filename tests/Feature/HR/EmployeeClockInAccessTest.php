@@ -5,6 +5,7 @@ namespace Tests\Feature\HR;
 use App\Models\Employee;
 use App\Models\HR\AttendanceRecord;
 use App\Models\ShopOwner;
+use App\Models\SuperAdmin;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -83,6 +84,23 @@ class EmployeeClockInAccessTest extends TestCase
         $this->actingAs($customer, 'user')
             ->postJson('/api/cart/clear')
             ->assertOk();
+    }
+
+    public function test_employee_can_logout_from_a_privileged_session_before_clocking_in(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $user = User::factory()->for($shop)->create([
+            'role' => 'MANAGER',
+            'status' => 'active',
+        ]);
+        $admin = SuperAdmin::factory()->create();
+
+        $this->actingAs($user, 'user')
+            ->actingAs($admin, 'super_admin')
+            ->post('/admin/logout')
+            ->assertRedirect(route('admin.login'));
+
+        $this->assertGuest('super_admin');
     }
 
     public function test_check_in_accepts_the_final_configured_minute(): void
