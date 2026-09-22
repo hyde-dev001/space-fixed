@@ -124,6 +124,17 @@ type DeliveryQuote = {
   method?: string | null;
 };
 
+type RepairWarrantyState = {
+  issued: true;
+  active: boolean;
+  started_at: string;
+  expires_at: string;
+  duration: number | null;
+  duration_unit: 'days' | 'weeks' | 'months' | string | null;
+  days_remaining: number;
+  can_claim: boolean;
+};
+
 type RepairOrder = {
   id: number;
   order_number: string;
@@ -223,6 +234,7 @@ type RepairOrder = {
   parent_repair_request_id?: number | null;
   billing_mode?: string | null;
   warranty_display_alias?: string | null;
+  warranty?: RepairWarrantyState | null;
   shop_owner_id?: number | null;
   repair_package_id?: number | null;
   package_price?: number | null;
@@ -2165,20 +2177,7 @@ const MyRepairs: React.FC = () => {
       return false;
     }
 
-    if (order.status !== 'picked_up') {
-      return false;
-    }
-
-    if (hasBlockingRefundForReview(order)) {
-      return false;
-    }
-
-    const latestClaim = latestWarrantyClaimByRepairId[order.id];
-    if (!latestClaim) {
-      return true;
-    }
-
-    return String(latestClaim.status || '').toLowerCase() === 'rejected';
+    return order.status === 'picked_up' && Boolean(order.warranty?.can_claim);
   };
 
   const getWarrantyClaimBlockReason = (order: RepairOrder): string => {
@@ -2188,6 +2187,14 @@ const MyRepairs: React.FC = () => {
 
     if (order.status !== 'picked_up') {
       return 'Warranty claim is available only after you receive the repaired shoes.';
+    }
+
+    if (!order.warranty) {
+      return 'This repair was not issued a warranty by the shop.';
+    }
+
+    if (!order.warranty.active) {
+      return `Warranty expired on ${new Date(order.warranty.expires_at).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}.`;
     }
 
     if (hasBlockingRefundForReview(order)) {
@@ -5182,12 +5189,24 @@ const MyRepairs: React.FC = () => {
                           })()}
                         </>
                       )}
-                      {order.status === 'picked_up' && (
+                      {order.warranty && (
+                        <div className="mr-auto w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 sm:w-auto">
+                          <p className="font-semibold">Repair warranty: {order.warranty.active ? 'Active' : 'Expired'}</p>
+                          <p>
+                            {order.warranty.active
+                              ? `${order.warranty.days_remaining} day${order.warranty.days_remaining === 1 ? '' : 's'} remaining · valid until ${new Date(order.warranty.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                              : `Expired ${new Date(order.warranty.expires_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                          </p>
+                          <p>
+                            Started {new Date(order.warranty.started_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </p>
+                        </div>
+                      )}
+                      {order.status === 'picked_up' && order.warranty?.can_claim && (
                         <button
                           onClick={() => handleFileWarrantyClaim(order)}
-                          disabled={!canFileWarrantyClaim(order)}
-                          title={canFileWarrantyClaim(order) ? 'File a no-charge warranty claim for this repair.' : getWarrantyClaimBlockReason(order)}
-                          className={`${actionButtonBaseClass} ${canFileWarrantyClaim(order) ? actionButtonSecondaryClass : actionButtonDisabledClass}`}
+                          title="File a no-charge warranty claim for this repair."
+                          className={`${actionButtonBaseClass} ${actionButtonSecondaryClass}`}
                         >
                           WARRANTY CLAIM
                         </button>

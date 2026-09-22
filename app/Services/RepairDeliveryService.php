@@ -1085,6 +1085,10 @@ final class RepairDeliveryService
                 ] : []),
             ]);
 
+            if ($isAnonymousWalkIn) {
+                app(RepairWarrantyService::class)->issueAtHandover($lockedRepair);
+            }
+
             return [
                 'repair' => $lockedRepair->fresh(),
                 'replayed' => false,

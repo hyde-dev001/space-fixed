@@ -26,6 +26,7 @@ use App\Services\RepairDeliveryService;
 use App\Services\RepairPosPaymentService;
 use App\Services\RepairPosReceiptService;
 use App\Services\RepairPosRefundService;
+use App\Services\RepairWarrantyService;
 use App\Services\PlatformRestrictionService;
 use App\Support\Tax\VatInclusiveCalculator;
 use Illuminate\Http\Request;
@@ -828,6 +829,7 @@ class RepairRequestController extends Controller
             'services',
             'shopOwner',
             'repairer',
+            'latestWarrantyClaim',
             'parentRepairRequest:id,total_paid_amount',
             'materialUsages.inventoryItem:id,price',
             'latestPosTransaction:id,metadata',
@@ -850,6 +852,7 @@ class RepairRequestController extends Controller
 
         $settlementService = app(PaymentSettlementService::class);
         $repairDeliveryService = app(RepairDeliveryService::class);
+        $warrantyService = app(RepairWarrantyService::class);
 
         if ($request->boolean('reconcile_payments')) {
             $hasReconciledChanges = false;
@@ -912,7 +915,7 @@ class RepairRequestController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup, $logisticsShipmentLookup, $settlementService, $repairDeliveryService) {
+            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup, $logisticsShipmentLookup, $settlementService, $repairDeliveryService, $warrantyService, $user) {
                 // Images are already cast as array, so no need to json_decode
                 $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
                 $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
@@ -1041,6 +1044,7 @@ class RepairRequestController extends Controller
                     'parent_repair_request_id' => $repair->parent_repair_request_id,
                     'billing_mode' => $repair->billing_mode,
                     'warranty_display_alias' => $repair->warranty_display_alias,
+                    'warranty' => $warrantyService->warrantyState($repair, (int) $user->id),
                     'repair_package_id' => $repair->repair_package_id,
                     'package_price' => $repair->package_price,
                     'add_ons_total' => $repair->add_ons_total,
@@ -1080,7 +1084,7 @@ class RepairRequestController extends Controller
             ], 401);
         }
 
-        $repair = RepairRequest::with(['services', 'shopOwner', 'repairer', 'conversation', 'repairPackage', 'materialUsages.inventoryItem:id,price'])
+        $repair = RepairRequest::with(['services', 'shopOwner', 'repairer', 'latestWarrantyClaim', 'conversation', 'repairPackage', 'materialUsages.inventoryItem:id,price'])
             ->where('id', $id)
             ->forCustomer($user->id)
             ->first();
@@ -1125,6 +1129,7 @@ class RepairRequestController extends Controller
                 'started_at' => $repair->started_at,
                 'completed_at' => $repair->completed_at,
                 'picked_up_at' => $repair->picked_up_at,
+                'warranty' => app(RepairWarrantyService::class)->warrantyState($repair, (int) $user->id),
                 'tracking_number' => $repair->tracking_number,
                 'carrier_company' => $repair->carrier_company,
                 'carrier_name' => $repair->carrier_name,
@@ -2181,12 +2186,13 @@ class RepairRequestController extends Controller
         $id,
         RepairDeliveryService $repairDeliveryService,
         PaymentSettlementService $settlementService,
+        RepairWarrantyService $warrantyService,
     )
     {
         $user = Auth::guard('user')->user();
         abort_unless($user, 401);
 
-        $repair = DB::transaction(function () use ($id, $user, $repairDeliveryService, $settlementService): RepairRequest {
+        $repair = DB::transaction(function () use ($id, $user, $repairDeliveryService, $settlementService, $warrantyService): RepairRequest {
             $repair = RepairRequest::query()
                 ->whereKey($id)
                 ->forCustomer($user->id)
@@ -2239,6 +2245,8 @@ class RepairRequestController extends Controller
                     'error' => $invoiceError->getMessage(),
                 ]);
             }
+
+            $warrantyService->issueAtHandover($repair);
 
             return $repair->fresh(['services', 'shopOwner', 'repairer']);
         }, 3);

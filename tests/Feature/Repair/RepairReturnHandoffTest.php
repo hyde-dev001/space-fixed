@@ -77,6 +77,10 @@ class RepairReturnHandoffTest extends TestCase
             ->assertOk();
 
         $this->assertSame('picked_up', $repair->fresh()->status);
+        $this->assertDatabaseHas('repair_requests', [
+            'id' => $repair->id,
+            'repair_warranty_issued' => true,
+        ]);
         $this->assertDatabaseCount('finance_invoices', 1);
 
         $this->actingAs($customer, 'user')
@@ -114,6 +118,10 @@ class RepairReturnHandoffTest extends TestCase
             ->assertOk();
 
         $this->assertSame('picked_up', $repair->fresh()->status);
+        $this->assertDatabaseHas('repair_requests', [
+            'id' => $repair->id,
+            'repair_warranty_issued' => true,
+        ]);
         $this->assertDatabaseCount('finance_invoices', 1);
     }
 
@@ -164,6 +172,7 @@ class RepairReturnHandoffTest extends TestCase
         $repair->refresh();
         $this->assertSame('picked_up', $repair->status);
         $this->assertNotNull($repair->picked_up_at);
+        $this->assertTrue((bool) $repair->repair_warranty_issued);
         $this->assertFalse((bool) $repair->pickup_enabled);
         $this->assertNotNull($repair->return_logistics_locked_at);
         $this->assertDatabaseCount('finance_invoices', 0);

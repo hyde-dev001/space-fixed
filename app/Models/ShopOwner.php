@@ -84,6 +84,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'repair_payment_policy', // full_upfront; deposit_50 is legacy-only
         'repair_workload_limit', // Max concurrent active repairs (default 20)
         'repair_warranty_days', // Warranty period in days for repair claims
+        'repair_warranty_duration_unit', // Warranty period unit: days, weeks, or months
         'warranty_enabled', // Toggle warranty claim filing for this shop
         'order_refund_deadline_days', // Refund/cancellation eligibility window for product orders
         'two_factor_email_enabled', // Require OTP code on login
@@ -107,6 +108,10 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'shop_address',
         'shop_geofence_radius',
         'attendance_geofence_enabled',
+    ];
+
+    protected $attributes = [
+        'repair_warranty_duration_unit' => 'days',
     ];
 
     /**
@@ -156,6 +161,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'attendance_geofence_enabled' => 'boolean',
         'established_year' => 'integer',
         'repair_warranty_days' => 'integer',
+        'repair_warranty_duration_unit' => 'string',
         'warranty_enabled' => 'boolean',
         'order_refund_deadline_days' => 'integer',
         'two_factor_email_enabled' => 'boolean',

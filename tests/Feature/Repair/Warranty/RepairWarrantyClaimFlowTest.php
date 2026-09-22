@@ -786,6 +786,7 @@ class RepairWarrantyClaimFlowTest extends TestCase
             'received_at' => now()->subDays(3),
             'payment_status' => 'completed',
         ]);
+        $repair = app(\App\Services\RepairWarrantyService::class)->issueAtHandover($repair);
 
         $claim = RepairWarrantyClaim::query()->create([
             'claim_no' => 'WCLM-FLOW-0001',

@@ -52,6 +52,9 @@ type ShopSettingsPayload = {
 	document_compliance: ComplianceSlot[];
 	repair_payment_policy: 'deposit_50' | 'full_upfront';
 	repair_workload_limit: number;
+	repair_warranty_enabled: boolean;
+	repair_warranty_duration: number;
+	repair_warranty_duration_unit: 'days' | 'weeks' | 'months';
 	order_refund_deadline_days: number;
 	totp_enabled: boolean;
 	has_paymongo_key: boolean;
@@ -411,6 +414,11 @@ const ShopSetting: React.FC = () => {
 	const [limitInputValue, setLimitInputValue] = useState<string>(String(serverLimit));
 	const [limitInputError, setLimitInputError] = useState<string | null>(null);
 	const [limitSaveSuccess, setLimitSaveSuccess] = useState(false);
+	const [repairWarrantyEnabled, setRepairWarrantyEnabled] = useState<boolean>(Boolean(shop_settings.repair_warranty_enabled ?? true));
+	const [repairWarrantyDurationInput, setRepairWarrantyDurationInput] = useState<string>(String(shop_settings.repair_warranty_duration ?? 30));
+	const [repairWarrantyDurationUnit, setRepairWarrantyDurationUnit] = useState<'days' | 'weeks' | 'months'>(shop_settings.repair_warranty_duration_unit ?? 'days');
+	const [repairWarrantyInputError, setRepairWarrantyInputError] = useState<string | null>(null);
+	const [repairWarrantySaveSuccess, setRepairWarrantySaveSuccess] = useState(false);
 	const [orderRefundDeadlineDays, setOrderRefundDeadlineDays] = useState<number>(shop_settings.order_refund_deadline_days ?? 7);
 	const [refundDeadlineInputValue, setRefundDeadlineInputValue] = useState<string>(String(shop_settings.order_refund_deadline_days ?? 7));
 	const [refundDeadlineInputError, setRefundDeadlineInputError] = useState<string | null>(null);
@@ -1274,6 +1282,44 @@ const ShopSetting: React.FC = () => {
 		);
 	};
 
+	const handleSaveRepairWarranty = () => {
+		const duration = Math.floor(Number(repairWarrantyDurationInput));
+		const durationLimit = repairWarrantyDurationUnit === 'days'
+			? 365
+			: repairWarrantyDurationUnit === 'weeks' ? 52 : 12;
+
+		if (repairWarrantyEnabled && (!Number.isFinite(duration) || duration < 1 || duration > durationLimit)) {
+			setRepairWarrantyInputError(`Enter a warranty duration from 1 to ${durationLimit} ${repairWarrantyDurationUnit}.`);
+			return;
+		}
+
+		setRepairWarrantyInputError(null);
+		const payload = repairWarrantyEnabled
+			? {
+				repair_warranty_enabled: true,
+				repair_warranty_duration: duration,
+				repair_warranty_duration_unit: repairWarrantyDurationUnit,
+			}
+			: { repair_warranty_enabled: false };
+
+		router.put('/shop-owner/settings', payload, {
+			preserveScroll: true,
+			onSuccess: () => {
+				if (repairWarrantyEnabled) setRepairWarrantyDurationInput(String(duration));
+				setRepairWarrantySaveSuccess(true);
+				window.setTimeout(() => setRepairWarrantySaveSuccess(false), 2200);
+			},
+			onError: (pageErrors) => {
+				const pageValidationErrors = pageErrors as Record<string, string | undefined>;
+				setRepairWarrantyInputError(
+					pageValidationErrors.repair_warranty_duration
+					|| pageValidationErrors.repair_warranty_duration_unit
+					|| 'Failed to save warranty settings. Please try again.',
+				);
+			},
+		});
+	};
+
 	const handleSaveOrderRefundDeadlineDays = () => {
 		const parsed = Number(refundDeadlineInputValue);
 		if (!Number.isFinite(parsed) || parsed < 1 || parsed > 30) {
@@ -2050,6 +2096,78 @@ const ShopSetting: React.FC = () => {
 									<p className="mt-3 text-xs text-gray-500">
 										Current limit: <span className="font-semibold text-gray-700">{repairRequestLimit}</span> active repair orders.
 									</p>
+								</div>
+
+								<div className="border-t border-gray-200 pt-6">
+									<div className="flex flex-wrap items-start justify-between gap-4">
+										<div>
+											<h3 className="text-lg font-semibold text-gray-900">Repair Warranty</h3>
+											<p className="mt-1 max-w-2xl text-sm text-gray-600">
+												Choose whether completed repairs receive a customer warranty. The warranty starts when the customer receives the shoes, and existing warranties keep their original terms.
+											</p>
+										</div>
+										<ToggleSwitch
+											enabled={repairWarrantyEnabled}
+											onChange={(enabled) => {
+												setRepairWarrantyEnabled(enabled);
+												setRepairWarrantyInputError(null);
+											}}
+											ariaLabel={repairWarrantyEnabled ? 'Disable repair warranty' : 'Enable repair warranty'}
+										/>
+									</div>
+									<div className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+										<div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+											<div>
+												<label className="text-sm font-medium text-gray-700" htmlFor="repair-warranty-duration">Warranty duration</label>
+												<input
+													id="repair-warranty-duration"
+													type="number"
+													min={1}
+													max={repairWarrantyDurationUnit === 'days' ? 365 : repairWarrantyDurationUnit === 'weeks' ? 52 : 12}
+													step={1}
+													value={repairWarrantyDurationInput}
+													disabled={!repairWarrantyEnabled}
+													onChange={(event) => {
+														setRepairWarrantyDurationInput(event.target.value);
+														if (repairWarrantyInputError) setRepairWarrantyInputError(null);
+													}}
+													className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100"
+												/>
+											</div>
+											<div>
+												<label className="text-sm font-medium text-gray-700" htmlFor="repair-warranty-duration-unit">Duration unit</label>
+												<select
+													id="repair-warranty-duration-unit"
+													value={repairWarrantyDurationUnit}
+													disabled={!repairWarrantyEnabled}
+													onChange={(event) => setRepairWarrantyDurationUnit(event.target.value as 'days' | 'weeks' | 'months')}
+													className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-gray-900 focus:outline-none focus:ring-1 focus:ring-gray-900 disabled:cursor-not-allowed disabled:bg-gray-100"
+												>
+													<option value="days">Days (up to 365)</option>
+													<option value="weeks">Weeks (up to 52)</option>
+													<option value="months">Months (up to 12)</option>
+												</select>
+											</div>
+										</div>
+										<div className="mt-4 flex flex-wrap items-center gap-3">
+											<button
+												type="button"
+												onClick={handleSaveRepairWarranty}
+												className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-black"
+											>
+												Save Warranty Settings
+											</button>
+											<span className="text-xs text-gray-500">
+												{repairWarrantyEnabled ? `New warranties: ${repairWarrantyDurationInput || '—'} ${repairWarrantyDurationUnit}.` : 'Warranty disabled for new customer handovers.'}
+											</span>
+										</div>
+										{repairWarrantyInputError && <p className="mt-2 text-xs text-red-600">{repairWarrantyInputError}</p>}
+										{repairWarrantySaveSuccess && (
+											<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
+												<Check size={13} /> Warranty settings saved.
+											</p>
+										)}
+									</div>
 								</div>
 
 							</div>

@@ -29,11 +29,18 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
 class ShopSettingsController extends Controller
 {
+    private const REPAIR_WARRANTY_DURATION_LIMITS = [
+        'days' => 365,
+        'weeks' => 52,
+        'months' => 12,
+    ];
+
     private const APPROVAL_PAGE_KEYS = [
         'refund_approval',
         'price_approval',
@@ -113,6 +120,9 @@ class ShopSettingsController extends Controller
                 'business_scaling'       => $businessScaling,
                 'repair_payment_policy'  => $normalizedRepairPaymentPolicy,
                 'repair_workload_limit'  => (int) ($shopOwner->repair_workload_limit ?? 20),
+                'repair_warranty_enabled' => (bool) ($shopOwner->warranty_enabled ?? true),
+                'repair_warranty_duration' => (int) ($shopOwner->repair_warranty_days ?? 30),
+                'repair_warranty_duration_unit' => (string) ($shopOwner->repair_warranty_duration_unit ?? 'days'),
                 'order_refund_deadline_days' => (int) ($shopOwner->order_refund_deadline_days ?? 7),
                 'totp_enabled'          => $shopOwner->hasTotpEnabled(),
                 'has_paymongo_key'       => !empty($shopOwner->paymongo_secret_key),
@@ -536,11 +546,39 @@ class ShopSettingsController extends Controller
             'approval_pages.expense_approval.enabled' => ['required_with:approval_pages', 'boolean'],
             'repair_payment_policy' => ['sometimes', 'string', 'in:full_upfront'],
             'repair_workload_limit' => ['sometimes', 'integer', 'min:1', 'max:500'],
+            'repair_warranty_enabled' => ['sometimes', 'boolean'],
+            'repair_warranty_duration' => ['sometimes', 'integer', 'min:1', 'max:365'],
+            'repair_warranty_duration_unit' => ['sometimes', 'string', Rule::in(array_keys(self::REPAIR_WARRANTY_DURATION_LIMITS))],
             'order_refund_deadline_days' => ['sometimes', 'integer', 'min:1', 'max:30'],
             'pay_cycle' => ['sometimes', 'string', 'in:monthly,semi_monthly'],
             'pay_day_first' => ['sometimes', 'integer', 'min:1', 'max:31'],
             'pay_day_second' => ['sometimes', 'integer', 'min:1', 'max:31', 'gt:pay_day_first'],
         ]);
+
+        $warrantyFields = [
+            'repair_warranty_enabled',
+            'repair_warranty_duration',
+            'repair_warranty_duration_unit',
+        ];
+        $hasWarrantyUpdate = array_intersect(array_keys($validated), $warrantyFields) !== [];
+        $warrantyEnabled = array_key_exists('repair_warranty_enabled', $validated)
+            ? filter_var($validated['repair_warranty_enabled'], FILTER_VALIDATE_BOOLEAN)
+            : (bool) ($shopOwner->warranty_enabled ?? true);
+        $warrantyDuration = (int) ($validated['repair_warranty_duration'] ?? ($shopOwner->repair_warranty_days ?? 30));
+        $warrantyUnit = (string) ($validated['repair_warranty_duration_unit'] ?? ($shopOwner->repair_warranty_duration_unit ?? 'days'));
+
+        if ($hasWarrantyUpdate && $warrantyEnabled) {
+            $maximumDuration = self::REPAIR_WARRANTY_DURATION_LIMITS[$warrantyUnit] ?? 0;
+            if ($maximumDuration <= 0 || $warrantyDuration > $maximumDuration) {
+                throw ValidationException::withMessages([
+                    'repair_warranty_duration' => [sprintf(
+                        'Warranty duration cannot exceed %d %s.',
+                        $maximumDuration,
+                        $warrantyUnit,
+                    )],
+                ]);
+            }
+        }
 
         if (array_key_exists('approval_pages', $validated)) {
             $settingsJson = $procurementSettings->settings_json ?? [];
@@ -561,6 +599,15 @@ class ShopSettingsController extends Controller
         }
         if (isset($validated['order_refund_deadline_days'])) {
             $shopOwnerUpdates['order_refund_deadline_days'] = $validated['order_refund_deadline_days'];
+        }
+        if ($hasWarrantyUpdate) {
+            $shopOwnerUpdates['warranty_enabled'] = $warrantyEnabled;
+            if (array_key_exists('repair_warranty_duration', $validated)) {
+                $shopOwnerUpdates['repair_warranty_days'] = $warrantyDuration;
+            }
+            if (array_key_exists('repair_warranty_duration_unit', $validated)) {
+                $shopOwnerUpdates['repair_warranty_duration_unit'] = $warrantyUnit;
+            }
         }
         if (!empty($shopOwnerUpdates)) {
             $shopOwner->update($shopOwnerUpdates);
