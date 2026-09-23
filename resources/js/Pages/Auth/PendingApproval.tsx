@@ -59,13 +59,7 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
     const getStatusContent = () => {
         if (shopOwner.status === 'rejected') {
             return {
-                icon: (
-                    <div className="relative flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-900">
-                        <svg className="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </div>
-                ),
+                icon: null,
                 title: 'Application Rejected',
                 subtitle: 'Your current application was not approved. You can review the reason below and contact support.',
                 badgeClass: 'bg-slate-100 text-slate-700 border-slate-300'
@@ -89,12 +83,15 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
 
         return {
             icon: (
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-300 bg-white">
-                    <span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-700 border-t-transparent" />
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-white shadow-sm">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                        <circle cx="12" cy="12" r="8" strokeWidth={1.8} />
+                        <path strokeLinecap="round" strokeWidth={1.8} d="M12 8v4l2.5 1.5" />
+                    </svg>
                 </div>
             ),
             title: 'Application Under Review',
-            subtitle: 'Thank you for registering! Our team is reviewing your application.',
+            subtitle: 'Thank you for registering! We are reviewing your submitted documents and shop details. We will email you as soon as a decision is ready.',
             badgeClass: 'bg-slate-100 text-slate-700 border-slate-300'
         };
     };
@@ -158,7 +155,7 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
             <Head title="Application Status" />
             <div className="userside-auth-page userside-auth-pattern relative min-h-dvh overflow-y-auto no-scrollbar font-outfit antialiased 2xl:h-dvh 2xl:overflow-hidden">
                 <Navigation hidePromoBar hideSearchAndCart />
-                <div className="mx-auto w-full max-w-6xl px-4 pb-6 pt-20 sm:px-6 sm:pt-24 lg:px-8 lg:pb-8 lg:pt-20">
+                <div className="mx-auto flex min-h-dvh w-full max-w-6xl items-center justify-center px-4 py-24 sm:px-6 sm:py-28 lg:px-8 lg:py-24">
                     <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-white/90 p-4 shadow-[0_30px_75px_-50px_rgba(15,23,42,0.45)] backdrop-blur-sm sm:p-5 lg:p-6">
                         <div className="relative grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(22rem,0.9fr)] xl:items-start">
                             <div className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 lg:p-5">
