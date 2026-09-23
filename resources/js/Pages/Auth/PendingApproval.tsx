@@ -156,8 +156,8 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
     return (
         <>
             <Head title="Application Status" />
-            <div className="h-screen overflow-y-auto no-scrollbar bg-white">
-                <Navigation />
+            <div className="userside-auth-page userside-auth-pattern relative h-screen overflow-y-auto no-scrollbar font-outfit antialiased">
+                <Navigation hidePromoBar hideSearchAndCart />
                 <div className="mx-auto max-w-3xl px-4 pb-8 pt-24 sm:px-6 sm:pt-28 lg:px-8 lg:pb-10 lg:pt-32">
                     <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-white/90 p-5 shadow-[0_30px_75px_-50px_rgba(15,23,42,0.45)] backdrop-blur-sm sm:p-6 lg:p-7">
                         <div className="relative space-y-4">
