@@ -246,24 +246,24 @@ export default function AdminManagement({ admins = [], stats = {}, filters = {},
           </div>
 
           <div className="rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-800 dark:bg-gray-800">
-            <div className="flex flex-col gap-4 border-b border-gray-200 p-5 dark:border-gray-700 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-col gap-4 border-b border-gray-200 p-5 dark:border-gray-700 lg:flex-row lg:items-center lg:gap-3">
               <label className="sr-only" htmlFor="admin-search">Search administrators</label>
               <input id="admin-search" type="search" value={search} onChange={(event) => {
                 const value = event.target.value;
                 setSearch(value);
                 if (searchTimer.current) clearTimeout(searchTimer.current);
                 searchTimer.current = setTimeout(() => visitAdminPage(value, filter, 1, roleFilter), 250);
-              }} placeholder="Search by name or email" className="w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 lg:max-w-sm" />
+              }} placeholder="Search by name or email" className="min-w-0 w-full rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 outline-none focus:border-blue-600 focus:ring-4 focus:ring-blue-600/10 lg:flex-1 lg:max-w-none" />
               <label className="sr-only" htmlFor="admin-role-filter">Filter administrators by role</label>
               <MonochromeSelect id="admin-role-filter" value={roleFilter} onChange={(event) => {
                 setRoleFilter(event.target.value);
                 visitAdminPage(search, filter, 1, event.target.value);
-              }} className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white">
+              }} className="w-full shrink-0 rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-gray-900 dark:border-gray-600 dark:bg-gray-700 dark:text-white sm:w-auto">
                 <option value="all">All roles</option>
                 <option value="admin">Admin</option>
                 <option value="super_admin">Super Admin</option>
               </MonochromeSelect>
-              <div className="flex flex-wrap gap-2" aria-label="Filter administrators">
+              <div className="flex shrink-0 flex-wrap gap-2" aria-label="Filter administrators">
                 {['all', 'active', 'pending_setup', 'suspended', 'inactive'].map((value) => (
                   <button key={value} type="button" onClick={() => {
                     setFilter(value);

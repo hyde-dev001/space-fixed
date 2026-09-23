@@ -118,7 +118,10 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
     expect(screen.queryByRole('article', { name: 'Reduced by credits' })).not.toBeInTheDocument();
     expect(screen.queryByText('Snapshot')).not.toBeInTheDocument();
 
-    expect(screen.getByRole('button', { name: 'Open fee settings' })).toBeInTheDocument();
+    const settingsButton = screen.getByRole('button', { name: 'Open fee settings' });
+    expect(settingsButton).toHaveClass('rounded-xl');
+    expect(settingsButton.parentElement).toHaveClass('items-start', 'justify-between');
+    expect(settingsButton).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open fee settings' }));
     expect(screen.getByRole('dialog').parentElement).toHaveClass('z-[1000000]');
     expect(screen.getByRole('heading', { name: 'Reliability scoring' })).toBeInTheDocument();
@@ -130,7 +133,11 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
     expect(screen.queryByText(/Reliability tiers \(JSON/i)).not.toBeInTheDocument();
     const movementRegion = screen.getByRole('region', { name: 'Credit movement' });
     expect(movementRegion).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View credit movement history' })).toBeInTheDocument();
+    const historyButton = screen.getByRole('button', { name: 'View credit movement history' });
+    expect(historyButton).toHaveClass('rounded-xl');
+    expect(historyButton.parentElement).toHaveClass('items-start', 'justify-between');
+    expect(historyButton.parentElement).not.toHaveClass('mt-4');
+    expect(historyButton).toBeInTheDocument();
     expect(movementRegion).not.toHaveTextContent('Credit Movement Shop');
     expect(screen.queryByRole('heading', { name: 'Audited balance adjustment' })).not.toBeInTheDocument();
 

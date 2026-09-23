@@ -81,6 +81,18 @@ describe('AdminManagement server pagination', () => {
     ));
   });
 
+  it('lets the search use available filter-row width without distributed gaps', () => {
+    render(
+      <AdminManagement
+        admins={page}
+        stats={{ total: 3, active: 2, suspended: 1, inactive: 0 }}
+      />
+    );
+
+    expect(screen.getByLabelText('Search administrators')).toHaveClass('min-w-0', 'lg:flex-1', 'lg:max-w-none');
+    expect(screen.getByLabelText('Filter administrators by role')).toHaveClass('shrink-0');
+  });
+
   it('uses paginator metadata for next-page navigation', () => {
     render(
       <AdminManagement
