@@ -195,6 +195,73 @@ class RiderLocationApiTest extends TestCase
         ]);
     }
 
+    public function test_repair_return_accepts_location_updates_before_and_after_shop_handoff(): void
+    {
+        [$leg, $rider] = $this->fixture();
+        $customer = User::factory()->create();
+        $repair = RepairRequest::factory()->create([
+            'user_id' => $customer->id,
+            'shop_owner_id' => $leg->shipment->shop_owner_id,
+        ]);
+        $leg->shipment->update([
+            'source_type' => 'repair_request',
+            'source_id' => $repair->id,
+            'purpose' => 'repair_return',
+        ]);
+        $leg->update([
+            'status' => 'assigned',
+            'leg_type' => 'outbound',
+            'origin_snapshot' => [
+                'type' => 'shop',
+                'name' => 'Repair shop',
+                'address' => 'Shop address',
+                'latitude' => 14.32,
+                'longitude' => 120.97,
+            ],
+            'destination_snapshot' => [
+                'type' => 'customer',
+                'name' => 'Customer Home',
+                'address' => 'Customer address',
+                'latitude' => 14.31,
+                'longitude' => 120.96,
+            ],
+        ]);
+
+        $this->actingAs($rider, 'user')
+            ->postJson('/api/logistics/legs/'.$leg->id.'/location', $this->payload())
+            ->assertOk()
+            ->assertJsonPath('accepted', true);
+
+        $leg->update([
+            'status' => 'picked_up',
+            'picked_up_at' => now(),
+        ]);
+
+        $this->actingAs($rider, 'user')
+            ->postJson('/api/logistics/legs/'.$leg->id.'/location', $this->payload())
+            ->assertForbidden();
+
+        $leg->update(['status' => 'in_transit']);
+
+        $this->actingAs($rider, 'user')
+            ->postJson('/api/logistics/legs/'.$leg->id.'/location', [
+                ...$this->payload(),
+                'latitude' => 14.315,
+                'longitude' => 120.965,
+            ])
+            ->assertOk()
+            ->assertJsonPath('accepted', true)
+            ->assertJsonPath('location.latitude', 14.315)
+            ->assertJsonPath('location.longitude', 120.965);
+
+        $this->actingAs($customer, 'user')
+            ->getJson('/tracking/shipments/'.$leg->shipment_id)
+            ->assertOk()
+            ->assertJsonPath('shipment.legs.0.live_tracking.location.latitude', 14.315)
+            ->assertJsonPath('shipment.legs.0.live_tracking.destination.type', 'customer')
+            ->assertJsonMissingPath('shipment.legs.0.live_tracking.rider');
+    }
+
     public function test_retail_refund_return_accepts_location_updates_before_and_after_customer_handoff(): void
     {
         [$leg, $rider] = $this->fixture();

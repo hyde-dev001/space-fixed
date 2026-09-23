@@ -269,4 +269,51 @@ describe('ShipmentTracking live tracking', () => {
     expect(screen.getByTestId('customer-live-map')).toHaveTextContent('1 customer marker');
     await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/tracking/shipments/1'));
   });
+
+  it('shows live tracking while a repair return rider brings the repaired shoes to the customer', async () => {
+    shipment.purpose = 'repair_return';
+    shipment.source_type = 'repair_request';
+    shipment.delivery_type = 'repair_return';
+    shipment.delivery_label = 'Repair Return';
+    shipment.status = 'active';
+    shipment.legs[0] = {
+      ...shipment.legs[0],
+      leg_type: 'outbound',
+      status: 'assigned',
+      picked_up_at: null,
+      origin_snapshot: {
+        type: 'shop',
+        name: 'Repair shop',
+        address: 'Shop address',
+        latitude: 14.62,
+        longitude: 121,
+      },
+      destination_snapshot: {
+        type: 'customer',
+        name: 'Customer Home',
+        address: 'Customer address',
+        latitude: 14.61,
+        longitude: 120.99,
+      },
+      live_tracking: {
+        ...shipment.legs[0].live_tracking,
+        delivery_type: 'repair_return',
+        delivery_label: 'Repair Return',
+        status: 'assigned',
+        destination: {
+          type: 'shop',
+          name: 'Repair shop',
+          address: 'Shop address',
+          latitude: 14.62,
+          longitude: 121,
+        },
+      },
+    };
+
+    render(<ShipmentTracking />);
+
+    expect(screen.getByText('Live return location')).toBeInTheDocument();
+    expect(screen.getByTestId('customer-live-map')).toHaveTextContent('1 customer marker');
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith('/tracking/shipments/1'));
+  });
 });
