@@ -41,6 +41,15 @@ beforeEach(() => {
 });
 
 describe('shop owner registration age input', () => {
+  it('reminds applicants that only Cavite-located shops can register', async () => {
+    render(<ShopOwnerRegistration />);
+
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Before You Proceed',
+      text: expect.stringContaining('Only shops located in Cavite are eligible to register here.'),
+    })));
+  });
+
   it.each(['-18', '+18', '0', '00018'])('rejects signed or non-positive age input %s with an invalid-age alert', async (value) => {
     render(<ShopOwnerRegistration />);
 
