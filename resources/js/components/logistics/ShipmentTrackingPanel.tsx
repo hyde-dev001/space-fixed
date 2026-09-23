@@ -63,6 +63,41 @@ const isRepairPickupTrackingLeg = (
   leg?: TrackingShipmentLeg,
 ): boolean =>
   isRepairPickupBeforeHandoff(shipment, leg) || isRepairPickupToShop(shipment, leg);
+const isRepairReturnBeforeHandoff = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  shipment.source_type === 'repair_request'
+  && shipment.purpose === 'repair_return'
+  && leg?.leg_type === 'outbound'
+  && !leg.picked_up_at
+  && ['assigned', 'pickup_scheduled'].includes(leg.status)
+  && leg.origin_snapshot?.type === 'shop';
+const isRepairReturnToCustomer = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  shipment.source_type === 'repair_request'
+  && shipment.purpose === 'repair_return'
+  && leg?.leg_type === 'outbound'
+  && Boolean(leg.picked_up_at)
+  && leg.status === 'in_transit'
+  && leg.destination_snapshot?.type === 'customer';
+const isRepairReturnHandoffPending = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  shipment.source_type === 'repair_request'
+  && shipment.purpose === 'repair_return'
+  && leg?.leg_type === 'outbound'
+  && Boolean(leg.picked_up_at)
+  && leg.status === 'picked_up'
+  && leg.destination_snapshot?.type === 'customer';
+const isRepairReturnTrackingLeg = (
+  shipment: TrackingShipment,
+  leg?: TrackingShipmentLeg,
+): boolean =>
+  isRepairReturnBeforeHandoff(shipment, leg) || isRepairReturnToCustomer(shipment, leg);
 const isRetailRefundReturnBeforeHandoff = (
   shipment: TrackingShipment,
   leg?: TrackingShipmentLeg,
@@ -309,13 +344,16 @@ export default function ShipmentTrackingPanel({
   const isLiveRepairPickup = isRepairPickupTrackingLeg(currentShipment, currentLeg);
   const isRepairPickupHandoff = isRepairPickupHandoffPending(currentShipment, currentLeg);
   const isRepairPickupPhase = isLiveRepairPickup || isRepairPickupHandoff;
+  const isLiveRepairReturn = isRepairReturnTrackingLeg(currentShipment, currentLeg);
+  const isRepairReturnHandoff = isRepairReturnHandoffPending(currentShipment, currentLeg);
+  const isRepairReturnPhase = isLiveRepairReturn || isRepairReturnHandoff;
   const isLiveRetailRefundReturn = isRetailRefundReturnTrackingLeg(currentShipment, currentLeg);
   const isRetailRefundReturnHandoff = isRetailRefundReturnHandoffPending(currentShipment, currentLeg);
   const isRetailRefundReturnPhase = isLiveRetailRefundReturn || isRetailRefundReturnHandoff;
   const shouldPoll = currentShipment.live_tracking_enabled === true
     && currentShipment.status === 'active'
     && !isThirdParty
-    && (isLiveCustomerDelivery || isRepairPickupPhase || isRetailRefundReturnPhase);
+    && (isLiveCustomerDelivery || isRepairPickupPhase || isRepairReturnPhase || isRetailRefundReturnPhase);
 
   useEffect(() => {
     if (!shouldPoll) {
@@ -347,10 +385,14 @@ export default function ShipmentTrackingPanel({
   const isRepair = currentShipment.source_type === 'repair_request';
   const trackingSectionLabel = isRepairPickupPhase
     ? 'Live pickup location'
-    : isRetailRefundReturnPhase ? 'Live return location' : 'Live delivery location';
+    : isRepairReturnPhase || isRetailRefundReturnPhase ? 'Live return location' : 'Live delivery location';
   const trackingMapLabel = isRepairPickupToShop(currentShipment, currentLeg)
     ? 'Shop drop-off map'
-    : isRetailRefundReturnToShop(currentShipment, currentLeg)
+    : isRepairReturnToCustomer(currentShipment, currentLeg)
+      ? 'Customer return map'
+      : isRepairReturnBeforeHandoff(currentShipment, currentLeg)
+        ? 'Shop dispatch map'
+        : isRetailRefundReturnToShop(currentShipment, currentLeg)
       ? 'Return to shop map'
       : isRetailRefundReturnBeforeHandoff(currentShipment, currentLeg)
         ? 'Customer return pickup map'

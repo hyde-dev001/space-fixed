@@ -440,7 +440,9 @@ class RiderLocationService
 
     private function isCustomerTrackableLeg(ShipmentLeg $leg): bool
     {
-        if ($this->isRepairPickupTrackingLeg($leg) || $this->isRetailRefundReturnTrackingLeg($leg)) {
+        if ($this->isRepairPickupTrackingLeg($leg)
+            || $this->isRepairReturnTrackingLeg($leg)
+            || $this->isRetailRefundReturnTrackingLeg($leg)) {
             return true;
         }
 
@@ -469,6 +471,29 @@ class RiderLocationService
             && data_get($leg->destination_snapshot, 'type') === 'shop';
 
         return $prePickup || $toShop;
+    }
+
+    private function isRepairReturnTrackingLeg(ShipmentLeg $leg): bool
+    {
+        $leg->loadMissing('shipment');
+
+        if ($leg->shipment?->source_type !== 'repair_request'
+            || $leg->shipment?->purpose !== 'repair_return'
+            || $leg->leg_type !== 'outbound') {
+            return false;
+        }
+
+        $beforeHandoff = $leg->picked_up_at === null
+            && in_array($leg->status, [
+                ShipmentLegStatus::ASSIGNED,
+                ShipmentLegStatus::PICKUP_SCHEDULED,
+            ], true)
+            && data_get($leg->origin_snapshot, 'type') === 'shop';
+        $toCustomer = $leg->picked_up_at !== null
+            && $leg->status === ShipmentLegStatus::IN_TRANSIT
+            && data_get($leg->destination_snapshot, 'type') === 'customer';
+
+        return $beforeHandoff || $toCustomer;
     }
 
     private function isRetailRefundReturnTrackingLeg(ShipmentLeg $leg): bool
@@ -501,7 +526,9 @@ class RiderLocationService
             $this->isRepairPickupTrackingLeg($leg)
             || $this->isRetailRefundReturnTrackingLeg($leg)
         ) && $leg->picked_up_at === null;
-        $snapshot = $isCustomerPickup
+        $isRepairReturnBeforeHandoff = $this->isRepairReturnTrackingLeg($leg)
+            && $leg->picked_up_at === null;
+        $snapshot = $isCustomerPickup || $isRepairReturnBeforeHandoff
             ? $leg->origin_snapshot
             : $leg->destination_snapshot;
 
