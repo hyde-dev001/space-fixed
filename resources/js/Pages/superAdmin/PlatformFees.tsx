@@ -533,17 +533,19 @@ export default function PlatformFeesPage() {
                                 <button type="button" onClick={() => setSettingsOpen(false)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900">Close</button>
                             </div>
 
-                            <div className="mt-5 flex flex-wrap gap-2">
-                                <button type="button" onClick={() => setScope('platform')} className={tabClass(scope === 'platform')}>Platform</button>
-                                <button type="button" onClick={() => setScope('shop_type')} className={tabClass(scope === 'shop_type')}>Shop type</button>
-                            </div>
+                            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex flex-wrap gap-2">
+                                    <button type="button" onClick={() => setScope('platform')} className={tabClass(scope === 'platform')}>Platform</button>
+                                    <button type="button" onClick={() => setScope('shop_type')} className={tabClass(scope === 'shop_type')}>Shop type</button>
+                                </div>
 
-                            {scope === 'shop_type' && (
-                        <div className="mt-4 flex gap-2">
-                            <button type="button" onClick={() => setShopType('individual')} className={tabClass(shopType === 'individual')}>Individual</button>
-                            <button type="button" onClick={() => setShopType('business')} className={tabClass(shopType === 'business')}>Business</button>
-                        </div>
-                    )}
+                                {scope === 'shop_type' && (
+                                    <div className="ml-auto flex flex-wrap justify-end gap-2">
+                                        <button type="button" onClick={() => setShopType('individual')} className={tabClass(shopType === 'individual')}>Individual</button>
+                                        <button type="button" onClick={() => setShopType('business')} className={tabClass(shopType === 'business')}>Business</button>
+                                    </div>
+                                )}
+                            </div>
 
                             <form onSubmit={saveSettings} className="mt-5 min-h-0 flex-1 grid gap-4 overflow-y-auto pr-1 md:grid-cols-3">
                         <Field label="Platform Fee rate (%)" value={form.platform_fee_rate} onChange={(value) => setField('platform_fee_rate', value)} />
