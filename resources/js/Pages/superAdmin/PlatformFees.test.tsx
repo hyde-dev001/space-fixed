@@ -123,6 +123,8 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
     expect(settingsButton).toHaveClass('rounded-xl');
     expect(pageHeader).toContainElement(settingsButton);
     expect(settingsButton).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Credit movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Fee settings' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open fee settings' }));
     expect(screen.getByRole('dialog').parentElement).toHaveClass('z-[1000000]');
     expect(screen.getByRole('heading', { name: 'Reliability scoring' })).toBeInTheDocument();
@@ -141,15 +143,12 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
     expect(screen.getByRole('button', { name: 'Add tier' })).toBeInTheDocument();
     expect(screen.queryByText(/Reliability weights \(JSON/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Reliability tiers \(JSON/i)).not.toBeInTheDocument();
-    const movementRegion = screen.getByRole('region', { name: 'Credit movement' });
-    expect(movementRegion).toBeInTheDocument();
     const historyButton = screen.getByRole('button', { name: 'View credit movement history' });
     expect(historyButton).toHaveClass('rounded-xl');
     expect(pageHeader).toContainElement(historyButton);
     expect(historyButton).toBeInTheDocument();
-    expect(movementRegion).not.toContainElement(historyButton);
-    expect(screen.getByRole('region', { name: 'Fee settings' })).not.toContainElement(settingsButton);
-    expect(movementRegion).not.toHaveTextContent('Credit Movement Shop');
+    expect(screen.queryByRole('region', { name: 'Credit movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Fee settings' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Audited balance adjustment' })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Payment history weight (%)'), { target: { value: '40' } });
@@ -200,7 +199,8 @@ it('submits a per-shop balance limit change', async () => {
 it('keeps admin credit movement history in a paginated modal', () => {
     render(<PlatformFeesPage />);
 
-    expect(screen.getByText('12 credit movements recorded across shops')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Credit movement' })).not.toBeInTheDocument();
+    expect(screen.queryByText('12 credit movements recorded across shops')).not.toBeInTheDocument();
     expect(screen.queryByText('Order refund #12')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'View credit movement history' }));
