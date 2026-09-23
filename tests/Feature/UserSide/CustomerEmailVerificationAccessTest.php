@@ -3,9 +3,12 @@
 namespace Tests\Feature\UserSide;
 
 use App\Models\ShopOwner;
+use App\Models\Product;
+use App\Models\RepairService;
 use App\Models\User;
 use Illuminate\Contracts\Notifications\Dispatcher as NotificationDispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\URL;
 use Tests\TestCase;
 
@@ -13,21 +16,60 @@ class CustomerEmailVerificationAccessTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_unverified_customer_is_limited_to_verification_routes(): void
+    public function test_unverified_customer_can_use_non_cod_customer_workflows(): void
     {
         $customer = User::factory()->unverified()->create([
             'shop_owner_id' => null,
             'status' => 'active',
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
+        $shop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+            'paymongo_secret_key' => 'sk_test_unverified_customer',
+        ]);
+        $product = Product::create([
+            'shop_owner_id' => $shop->id,
+            'name' => 'Unverified Customer Shoe',
+            'slug' => 'unverified-customer-shoe-'.random_int(1000, 9999),
+            'price' => 1000,
+            'stock_quantity' => 5,
+            'is_active' => true,
         ]);
 
         $this->actingAs($customer, 'user')
             ->get('/checkout')
-            ->assertRedirect(route('verification.notice'));
+            ->assertOk();
 
         $this->actingAs($customer, 'user')
             ->getJson(route('user.addresses.index'))
-            ->assertForbidden()
-            ->assertJsonPath('code', 'EMAIL_VERIFICATION_REQUIRED');
+            ->assertOk();
+
+        $this->actingAs($customer, 'user')
+            ->postJson('/api/cart/add', [
+                'product_id' => $product->id,
+                'quantity' => 1,
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
+
+        $this->actingAs($customer, 'user')
+            ->postJson('/api/checkout/create-order', [
+                'items' => [[
+                    'id' => 'unverified-cart-item',
+                    'pid' => $product->id,
+                    'qty' => 1,
+                    'name' => $product->name,
+                    'price' => 1000,
+                ]],
+                'total_amount' => 1000,
+                'shipping_fee' => 0,
+                'customer_name' => $customer->name,
+                'customer_email' => $customer->email,
+                'shipping_address' => '1 Customer Street',
+                'payment_method' => 'paymongo',
+            ])
+            ->assertOk()
+            ->assertJsonPath('success', true);
 
         $this->actingAs($customer, 'user')
             ->get(route('verification.notice'))
@@ -46,7 +88,7 @@ class CustomerEmailVerificationAccessTest extends TestCase
             ->assertOk();
     }
 
-    public function test_unverified_customer_cannot_open_the_repair_request_form(): void
+    public function test_unverified_customer_can_open_the_repair_request_form(): void
     {
         $customer = User::factory()->unverified()->create([
             'shop_owner_id' => null,
@@ -55,7 +97,42 @@ class CustomerEmailVerificationAccessTest extends TestCase
 
         $this->actingAs($customer, 'user')
             ->get(route('repair-process'))
-            ->assertRedirect(route('verification.notice'));
+            ->assertOk();
+    }
+
+    public function test_unverified_customer_can_submit_a_repair_request(): void
+    {
+        $customer = User::factory()->unverified()->create([
+            'shop_owner_id' => null,
+            'status' => 'active',
+            'identity_verification_status' => User::IDENTITY_PENDING_REVIEW,
+        ]);
+        $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $service = RepairService::query()->create([
+            'shop_owner_id' => $shop->id,
+            'name' => 'Unverified customer repair',
+            'category' => 'Cleaning',
+            'price' => 100,
+            'duration' => '1 day',
+            'description' => 'Repair access test service',
+            'status' => 'active',
+        ]);
+
+        $this->actingAs($customer, 'user')
+            ->post('/api/repair-requests', [
+                'customer_name' => $customer->name,
+                'email' => $customer->email,
+                'phone' => '09171234567',
+                'shoe_type' => 'Sneakers',
+                'shop_owner_id' => $shop->id,
+                'services' => [$service->id],
+                'images' => [UploadedFile::fake()->create('shoe.jpg', 100, 'image/jpeg')],
+                'total' => 100,
+                'service_type' => 'walkin',
+                'return_delivery_method' => 'walk_in',
+            ], ['Accept' => 'application/json'])
+            ->assertOk()
+            ->assertJsonPath('success', true);
     }
 
     public function test_verified_customer_can_access_customer_workflows(): void

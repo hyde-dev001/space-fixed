@@ -53,6 +53,45 @@ class CodEligibilityService
     }
 
     /**
+     * COD is the only customer-facing checkout path that requires both email
+     * and identity verification.
+     *
+     * @return array{eligible: bool, reason: string|null, message: string|null}
+     */
+    public function customerEligibility(User $customer): array
+    {
+        if (! $customer->isCustomerAccount()) {
+            return [
+                'eligible' => true,
+                'reason' => null,
+                'message' => null,
+            ];
+        }
+
+        if (! $customer->hasVerifiedEmail()) {
+            return [
+                'eligible' => false,
+                'reason' => 'customer_email_verification_required',
+                'message' => 'Verify your email address before using Cash on Delivery.',
+            ];
+        }
+
+        if (! $customer->hasApprovedIdentity()) {
+            return [
+                'eligible' => false,
+                'reason' => 'customer_identity_verification_required',
+                'message' => 'Complete identity verification before using Cash on Delivery.',
+            ];
+        }
+
+        return [
+            'eligible' => true,
+            'reason' => null,
+            'message' => null,
+        ];
+    }
+
+    /**
      * Return the prerequisites that must be met before a shop may enable COD.
      *
      * @return array{ready: bool, reason: string|null, message: string|null}
@@ -93,6 +132,7 @@ class CodEligibilityService
         float $merchandiseAmount,
         ?string $deliveryMethod = 'shop_owned',
         string $orderType = 'retail',
+        ?User $customer = null,
     ): array {
         $amountCents = $this->toCents($merchandiseAmount);
         $amount = $amountCents / 100;
@@ -106,6 +146,19 @@ class CodEligibilityService
         $base = $this->baseAvailability($shopOwner);
         if (! $base['eligible']) {
             return $this->result(false, $base['reason'], $threshold, $amount, $base['message']);
+        }
+
+        if ($customer instanceof User) {
+            $customerEligibility = $this->customerEligibility($customer);
+            if (! $customerEligibility['eligible']) {
+                return $this->result(
+                    false,
+                    $customerEligibility['reason'],
+                    $threshold,
+                    $amount,
+                    $customerEligibility['message'],
+                );
+            }
         }
 
         if (strtolower(trim((string) $deliveryMethod)) !== 'shop_owned') {

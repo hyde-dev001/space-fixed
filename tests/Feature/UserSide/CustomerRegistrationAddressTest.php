@@ -363,24 +363,23 @@ class CustomerRegistrationAddressTest extends TestCase
         $this->assertGuest('web');
     }
 
-    public function test_unverified_customer_login_uses_user_guard_for_verification_notice(): void
+    public function test_unverified_customer_login_uses_user_guard_for_non_cod_access(): void
     {
         $user = User::factory()->unverified()->create([
             'email' => 'unverified.customer@example.test',
             'status' => 'active',
         ]);
 
-        $this->post('/user/login', [
+        $this->postJson('/user/login', [
             'email' => $user->email,
             'password' => 'password',
-        ])->assertRedirect(route('verification.notice'));
+        ])->assertOk()
+            ->assertJsonPath('success', true);
 
-        $this->assertGuest('user');
-        $this->assertGuest('web');
-        $this->get(route('verification.notice'))->assertOk();
+        $this->assertAuthenticatedAs($user, 'user');
     }
 
-    public function test_unverified_customer_login_clears_an_existing_user_session(): void
+    public function test_unverified_customer_login_replaces_an_existing_user_session(): void
     {
         $existingUser = User::factory()->create([
             'email' => 'existing.customer@example.test',
@@ -393,13 +392,14 @@ class CustomerRegistrationAddressTest extends TestCase
         ]);
 
         $this->actingAs($existingUser, 'user')
-            ->post('/user/login', [
+            ->postJson('/user/login', [
                 'email' => $unverifiedUser->email,
                 'password' => 'password',
             ])
-            ->assertRedirect(route('verification.notice'));
+            ->assertOk()
+            ->assertJsonPath('success', true);
 
-        $this->assertGuest('user');
+        $this->assertAuthenticatedAs($unverifiedUser, 'user');
     }
 
     public function test_registration_requires_a_complete_map_location(): void

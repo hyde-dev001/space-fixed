@@ -56,7 +56,7 @@ class AuthController extends Controller
                     'message' => [
                         'icon' => 'success',
                         'title' => 'Success',
-                        'text' => 'User created successfully. Please verify your email before signing in.'
+                        'text' => 'User created successfully. Verify your email for account security. Online shopping is available now; Cash on Delivery requires verification.'
                     ],
                     'email_delivery_status' => $verificationEmailFailed ? 'failed' : 'sent',
                 ], Response::HTTP_OK);
@@ -124,20 +124,6 @@ class AuthController extends Controller
                     'text' => 'Invalid Credentials',
                 ],
             ], Response::HTTP_UNPROCESSABLE_ENTITY);
-        }
-
-        if ($user && $user->isCustomerAccount() && ! $user->hasVerifiedEmail()) {
-            Auth::guard('user')->logout();
-
-            return response()->json([
-                'success' => false,
-                'code' => 'EMAIL_VERIFICATION_REQUIRED',
-                'message' => [
-                    'icon' => 'error',
-                    'title' => 'Email Verification Required',
-                    'text' => 'Please verify your email address before signing in.',
-                ],
-            ], Response::HTTP_FORBIDDEN);
         }
 
         /** @var User $user */

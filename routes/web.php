@@ -534,11 +534,11 @@ Route::post('/accept-invitation/{token}', [InvitationController::class, 'accept'
 
 // Cart Routes
 Route::get('/api/cart', [CartController::class, 'index'])->name('cart.index');
-Route::post('/api/cart/add', [CartController::class, 'add'])->middleware(['auth:user', 'customer.identity.approved'])->name('cart.add');
+Route::post('/api/cart/add', [CartController::class, 'add'])->middleware('auth:user')->name('cart.add');
 Route::post('/api/cart/remove', [CartController::class, 'remove'])->middleware('auth:user')->name('cart.remove');
 Route::post('/api/cart/update', [CartController::class, 'update'])->middleware('auth:user')->name('cart.update');
 Route::post('/api/cart/clear', [CartController::class, 'clear'])->middleware('auth:user')->name('cart.clear');
-Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware(['auth:user', 'customer.identity.approved'])->name('cart.sync');
+Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth:user')->name('cart.sync');
 
 Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(function () {
     Route::get('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'index']);
@@ -697,7 +697,7 @@ Route::middleware('auth:user')->prefix('api/user/addresses')->group(function () 
 });
 
 // Checkout & Order Routes
-Route::post('/api/checkout/create-order', [CheckoutController::class, 'createOrder'])->middleware(['auth:user', 'customer.identity.approved'])->name('checkout.create-order');
+Route::post('/api/checkout/create-order', [CheckoutController::class, 'createOrder'])->middleware('auth:user')->name('checkout.create-order');
 Route::post('/api/checkout/promo-preview', [CheckoutController::class, 'previewPromoPricing'])->middleware('auth:user')->name('checkout.promo-preview');
 Route::get('/api/my-orders', [CheckoutController::class, 'myOrders'])->middleware('auth:user')->name('api.my-orders');
 
@@ -1454,7 +1454,7 @@ Route::prefix('api/repair-packages')->group(function () {
 Route::prefix('api/repair-requests')->group(function () {
     // Submit repair request - Protected (customers must be logged in)
     Route::post('/', [\App\Http\Controllers\Api\RepairRequestController::class, 'store'])
-        ->middleware(['auth:user', 'customer.identity.approved']);
+        ->middleware('auth:user');
 
     // Get all repair requests - Protected (Staff/Manager only)
     Route::middleware('auth:user')->group(function () {

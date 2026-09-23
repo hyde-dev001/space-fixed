@@ -53,7 +53,7 @@ class CustomerApiEmailVerificationTest extends TestCase
         $this->assertDatabaseMissing('users', ['email' => 'short-api-password@example.test']);
     }
 
-    public function test_api_login_does_not_issue_a_token_to_an_unverified_customer(): void
+    public function test_api_login_issues_a_token_to_an_unverified_customer_for_non_cod_access(): void
     {
         $customer = User::factory()->unverified()->create([
             'email' => 'unverified.api.customer@example.test',
@@ -66,12 +66,12 @@ class CustomerApiEmailVerificationTest extends TestCase
         $this->postJson('/api/login', [
             'email' => $customer->email,
             'password' => 'Password123!',
-        ])->assertForbidden()
-            ->assertJsonPath('code', 'EMAIL_VERIFICATION_REQUIRED')
-            ->assertJsonMissingPath('token');
+        ])->assertOk()
+            ->assertJsonPath('user.id', $customer->id)
+            ->assertJsonStructure(['token']);
 
-        $this->assertGuest('user');
-        $this->assertCount(0, $customer->tokens()->get());
+        $this->assertAuthenticated('user');
+        $this->assertCount(1, $customer->tokens()->get());
     }
 
     public function test_api_login_still_issues_a_token_to_a_verified_customer(): void

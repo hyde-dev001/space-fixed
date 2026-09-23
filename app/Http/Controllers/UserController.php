@@ -168,7 +168,8 @@ class UserController extends Controller
      * Register a new user account
      *
      * Customer accounts are created after the document admission screen passes.
-     * Email verification, not administrator approval, gates normal access.
+     * Email verification is recommended for account security; only COD
+     * checkout requires customer email and identity verification.
      *
      * @return \Illuminate\Http\JsonResponse|\Illuminate\Http\RedirectResponse
      */
@@ -429,7 +430,7 @@ class UserController extends Controller
 
             $registrationMessage = $verificationEmailFailed
                 ? 'Your account was created, but we could not send the verification email. Use the resend button on the next page.'
-                : 'Registration successful! Please check your email to verify your account.';
+                : 'Registration successful! Verify your email for account security. Online shopping is available now; Cash on Delivery requires verification.';
             $registrationFlash = $verificationEmailFailed
                 ? [
                     'warning' => $registrationMessage,
@@ -650,17 +651,6 @@ class UserController extends Controller
                 throw ValidationException::withMessages([
                     'email' => ['Invalid email or password.'],
                 ]);
-            }
-
-            // Check if email is verified (only for non-employee users)
-            if ($user->isCustomerAccount() && ! $user->hasVerifiedEmail()) {
-                Auth::guard('user')->logout();
-                $request->session()->regenerate();
-                $request->session()->put('pending_customer_verification_user_id', $user->getKey());
-
-                throw ValidationException::withMessages([
-                    'email' => ['Please verify your email address before logging in. Check your inbox for the verification link.'],
-                ])->redirectTo(route('verification.notice'));
             }
 
             // Check user status (stored as string in database)

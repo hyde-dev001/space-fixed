@@ -48,7 +48,7 @@ Route::post('/webhooks/xendit/payout', [\App\Http\Controllers\XenditPayoutWebhoo
  * PayMongo Proxy - Frontend calls this to avoid CORS
  * Uses payment links API (the one that was working for you last week)
  */
-Route::middleware(['web', 'auth:user', 'customer.identity.approved', 'throttle:10,1'])->post('/paymongo-proxy', function (Request $request) {
+Route::middleware(['web', 'auth:user', 'throttle:10,1'])->post('/paymongo-proxy', function (Request $request) {
     try {
         $validated = $request->validate([
             'order_id' => ['nullable', 'integer', 'required_without:repair_request_id'],
@@ -321,7 +321,7 @@ Route::middleware(['web', 'auth:user', 'shop.isolation'])->prefix('finance/appro
  * Checkout and Order Management
  */
 Route::post('/checkout/create-order', [\App\Http\Controllers\UserSide\CheckoutController::class, 'createOrder'])
-    ->middleware(['web', 'auth:user', 'customer.identity.approved']);
+    ->middleware(['web', 'auth:user']);
 Route::post('/orders/{id}/update-payment-link', [\App\Http\Controllers\UserSide\CheckoutController::class, 'updatePaymentLink'])
     ->middleware(['web', 'auth:user', 'throttle:20,1'])
     ->name('api.orders.update-payment-link');
