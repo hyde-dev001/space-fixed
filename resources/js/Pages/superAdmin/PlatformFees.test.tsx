@@ -126,6 +126,15 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
     fireEvent.click(screen.getByRole('button', { name: 'Open fee settings' }));
     expect(screen.getByRole('dialog').parentElement).toHaveClass('z-[1000000]');
     expect(screen.getByRole('heading', { name: 'Reliability scoring' })).toBeInTheDocument();
+    const scopeTabs = screen.getByRole('button', { name: 'Platform' }).parentElement?.parentElement;
+    expect(scopeTabs).toHaveClass('items-center', 'justify-between');
+    const shopTypeTab = screen.getByRole('button', { name: 'Shop type' });
+    expect(scopeTabs).toContainElement(shopTypeTab);
+    fireEvent.click(shopTypeTab);
+    const shopTypeTabs = screen.getByRole('button', { name: 'Individual' }).parentElement;
+    expect(shopTypeTabs).toHaveClass('justify-end');
+    expect(scopeTabs).toContainElement(screen.getByRole('button', { name: 'Individual' }));
+    expect(scopeTabs).toContainElement(screen.getByRole('button', { name: 'Business' }));
     expect(screen.queryByRole('heading', { name: 'Shop Platform Balance overview' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Payment history weight (%)')).toHaveValue(35);
     expect(screen.getByText('Total: 100%')).toBeInTheDocument();
