@@ -26,6 +26,7 @@ final class EnsureEmployeeClockedIn
             || ! $user->isEmployeeAccount()
             || $request->routeIs(
                 'user.logout',
+                'admin.logout',
                 'staff.attendance.checkin',
                 'erp.password.update',
                 'erp.security.sessions.logout-others',

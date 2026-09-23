@@ -41,6 +41,15 @@ beforeEach(() => {
 });
 
 describe('shop owner registration age input', () => {
+  it('reminds applicants that only Cavite-located shops can register', async () => {
+    render(<ShopOwnerRegistration />);
+
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Before You Proceed',
+      text: expect.stringContaining('Only shops located in Cavite are eligible to register here.'),
+    })));
+  });
+
   it.each(['-18', '+18', '0', '00018'])('rejects signed or non-positive age input %s with an invalid-age alert', async (value) => {
     render(<ShopOwnerRegistration />);
 
@@ -71,5 +80,79 @@ describe('shop owner registration age input', () => {
     fireEvent.change(ageInput, { target: { value: '18' } });
 
     expect(ageInput).toHaveValue('18');
+  });
+
+  it('blocks the next step with an age requirement alert for applicants below 18', async () => {
+    render(<ShopOwnerRegistration />);
+
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Before You Proceed',
+    })));
+    swalFireMock.mockClear();
+
+    fireEvent.change(screen.getByLabelText('Age'), { target: { value: '17' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      icon: 'error',
+      title: 'Age requirement not met',
+      text: 'Applicants below 18 cannot register as a shop owner. You must be at least 18 years old to continue.',
+    })));
+    expect(screen.getByLabelText('Age')).toHaveValue('17');
+  });
+
+  it('shows the document reminder once when entering Step 3', async () => {
+    render(
+      <ShopOwnerRegistration
+        resubmission={{
+          isResubmission: true,
+          submitUrl: '/shop-owner/resubmit',
+          form: {
+            firstName: 'Juan',
+            lastName: 'Dela Cruz',
+            email: 'juan@example.com',
+            phone: '09171234567',
+            age: 25,
+            address: 'Imus, Cavite',
+            addressRegion: 'CALABARZON',
+            addressProvince: 'Cavite',
+            addressCity: 'Imus',
+            addressBarangay: 'Bayan Luma',
+            addressPostalCode: '4103',
+            addressLatitude: '14.2814',
+            addressLongitude: '120.8685',
+            businessName: 'Juan Shoes',
+            businessAddress: 'Imus, Cavite',
+            postalCode: '4103',
+            businessType: 'retail',
+            registrationType: 'individual',
+            shopLatitude: '14.2814',
+            shopLongitude: '120.8685',
+            shopAddress: 'Imus, Cavite',
+            shopGeofenceRadius: 90,
+          },
+          documents: {},
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(screen.getByLabelText('Shop Name')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(screen.getByText('Shop Permits & Credentials')).toBeInTheDocument());
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      icon: 'info',
+      title: 'Document Submission Reminder',
+      text: expect.stringContaining('accurate, authentic, and up-to-date documents'),
+      confirmButtonText: 'I Understand',
+    })));
+
+    const reminderCallCount = swalFireMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    await waitFor(() => expect(screen.getByLabelText('Shop Name')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(screen.getByText('Shop Permits & Credentials')).toBeInTheDocument());
+    expect(swalFireMock).toHaveBeenCalledTimes(reminderCallCount);
   });
 });

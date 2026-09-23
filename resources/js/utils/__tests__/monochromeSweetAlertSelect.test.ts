@@ -45,6 +45,8 @@ describe('SweetAlert monochrome select enhancer', () => {
     const trigger = screen.getByRole('combobox', { name: 'Payment Method' });
     fireEvent.click(trigger);
 
+    expect(within(wrapper).getByRole('listbox')).toHaveClass('overflow-auto', 'no-scrollbar');
+
     const bankOption = within(wrapper).getByRole('option', { name: 'Bank Transfer' });
     expect(bankOption).toHaveClass('text-gray-900', 'hover:bg-gray-100');
     fireEvent.click(bankOption);

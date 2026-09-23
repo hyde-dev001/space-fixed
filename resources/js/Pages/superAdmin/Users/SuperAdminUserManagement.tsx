@@ -66,6 +66,7 @@ interface User {
   id: number;
   firstName: string;
   lastName: string;
+  suffix?: string | null;
   name: string;
   email: string;
   address: string;
@@ -694,12 +695,6 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
           </div>
           <div className="flex flex-wrap gap-3">
             <Link
-              href="/admin/identity-verification-reviews"
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
-            >
-              Identity Review Queue
-            </Link>
-            <Link
               href="/admin/flagged-accounts"
               className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-gray-900 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition-colors duration-200"
             >
@@ -873,6 +868,8 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                         <button
                           onClick={() => {
                             setSelectedUser(user);
+                            setExpandedDocuments(new Set());
+                            setImageLoadErrors(new Set());
                             setIsDetailsModalOpen(true);
                           }}
                           disabled={isProcessingId === user.id}
@@ -1210,7 +1207,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
             {/* Modal */}
             <div ref={detailsModalRef} tabIndex={-1} className="fixed inset-0 flex items-center justify-center z-[100001] p-4" 
               style={{ animation: 'slideIn 0.3s ease-out' }}>
-              <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto">
+              <div role="dialog" aria-modal="true" className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl max-w-4xl w-full max-h-[95vh] overflow-y-auto no-scrollbar">
                 <div className="p-8">
                   <div className="flex justify-between items-center mb-6">
                     <h3 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -1249,6 +1246,12 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                            Suffix
+                          </label>
+                          <p className="text-base text-gray-900 dark:text-white font-medium">{selectedUser.suffix || 'Not provided'}</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
                             Email Address
                           </label>
                           <p className="text-base text-gray-900 dark:text-white">{selectedUser.email}</p>
@@ -1281,74 +1284,48 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                       </div>
                     </div>
 
-                    {/* Identity Screening */}
-                    {selectedUser.identityVerification && (
-                      <div>
-                        <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
-                          Identity Screening
-                        </h4>
-                        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 p-4 space-y-3">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                                Document Type
-                              </label>
-                              <p className="text-sm text-gray-900 dark:text-white">
-                                {selectedUser.identityVerification.documentType || 'Not classified'}
-                              </p>
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                                Automated Screening
-                              </label>
-                              <p className="text-sm text-gray-900 dark:text-white">
-                                {selectedUser.identityVerification.screeningStatus.replaceAll('_', ' ')}
-                              </p>
-                            </div>
-                            <div>
-                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                                Human Review
-                              </label>
-                              <p className="text-sm text-gray-900 dark:text-white">
-                                {selectedUser.identityVerification.reviewStatus.replaceAll('_', ' ')}
-                              </p>
-                            </div>
-                            {selectedUser.identityVerification.failureReason && (
-                              <div>
-                                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
-                                  Screening Note
-                                </label>
-                                <p className="text-sm text-gray-900 dark:text-white">
-                                  {selectedUser.identityVerification.failureReason.replaceAll('_', ' ')}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                          {['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
-                            && ['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus) && (
-                              <div className="flex flex-wrap gap-3 pt-3 border-t border-gray-200 dark:border-gray-600">
-                                <Button
-                                  onClick={() => confirmIdentityReview(selectedUser, 'approve')}
-                                  disabled={isProcessingId === selectedUser.id}
-                                  className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50"
-                                >
-                                  Approve Review
-                                </Button>
-                                <Button
-                                  onClick={() => confirmIdentityReview(selectedUser, 'reject')}
-                                  disabled={isProcessingId === selectedUser.id}
-                                  className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
-                                >
-                                  Reject Review
-                                </Button>
-                              </div>
-                            )}
-                          <p className="text-xs text-gray-600 dark:text-gray-300">
-                            Automated screening indicates document consistency only. Human review decisions do not by themselves establish government authenticity.
+                    {/* Account Status */}
+                    <div>
+                      <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
+                        Account Status
+                      </h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                            Status
+                          </label>
+                          <span className={`inline-block px-4 py-2 text-sm font-bold rounded-lg ${
+                            selectedUser.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
+                            selectedUser.status === 'approved' || selectedUser.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                            selectedUser.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
+                            selectedUser.status === 'suspended' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
+                            'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
+                          }`}>
+                            {selectedUser.status.charAt(0).toUpperCase() + selectedUser.status.slice(1)}
+                          </span>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                            Registration Date
+                          </label>
+                          <p className="text-base text-gray-900 dark:text-white">{new Date(selectedUser.createdAt).toLocaleDateString()}</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                            Registration Time
+                          </label>
+                          <p className="text-base text-gray-900 dark:text-white">{new Date(selectedUser.createdAt).toLocaleTimeString()}</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
+                            Last Login
+                          </label>
+                          <p className="text-base text-gray-900 dark:text-white">
+                            {selectedUser.lastLogin ? new Date(selectedUser.lastLogin).toLocaleDateString() : 'Never logged in'}
                           </p>
                         </div>
                       </div>
-                    )}
+                    </div>
 
                     {/* Document Information */}
                     {(selectedUser.validIdUrl || selectedUser.validIdBackUrl) && (
@@ -1356,7 +1333,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                         <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
                           Submitted Documents
                         </h4>
-                        <div className="space-y-3 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg max-h-96 overflow-y-auto">
+                        <div className="space-y-3 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg max-h-96 overflow-y-auto no-scrollbar">
                           {selectedUser.validIdUrl && (
                             <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-800">
                             <div className="flex items-center justify-between mb-2">
@@ -1471,52 +1448,91 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                       </div>
                     )}
 
-                    {/* Account Status */}
-                    <div>
-                      <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
-                        Account Status
-                      </h4>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                            Status
-                          </label>
-                          <span className={`inline-block px-4 py-2 text-sm font-bold rounded-lg ${
-                            selectedUser.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' :
-                            selectedUser.status === 'approved' || selectedUser.status === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
-                            selectedUser.status === 'rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200' :
-                            selectedUser.status === 'suspended' ? 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200' :
-                            'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200'
-                          }`}>
-                            {selectedUser.status.charAt(0).toUpperCase() + selectedUser.status.slice(1)}
-                          </span>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                            Registration Date
-                          </label>
-                          <p className="text-base text-gray-900 dark:text-white">{new Date(selectedUser.createdAt).toLocaleDateString()}</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                            Registration Time
-                          </label>
-                          <p className="text-base text-gray-900 dark:text-white">{new Date(selectedUser.createdAt).toLocaleTimeString()}</p>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-2">
-                            Last Login
-                          </label>
-                          <p className="text-base text-gray-900 dark:text-white">
-                            {selectedUser.lastLogin ? new Date(selectedUser.lastLogin).toLocaleDateString() : 'Never logged in'}
+                    {/* Identity Screening */}
+                    {selectedUser.identityVerification && (
+                      <div>
+                        <h4 className="text-xl font-bold text-gray-900 dark:text-white mb-4 pb-3 border-b-2 border-gray-200 dark:border-gray-700">
+                          Identity Screening
+                        </h4>
+                        <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700 p-4 space-y-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Document Type
+                              </label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {selectedUser.identityVerification.documentType || 'Not classified'}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Automated Screening
+                              </label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {selectedUser.identityVerification.screeningStatus.replaceAll('_', ' ')}
+                              </p>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                Human Review
+                              </label>
+                              <p className="text-sm text-gray-900 dark:text-white">
+                                {selectedUser.identityVerification.reviewStatus.replaceAll('_', ' ')}
+                              </p>
+                            </div>
+                            {selectedUser.identityVerification.failureReason && (
+                              <div>
+                                <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                                  Screening Note
+                                </label>
+                                <p className="text-sm text-gray-900 dark:text-white">
+                                  {selectedUser.identityVerification.failureReason.replaceAll('_', ' ')}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          <p className="text-xs text-gray-600 dark:text-gray-300">
+                            Automated screening indicates document consistency only. Human review decisions do not by themselves establish government authenticity.
                           </p>
                         </div>
                       </div>
-                    </div>
+                    )}
+
                   </div>
 
-                  <div className="mt-10 flex justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
-                    <Button variant="outline" onClick={() => setIsDetailsModalOpen(false)}>
+                  <div className="mt-10 flex flex-wrap justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+                    {selectedUser.identityVerification && (
+                      <>
+                        <Button
+                          onClick={() => confirmIdentityReview(selectedUser, 'approve')}
+                          disabled={isProcessingId === selectedUser.id
+                            || expandedDocuments.size === 0
+                            || !['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
+                            || !['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus)}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Approve Review
+                        </Button>
+                        <Button
+                          onClick={() => confirmIdentityReview(selectedUser, 'reject')}
+                          disabled={isProcessingId === selectedUser.id
+                            || expandedDocuments.size === 0
+                            || !['automated_check_passed', 'manual_review_required'].includes(selectedUser.identityVerification.screeningStatus)
+                            || !['not_required', 'pending'].includes(selectedUser.identityVerification.reviewStatus)}
+                          className="bg-red-600 hover:bg-red-700 text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          Reject Review
+                        </Button>
+                      </>
+                    )}
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setIsDetailsModalOpen(false);
+                        setExpandedDocuments(new Set());
+                        setImageLoadErrors(new Set());
+                      }}
+                    >
                       Close
                     </Button>
                   </div>

@@ -437,9 +437,15 @@ export default function PlatformFeesPage() {
         <AppLayout>
             <Head title="Platform Fees" />
             <div className="space-y-6">
-                <header>
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Platform Fees</h1>
-                    <p className="mt-2 text-gray-600 dark:text-gray-400">Review marketplace balances, reliability recommendations, and fee policy.</p>
+                <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Platform Fees</h1>
+                        <p className="mt-2 text-gray-600 dark:text-gray-400">Review marketplace balances, reliability recommendations, and fee policy.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-3 sm:justify-end">
+                        <button type="button" onClick={() => { setCreditMovementPage(1); setCreditMovementModalOpen(true); }} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">View credit movement history</button>
+                        <button type="button" onClick={() => setSettingsOpen(true)} className="inline-flex min-h-11 items-center justify-center rounded-xl bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-black focus:outline-none focus:ring-2 focus:ring-gray-900/20 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200">Open fee settings</button>
+                    </div>
                 </header>
 
                 <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label="Platform fee summary">
@@ -447,17 +453,6 @@ export default function PlatformFeesPage() {
                     <DashboardMetricCard testId="platform-fee-collected-card" label="Collected" value={money(metrics.collected)} description="Paid by shop owners" context="Collected" icon={BadgeCheck} tone="success" />
                     <DashboardMetricCard testId="platform-fee-net-payable-card" label="Net Payable" value={money(metrics.outstanding)} description="Outstanding charges after available credits" context="Receivable" icon={WalletCards} tone="warning" />
                     <DashboardMetricCard testId="platform-fee-pending-card" label="Pending payments" value={String(metrics.pending_payments)} description="Awaiting confirmation" context="Pending" icon={Clock3} tone="warning" />
-                </section>
-
-                <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/20" aria-labelledby="platform-fee-credit-movement-heading" aria-label="Credit movement">
-                    <div>
-                        <h2 id="platform-fee-credit-movement-heading" className="text-lg font-semibold text-gray-900 dark:text-white">Credit movement</h2>
-                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Credits reduce a shop&apos;s outstanding charges; they are separate from Platform Fees Generated and do not increase it.</p>
-                    </div>
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">{adminCreditMovements.length} credit movements recorded across shops</span>
-                        <button type="button" onClick={() => { setCreditMovementPage(1); setCreditMovementModalOpen(true); }} className="rounded-lg border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40">View credit movement history</button>
-                    </div>
                 </section>
 
                 {creditMovementModalOpen && (
@@ -514,16 +509,6 @@ export default function PlatformFeesPage() {
                     </Modal>
                 )}
 
-                <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="platform-fee-settings-heading">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                            <h2 id="platform-fee-settings-heading" className="text-lg font-semibold text-gray-900 dark:text-white">Fee settings</h2>
-                            <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Configure rates, terms, reliability weights, and tiers when needed.</p>
-                        </div>
-                        <button type="button" onClick={() => setSettingsOpen(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Open fee settings</button>
-                    </div>
-                </section>
-
                 {settingsOpen && (
                     <div className="fixed inset-0 z-[1000000] flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4 sm:p-8 erp-modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSettingsOpen(false); }}>
                         <section className="flex max-h-[calc(100dvh-2rem)] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white p-5 shadow-2xl dark:border-gray-800 dark:bg-gray-950" role="dialog" aria-modal="true" aria-labelledby="platform-fee-settings-modal-heading">
@@ -535,17 +520,19 @@ export default function PlatformFeesPage() {
                                 <button type="button" onClick={() => setSettingsOpen(false)} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-900">Close</button>
                             </div>
 
-                            <div className="mt-5 flex flex-wrap gap-2">
-                                <button type="button" onClick={() => setScope('platform')} className={tabClass(scope === 'platform')}>Platform</button>
-                                <button type="button" onClick={() => setScope('shop_type')} className={tabClass(scope === 'shop_type')}>Shop type</button>
-                            </div>
+                            <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex flex-wrap gap-2">
+                                    <button type="button" onClick={() => setScope('platform')} className={tabClass(scope === 'platform')}>Platform</button>
+                                    <button type="button" onClick={() => setScope('shop_type')} className={tabClass(scope === 'shop_type')}>Shop type</button>
+                                </div>
 
-                            {scope === 'shop_type' && (
-                        <div className="mt-4 flex gap-2">
-                            <button type="button" onClick={() => setShopType('individual')} className={tabClass(shopType === 'individual')}>Individual</button>
-                            <button type="button" onClick={() => setShopType('business')} className={tabClass(shopType === 'business')}>Business</button>
-                        </div>
-                    )}
+                                {scope === 'shop_type' && (
+                                    <div className="ml-auto flex flex-wrap justify-end gap-2">
+                                        <button type="button" onClick={() => setShopType('individual')} className={tabClass(shopType === 'individual')}>Individual</button>
+                                        <button type="button" onClick={() => setShopType('business')} className={tabClass(shopType === 'business')}>Business</button>
+                                    </div>
+                                )}
+                            </div>
 
                             <form onSubmit={saveSettings} className="mt-5 min-h-0 flex-1 grid gap-4 overflow-y-auto pr-1 md:grid-cols-3">
                         <Field label="Platform Fee rate (%)" value={form.platform_fee_rate} onChange={(value) => setField('platform_fee_rate', value)} />

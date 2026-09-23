@@ -118,20 +118,37 @@ it('replaces reliability JSON fields with labeled controls and submits the same 
     expect(screen.queryByRole('article', { name: 'Reduced by credits' })).not.toBeInTheDocument();
     expect(screen.queryByText('Snapshot')).not.toBeInTheDocument();
 
-    expect(screen.getByRole('button', { name: 'Open fee settings' })).toBeInTheDocument();
+    const pageHeader = screen.getByRole('banner');
+    const settingsButton = screen.getByRole('button', { name: 'Open fee settings' });
+    expect(settingsButton).toHaveClass('rounded-xl');
+    expect(pageHeader).toContainElement(settingsButton);
+    expect(settingsButton).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Credit movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Fee settings' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Open fee settings' }));
     expect(screen.getByRole('dialog').parentElement).toHaveClass('z-[1000000]');
     expect(screen.getByRole('heading', { name: 'Reliability scoring' })).toBeInTheDocument();
+    const scopeTabs = screen.getByRole('button', { name: 'Platform' }).parentElement?.parentElement;
+    expect(scopeTabs).toHaveClass('items-center', 'justify-between');
+    const shopTypeTab = screen.getByRole('button', { name: 'Shop type' });
+    expect(scopeTabs).toContainElement(shopTypeTab);
+    fireEvent.click(shopTypeTab);
+    const shopTypeTabs = screen.getByRole('button', { name: 'Individual' }).parentElement;
+    expect(shopTypeTabs).toHaveClass('justify-end');
+    expect(scopeTabs).toContainElement(screen.getByRole('button', { name: 'Individual' }));
+    expect(scopeTabs).toContainElement(screen.getByRole('button', { name: 'Business' }));
     expect(screen.queryByRole('heading', { name: 'Shop Platform Balance overview' })).not.toBeInTheDocument();
     expect(screen.getByLabelText('Payment history weight (%)')).toHaveValue(35);
     expect(screen.getByText('Total: 100%')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add tier' })).toBeInTheDocument();
     expect(screen.queryByText(/Reliability weights \(JSON/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Reliability tiers \(JSON/i)).not.toBeInTheDocument();
-    const movementRegion = screen.getByRole('region', { name: 'Credit movement' });
-    expect(movementRegion).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'View credit movement history' })).toBeInTheDocument();
-    expect(movementRegion).not.toHaveTextContent('Credit Movement Shop');
+    const historyButton = screen.getByRole('button', { name: 'View credit movement history' });
+    expect(historyButton).toHaveClass('rounded-xl');
+    expect(pageHeader).toContainElement(historyButton);
+    expect(historyButton).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Credit movement' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Fee settings' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Audited balance adjustment' })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Payment history weight (%)'), { target: { value: '40' } });
@@ -182,7 +199,8 @@ it('submits a per-shop balance limit change', async () => {
 it('keeps admin credit movement history in a paginated modal', () => {
     render(<PlatformFeesPage />);
 
-    expect(screen.getByText('12 credit movements recorded across shops')).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Credit movement' })).not.toBeInTheDocument();
+    expect(screen.queryByText('12 credit movements recorded across shops')).not.toBeInTheDocument();
     expect(screen.queryByText('Order refund #12')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'View credit movement history' }));

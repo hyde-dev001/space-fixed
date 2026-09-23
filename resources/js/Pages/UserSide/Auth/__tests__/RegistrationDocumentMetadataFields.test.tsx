@@ -40,4 +40,37 @@ describe('registration document metadata fields', () => {
 
     expect(screen.getByLabelText('Business registration expiration date')).toHaveAttribute('type', 'date');
   });
+
+  it('shows a required expiration date without an expiration mode selector', () => {
+    render(
+      <RegistrationDocumentMetadataFields
+        idPrefix="mayors_permit"
+        label="Mayor's Permit / Shop Permit"
+        metadata={{ expirationMode: 'dated', expiresOn: '', issuedOn: '' }}
+        expirationRequired
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Mayor's Permit / Shop Permit expiration")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Mayor's Permit / Shop Permit expiration date")).toHaveAttribute('type', 'date');
+  });
+
+  it('aligns date fields and removes the left gap for optional expiration dates', () => {
+    render(
+      <RegistrationDocumentMetadataFields
+        idPrefix="bir_certificate"
+        label="BIR Certificate of Registration (COR)"
+        metadata={{ expirationMode: 'dated', expiresOn: '', issuedOn: '' }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const issuedDate = screen.getByLabelText('BIR Certificate of Registration (COR) issued date');
+    const expirationDate = screen.getByLabelText('BIR Certificate of Registration (COR) expiration date');
+
+    expect(issuedDate.previousElementSibling).toHaveClass('min-h-8');
+    expect(expirationDate.previousElementSibling).toHaveClass('min-h-8');
+    expect(expirationDate.parentElement).toHaveClass('sm:col-span-2');
+  });
 });

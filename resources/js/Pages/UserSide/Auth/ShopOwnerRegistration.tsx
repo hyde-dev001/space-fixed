@@ -218,6 +218,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const [selectedCity, setSelectedCity] = useState(inferCaviteCity(resubmission?.form?.businessAddress ?? ""));
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
   const cityDropdownRef = useRef<HTMLDivElement>(null);
+  const hasShownDocumentReminder = useRef(false);
 
 
   const [uploadedDocuments, setUploadedDocuments] = useState({
@@ -235,7 +236,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     : 'Shop Registration (DTI)';
   const [documentMetadata, setDocumentMetadata] = useState<Record<FixedDocumentSlot, RegistrationDocumentMetadata>>({
     business_registration: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
-    mayors_permit: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+    mayors_permit: { expirationMode: 'dated', expiresOn: '', issuedOn: '' },
     bir_certificate: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
     valid_id: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
   });
@@ -299,7 +300,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     void Swal.fire({
       icon: 'question',
       title: 'Before You Proceed',
-      text: 'This account is intended for shop owners and repairers applying for SoleSpace services. Please continue only if you have a business or repair service to register.',
+      text: 'This account is intended for shop owners and repairers applying for SoleSpace services. Only shops located in Cavite are eligible to register here. Please continue only if you have a business or repair service to register.',
       showCancelButton: true,
       confirmButtonText: 'Proceed',
       cancelButtonText: 'Cancel',
@@ -316,6 +317,21 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       Swal.close();
     };
   }, [isResubmission]);
+
+  useEffect(() => {
+    if (currentStep !== 3 || hasShownDocumentReminder.current) return;
+
+    hasShownDocumentReminder.current = true;
+    void Swal.fire({
+      icon: 'info',
+      title: 'Document Submission Reminder',
+      text: 'Please submit accurate, authentic, and up-to-date documents. Read the instructions below before uploading and make sure every photo is clear, complete, and readable.',
+      confirmButtonText: 'I Understand',
+      confirmButtonColor: '#111827',
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+    });
+  }, [currentStep]);
 
   const businessTypeOptions = [
     { value: "retail", label: "Retail" },
@@ -1182,6 +1198,20 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   };
 
   const handleNext = async () => {
+    if (currentStep === 1) {
+      const age = Number(formData.age);
+
+      if (formData.age.trim() && Number.isInteger(age) && age > 0 && age < 18) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Age requirement not met',
+          text: 'Applicants below 18 cannot register as a shop owner. You must be at least 18 years old to continue.',
+          confirmButtonColor: '#3085d6',
+        });
+        return;
+      }
+    }
+
     const stepErrors = getStepValidationErrors(currentStep);
     if (Object.keys(stepErrors).length > 0) {
       setErrors((prev) => ({ ...prev, ...stepErrors }));
@@ -2148,7 +2178,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewAlt="Mayor's Permit / Shop Permit preview"
                       />
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
-                        <RegistrationDocumentMetadataFields idPrefix="mayors_permit" label="Mayor's Permit / Shop Permit" metadata={documentMetadata.mayors_permit} onChange={(updates) => updateDocumentMetadata('mayors_permit', updates)} />
+                        <RegistrationDocumentMetadataFields idPrefix="mayors_permit" label="Mayor's Permit / Shop Permit" metadata={documentMetadata.mayors_permit} expirationRequired onChange={(updates) => updateDocumentMetadata('mayors_permit', updates)} />
                       </div>
                       {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
@@ -2388,16 +2418,16 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             {currentStep === 4 && (
               <>
                 {/* Review Timeline */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 md:p-6">
+                <div className="bg-white border border-black rounded-lg p-4 md:p-6">
                   <div className="flex flex-col sm:flex-row gap-4">
                     <div className="flex-shrink-0">
-                      <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                      <svg className="w-6 h-6 text-black" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-2">Review Timeline</h4>
-                      <ul className="text-sm text-gray-700 space-y-1">
+                      <h4 className="font-semibold text-black mb-2">Review Timeline</h4>
+                      <ul className="text-sm text-black space-y-1">
                         <li>• Review period: 3 to 7 business days</li>
                         <li>• Our team verifies all documents and shop details</li>
                         <li>• You'll receive status updates via email</li>

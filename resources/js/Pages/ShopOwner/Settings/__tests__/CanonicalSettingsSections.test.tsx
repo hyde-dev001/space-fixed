@@ -263,6 +263,20 @@ describe("canonical settings sections", () => {
     expect(navigationLabels.slice(0, 3)).toEqual(["Profile", "Subscription", "Modules & Team"]);
   });
 
+  it("hides showroom subscription for repair-only shops", async () => {
+    renderSettings("subscription", {
+      ...baseShopSettings,
+      business_type: "repair",
+      premium: { ...baseShopSettings.premium, eligible: false },
+    });
+
+    expect(screen.queryByRole("link", { name: "Subscription" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Subscription" })).not.toBeInTheDocument();
+    expect(document.getElementById("settings-section-subscription")).toBeNull();
+
+    await waitFor(() => expect(screen.getByRole("link", { name: /^Profile$/i })).toHaveAttribute("aria-current", "page"));
+  });
+
   it("marks the settings surfaces for dark mode styling", () => {
     renderSettings("profile");
 
