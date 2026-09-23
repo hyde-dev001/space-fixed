@@ -156,18 +156,18 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
     return (
         <>
             <Head title="Application Status" />
-            <div className="userside-auth-page userside-auth-pattern relative h-screen overflow-y-auto no-scrollbar font-outfit antialiased">
+            <div className="userside-auth-page userside-auth-pattern relative min-h-dvh overflow-y-auto no-scrollbar font-outfit antialiased 2xl:h-dvh 2xl:overflow-hidden">
                 <Navigation hidePromoBar hideSearchAndCart />
-                <div className="mx-auto max-w-3xl px-4 pb-8 pt-24 sm:px-6 sm:pt-28 lg:px-8 lg:pb-10 lg:pt-32">
-                    <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-white/90 p-5 shadow-[0_30px_75px_-50px_rgba(15,23,42,0.45)] backdrop-blur-sm sm:p-6 lg:p-7">
-                        <div className="relative space-y-4">
-                            <div className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 sm:p-5">
-                                <div className="relative mb-5">
+                <div className="mx-auto w-full max-w-6xl px-4 pb-6 pt-20 sm:px-6 sm:pt-24 lg:px-8 lg:pb-8 lg:pt-20">
+                    <div className="relative overflow-hidden rounded-3xl border border-slate-200/70 bg-white/90 p-4 shadow-[0_30px_75px_-50px_rgba(15,23,42,0.45)] backdrop-blur-sm sm:p-5 lg:p-6">
+                        <div className="relative grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(22rem,0.9fr)] xl:items-start">
+                            <div className="rounded-2xl border border-slate-200/80 bg-white/75 p-4 lg:p-5">
+                                <div className="relative mb-4">
                                     <span className={`absolute right-0 top-0 inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${status.badgeClass}`}>
                                         {statusLabel}
                                     </span>
 
-                                    <div className="flex items-start gap-4 pr-28 sm:pr-32">
+                                    <div className="flex items-start gap-3 pr-28 sm:pr-32">
                                         {status.icon}
                                         <div>
                                             <h1 className="text-2xl font-bold leading-tight text-slate-900 sm:text-3xl">{status.title}</h1>
@@ -176,7 +176,7 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
                                     </div>
                                 </div>
 
-                                <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50/90 p-4 text-sm sm:grid-cols-2">
+                                <div className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-slate-50/90 p-3 text-sm sm:grid-cols-2">
                                     <div>
                                         <p className="text-xs uppercase tracking-[0.12em] text-slate-500">Business</p>
                                         <p className="mt-1 font-semibold text-slate-900">{shopOwner.business_name}</p>
@@ -196,7 +196,7 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
                                 </div>
 
                                 {shopOwner.status === 'pending' && (
-                                    <div className="mt-4 rounded-xl border border-slate-300 bg-slate-50 p-4">
+                                    <div className="mt-3 rounded-xl border border-slate-300 bg-slate-50 p-3">
                                         <div className="mb-2 flex items-center justify-between text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
                                             <span>Review Progress</span>
                                             <span className="text-slate-800">Day {Math.min(daysSinceSubmission, REVIEW_WINDOW_DAYS)} of {REVIEW_WINDOW_DAYS}</span>
@@ -213,7 +213,7 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
                                 )}
 
                                 {shopOwner.status === 'approved' && (
-                                    <div className="mt-4 rounded-xl border border-slate-300 bg-slate-50 p-4 text-sm text-slate-700">
+                                    <div className="mt-3 rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700">
                                         <p className="font-semibold text-slate-900">Next step: Set your password</p>
                                         <p className="mt-1">
                                             An email was sent to <strong>{shopOwner.email}</strong> with your password setup link.
@@ -223,14 +223,14 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
                                 )}
 
                                 {shopOwner.status === 'rejected' && shopOwner.rejection_reason && (
-                                    <div className="mt-4 rounded-xl border border-slate-300 bg-slate-50 p-4 text-sm text-slate-700">
+                                    <div className="mt-3 rounded-xl border border-slate-300 bg-slate-50 p-3 text-sm text-slate-700">
                                         <p className="font-semibold text-slate-900">Reason for rejection</p>
                                         <p className="mt-1">{shopOwner.rejection_reason}</p>
                                     </div>
                                 )}
 
                                 {shopOwner.email_verified_at && (
-                                    <div className="mt-4 inline-flex items-center rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
+                                    <div className="mt-3 inline-flex items-center rounded-full border border-slate-300 bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
                                         <svg className="mr-1.5 h-4 w-4" fill="currentColor" viewBox="0 0 20 20">
                                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                                         </svg>
@@ -239,13 +239,13 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
                                 )}
                             </div>
 
-                            <aside className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4 sm:p-5">
+                            <aside className="rounded-2xl border border-slate-200 bg-slate-50/80 p-4">
                                 <h2 className="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700">Approval Timeline</h2>
                                 <p className="mt-1 text-sm text-slate-600">
                                     Most SoleSpace applications are approved within 3 to 7 business days.
                                 </p>
 
-                                <div className="mt-4 space-y-3">
+                                <div className="mt-3 space-y-2">
                                     {reviewTimeline.map((step, index) => {
                                         const state = getStepState(index);
                                         const bulletClass =
@@ -256,7 +256,7 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
                                                 : 'bg-slate-200 text-slate-600';
 
                                         return (
-                                            <div key={step.title} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                                            <div key={step.title} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-2.5">
                                                 <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold ${bulletClass}`}>
                                                     {index + 1}
                                                 </div>
@@ -270,11 +270,11 @@ export default function PendingApproval({ shopOwner }: PendingApprovalProps) {
                                     })}
                                 </div>
 
-                                <div className="mt-4 rounded-xl border border-slate-300 bg-slate-100 p-3 text-xs text-slate-700">
+                                <div className="mt-3 rounded-xl border border-slate-300 bg-slate-100 p-3 text-xs text-slate-700">
                                     Keep your inbox and spam folder checked daily. Approval updates are sent via email only.
                                 </div>
 
-                                <div className="mt-4 flex flex-col gap-2 sm:flex-row lg:flex-col">
+                                <div className="mt-3 flex flex-col gap-2 sm:flex-row xl:flex-col">
                                     <Link
                                         href="/"
                                         className="inline-flex w-full items-center justify-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700"
