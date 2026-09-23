@@ -218,6 +218,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const [selectedCity, setSelectedCity] = useState(inferCaviteCity(resubmission?.form?.businessAddress ?? ""));
   const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
   const cityDropdownRef = useRef<HTMLDivElement>(null);
+  const hasShownDocumentReminder = useRef(false);
 
 
   const [uploadedDocuments, setUploadedDocuments] = useState({
@@ -235,7 +236,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     : 'Shop Registration (DTI)';
   const [documentMetadata, setDocumentMetadata] = useState<Record<FixedDocumentSlot, RegistrationDocumentMetadata>>({
     business_registration: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
-    mayors_permit: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+    mayors_permit: { expirationMode: 'dated', expiresOn: '', issuedOn: '' },
     bir_certificate: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
     valid_id: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
   });
@@ -316,6 +317,21 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       Swal.close();
     };
   }, [isResubmission]);
+
+  useEffect(() => {
+    if (currentStep !== 3 || hasShownDocumentReminder.current) return;
+
+    hasShownDocumentReminder.current = true;
+    void Swal.fire({
+      icon: 'info',
+      title: 'Document Submission Reminder',
+      text: 'Please submit accurate, authentic, and up-to-date documents. Read the instructions below before uploading and make sure every photo is clear, complete, and readable.',
+      confirmButtonText: 'I Understand',
+      confirmButtonColor: '#111827',
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+    });
+  }, [currentStep]);
 
   const businessTypeOptions = [
     { value: "retail", label: "Retail" },
@@ -2162,7 +2178,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewAlt="Mayor's Permit / Shop Permit preview"
                       />
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
-                        <RegistrationDocumentMetadataFields idPrefix="mayors_permit" label="Mayor's Permit / Shop Permit" metadata={documentMetadata.mayors_permit} onChange={(updates) => updateDocumentMetadata('mayors_permit', updates)} />
+                        <RegistrationDocumentMetadataFields idPrefix="mayors_permit" label="Mayor's Permit / Shop Permit" metadata={documentMetadata.mayors_permit} expirationRequired onChange={(updates) => updateDocumentMetadata('mayors_permit', updates)} />
                       </div>
                       {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">

@@ -91,4 +91,59 @@ describe('shop owner registration age input', () => {
     })));
     expect(screen.getByLabelText('Age')).toHaveValue('17');
   });
+
+  it('shows the document reminder once when entering Step 3', async () => {
+    render(
+      <ShopOwnerRegistration
+        resubmission={{
+          isResubmission: true,
+          submitUrl: '/shop-owner/resubmit',
+          form: {
+            firstName: 'Juan',
+            lastName: 'Dela Cruz',
+            email: 'juan@example.com',
+            phone: '09171234567',
+            age: 25,
+            address: 'Imus, Cavite',
+            addressRegion: 'CALABARZON',
+            addressProvince: 'Cavite',
+            addressCity: 'Imus',
+            addressBarangay: 'Bayan Luma',
+            addressPostalCode: '4103',
+            addressLatitude: '14.2814',
+            addressLongitude: '120.8685',
+            businessName: 'Juan Shoes',
+            businessAddress: 'Imus, Cavite',
+            postalCode: '4103',
+            businessType: 'retail',
+            registrationType: 'individual',
+            shopLatitude: '14.2814',
+            shopLongitude: '120.8685',
+            shopAddress: 'Imus, Cavite',
+            shopGeofenceRadius: 90,
+          },
+          documents: {},
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(screen.getByLabelText('Shop Name')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(screen.getByText('Shop Permits & Credentials')).toBeInTheDocument());
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      icon: 'info',
+      title: 'Document Submission Reminder',
+      text: expect.stringContaining('accurate, authentic, and up-to-date documents'),
+      confirmButtonText: 'I Understand',
+    })));
+
+    const reminderCallCount = swalFireMock.mock.calls.length;
+    fireEvent.click(screen.getByRole('button', { name: 'Previous' }));
+    await waitFor(() => expect(screen.getByLabelText('Shop Name')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() => expect(screen.getByText('Shop Permits & Credentials')).toBeInTheDocument());
+    expect(swalFireMock).toHaveBeenCalledTimes(reminderCallCount);
+  });
 });
