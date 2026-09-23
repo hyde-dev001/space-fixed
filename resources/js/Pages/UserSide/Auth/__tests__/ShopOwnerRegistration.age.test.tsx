@@ -72,4 +72,23 @@ describe('shop owner registration age input', () => {
 
     expect(ageInput).toHaveValue('18');
   });
+
+  it('blocks the next step with an age requirement alert for applicants below 18', async () => {
+    render(<ShopOwnerRegistration />);
+
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Before You Proceed',
+    })));
+    swalFireMock.mockClear();
+
+    fireEvent.change(screen.getByLabelText('Age'), { target: { value: '17' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    await waitFor(() => expect(swalFireMock).toHaveBeenCalledWith(expect.objectContaining({
+      icon: 'error',
+      title: 'Age requirement not met',
+      text: 'Applicants below 18 cannot register as a shop owner. You must be at least 18 years old to continue.',
+    })));
+    expect(screen.getByLabelText('Age')).toHaveValue('17');
+  });
 });

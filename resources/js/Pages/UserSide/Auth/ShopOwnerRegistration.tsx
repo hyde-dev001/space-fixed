@@ -1182,6 +1182,20 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   };
 
   const handleNext = async () => {
+    if (currentStep === 1) {
+      const age = Number(formData.age);
+
+      if (formData.age.trim() && Number.isInteger(age) && age > 0 && age < 18) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Age requirement not met',
+          text: 'Applicants below 18 cannot register as a shop owner. You must be at least 18 years old to continue.',
+          confirmButtonColor: '#3085d6',
+        });
+        return;
+      }
+    }
+
     const stepErrors = getStepValidationErrors(currentStep);
     if (Object.keys(stepErrors).length > 0) {
       setErrors((prev) => ({ ...prev, ...stepErrors }));
