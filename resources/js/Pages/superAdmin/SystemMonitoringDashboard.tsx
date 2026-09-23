@@ -132,8 +132,6 @@ export default function SystemMonitoringDashboard() {
   const performanceRows = dashboard?.performance_metrics || [];
   const canViewAudit = dashboard?.can_view_audit ?? true;
   const canViewSystemHealth = dashboard?.can_view_system_health ?? true;
-  const showSystemStatus = typeof dashboard?.systems_operational === 'boolean';
-  const systemsOperational = dashboard?.systems_operational === true;
 
   const metricsData: MetricData[] = [
     ...(metrics.total_users !== undefined ? [{
@@ -173,16 +171,6 @@ export default function SystemMonitoringDashboard() {
             <p className="text-gray-600 dark:text-gray-400 mt-2">
               Current database, queue, failed-job, and account snapshots
             </p>
-          </div>
-          <div className="flex items-center gap-3">
-            {showSystemStatus && (
-              <div className={`flex items-center gap-2 rounded-lg px-4 py-2 ${systemsOperational ? 'bg-green-100 dark:bg-green-900/30' : 'bg-red-100 dark:bg-red-900/30'}`}>
-                <div className={`h-2 w-2 rounded-full ${systemsOperational ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                <span className={`text-sm font-medium ${systemsOperational ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'}`}>
-                  {systemsOperational ? 'Database connected' : 'Database attention required'}
-                </span>
-              </div>
-            )}
           </div>
         </div>
 

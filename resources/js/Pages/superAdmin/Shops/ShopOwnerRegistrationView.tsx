@@ -628,8 +628,8 @@ export default function ShopOwnerRegistrationView({
 
           {/* Filters */}
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mb-8">
-            <div className="flex flex-wrap gap-4">
-              <div>
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="min-w-0 flex-1 basis-full sm:basis-0">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Search Applications
                 </label>
@@ -639,11 +639,11 @@ export default function ShopOwnerRegistrationView({
                   onChange={(e) => setSearchTerm(e.target.value)}
                   placeholder="Search by business name or email..."
                   aria-label="Search Applications"
-                  className="px-9 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                  className="w-full px-9 py-2 border border-gray-300 dark:border-gray-600 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                 />
               </div>
 
-              <div>
+              <div className="shrink-0">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Filter by Status
                 </label>

@@ -450,13 +450,15 @@ export default function PlatformFeesPage() {
                 </section>
 
                 <section className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/20" aria-labelledby="platform-fee-credit-movement-heading" aria-label="Credit movement">
-                    <div>
-                        <h2 id="platform-fee-credit-movement-heading" className="text-lg font-semibold text-gray-900 dark:text-white">Credit movement</h2>
-                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Credits reduce a shop&apos;s outstanding charges; they are separate from Platform Fees Generated and do not increase it.</p>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                            <h2 id="platform-fee-credit-movement-heading" className="text-lg font-semibold text-gray-900 dark:text-white">Credit movement</h2>
+                            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Credits reduce a shop&apos;s outstanding charges; they are separate from Platform Fees Generated and do not increase it.</p>
+                        </div>
+                        <button type="button" onClick={() => { setCreditMovementPage(1); setCreditMovementModalOpen(true); }} className="rounded-xl border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40">View credit movement history</button>
                     </div>
-                    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                    <div className="mt-4">
                         <span className="text-sm text-gray-600 dark:text-gray-400">{adminCreditMovements.length} credit movements recorded across shops</span>
-                        <button type="button" onClick={() => { setCreditMovementPage(1); setCreditMovementModalOpen(true); }} className="rounded-lg border border-emerald-300 px-3 py-2 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:text-emerald-300 dark:hover:bg-emerald-950/40">View credit movement history</button>
                     </div>
                 </section>
 
@@ -515,12 +517,12 @@ export default function PlatformFeesPage() {
                 )}
 
                 <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]" aria-labelledby="platform-fee-settings-heading">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                             <h2 id="platform-fee-settings-heading" className="text-lg font-semibold text-gray-900 dark:text-white">Fee settings</h2>
                             <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Configure rates, terms, reliability weights, and tiers when needed.</p>
                         </div>
-                        <button type="button" onClick={() => setSettingsOpen(true)} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Open fee settings</button>
+                        <button type="button" onClick={() => setSettingsOpen(true)} className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">Open fee settings</button>
                     </div>
                 </section>
 

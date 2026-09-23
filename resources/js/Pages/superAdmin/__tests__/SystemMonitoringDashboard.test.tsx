@@ -39,6 +39,7 @@ describe('SystemMonitoringDashboard', () => {
     expect(screen.queryByText('Performance Metrics')).not.toBeInTheDocument();
     expect(screen.queryByText('Live')).not.toBeInTheDocument();
     expect(screen.queryByText('All Systems Operational')).not.toBeInTheDocument();
+    expect(screen.queryByText('Database connected')).not.toBeInTheDocument();
     expect(screen.getByText(/database connectivity/i)).toBeInTheDocument();
     expect(screen.getByText(/failed jobs/i)).toBeInTheDocument();
   });
@@ -48,7 +49,7 @@ describe('SystemMonitoringDashboard', () => {
     render(<SystemMonitoringDashboard />);
 
     expect(screen.queryByText('All Systems Operational')).not.toBeInTheDocument();
-    expect(screen.getByText('Database attention required')).toBeInTheDocument();
+    expect(screen.queryByText('Database attention required')).not.toBeInTheDocument();
     expect(screen.getByText('Failed Jobs')).toBeInTheDocument();
   });
 });

@@ -185,6 +185,10 @@ describe('registration queue pagination UI', () => {
       } as never)
     );
 
+    expect(screen.getByLabelText('Search Applications')).toHaveClass('w-full');
+    expect(screen.getByLabelText('Search Applications').parentElement).toHaveClass('min-w-0', 'flex-1');
+    expect(screen.getByLabelText('Filter by Status').parentElement?.parentElement).toHaveClass('shrink-0');
+
     fireEvent.change(screen.getByLabelText('Search Applications'), {
       target: { value: 'Sole' },
     });
