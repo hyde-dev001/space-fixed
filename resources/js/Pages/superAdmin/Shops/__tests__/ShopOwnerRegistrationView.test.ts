@@ -203,5 +203,15 @@ describe('registration queue pagination UI', () => {
 
     expect(screen.getByText('123 Personal Street, Salitran I, Dasmarinas, Cavite, 4114')).toBeInTheDocument();
     expect(screen.getByText('Cavite business address')).toBeInTheDocument();
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog).toHaveClass('h-full', 'w-full', 'overflow-hidden');
+    expect(dialog.querySelector('.overflow-y-auto')).toHaveClass('no-scrollbar');
+    expect(document.documentElement.style.overflow).toBe('hidden');
+    expect(document.body.style.overflow).toBe('hidden');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
+    expect(document.documentElement.style.overflow).toBe('');
+    expect(document.body.style.overflow).toBe('');
   });
 });

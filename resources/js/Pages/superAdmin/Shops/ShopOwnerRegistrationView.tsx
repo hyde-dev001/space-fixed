@@ -292,6 +292,23 @@ export default function ShopOwnerRegistrationView({
   const skipInitialSearch = useRef(true);
 
   useEffect(() => {
+    if (!isViewModalOpen) return;
+
+    const root = document.documentElement;
+    const body = document.body;
+    const previousRootOverflow = root.style.overflow;
+    const previousBodyOverflow = body.style.overflow;
+
+    root.style.overflow = 'hidden';
+    body.style.overflow = 'hidden';
+
+    return () => {
+      root.style.overflow = previousRootOverflow;
+      body.style.overflow = previousBodyOverflow;
+    };
+  }, [isViewModalOpen]);
+
+  useEffect(() => {
     setRegistrationsState(serverRows);
     if (serverPage) {
       setCurrentPage(serverPage.current_page);
@@ -821,10 +838,15 @@ export default function ShopOwnerRegistrationView({
 
           {/* View Details Modal */}
           {isViewModalOpen && selectedRegistration && (
-            <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
-              <div className="relative bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-                <div className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4 flex justify-between items-center">
-                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+            <div className="fixed inset-0 z-[999999] flex h-dvh w-screen items-stretch justify-center bg-black/60 backdrop-blur-sm erp-modal-backdrop">
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="registration-details-title"
+                className="relative flex h-full w-full max-w-none flex-col overflow-hidden bg-white shadow-2xl dark:bg-gray-800"
+              >
+                <div className="flex shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6 py-4 dark:border-gray-700 dark:bg-gray-800 lg:px-8">
+                  <h3 id="registration-details-title" className="text-xl font-semibold text-gray-900 dark:text-white">
                     {selectedRegistration.businessName} - Registration Details
                   </h3>
                   <button
@@ -835,45 +857,43 @@ export default function ShopOwnerRegistrationView({
                     ×
                   </button>
                 </div>
-                <div className="p-6">
+                <div className="min-h-0 flex-1 overflow-y-auto no-scrollbar p-6 lg:p-8">
                   <div className="space-y-6">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      {/* Left Column */}
-                      <div className="space-y-6">
-                        {/* Personal Information */}
-                        <div>
+                    <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+                      {/* Personal Information */}
+                      <div>
                           <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3 flex items-center">
                             <UserIcon className="w-5 h-5 mr-2" />
                             Personal Information
                           </h4>
-                          <div className="space-y-3 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-                            <div>
+                          <div className="grid grid-cols-1 gap-x-6 gap-y-4 rounded-xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-700/60 sm:grid-cols-2">
+                            <div className="min-w-0">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">First Name</label>
                               <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.firstName}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Last Name</label>
                               <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.lastName}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Email</label>
-                              <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.email}</p>
+                              <p className="break-words text-sm text-gray-900 dark:text-white">{selectedRegistration.email}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Phone</label>
                               <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.phone}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Suffix</label>
                               <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.suffix || '—'}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Age</label>
                               <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.age ?? '—'}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0 sm:col-span-2">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Personal Address</label>
-                              <p className="text-sm text-gray-900 dark:text-white">
+                              <p className="break-words text-sm text-gray-900 dark:text-white">
                                 {[
                                   selectedRegistration.address,
                                   selectedRegistration.addressBarangay,
@@ -892,34 +912,34 @@ export default function ShopOwnerRegistrationView({
                             <DocsIcon className="w-5 h-5 mr-2" />
                             Business Information
                           </h4>
-                          <div className="space-y-3 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-                            <div>
+                          <div className="grid grid-cols-1 gap-x-6 gap-y-4 rounded-xl border border-gray-200 bg-gray-50 p-5 dark:border-gray-700 dark:bg-gray-700/60 sm:grid-cols-2">
+                            <div className="min-w-0">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Business Name</label>
                               <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.businessName}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Business Type</label>
                               <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.businessType}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Registration Type</label>
                               <p className="text-sm text-gray-900 dark:text-white">{formatRegistrationType(selectedRegistration.registrationType)}</p>
                             </div>
-                            <div>
+                            <div className="min-w-0 sm:col-span-2">
                               <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Address</label>
-                              <p className="text-sm text-gray-900 dark:text-white">{selectedRegistration.businessAddress}</p>
+                              <p className="break-words text-sm text-gray-900 dark:text-white">{selectedRegistration.businessAddress}</p>
                             </div>
                           </div>
                         </div>
                       </div>
 
-                      {/* Right Column - Documents */}
-                      <div>
+                    {/* Submitted Documents */}
+                    <div>
                         <h4 className="text-lg font-medium text-gray-900 dark:text-white mb-3 flex items-center">
                           <DocsIcon className="w-5 h-5 mr-2" />
                           Submitted Documents ({selectedRegistrationDocuments.length})
                         </h4>
-                        <div className="space-y-3 bg-gray-50 dark:bg-gray-700 p-4 rounded-lg max-h-96 overflow-y-auto">
+                        <div className="grid grid-cols-1 items-start gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/60 xl:grid-cols-2">
                           {selectedRegistrationDocuments.length > 0 ? (
                             selectedRegistrationDocuments.map((document, index) => {
                               const otherCountBefore = selectedRegistrationDocuments
@@ -927,7 +947,7 @@ export default function ShopOwnerRegistrationView({
                                 .filter((item) => (item.type || '').toLowerCase().startsWith('other')).length;
 
                               return (
-                              <div key={index} className="border border-gray-200 dark:border-gray-600 rounded-lg p-3 bg-white dark:bg-gray-800">
+                              <div key={index} className="min-w-0 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-600 dark:bg-gray-800">
                                 <div className="flex items-center justify-between mb-2">
                                   <div className="flex items-center space-x-2">
                                     <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900 rounded flex items-center justify-center">
@@ -979,22 +999,22 @@ export default function ShopOwnerRegistrationView({
                                       }.
                                     </p>
                                     {document.logicalSlot === 'business_registration' && (
-                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                      <label className="block min-w-0 text-xs font-medium text-gray-700 dark:text-gray-300">
                                         Verified authority
                                         <MonochromeSelect
                                           value={reviewMetadata[document.id]?.documentType ?? document.documentType ?? ''}
                                           onChange={(event) => updateReviewMetadata(document.id!, {
                                             documentType: event.target.value,
                                           })}
-                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                          className="mt-1 h-11 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                                         >
                                           <option value="dti_registration">DTI</option>
                                           <option value="sec_registration">SEC</option>
                                         </MonochromeSelect>
                                       </label>
                                     )}
-                                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                                      <label className="block min-w-0 text-xs font-medium text-gray-700 dark:text-gray-300">
                                         Verified issue date
                                         <input
                                           type="date"
@@ -1002,10 +1022,10 @@ export default function ShopOwnerRegistrationView({
                                           onChange={(event) => updateReviewMetadata(document.id!, {
                                             issuedOn: event.target.value || null,
                                           })}
-                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                          className="mt-1 h-11 w-full min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                                         />
                                       </label>
-                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                      <label className="block min-w-0 text-xs font-medium text-gray-700 dark:text-gray-300">
                                         Verified expiration
                                         <MonochromeSelect
                                           value={reviewMetadata[document.id]?.expirationMode ?? document.expirationMode ?? ''}
@@ -1015,7 +1035,7 @@ export default function ShopOwnerRegistrationView({
                                               ? null
                                               : reviewMetadata[document.id!]?.expiresOn ?? document.expiresOn ?? null,
                                           })}
-                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                          className="mt-1 h-11 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                                         >
                                           <option value="">Select…</option>
                                           <option value="dated">Dated</option>
@@ -1024,7 +1044,7 @@ export default function ShopOwnerRegistrationView({
                                       </label>
                                     </div>
                                     {(reviewMetadata[document.id]?.expirationMode ?? document.expirationMode) === 'dated' && (
-                                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                                      <label className="block min-w-0 text-xs font-medium text-gray-700 dark:text-gray-300 md:col-span-2">
                                         Verified expiration date
                                         <input
                                           type="date"
@@ -1032,7 +1052,7 @@ export default function ShopOwnerRegistrationView({
                                           onChange={(event) => updateReviewMetadata(document.id!, {
                                             expiresOn: event.target.value || null,
                                           })}
-                                          className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                          className="mt-1 h-11 w-full min-w-0 rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                                         />
                                       </label>
                                     )}
@@ -1059,13 +1079,12 @@ export default function ShopOwnerRegistrationView({
                             );
                           })
                           ) : (
-                            <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+                            <p className="py-4 text-center text-sm text-gray-500 dark:text-gray-400 xl:col-span-2">
                               No documents uploaded
                             </p>
                           )}
                         </div>
                       </div>
-                    </div>
 
                     {/* Operating Hours removed per request */}
 
