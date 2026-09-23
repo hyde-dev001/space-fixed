@@ -21,24 +21,24 @@ final class CustomerIdentityAccessTest extends TestCase
             ->assertOk();
     }
 
-    public function test_pending_customer_is_blocked_before_checkout_validation(): void
+    public function test_pending_customer_can_reach_online_checkout_validation(): void
     {
         $user = $this->customer(User::IDENTITY_PENDING_REVIEW);
 
         $this->actingAs($user, 'user')
             ->postJson('/api/checkout/create-order', [])
-            ->assertForbidden()
-            ->assertJsonPath('code', 'IDENTITY_VERIFICATION_REQUIRED');
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Validation failed');
     }
 
-    public function test_rejected_customer_is_blocked_before_checkout_validation(): void
+    public function test_rejected_customer_can_reach_online_checkout_validation(): void
     {
         $user = $this->customer(User::IDENTITY_REJECTED);
 
         $this->actingAs($user, 'user')
             ->postJson('/api/checkout/create-order', [])
-            ->assertForbidden()
-            ->assertJsonPath('code', 'IDENTITY_VERIFICATION_REQUIRED');
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Validation failed');
     }
 
     public function test_approved_customer_reaches_checkout_validation(): void

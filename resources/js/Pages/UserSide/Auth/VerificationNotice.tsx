@@ -108,7 +108,7 @@ export default function VerificationNotice({
                   Verify Your Email Address
                 </h1>
                 <p className="text-lg text-gray-600 leading-relaxed">
-                  Your account has been created. Please verify your email address before signing in.
+                  Your account has been created. Verify your email for account security. You can shop online while verification is pending; Cash on Delivery requires a verified account.
                 </p>
               </div>
 
@@ -191,7 +191,7 @@ export default function VerificationNotice({
                   </li>
                   <li className="flex items-start space-x-3">
                     <span className="flex-shrink-0 w-6 h-6 bg-black text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
-                    <span className="flex-1 pt-0.5">After verification, return to login and sign in normally.</span>
+                    <span className="flex-1 pt-0.5">You may sign in and shop online now. Verify your email before using Cash on Delivery.</span>
                   </li>
                 </ol>
               </div>

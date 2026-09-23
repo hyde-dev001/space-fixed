@@ -38,6 +38,48 @@ class CodOrderThresholdTest extends TestCase
     }
 
     #[Test]
+    public function cod_requires_email_and_identity_verification_but_online_checkout_does_not(): void
+    {
+        Http::preventStrayRequests();
+        $shop = $this->shop(['cod_order_threshold' => 5000]);
+
+        $emailUnverifiedCustomer = User::factory()->unverified()->create([
+            'identity_verification_status' => User::IDENTITY_APPROVED,
+        ]);
+        $emailUnverifiedAddress = $this->address($emailUnverifiedCustomer);
+        $emailUnverifiedProduct = $this->product($shop, 1000, 'email-unverified');
+
+        $emailResponse = $this->actingAs($emailUnverifiedCustomer, 'user')
+            ->postJson('/api/checkout/create-order', $this->payload(
+                $emailUnverifiedProduct,
+                $emailUnverifiedCustomer,
+                $emailUnverifiedAddress,
+                1000,
+            ));
+
+        $emailResponse->assertUnprocessable()
+            ->assertJsonPath('error', 'customer_email_verification_required');
+
+        $identityPendingCustomer = User::factory()->create([
+            'identity_verification_status' => User::IDENTITY_PENDING_REVIEW,
+        ]);
+        $identityPendingAddress = $this->address($identityPendingCustomer);
+        $identityPendingProduct = $this->product($shop, 1000, 'identity-pending');
+
+        $identityResponse = $this->actingAs($identityPendingCustomer, 'user')
+            ->postJson('/api/checkout/create-order', $this->payload(
+                $identityPendingProduct,
+                $identityPendingCustomer,
+                $identityPendingAddress,
+                1000,
+            ));
+
+        $identityResponse->assertUnprocessable()
+            ->assertJsonPath('error', 'customer_identity_verification_required');
+        $this->assertDatabaseCount('orders', 0);
+    }
+
+    #[Test]
     public function cod_uses_the_combined_discounted_merchandise_total(): void
     {
         Http::preventStrayRequests();

@@ -146,7 +146,6 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\HandleInertiaRequests::class,
             \App\Http\Middleware\CheckEmployeeSuspension::class,
             \App\Http\Middleware\EnsureEmployeeSecurity::class,
-            \App\Http\Middleware\EnsureCustomerEmailIsVerified::class,
             \App\Http\Middleware\EnsureEmployeeClockedIn::class,
         ]);
         $middleware->api([
@@ -154,7 +153,6 @@ return Application::configure(basePath: dirname(__DIR__))
             \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             \App\Http\Middleware\CheckEmployeeSuspension::class,
             \App\Http\Middleware\EnsureEmployeeSecurity::class,
-            \App\Http\Middleware\EnsureCustomerEmailIsVerified::class,
             \App\Http\Middleware\EnsureEmployeeClockedIn::class,
             'throttle:60,1',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,

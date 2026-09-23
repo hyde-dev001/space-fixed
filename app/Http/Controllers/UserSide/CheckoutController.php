@@ -1008,7 +1008,7 @@ class CheckoutController extends Controller
             )), 2);
             $vatRatePercent = 12.0;
             $vatBreakdown = VatInclusiveCalculator::extract($fallbackSubtotal, $vatRatePercent);
-            $codEligibility = $this->codEligibilityService->evaluate($shopOwner, $fallbackSubtotal);
+            $codEligibility = $this->codEligibilityService->evaluate($shopOwner, $fallbackSubtotal, customer: $user);
 
             return response()->json([
                 'success' => true,
@@ -1155,6 +1155,7 @@ class CheckoutController extends Controller
         $codEligibility = $this->codEligibilityService->evaluate(
             $shopOwner,
             (float) ($pricing['final_subtotal'] ?? 0),
+            customer: $user,
         );
 
         return response()->json([
@@ -1432,6 +1433,17 @@ class CheckoutController extends Controller
             $vatRatePercent = 12.0;
 
             $isCodCheckout = $canonicalPaymentMethod === 'cod';
+            if ($isCodCheckout) {
+                $customerCodEligibility = $this->codEligibilityService->customerEligibility($user);
+                if (! ($customerCodEligibility['eligible'] ?? false)) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => $customerCodEligibility['reason'],
+                        'message' => $customerCodEligibility['message'],
+                    ], 422);
+                }
+            }
+
             if ($isCodCheckout && !empty($shopOwnerIds)) {
                 foreach ($shopOwnerIds as $shopOwnerId) {
                     $shopOwner = ShopOwner::query()->find((int) $shopOwnerId);
@@ -1557,6 +1569,7 @@ class CheckoutController extends Controller
                             $expectedItemInclusiveTotal,
                             $canonicalDeliveryMethod,
                             'retail',
+                            $user,
                         );
 
                         if (! ($codEligibility['eligible'] ?? false)) {
