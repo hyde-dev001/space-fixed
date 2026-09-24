@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { route } from 'ziggy-js';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
+import { CUSTOMER_ACCOUNT_TERMS_HTML, openTermsPolicyModal } from '@/utils/termsPolicyModal';
 import { getFreshCsrfToken } from '@/utils/csrf';
 import 'leaflet/dist/leaflet.css';
 import Navigation from "../Shared/Navigation";
@@ -256,6 +257,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const [emailVerificationMessage, setEmailVerificationMessage] = useState(
     isResubmission ? 'Resubmission: your verified email is locked to this application.' : ''
   );
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [isSendingEmailCode, setIsSendingEmailCode] = useState(false);
   const [isVerifyingEmailCode, setIsVerifyingEmailCode] = useState(false);
   const [availabilityNote, setAvailabilityNote] = useState('');
@@ -952,6 +954,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       });
     }
 
+    if (step === 4 && !termsAccepted) {
+      stepErrors.termsAccepted = 'Please read and accept the terms and conditions before submitting.';
+    }
+
     return stepErrors;
   };
 
@@ -959,6 +965,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     ...getStepValidationErrors(1),
     ...getStepValidationErrors(2),
     ...getStepValidationErrors(3),
+    ...getStepValidationErrors(4),
   });
 
   const getFirstInvalidStep = (validationErrors: Record<string, string>): number => {
@@ -1244,6 +1251,22 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
   const handlePrev = () => {
     setCurrentStep(currentStep - 1);
+  };
+
+  const handleTermsChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.checked) {
+      setTermsAccepted(false);
+      setErrors((prev) => ({ ...prev, termsAccepted: '' }));
+      return;
+    }
+
+    const result = await openTermsPolicyModal('TERMS AND CONDITIONS', CUSTOMER_ACCOUNT_TERMS_HTML);
+    const accepted = Boolean(result.isConfirmed);
+    setTermsAccepted(accepted);
+    setErrors((prev) => ({
+      ...prev,
+      termsAccepted: accepted ? '' : 'Please accept the terms and conditions before submitting.',
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -2438,6 +2461,19 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           ? 'Review your updates before resubmitting your application for approval.'
                           : 'Review all information before submitting your application for approval.'}
                       </p>
+                      <div className="mt-4 text-left">
+                        <label htmlFor="shopOwnerTermsAccepted" className="flex items-start gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            id="shopOwnerTermsAccepted"
+                            checked={termsAccepted}
+                            onChange={handleTermsChange}
+                            className="mt-0.5 h-4 w-4 rounded border-gray-300 text-black focus:ring-black/30"
+                          />
+                          <span>Accept to the terms and conditions</span>
+                        </label>
+                        {errors.termsAccepted && <p className="mt-1 text-sm text-red-600">{errors.termsAccepted}</p>}
+                      </div>
                       {!caviteLocationState.allowed && (
                         <p className="mt-2 text-sm font-medium text-red-600">
                           {caviteLocationState.message}
