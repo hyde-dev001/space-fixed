@@ -254,7 +254,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const [emailVerificationSent, setEmailVerificationSent] = useState(isResubmission);
   const [emailVerified, setEmailVerified] = useState(isResubmission);
   const [emailVerificationMessage, setEmailVerificationMessage] = useState(
-    isResubmission ? 'Resubmission mode: your verified email is locked to this application.' : ''
+    isResubmission ? 'Resubmission: your verified email is locked to this application.' : ''
   );
   const [isSendingEmailCode, setIsSendingEmailCode] = useState(false);
   const [isVerifyingEmailCode, setIsVerifyingEmailCode] = useState(false);
@@ -1466,21 +1466,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       <div className="userside-shop-owner-registration-page userside-auth-page userside-auth-pattern relative min-h-screen font-outfit antialiased">
         <Navigation hidePromoBar hideSearchAndCart />
         <div className="max-w-6xl mx-auto px-4 lg:px-8 pt-24 pb-8 md:pt-28 md:pb-12 lg:pt-32">
-          {/* Header Section */}
-          {isResubmission && (
-            <div className="text-center mb-8 md:mb-10 lg:mb-12 px-1">
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-3 md:mb-4 tracking-tight leading-tight">
-                Shop Owner Application Resubmission
-              </h1>
-              <p className="text-base sm:text-lg text-gray-600 max-w-2xl mx-auto mb-1.5 md:mb-2">
-                Update your details and submit for another review
-              </p>
-              <p className="text-xs sm:text-sm text-gray-500">
-                Complete your registration to start selling products and services
-              </p>
-            </div>
-          )}
-
           {/* Progress Indicator */}
           <div className="mb-6 md:mb-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-5 lg:p-6">
             <div className="grid grid-cols-2 gap-2 md:gap-3 lg:hidden">
@@ -1538,16 +1523,16 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             {currentStep === 1 && (
               <ComponentCard title="Personal Information">
                 {isResubmission && (
-                  <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
-                    <p className="text-sm font-semibold text-amber-900">Resubmission Mode</p>
-                    <p className="mt-1 text-sm text-amber-800">
+                  <div className="mb-6 rounded-lg border border-gray-900 bg-white p-4">
+                    <p className="text-sm font-semibold text-gray-900">Resubmission</p>
+                    <p className="mt-1 text-sm text-gray-700">
                       Your previous application was rejected. Update the details below, replace or add documents, then submit again.
                     </p>
-                    <p className="mt-2 text-sm text-amber-900">
+                    <p className="mt-2 text-sm text-gray-900">
                       <span className="font-semibold">Attempts:</span> {resubmissionUsedAttempts}/{resubmissionMaxAttempts} used, {resubmissionRemainingAttempts} remaining
                     </p>
                     {resubmission?.rejectionReason && (
-                      <p className="mt-2 text-sm text-amber-900">
+                      <p className="mt-2 text-sm text-gray-900">
                         <span className="font-semibold">Rejection reason:</span> {resubmission.rejectionReason}
                       </p>
                     )}
