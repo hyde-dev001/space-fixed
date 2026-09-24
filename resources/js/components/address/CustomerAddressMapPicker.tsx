@@ -378,7 +378,7 @@ export default function CustomerAddressMapPicker({
             Search address
           </label>
           <input
-            className="min-h-11 w-full rounded-lg border border-gray-300 px-3 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="min-h-11 w-full rounded-lg border border-gray-300 px-3 focus:border-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900/20"
             disabled={disabled}
             id={searchId}
             onChange={(event) => setQuery(event.target.value)}
@@ -388,7 +388,7 @@ export default function CustomerAddressMapPicker({
           />
         </div>
         <button
-          className="min-h-11 rounded-xl bg-blue-600 px-4 text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+          className="min-h-11 rounded-xl bg-black px-4 text-white transition-colors hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
           disabled={disabled || searching}
           onClick={embeddedInForm ? () => void search() : undefined}
           type={embeddedInForm ? 'button' : 'submit'}
@@ -396,7 +396,7 @@ export default function CustomerAddressMapPicker({
           {searching ? 'Searching…' : 'Search'}
         </button>
         <button
-          className="min-h-11 rounded-lg border border-slate-300 bg-white px-4 font-medium text-slate-900 shadow-sm transition-colors hover:border-slate-400 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500 disabled:opacity-100"
+          className="min-h-11 rounded-lg border border-gray-900 bg-white px-4 font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-500 disabled:opacity-100"
           disabled={disabled || locating}
           onClick={useMyLocation}
           type="button"
