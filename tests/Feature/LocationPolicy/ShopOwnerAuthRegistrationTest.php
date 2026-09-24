@@ -559,6 +559,14 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'expiration_mode' => 'none',
         ])->save();
 
+        $owner->documents()->create([
+            'document_type' => 'supporting_document',
+            'logical_slot' => 'supporting_document:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            'file_path' => $supportingPath,
+            'disk' => 'local',
+            'status' => 'withdrawn',
+        ]);
+
         $url = URL::temporarySignedRoute(
             'shop-owner.resubmission.form',
             now()->addDay(),
@@ -571,6 +579,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
                 ->where('resubmission.documents.dti_registration.type', 'sec_registration')
                 ->where('resubmission.documents.other_documents.0.type', 'supporting_document')
                 ->where('resubmission.documents.other_documents.0.logical_slot', 'supporting_document:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+                ->has('resubmission.documents.other_documents', 1)
             );
     }
 
@@ -609,6 +618,81 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             ['rejected', 'rejected', 'rejected', 'rejected'],
             ShopDocument::query()->whereKey($originalIds)->orderBy('id')->pluck('status')->all(),
         );
+    }
+
+    public function test_resubmission_withdraws_selected_optional_document_without_deleting_its_history(): void
+    {
+        Storage::fake('local');
+        $owner = $this->rejectedOwnerWithDocuments();
+        $removedPath = "shop_documents/{$owner->id}/old-lease.png";
+        $legacyPath = "shop_documents/{$owner->id}/legacy-photo.png";
+        $keptPath = "shop_documents/{$owner->id}/old-permit-photo.png";
+        Storage::disk('local')->put($removedPath, 'lease');
+        Storage::disk('local')->put($legacyPath, 'legacy');
+        Storage::disk('local')->put($keptPath, 'photo');
+
+        $removed = $owner->documents()->create([
+            'document_type' => 'supporting_document',
+            'logical_slot' => 'supporting_document:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'file_path' => $removedPath,
+            'disk' => 'local',
+            'status' => 'rejected',
+        ]);
+        $legacy = $owner->documents()->create([
+            'document_type' => 'other_supporting_document',
+            'file_path' => $legacyPath,
+            'disk' => 'local',
+            'status' => 'rejected',
+        ]);
+        $kept = $owner->documents()->create([
+            'document_type' => 'supporting_document',
+            'logical_slot' => 'supporting_document:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            'file_path' => $keptPath,
+            'disk' => 'local',
+            'status' => 'rejected',
+        ]);
+
+        $this->withHeaders(['Accept' => 'application/json'])
+            ->post($this->resubmissionUrl($owner), $this->payload([
+                'email' => $owner->email,
+                'removed_other_document_ids' => [$removed->id, $legacy->id],
+            ]))
+            ->assertOk();
+
+        $this->assertDatabaseHas('shop_documents', ['id' => $removed->id, 'status' => 'withdrawn']);
+        $this->assertDatabaseHas('shop_documents', ['id' => $legacy->id, 'status' => 'withdrawn']);
+        $this->assertDatabaseHas('shop_documents', ['id' => $kept->id, 'status' => 'rejected']);
+        Storage::disk('local')->assertExists($removedPath);
+        Storage::disk('local')->assertExists($legacyPath);
+        Storage::disk('local')->assertExists($keptPath);
+    }
+
+    public function test_resubmission_cannot_withdraw_required_or_another_owners_document(): void
+    {
+        Storage::fake('local');
+        $owner = $this->rejectedOwnerWithDocuments();
+        $otherOwner = $this->rejectedOwnerWithDocuments();
+        $required = $owner->documents()->firstOrFail();
+        $foreign = $otherOwner->documents()->create([
+            'document_type' => 'supporting_document',
+            'logical_slot' => 'supporting_document:cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+            'file_path' => 'shop_documents/foreign.png',
+            'disk' => 'local',
+            'status' => 'rejected',
+        ]);
+
+        foreach ([$required->id, $foreign->id] as $documentId) {
+            $this->withHeaders(['Accept' => 'application/json'])
+                ->post($this->resubmissionUrl($owner), $this->payload([
+                    'email' => $owner->email,
+                    'removed_other_document_ids' => [$documentId],
+                ]))
+                ->assertUnprocessable();
+        }
+
+        $this->assertSame('rejected', $required->fresh()->status);
+        $this->assertSame('rejected', $foreign->fresh()->status);
+        $this->assertSame('rejected', $owner->fresh()->status->value);
     }
 
     /** @param array<int, string> $types */

@@ -361,6 +361,37 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $this->assertStringNotContainsString('reviewed_by_super_admin_id', $response->getContent());
     }
 
+    public function test_registration_index_excludes_withdrawn_optional_documents(): void
+    {
+        $admin = SuperAdmin::factory()->superAdmin()->create();
+        $owner = $this->pendingRegistrationWithDocuments();
+        $removed = $owner->documents()->create([
+            'document_type' => 'supporting_document',
+            'logical_slot' => 'supporting_document:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'file_path' => 'shop_documents/removed.png',
+            'disk' => 'local',
+            'status' => 'withdrawn',
+        ]);
+        $kept = $owner->documents()->create([
+            'document_type' => 'supporting_document',
+            'logical_slot' => 'supporting_document:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            'file_path' => 'shop_documents/kept.png',
+            'disk' => 'local',
+            'status' => 'pending',
+        ]);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.registrations.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('registrations', function ($registrations) use ($owner, $removed, $kept): bool {
+                    $registration = collect($registrations['data'] ?? [])->firstWhere('id', $owner->id);
+                    $ids = collect($registration['documents'] ?? [])->pluck('id');
+
+                    return ! $ids->contains($removed->id) && $ids->contains($kept->id);
+                }));
+    }
+
     /**
      * @param  array<int, string>  $types
      * @param  array<string, array{stored?: bool, status?: string, type?: string}>  $overrides

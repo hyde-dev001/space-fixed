@@ -176,6 +176,13 @@ final class ShopDocumentRenewalSubmissionTest extends TestCase
     {
         $owner = ShopOwner::factory()->approved()->create();
         $current = $this->currentDocument($owner);
+        $owner->documents()->create([
+            'document_type' => 'supporting_document',
+            'logical_slot' => 'supporting_document:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            'file_path' => 'shop_documents/withdrawn.png',
+            'disk' => 'local',
+            'status' => 'withdrawn',
+        ]);
 
         $response = $this->actingAs($owner, 'shop_owner')
             ->get(route('shop-owner.settings'));
@@ -189,7 +196,8 @@ final class ShopDocumentRenewalSubmissionTest extends TestCase
                 ->where('shop_settings.document_compliance.1.current.url', route('shop-owner.documents.show', [
                     'shopOwner' => $owner->id,
                     'document' => $current->id,
-                ])));
+                ]))
+                ->has('shop_settings.document_compliance', 4));
 
         $this->assertStringNotContainsString('file_path', $response->getContent());
         $this->assertStringNotContainsString('checksum_sha256', $response->getContent());

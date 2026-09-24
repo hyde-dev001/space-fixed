@@ -267,7 +267,7 @@ final class PrivateSensitiveDocumentController extends Controller
             abort(404);
         }
 
-        if ((int) $document->shop_owner_id !== (int) $shopOwner->id) {
+        if ((int) $document->shop_owner_id !== (int) $shopOwner->id || (string) $document->status === 'withdrawn') {
             abort(404);
         }
 

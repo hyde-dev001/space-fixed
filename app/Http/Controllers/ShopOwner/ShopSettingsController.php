@@ -177,7 +177,7 @@ class ShopSettingsController extends Controller
      */
     private function documentCompliancePayload(ShopOwner $shopOwner): array
     {
-        $rows = $shopOwner->documents->sortByDesc('id')->values();
+        $rows = $shopOwner->documents->where('status', '!=', 'withdrawn')->sortByDesc('id')->values();
         $slots = [
             'business_registration' => 'Business Registration (DTI or SEC)',
             'mayors_permit' => "Mayor's Permit / Business Permit",

@@ -82,6 +82,10 @@ class ShopOwnerAuthController extends Controller
         $latestDocumentsBySlot = $this->latestDocumentsByLogicalSlot($shopOwner);
         $otherDocuments = $documents
             ->filter(function ($document) use ($latestDocumentsBySlot): bool {
+                if ((string) $document->status === 'withdrawn') {
+                    return false;
+                }
+
                 $normalizedType = $this->documentRequirements->normalizeType((string) $document->document_type);
                 if ($normalizedType === 'other_supporting_document') {
                     return true;
@@ -283,6 +287,8 @@ class ShopOwnerAuthController extends Controller
                 'other_document_metadata.*.expiration_mode' => 'required|string',
                 'other_document_metadata.*.expires_on' => 'nullable|date_format:Y-m-d',
                 'other_document_metadata.*.issued_on' => 'nullable|date_format:Y-m-d',
+                'removed_other_document_ids' => 'nullable|array|max:50',
+                'removed_other_document_ids.*' => 'required|integer|distinct|min:1',
             ]);
 
             $validated = $this->normalizePersonalAddress($validated);
@@ -326,6 +332,37 @@ class ShopOwnerAuthController extends Controller
 
                 $predecessors = $this->latestDocumentsByLogicalSlot($lockedShopOwner);
                 $entries = $this->registrationDocumentEntries($request, $validated, $predecessors, true);
+
+                $removedIds = $validated['removed_other_document_ids'] ?? [];
+                if ($removedIds !== []) {
+                    $removable = $lockedShopOwner->documents()
+                        ->whereIn('id', $removedIds)
+                        ->lockForUpdate()
+                        ->get();
+
+                    if ($removable->count() !== count($removedIds) || $removable->contains(function (ShopDocument $document) use ($predecessors): bool {
+                        $slot = trim((string) $document->logical_slot);
+                        $type = $this->documentRequirements->normalizeType((string) $document->document_type);
+
+                        return (string) $document->status === 'withdrawn'
+                            || ($type !== 'other_supporting_document'
+                                && ($type !== 'supporting_document'
+                                    || !str_starts_with($slot, 'supporting_document:')
+                                    || ($predecessors[$slot]->id ?? null) !== $document->id));
+                    })) {
+                        throw ValidationException::withMessages([
+                            'removed_other_document_ids' => ['Only your existing optional documents can be removed.'],
+                        ]);
+                    }
+
+                    foreach ($removable as $document) {
+                        $document->forceFill([
+                            'status' => 'withdrawn',
+                            'is_current' => null,
+                            'superseded_at' => now(),
+                        ])->save();
+                    }
+                }
 
                 $lockedShopOwner->forceFill([
                     'first_name' => $validated['first_name'],
