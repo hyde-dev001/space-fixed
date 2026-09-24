@@ -36,4 +36,21 @@ describe('DropzoneComponent layout', () => {
     expect(dropzoneRoot).not.toHaveClass('h-full');
     expect(dropzoneRoot.parentElement).not.toHaveClass('h-full');
   });
+
+  it('keeps an existing resubmission file in the neutral upload layout', () => {
+    const { container } = render(
+      <DropzoneComponent
+        onDrop={vi.fn()}
+        isUploaded
+        isExistingFile
+        fileName="existing-document.png"
+        previewUrl="/documents/existing-document.png"
+      />,
+    );
+
+    expect(screen.getByText('Drag & Drop Documents Here')).toBeInTheDocument();
+    expect(screen.queryByText('File Uploaded Successfully!')).not.toBeInTheDocument();
+    expect(screen.getByText('Change File')).toBeInTheDocument();
+    expect(container.querySelector('.border-green-500')).toBeNull();
+  });
 });

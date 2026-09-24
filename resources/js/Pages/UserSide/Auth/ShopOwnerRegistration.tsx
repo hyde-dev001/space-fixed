@@ -2131,6 +2131,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           }
                         }}
                         isUploaded={!!uploadedDocuments.dti.file || !!existingDocuments.dti}
+                        isExistingFile={!!existingDocuments.dti && !uploadedDocuments.dti.file}
                         fileName={uploadedDocuments.dti.fileName}
                         previewUrl={uploadedDocuments.dti.previewUrl || existingDocuments.dti?.url || undefined}
                         previewAlt={`${businessRegistrationLabel} preview`}
@@ -2186,6 +2187,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           }
                         }}
                         isUploaded={!!uploadedDocuments.mayors_permit.file || !!existingDocuments.mayors_permit}
+                        isExistingFile={!!existingDocuments.mayors_permit && !uploadedDocuments.mayors_permit.file}
                         fileName={uploadedDocuments.mayors_permit.fileName}
                         previewUrl={uploadedDocuments.mayors_permit.previewUrl || existingDocuments.mayors_permit?.url || undefined}
                         previewAlt="Mayor's Permit / Shop Permit preview"
@@ -2241,6 +2243,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           }
                         }}
                         isUploaded={!!uploadedDocuments.bir.file || !!existingDocuments.bir}
+                        isExistingFile={!!existingDocuments.bir && !uploadedDocuments.bir.file}
                         fileName={uploadedDocuments.bir.fileName}
                         previewUrl={uploadedDocuments.bir.previewUrl || existingDocuments.bir?.url || undefined}
                         previewAlt="BIR Certificate of Registration preview"
@@ -2296,6 +2299,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           }
                         }}
                         isUploaded={!!uploadedDocuments.valid_id.file || !!existingDocuments.valid_id}
+                        isExistingFile={!!existingDocuments.valid_id && !uploadedDocuments.valid_id.file}
                         fileName={uploadedDocuments.valid_id.fileName}
                         previewUrl={uploadedDocuments.valid_id.previewUrl || existingDocuments.valid_id?.url || undefined}
                         previewAlt="Valid ID of Owner preview"
