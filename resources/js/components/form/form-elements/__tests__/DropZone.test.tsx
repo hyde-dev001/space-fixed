@@ -49,8 +49,10 @@ describe('DropzoneComponent layout', () => {
     );
 
     expect(screen.getByText('Drag & Drop Documents Here')).toBeInTheDocument();
+    expect(screen.queryByRole('img')).not.toBeInTheDocument();
     expect(screen.queryByText('File Uploaded Successfully!')).not.toBeInTheDocument();
-    expect(screen.getByText('Change File')).toBeInTheDocument();
+    expect(screen.getByText('Browse File')).toBeInTheDocument();
+    expect(screen.queryByText('Change File')).not.toBeInTheDocument();
     expect(container.querySelector('.border-green-500')).toBeNull();
   });
 });
