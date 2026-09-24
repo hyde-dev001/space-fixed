@@ -229,6 +229,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     valid_id: { file: null as File | null, fileName: existingDocuments.valid_id?.fileName ?? '', previewUrl: existingDocuments.valid_id?.url ?? '' },
   });
   const [additionalDocuments, setAdditionalDocuments] = useState<AdditionalDocument[]>([]);
+  const [removedOtherDocumentIds, setRemovedOtherDocumentIds] = useState<number[]>([]);
   const [businessRegistrationType, setBusinessRegistrationType] = useState<'dti_registration' | 'sec_registration'>(
     existingDocuments.dti?.type === 'sec_registration' ? 'sec_registration' : 'dti_registration',
   );
@@ -485,7 +486,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   };
 
   const handleAddAdditionalDocument = () => {
-    if (additionalDocuments.length >= MAX_ADDITIONAL_DOCUMENTS) {
+    if (additionalDocuments.length + existingDocuments.other.length - removedOtherDocumentIds.length >= MAX_ADDITIONAL_DOCUMENTS) {
       Swal.fire({
         icon: 'info',
         title: 'Limit Reached',
@@ -618,6 +619,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
       return prev.filter((doc) => doc.id !== id);
     });
+  };
+
+  const handleRemoveExistingOtherDocument = (id: number) => {
+    setRemovedOtherDocumentIds((previous) => [...previous, id]);
   };
 
   const getCaviteLocationState = () => {
@@ -985,7 +990,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       'email_verification',
     ];
     const stepTwoKeys = ['business_name', 'business_address', 'business_type', 'shop_latitude', 'shop_longitude'];
-    const stepThreeKeys = ['dti_registration', 'mayors_permit', 'bir_certificate', 'valid_id'];
+    const stepThreeKeys = ['dti_registration', 'mayors_permit', 'bir_certificate', 'valid_id', 'removed_other_document_ids'];
 
     if (stepOneKeys.some((key) => Boolean(validationErrors[key]))) {
       return 1;
@@ -1407,6 +1412,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             submissionKey: document.submissionKey,
           })),
         });
+        removedOtherDocumentIds.forEach((id, index) => {
+          submitData.append(`removed_other_document_ids[${index}]`, String(id));
+        });
 
         const submitEndpoint = isResubmission ? (resubmission?.submitUrl ?? '') : route('shop-owner.register');
         if (!submitEndpoint) {
@@ -1476,10 +1484,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     uploadedDocuments.bir.file || existingDocuments.bir,
     uploadedDocuments.valid_id.file || existingDocuments.valid_id,
   ].filter(Boolean).length;
-  const existingAdditionalCount = existingDocuments.other.length;
+  const remainingOtherDocuments = existingDocuments.other.filter((doc) => !removedOtherDocumentIds.includes(doc.id));
+  const existingAdditionalCount = remainingOtherDocuments.length;
   const additionalUploadCount = existingAdditionalCount + additionalDocuments.filter((doc) => !!doc.file).length;
   const hasAdditionalDocuments = additionalDocuments.length > 0 || existingAdditionalCount > 0;
-  const hasReachedAdditionalLimit = additionalDocuments.length >= MAX_ADDITIONAL_DOCUMENTS;
+  const hasReachedAdditionalLimit = additionalDocuments.length + existingAdditionalCount >= MAX_ADDITIONAL_DOCUMENTS;
   const registrationSteps = [
     { id: 1, label: 'Personal Info', shortLabel: 'Personal' },
     { id: 2, label: 'Shop Info', shortLabel: 'Shop' },
@@ -2341,16 +2350,19 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     {hasAdditionalDocuments ? (
                       <>
                         <p className="mt-4 text-xs font-medium text-gray-700">
-                          {additionalUploadCount} of {existingDocuments.other.length + additionalDocuments.length} optional document(s) available
+                          {additionalUploadCount} of {existingAdditionalCount + additionalDocuments.length} optional document(s) available
                         </p>
-                        {existingDocuments.other.length > 0 && (
+                        {remainingOtherDocuments.length > 0 && (
                           <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                             <p className="text-sm font-semibold text-gray-900">Previously Uploaded Optional Documents</p>
-                            <div className="mt-2 space-y-1">
-                              {existingDocuments.other.map((doc, index) => (
-                                <p key={doc.id} className="text-xs text-gray-700">
-                                  Existing #{index + 1}: <a href={doc.url} target="_blank" rel="noreferrer" className="underline">{doc.fileName}</a>
-                                </p>
+                            <div className="mt-2 space-y-2">
+                              {remainingOtherDocuments.map((doc, index) => (
+                                <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                                  <span>Existing #{index + 1}: <a href={doc.url} target="_blank" rel="noreferrer" className="break-all underline">{doc.fileName}</a></span>
+                                  <button type="button" onClick={() => handleRemoveExistingOtherDocument(doc.id)} className="rounded-md border border-red-200 px-2.5 py-1 font-semibold text-red-600 hover:bg-red-50">
+                                    Remove
+                                  </button>
+                                </div>
                               ))}
                             </div>
                           </div>
@@ -2403,6 +2415,22 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-center">
                         <p className="text-sm font-medium text-gray-700">No optional document added yet.</p>
                         <p className="mt-1 text-xs text-gray-500">Use the Others button when you want to attach extra proof files.</p>
+                      </div>
+                    )}
+
+                    {removedOtherDocumentIds.length > 0 && (
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+                        <p className="font-semibold">Removed when you resubmit</p>
+                        <div className="mt-2 space-y-2">
+                          {existingDocuments.other.filter((doc) => removedOtherDocumentIds.includes(doc.id)).map((doc) => (
+                            <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="break-all">{doc.fileName}</span>
+                              <button type="button" onClick={() => setRemovedOtherDocumentIds((previous) => previous.filter((id) => id !== doc.id))} className="font-semibold underline hover:text-gray-900">
+                                Undo
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 

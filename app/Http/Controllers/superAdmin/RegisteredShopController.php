@@ -175,7 +175,7 @@ final class RegisteredShopController extends Controller
                 'suspension_reason' => $model->suspension_reason,
                 'created_at' => $model->created_at->format('Y-m-d H:i:s'),
                 'approved_at' => $model->updated_at->format('Y-m-d H:i:s'),
-                'documentUrls' => $model->documents->map(
+                'documentUrls' => $model->documents->where('status', '!=', 'withdrawn')->values()->map(
                     fn ($document): string => route('admin.shop-documents.show', [
                         'shopOwner' => $model->id,
                         'document' => $document->id,

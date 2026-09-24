@@ -538,6 +538,8 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         );
         $this->get($signedUrl)->assertOk();
         $this->get($signedUrl.'&tampered=1')->assertForbidden();
+        $document->forceFill(['status' => 'withdrawn'])->save();
+        $this->get($signedUrl)->assertNotFound();
 
         $expiredUrl = URL::temporarySignedRoute(
             'shop-owner.resubmission.document',
@@ -648,6 +650,8 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
     {
         $admin = SuperAdmin::factory()->superAdmin()->create();
         $owner = ShopOwner::factory()->pending()->create();
+        $withdrawn = $this->createDocument($owner, 'supporting_document');
+        $withdrawn->forceFill(['status' => 'withdrawn'])->save();
         $document = $this->createDocument($owner, 'valid_id');
         $customer = User::factory()->create([
             'valid_id_path' => 'valid_ids/customer.png',
@@ -666,7 +670,8 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $detailsResponse = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shops.show', ['shopOwner' => $owner->id]));
         $detailsResponse->assertOk()
-            ->assertJsonPath('shop.documentUrls.0', route('admin.shop-documents.show', [$owner, $document]));
+            ->assertJsonPath('shop.documentUrls.0', route('admin.shop-documents.show', [$owner, $document]))
+            ->assertJsonCount(1, 'shop.documentUrls');
         $this->assertStringNotContainsString($document->file_path, $detailsResponse->getContent());
 
         $userManagementResponse = $this->actingAsCompletedPrivileged($admin)
