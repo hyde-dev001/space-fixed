@@ -136,6 +136,7 @@ final class ShopOwnerRegistrationApprovalEndToEndTest extends TestCase
             'business_address' => 'Dasmarinas, Cavite',
             'business_type' => 'retail',
             'registration_type' => 'individual',
+            'terms_accepted' => '1',
             'attendance_geofence_enabled' => true,
             'shop_latitude' => 14.3294,
             'shop_longitude' => 120.9367,

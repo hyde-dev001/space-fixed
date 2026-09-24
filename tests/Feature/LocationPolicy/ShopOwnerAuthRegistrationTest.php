@@ -102,6 +102,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'business_address' => 'Dasmariñas, Cavite',
             'business_type' => 'repair',
             'registration_type' => 'individual',
+            'terms_accepted' => '1',
             'attendance_geofence_enabled' => true,
             'shop_latitude' => self::LAT_DASMARINAS,
             'shop_longitude' => self::LNG_DASMARINAS,
@@ -194,6 +195,64 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'action_url' => '/admin/registrations?status=pending',
             'is_read' => false,
             'requires_action' => true,
+        ]);
+    }
+
+    public function test_registration_requires_and_persists_shop_owner_terms_acceptance(): void
+    {
+        Storage::fake('public');
+        $email = 'auth-terms-register@solespaceph.com';
+        $this->markRegistrationEmailVerified($email);
+
+        $this->postJson('/shop-owner/register', array_merge(
+            $this->payload([
+                'email' => $email,
+                'terms_accepted' => '0',
+            ]),
+            $this->docs(),
+        ))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['terms_accepted']);
+
+        $this->assertDatabaseMissing('shop_owners', ['email' => $email]);
+
+        $acceptedEmail = 'auth-terms-register-accepted@solespaceph.com';
+        $this->markRegistrationEmailVerified($acceptedEmail);
+
+        $this->postJson('/shop-owner/register', array_merge(
+            $this->payload([
+                'email' => $acceptedEmail,
+                'terms_accepted' => '1',
+            ]),
+            $this->docs(),
+        ))->assertStatus(201);
+
+        $this->assertDatabaseHas('shop_owners', [
+            'email' => $acceptedEmail,
+            'registration_terms_version' => 'customer-account-v1',
+        ]);
+        $this->assertNotNull(ShopOwner::query()
+            ->where('email', $acceptedEmail)
+            ->value('registration_terms_accepted_at'));
+    }
+
+    public function test_resubmission_requires_shop_owner_terms_acceptance(): void
+    {
+        Storage::fake('local');
+        $owner = $this->rejectedOwnerWithDocuments();
+
+        $this->withHeaders(['Accept' => 'application/json'])
+            ->post($this->resubmissionUrl($owner), $this->payload([
+                'email' => $owner->email,
+                'terms_accepted' => '0',
+            ]))
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['terms_accepted']);
+
+        $this->assertDatabaseHas('shop_owners', [
+            'id' => $owner->id,
+            'status' => 'rejected',
+            'resubmission_count' => 0,
         ]);
     }
 
@@ -531,6 +590,12 @@ class ShopOwnerAuthRegistrationTest extends TestCase
         $this->withHeaders(['Accept' => 'application/json'])
             ->post($this->resubmissionUrl($owner), $payload)
             ->assertOk();
+
+        $this->assertDatabaseHas('shop_owners', [
+            'id' => $owner->id,
+            'registration_terms_version' => 'customer-account-v1',
+        ]);
+        $this->assertNotNull($owner->fresh()->registration_terms_accepted_at);
 
         $currentIds = ShopDocument::query()
             ->where('shop_owner_id', $owner->id)

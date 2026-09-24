@@ -1269,6 +1269,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     }));
   };
 
+  const handleViewTerms = () => {
+    void openTermsPolicyModal('TERMS AND CONDITIONS', CUSTOMER_ACCOUNT_TERMS_HTML);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -1364,6 +1368,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
         submitData.append('postal_code', formData.postalCode);
         submitData.append('business_type', formData.businessType);
         submitData.append('registration_type', formData.registrationType);
+        submitData.append('terms_accepted', termsAccepted ? '1' : '0');
         // Only enable attendance geofence for company accounts (they have staff to clock in)
         const isIndividual = formData.registrationType === 'individual';
         submitData.append('attendance_geofence_enabled', isIndividual ? '0' : '1');
@@ -2472,6 +2477,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           />
                           <span>Accept to the terms and conditions</span>
                         </label>
+                        <button
+                          type="button"
+                          onClick={handleViewTerms}
+                          className="ml-6 mt-1 text-sm font-medium text-gray-900 underline underline-offset-2 hover:text-gray-600"
+                        >
+                          View Terms and Conditions
+                        </button>
                         {errors.termsAccepted && <p className="mt-1 text-sm text-red-600">{errors.termsAccepted}</p>}
                       </div>
                       {!caviteLocationState.allowed && (
