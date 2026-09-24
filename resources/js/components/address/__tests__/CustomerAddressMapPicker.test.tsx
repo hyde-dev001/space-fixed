@@ -460,13 +460,13 @@ describe('CustomerAddressMapPicker', () => {
 
     expect(screen.getByRole('button', { name: 'Search' })).toHaveClass(
       'rounded-xl',
-      'bg-blue-600',
-      'hover:bg-blue-700',
+      'bg-black',
+      'hover:bg-gray-900',
     );
     expect(screen.getByRole('button', { name: 'Use My Location' })).toHaveClass(
-      'border-slate-300',
+      'border-gray-900',
       'bg-white',
-      'text-slate-900',
+      'text-gray-900',
     );
   });
 
