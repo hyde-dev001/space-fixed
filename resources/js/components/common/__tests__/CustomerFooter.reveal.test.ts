@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const footerSource = readFileSync(resolve(process.cwd(), 'resources/js/components/common/CustomerFooter.tsx'), 'utf8');
+const appCss = readFileSync(resolve(process.cwd(), 'resources/css/app.css'), 'utf8');
 const customerPageSources = [
   'Pages/UserSide/Orders/Checkout.tsx',
   'Pages/UserSide/Products/Products.tsx',
@@ -34,5 +35,15 @@ describe('customer footer curtain reveal', () => {
       expect(source, relativePath).toContain('CustomerFooterReveal');
       expect(source, relativePath).not.toContain('<CustomerFooter ');
     });
+  });
+
+  it('keeps the registration form free of the global footer curtain', () => {
+    const registrationSource = customerPageSources.find(({ relativePath }) => (
+      relativePath === 'Pages/UserSide/Auth/ShopOwnerRegistration.tsx'
+    ));
+
+    expect(registrationSource?.source).toContain('userside-shop-owner-registration-shell');
+    expect(appCss).toContain('.userside-shop-owner-registration-shell .customer-footer-page__spacer');
+    expect(appCss).toContain('.userside-shop-owner-registration-shell .customer-footer');
   });
 });

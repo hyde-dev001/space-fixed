@@ -116,6 +116,12 @@ html:not(.dark) #app .super-admin-shell [class~="bg-gray-50"] {
   pointer-events: none;
 }
 
+/* Registration should end with the form instead of revealing the global footer curtain. */
+.userside-shop-owner-registration-shell .customer-footer-page__spacer,
+.userside-shop-owner-registration-shell .customer-footer {
+  display: none;
+}
+
 .customer-footer--fixed {
   position: fixed;
   inset-inline: 0;
