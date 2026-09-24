@@ -49,6 +49,7 @@ class ShopOwnerAuthController extends Controller
     ) {}
 
     private const MAX_RESUBMISSION_ATTEMPTS = 3;
+    private const REGISTRATION_TERMS_VERSION = 'customer-account-v1';
     private const REGISTRATION_EMAIL_OTP_TTL_MINUTES = 10;
     private const REGISTRATION_EMAIL_OTP_MAX_ATTEMPTS = 5;
     private const REGISTRATION_EMAIL_VERIFIED_TTL_MINUTES = 60;
@@ -257,6 +258,7 @@ class ShopOwnerAuthController extends Controller
                 'zip_code' => 'nullable|string|max:20',
                 'business_type' => 'required|in:retail,repair,both (retail & repair)',
                 'registration_type' => 'required|in:individual,company',
+                'terms_accepted' => ['required', 'accepted'],
                 'attendance_geofence_enabled' => 'sometimes|boolean',
                 'shop_latitude' => 'nullable|numeric|between:-90,90',
                 'shop_longitude' => 'nullable|numeric|between:-180,180',
@@ -344,6 +346,8 @@ class ShopOwnerAuthController extends Controller
                     'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
                     'business_type' => $validated['business_type'],
                     'registration_type' => $validated['registration_type'],
+                    'registration_terms_version' => self::REGISTRATION_TERMS_VERSION,
+                    'registration_terms_accepted_at' => now(),
                     'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
                     'shop_latitude' => $validated['shop_latitude'] ?? null,
                     'shop_longitude' => $validated['shop_longitude'] ?? null,
@@ -654,6 +658,7 @@ class ShopOwnerAuthController extends Controller
                 'zip_code' => 'nullable|string|max:20',
                 'business_type' => 'required|in:retail,repair,both (retail & repair)',
                 'registration_type' => 'required|in:individual,company',
+                'terms_accepted' => ['required', 'accepted'],
                 'attendance_geofence_enabled' => 'sometimes|boolean',
                 'shop_latitude' => 'nullable|numeric|between:-90,90',
                 'shop_longitude' => 'nullable|numeric|between:-180,180',
@@ -713,6 +718,8 @@ class ShopOwnerAuthController extends Controller
                 'business_type.in' => 'Invalid shop type. Choose Retail, Repair, or Both (Retail & Repair).',
                 'registration_type.required' => 'Please select your registration type.',
                 'registration_type.in' => 'Invalid registration type. Choose Individual or Company.',
+                'terms_accepted.required' => 'Please accept the terms and conditions before submitting.',
+                'terms_accepted.accepted' => 'Please accept the terms and conditions before submitting.',
                 'shop_latitude.numeric' => 'Shop latitude must be a valid number.',
                 'shop_latitude.between' => 'Shop latitude is out of range. Set a valid map location.',
                 'shop_longitude.numeric' => 'Shop longitude must be a valid number.',
@@ -814,6 +821,8 @@ class ShopOwnerAuthController extends Controller
                         'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
                         'business_type' => $validated['business_type'],
                         'registration_type' => $validated['registration_type'],
+                        'registration_terms_version' => self::REGISTRATION_TERMS_VERSION,
+                        'registration_terms_accepted_at' => now(),
                         'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
                         'shop_latitude' => $validated['shop_latitude'] ?? null,
                         'shop_longitude' => $validated['shop_longitude'] ?? null,
@@ -845,6 +854,8 @@ class ShopOwnerAuthController extends Controller
                         'postal_code' => $validated['postal_code'] ?? $validated['zip_code'] ?? null,
                         'business_type' => $validated['business_type'],
                         'registration_type' => $validated['registration_type'],
+                        'registration_terms_version' => self::REGISTRATION_TERMS_VERSION,
+                        'registration_terms_accepted_at' => now(),
                         'attendance_geofence_enabled' => (bool) ($validated['attendance_geofence_enabled'] ?? false),
                         'shop_latitude' => $validated['shop_latitude'] ?? null,
                         'shop_longitude' => $validated['shop_longitude'] ?? null,

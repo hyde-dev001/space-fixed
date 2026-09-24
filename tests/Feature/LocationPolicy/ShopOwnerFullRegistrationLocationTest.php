@@ -60,6 +60,7 @@ class ShopOwnerFullRegistrationLocationTest extends TestCase
             'business_address' => 'Imus, Cavite',
             'business_type' => 'repair',
             'registration_type' => 'individual',
+            'terms_accepted' => '1',
             'attendance_geofence_enabled' => true,
             'shop_latitude' => self::LAT_DASMARINAS,
             'shop_longitude' => self::LNG_DASMARINAS,

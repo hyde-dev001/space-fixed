@@ -76,6 +76,8 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'tax_id',               // Tax identification number
         'business_type',        // Type: retail, repair, or both
         'registration_type',    // Individual or company registration
+        'registration_terms_version',
+        'registration_terms_accepted_at',
         'platform_fee_terms_version',
         'platform_fee_terms_accepted_by',
         'platform_fee_terms_accepted_at',
@@ -162,6 +164,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'shop_geofence_radius' => 'integer',
         'attendance_geofence_enabled' => 'boolean',
         'established_year' => 'integer',
+        'registration_terms_accepted_at' => 'datetime',
         'repair_warranty_days' => 'integer',
         'repair_warranty_duration_unit' => 'string',
         'warranty_enabled' => 'boolean',

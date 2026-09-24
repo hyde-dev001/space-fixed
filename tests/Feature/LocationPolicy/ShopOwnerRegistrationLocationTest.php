@@ -96,6 +96,7 @@ class ShopOwnerRegistrationLocationTest extends TestCase
             'business_address' => 'Dasmariñas, Cavite',
             'business_type'    => 'repair',
             'registration_type' => 'individual',
+            'terms_accepted' => '1',
             'business_registration_type' => 'dti_registration',
             'attendance_geofence_enabled' => true,
             'shop_address'     => 'Dasmariñas, Cavite',
