@@ -2449,9 +2449,51 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                   </div>
                 </div>
 
+                {/* Terms and Conditions */}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 md:p-6">
+                  <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(24rem,auto)] lg:items-center lg:gap-8">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Before you submit</p>
+                      <h3 className="mt-1 text-lg font-semibold text-gray-900">Terms and Conditions</h3>
+                      <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">
+                        Please review and accept the Terms and Conditions before submitting your shop owner application.
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 lg:min-w-[24rem]">
+                      <label htmlFor="shopOwnerTermsAccepted" className="flex items-start gap-3 text-sm font-medium leading-6 text-gray-900">
+                        <input
+                          type="checkbox"
+                          id="shopOwnerTermsAccepted"
+                          checked={termsAccepted}
+                          onChange={handleTermsChange}
+                          className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-black focus:ring-2 focus:ring-black/20"
+                        />
+                        <span>I agree to the Terms and Conditions</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleViewTerms}
+                        className="ml-7 mt-1 inline-flex min-h-8 items-center text-sm font-medium text-gray-700 underline underline-offset-4 transition-colors hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
+                      >
+                        Read Terms and Conditions
+                      </button>
+                    </div>
+                  </div>
+                  {errors.termsAccepted && (
+                    <p className="mt-4 border-t border-red-100 pt-3 text-sm font-medium text-red-600" role="alert">
+                      {errors.termsAccepted}
+                    </p>
+                  )}
+                  {!caviteLocationState.allowed && (
+                    <p className="mt-3 text-sm font-medium text-red-600">
+                      {caviteLocationState.message}
+                    </p>
+                  )}
+                </div>
+
                 {/* Submit Button Section */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 md:p-8">
-                  <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center lg:gap-8">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 md:p-6">
+                  <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center lg:gap-8">
                     <button
                       type="button"
                       onClick={handlePrev}
@@ -2460,45 +2502,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       Previous
                     </button>
                     <div className="min-w-0 text-center">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">Ready to Submit?</h3>
-                      <p className="text-sm text-gray-600">
+                      <h3 className="text-lg font-semibold text-gray-900">Ready to Submit?</h3>
+                      <p className="mt-1 text-sm text-gray-600">
                         {isResubmission
                           ? 'Review your updates before resubmitting your application for approval.'
                           : 'Review all information before submitting your application for approval.'}
                       </p>
-                      <div className="mt-5 w-full rounded-xl border border-gray-200 bg-gray-50 p-4 text-left">
-                        <div className="flex items-start gap-3">
-                          <input
-                            type="checkbox"
-                            id="shopOwnerTermsAccepted"
-                            checked={termsAccepted}
-                            onChange={handleTermsChange}
-                            className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-black focus:ring-2 focus:ring-black/20"
-                          />
-                          <div className="min-w-0">
-                            <label htmlFor="shopOwnerTermsAccepted" className="block text-sm font-medium leading-6 text-gray-900">
-                              I agree to the Terms and Conditions
-                            </label>
-                            <button
-                              type="button"
-                              onClick={handleViewTerms}
-                              className="mt-1 inline-flex min-h-8 items-center text-sm font-medium text-gray-700 underline underline-offset-4 transition-colors hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
-                            >
-                              Read Terms and Conditions
-                            </button>
-                          </div>
-                        </div>
-                        {errors.termsAccepted && (
-                          <p className="mt-3 border-t border-red-100 pt-3 text-sm font-medium text-red-600" role="alert">
-                            {errors.termsAccepted}
-                          </p>
-                        )}
-                      </div>
-                      {!caviteLocationState.allowed && (
-                        <p className="mt-2 text-sm font-medium text-red-600">
-                          {caviteLocationState.message}
-                        </p>
-                      )}
                     </div>
                     <button
                       type="submit"
