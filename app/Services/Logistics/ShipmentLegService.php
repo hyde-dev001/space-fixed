@@ -3,6 +3,7 @@
 namespace App\Services\Logistics;
 
 use App\Enums\Logistics\RiderProgressState;
+use App\Enums\OrderStatus;
 use App\Models\CodCollection;
 use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\DeliveryAttempt;
@@ -362,10 +363,7 @@ class ShipmentLegService
                 'visibility' => 'customer',
                 'message' => 'Third-party courier marked the shipment delivered.',
             ]);
-            Order::query()
-                ->whereKey($order->id)
-                ->where('status', 'shipped')
-                ->update(['status' => 'delivered']);
+            $this->markOrderDeliveredIfShipped($order);
 
             return $leg->fresh();
         });
@@ -1295,15 +1293,22 @@ class ShipmentLegService
             return;
         }
 
-        $order = Order::query()->whereKey($shipment->source_id)->first();
+        $order = Order::query()->whereKey($shipment->source_id)->lockForUpdate()->first();
         if (! $order || $order->resolvedDeliveryMethod() !== 'shop_owned') {
             return;
         }
 
-        Order::query()
-            ->whereKey($order->id)
-            ->where('status', 'shipped')
-            ->update(['status' => 'delivered']);
+        $this->markOrderDeliveredIfShipped($order);
+    }
+
+    private function markOrderDeliveredIfShipped(Order $order): void
+    {
+        if ($order->status !== OrderStatus::SHIPPED) {
+            return;
+        }
+
+        $order->status = OrderStatus::DELIVERED;
+        $order->save();
     }
 
     private function completeShopOwnedReturn($shipment): void
