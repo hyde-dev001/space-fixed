@@ -2,9 +2,12 @@
 
 namespace Tests\Feature\PlatformFee;
 
+use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
@@ -42,6 +45,90 @@ class PlatformFeeLedgerTest extends TestCase
             'fee_rate' => '5.000000',
             'platform_fee_amount' => '90.00',
             'vat_amount' => '10.80',
+            'total_charge' => '100.80',
+        ]);
+    }
+
+    #[Test]
+    public function a_paid_company_order_delivered_by_shop_owned_logistics_creates_a_fee_charge(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'origin_channel' => 'marketplace',
+            'total_amount' => 1800,
+            'status' => 'shipped',
+            'payment_status' => 'paid',
+            'delivery_method' => 'shop_owned',
+            'carrier_company' => 'Shop-owned logistics',
+        ]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'purpose' => 'retail_delivery',
+            'status' => 'active',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'in_transit',
+            'requires_delivery_proof' => false,
+        ]);
+
+        $service = app(ShipmentLegService::class);
+        $service->markDelivered($leg);
+        $service->markDelivered($leg->fresh());
+
+        $this->assertSame('delivered', $order->fresh()->status->value);
+        $this->assertDatabaseCount('platform_fee_charges', 1);
+        $this->assertDatabaseHas('platform_fee_charges', [
+            'shop_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'source_origin' => 'marketplace',
+            'total_charge' => '100.80',
+        ]);
+    }
+
+    #[Test]
+    public function a_paid_third_party_order_delivered_by_logistics_creates_a_fee_charge(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual']);
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'origin_channel' => 'marketplace',
+            'total_amount' => 1800,
+            'status' => 'shipped',
+            'payment_status' => 'paid',
+            'delivery_method' => 'third_party',
+            'carrier_company' => 'External Courier',
+        ]);
+        $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'purpose' => 'retail_delivery',
+            'status' => 'active',
+        ]);
+        $leg = ShipmentLeg::factory()->create([
+            'shipment_id' => $shipment->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'in_transit',
+            'requires_delivery_proof' => false,
+        ]);
+
+        $service = app(ShipmentLegService::class);
+        $service->updateThirdParty($leg, $shop, 'delivered', []);
+        $service->updateThirdParty($leg->fresh(), $shop, 'delivered', []);
+
+        $this->assertSame('delivered', $order->fresh()->status->value);
+        $this->assertDatabaseCount('platform_fee_charges', 1);
+        $this->assertDatabaseHas('platform_fee_charges', [
+            'shop_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'source_origin' => 'marketplace',
             'total_charge' => '100.80',
         ]);
     }

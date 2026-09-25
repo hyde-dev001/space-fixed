@@ -126,3 +126,7 @@
 - Payment settlement notifications should resolve the persisted shop display name at the notification boundary so admin alerts identify the paying shop instead of using a generic message.
 
 - Delivery method alone must not route an individual shop owner’s online refund through Staff and Finance; centralize the third-party workflow classification and reuse it for approval, notifications, and API stage projections.
+
+## 2026-09-25 - Observer-aware delivery accounting
+
+- When an order status transition triggers financial observers, logistics completion must save the guarded order through Eloquent; query-builder bulk updates bypass the observer and silently omit ledger charges.
