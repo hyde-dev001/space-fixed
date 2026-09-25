@@ -579,6 +579,7 @@ class ShopOwnerAuthRegistrationTest extends TestCase
                 ->where('resubmission.documents.dti_registration.type', 'sec_registration')
                 ->where('resubmission.documents.other_documents.0.type', 'supporting_document')
                 ->where('resubmission.documents.other_documents.0.logical_slot', 'supporting_document:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
+                ->where('resubmission.documents.other_documents.0.expirationMode', 'none')
                 ->has('resubmission.documents.other_documents', 1)
             );
     }
@@ -665,6 +666,42 @@ class ShopOwnerAuthRegistrationTest extends TestCase
         Storage::disk('local')->assertExists($removedPath);
         Storage::disk('local')->assertExists($legacyPath);
         Storage::disk('local')->assertExists($keptPath);
+    }
+
+    public function test_resubmission_replaces_an_optional_document_in_its_existing_slot(): void
+    {
+        Storage::fake('local');
+        $owner = $this->rejectedOwnerWithDocuments();
+        $slotId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+        $slot = 'supporting_document:' . $slotId;
+        $oldPath = "shop_documents/{$owner->id}/old-lease.png";
+        Storage::disk('local')->put($oldPath, $this->pngBytes());
+        $previous = $owner->documents()->create([
+            'document_type' => 'supporting_document',
+            'logical_slot' => $slot,
+            'file_path' => $oldPath,
+            'disk' => 'local',
+            'status' => 'rejected',
+        ]);
+
+        $this->withHeaders(['Accept' => 'application/json'])
+            ->post($this->resubmissionUrl($owner), $this->payload([
+                'email' => $owner->email,
+                'other_documents' => [$slotId => UploadedFile::fake()->createWithContent('new-lease.png', $this->pngBytes())],
+                'other_document_metadata' => [$slotId => [
+                    'issued_on' => '2026-01-01',
+                    'expiration_mode' => 'dated',
+                    'expires_on' => '2027-01-01',
+                ]],
+            ]))
+            ->assertOk();
+
+        $replacement = $owner->documents()->where('logical_slot', $slot)->latest('id')->firstOrFail();
+        $this->assertNotSame($previous->id, $replacement->id);
+        $this->assertSame($previous->id, $replacement->predecessor_document_id);
+        $this->assertSame('dated', $replacement->expiration_mode);
+        Storage::disk('local')->assertExists($oldPath);
+        Storage::disk('local')->assertExists($replacement->file_path);
     }
 
     public function test_resubmission_cannot_withdraw_required_or_another_owners_document(): void

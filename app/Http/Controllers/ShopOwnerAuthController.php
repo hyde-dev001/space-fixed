@@ -120,6 +120,9 @@ class ShopOwnerAuthController extends Controller
                     ['shopOwner' => $shopOwner->id, 'document' => $document->id],
                 ),
                 'fileName' => basename((string) $document->file_path),
+                'issuedOn' => $document->issued_on?->format('Y-m-d'),
+                'expirationMode' => $document->expiration_mode === 'dated' ? 'dated' : 'none',
+                'expiresOn' => $document->expires_on?->format('Y-m-d'),
             ];
         };
 
