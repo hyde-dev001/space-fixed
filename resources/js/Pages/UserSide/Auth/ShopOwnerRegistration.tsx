@@ -122,8 +122,12 @@ const getResubmissionPersonalAddress = (
 interface ExistingDocumentPayload {
   id: number;
   type: string;
+  logical_slot?: string | null;
   url: string;
   fileName: string;
+  issuedOn?: string | null;
+  expirationMode?: 'dated' | 'none';
+  expiresOn?: string | null;
 }
 
 interface ResubmissionPayload {
@@ -229,6 +233,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     valid_id: { file: null as File | null, fileName: existingDocuments.valid_id?.fileName ?? '', previewUrl: existingDocuments.valid_id?.url ?? '' },
   });
   const [additionalDocuments, setAdditionalDocuments] = useState<AdditionalDocument[]>([]);
+  const [replacedOtherDocuments, setReplacedOtherDocuments] = useState<Record<number, AdditionalDocument>>({});
   const [removedOtherDocumentIds, setRemovedOtherDocumentIds] = useState<number[]>([]);
   const [businessRegistrationType, setBusinessRegistrationType] = useState<'dti_registration' | 'sec_registration'>(
     existingDocuments.dti?.type === 'sec_registration' ? 'sec_registration' : 'dti_registration',
@@ -625,6 +630,42 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     setRemovedOtherDocumentIds((previous) => [...previous, id]);
   };
 
+  const existingSupportingDraft = (document: ExistingDocumentPayload): AdditionalDocument => ({
+    id: document.logical_slot?.replace(/^supporting_document:/, '') || `legacy:${document.id}`,
+    file: null,
+    fileName: document.fileName,
+    previewUrl: '',
+    metadata: {
+      issuedOn: document.issuedOn ?? '',
+      expirationMode: document.expirationMode ?? 'none',
+      expiresOn: document.expiresOn ?? '',
+    },
+    submissionKey: crypto.randomUUID(),
+  });
+
+  const handleReplaceExistingOtherDocument = (document: ExistingDocumentPayload, file: File) => {
+    if (!isAllowedShopOwnerImageFile(file)) {
+      showInvalidImageUploadAlert('Other Supporting Documents', file.name);
+      return;
+    }
+
+    setReplacedOtherDocuments((previous) => {
+      const current = previous[document.id] ?? existingSupportingDraft(document);
+      if (current.previewUrl.startsWith('blob:')) URL.revokeObjectURL(current.previewUrl);
+      return {
+        ...previous,
+        [document.id]: { ...current, file, fileName: file.name, previewUrl: createPreviewUrl(file) },
+      };
+    });
+  };
+
+  const updateExistingOtherMetadata = (document: ExistingDocumentPayload, updates: Partial<RegistrationDocumentMetadata>) => {
+    setReplacedOtherDocuments((previous) => {
+      const current = previous[document.id] ?? existingSupportingDraft(document);
+      return { ...previous, [document.id]: { ...current, metadata: { ...current.metadata, ...updates } } };
+    });
+  };
+
   const getCaviteLocationState = () => {
     const lat = parseFloat(geoLat);
     const lng = parseFloat(geoLng);
@@ -953,6 +994,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       }
 
       additionalDocuments.forEach((document) => {
+        if (document.metadata.expirationMode === 'dated' && !document.metadata.expiresOn) {
+          stepErrors[`supporting_document:${document.id}`] = 'Enter an expiration date or choose no expiration.';
+        }
+      });
+      Object.entries(replacedOtherDocuments).filter(([id]) => !removedOtherDocumentIds.includes(Number(id))).forEach(([, document]) => {
         if (document.metadata.expirationMode === 'dated' && !document.metadata.expiresOn) {
           stepErrors[`supporting_document:${document.id}`] = 'Enter an expiration date or choose no expiration.';
         }
@@ -1405,7 +1451,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             metadata: documentMetadata.valid_id,
           },
           submissionKeys,
-          supportingDocuments: additionalDocuments.map((document) => ({
+          supportingDocuments: [...additionalDocuments, ...Object.entries(replacedOtherDocuments)
+            .filter(([id]) => !removedOtherDocumentIds.includes(Number(id)))
+            .map(([, document]) => document)].map((document) => ({
             slotId: document.id,
             file: document.file,
             metadata: document.metadata,
@@ -2353,17 +2401,48 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           {additionalUploadCount} of {existingAdditionalCount + additionalDocuments.length} optional document(s) available
                         </p>
                         {remainingOtherDocuments.length > 0 && (
-                          <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                          <div className="mt-4">
                             <p className="text-sm font-semibold text-gray-900">Previously Uploaded Optional Documents</p>
-                            <div className="mt-2 space-y-2">
-                              {remainingOtherDocuments.map((doc, index) => (
-                                <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-gray-200 px-3 py-2 text-xs text-gray-700">
-                                  <span>Existing #{index + 1}: <a href={doc.url} target="_blank" rel="noreferrer" className="break-all underline">{doc.fileName}</a></span>
-                                  <button type="button" onClick={() => handleRemoveExistingOtherDocument(doc.id)} className="rounded-md border border-red-200 px-2.5 py-1 font-semibold text-red-600 hover:bg-red-50">
-                                    Remove
-                                  </button>
-                                </div>
-                              ))}
+                            <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                              {remainingOtherDocuments.map((doc, index) => {
+                                const replacement = replacedOtherDocuments[doc.id];
+                                const metadata = replacement?.metadata ?? {
+                                  issuedOn: doc.issuedOn ?? '',
+                                  expirationMode: doc.expirationMode ?? 'none',
+                                  expiresOn: doc.expiresOn ?? '',
+                                };
+                                return (
+                                  <div key={doc.id} className="min-w-0 rounded-lg border border-gray-200 bg-white p-3">
+                                    <div className="mb-2 flex items-start justify-between gap-3">
+                                      <p className="text-sm font-semibold text-gray-900">Supporting Document #{index + 1} <span className="text-green-700">✓ Ready</span></p>
+                                      <button type="button" onClick={() => handleRemoveExistingOtherDocument(doc.id)} aria-label={`Remove existing supporting document ${index + 1}`} className="inline-flex min-h-9 items-center rounded-md border border-red-200 px-3 text-xs font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700">
+                                        Remove
+                                      </button>
+                                    </div>
+                                    <p className="mb-2 break-all text-xs text-gray-700">
+                                      Existing file: <a href={doc.url} target="_blank" rel="noreferrer" className="underline">{doc.fileName}</a>
+                                    </p>
+                                    <DropzoneComponent
+                                      onDrop={(files) => { if (files[0]) handleReplaceExistingOtherDocument(doc, files[0]); }}
+                                      accept={SHOP_OWNER_IMAGE_ACCEPT}
+                                      onInvalidFiles={(files) => { if (files[0]) showInvalidImageUploadAlert('Other Supporting Documents', files[0].name); }}
+                                      isUploaded={true}
+                                      isExistingFile={!replacement?.file}
+                                      fileName={replacement?.fileName ?? doc.fileName}
+                                      previewUrl={replacement?.previewUrl || doc.url}
+                                      previewAlt={`Supporting document ${index + 1} preview`}
+                                      inputAriaLabel={`Replace supporting document ${index + 1}`}
+                                    />
+                                    <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                                      <RegistrationDocumentMetadataFields idPrefix={`existing-supporting-${doc.id}`} label={`Supporting document ${index + 1}`} metadata={metadata} onChange={(updates) => updateExistingOtherMetadata(doc, updates)} />
+                                    </div>
+                                    <p className="mt-2 text-xs font-semibold text-green-700">
+                                      {replacement?.file ? 'Replacement attached' : 'Existing document will be reused unless you replace it'}
+                                    </p>
+                                    {replacement && errors[`supporting_document:${replacement.id}`] && <p className="mt-1 text-xs text-red-600">{errors[`supporting_document:${replacement.id}`]}</p>}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )}

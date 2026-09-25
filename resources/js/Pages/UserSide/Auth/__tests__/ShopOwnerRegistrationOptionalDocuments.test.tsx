@@ -8,8 +8,11 @@ vi.mock('@/Pages/UserSide/Shared/UserModal', () => ({ default: { fire: swalFireM
 vi.mock('../../Shared/Navigation', () => ({ default: () => null }));
 vi.mock('@/components/address/CustomerAddressMapPicker', () => ({ default: () => null }));
 vi.mock('@/components/common/ComponentCard', () => ({ default: ({ children }: { children: React.ReactNode }) => <section>{children}</section> }));
-vi.mock('@/components/form/form-elements/DropZone', () => ({ default: () => null }));
-vi.mock('@/components/form/RegistrationDocumentMetadataFields', () => ({ default: () => null }));
+vi.mock('@/components/form/form-elements/DropZone', () => ({ default: ({ onDrop, inputAriaLabel, isExistingFile }: { onDrop?: (files: File[]) => void; inputAriaLabel?: string; isExistingFile?: boolean }) => (
+  <button type="button" aria-label={inputAriaLabel} onClick={() => onDrop?.([new File(['replacement'], 'updated-lease.png', { type: 'image/png' })])}>
+    {isExistingFile ? 'Drag & Drop Documents Here' : 'File Uploaded Successfully!'}
+  </button>
+) }));
 vi.mock('@/components/common/CustomerFooter', () => ({ CustomerFooterReveal: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
 vi.mock('leaflet', () => ({
   Icon: { Default: class { static mergeOptions() {} } },
@@ -24,6 +27,8 @@ import ShopOwnerRegistration from '../ShopOwnerRegistration';
 beforeEach(() => {
   swalFireMock.mockReset();
   swalFireMock.mockResolvedValue({ isConfirmed: true });
+  URL.createObjectURL = vi.fn(() => 'blob:replacement');
+  URL.revokeObjectURL = vi.fn();
 });
 
 it('lets the owner remove and restore an existing optional document before resubmitting', async () => {
@@ -42,7 +47,7 @@ it('lets the owner remove and restore an existing optional document before resub
       mayors_permit: { id: 2, type: 'mayors_permit', fileName: 'permit.png', url: '/permit' },
       bir_certificate: { id: 3, type: 'bir_certificate', fileName: 'bir.png', url: '/bir' },
       valid_id: { id: 4, type: 'valid_id', fileName: 'id.png', url: '/id' },
-      other_documents: [{ id: 5, type: 'supporting_document', fileName: 'lease.png', url: '/lease' }],
+      other_documents: [{ id: 5, type: 'supporting_document', logical_slot: 'supporting_document:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', fileName: 'lease.png', url: '/lease' }],
     },
   }} />);
 
@@ -51,7 +56,13 @@ it('lets the owner remove and restore an existing optional document before resub
   fireEvent.click(screen.getByRole('button', { name: 'Next' }));
   await waitFor(() => expect(screen.getByText('Previously Uploaded Optional Documents')).toBeInTheDocument());
 
-  fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+  expect(screen.getByRole('button', { name: 'Replace supporting document 1' })).toHaveTextContent('Drag & Drop Documents Here');
+  expect(screen.getByLabelText('Supporting document 1 issued date')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Replace supporting document 1' }));
+  expect(screen.getByText('Replacement attached')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Replace supporting document 1' })).toHaveTextContent('File Uploaded Successfully!');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Remove existing supporting document 1' }));
   expect(screen.getByText('Removed when you resubmit')).toBeInTheDocument();
   expect(screen.queryByText('Previously Uploaded Optional Documents')).not.toBeInTheDocument();
 
