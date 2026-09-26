@@ -2332,17 +2332,17 @@ const UserAccessControl: React.FC = () => {
             </div>
           </Modal>
 
-          <Modal isOpen={Boolean(viewingEmployee)} onClose={() => setViewingEmployee(null)}>
+          <Modal isOpen={Boolean(viewingEmployee)} onClose={() => setViewingEmployee(null)} size="4xl">
             {viewingEmployee && (
-              <div className="w-full max-w-3xl p-6">
-                <div className="border-b border-gray-200 pb-4 dark:border-gray-700">
+              <div className="max-h-[calc(100dvh-2rem)] w-full max-w-none overflow-y-auto p-5 sm:p-6">
+                <div className="border-b border-gray-200 pb-3 dark:border-gray-700">
                   <h3 className="text-2xl font-semibold text-gray-900 dark:text-white">View Details</h3>
                   <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                     Read-only employee and account information.
                   </p>
                 </div>
 
-                <dl className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {[
                     ['Name', viewingEmployee.name],
                     ['Suffix', viewingEmployee.suffix || 'Not available'],
@@ -2367,14 +2367,14 @@ const UserAccessControl: React.FC = () => {
                     ['Created By', viewingEmployee.createdBy ? String(viewingEmployee.createdBy) : 'Not available'],
                     ['Linked Account State', viewingEmployee.linkedAccountState || (viewingEmployee.userId ? 'linked' : 'not_linked')],
                   ].map(([label, value]) => (
-                    <div key={label} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                    <div key={label} className="rounded-lg border border-gray-200 p-2.5 dark:border-gray-700">
                       <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</dt>
                       <dd className="mt-1 break-words text-sm text-gray-900 dark:text-white">{value}</dd>
                     </div>
                   ))}
                 </dl>
 
-                <div className="mt-6 flex justify-end">
+                <div className="mt-4 flex justify-end">
                   <Button variant="outline" onClick={() => setViewingEmployee(null)}>
                     Close
                   </Button>
