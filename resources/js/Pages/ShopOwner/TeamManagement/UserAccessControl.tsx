@@ -2230,38 +2230,27 @@ const UserAccessControl: React.FC = () => {
                 {/* Content */}
                 <div className="p-6 max-h-[calc(90vh-112px)] overflow-y-auto">
                   <div className="space-y-4">
-                    <div className="lg:grid lg:grid-cols-4 lg:gap-3">
-                      <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 tracking-wider lg:col-span-4">PERSONAL INFORMATION</h4>
-                      <hr className="mt-2 mb-3 border-gray-200 dark:border-gray-700 lg:col-span-4" />
+                    <div className="grid grid-cols-1 gap-3 lg:grid-cols-6">
+                      <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 tracking-wider lg:col-span-6">PERSONAL INFORMATION</h4>
+                      <hr className="mt-2 mb-3 border-gray-200 dark:border-gray-700 lg:col-span-6" />
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:contents">
-                        <div>
+                        <div className="lg:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">First Name *</label>
                           <input type="text" value={employeeForm.firstName} onChange={(e) => setEmployeeForm({ ...employeeForm, firstName: e.target.value })} placeholder="First name" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
                         </div>
-                        <div>
+                        <div className="lg:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Last Name *</label>
                           <input type="text" value={employeeForm.lastName} onChange={(e) => setEmployeeForm({ ...employeeForm, lastName: e.target.value })} placeholder="Last name" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
                         </div>
                       </div>
 
-                      <div className="mt-3 lg:mt-0">
+                      <div className="lg:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Suffix</label>
                         <input type="text" value={employeeForm.suffix} onChange={(e) => setEmployeeForm({ ...employeeForm, suffix: e.target.value })} placeholder="Jr., Sr., III" maxLength={50} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
                       </div>
 
-                      <div className="mt-3 lg:mt-0">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email *</label>
-                        <input type="email" value={employeeForm.email} onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })} placeholder="Email address" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeeEmailValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
-                        {employeeEmailValidation.status === 'error' && (
-                          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{employeeEmailValidation.message}</p>
-                        )}
-                        {employeeEmailValidation.status === 'checking' && (
-                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{employeeEmailValidation.message}</p>
-                        )}
-                      </div>
-
-                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 lg:mt-0 lg:grid-cols-1">
+                      <div className="lg:col-span-3">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
                           <input type="tel" value={employeeForm.phone} onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })} inputMode="numeric" pattern="[0-9]*" maxLength={11} placeholder="09XXXXXXXXX" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeePhoneValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
@@ -2274,7 +2263,18 @@ const UserAccessControl: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="mt-3 lg:col-span-4 lg:mt-0">
+                      <div className="lg:col-span-3">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email *</label>
+                        <input type="email" value={employeeForm.email} onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })} placeholder="Email address" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeeEmailValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
+                        {employeeEmailValidation.status === 'error' && (
+                          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{employeeEmailValidation.message}</p>
+                        )}
+                        {employeeEmailValidation.status === 'checking' && (
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{employeeEmailValidation.message}</p>
+                        )}
+                      </div>
+
+                      <div className="mt-3 lg:col-span-6 lg:mt-0">
                         <PhilippineAddressFields
                           idPrefix="owner-employee"
                           value={{
