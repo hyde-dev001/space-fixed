@@ -6,6 +6,7 @@ export interface Employee {
   lastName: string;
   email: string;
   phone: string;
+  suffix?: string;
   position: string;
   department: string;
   hireDate: string;
@@ -15,6 +16,9 @@ export interface Employee {
   salary: number;
   profileImage?: string;
   address: string;
+  province?: string;
+  cityMunicipality?: string;
+  postalCode?: string;
   city: string;
   state: string;
   zipCode: string;

@@ -1,5 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import PhilippineAddressFields from "@/components/employee/PhilippineAddressFields";
 import { Head, router, usePage } from '@inertiajs/react';
 import AppLayoutShopOwner from '../../../layout/AppLayout_shopOwner';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
@@ -57,6 +58,10 @@ interface Employee {
   department?: string;
   phone?: string;
   address?: string;
+  suffix?: string;
+  province?: string;
+  cityMunicipality?: string;
+  postalCode?: string;
   position?: string;
   personalEmail?: string | null;
   accountStatus?: string | null;
@@ -413,6 +418,10 @@ const UserAccessControl: React.FC = () => {
         : emp.additionalRoles,
       position: emp.position ?? '',
       personalEmail: emp.personalEmail ?? emp.personal_email ?? null,
+      suffix: emp.suffix ?? '',
+      province: emp.province ?? emp.state ?? '',
+      cityMunicipality: emp.cityMunicipality ?? emp.city_municipality ?? emp.city ?? '',
+      postalCode: emp.postalCode ?? emp.postal_code ?? emp.zip_code ?? '',
       accountStatus: emp.accountStatus ?? emp.account_status ?? null,
       lastActive: emp.lastActive ?? emp.last_active ?? null,
       createdBy: emp.createdBy ?? emp.created_by ?? null,
@@ -457,6 +466,10 @@ const UserAccessControl: React.FC = () => {
     email: '',
     phone: '',
     address: '',
+    suffix: '',
+    province: '',
+    cityMunicipality: '',
+    postalCode: '',
     department: '', // Maps to role in backend
     hire_date: new Date().toISOString().split('T')[0],
     role: '', // preserved for backward compatibility
@@ -955,6 +968,21 @@ const UserAccessControl: React.FC = () => {
       return;
     }
 
+    if (employeeForm.address.trim() && (
+      !employeeForm.province ||
+      !employeeForm.cityMunicipality ||
+      !/^\d{4}$/.test(employeeForm.postalCode)
+    )) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Province, City/Municipality, and a 4-digit Postal Code are required when an address is provided.',
+        timer: 3000,
+        showConfirmButton: false,
+      });
+      return;
+    }
+
     if (normalizedPhone.length < 11) {
       setEmployeePhoneValidation({ status: 'error', message: 'Phone number must be exactly 11 digits.' });
       return;
@@ -1091,10 +1119,14 @@ const UserAccessControl: React.FC = () => {
         router.post('/shop-owner/employees', {
           first_name: employeeForm.firstName,
           last_name: employeeForm.lastName,
+          suffix: employeeForm.suffix,
           name: `${employeeForm.firstName} ${employeeForm.lastName}`,
           email: trimmedEmail,
           phone: normalizedPhone,
           address: employeeForm.address,
+          province: employeeForm.province,
+          city_municipality: employeeForm.cityMunicipality,
+          postal_code: employeeForm.postalCode,
           department: employeeForm.department || 'General',
           position: employeeForm.position || '',
           functional_role: '',
@@ -1118,6 +1150,10 @@ const UserAccessControl: React.FC = () => {
               email: '',
               phone: '',
               address: '',
+              suffix: '',
+              province: '',
+              cityMunicipality: '',
+              postalCode: '',
               department: '',
               hire_date: new Date().toISOString().split('T')[0],
               role: '',
@@ -1578,6 +1614,10 @@ const UserAccessControl: React.FC = () => {
       email: '',
       phone: '',
       address: '',
+      suffix: '',
+      province: '',
+      cityMunicipality: '',
+      postalCode: '',
       department: '',
       hire_date: new Date().toISOString().split('T')[0],
       role: '',
@@ -2159,6 +2199,11 @@ const UserAccessControl: React.FC = () => {
                       </div>
 
                       <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Suffix</label>
+                        <input type="text" value={employeeForm.suffix} onChange={(e) => setEmployeeForm({ ...employeeForm, suffix: e.target.value })} placeholder="Jr., Sr., III" maxLength={50} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
+                      </div>
+
+                      <div className="mt-4">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email *</label>
                         <input type="email" value={employeeForm.email} onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })} placeholder="Email address" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeeEmailValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
                         {employeeEmailValidation.status === 'error' && (
@@ -2180,10 +2225,25 @@ const UserAccessControl: React.FC = () => {
                             <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{employeePhoneValidation.message}</p>
                           )}
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Address</label>
-                          <input type="text" value={employeeForm.address} onChange={(e) => setEmployeeForm({ ...employeeForm, address: e.target.value })} placeholder="Address" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
-                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <PhilippineAddressFields
+                          idPrefix="owner-employee"
+                          value={{
+                            address: employeeForm.address,
+                            province: employeeForm.province,
+                            cityMunicipality: employeeForm.cityMunicipality,
+                            postalCode: employeeForm.postalCode,
+                          }}
+                          onChange={(address) => setEmployeeForm({
+                            ...employeeForm,
+                            address: address.address,
+                            province: address.province,
+                            cityMunicipality: address.cityMunicipality,
+                            postalCode: address.postalCode,
+                          })}
+                        />
                       </div>
                     </div>
 
@@ -2285,9 +2345,14 @@ const UserAccessControl: React.FC = () => {
                 <dl className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
                   {[
                     ['Name', viewingEmployee.name],
+                    ['Suffix', viewingEmployee.suffix || 'Not available'],
                     ['Work Email', viewingEmployee.email],
                     ['Personal Email', viewingEmployee.personalEmail || 'Personal email unavailable'],
                     ['Phone', viewingEmployee.phone || 'Not available'],
+                    ['Address', viewingEmployee.address || 'Not available'],
+                    ['Province', viewingEmployee.province || 'Not available'],
+                    ['City/Municipality', viewingEmployee.cityMunicipality || 'Not available'],
+                    ['Postal Code', viewingEmployee.postalCode || 'Not available'],
                     ['Department / Role', viewingEmployee.department || viewingEmployee.role || 'Not assigned'],
                     ['Position / Job Title', viewingEmployee.position || 'Not assigned'],
                     ['Employment Status', viewingEmployee.status],
