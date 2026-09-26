@@ -2151,11 +2151,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <Label>{businessRegistrationLabel} {(uploadedDocuments.dti.file || existingDocuments.dti) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
-                      {existingDocuments.dti && !uploadedDocuments.dti.file && (
-                        <p className="mb-2 text-xs text-gray-700">
-                          Existing file: <a href={existingDocuments.dti.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.dti.fileName}</a>
-                        </p>
-                      )}
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -2208,11 +2203,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                     <div>
                       <Label>Mayor's Permit / Shop Permit {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
-                      {existingDocuments.mayors_permit && !uploadedDocuments.mayors_permit.file && (
-                        <p className="mb-2 text-xs text-gray-700">
-                          Existing file: <a href={existingDocuments.mayors_permit.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.mayors_permit.fileName}</a>
-                        </p>
-                      )}
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -2264,11 +2254,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                     <div>
                       <Label>BIR Certificate of Registration (COR) {(uploadedDocuments.bir.file || existingDocuments.bir) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
-                      {existingDocuments.bir && !uploadedDocuments.bir.file && (
-                        <p className="mb-2 text-xs text-gray-700">
-                          Existing file: <a href={existingDocuments.bir.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.bir.fileName}</a>
-                        </p>
-                      )}
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -2320,11 +2305,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                     <div>
                       <Label>Valid ID of Owner {(uploadedDocuments.valid_id.file || existingDocuments.valid_id) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
-                      {existingDocuments.valid_id && !uploadedDocuments.valid_id.file && (
-                        <p className="mb-2 text-xs text-gray-700">
-                          Existing file: <a href={existingDocuments.valid_id.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.valid_id.fileName}</a>
-                        </p>
-                      )}
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -2403,7 +2383,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         {remainingOtherDocuments.length > 0 && (
                           <div className="mt-4">
                             <p className="text-sm font-semibold text-gray-900">Previously Uploaded Optional Documents</p>
-                            <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                            <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
                               {remainingOtherDocuments.map((doc, index) => {
                                 const replacement = replacedOtherDocuments[doc.id];
                                 const metadata = replacement?.metadata ?? {
@@ -2419,9 +2399,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                                         Remove
                                       </button>
                                     </div>
-                                    <p className="mb-2 break-all text-xs text-gray-700">
-                                      Existing file: <a href={doc.url} target="_blank" rel="noreferrer" className="underline">{doc.fileName}</a>
-                                    </p>
                                     <DropzoneComponent
                                       onDrop={(files) => { if (files[0]) handleReplaceExistingOtherDocument(doc, files[0]); }}
                                       accept={SHOP_OWNER_IMAGE_ACCEPT}
