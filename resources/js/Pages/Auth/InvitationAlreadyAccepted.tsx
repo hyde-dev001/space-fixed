@@ -39,15 +39,15 @@ export default function InvitationAlreadyAccepted({ email }: Props) {
                         This account has already been activated. You can log in using your password.
                     </p>
 
-                    <div className="mb-5 grid gap-4 text-left md:grid-cols-2">
+                    <div className="mb-4 space-y-3 text-left">
                         {/* Account Info */}
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/60">
-                            <p className="mb-1 text-sm text-gray-600 dark:text-gray-400">Your account email:</p>
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-700/60">
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Your account email:</p>
                             <p className="break-words font-semibold text-gray-900 dark:text-white">{email}</p>
                         </div>
 
                         {/* Instructions */}
-                        <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-600 dark:bg-gray-700/50">
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-600 dark:bg-gray-700/50">
                             <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
                                 Need help?
                             </h3>
