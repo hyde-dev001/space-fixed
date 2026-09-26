@@ -92,6 +92,17 @@ vi.mock("@/components/address/CustomerAddressManager", () => ({
 
 import MyRepairs from "../myRepairs";
 
+const activeWarranty = {
+  issued: true,
+  active: true,
+  started_at: "2026-07-26T10:00:00.000Z",
+  expires_at: "2026-08-25T10:00:00.000Z",
+  duration: 30,
+  duration_unit: "days",
+  days_remaining: 30,
+  can_claim: true,
+};
+
 const repair = (overrides: Record<string, unknown> = {}) => ({
   id: 77,
   order_number: "REP-77",
@@ -1620,6 +1631,7 @@ describe("MyRepairs warranty logistics", () => {
   it("reuses the pinned repair address and exposes shop-rider and third-party choices", async () => {
     mocks.repair = repair({
       status: "picked_up",
+      warranty: activeWarranty,
       picked_up_at: "2026-07-26T10:00:00.000Z",
       return_logistics_locked_at: "2026-07-26T09:00:00.000Z",
     });
@@ -1643,6 +1655,7 @@ describe("MyRepairs warranty logistics", () => {
   it("hides shop-owned warranty logistics for an individual repair shop", async () => {
     mocks.repair = repair({
       status: "picked_up",
+      warranty: activeWarranty,
       picked_up_at: "2026-07-26T10:00:00.000Z",
       shop_registration_type: "individual",
       return_logistics_locked_at: "2026-07-26T09:00:00.000Z",

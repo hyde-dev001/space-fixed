@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Models\ShopOwner;
 use App\Models\Employee;
 use App\Enums\EmployeeStatus;
+use App\Http\Middleware\EnsureEmployeeClockedIn;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Spatie\Permission\Models\Permission;
@@ -25,6 +26,7 @@ class EmployeeControllerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withoutMiddleware(EnsureEmployeeClockedIn::class);
 
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         Permission::findOrCreate('access-employee-directory', 'user');
@@ -58,8 +60,13 @@ class EmployeeControllerTest extends TestCase
         $employeeData = [
             'firstName' => 'John',
             'lastName' => 'Doe',
+            'suffix' => 'Jr.',
             'email' => 'john.doe@example.com',
             'phone' => '09171234567',
+            'address' => '123 Main Street',
+            'province' => 'Abra',
+            'city_municipality' => 'Bangued',
+            'postal_code' => '2800',
             'department' => 'Engineering',
             'position' => 'Software Engineer',
             'hireDate' => now()->format('Y-m-d'),
@@ -79,7 +86,25 @@ class EmployeeControllerTest extends TestCase
         $this->assertDatabaseHas('employees', [
             'email' => 'john.doe@example.com',
             'shop_owner_id' => $this->shopOwner->id,
+            'suffix' => 'Jr.',
+            'address' => '123 Main Street',
+            'state' => 'Abra',
+            'city' => 'Bangued',
+            'zip_code' => '2800',
         ]);
+
+        $this->assertDatabaseHas('users', [
+            'email' => 'john.doe@example.com',
+            'suffix' => 'Jr.',
+            'address' => '123 Main Street',
+            'province' => 'Abra',
+            'city' => 'Bangued',
+            'postal_code' => '2800',
+        ]);
+
+        $response->assertJsonPath('employee.province', 'Abra')
+            ->assertJsonPath('employee.city_municipality', 'Bangued')
+            ->assertJsonPath('employee.postal_code', '2800');
     }
 
     #[Test]
@@ -309,13 +334,14 @@ class EmployeeControllerTest extends TestCase
             'firstName' => '', // Required
             'email' => 'invalid-email', // Invalid format
             'salary' => 'not-a-number', // Should be numeric
+            'postal_code' => '12345', // Must be exactly four digits
         ];
 
         $response = $this->actingAs($this->hrUser, 'user')
             ->postJson('/api/hr/employees', $invalidData);
 
         $response->assertStatus(422)
-            ->assertJsonValidationErrors(['firstName', 'email', 'salary']);
+            ->assertJsonValidationErrors(['firstName', 'email', 'salary', 'postal_code']);
     }
 
     #[Test]

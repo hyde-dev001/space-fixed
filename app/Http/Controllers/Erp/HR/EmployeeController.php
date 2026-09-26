@@ -76,6 +76,21 @@ class EmployeeController extends Controller
     }
 
     /**
+     * Keep legacy employee address columns available through stable API names.
+     *
+     * @return array<string, mixed>
+     */
+    private function employeePayload(Employee $employee): array
+    {
+        $payload = $employee->toArray();
+        $payload['province'] = $employee->state;
+        $payload['city_municipality'] = $employee->city;
+        $payload['postal_code'] = $employee->zip_code;
+
+        return $payload;
+    }
+
+    /**
      * Display a listing of employees.
      */
     public function index(Request $request): JsonResponse
@@ -123,7 +138,7 @@ class EmployeeController extends Controller
             ->paginate($request->get('per_page', 15));
 
         $employees->setCollection($employees->getCollection()->map(function (Employee $employee): array {
-            return $employee->toArray() + [
+            return $this->employeePayload($employee) + [
                 'owner_projection' => $this->employeeOwnerProjection->project($employee),
             ];
         }));
@@ -143,9 +158,17 @@ class EmployeeController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        $request->merge([
+            'address' => $request->input('address', $request->input('location')),
+            'province' => $request->input('province', $request->input('state')),
+            'city_municipality' => $request->input('city_municipality', $request->input('city')),
+            'postal_code' => $request->input('postal_code', $request->input('zipCode', $request->input('zip_code'))),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'firstName' => 'required|string|max:50',
             'lastName' => 'required|string|max:50',
+            'suffix' => 'nullable|string|max:50',
             'email' => 'required|email|unique:employees,email|unique:users,email',
             'phone' => ['nullable', 'regex:/^\d{11}$/', 'unique:employees,phone', 'unique:users,phone'],
             'position' => 'required|string|max:100',
@@ -156,12 +179,16 @@ class EmployeeController extends Controller
             'city' => 'nullable|string|max:100',
             'state' => 'nullable|string|max:100',
             'zipCode' => 'nullable|string|max:20',
+            'province' => 'nullable|string|max:100|required_with:address',
+            'city_municipality' => 'nullable|string|max:100|required_with:address',
+            'postal_code' => ['nullable', 'regex:/^\d{4}$/', 'required_with:address'],
             'emergencyContact' => 'nullable|string|max:100',
             'emergencyPhone' => 'nullable|string|max:20',
             'location' => 'nullable|string|max:100',
             'profileImage' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
         ], [
             'phone.regex' => 'Phone number must be exactly 11 digits.',
+            'postal_code.regex' => 'Postal code must be exactly 4 digits.',
         ]);
 
         if ($validator->fails()) {
@@ -245,6 +272,7 @@ class EmployeeController extends Controller
                 'shop_owner_id' => $user->shop_owner_id,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
+                'suffix' => $request->input('suffix'),
                 'name' => $fullName,
                 'email' => $request->email,
                 'phone' => $request->phone ?? null,
@@ -253,9 +281,9 @@ class EmployeeController extends Controller
                 'hire_date' => $request->hireDate ?? $request->hire_date ?? now(),
                 'salary' => $request->salary ?? 0,
                 'address' => $request->location ?? $request->address ?? null,
-                'city' => $request->city ?? null,
-                'state' => $request->state ?? null,
-                'zip_code' => $request->zipCode ?? $request->zip_code ?? null,
+                'city' => $request->input('city_municipality') ?? $request->input('city'),
+                'state' => $request->input('province') ?? $request->input('state'),
+                'zip_code' => $request->input('postal_code') ?? $request->input('zipCode', $request->input('zip_code')),
                 'emergency_contact' => $request->emergencyContact ?? $request->emergency_contact ?? null,
                 'emergency_phone' => $request->emergencyPhone ?? $request->emergency_phone ?? null,
                 'status' => 'active',
@@ -274,9 +302,13 @@ class EmployeeController extends Controller
                 'name' => $fullName,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
+                'suffix' => $request->input('suffix'),
                 'email' => $request->email,
                 'phone' => $request->phone ?? '',
                 'address' => $request->location ?? $request->address ?? '',
+                'province' => $request->input('province'),
+                'city' => $request->input('city_municipality') ?? $request->input('city'),
+                'postal_code' => $request->input('postal_code'),
                 'shop_owner_id' => $user->shop_owner_id,
                 // Keep legacy users.role enum-compatible; source of truth remains Spatie roles.
                 'role' => $legacyUserRole,
@@ -320,7 +352,7 @@ class EmployeeController extends Controller
 
         return response()->json([
             'message' => 'Employee created successfully. Share the invitation link with the employee.',
-            'employee' => $employee->load(['leaveBalances']),
+            'employee' => $this->employeePayload($employee->load(['leaveBalances'])),
             'user_id' => $newUser->id,
             'invite_url' => $inviteUrl,
             'invite_expires_at' => $inviteExpiresAt->toDateTimeString(),
@@ -368,7 +400,7 @@ class EmployeeController extends Controller
             ->findOrFail($id);
 
         // Add user_id and permissions to response
-        $response = $employee->toArray();
+        $response = $this->employeePayload($employee);
         $response['user_id'] = $employee->user?->id;
         $response['permissions'] = $employee->user?->getAllPermissions()->pluck('name')->toArray() ?? [];
         $response['direct_permissions'] = $employee->user?->permissions->pluck('name')->toArray() ?? [];
@@ -404,6 +436,7 @@ class EmployeeController extends Controller
         $validator = Validator::make($request->all(), [
             'firstName' => 'sometimes|required|string|max:50',
             'lastName' => 'sometimes|required|string|max:50',
+            'suffix' => 'sometimes|nullable|string|max:50',
             'email' => 'sometimes|required|email|unique:employees,email,' . $employee->id,
             'phone' => 'sometimes|required|regex:/^\d{11}$/',
             'position' => 'sometimes|required|string|max:100',
@@ -414,12 +447,16 @@ class EmployeeController extends Controller
             'city' => 'sometimes|required|string|max:100',
             'state' => 'sometimes|required|string|max:100',
             'zipCode' => 'sometimes|required|string|max:20',
+            'province' => 'sometimes|nullable|string|max:100|required_with:address',
+            'city_municipality' => 'sometimes|nullable|string|max:100|required_with:address',
+            'postal_code' => ['sometimes', 'nullable', 'regex:/^\d{4}$/', 'required_with:address'],
             'emergencyContact' => 'sometimes|required|string|max:100',
             'emergencyPhone' => 'sometimes|required|string|max:20',
             'suspensionReason' => 'nullable|string',
             'profileImage' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
         ], [
             'phone.regex' => 'Phone number must be exactly 11 digits.',
+            'postal_code.regex' => 'Postal code must be exactly 4 digits.',
         ]);
 
         // Salary changes must go through the dedicated workflow (Phase 7).
@@ -452,6 +489,7 @@ class EmployeeController extends Controller
         }
         if ($request->has('email')) $data['email'] = $request->email;
         if ($request->has('phone')) $data['phone'] = $request->phone;
+        if ($request->has('suffix')) $data['suffix'] = $request->input('suffix');
         if ($request->has('position')) $data['position'] = $request->position;
         if ($request->has('department')) $data['department'] = $request->department;
         if ($request->has('hireDate')) $data['hire_date'] = $request->hireDate;
@@ -466,6 +504,9 @@ class EmployeeController extends Controller
         if ($request->has('city')) $data['city'] = $request->city;
         if ($request->has('state')) $data['state'] = $request->state;
         if ($request->has('zipCode')) $data['zip_code'] = $request->zipCode;
+        if ($request->has('province')) $data['state'] = $request->input('province');
+        if ($request->has('city_municipality')) $data['city'] = $request->input('city_municipality');
+        if ($request->has('postal_code')) $data['zip_code'] = $request->input('postal_code');
         if ($request->has('emergencyContact')) $data['emergency_contact'] = $request->emergencyContact;
         if ($request->has('emergencyPhone')) $data['emergency_phone'] = $request->emergencyPhone;
 
@@ -484,6 +525,19 @@ class EmployeeController extends Controller
 
         $employee->update($data);
 
+        if (array_intersect(array_keys($data), ['suffix', 'address', 'city', 'state', 'zip_code'])) {
+            $employee->loadMissing('user');
+            if ($employee->user) {
+                $employee->user->forceFill([
+                    'suffix' => $employee->suffix,
+                    'address' => $employee->address,
+                    'province' => $employee->state,
+                    'city' => $employee->city,
+                    'postal_code' => $employee->zip_code,
+                ])->save();
+            }
+        }
+
         if (isset($data['status'])) {
             $this->linkedUserSynchronizer->sync($employee);
         }
@@ -499,7 +553,7 @@ class EmployeeController extends Controller
 
         return response()->json([
             'message' => 'Employee updated successfully',
-            'employee' => $employee
+            'employee' => $this->employeePayload($employee)
         ]);
     }
 

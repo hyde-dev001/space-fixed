@@ -250,7 +250,11 @@ class UserAccessControlController extends Controller
                     'name' => $employee->name,
                     'email' => $employee->email,
                     'phone' => $employee->phone ?? $user?->phone ?? null,
-                    'address' => $user?->address ?? null,
+                    'address' => $employee->address ?? $user?->address ?? null,
+                    'suffix' => $employee->suffix ?? $user?->suffix ?? null,
+                    'province' => $employee->state ?? $user?->province ?? null,
+                    'cityMunicipality' => $employee->city ?? $user?->city ?? null,
+                    'postalCode' => $employee->zip_code ?? $user?->postal_code ?? null,
                     'role' => $roleName ?? $employee->department ?? 'Staff',
                     'status' => $employee->status,
                     'createdAt' => $employee->created_at,
@@ -328,6 +332,10 @@ class UserAccessControlController extends Controller
                 'email' => 'required|email|unique:employees,email',
                 'phone' => ['nullable', 'regex:/^\d{11}$/', 'unique:employees,phone', 'unique:users,phone'],
                 'address' => 'nullable|string|max:255',
+                'suffix' => 'nullable|string|max:50',
+                'province' => 'nullable|string|max:100|required_with:address',
+                'city_municipality' => 'nullable|string|max:100|required_with:address',
+                'postal_code' => ['nullable', 'regex:/^\d{4}$/', 'required_with:address'],
                 'position' => 'nullable|string|max:100',
                 'position_template_id' => 'nullable|exists:position_templates,id',
                 'department' => 'nullable|string|max:100',
@@ -401,6 +409,9 @@ class UserAccessControlController extends Controller
             $validated['hire_date'] = $validated['hire_date'] ?? now()->toDateString();
             $validated['status'] = $validated['status'] ?? 'active';
             $validated['branch'] = $validated['branch'] ?? null;
+            $validated['state'] = $validated['province'] ?? null;
+            $validated['city'] = $validated['city_municipality'] ?? null;
+            $validated['zip_code'] = $validated['postal_code'] ?? null;
 
             // Ensure email is free across employees and users before creating anything
             if (Employee::where('email', $validated['email'])->exists()) {
@@ -435,7 +446,7 @@ class UserAccessControlController extends Controller
             
             [$employee, $user] = DB::transaction(function () use ($validated, $shopOwner, $inviteToken, $inviteExpiresAt, $legacyUserRole) {
                 $employeeData = collect($validated)->only([
-                    'shop_owner_id','name','email','phone','address','position','department','branch','salary','hire_date','status'
+                    'shop_owner_id','name','email','phone','address','suffix','city','state','zip_code','position','department','branch','salary','hire_date','status'
                 ])->toArray();
                 $employee = Employee::create($employeeData);
 
@@ -455,9 +466,13 @@ class UserAccessControlController extends Controller
                         'name' => $validated['name'],
                         'first_name' => $firstName,
                         'last_name' => $lastName,
+                        'suffix' => $validated['suffix'] ?? null,
                         'email' => $validated['email'],
                         'phone' => $validated['phone'] ?? '',
                         'address' => $validated['address'] ?? '',
+                        'province' => $validated['province'] ?? null,
+                        'city' => $validated['city_municipality'] ?? null,
+                        'postal_code' => $validated['postal_code'] ?? null,
                         'shop_owner_id' => $shopOwner->id,
                         'role' => $legacyUserRole, // Keep old role column enum-compatible for backward compatibility
                         'position' => $validated['position'] ?? null,
@@ -1638,9 +1653,13 @@ class UserAccessControlController extends Controller
             'name' => $employee->name ?: trim("{$firstName} {$lastName}"),
             'first_name' => $firstName,
             'last_name' => $lastName,
+            'suffix' => $employee->suffix ?? $linkedUser?->suffix,
             'email' => $employee->email,
-            'phone' => $employee->phone,
-            'address' => $employee->address,
+            'phone' => $employee->phone ?? $linkedUser?->phone,
+            'address' => $employee->address ?? $linkedUser?->address,
+            'province' => $employee->state ?? $linkedUser?->province,
+            'city_municipality' => $employee->city ?? $linkedUser?->city,
+            'postal_code' => $employee->zip_code ?? $linkedUser?->postal_code,
             'position' => $employee->position,
             'department' => $employee->department,
             'salary' => $employee->salary,

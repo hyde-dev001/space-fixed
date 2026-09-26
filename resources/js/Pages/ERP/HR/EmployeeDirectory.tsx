@@ -1,5 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
 import IconButton from "@/components/ui/icon-button/IconButton";
+import PhilippineAddressFields from "@/components/employee/PhilippineAddressFields";
 import React, { useMemo, useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
@@ -15,6 +16,10 @@ type Employee = {
   lastName: string;
   email: string;
   phone?: string;
+  suffix?: string;
+  province?: string;
+  cityMunicipality?: string;
+  postalCode?: string;
   department: string;
   position: string;
   status: EmployeeStatus;
@@ -383,6 +388,10 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     lastName: lastName,
     email: apiEmployee.email,
     phone: apiEmployee.phone,
+    suffix: apiEmployee.suffix || '',
+    province: apiEmployee.province || apiEmployee.state || '',
+    cityMunicipality: apiEmployee.city_municipality || apiEmployee.cityMunicipality || apiEmployee.city || '',
+    postalCode: apiEmployee.postal_code || apiEmployee.postalCode || apiEmployee.zip_code || '',
     department: apiEmployee.department,
     position: apiEmployee.position,
     status: canonicalEmployeeStatus(apiEmployee.status),
@@ -639,12 +648,16 @@ export const EmployeeManagement: React.FC<{
   const [addEmployeeForm, setAddEmployeeForm] = useState({
     firstName: "",
     lastName: "",
+    suffix: "",
     email: "",
     phone: "",
     department: "",
     position: "",
     hiredAt: new Date().toISOString().split("T")[0],
     location: "",
+    province: "",
+    cityMunicipality: "",
+    postalCode: "",
     salary: "",
   });
   // UI state for in-flight requests / errors
@@ -2054,6 +2067,20 @@ export const EmployeeManagement: React.FC<{
       return;
     }
 
+    if (addEmployeeForm.location.trim() && (
+      !addEmployeeForm.province ||
+      !addEmployeeForm.cityMunicipality ||
+      !/^\d{4}$/.test(addEmployeeForm.postalCode)
+    )) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validation Error',
+        text: 'Province, City/Municipality, and a 4-digit Postal Code are required when an address is provided.',
+        confirmButtonColor: '#ef4444',
+      });
+      return;
+    }
+
     if (addEmployeeEmailValidation.status === 'checking' || addEmployeePhoneValidation.status === 'checking') {
       Swal.fire({
         icon: 'info',
@@ -2152,9 +2179,13 @@ export const EmployeeManagement: React.FC<{
             body: JSON.stringify(ownerMode
               ? {
                   name: `${addEmployeeForm.firstName} ${addEmployeeForm.lastName}`.trim(),
+                  suffix: addEmployeeForm.suffix,
                   email: trimmedEmail,
                   phone: normalizedPhone,
                   address: addEmployeeForm.location,
+                  province: addEmployeeForm.province,
+                  city_municipality: addEmployeeForm.cityMunicipality,
+                  postal_code: addEmployeeForm.postalCode,
                   position: addEmployeeForm.position || 'General Staff',
                   department: addEmployeeForm.department || 'General',
                   role: addEmployeeForm.department || 'Staff',
@@ -2165,14 +2196,19 @@ export const EmployeeManagement: React.FC<{
               : {
                   firstName: addEmployeeForm.firstName,
                   lastName: addEmployeeForm.lastName,
+                  suffix: addEmployeeForm.suffix,
                   email: trimmedEmail,
                   phone: normalizedPhone,
+                  address: addEmployeeForm.location,
                   position: addEmployeeForm.position || 'General Staff',
                   department: addEmployeeForm.department || 'General',
                   role: addEmployeeForm.department || 'Staff',
                   salary: parseFloat(addEmployeeForm.salary) || 0,
                   hireDate: addEmployeeForm.hiredAt || new Date().toISOString().split('T')[0],
                   location: addEmployeeForm.location,
+                  province: addEmployeeForm.province,
+                  city_municipality: addEmployeeForm.cityMunicipality,
+                  postal_code: addEmployeeForm.postalCode,
                 }),
           });
 
@@ -2201,12 +2237,16 @@ export const EmployeeManagement: React.FC<{
           setAddEmployeeForm({ 
             firstName: "", 
             lastName: "", 
+            suffix: "",
             email: "", 
             phone: "", 
             department: "", 
             position: "", 
             hiredAt: new Date().toISOString().split("T")[0], 
             location: "",
+            province: "",
+            cityMunicipality: "",
+            postalCode: "",
             salary: "",
           });
 
@@ -3353,6 +3393,25 @@ export const EmployeeManagement: React.FC<{
 
                       <div className="mt-4">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                          Suffix
+                        </label>
+                        <input
+                          type="text"
+                          value={addEmployeeForm.suffix}
+                          onChange={(e) =>
+                            setAddEmployeeForm({
+                              ...addEmployeeForm,
+                              suffix: e.target.value,
+                            })
+                          }
+                          placeholder="Jr., Sr., III"
+                          maxLength={50}
+                          className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                        />
+                      </div>
+
+                      <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                           Email <span className="text-red-500">*</span>
                         </label>
                         <input
@@ -3402,23 +3461,25 @@ export const EmployeeManagement: React.FC<{
                           )}
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                            Address
-                          </label>
-                          <input
-                            type="text"
-                            value={addEmployeeForm.location}
-                            onChange={(e) =>
-                              setAddEmployeeForm({
-                                ...addEmployeeForm,
-                                location: e.target.value,
-                              })
-                            }
-                            placeholder="Address"
-                            className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
-                          />
-                        </div>
+                      </div>
+
+                      <div className="mt-4">
+                        <PhilippineAddressFields
+                          idPrefix="hr-employee"
+                          value={{
+                            address: addEmployeeForm.location,
+                            province: addEmployeeForm.province,
+                            cityMunicipality: addEmployeeForm.cityMunicipality,
+                            postalCode: addEmployeeForm.postalCode,
+                          }}
+                          onChange={(address) => setAddEmployeeForm({
+                            ...addEmployeeForm,
+                            location: address.address,
+                            province: address.province,
+                            cityMunicipality: address.cityMunicipality,
+                            postalCode: address.postalCode,
+                          })}
+                        />
                       </div>
                     </div>
 
