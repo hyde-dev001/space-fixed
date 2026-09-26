@@ -3336,9 +3336,9 @@ export const EmployeeManagement: React.FC<{
         {isAddEmployeeOpen && (
           <ModalPortal>
             <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
-              <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
+              <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-6xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
                 {/* Header */}
-                <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6">
+                <div className="border-b border-gray-200 dark:border-gray-800 px-6 py-4">
                   <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
                     Add New Employee
                   </h2>
@@ -3348,14 +3348,14 @@ export const EmployeeManagement: React.FC<{
                 </div>
 
                 {/* Content */}
-                <div className="p-8 max-h-[calc(90vh-140px)] overflow-y-auto">
-                  <div className="space-y-6">
+                <div className="p-6 max-h-[calc(90vh-112px)] overflow-y-auto">
+                  <div className="space-y-4">
                     {/* Personal Information Section */}
-                    <div className="lg:grid lg:grid-cols-3 lg:gap-4">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4 pb-2 border-b border-gray-200 dark:border-gray-700 lg:col-span-3">
+                    <div className="lg:grid lg:grid-cols-4 lg:gap-3">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3 pb-2 border-b border-gray-200 dark:border-gray-700 lg:col-span-4">
                         Personal Information
                       </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:contents">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:contents">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             First Name <span className="text-red-500">*</span>
@@ -3391,7 +3391,7 @@ export const EmployeeManagement: React.FC<{
                         </div>
                       </div>
 
-                      <div className="mt-4 lg:mt-0">
+                      <div className="mt-3 lg:mt-0">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                           Suffix
                         </label>
@@ -3410,7 +3410,7 @@ export const EmployeeManagement: React.FC<{
                         />
                       </div>
 
-                      <div className="mt-4 lg:col-span-2 lg:mt-0">
+                      <div className="mt-3 lg:mt-0">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                           Email <span className="text-red-500">*</span>
                         </label>
@@ -3433,7 +3433,7 @@ export const EmployeeManagement: React.FC<{
                         )}
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 lg:mt-0 lg:grid-cols-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 lg:mt-0 lg:grid-cols-1">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Phone
@@ -3463,7 +3463,7 @@ export const EmployeeManagement: React.FC<{
 
                       </div>
 
-                      <div className="mt-4 lg:col-span-3 lg:mt-0">
+                      <div className="mt-3 lg:col-span-4 lg:mt-0">
                         <PhilippineAddressFields
                           idPrefix="hr-employee"
                           value={{
@@ -3484,11 +3484,11 @@ export const EmployeeManagement: React.FC<{
                     </div>
 
                     {/* Job Information Section */}
-                    <div className="lg:grid lg:grid-cols-3 lg:gap-4">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-4 pb-2 border-b border-gray-200 dark:border-gray-700 lg:col-span-3">
+                    <div className="lg:grid lg:grid-cols-4 lg:gap-3">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3 pb-2 border-b border-gray-200 dark:border-gray-700 lg:col-span-4">
                         Job Information
                       </h3>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:contents">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:contents">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Department / Role <span className="text-red-500">*</span>
@@ -3523,7 +3523,7 @@ export const EmployeeManagement: React.FC<{
                           </MonochromeSelect>
                         </div>
 
-                        <div className="lg:col-span-2">
+                        <div className="lg:col-span-3">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Position / Job Title
                           </label>
@@ -3546,7 +3546,7 @@ export const EmployeeManagement: React.FC<{
 
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 lg:contents">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 lg:contents">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Hired Date
@@ -3564,7 +3564,7 @@ export const EmployeeManagement: React.FC<{
                           />
                         </div>
 
-                        <div className="lg:col-span-2">
+                        <div className="lg:col-span-3">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Daily Rate
                           </label>

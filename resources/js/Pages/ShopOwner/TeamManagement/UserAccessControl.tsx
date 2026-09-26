@@ -2173,21 +2173,21 @@ const UserAccessControl: React.FC = () => {
           {/* Modals */}
           <Modal isOpen={isEmployeeModalOpen} onClose={() => setIsEmployeeModalOpen(false)}>
             <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
-              <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-4xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
+              <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-6xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
                 {/* Header */}
-                <div className="border-b border-gray-200 dark:border-gray-800 px-8 py-6">
+                <div className="border-b border-gray-200 dark:border-gray-800 px-6 py-4">
                   <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add New Employee</h2>
                   <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Fill in the employee details below</p>
                 </div>
 
                 {/* Content */}
-                <div className="p-8 max-h-[calc(90vh-140px)] overflow-y-auto">
-                  <div className="space-y-6">
-                    <div className="lg:grid lg:grid-cols-3 lg:gap-4">
-                      <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 tracking-wider lg:col-span-3">PERSONAL INFORMATION</h4>
-                      <hr className="mt-3 mb-4 border-gray-200 dark:border-gray-700 lg:col-span-3" />
+                <div className="p-6 max-h-[calc(90vh-112px)] overflow-y-auto">
+                  <div className="space-y-4">
+                    <div className="lg:grid lg:grid-cols-4 lg:gap-3">
+                      <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 tracking-wider lg:col-span-4">PERSONAL INFORMATION</h4>
+                      <hr className="mt-2 mb-3 border-gray-200 dark:border-gray-700 lg:col-span-4" />
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:contents">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:contents">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">First Name *</label>
                           <input type="text" value={employeeForm.firstName} onChange={(e) => setEmployeeForm({ ...employeeForm, firstName: e.target.value })} placeholder="First name" className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
@@ -2198,12 +2198,12 @@ const UserAccessControl: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="mt-4 lg:mt-0">
+                      <div className="mt-3 lg:mt-0">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Suffix</label>
                         <input type="text" value={employeeForm.suffix} onChange={(e) => setEmployeeForm({ ...employeeForm, suffix: e.target.value })} placeholder="Jr., Sr., III" maxLength={50} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
                       </div>
 
-                      <div className="mt-4 lg:col-span-2 lg:mt-0">
+                      <div className="mt-3 lg:mt-0">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email *</label>
                         <input type="email" value={employeeForm.email} onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })} placeholder="Email address" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeeEmailValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
                         {employeeEmailValidation.status === 'error' && (
@@ -2214,7 +2214,7 @@ const UserAccessControl: React.FC = () => {
                         )}
                       </div>
 
-                      <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4 lg:mt-0 lg:grid-cols-1">
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3 lg:mt-0 lg:grid-cols-1">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
                           <input type="tel" value={employeeForm.phone} onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })} inputMode="numeric" pattern="[0-9]*" maxLength={11} placeholder="09XXXXXXXXX" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeePhoneValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
@@ -2227,7 +2227,7 @@ const UserAccessControl: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="mt-4 lg:col-span-3 lg:mt-0">
+                      <div className="mt-3 lg:col-span-4 lg:mt-0">
                         <PhilippineAddressFields
                           idPrefix="owner-employee"
                           value={{
@@ -2247,11 +2247,11 @@ const UserAccessControl: React.FC = () => {
                       </div>
                     </div>
 
-                    <div className="lg:grid lg:grid-cols-3 lg:gap-4">
-                      <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 tracking-wider lg:col-span-3">JOB INFORMATION</h4>
-                      <hr className="mt-3 mb-4 border-gray-200 dark:border-gray-700 lg:col-span-3" />
+                    <div className="lg:grid lg:grid-cols-4 lg:gap-3">
+                      <h4 className="text-xs font-semibold text-gray-700 dark:text-gray-300 tracking-wider lg:col-span-4">JOB INFORMATION</h4>
+                      <hr className="mt-2 mb-3 border-gray-200 dark:border-gray-700 lg:col-span-4" />
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 lg:contents">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:contents">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             Department / Role <span className="text-red-500">*</span>
@@ -2268,7 +2268,7 @@ const UserAccessControl: React.FC = () => {
                             ))}
                           </MonochromeSelect>
                         </div>
-                        <div className="lg:col-span-2">
+                        <div className="lg:col-span-3">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Position / Job Title</label>
                           <input 
                             type="text" 
@@ -2283,7 +2283,7 @@ const UserAccessControl: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="mt-4 lg:mt-0">
+                      <div className="mt-3 lg:mt-0">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Hired Date</label>
                         <div className="relative">
                           <input type="date" value={employeeForm.hire_date} onChange={(e) => setEmployeeForm({ ...employeeForm, hire_date: e.target.value })} className="w-full pl-4 pr-10 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-800 dark:text-white" />
@@ -2293,7 +2293,7 @@ const UserAccessControl: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="mt-4 lg:col-span-2 lg:mt-0">
+                      <div className="mt-3 lg:col-span-3 lg:mt-0">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Daily Rate</label>
                         <div className="relative">
                           <span className="absolute left-3 top-2.5 text-gray-500 dark:text-gray-400">₱</span>
