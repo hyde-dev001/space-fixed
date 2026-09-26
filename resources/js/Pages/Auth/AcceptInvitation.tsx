@@ -36,12 +36,7 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
         <>
             <Head title="Accept Invitation" />
             
-            <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-white dark:bg-gray-900 px-4 py-6 sm:py-8">
-                <div className="pointer-events-none absolute inset-0">
-                    <div className="absolute -top-28 -left-20 h-80 w-80 rounded-full bg-blue-100/70 blur-3xl dark:bg-blue-900/20" />
-                    <div className="absolute -bottom-28 -right-20 h-96 w-96 rounded-full bg-indigo-100/70 blur-3xl dark:bg-indigo-900/20" />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(15,23,42,0.04),transparent_60%)] dark:bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.08),transparent_60%)]" />
-                </div>
+            <div className="userside-auth-page userside-auth-pattern relative flex min-h-screen items-center justify-center px-4 py-6 font-outfit antialiased sm:py-8">
 
                 <div className="relative max-w-2xl w-full rounded-3xl border border-gray-200/80 bg-white/95 dark:bg-gray-800/95 dark:border-gray-700 shadow-2xl backdrop-blur-xl p-6">
                     {/* Header */}

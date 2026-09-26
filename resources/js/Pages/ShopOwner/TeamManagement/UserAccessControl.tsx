@@ -2120,6 +2120,53 @@ const UserAccessControl: React.FC = () => {
     }
   };
 
+  const employeeDetailSections: Array<{ title: string; fields: Array<[string, string | number]> }> = viewingEmployee
+    ? [
+        {
+          title: 'Personal Information',
+          fields: [
+            ['Name', viewingEmployee.name],
+            ['Suffix', viewingEmployee.suffix || 'Not available'],
+          ],
+        },
+        {
+          title: 'Contact & Address',
+          fields: [
+            ['Work Email', viewingEmployee.email],
+            ['Personal Email', viewingEmployee.personalEmail || 'Personal email unavailable'],
+            ['Phone', viewingEmployee.phone || 'Not available'],
+            ['Address', viewingEmployee.address || 'Not available'],
+            ['Province', viewingEmployee.province || 'Not available'],
+            ['City/Municipality', viewingEmployee.cityMunicipality || 'Not available'],
+            ['Postal Code', viewingEmployee.postalCode || 'Not available'],
+          ],
+        },
+        {
+          title: 'Job Information',
+          fields: [
+            ['Department / Role', viewingEmployee.department || viewingEmployee.role || 'Not assigned'],
+            ['Position / Job Title', viewingEmployee.position || 'Not assigned'],
+            ['Employment Status', viewingEmployee.status],
+            ['Hired Date', viewingEmployee.hire_date
+              ? new Date(viewingEmployee.hire_date).toLocaleDateString()
+              : 'Not available'],
+            ['Salary / Daily Rate', viewingEmployee.salary ?? 'Not available'],
+          ],
+        },
+        {
+          title: 'Account & Activity',
+          fields: [
+            ['Account Status', viewingEmployee.accountStatus || 'Unknown'],
+            ['Last Active', viewingEmployee.lastActive
+              ? new Date(viewingEmployee.lastActive).toLocaleString()
+              : 'Never'],
+            ['Created By', viewingEmployee.createdBy ? String(viewingEmployee.createdBy) : 'Not available'],
+            ['Linked Account State', viewingEmployee.linkedAccountState || (viewingEmployee.userId ? 'linked' : 'not_linked')],
+          ],
+        },
+      ]
+    : [];
+
   return (
     <Layout>
       <Head title="User Access Control" />
@@ -2342,37 +2389,23 @@ const UserAccessControl: React.FC = () => {
                   </p>
                 </div>
 
-                <dl className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {[
-                    ['Name', viewingEmployee.name],
-                    ['Suffix', viewingEmployee.suffix || 'Not available'],
-                    ['Work Email', viewingEmployee.email],
-                    ['Personal Email', viewingEmployee.personalEmail || 'Personal email unavailable'],
-                    ['Phone', viewingEmployee.phone || 'Not available'],
-                    ['Address', viewingEmployee.address || 'Not available'],
-                    ['Province', viewingEmployee.province || 'Not available'],
-                    ['City/Municipality', viewingEmployee.cityMunicipality || 'Not available'],
-                    ['Postal Code', viewingEmployee.postalCode || 'Not available'],
-                    ['Department / Role', viewingEmployee.department || viewingEmployee.role || 'Not assigned'],
-                    ['Position / Job Title', viewingEmployee.position || 'Not assigned'],
-                    ['Employment Status', viewingEmployee.status],
-                    ['Hired Date', viewingEmployee.hire_date
-                      ? new Date(viewingEmployee.hire_date).toLocaleDateString()
-                      : 'Not available'],
-                    ['Salary / Daily Rate', viewingEmployee.salary ?? 'Not available'],
-                    ['Account Status', viewingEmployee.accountStatus || 'Unknown'],
-                    ['Last Active', viewingEmployee.lastActive
-                      ? new Date(viewingEmployee.lastActive).toLocaleString()
-                      : 'Never'],
-                    ['Created By', viewingEmployee.createdBy ? String(viewingEmployee.createdBy) : 'Not available'],
-                    ['Linked Account State', viewingEmployee.linkedAccountState || (viewingEmployee.userId ? 'linked' : 'not_linked')],
-                  ].map(([label, value]) => (
-                    <div key={label} className="rounded-lg border border-gray-200 p-2.5 dark:border-gray-700">
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</dt>
-                      <dd className="mt-1 break-words text-sm text-gray-900 dark:text-white">{value}</dd>
-                    </div>
+                <div className="mt-4 space-y-4">
+                  {employeeDetailSections.map(({ title, fields }) => (
+                    <section key={title} className="rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                      <h4 className="mb-3 text-xs font-bold uppercase tracking-[0.12em] text-gray-500 dark:text-gray-400">
+                        {title}
+                      </h4>
+                      <dl className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                        {fields.map(([label, value]) => (
+                          <div key={label} className="min-w-0 rounded-lg bg-white/80 px-3 py-2 dark:bg-gray-900/50">
+                            <dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">{label}</dt>
+                            <dd className="mt-1 break-words text-sm text-gray-900 dark:text-white">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
                   ))}
-                </dl>
+                </div>
 
                 <div className="mt-4 flex justify-end">
                   <Button variant="outline" onClick={() => setViewingEmployee(null)}>
