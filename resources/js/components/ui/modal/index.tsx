@@ -8,6 +8,7 @@ interface ModalProps {
   showCloseButton?: boolean; // New prop to control close button visibility
   isFullscreen?: boolean; // Default to false for backwards compatibility
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl'; // Modal size
+  zIndex?: number;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -18,6 +19,7 @@ export const Modal: React.FC<ModalProps> = ({
   showCloseButton = true, // Default to true for backwards compatibility
   isFullscreen = false,
   size = 'md',
+  zIndex,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
 
@@ -38,14 +40,21 @@ export const Modal: React.FC<ModalProps> = ({
   }, [isOpen, onClose]);
 
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "unset";
+    if (!isOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const previousPaddingRight = document.body.style.paddingRight;
+    const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+
+    document.body.style.overflow = "hidden";
+    if (scrollbarWidth > 0) {
+      const currentPaddingRight = Number.parseFloat(window.getComputedStyle(document.body).paddingRight) || 0;
+      document.body.style.paddingRight = `${currentPaddingRight + scrollbarWidth}px`;
     }
 
     return () => {
-      document.body.style.overflow = "unset";
+      document.body.style.overflow = previousOverflow;
+      document.body.style.paddingRight = previousPaddingRight;
     };
   }, [isOpen]);
 
@@ -69,10 +78,13 @@ export const Modal: React.FC<ModalProps> = ({
     : `relative w-full ${sizeClasses[size]} mx-auto rounded-3xl bg-white dark:bg-gray-900`;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center overflow-y-auto modal z-99999">
+    <div
+      className="fixed inset-0 flex items-center justify-center overflow-y-auto modal z-99999"
+      style={zIndex === undefined ? undefined : { zIndex }}
+    >
       {!isFullscreen && (
         <div
-          className="fixed inset-0 h-full w-full bg-black/10 backdrop-blur-sm"
+          className="erp-modal-backdrop fixed inset-0 h-full w-full bg-black/10 backdrop-blur-sm"
           onClick={onClose}
         ></div>
       )}

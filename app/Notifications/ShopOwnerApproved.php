@@ -8,9 +8,9 @@ use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Facades\URL;
 
-class ShopOwnerApproved extends Notification // implements ShouldQueue - Disabled for immediate sending
+class ShopOwnerApproved extends Notification implements ShouldQueue
 {
-    // use Queueable; - Not needed when not queued
+    use Queueable;
 
     protected $shopOwner;
     protected $token;
@@ -22,6 +22,7 @@ class ShopOwnerApproved extends Notification // implements ShouldQueue - Disable
     {
         $this->shopOwner = $shopOwner;
         $this->token = $token;
+        $this->afterCommit = true;
     }
 
     /**

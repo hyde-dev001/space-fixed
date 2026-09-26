@@ -1,8 +1,10 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useEffect, useMemo, useState } from "react";
-import { Head } from "@inertiajs/react";
+import { Head, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import axios from "axios";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import ErrorModal from "../../../../components/common/ErrorModal";
 
 type WarrantyStatusFilter = "all" | "pending_repairer" | "approved" | "rejected" | "expired";
@@ -46,14 +48,11 @@ const STATUS_OPTIONS: Array<{ label: string; value: WarrantyStatusFilter }> = [
   { label: "Expired", value: "expired" },
 ];
 
-type ChangeType = "increase" | "decrease";
 type MetricColor = "success" | "warning" | "info";
 
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change: number;
-  changeType: ChangeType;
   icon: ({ className }: { className?: string }) => JSX.Element;
   color: MetricColor;
   description: string;
@@ -90,25 +89,13 @@ const ReceiptIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 const AlertTriangleIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
   </svg>
 );
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
   const getColorClasses = () => {
     switch (color) {
       case "success":
@@ -126,19 +113,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:-translate-y-1 hover:border-gray-300 hover:shadow-xl dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="mb-4 flex items-center justify-between">
+        <div className="mb-4 flex items-center">
           <div className={`flex h-14 w-14 items-center justify-center rounded-2xl bg-linear-to-br ${getColorClasses()} shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="size-7 text-white drop-shadow-sm" />
-          </div>
-          <div
-            className={`flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
         <div className="space-y-2">
@@ -211,6 +188,8 @@ const formatWarrantyDateTime = (value: string | null | undefined): string => {
 };
 
 export default function WarrantyQueue() {
+  const erpMode = (usePage().props as any)?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<WarrantyStatusFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -446,18 +425,13 @@ export default function WarrantyQueue() {
   }, [statusFilter, searchQuery]);
 
   return (
-    <AppLayoutShopOwner hideHeader={isClaimDetailsOpen}>
+    <Layout hideHeader={isClaimDetailsOpen}>
       <Head title="Warranty Queue" />
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
 
       <div className="space-y-6 p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="mb-1 text-2xl font-semibold text-gray-900 dark:text-white">Warranty Queue</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              Review warranty claims from customer portal and POS walk-in submissions.
-            </p>
-          </div>
+          <h1 className="sr-only">Warranty Queue</h1>
           <button
             type="button"
             onClick={() => {
@@ -474,8 +448,6 @@ export default function WarrantyQueue() {
           <MetricCard
             title="Pending Claims"
             value={kpi.pending_count}
-            change={0}
-            changeType="increase"
             icon={ClockIcon}
             color="warning"
             description="Awaiting your review"
@@ -483,8 +455,6 @@ export default function WarrantyQueue() {
           <MetricCard
             title="Approved"
             value={kpi.approved_count}
-            change={0}
-            changeType="increase"
             icon={CheckIcon}
             color="success"
             description={`Within ${kpi.window_days} days`}
@@ -492,8 +462,6 @@ export default function WarrantyQueue() {
           <MetricCard
             title="Rejected"
             value={kpi.rejected_count}
-            change={0}
-            changeType="decrease"
             icon={XIcon}
             color="info"
             description="Needs customer follow-up"
@@ -501,8 +469,6 @@ export default function WarrantyQueue() {
           <MetricCard
             title="Expired"
             value={kpi.expired_count}
-            change={0}
-            changeType="decrease"
             icon={AlertTriangleIcon}
             color="warning"
             description="Outside warranty window"
@@ -526,7 +492,7 @@ export default function WarrantyQueue() {
               />
             </div>
             <div className="sm:w-52">
-              <select
+              <MonochromeSelect
                 aria-label="Filter warranty claims by status"
                 value={statusFilter}
                 onChange={(event) => setStatusFilter(event.target.value as WarrantyStatusFilter)}
@@ -537,7 +503,7 @@ export default function WarrantyQueue() {
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -641,7 +607,7 @@ export default function WarrantyQueue() {
 
         {isClaimDetailsOpen && selectedClaim && (
           <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop"
             onClick={closeWarrantyClaimDetails}
           >
             <div
@@ -772,6 +738,6 @@ export default function WarrantyQueue() {
           </div>
         )}
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

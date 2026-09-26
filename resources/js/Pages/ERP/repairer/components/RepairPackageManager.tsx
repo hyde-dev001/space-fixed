@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import Swal from "sweetalert2";
@@ -15,10 +16,10 @@ type RepairPackage = {
   id: number;
   name: string;
   description?: string | null;
+  image_url?: string | null;
+  duration?: string | null;
   package_price: number;
   status: "active" | "inactive";
-  starts_at?: string | null;
-  ends_at?: string | null;
   service_count: number;
   services_total_price: number;
   savings_amount: number;
@@ -88,10 +89,11 @@ type PackageAnalytics = {
 type PackageFormState = {
   name: string;
   description: string;
+  durationFrom: string;
+  durationTo: string;
+  durationUnit: "minutes" | "hours" | "days";
   package_price: string;
   status: "active" | "inactive";
-  starts_at: string;
-  ends_at: string;
   service_ids: number[];
   material_templates: Array<{
     inventory_item_id: number;
@@ -102,10 +104,11 @@ type PackageFormState = {
 const defaultFormState: PackageFormState = {
   name: "",
   description: "",
+  durationFrom: "",
+  durationTo: "",
+  durationUnit: "hours",
   package_price: "",
   status: "active",
-  starts_at: "",
-  ends_at: "",
   service_ids: [],
   material_templates: [],
 };
@@ -123,6 +126,55 @@ const formatDateTime = (value?: string | null) => {
     day: "numeric",
     year: "numeric",
   }).format(new Date(value));
+};
+
+const parseDurationValue = (value?: string | null): Pick<PackageFormState, "durationFrom" | "durationTo" | "durationUnit"> => {
+  const normalized = String(value || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const rangeMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(minutes?|hours?|days?)$/i);
+
+  if (rangeMatch) {
+    return {
+      durationFrom: rangeMatch[1],
+      durationTo: rangeMatch[2],
+      durationUnit: rangeMatch[3].startsWith("day")
+        ? "days"
+        : rangeMatch[3].startsWith("minute")
+          ? "minutes"
+          : "hours",
+    };
+  }
+
+  const singleMatch = normalized.match(/^(\d+(?:\.\d+)?)\s*(minutes?|hours?|days?)$/i);
+  if (singleMatch) {
+    return {
+      durationFrom: singleMatch[1],
+      durationTo: "",
+      durationUnit: singleMatch[2].startsWith("day")
+        ? "days"
+        : singleMatch[2].startsWith("minute")
+          ? "minutes"
+          : "hours",
+    };
+  }
+
+  return { durationFrom: "", durationTo: "", durationUnit: "hours" };
+};
+
+const buildDurationValue = (
+  durationFrom: string,
+  durationTo: string,
+  durationUnit: "minutes" | "hours" | "days",
+) => {
+  const fromValue = Number(durationFrom);
+  if (!Number.isFinite(fromValue) || fromValue <= 0) return "";
+
+  if (durationTo.trim()) {
+    const toValue = Number(durationTo);
+    if (!Number.isFinite(toValue) || toValue < fromValue) return "";
+    return `${fromValue} to ${toValue} ${durationUnit}`;
+  }
+
+  return `${fromValue} ${fromValue === 1 ? durationUnit.slice(0, -1) : durationUnit}`;
 };
 
 const EditIcon = ({ className }: { className?: string }) => (
@@ -151,11 +203,15 @@ const ArchiveRestoreIcon = ({ className }: { className?: string }) => (
 type RepairPackageManagerProps = {
   serviceEndpoint?: string;
   materialsEndpoint?: string;
+  readOnly?: boolean;
+  allowDirectPriceEdit?: boolean;
 };
 
 export default function RepairPackageManager({
   serviceEndpoint = "/api/repair-services",
   materialsEndpoint = "/api/repairer/materials",
+  readOnly = false,
+  allowDirectPriceEdit = false,
 }: RepairPackageManagerProps) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -171,6 +227,17 @@ export default function RepairPackageManager({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<RepairPackage | null>(null);
   const [formState, setFormState] = useState<PackageFormState>(defaultFormState);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [removeExistingImage, setRemoveExistingImage] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview.startsWith("blob:") && typeof URL.revokeObjectURL === "function") {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  }, [imagePreview]);
 
   const loadData = async (archived = showArchived) => {
     try {
@@ -257,6 +324,9 @@ export default function RepairPackageManager({
   const resetAndCloseModal = () => {
     setFormState(defaultFormState);
     setSelectedPackage(null);
+    setSelectedImageFile(null);
+    setImagePreview("");
+    setRemoveExistingImage(false);
     setIsAddModalOpen(false);
     setIsEditModalOpen(false);
   };
@@ -264,6 +334,9 @@ export default function RepairPackageManager({
   const openAddModal = () => {
     setFormState(defaultFormState);
     setSelectedPackage(null);
+    setSelectedImageFile(null);
+    setImagePreview("");
+    setRemoveExistingImage(false);
     setIsAddModalOpen(true);
   };
 
@@ -279,13 +352,15 @@ export default function RepairPackageManager({
 
   const openEditModal = (pkg: RepairPackage) => {
     setSelectedPackage(pkg);
+    setSelectedImageFile(null);
+    setImagePreview(pkg.image_url || "");
+    setRemoveExistingImage(false);
     setFormState({
       name: pkg.name,
       description: pkg.description || "",
+      ...parseDurationValue(pkg.duration),
       package_price: String(pkg.package_price),
       status: pkg.status,
-      starts_at: pkg.starts_at ? pkg.starts_at.slice(0, 16) : "",
-      ends_at: pkg.ends_at ? pkg.ends_at.slice(0, 16) : "",
       service_ids: pkg.services.map((service) => service.id),
       material_templates: (pkg.material_templates || []).map((line) => ({
         inventory_item_id: line.inventory_item_id,
@@ -293,6 +368,42 @@ export default function RepairPackageManager({
       })),
     });
     setIsEditModalOpen(true);
+  };
+
+  const handlePackageImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+
+    if (!file) return;
+
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      event.target.value = "";
+      Swal.fire({
+        icon: "error",
+        title: "Invalid image",
+        text: "Choose a JPG, PNG, or WEBP image.",
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      event.target.value = "";
+      Swal.fire({
+        icon: "error",
+        title: "Image is too large",
+        text: "The package image must be 5 MB or smaller.",
+      });
+      return;
+    }
+
+    setSelectedImageFile(file);
+    setRemoveExistingImage(false);
+    setImagePreview(typeof URL.createObjectURL === "function" ? URL.createObjectURL(file) : "");
+  };
+
+  const handleRemovePackageImage = () => {
+    setSelectedImageFile(null);
+    setImagePreview("");
+    setRemoveExistingImage(true);
   };
 
   const toggleService = (serviceId: number) => {
@@ -376,11 +487,42 @@ export default function RepairPackageManager({
     }
 
     const packagePrice = Number(formState.package_price);
-    if (!Number.isFinite(packagePrice) || packagePrice < 0) {
-      return "Package price must be a valid non-negative number.";
+    if (!Number.isFinite(packagePrice) || packagePrice < 0.01) {
+      return "Package price must be a valid amount greater than zero.";
+    }
+
+    if (!buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit)) {
+      return "Please enter a valid duration estimate.";
     }
 
     return null;
+  };
+
+  const buildPackageFormData = (method: "POST" | "PUT"): FormData => {
+    const payload = new FormData();
+    payload.append("_method", method);
+    payload.append("name", formState.name);
+    payload.append("description", formState.description);
+    payload.append("duration", buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit));
+    payload.append("package_price", formState.package_price);
+    payload.append("status", formState.status);
+
+    formState.service_ids.forEach((serviceId, index) => {
+      payload.append(`service_ids[${index}]`, String(serviceId));
+    });
+
+    formState.material_templates.forEach((line, index) => {
+      payload.append(`material_templates[${index}][inventory_item_id]`, String(line.inventory_item_id));
+      payload.append(`material_templates[${index}][default_quantity]`, String(Number(line.default_quantity)));
+    });
+
+    if (selectedImageFile) {
+      payload.append("image", selectedImageFile);
+    } else if (method === "PUT" && removeExistingImage) {
+      payload.append("remove_image", "1");
+    }
+
+    return payload;
   };
 
   const submitCreate = async () => {
@@ -392,20 +534,7 @@ export default function RepairPackageManager({
 
     setSubmitting(true);
     try {
-      const materialTemplatesPayload = formState.material_templates.map((line) => ({
-        inventory_item_id: Number(line.inventory_item_id),
-        default_quantity: Number(line.default_quantity),
-      }));
-
-      const payload = {
-        ...formState,
-        package_price: Number(formState.package_price),
-        starts_at: formState.starts_at || null,
-        ends_at: formState.ends_at || null,
-        material_templates: materialTemplatesPayload,
-      };
-
-      const response = await axios.post("/api/repair-packages", payload);
+      const response = await axios.post("/api/repair-packages", buildPackageFormData("POST"));
       if (response.data?.success) {
         await loadData(showArchived);
         resetAndCloseModal();
@@ -430,20 +559,10 @@ export default function RepairPackageManager({
 
     setSubmitting(true);
     try {
-      const materialTemplatesPayload = formState.material_templates.map((line) => ({
-        inventory_item_id: Number(line.inventory_item_id),
-        default_quantity: Number(line.default_quantity),
-      }));
-
-      const payload = {
-        ...formState,
-        package_price: Number(formState.package_price),
-        starts_at: formState.starts_at || null,
-        ends_at: formState.ends_at || null,
-        material_templates: materialTemplatesPayload,
-      };
-
-      const response = await axios.put(`/api/repair-packages/${selectedPackage.id}`, payload);
+      const response = await axios.post(
+        `/api/repair-packages/${selectedPackage.id}`,
+        buildPackageFormData("PUT"),
+      );
       if (response.data?.success) {
         await loadData(showArchived);
         resetAndCloseModal();
@@ -515,7 +634,7 @@ export default function RepairPackageManager({
     const isEditMode = mode === "edit";
 
     return (
-      <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-999999 bg-black/25 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
         <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
           <div className="p-6 border-b border-gray-200 dark:border-gray-800">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{title}</h2>
@@ -536,7 +655,7 @@ export default function RepairPackageManager({
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Status</label>
-                <select
+                <MonochromeSelect
                   title="Package status"
                   value={formState.status}
                   onChange={(e) => setFormState((prev) => ({ ...prev, status: e.target.value as "active" | "inactive" }))}
@@ -544,7 +663,7 @@ export default function RepairPackageManager({
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
-                </select>
+                </MonochromeSelect>
               </div>
             </div>
 
@@ -559,27 +678,78 @@ export default function RepairPackageManager({
               />
             </div>
 
+            <div>
+              <label htmlFor="package-image" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Package image (optional)
+              </label>
+              <div className="relative overflow-hidden rounded-xl border border-dashed border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60">
+                <input
+                  id="package-image"
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handlePackageImageChange}
+                  className="sr-only"
+                />
+                {imagePreview ? (
+                  <div className="relative aspect-video min-h-40 bg-gray-900">
+                    <img src={imagePreview} alt="Selected package image preview" className="h-full w-full object-cover" />
+                    <div className="absolute inset-x-3 bottom-3 flex justify-end gap-2">
+                      <label
+                        htmlFor="package-image"
+                        className="cursor-pointer rounded-lg border border-white/70 bg-black/80 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-black"
+                      >
+                        Replace
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleRemovePackageImage}
+                        className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-semibold text-black transition-colors hover:bg-gray-100"
+                      >
+                        Remove image
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label
+                    htmlFor="package-image"
+                    className="flex min-h-40 cursor-pointer flex-col items-center justify-center px-5 py-8 text-center outline-none transition-colors hover:border-gray-900 hover:bg-white focus-within:ring-2 focus-within:ring-black dark:hover:bg-gray-900"
+                  >
+                    <svg aria-hidden="true" className="mb-3 h-10 w-10 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                      <rect x="3" y="4" width="18" height="16" rx="2" />
+                      <circle cx="8.5" cy="9" r="1.5" />
+                      <path d="m21 15-4.5-4.5L7 20" />
+                    </svg>
+                    <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                      Drop image here or <span className="underline underline-offset-2">browse</span>
+                    </span>
+                    <span className="mt-1 text-xs text-gray-500 dark:text-gray-400">Use one clear photo that represents this package.</span>
+                  </label>
+                )}
+              </div>
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">JPG, PNG, or WEBP / Maximum 5 MB / Recommended ratio 16:9</p>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Package Price *</label>
                 <input
                   type="number"
-                  min="0"
+                  min="0.01"
                   step="0.01"
                   value={formState.package_price}
                   onChange={(e) => {
                     setFormState((prev) => ({ ...prev, package_price: e.target.value }));
                   }}
-                  disabled={isEditMode}
+                  disabled={isEditMode && !allowDirectPriceEdit}
                   className={`w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-white ${
-                    isEditMode
+                    isEditMode && !allowDirectPriceEdit
                       ? "bg-gray-100 dark:bg-gray-700 cursor-not-allowed"
                       : "bg-white dark:bg-gray-800"
                   }`}
                   placeholder="e.g. 948.00"
                 />
                 <div className="mt-1 space-y-1">
-                  {isEditMode ? (
+                  {isEditMode && !allowDirectPriceEdit ? (
                     <p className="text-xs text-gray-500 dark:text-gray-400">
                       Package price is locked when editing.
                     </p>
@@ -593,7 +763,7 @@ export default function RepairPackageManager({
                         onClick={() => {
                           setFormState((prev) => ({ ...prev, package_price: String(selectedServicesTotal.toFixed(2)) }));
                         }}
-                        className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                        className="cursor-pointer text-xs text-blue-600 underline underline-offset-2 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
                       >
                         Apply reference price
                       </button>
@@ -601,25 +771,48 @@ export default function RepairPackageManager({
                   )}
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Starts At (optional)</label>
-                <input
-                  type="datetime-local"
-                  title="Package start date and time"
-                  value={formState.starts_at}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, starts_at: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Ends At (optional)</label>
-                <input
-                  type="datetime-local"
-                  title="Package end date and time"
-                  value={formState.ends_at}
-                  onChange={(e) => setFormState((prev) => ({ ...prev, ends_at: e.target.value }))}
-                  className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-                />
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Duration Estimate *</label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    title="Minimum duration"
+                    value={formState.durationFrom}
+                    onChange={(e) => setFormState((prev) => ({ ...prev, durationFrom: e.target.value }))}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    placeholder="2"
+                  />
+                  <input
+                    type="number"
+                    min={formState.durationFrom ? Number(formState.durationFrom) : 1}
+                    step="1"
+                    title="Maximum duration (optional)"
+                    value={formState.durationTo}
+                    onChange={(e) => setFormState((prev) => ({ ...prev, durationTo: e.target.value }))}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                    placeholder="3"
+                  />
+                  <MonochromeSelect
+                    title="Select duration unit"
+                    value={formState.durationUnit}
+                    onChange={(e) => setFormState((prev) => ({ ...prev, durationUnit: e.target.value as PackageFormState["durationUnit"] }))}
+                    className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
+                  >
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                  </MonochromeSelect>
+                </div>
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Leave the second box empty for an exact estimate. Fill both for a range like 30 to 45 minutes, 2 to 3 hours, or 1 to 2 days.
+                </p>
+                {buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit) && (
+                  <p className="mt-2 text-xs font-medium text-gray-600 dark:text-gray-300">
+                    Preview: {buildDurationValue(formState.durationFrom, formState.durationTo, formState.durationUnit)}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -632,7 +825,7 @@ export default function RepairPackageManager({
                 {services.map((service) => {
                   const checked = formState.service_ids.includes(service.id);
                   return (
-                    <label key={service.id} className={`flex items-center justify-between gap-3 rounded border p-3 cursor-pointer ${checked ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-200 dark:border-gray-700"}`}>
+                    <label key={service.id} className={`flex items-center justify-between gap-3 rounded border p-3 cursor-pointer transition-colors ${checked ? "border-gray-500 bg-gray-100 dark:border-gray-600 dark:bg-gray-800" : "border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-900"}`}>
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900 dark:text-white truncate">{service.name}</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">{service.category} • {service.duration}</p>
@@ -680,7 +873,7 @@ export default function RepairPackageManager({
                     <div key={`material-template-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                       <div className="md:col-span-5">
                         <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
-                        <select
+                        <MonochromeSelect
                           title="Select inventory material"
                           value={line.inventory_item_id || ""}
                           onChange={(e) => updateMaterialTemplateLine(index, "inventory_item_id", Number(e.target.value || 0))}
@@ -692,7 +885,7 @@ export default function RepairPackageManager({
                               {material.name} (Available: {material.available_quantity})
                             </option>
                           ))}
-                        </select>
+                        </MonochromeSelect>
                       </div>
 
                       <div className="md:col-span-2">
@@ -876,7 +1069,11 @@ export default function RepairPackageManager({
         <div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Repair Packages</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            {showArchived ? "Archived package list" : "Create bundled service packages (repairer-managed)."}
+            {showArchived
+              ? "Archived package list"
+              : readOnly
+                ? "View bundled service packages."
+                : "Create bundled service packages (repairer-managed)."}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -893,7 +1090,7 @@ export default function RepairPackageManager({
             {showArchived ? "Show Active" : "Show Archived"}
           </button>
 
-          {!showArchived && (
+          {!readOnly && !showArchived && (
             <button
               onClick={openAddModal}
               className="inline-flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800"
@@ -912,7 +1109,7 @@ export default function RepairPackageManager({
           placeholder="Search package name or description"
           className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
         />
-        <select
+        <MonochromeSelect
           title="Package status filter"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "inactive")}
@@ -921,7 +1118,7 @@ export default function RepairPackageManager({
           <option value="all">All statuses</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
-        </select>
+        </MonochromeSelect>
       </div>
 
       <div className="overflow-x-auto">
@@ -933,13 +1130,13 @@ export default function RepairPackageManager({
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Savings</th>
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+              {!readOnly && <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
             {loading && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={readOnly ? 5 : 6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
                   Loading repair packages...
                 </td>
               </tr>
@@ -947,7 +1144,7 @@ export default function RepairPackageManager({
 
             {!loading && filteredPackages.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
+                <td colSpan={readOnly ? 5 : 6} className="px-6 py-10 text-center text-gray-500 dark:text-gray-400">
                   {showArchived ? "No archived repair packages found." : "No repair packages found."}
                 </td>
               </tr>
@@ -958,6 +1155,7 @@ export default function RepairPackageManager({
                 <td className="px-6 py-4 align-top">
                   <p className="text-sm font-semibold text-gray-900 dark:text-white">{pkg.name}</p>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">{pkg.description || "No description"}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Duration: {pkg.duration || "Not set"}</p>
                 </td>
                 <td className="px-6 py-4 align-top text-sm text-gray-700 dark:text-gray-200">
                   {pkg.service_count} service{pkg.service_count !== 1 ? "s" : ""}
@@ -969,7 +1167,7 @@ export default function RepairPackageManager({
                     {pkg.status}
                   </span>
                 </td>
-                <td className="px-6 py-4 align-top">
+                {!readOnly && <td className="px-6 py-4 align-top">
                   <div className="flex items-center gap-2">
                     {!showArchived ? (
                       <>
@@ -1001,15 +1199,15 @@ export default function RepairPackageManager({
                       </button>
                     )}
                   </div>
-                </td>
+                </td>}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
-      {renderModal("add")}
-      {renderModal("edit")}
+      {!readOnly && renderModal("add")}
+      {!readOnly && renderModal("edit")}
     </div>
   );
 }

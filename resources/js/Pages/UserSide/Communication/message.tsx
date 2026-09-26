@@ -77,7 +77,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   // Check if user is still authenticated
   useEffect(() => {
     if (!auth?.user) {
-      router.visit('/user/login');
+      router.visit('/login');
     }
   }, [auth?.user]);
 
@@ -150,7 +150,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           console.error('Failed to fetch conversations:', response.status, response.statusText, errorText);
           if (response.status === 401) {
             console.log('Unauthorized - redirecting to login');
-            router.visit('/user/login');
+      router.visit('/login');
           }
           setIsLoading(false);
           return;
@@ -261,7 +261,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
           console.error('Failed to fetch messages:', response.status, response.statusText);
         }
         if (response.status === 401) {
-          router.visit('/user/login');
+      router.visit('/login');
         }
         return;
       }
@@ -419,7 +419,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       if (!response.ok) {
         console.error('Failed to create conversation:', response.status, response.statusText);
         if (response.status === 401) {
-          router.visit('/user/login');
+      router.visit('/login');
         }
         return;
       }
@@ -480,7 +480,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       if (!response.ok) {
         console.error('Failed to send message:', response.status, response.statusText);
         if (response.status === 401) {
-          router.visit('/user/login');
+      router.visit('/login');
         }
         return;
       }
@@ -651,7 +651,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       );
     }
 
-    const bgClass = tone === 'customer' ? 'bg-gray-900 text-white' : 'bg-blue-100 text-blue-700';
+    const bgClass = 'bg-gray-950 text-white';
 
     return (
       <div className={`w-7 h-7 rounded-full ${bgClass} flex items-center justify-center text-[11px] font-semibold`}>
@@ -1323,8 +1323,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                             )}
                             
                             {/* Footer message */}
-                            <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
-                              <p className="text-xs text-blue-900 leading-relaxed">
+                            <div className="bg-gray-100 rounded-lg px-3 py-2.5 mb-4 dark:bg-gray-800">
+                              <p className="text-xs text-gray-900 leading-relaxed dark:text-gray-100">
                                 {content.includes('bring your item') 
                                   ? '💡 Please bring your item to our shop at your convenience.' 
                                   : '💡 We\'ll keep you updated on the progress of your repair.'}
@@ -1699,7 +1699,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
 
       {fullscreenImage && (
         <div
-          className="fixed inset-0 backdrop-blur-md flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/25 backdrop-blur-md flex items-center justify-center z-50 erp-modal-backdrop"
           onClick={() => setFullscreenImage(null)}
         >
           <button

@@ -1,11 +1,16 @@
-import { Head } from "@inertiajs/react";
+import MonochromeSelect from "@/components/form/Select";
+import { Head, usePage } from "@inertiajs/react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
+import IconButton from "../../../../components/ui/icon-button/IconButton";
+import { withSweetAlertSemantic } from "../../../../utils/semanticSweetAlert";
 
 type PromoKind = "voucher" | "discount";
 type DiscountMode = "percentage" | "fixed";
 type CampaignStatus = "draft" | "scheduled" | "active" | "expired";
+type DiscountTarget = 'items' | 'shipping';
 
 type ProductOption = {
 	id: number;
@@ -34,6 +39,7 @@ type Campaign = {
 	startDate: string;
 	endDate: string;
 	status: CampaignStatus;
+	discountTarget: DiscountTarget;
 };
 
 type ApiCampaign = {
@@ -50,7 +56,16 @@ type ApiCampaign = {
 	start_at: string;
 	end_at: string;
 	status: CampaignStatus;
+	discount_target?: DiscountTarget | null;
 	products?: Array<{ id: number; name: string }>;
+};
+
+type LogisticsCapability = {
+	eligible: boolean;
+	enabled: boolean;
+	accessible: boolean;
+	code: string | null;
+	reason: string | null;
 };
 
 type PromoFormState = {
@@ -65,6 +80,7 @@ type PromoFormState = {
 	usageLimit: string;
 	startDate: string;
 	endDate: string;
+	discountTarget: 'items' | 'shipping';
 };
 
 const PROMO_CODE_MAX_LENGTH = 7;
@@ -86,6 +102,7 @@ const buildInitialForm = (firstProductId: string = ""): PromoFormState => {
 		usageLimit: "100",
 		startDate: today.toISOString().slice(0, 10),
 		endDate: nextWeek.toISOString().slice(0, 10),
+		discountTarget: "items",
 	};
 };
 
@@ -158,6 +175,8 @@ const TrashIcon = ({ className = "" }: { className?: string }) => (
 );
 
 export default function VouchersDiscountPage() {
+	const erpMode = (usePage().props as any)?.erpMode === true;
+	const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
 	const [campaigns, setCampaigns] = useState<Campaign[]>([]);
 	const [products, setProducts] = useState<ProductOption[]>([]);
 	const [isLoading, setIsLoading] = useState(false);
@@ -167,6 +186,8 @@ export default function VouchersDiscountPage() {
 	const [editingCampaignId, setEditingCampaignId] = useState<number | null>(null);
 	const [form, setForm] = useState<PromoFormState>(buildInitialForm());
 	const [filter, setFilter] = useState<"all" | PromoKind>("all");
+	const [logisticsCapability, setLogisticsCapability] = useState<LogisticsCapability | null>(null);
+	const shippingVouchersAvailable = logisticsCapability?.accessible === true;
 
 	const mapApiCampaignToUi = (campaign: ApiCampaign): Campaign => {
 		const scopedProducts = Array.isArray(campaign.products) ? campaign.products : [];
@@ -181,7 +202,7 @@ export default function VouchersDiscountPage() {
 			productId: firstProduct ? String(firstProduct.id) : "",
 			productName: scopedProducts.length > 0
 				? scopedProducts.map((product) => product.name).join(", ")
-				: "All products",
+				: campaign.discount_target === "shipping" ? "Shipping" : "All products",
 			discountMode: campaign.discount_mode,
 			value: Number(campaign.value || 0),
 			minSpend: Number(campaign.min_spend || 0),
@@ -190,6 +211,7 @@ export default function VouchersDiscountPage() {
 			startDate: String(campaign.start_at || "").slice(0, 10),
 			endDate: String(campaign.end_at || "").slice(0, 10),
 			status: campaign.status,
+			discountTarget: isVoucher && campaign.discount_target === "shipping" ? "shipping" : "items",
 		};
 	};
 
@@ -242,6 +264,7 @@ export default function VouchersDiscountPage() {
 
 		const data = await response.json();
 		const list: ApiCampaign[] = Array.isArray(data?.data) ? data.data : [];
+		setLogisticsCapability(data?.logistics ?? null);
 		setCampaigns(list.map(mapApiCampaignToUi));
 	};
 
@@ -288,6 +311,7 @@ export default function VouchersDiscountPage() {
 	);
 
 	const isProductDiscountMode = form.kind === "discount";
+	const isShippingVoucher = !isProductDiscountMode && form.discountTarget === "shipping";
 	const parsedFormValue = form.value.trim() === "" ? Number.NaN : Number(form.value);
 	const currentProductPrice = Number(selectedProduct?.price || 0);
 	const baselineOriginalPrice = selectedProduct && selectedProduct.compareAtPrice !== null && selectedProduct.compareAtPrice > selectedProduct.price
@@ -328,7 +352,9 @@ export default function VouchersDiscountPage() {
 		: `${previewDurationDays} day${previewDurationDays === 1 ? "" : "s"}`;
 	const previewScopeLabel = isProductDiscountMode
 		? (form.discountScheduleEnabled ? "Scheduled sale" : "Immediate sale")
-		: (Number(form.usageLimit || 0) > 0 ? `${form.usageLimit} max uses` : "Unlimited uses");
+		: (isShippingVoucher
+			? "Shop-owned shipping"
+			: (Number(form.usageLimit || 0) > 0 ? `${form.usageLimit} max uses` : "Unlimited uses"));
 	const previewIntensity = Math.min(100, Math.max(14, previewDurationDays * 8));
 	const previewIntensityClass = previewIntensity >= 80
 		? "w-5/6"
@@ -369,7 +395,7 @@ export default function VouchersDiscountPage() {
 		try {
 			const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
 
-			const response = await fetch(`/api/shop-owner/products/${selectedProduct.id}`, {
+			const response = await fetch(`/api/shop-owner/promos/products/${selectedProduct.id}/sale`, {
 				method: "PUT",
 				credentials: "include",
 				headers: {
@@ -377,13 +403,7 @@ export default function VouchersDiscountPage() {
 					Accept: "application/json",
 					"X-CSRF-TOKEN": csrfToken,
 				},
-				body: JSON.stringify({
-					price: originalPrice,
-					compare_at_price: null,
-					scheduled_sale_price: null,
-					sale_starts_at: null,
-					sale_ends_at: null,
-				}),
+				body: JSON.stringify({ mode: "restore" }),
 			});
 
 			const result = await response.json().catch(() => ({}));
@@ -421,10 +441,13 @@ export default function VouchersDiscountPage() {
 
 	const handleEditCampaign = (campaign: Campaign) => {
 		const fallbackProductId = products[0] ? String(products[0].id) : "";
+		const isShippingTarget = campaign.discountTarget === "shipping";
 		const productExists = campaign.productId
 			? products.some((product) => String(product.id) === campaign.productId)
 			: false;
-		const targetProductId = campaign.productId && productExists ? campaign.productId : fallbackProductId;
+		const targetProductId = isShippingTarget
+			? ""
+			: (campaign.productId && productExists ? campaign.productId : fallbackProductId);
 		setEditingCampaignId(campaign.id);
 
 		setForm((current) => ({
@@ -442,6 +465,7 @@ export default function VouchersDiscountPage() {
 			usageLimit: campaign.usageLimit > 0 ? String(campaign.usageLimit) : "",
 			startDate: campaign.startDate || current.startDate,
 			endDate: campaign.endDate || current.endDate,
+			discountTarget: isShippingTarget ? "shipping" : "items",
 		}));
 
 		window.scrollTo({ top: 0, behavior: "smooth" });
@@ -455,7 +479,7 @@ export default function VouchersDiscountPage() {
 	};
 
 	const handleDeleteCampaign = async (campaign: Campaign) => {
-		const confirmation = await Swal.fire({
+		const confirmation = await Swal.fire(withSweetAlertSemantic({
 			title: "Delete campaign?",
 			text: `This will permanently remove ${campaign.name}.`,
 			icon: "warning",
@@ -464,7 +488,7 @@ export default function VouchersDiscountPage() {
 			cancelButtonColor: "#9CA3AF",
 			confirmButtonText: "Yes, delete it",
 			cancelButtonText: "Cancel",
-		});
+		}, "danger"));
 
 		if (!confirmation.isConfirmed) {
 			return;
@@ -544,11 +568,21 @@ export default function VouchersDiscountPage() {
 
 			if (field === "kind" && value === "discount") {
 				next.code = "AUTO-DISCOUNT";
+				next.discountTarget = "items";
+				next.productId = next.productId || (products[0] ? String(products[0].id) : "");
 			}
 
 			if (field === "kind" && value === "voucher" && current.code === "AUTO-DISCOUNT") {
 				next.code = "";
 				next.discountScheduleEnabled = false;
+			}
+
+			if (field === "discountTarget" && value === "shipping") {
+				next.productId = "";
+			}
+
+			if (field === "discountTarget" && value === "items") {
+				next.productId = next.productId || (products[0] ? String(products[0].id) : "");
 			}
 
 			return next;
@@ -651,6 +685,16 @@ export default function VouchersDiscountPage() {
 			return;
 		}
 
+		if (form.kind === "voucher" && form.discountTarget === "shipping" && !shippingVouchersAvailable) {
+			await Swal.fire({
+				title: "Shipping vouchers unavailable",
+				text: "Shipping voucher requires accessible Shop-owned Logistics.",
+				icon: "warning",
+				confirmButtonColor: "#111827",
+			});
+			return;
+		}
+
 		if ((!isProductDiscountMode || form.discountScheduleEnabled) && new Date(form.endDate) < new Date(form.startDate)) {
 			await Swal.fire({
 				title: "Invalid schedule",
@@ -690,8 +734,9 @@ export default function VouchersDiscountPage() {
 			if (editingCampaignId !== null) {
 				const payload = {
 					kind: form.kind === "discount" ? "sale" : "voucher",
-					scope: form.productId ? "product_specific" : "shop_wide",
-					product_ids: form.productId ? [Number(form.productId)] : [],
+					discount_target: form.discountTarget,
+					scope: form.discountTarget === "shipping" ? "shop_wide" : (form.productId ? "product_specific" : "shop_wide"),
+					product_ids: form.discountTarget === "shipping" ? [] : (form.productId ? [Number(form.productId)] : []),
 					name: form.name.trim(),
 					code: form.kind === "voucher" ? form.code.trim().toUpperCase() : null,
 					discount_mode: form.discountMode,
@@ -744,7 +789,7 @@ export default function VouchersDiscountPage() {
 					&& startsAtDate <= new Date()
 				);
 
-				const response = await fetch(`/api/shop-owner/products/${productId}`, {
+				const response = await fetch(`/api/shop-owner/promos/products/${productId}/sale`, {
 					method: "PUT",
 					credentials: "include",
 					headers: {
@@ -753,6 +798,7 @@ export default function VouchersDiscountPage() {
 						"X-CSRF-TOKEN": csrfToken,
 					},
 					body: JSON.stringify({
+						mode: "apply",
 						price: shouldScheduleDiscount
 							? selectedProduct?.price
 							: proposedPrice,
@@ -800,8 +846,9 @@ export default function VouchersDiscountPage() {
 
 			const payload = {
 				kind: form.kind === "discount" ? "sale" : "voucher",
-				scope: form.productId ? "product_specific" : "shop_wide",
-				product_ids: form.productId ? [Number(form.productId)] : [],
+				discount_target: form.discountTarget,
+				scope: form.discountTarget === "shipping" ? "shop_wide" : (form.productId ? "product_specific" : "shop_wide"),
+				product_ids: form.discountTarget === "shipping" ? [] : (form.productId ? [Number(form.productId)] : []),
 				name: form.name.trim(),
 				code: form.kind === "voucher" ? form.code.trim().toUpperCase() : null,
 				discount_mode: form.discountMode,
@@ -852,10 +899,10 @@ export default function VouchersDiscountPage() {
 	};
 
 	return (
-		<AppLayoutShopOwner>
+		<Layout>
 			<Head title="Vouchers & Discount - Shop Owner" />
 
-			<div className="space-y-6">
+			<div className="shopowner-vouchers-page space-y-6">
 				<section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[radial-gradient(circle_at_top_left,_rgba(29,78,216,0.12),_transparent_32%),linear-gradient(135deg,#ffffff_0%,#f8fafc_55%,#eef2ff_100%)] p-6 shadow-sm md:p-8">
 					<div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
 						<div className="max-w-2xl">
@@ -863,7 +910,7 @@ export default function VouchersDiscountPage() {
 								Promo Management
 							</span>
 							<h1 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 md:text-4xl">
-								Vouchers & Discount
+								Vouchers &amp; Discount
 							</h1>
 							<p className="mt-3 max-w-xl text-sm leading-6 text-slate-600 md:text-base">
 								Create product-based vouchers and discounts for your shop without leaving the dashboard flow. This page is tuned for fast setup, clear schedules, and cleaner promo monitoring.
@@ -962,9 +1009,57 @@ export default function VouchersDiscountPage() {
 									<p className="text-xs text-slate-500">Maximum of {PROMO_CODE_MAX_LENGTH} characters.</p>
 								</label>
 
-								<label className="space-y-2 text-sm text-slate-600">
-									<span className="font-medium text-slate-800">Select product</span>
-									<select
+								{!isProductDiscountMode && (
+									<fieldset className="space-y-2 text-sm text-slate-600 md:col-span-2">
+										<legend className="font-medium text-slate-800">Voucher target</legend>
+										<div className="grid gap-3 md:grid-cols-2">
+											<label className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${form.discountTarget === "items" ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}>
+												<input
+													type="radio"
+													name="discount-target"
+													value="items"
+													checked={form.discountTarget === "items"}
+													onChange={(event) => handleChange("discountTarget", event.target.value)}
+													className="mt-0.5 h-4 w-4 accent-slate-900"
+												/>
+												<span>
+													<span className="block font-semibold text-slate-800">Items</span>
+													<span className="block text-xs text-slate-500">Apply the voucher to eligible product items.</span>
+												</span>
+											</label>
+											<label className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-2xl border px-4 py-3 transition ${form.discountTarget === "shipping" ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"}`}>
+												<input
+													type="radio"
+													name="discount-target"
+													value="shipping"
+													checked={form.discountTarget === "shipping"}
+													onChange={(event) => handleChange("discountTarget", event.target.value)}
+													disabled={!shippingVouchersAvailable}
+													className="mt-0.5 h-4 w-4 accent-slate-900"
+												/>
+												<span>
+													<span className="block font-semibold text-slate-800">Shipping voucher</span>
+													<span className="block text-xs text-slate-500">Discount Shop-owned Logistics delivery fees.</span>
+												</span>
+											</label>
+										</div>
+										<p className="text-xs leading-5 text-slate-500" role="status" aria-live="polite">
+											{shippingVouchersAvailable
+												? "Shipping vouchers apply only when the customer delivery is covered by Shop-owned Logistics."
+												: "Shipping vouchers are unavailable because this shop does not have accessible Shop-owned Logistics."}
+										</p>
+									</fieldset>
+								)}
+
+								{isShippingVoucher ? (
+									<div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 md:col-span-2">
+										<p className="font-semibold">Shipping voucher is shop-wide</p>
+										<p className="mt-1 text-xs leading-5 text-blue-800">No product is attached. The voucher will reduce the eligible Shop-owned Logistics fee at payment.</p>
+									</div>
+								) : (
+									<label className="space-y-2 text-sm text-slate-600">
+										<span className="font-medium text-slate-800">Select product</span>
+									<MonochromeSelect
 										value={form.productId}
 										onChange={(event) => handleChange("productId", event.target.value)}
 										className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
@@ -975,20 +1070,21 @@ export default function VouchersDiscountPage() {
 												{product.name} · {product.category}
 											</option>
 										))}
-									</select>
-								</label>
+									</MonochromeSelect>
+									</label>
+								)}
 
 								{!isProductDiscountMode ? (
 									<label className="space-y-2 text-sm text-slate-600">
 										<span className="font-medium text-slate-800">Discount type</span>
-										<select
+										<MonochromeSelect
 											value={form.discountMode}
 											onChange={(event) => handleChange("discountMode", event.target.value)}
 											className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-slate-900 outline-none transition focus:border-slate-900 focus:ring-4 focus:ring-slate-200"
 										>
 											<option value="percentage">Percentage off</option>
 											<option value="fixed">Fixed peso off</option>
-										</select>
+										</MonochromeSelect>
 									</label>
 								) : (
 									<label className="space-y-2 text-sm text-slate-600">
@@ -1139,19 +1235,19 @@ export default function VouchersDiscountPage() {
 									{form.kind}
 								</span>
 							</div>
-							<div className="mt-5 flex flex-1 flex-col rounded-[24px] bg-slate-950 p-5 text-white shadow-[0_20px_60px_-30px_rgba(15,23,42,0.85)]">
+							<div className="mt-5 flex flex-1 flex-col rounded-[24px] bg-gray-100 p-5 text-gray-900 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.18)] dark:bg-gray-900 dark:text-gray-100">
 								<div className="flex items-start justify-between gap-4">
 									<div>
-										<p className="text-xs uppercase tracking-[0.24em] text-slate-400">Offer Summary</p>
-										<h3 className="mt-3 text-2xl font-semibold">{previewTitle}</h3>
+										<p className="text-xs uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">Offer Summary</p>
+										<h3 className="mt-3 text-2xl font-semibold text-gray-900 dark:text-white">{previewTitle}</h3>
 									</div>
-									<TicketIcon className="h-10 w-10 text-slate-300" />
+									<TicketIcon className="h-10 w-10 text-gray-600 dark:text-gray-300" />
 								</div>
 
 								<div className="mt-6 grid grid-cols-2 gap-3">
-									<div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-										<p className="text-xs uppercase tracking-wide text-slate-400">Discount</p>
-										<p className="mt-2 text-xl font-semibold">
+									<div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+										<p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Discount</p>
+										<p className="mt-2 text-xl font-semibold text-gray-900 dark:text-white">
 											{form.value
 												? isProductDiscountMode
 													? formatCurrency(Number(form.value))
@@ -1161,10 +1257,10 @@ export default function VouchersDiscountPage() {
 												: "Set value"}
 										</p>
 									</div>
-									<div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-										<p className="text-xs uppercase tracking-wide text-slate-400">Code</p>
+									<div className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+										<p className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Code</p>
 										<p
-											className="mt-2 max-w-full truncate text-xl font-semibold tracking-[0.14em]"
+											className="mt-2 max-w-full truncate text-xl font-semibold tracking-[0.14em] text-gray-900 dark:text-white"
 											title={form.kind === "voucher" ? (form.code || "NO-CODE") : "AUTO"}
 										>
 											{form.kind === "voucher" ? (form.code || "NO-CODE") : "AUTO"}
@@ -1172,14 +1268,14 @@ export default function VouchersDiscountPage() {
 									</div>
 								</div>
 
-								<div className="mt-6 space-y-3 text-sm text-slate-300">
+								<div className="mt-6 space-y-3 text-sm text-gray-600 dark:text-gray-300">
 									<div className="flex items-center justify-between gap-4">
-										<span>Product</span>
-										<span className="font-medium text-white">{selectedProduct?.name ?? "All products"}</span>
+										<span>{isShippingVoucher ? "Shipping" : "Product"}</span>
+										<span className="font-medium text-gray-900 dark:text-white">{isShippingVoucher ? "Shop-owned Logistics" : (selectedProduct?.name ?? "All products")}</span>
 									</div>
 									<div className="flex items-center justify-between gap-4">
 										<span>Schedule</span>
-										<span className="font-medium text-white">
+										<span className="font-medium text-gray-900 dark:text-white">
 											{isProductDiscountMode
 												? (form.discountScheduleEnabled ? `${form.startDate} to ${form.endDate}` : "Apply immediately")
 												: `${form.startDate} to ${form.endDate}`}
@@ -1187,7 +1283,7 @@ export default function VouchersDiscountPage() {
 									</div>
 									<div className="flex items-center justify-between gap-4">
 										<span>{isProductDiscountMode ? "Savings" : "Minimum spend"}</span>
-										<span className="font-medium text-white">
+										<span className="font-medium text-gray-900 dark:text-white">
 											{isProductDiscountMode
 												? `${formatCurrency(saleSavings)}${saleSavingsPercent > 0 ? ` (${saleSavingsPercent}% off)` : ""}`
 												: formatCurrency(Number(form.minSpend || 0))}
@@ -1195,19 +1291,19 @@ export default function VouchersDiscountPage() {
 									</div>
 								</div>
 
-								<div className="mt-6 border-t border-white/10 pt-4">
-									<p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Promo Pulse</p>
+								<div className="mt-6 border-t border-gray-200 pt-4 dark:border-gray-700">
+									<p className="text-[11px] uppercase tracking-[0.24em] text-gray-500 dark:text-gray-400">Promo Pulse</p>
 									<div className="mt-3 grid grid-cols-2 gap-3">
-										<div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-											<p className="text-[11px] uppercase tracking-wide text-slate-400">Duration</p>
-											<p className="mt-1 text-sm font-semibold text-white">{previewDurationLabel}</p>
+										<div className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+											<p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Duration</p>
+											<p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{previewDurationLabel}</p>
 										</div>
-										<div className="rounded-2xl border border-white/10 bg-white/5 p-3">
-											<p className="text-[11px] uppercase tracking-wide text-slate-400">Scope</p>
-											<p className="mt-1 text-sm font-semibold text-white">{previewScopeLabel}</p>
+										<div className="rounded-2xl border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-800">
+											<p className="text-[11px] uppercase tracking-wide text-gray-500 dark:text-gray-400">Scope</p>
+											<p className="mt-1 text-sm font-semibold text-gray-900 dark:text-white">{previewScopeLabel}</p>
 										</div>
 									</div>
-									<div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/10">
+									<div className="mt-4 h-2 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
 										<div
 											className={`h-full rounded-full bg-linear-to-r from-cyan-300 via-blue-300 to-indigo-300 ${previewIntensityClass}`}
 										/>
@@ -1288,23 +1384,23 @@ export default function VouchersDiscountPage() {
 										</td>
 										<td className="py-4 text-right">
 											<div className="inline-flex items-center gap-2">
-												<button
-													type="button"
+												<IconButton
+													variant="neutral"
 													onClick={() => handleEditCampaign(campaign)}
-													className="rounded-lg p-2 text-blue-600 transition-colors hover:bg-blue-50"
 													title="View / Edit"
+													label={`View or edit ${campaign.name}`}
 												>
 													<EyeIcon className="h-5 w-5" />
-												</button>
-												<button
-													type="button"
+												</IconButton>
+												<IconButton
+													variant="danger"
 													onClick={() => handleDeleteCampaign(campaign)}
 													disabled={deletingCampaignId === campaign.id}
-													className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
 													title="Delete"
+													label={`Delete ${campaign.name}`}
 												>
 													<TrashIcon className="h-5 w-5" />
-												</button>
+												</IconButton>
 											</div>
 										</td>
 									</tr>
@@ -1320,6 +1416,6 @@ export default function VouchersDiscountPage() {
 					</div>
 				</section>
 			</div>
-		</AppLayoutShopOwner>
+		</Layout>
 	);
 }

@@ -6,7 +6,7 @@ use App\Models\RepairRequest;
 use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
-use App\Services\NotificationService;
+use App\Models\UserAddress;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -15,19 +15,116 @@ use Illuminate\Validation\ValidationException;
 
 class RepairWarrantyService
 {
-    private const DEFAULT_WARRANTY_DAYS = 30;
-    private const MIN_WARRANTY_DAYS = 1;
-    private const MAX_WARRANTY_DAYS = 90;
+    private const DEFAULT_WARRANTY_DURATION = 30;
+
+    private const WARRANTY_DURATION_LIMITS = [
+        'days' => 365,
+        'weeks' => 52,
+        'months' => 12,
+    ];
+
     private const MAX_EVIDENCE_IMAGES = 10;
 
     public function __construct(
-        private ?NotificationService $notificationService = null
+        private ?NotificationService $notificationService = null,
+        private ?RepairDeliveryService $repairDeliveryService = null,
     ) {
         $this->notificationService ??= app(NotificationService::class);
+        $this->repairDeliveryService ??= app(RepairDeliveryService::class);
+    }
+
+    public function issueAtHandover(RepairRequest $repair): RepairRequest
+    {
+        return DB::transaction(function () use ($repair): RepairRequest {
+            /** @var RepairRequest $lockedRepair */
+            $lockedRepair = RepairRequest::query()
+                ->with('shopOwner')
+                ->whereKey($repair->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ((bool) ($lockedRepair->is_warranty_job ?? false) || $this->hasWarranty($lockedRepair)) {
+                return $lockedRepair;
+            }
+
+            $configuration = $this->warrantyConfiguration($lockedRepair->shopOwner);
+            if ($configuration === null) {
+                return $lockedRepair;
+            }
+
+            $start = $lockedRepair->picked_up_at;
+            if ($start === null) {
+                return $lockedRepair;
+            }
+
+            $startedAt = Carbon::parse($start);
+            $expiresAt = $this->calculateExpiry(
+                $startedAt,
+                $configuration['duration'],
+                $configuration['unit'],
+            );
+
+            $lockedRepair->forceFill([
+                'repair_warranty_issued' => true,
+                'repair_warranty_started_at' => $startedAt,
+                'repair_warranty_expires_at' => $expiresAt,
+                'repair_warranty_duration' => $configuration['duration'],
+                'repair_warranty_duration_unit' => $configuration['unit'],
+            ])->save();
+
+            return $lockedRepair->fresh(['shopOwner']);
+        });
+    }
+
+    public function hasWarranty(RepairRequest $repair): bool
+    {
+        return (bool) ($repair->repair_warranty_issued ?? false)
+            && $repair->repair_warranty_started_at !== null
+            && $repair->repair_warranty_expires_at !== null;
     }
 
     /**
-     * @return array{warranty_started_at: Carbon, warranty_expires_at: Carbon, warranty_days: int}
+     * @return array{issued: true, active: bool, started_at: string, expires_at: string, duration: int|null, duration_unit: string|null, days_remaining: int, can_claim: bool}|null
+     */
+    public function warrantyState(RepairRequest $repair, ?int $customerUserId = null): ?array
+    {
+        if (! $this->hasWarranty($repair)) {
+            return null;
+        }
+
+        $startedAt = Carbon::parse($repair->repair_warranty_started_at);
+        $expiresAt = Carbon::parse($repair->repair_warranty_expires_at);
+        $active = now()->lessThanOrEqualTo($expiresAt);
+
+        return [
+            'issued' => true,
+            'active' => $active,
+            'started_at' => $startedAt->toISOString(),
+            'expires_at' => $expiresAt->toISOString(),
+            'duration' => $repair->repair_warranty_duration === null
+                ? null
+                : (int) $repair->repair_warranty_duration,
+            'duration_unit' => $repair->repair_warranty_duration_unit
+                ? (string) $repair->repair_warranty_duration_unit
+                : null,
+            'days_remaining' => $active ? max(0, (int) now()->diffInDays($expiresAt, false)) : 0,
+            'can_claim' => $active && $this->canClaimWarranty($repair, $customerUserId),
+        ];
+    }
+
+    public function canClaimWarranty(RepairRequest $repair, ?int $customerUserId = null): bool
+    {
+        try {
+            $this->validateEligibility($repair, $customerUserId);
+
+            return true;
+        } catch (ValidationException) {
+            return false;
+        }
+    }
+
+    /**
+     * @return array{warranty_started_at: Carbon, warranty_expires_at: Carbon, warranty_days: int, warranty_duration: int, warranty_duration_unit: string}
      */
     public function validateEligibility(RepairRequest $originalRepair, ?int $customerUserId = null, ?int $ignoreClaimId = null): array
     {
@@ -37,16 +134,9 @@ class RepairWarrantyService
             ]);
         }
 
-        $shopOwner = $originalRepair->shopOwner ?: ShopOwner::query()->find($originalRepair->shop_owner_id);
-        if (!$shopOwner) {
+        if (! $originalRepair->shopOwner && ! ShopOwner::query()->whereKey($originalRepair->shop_owner_id)->exists()) {
             throw ValidationException::withMessages([
                 'repair' => ['Shop context could not be resolved for this repair request.'],
-            ]);
-        }
-
-        if ((bool) ($shopOwner->warranty_enabled ?? true) === false) {
-            throw ValidationException::withMessages([
-                'repair' => ['Warranty claims are currently disabled for this shop.'],
             ]);
         }
 
@@ -57,23 +147,20 @@ class RepairWarrantyService
         }
 
         $eligibleStatuses = ['picked_up', 'received'];
-        if (!in_array((string) $originalRepair->status, $eligibleStatuses, true)) {
+        if (! in_array((string) $originalRepair->status, $eligibleStatuses, true)) {
             throw ValidationException::withMessages([
                 'repair' => ['Warranty claims can only be filed after pickup/receipt confirmation.'],
             ]);
         }
 
-        $windowStart = $this->resolveWarrantyWindowStart($originalRepair);
-        if (!$windowStart) {
+        if (! $this->hasWarranty($originalRepair)) {
             throw ValidationException::withMessages([
-                'repair' => ['Warranty start date is not available for this repair request.'],
+                'repair' => ['Warranty was not issued for this repair request.'],
             ]);
         }
 
-        $days = (int) ($shopOwner->repair_warranty_days ?? self::DEFAULT_WARRANTY_DAYS);
-        $days = max(self::MIN_WARRANTY_DAYS, min(self::MAX_WARRANTY_DAYS, $days));
-
-        $windowExpiry = $windowStart->copy()->addDays($days)->endOfDay();
+        $windowStart = Carbon::parse($originalRepair->repair_warranty_started_at);
+        $windowExpiry = Carbon::parse($originalRepair->repair_warranty_expires_at);
         if (now()->greaterThan($windowExpiry)) {
             throw ValidationException::withMessages([
                 'repair' => ['Warranty period has already expired for this repair request.'],
@@ -124,12 +211,14 @@ class RepairWarrantyService
         return [
             'warranty_started_at' => $windowStart,
             'warranty_expires_at' => $windowExpiry,
-            'warranty_days' => $days,
+            'warranty_days' => (int) ($originalRepair->repair_warranty_duration ?? self::DEFAULT_WARRANTY_DURATION),
+            'warranty_duration' => (int) ($originalRepair->repair_warranty_duration ?? self::DEFAULT_WARRANTY_DURATION),
+            'warranty_duration_unit' => (string) ($originalRepair->repair_warranty_duration_unit ?? 'days'),
         ];
     }
 
     /**
-     * @param UploadedFile[] $images
+     * @param  UploadedFile[]  $images
      */
     public function createCustomerClaim(RepairRequest $repair, User $customer, array $validated, array $images): RepairWarrantyClaim
     {
@@ -139,8 +228,21 @@ class RepairWarrantyService
             ]);
         }
 
+        if ((string) $repair->status !== 'picked_up') {
+            throw ValidationException::withMessages([
+                'repair' => ['Warranty claims can only be filed after the customer receives the repaired shoes.'],
+            ]);
+        }
+
         $window = $this->validateEligibility($repair, (int) $customer->id);
-        $this->syncCustomerWarrantyDeliveryAddress($repair, $validated);
+        $preferredReturnMethod = $this->normalizePreferredReturnMethod((string) ($validated['preferred_return_method'] ?? 'walk_in'));
+        $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));
+        $this->ensureWarrantyLogisticsAllowed($repair, $preferredReturnMethod, $preferredReceiveMethod);
+        $this->warrantyDeliveryPlan(
+            $repair,
+            $preferredReturnMethod,
+            $preferredReceiveMethod,
+        );
 
         return $this->createClaimRecord(
             repair: $repair,
@@ -153,12 +255,9 @@ class RepairWarrantyService
         );
     }
 
-    /**
-     * @param UploadedFile[] $images
-     */
-    public function createPosWalkInClaim(RepairRequest $repair, array $validated, array $images, int $actorId): RepairWarrantyClaim
+    public function createPosWalkInClaim(RepairRequest $repair, array $validated, int $actorId): RepairWarrantyClaim
     {
-        if (!$this->isManualPosRepair($repair)) {
+        if (! $this->isManualPosRepair($repair)) {
             throw ValidationException::withMessages([
                 'repair' => ['POS walk-in warranty claims are only allowed for manual POS walk-in repairs.'],
             ]);
@@ -169,7 +268,7 @@ class RepairWarrantyService
         return $this->createClaimRecord(
             repair: $repair,
             validated: $validated,
-            images: $images,
+            images: [],
             window: $window,
             sourceChannel: 'manual_pos_walk_in',
             actorId: $actorId,
@@ -245,11 +344,16 @@ class RepairWarrantyService
 
             $preferredReturn = $this->normalizePreferredReturnMethod((string) ($lockedClaim->preferred_return_method ?? 'walk_in'));
             $intakeMethod = $preferredReturn;
-            $deliveryMethod = $intakeMethod === 'customer_delivery' ? 'pickup' : 'walk_in';
+            $deliveryMethod = $intakeMethod === 'walk_in' ? 'walk_in' : 'pickup';
             $preferredReceive = $this->normalizePreferredReceiveMethod((string) ($lockedClaim->preferred_receive_method ?? 'walk_in'));
-            $returnAddress = $preferredReceive === 'shop_delivery'
-                ? ($original->return_address ?? $original->pickup_address ?? $original->intake_address)
-                : null;
+            $deliveryPlan = $this->warrantyDeliveryPlan($original, $intakeMethod, $preferredReceive);
+            $intakeFee = (float) $deliveryPlan['intake']['fee'];
+            $returnFee = (float) $deliveryPlan['return']['fee'];
+            $needsIntakePayment = $intakeMethod === 'shop_pickup' && $intakeFee > 0;
+            $hasLaterReturnPayment = $preferredReceive === 'shop_delivery' && $returnFee > 0;
+            $initialPaymentStatus = $needsIntakePayment
+                ? 'pending'
+                : ($hasLaterReturnPayment ? 'paid' : 'completed');
 
             $status = ($handlerSource === 'business_employee' && $handlerUserId)
                 ? 'assigned_to_repairer'
@@ -287,11 +391,12 @@ class RepairWarrantyService
                 'included_services_snapshot' => $original->included_services_snapshot,
                 'add_on_services_snapshot' => $original->add_on_services_snapshot,
                 'pricing_breakdown' => $pricingBreakdown,
-                'payment_status' => 'completed',
-                'payment_enabled' => false,
+                'payment_status' => $initialPaymentStatus,
+                'payment_enabled' => $needsIntakePayment,
+                'payment_enabled_at' => $needsIntakePayment ? now() : null,
                 'payment_policy' => $original->payment_policy,
                 'payment_policy_snapshot' => $original->payment_policy_snapshot ?: $original->payment_policy,
-                'payment_status_derived' => 'completed',
+                'payment_status_derived' => $initialPaymentStatus,
                 'total_paid_amount' => 0,
                 'total_refunded_amount' => 0,
                 'manual_pos_queue_enabled' => false,
@@ -306,16 +411,25 @@ class RepairWarrantyService
                 'status' => $status,
                 'delivery_method' => $deliveryMethod,
                 'intake_delivery_method' => $intakeMethod,
-                'intake_address' => $intakeMethod === 'customer_delivery' ? ($original->intake_address ?? $original->pickup_address) : null,
-                'pickup_address' => $intakeMethod === 'customer_delivery' ? ($original->pickup_address ?? $original->intake_address) : null,
+                'intake_address' => $deliveryPlan['intake']['snapshot'],
+                'pickup_address' => $deliveryPlan['intake']['snapshot'],
+                'intake_delivery_fee' => $intakeFee,
+                'intake_logistics_quote' => $deliveryPlan['intake']['quote'],
+                'intake_logistics_locked_at' => null,
                 'return_delivery_method' => $preferredReceive,
-                'return_address' => $returnAddress,
+                'return_address' => $deliveryPlan['return']['snapshot'],
+                'return_delivery_fee' => $returnFee,
+                'return_logistics_quote' => $deliveryPlan['return']['quote'],
+                'return_logistics_locked_at' => null,
+                'return_address_confirmed_at' => null,
+                'return_address_confirmed_version' => null,
+                'same_as_intake_address' => $deliveryPlan['same_address'],
                 'is_high_value' => false,
                 'requires_owner_approval' => false,
             ]);
 
             $serviceIds = $original->services()->pluck('repair_services.id')->all();
-            if (!empty($serviceIds)) {
+            if (! empty($serviceIds)) {
                 $linked->services()->sync($serviceIds);
             }
 
@@ -483,7 +597,7 @@ class RepairWarrantyService
             ->whereNotNull('reviewed_at')
             ->get(['created_at', 'reviewed_at'])
             ->map(function (RepairWarrantyClaim $claim): float {
-                if (!$claim->created_at || !$claim->reviewed_at) {
+                if (! $claim->created_at || ! $claim->reviewed_at) {
                     return 0.0;
                 }
 
@@ -511,8 +625,8 @@ class RepairWarrantyService
     }
 
     /**
-     * @param UploadedFile[] $images
-     * @param array{warranty_started_at: Carbon, warranty_expires_at: Carbon, warranty_days: int} $window
+     * @param  UploadedFile[]  $images
+     * @param  array{warranty_started_at: Carbon, warranty_expires_at: Carbon, warranty_days: int}  $window
      */
     private function createClaimRecord(
         RepairRequest $repair,
@@ -523,7 +637,7 @@ class RepairWarrantyService
         int $actorId,
         ?int $customerUserId
     ): RepairWarrantyClaim {
-        if (empty($images)) {
+        if (empty($images) && $sourceChannel !== 'manual_pos_walk_in') {
             throw ValidationException::withMessages([
                 'images' => ['At least one evidence image is required.'],
             ]);
@@ -535,7 +649,7 @@ class RepairWarrantyService
             ]);
         }
 
-        if (!(bool) ($validated['same_issue_confirmation'] ?? false)) {
+        if (! (bool) ($validated['same_issue_confirmation'] ?? false)) {
             throw ValidationException::withMessages([
                 'same_issue_confirmation' => ['Same issue confirmation is required for warranty claims.'],
             ]);
@@ -543,10 +657,11 @@ class RepairWarrantyService
 
         [$handlerUserId, $handlerSource] = $this->resolveHandlerForRepair($repair);
 
-        $evidenceMedia = $this->storeEvidenceMedia($images);
+        $evidenceMedia = empty($images) ? [] : $this->storeEvidenceMedia($images);
 
         $preferredReturnMethod = $this->normalizePreferredReturnMethod((string) ($validated['preferred_return_method'] ?? 'walk_in'));
         $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));
+        $this->ensureWarrantyLogisticsAllowed($repair, $preferredReturnMethod, $preferredReceiveMethod);
 
         $claim = RepairWarrantyClaim::query()->create([
             'claim_no' => $this->generateClaimNo(),
@@ -651,7 +766,7 @@ class RepairWarrantyService
     }
 
     /**
-     * @param UploadedFile[] $images
+     * @param  UploadedFile[]  $images
      * @return string[]
      */
     private function storeEvidenceMedia(array $images): array
@@ -659,7 +774,7 @@ class RepairWarrantyService
         $stored = [];
 
         foreach ($images as $image) {
-            if (!$image instanceof UploadedFile) {
+            if (! $image instanceof UploadedFile) {
                 continue;
             }
 
@@ -683,56 +798,109 @@ class RepairWarrantyService
 
     private function normalizePreferredReturnMethod(string $method): string
     {
-        return strtolower(trim($method)) === 'customer_delivery'
-            ? 'customer_delivery'
+        $normalized = strtolower(trim($method));
+
+        return in_array($normalized, ['customer_delivery', 'shop_pickup'], true)
+            ? $normalized
             : 'walk_in';
     }
 
     private function normalizePreferredReceiveMethod(string $method): string
     {
-        return strtolower(trim($method)) === 'shop_delivery'
-            ? 'shop_delivery'
+        $normalized = strtolower(trim($method));
+
+        return in_array($normalized, ['customer_pickup', 'shop_delivery'], true)
+            ? $normalized
             : 'walk_in';
     }
 
-    private function syncCustomerWarrantyDeliveryAddress(RepairRequest $repair, array $validated): void
-    {
-        $preferredReceiveMethod = $this->normalizePreferredReceiveMethod((string) ($validated['preferred_receive_method'] ?? 'walk_in'));
-        if ($preferredReceiveMethod !== 'shop_delivery') {
+    private function warrantyDeliveryPlan(
+        RepairRequest $repair,
+        string $intakeMethod,
+        string $returnMethod,
+    ): array {
+        $this->ensureWarrantyLogisticsAllowed($repair, $intakeMethod, $returnMethod);
+
+        $intake = $this->warrantyDeliveryLeg($repair, 'intake', $intakeMethod);
+        $return = $this->warrantyDeliveryLeg($repair, 'return', $returnMethod);
+
+        return [
+            'intake' => $intake,
+            'return' => $return,
+            'same_address' => (int) data_get($intake, 'snapshot.address_id') > 0
+                && (int) data_get($intake, 'snapshot.address_id') === (int) data_get($return, 'snapshot.address_id'),
+        ];
+    }
+
+    private function ensureWarrantyLogisticsAllowed(
+        RepairRequest $repair,
+        string $intakeMethod,
+        string $returnMethod,
+    ): void {
+        $shopOwner = $repair->shopOwner ?: ShopOwner::query()->find($repair->shop_owner_id);
+        if (strtolower(trim((string) ($shopOwner?->registration_type ?? ''))) !== 'individual') {
             return;
         }
 
-        $returnAddress = [
-            'address_line' => trim((string) ($validated['receive_address_line'] ?? '')),
-            'barangay' => trim((string) ($validated['receive_barangay'] ?? '')),
-            'city' => trim((string) ($validated['receive_city'] ?? '')),
-            'region' => trim((string) ($validated['receive_region'] ?? '')),
-            'postal_code' => trim((string) ($validated['receive_postal_code'] ?? '')),
-        ];
+        $errors = [];
+        if ($intakeMethod === 'shop_pickup') {
+            $errors['preferred_return_method'][] = 'Individual Repair shops accept warranty items by walk-in or customer-arranged delivery only.';
+        }
+        if ($returnMethod === 'shop_delivery') {
+            $errors['preferred_receive_method'][] = 'Individual Repair shops return warranty items by shop pickup or customer-arranged delivery only.';
+        }
 
-        $requiredDeliveryAddress = [
-            'address_line' => $returnAddress['address_line'],
-            'barangay' => $returnAddress['barangay'],
-            'city' => $returnAddress['city'],
-            'postal_code' => $returnAddress['postal_code'],
-        ];
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+    }
 
-        $missingAddressFields = collect($requiredDeliveryAddress)
-            ->filter(fn (string $value): bool => $value === '')
-            ->keys()
-            ->values()
-            ->all();
+    private function warrantyDeliveryLeg(RepairRequest $repair, string $leg, string $method): array
+    {
+        if ($method === 'walk_in') {
+            return ['snapshot' => null, 'fee' => 0.0, 'quote' => null];
+        }
 
-        if (!empty($missingAddressFields)) {
+        $field = $leg === 'intake' ? 'intake_address' : 'return_address';
+        $candidates = $leg === 'intake'
+            ? [$repair->intake_address, $repair->pickup_address, $repair->return_address]
+            : [$repair->return_address, $repair->intake_address, $repair->pickup_address];
+        $source = collect($candidates)->first(
+            fn ($snapshot): bool => is_array($snapshot) && (int) ($snapshot['address_id'] ?? 0) > 0
+        );
+        $address = is_array($source)
+            ? UserAddress::query()
+                ->whereKey((int) $source['address_id'])
+                ->where('user_id', $repair->user_id)
+                ->first()
+            : null;
+
+        if (! $address) {
             throw ValidationException::withMessages([
-                'receive_address' => ['Complete delivery address is required when preferred receive method is shop delivery.'],
+                $field => ['Choose a pinned saved address on the original repair before selecting this delivery method.'],
             ]);
         }
 
-        $repair->forceFill([
-            'return_delivery_method' => 'shop_delivery',
-            'return_address' => $returnAddress,
-        ])->save();
+        $snapshot = $this->repairDeliveryService->snapshot($address, $method);
+        $shopOwned = $method === ($leg === 'intake' ? 'shop_pickup' : 'shop_delivery');
+        if (! $shopOwned) {
+            return ['snapshot' => $snapshot, 'fee' => 0.0, 'quote' => null];
+        }
+
+        $shop = $repair->shopOwner ?: ShopOwner::query()->find($repair->shop_owner_id);
+        $quote = $shop ? $this->repairDeliveryService->quote($shop, $address) : ['available' => false];
+        if (! ($quote['available'] ?? false)) {
+            throw ValidationException::withMessages([
+                $field => [($quote['reason'] ?? null) === 'outside_coverage'
+                    ? 'The selected address is outside the shop rider coverage. Choose walk-in or customer-arranged delivery.'
+                    : 'Shop rider delivery is currently unavailable for the selected address.'],
+            ]);
+        }
+
+        $quote['address_version'] = $snapshot['version'];
+        $quote['method'] = $method;
+
+        return ['snapshot' => $snapshot, 'fee' => (float) $quote['fee'], 'quote' => $quote];
     }
 
     /**
@@ -759,7 +927,7 @@ class RepairWarrantyService
 
     private function resolveOwnerLinkedUserId(?ShopOwner $shopOwner): ?int
     {
-        if (!$shopOwner) {
+        if (! $shopOwner) {
             return null;
         }
 
@@ -830,7 +998,7 @@ class RepairWarrantyService
             ->withCount([
                 'assignedRepairs as active_repairs_count' => function ($query) use ($activeStatuses) {
                     $query->whereIn('status', $activeStatuses);
-                }
+                },
             ])
             ->orderBy('active_repairs_count')
             ->orderBy('id')
@@ -849,16 +1017,38 @@ class RepairWarrantyService
         return $fallbackId > 0 ? $fallbackId : null;
     }
 
-    private function resolveWarrantyWindowStart(RepairRequest $repair): ?Carbon
+    /**
+     * @return array{duration: int, unit: string}|null
+     */
+    private function warrantyConfiguration(?ShopOwner $shopOwner): ?array
     {
-        foreach (['picked_up_at', 'received_at', 'customer_confirmed_at'] as $field) {
-            $value = $repair->{$field} ?? null;
-            if ($value !== null) {
-                return Carbon::parse($value);
-            }
+        if (! $shopOwner || ! (bool) ($shopOwner->warranty_enabled ?? true)) {
+            return null;
         }
 
-        return null;
+        $unit = strtolower(trim((string) ($shopOwner->repair_warranty_duration_unit ?? 'days')));
+        if (! array_key_exists($unit, self::WARRANTY_DURATION_LIMITS)) {
+            return null;
+        }
+
+        $duration = (int) ($shopOwner->repair_warranty_days ?? self::DEFAULT_WARRANTY_DURATION);
+        if ($duration < 1 || $duration > self::WARRANTY_DURATION_LIMITS[$unit]) {
+            return null;
+        }
+
+        return [
+            'duration' => $duration,
+            'unit' => $unit,
+        ];
+    }
+
+    private function calculateExpiry(Carbon $startedAt, int $duration, string $unit): Carbon
+    {
+        return match ($unit) {
+            'weeks' => $startedAt->copy()->addWeeks($duration)->endOfDay(),
+            'months' => $startedAt->copy()->addMonthsNoOverflow($duration)->endOfDay(),
+            default => $startedAt->copy()->addDays($duration)->endOfDay(),
+        };
     }
 
     private function generateClaimNo(): string
@@ -882,10 +1072,10 @@ class RepairWarrantyService
             ->whereDate('created_at', now()->toDateString())
             ->count() + 1;
 
-        $requestId = 'REP-' . now()->format('Ymd') . str_pad((string) $counter, 3, '0', STR_PAD_LEFT);
+        $requestId = 'REP-'.now()->format('Ymd').str_pad((string) $counter, 3, '0', STR_PAD_LEFT);
         while (RepairRequest::query()->where('request_id', $requestId)->exists()) {
             $counter++;
-            $requestId = 'REP-' . now()->format('Ymd') . str_pad((string) $counter, 3, '0', STR_PAD_LEFT);
+            $requestId = 'REP-'.now()->format('Ymd').str_pad((string) $counter, 3, '0', STR_PAD_LEFT);
         }
 
         return $requestId;

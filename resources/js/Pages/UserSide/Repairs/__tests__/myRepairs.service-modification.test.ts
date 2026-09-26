@@ -1,0 +1,49 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const source = readFileSync(
+  join(process.cwd(), 'resources/js/Pages/UserSide/Repairs/myRepairs.tsx'),
+  'utf8',
+);
+
+describe('My Repairs service modification integration', () => {
+  it('offers modification only for accepted unpaid repairs and calls the update endpoint', () => {
+    expect(source).toContain("order.status === 'repairer_accepted'");
+    expect(source).toContain('order.conversation_id');
+    expect(source).toContain("'down_payment_paid'");
+    expect(source).toContain("'partially_paid'");
+    expect(source).toContain("'partially_refunded'");
+    expect(source).toContain('!order.payment_completed_at');
+    expect(source).toContain('MODIFY');
+    expect(source).toContain('Modify Repair Services');
+    expect(source).toContain('/api/repair-services?shop_id=');
+    expect(source).toContain("method: 'PATCH'");
+    expect(source).toContain('/services`');
+    expect(source).toContain('remove_package: Boolean(modifyOrder.repair_package_id)');
+    expect(source).toContain('selectedModifyServiceIds.length === 0');
+  });
+
+  it('shows warranty claims only after the customer receives the repaired shoes', () => {
+    expect(source).toContain("if (order.status !== 'picked_up')");
+    expect(source).toContain("{order.status === 'picked_up' && (");
+    expect(source).not.toContain("order.status === 'picked_up' || order.status === 'received'");
+  });
+
+  it('keeps the package warning monochrome', () => {
+    const noticeStart = source.indexOf('This repair uses a package');
+    const noticeEnd = source.indexOf('Remove Package', noticeStart);
+    const packageNotice = source.slice(noticeStart - 220, noticeEnd + 120);
+
+    expect(packageNotice).toContain('border border-black bg-white p-4');
+    expect(packageNotice).toContain('text-sm text-black');
+    expect(packageNotice).not.toContain('border-amber-200 bg-amber-50');
+    expect(packageNotice).not.toContain('text-amber-900');
+    expect(packageNotice).not.toContain('text-amber-950');
+  });
+
+  it('keeps pinned warranty addresses monochrome', () => {
+    expect(source).toContain('rounded-lg border border-black bg-white px-3 py-2 text-xs text-black');
+    expect(source).not.toContain('rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800');
+  });
+});

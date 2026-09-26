@@ -35,7 +35,7 @@ export default function SignInForm() {
             name="email"
             value={formData.email}
             onChange={handleChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent dark:bg-gray-800 dark:border-gray-700 dark:text-white"
             required
           />
         </div>
@@ -50,7 +50,7 @@ export default function SignInForm() {
             name="password"
             value={formData.password}
             onChange={handleChange}
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-800 dark:border-gray-700 dark:text-white"
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent dark:bg-gray-800 dark:border-gray-700 dark:text-white"
             required
           />
         </div>
@@ -62,7 +62,7 @@ export default function SignInForm() {
             name="remember"
             checked={formData.remember}
             onChange={handleChange}
-            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            className="h-4 w-4 text-black focus:ring-black border-gray-300 rounded"
           />
           <label htmlFor="remember" className="ml-2 block text-sm text-gray-700 dark:text-gray-300">
             Remember me
@@ -71,7 +71,7 @@ export default function SignInForm() {
 
         <button
           type="submit"
-          className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          className="w-full bg-black text-white py-2 px-4 rounded-lg hover:bg-gray-900 transition-colors font-medium focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2"
         >
           Sign In
         </button>

@@ -6,6 +6,8 @@ use App\Models\PremiumPlan;
 use App\Models\Product;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
+use App\Models\ShopOwnerSubscriptionPayment;
+use App\Models\ShopOwnerSubscriptionRefund;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
@@ -119,6 +121,13 @@ class PremiumFeatureTest extends TestCase
         $this->assertSame('cs_test_123', $subscription->paymongo_session_id);
         $this->assertSame($plan->showroom_slot_limit, $subscription->showroom_slot_limit);
 
+        $payment = ShopOwnerSubscriptionPayment::query()
+            ->where('subscription_id', $subscription->id)
+            ->sole();
+        $this->assertSame('pending', $payment->status);
+        $this->assertSame('new_subscription', $payment->payment_type);
+        $this->assertSame('cs_test_123', $payment->paymongo_session_id);
+
         Http::assertSent(function ($request) use ($subscription, $shopOwner, $plan) {
             $payload = $request->data();
 
@@ -153,6 +162,18 @@ class PremiumFeatureTest extends TestCase
             'paymongo_session_id' => 'cs_webhook_123',
         ]);
 
+        $payment = ShopOwnerSubscriptionPayment::create([
+            'shop_owner_id' => $shopOwner->id,
+            'subscription_id' => $subscription->id,
+            'payment_type' => 'new_subscription',
+            'gateway' => 'paymongo',
+            'currency' => 'PHP',
+            'paymongo_session_id' => 'cs_webhook_123',
+            'plan_price' => $plan->price,
+            'amount_due' => $plan->price,
+            'status' => 'pending',
+        ]);
+
         $payload = [
             'data' => [
                 'attributes' => [
@@ -164,9 +185,13 @@ class PremiumFeatureTest extends TestCase
                                 'subscription_id' => (string) $subscription->id,
                                 'shop_owner_id' => (string) $shopOwner->id,
                                 'plan_code' => $plan->plan_code,
+                                'payment_record_id' => (string) $payment->id,
                             ],
                             'payments' => [
-                                ['id' => 'pay_test_123'],
+                                ['id' => 'pay_test_123', 'attributes' => [
+                                    'amount' => 24900,
+                                    'currency' => 'PHP',
+                                ]],
                             ],
                         ],
                     ],
@@ -184,6 +209,8 @@ class PremiumFeatureTest extends TestCase
 
         $this->assertSame('active', $subscription->status);
         $this->assertSame('pay_test_123', $subscription->paymongo_payment_id);
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('pay_test_123', $payment->fresh()->paymongo_payment_id);
         $this->assertTrue((bool) $subscription->auto_renew);
         $this->assertSame(ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED, $subscription->auto_renew_status);
         $this->assertEquals('2026-03-15 10:00:00', $subscription->starts_at?->format('Y-m-d H:i:s'));
@@ -221,6 +248,29 @@ class PremiumFeatureTest extends TestCase
 
         $allowed = $this->get('/shop-profile/' . $shopOwner->id . '/virtual-showroom');
         $allowed->assertOk();
+    }
+
+    /** @test */
+    public function virtual_showroom_preserves_a_configured_150_slot_limit_for_a_premium_subscription(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $plan = $this->createPlan([
+            'plan_code' => 'premium',
+            'name' => 'Premium',
+            'showroom_slot_limit' => 150,
+        ]);
+
+        $subscription = $this->createActiveSubscription($shopOwner, $plan, [
+            'showroom_slot_limit' => 150,
+        ]);
+
+        $response = $this->get('/shop-profile/' . $shopOwner->id . '/virtual-showroom');
+
+        $response->assertOk();
+
+        $page = $this->extractInertiaPageData($response->getContent());
+
+        $this->assertSame(150, $page['props']['shop']['showroom_slot_limit'] ?? null);
     }
 
     /** @test */
@@ -305,6 +355,51 @@ class PremiumFeatureTest extends TestCase
     }
 
     /** @test */
+    public function cancelled_entitled_subscription_cannot_reenable_auto_renew_while_refund_is_unresolved(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $plan = $this->createPlan();
+        $subscription = $this->createActiveSubscription($shopOwner, $plan, [
+            'status' => 'cancelled',
+            'auto_renew' => false,
+            'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED,
+            'ends_at' => now()->addDays(10),
+        ]);
+        $payment = ShopOwnerSubscriptionPayment::query()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'subscription_id' => $subscription->id,
+            'payment_type' => 'new_subscription',
+            'gateway' => 'paymongo',
+            'currency' => 'PHP',
+            'paymongo_payment_id' => 'pay-auto-renew-refund',
+            'amount_due' => 249,
+            'amount_paid' => 249,
+            'status' => 'paid',
+            'paid_at' => now()->subDay(),
+        ]);
+        ShopOwnerSubscriptionRefund::query()->create([
+            'payment_id' => $payment->id,
+            'subscription_id' => $subscription->id,
+            'local_reference' => (string) fake()->uuid(),
+            'amount' => 249,
+            'currency' => 'PHP',
+            'business_reason' => 'Pending provider verification.',
+            'provider_reason' => 'others',
+            'status' => 'unknown',
+            'initiated_at' => now()->subMinute(),
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner');
+
+        $this->patchJson('/api/shop-owner/premium/auto-renew', ['enabled' => true])
+            ->assertStatus(409)
+            ->assertJson(['success' => false]);
+
+        $this->assertSame('cancelled', $subscription->fresh()->status);
+        $this->assertFalse((bool) $subscription->fresh()->auto_renew);
+    }
+
+    /** @test */
     public function showroom_slot_limit_blocks_featuring_more_products_than_allowed(): void
     {
         $shopOwner = $this->createShopOwner();
@@ -362,5 +457,28 @@ class PremiumFeatureTest extends TestCase
             'plan_code' => $plan->plan_code,
         ]);
         $apiCheckoutResponse->assertStatus(403);
+    }
+
+    /** @test */
+    public function plans_api_returns_active_plan_benefits_in_order(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $this->createPlan([
+            'benefits' => ['First benefit', 'Second benefit'],
+        ]);
+        $this->createPlan([
+            'plan_code' => 'hidden',
+            'name' => 'Hidden',
+            'status' => 'inactive',
+            'benefits' => ['Hidden benefit'],
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner');
+
+        $response = $this->getJson('/api/shop-owner/premium/plans');
+
+        $response->assertOk()
+            ->assertJsonPath('plans.0.benefits', ['First benefit', 'Second benefit'])
+            ->assertJsonMissing(['plan_code' => 'hidden']);
     }
 }

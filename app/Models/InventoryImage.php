@@ -39,11 +39,30 @@ class InventoryImage extends Model
         return $this->belongsTo(InventoryColorVariant::class, 'inventory_color_variant_id');
     }
 
+    public static function normalizePath(?string $path): ?string
+    {
+        $path = trim((string) $path);
+        if ($path === '') {
+            return null;
+        }
+
+        return preg_replace('#^/?(?:storage|public)/#i', '', $path) ?: null;
+    }
+
+    public static function existingPublicPath(?string $path): ?string
+    {
+        $normalizedPath = self::normalizePath($path);
+
+        return $normalizedPath && Storage::disk('public')->exists($normalizedPath)
+            ? $normalizedPath
+            : null;
+    }
+
     /**
      * Get the full URL for the image
      */
     public function getUrlAttribute(): string
     {
-        return Storage::url($this->image_path);
+        return Storage::disk('public')->url(self::normalizePath($this->image_path) ?? $this->image_path);
     }
 }

@@ -1,416 +1,394 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { Link, usePage } from "@inertiajs/react";
-
-// Assume these icons are imported from an icon library
 import {
-  CalenderIcon,
-  CheckLineIcon,
-  GridIcon,
-  HorizontaLDots,
-  UserIcon,
-  UserCircleIcon,
-  ShootingStarIcon,
-} from "../icons";
+  ArrowUpCircle,
+  BarChart3,
+  ChevronDown,
+  CircleDollarSign,
+  ClipboardCheck,
+  CreditCard,
+  FileText,
+  LayoutDashboard,
+  MessageSquareWarning,
+  ScrollText,
+  ShieldCheck,
+  Store,
+  Users,
+  Wrench,
+} from "lucide-react";
+
+import { HorizontaLDots, ShootingStarIcon } from "../icons";
 import { useSidebar } from "../context/SidebarContext";
 
 type NavItem = {
   name: string;
   icon: React.ReactNode;
-  route?: string; // Changed from path to route
-  subItems?: { name: string; route: string; icon?: React.ReactNode; pro?: boolean; new?: boolean; superAdminOnly?: boolean }[];
-  superAdminOnly?: boolean; // Flag for super admin only items
+  section: string;
+  route: string;
+  capability?: string;
+  pageKey?: string;
+};
+
+const routeFallbacks: Record<string, string> = {
+  "admin.system-monitoring": "/admin/system-monitoring",
+  "admin.maintenance.index": "/admin/maintenance",
+  "admin.audit": "/admin/audit",
+  "admin.administrators.index": "/admin/administrators",
+  "admin.business-upgrade-requests.index": "/admin/business-upgrade-requests",
+  "admin.registrations.index": "/admin/registrations",
+  "admin.document-renewals.index": "/admin/document-renewals",
+  "admin.shop-reports": "/admin/shop-reports",
+  "admin.suspension-appeals": "/admin/appeals",
+  "admin.shops.index": "/admin/shops",
+  "admin.subscriptions.index": "/admin/subscriptions",
+  "admin.platform-fees.index": "/admin/platform-fees",
+  "admin.users.index": "/admin/users",
+  landing: "/",
 };
 
 const AppSidebar: React.FC = () => {
-  const { isExpanded, isMobileOpen, isHovered, setIsHovered, openSubmenu, toggleSubmenu } = useSidebar();
+  const {
+    isExpanded,
+    isMobileOpen,
+    isHovered,
+    setIsHovered,
+    sidebarScrollTop,
+    expandedSections,
+    toggleSidebarSection,
+  } = useSidebar();
+  const sidebarScrollRef = useRef<HTMLDivElement>(null);
   const { url, props } = usePage();
-  const auth = (props as any).auth;
-  // Check if user is super admin (from super_admin guard) or has super_admin role
-  const isSuperAdmin = auth?.superAdmin?.role === 'super_admin' || auth?.user?.role === 'super_admin';
 
-  const routeFallbacks: Record<string, string> = {
-    'admin.suspension-appeals': '/admin/appeals',
-    landing: '/',
-  };
+  useLayoutEffect(() => {
+    const node = sidebarScrollRef.current;
+    if (!node) return;
 
-  const resolveRouteHref = useCallback((routeName: string) => {
+    node.scrollTop = sidebarScrollTop.current;
+
+    const handleScroll = () => {
+      sidebarScrollTop.current = node.scrollTop;
+    };
+
+    node.addEventListener("scroll", handleScroll, { passive: true });
+    return () => node.removeEventListener("scroll", handleScroll);
+  }, [sidebarScrollTop]);
+  const auth = (props as {
+    auth?: {
+      super_admin?: {
+        role?: string;
+        capabilities?: unknown[];
+        page_permissions?: unknown[];
+      };
+    };
+  }).auth;
+
+  const capabilities = new Set(
+    Array.isArray(auth?.super_admin?.capabilities)
+      ? auth.super_admin.capabilities.filter((capability): capability is string => typeof capability === "string")
+      : [],
+  );
+  const pagePermissions = new Set(
+    Array.isArray(auth?.super_admin?.page_permissions)
+      ? auth.super_admin.page_permissions.filter((page): page is string => typeof page === "string")
+      : [],
+  );
+  const hasPagePermissionPayload = Array.isArray(auth?.super_admin?.page_permissions);
+
+  const hasCapability = useCallback(
+    (capability?: string) => capability === undefined || capabilities.has(capability),
+    [capabilities],
+  );
+  const hasPage = useCallback(
+    (pageKey?: string) => {
+      if (pageKey === undefined || pageKey === "dashboard") return true;
+      if (auth?.super_admin?.role === "super_admin") return true;
+
+      return !hasPagePermissionPayload || pagePermissions.has(pageKey);
+    },
+    [auth?.super_admin?.role, hasPagePermissionPayload, pagePermissions],
+  );
+
+  const resolveRouteHref = useCallback((routeName: string): string | null => {
     try {
       return route(routeName);
     } catch {
-      return routeFallbacks[routeName] ?? '#';
+      return routeFallbacks[routeName] ?? null;
     }
   }, []);
 
-  // Filter nav items based on role
-  const getNavItems = (): NavItem[] => {
-    const items: NavItem[] = [
-      {
-        icon: (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="12" cy="12" r="1"></circle>
-            <circle cx="19" cy="12" r="1"></circle>
-            <circle cx="5" cy="12" r="1"></circle>
-            <circle cx="12" cy="5" r="1"></circle>
-            <circle cx="12" cy="19" r="1"></circle>
-            <circle cx="17.66" cy="6.34" r="1"></circle>
-            <circle cx="6.34" cy="17.66" r="1"></circle>
-            <circle cx="17.66" cy="17.66" r="1"></circle>
-            <circle cx="6.34" cy="6.34" r="1"></circle>
-          </svg>
-        ),
-        name: "Dashboard",
-        route: "superAdmin.system-monitoring-dashboard",
-      },
-      {
-        icon: (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="9" cy="7" r="4"></circle>
-            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-          </svg>
-        ),
-        name: "Account Management",
-        subItems: [
-          // Always show Admin Management for super admin
-          { name: "Admin Management", route: "admin.admin-management", pro: false },
-          { name: "User Management", route: "superAdmin.super-admin-user-management", pro: false },
-          { name: "Shop Management", route: "superAdmin.shop-owner-registration-view", pro: false },
-          { name: "Shop Reports", route: "admin.shop-reports", pro: false },
-          { name: "Suspension Appeals", route: "admin.suspension-appeals", pro: false },
-        ],
-      },
-      {
-        icon: (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="7" height="7"></rect>
-            <rect x="14" y="3" width="7" height="7"></rect>
-            <rect x="14" y="14" width="7" height="7"></rect>
-            <rect x="3" y="14" width="7" height="7"></rect>
-          </svg>
-        ),
-        name: "Registered Shops",
-        route: "admin.registered-shops",
-      },
-      {
-        icon: (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="5" width="18" height="14" rx="2"></rect>
-            <path d="M3 7h18"></path>
-            <path d="M7 12h4"></path>
-            <path d="M7 16h4"></path>
-          </svg>
-        ),
-        name: "Subscription Management",
-        route: "admin.subscription-management",
-      },
-      {
-        icon: (
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-        ),
-        name: "Notification & Communication Tools",
-        route: "superAdmin.notification-communication-tools",
-      },
-      
-    ];
-
-    // Return all items - the backend middleware will protect restricted routes
-    return items;
-  };
-
-  const navItems = getNavItems();
-  const othersItems: NavItem[] = [];
-
-  const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>(
-    {}
-  );
-  const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const navItems: NavItem[] = [
+    {
+      section: "OVERVIEW",
+      name: "Dashboard",
+      icon: <LayoutDashboard className="h-5 w-5" />,
+      route: "admin.system-monitoring",
+      capability: "view_monitoring",
+      pageKey: "dashboard",
+    },
+    {
+      section: "PEOPLE & ACCESS",
+      name: "Admin Management",
+      icon: <ShieldCheck className="h-5 w-5" />,
+      route: "admin.administrators.index",
+      capability: "manage_administrators",
+      pageKey: "admin_management",
+    },
+    {
+      section: "PEOPLE & ACCESS",
+      name: "User Management",
+      icon: <Users className="h-5 w-5" />,
+      route: "admin.users.index",
+      capability: "intervene_accounts",
+      pageKey: "user_management",
+    },
+    {
+      section: "SHOP OPERATIONS",
+      name: "Registered Shops",
+      icon: <Store className="h-5 w-5" />,
+      route: "admin.shops.index",
+      capability: "intervene_accounts",
+      pageKey: "registered_shops",
+    },
+    {
+      section: "SHOP OWNER APPROVALS",
+      name: "Shop Management",
+      icon: <ClipboardCheck className="h-5 w-5" />,
+      route: "admin.registrations.index",
+      capability: "review_registrations",
+      pageKey: "shop_management",
+    },
+    {
+      section: "SHOP OWNER APPROVALS",
+      name: "Document Renewals",
+      icon: <FileText className="h-5 w-5" />,
+      route: "admin.document-renewals.index",
+      capability: "review_registrations",
+      pageKey: "document_renewals",
+    },
+    {
+      section: "SHOP OWNER APPROVALS",
+      name: "Business Upgrade Requests",
+      icon: <ArrowUpCircle className="h-5 w-5" />,
+      route: "admin.business-upgrade-requests.index",
+      capability: "review_registrations",
+      pageKey: "business_upgrade_requests",
+    },
+    {
+      section: "USER APPROVALS & APPEALS",
+      name: "Suspension Appeals",
+      icon: <MessageSquareWarning className="h-5 w-5" />,
+      route: "admin.suspension-appeals",
+      capability: "view_appeals",
+      pageKey: "suspension_appeals",
+    },
+    {
+      section: "REPORTS & AUDIT",
+      name: "Shop Reports",
+      icon: <BarChart3 className="h-5 w-5" />,
+      route: "admin.shop-reports",
+      capability: "moderate_reports",
+      pageKey: "shop_reports",
+    },
+    {
+      section: "REPORTS & AUDIT",
+      name: "Audit History",
+      icon: <ScrollText className="h-5 w-5" />,
+      route: "admin.audit",
+      capability: "view_privileged_audit",
+      pageKey: "audit_history",
+    },
+    {
+      section: "PLATFORM ADMINISTRATION",
+      name: "System Maintenance",
+      icon: <Wrench className="h-5 w-5" />,
+      route: "admin.maintenance.index",
+      capability: "view_platform_maintenance",
+      pageKey: "system_maintenance",
+    },
+    {
+      section: "PLATFORM ADMINISTRATION",
+      name: "Subscription Management",
+      icon: <CreditCard className="h-5 w-5" />,
+      route: "admin.subscriptions.index",
+      capability: "manage_plans",
+      pageKey: "subscription_management",
+    },
+    {
+      section: "PLATFORM ADMINISTRATION",
+      name: "Platform Fees",
+      icon: <CircleDollarSign className="h-5 w-5" />,
+      route: "admin.platform-fees.index",
+      capability: "manage_platform_fees",
+      pageKey: "platform_fees",
+    },
+  ].filter((item) => hasCapability(item.capability) && hasPage(item.pageKey));
 
   const isActive = useCallback(
     (routeName: string) => {
       try {
-        // Prefer Ziggy's router check when available: route() -> Router.current(name)
         try {
           if (typeof route === "function") {
             const router = (route as any)();
-            if (typeof router.current === "function") {
-              if (router.current(routeName)) return true;
+            if (typeof router.current === "function" && router.current(routeName)) {
+              return true;
             }
           }
-        } catch (e) {
-          // ignore and fallback to URL comparison
+        } catch {
+          // Fall back to URL comparison when the router helper is unavailable.
         }
 
-        const routeUrl = route(routeName);
-        return url === routeUrl || url.startsWith(routeUrl);
+        const routeUrl = resolveRouteHref(routeName);
+        return routeUrl ? url === routeUrl || url.startsWith(routeUrl) : false;
       } catch {
         return false;
       }
     },
-    [url]
+    [resolveRouteHref, url],
   );
 
-  const isMenuActive = useCallback(
-    (nav: NavItem) => {
-      if (nav.route && isActive(nav.route)) return true;
-      if (nav.subItems) {
-        return nav.subItems.some(sub => isActive(sub.route));
-      }
-      return false;
-    },
-    [isActive]
+  const renderMenuItems = (items: NavItem[]) => (
+    <ul className="flex flex-col gap-4">
+      {items.map((item) => {
+        const href = resolveRouteHref(item.route);
+        if (!href) return null;
+
+        const active = isActive(item.route);
+
+        return (
+          <li key={item.name}>
+            <Link
+              href={href}
+              viewTransition
+              aria-current={active ? "page" : undefined}
+              className={[
+                "menu-item group",
+                active ? "menu-item-active" : "menu-item-inactive",
+              ].join(" ")}
+            >
+              <span
+                data-testid={`super-admin-page-icon-${item.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
+                className={[
+                  "menu-item-icon-size w-6 h-6",
+                  active ? "menu-item-icon-active" : "menu-item-icon-inactive",
+                ].join(" ")}
+              >
+                {item.icon}
+              </span>
+              {(isExpanded || isHovered || isMobileOpen) && (
+                <span className="menu-item-text">{item.name}</span>
+              )}
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 
-  useEffect(() => {
-    let submenuMatched = false;
-    let matchedKey: string | null = null;
-    
-    ["main", "others"].forEach((menuType) => {
-      const items = menuType === "main" ? navItems : othersItems;
-      items.forEach((nav, index) => {
-        if (nav.subItems) {
-          nav.subItems.forEach((subItem) => {
-            if (isActive(subItem.route)) {
-              const key = `${menuType}-${index}`;
-              matchedKey = key;
-              submenuMatched = true;
-            }
-          });
-        }
-      });
-    });
-
-    // Only update if we found a match and it's different from current
-    if (submenuMatched && matchedKey && openSubmenu !== matchedKey) {
-      toggleSubmenu(matchedKey);
-    }
-  }, [url, isActive]);
-
-  useEffect(() => {
-    if (openSubmenu !== null) {
-      const key = openSubmenu;
-      if (subMenuRefs.current[key]) {
-        setSubMenuHeight((prevHeights) => ({
-          ...prevHeights,
-          [key]: subMenuRefs.current[key]?.scrollHeight || 0,
-        }));
+  const renderSectionedMenuItems = (items: NavItem[]) => {
+    const sections = items.reduce<Array<{ label: string; items: NavItem[] }>>((groups, item) => {
+      const current = groups[groups.length - 1];
+      if (current?.label === item.section) {
+        current.items.push(item);
+      } else {
+        groups.push({ label: item.section, items: [item] });
       }
-    }
-  }, [openSubmenu]);
+      return groups;
+    }, []);
 
-  const handleSubmenuToggle = (index: number, menuType: "main" | "others") => {
-    const key = `${menuType}-${index}`;
-    toggleSubmenu(key);
-  };
+    const showSectionLabels = isExpanded || isHovered || isMobileOpen;
 
-  const renderMenuItems = (items: NavItem[], menuType: "main" | "others") => {
     return (
-      <ul className="flex flex-col gap-4">
-        {items.map((nav, index) => {
-          const subItems = nav.subItems?.filter((s) => s.name !== "Create Admin") || nav.subItems;
-          if (nav.subItems && (!subItems || subItems.length === 0)) {
-            return null;
-          }
+      <div className="space-y-6">
+        {sections.map((section) => {
+          const isOpen = expandedSections.has(section.label);
+          const sectionId = `super-admin-section-${section.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
 
           return (
-            <li key={nav.name}>
-              {subItems ? (
-                <button
-                  onClick={() => handleSubmenuToggle(index, menuType)}
-                  className={`menu-item group ${
-                    isMenuActive(nav) || openSubmenu === `${menuType}-${index}`
-                      ? "menu-item-active"
-                      : "menu-item-inactive"
-                  } cursor-pointer ${
-                    !isExpanded && !isHovered
-                      ? "lg:justify-center"
-                      : "lg:justify-start"
-                  }`}
-                >
-                  <span
-                    className={`menu-item-icon-size w-6 h-6 ${
-                      isMenuActive(nav) || openSubmenu === `${menuType}-${index}`
-                        ? "menu-item-icon-active"
-                        : "menu-item-icon-inactive"
-                    }`}
+            <div key={section.label}>
+              {showSectionLabels ? (
+                <>
+                  <button
+                    type="button"
+                    aria-expanded={isOpen}
+                    aria-controls={sectionId}
+                    onClick={() => toggleSidebarSection(section.label)}
+                    className="flex min-h-9 w-full items-center justify-between rounded-lg px-3 text-left text-xs font-semibold uppercase tracking-wide text-gray-400 transition-colors duration-200 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:hover:bg-gray-800 dark:focus-visible:ring-gray-300"
                   >
-                    {nav.icon}
-                  </span>
-                  {(isExpanded || isHovered || isMobileOpen) && (
-                    <span className="menu-item-text">{nav.name}</span>
-                  )}
-                  {(isExpanded || isHovered || isMobileOpen) && (
-                    <svg
-                      className={`ml-auto w-5 h-5 transition-transform duration-200 ${
-                        openSubmenu === `${menuType}-${index}`
-                          ? "rotate-180 text-brand-500"
-                          : ""
-                      }`}
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                    <span>{section.label}</span>
+                    <ChevronDown
+                      data-testid={`super-admin-section-icon-${section.label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}
                       aria-hidden="true"
-                    >
-                      <path d="M6 9l6 6 6-6" />
-                    </svg>
+                      className={[
+                        "h-4 w-4 shrink-0 text-gray-400 transition-transform duration-200",
+                        isOpen ? "rotate-180" : "",
+                      ].join(" ")}
+                    />
+                  </button>
+                  {isOpen && (
+                    <div id={sectionId}>
+                      {renderMenuItems(section.items)}
+                    </div>
                   )}
-                </button>
-              ) : (
-                nav.route && (
-                  <Link
-                    href={resolveRouteHref(nav.route)}
-                    className={`menu-item group ${
-                      isActive(nav.route) ? "menu-item-active" : "menu-item-inactive"
-                    }`}
-                  >
-                    <span
-                      className={`menu-item-icon-size w-6 h-6 ${
-                        isActive(nav.route)
-                          ? "menu-item-icon-active"
-                          : "menu-item-icon-inactive"
-                      }`}
-                    >
-                      {nav.icon}
-                    </span>
-                    {(isExpanded || isHovered || isMobileOpen) && (
-                      <span className="menu-item-text">{nav.name}</span>
-                    )}
-                  </Link>
-                )
-              )}
-
-              {subItems && (isExpanded || isHovered || isMobileOpen) && (
-                <div
-                  ref={(el) => {
-                    subMenuRefs.current[`${menuType}-${index}`] = el;
-                  }}
-                  className="overflow-hidden transition-all duration-300"
-                  style={{
-                    height:
-                      openSubmenu === `${menuType}-${index}`
-                        ? `${subMenuHeight[`${menuType}-${index}`]}px`
-                        : "0px",
-                  }}
-                >
-                  <ul className="mt-2 space-y-1 ml-9">
-                    {subItems.map((subItem) => (
-                      <li key={subItem.name}>
-                        <Link
-                          href={resolveRouteHref(subItem.route)}
-                          className={`menu-dropdown-item ${
-                            isActive(subItem.route)
-                              ? "menu-dropdown-item-active"
-                              : "menu-dropdown-item-inactive"
-                          }`}
-                        >
-                          {subItem.icon && (
-                            <span className="flex items-center justify-center w-4 h-4">
-                              {subItem.icon}
-                            </span>
-                          )}
-                          {subItem.name}
-                          <span className="flex items-center gap-1 ml-auto">
-                            {isActive(subItem.route) && (
-                              <CheckLineIcon className="w-4 h-4 text-green-500" />
-                            )}
-                            {subItem.new && (
-                              <span
-                                className={`${
-                                  isActive(subItem.route)
-                                    ? "menu-dropdown-badge-active"
-                                    : "menu-dropdown-badge-inactive"
-                                } menu-dropdown-badge`}
-                              >
-                                new
-                              </span>
-                            )}
-                            {subItem.pro && (
-                              <span
-                                className={`${
-                                  isActive(subItem.route)
-                                    ? "menu-dropdown-badge-active"
-                                    : "menu-dropdown-badge-inactive"
-                                } menu-dropdown-badge`}
-                              >
-                                pro
-                              </span>
-                            )}
-                          </span>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </li>
+                </>
+              ) : renderMenuItems(section.items)}
+            </div>
           );
         })}
-      </ul>
+      </div>
     );
   };
 
+  const sidebarWidth = isExpanded || isMobileOpen || isHovered ? "w-[290px]" : "w-[90px]";
+  const sidebarVisibility = isMobileOpen ? "translate-x-0" : "-translate-x-full";
+
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200 
-        ${
-          isExpanded || isMobileOpen
-            ? "w-[290px]"
-            : isHovered
-            ? "w-[290px]"
-            : "w-[90px]"
-        }
-        ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
-        lg:translate-x-0`}
+      className={[
+        "erp-sidebar fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200",
+        sidebarWidth,
+        sidebarVisibility,
+        "lg:translate-x-0",
+      ].join(" ")}
       onMouseEnter={() => !isExpanded && setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div
-        className={`py-8 flex ${
-          !isExpanded && !isHovered ? "lg:justify-center" : "justify-start"
-        }`}
-      >
-        <Link href={resolveRouteHref("landing")} className="flex items-center gap-2 hover:scale-105 transition-transform duration-200">
+      <div className={[
+        "py-8 flex",
+        !isExpanded && !isHovered ? "lg:justify-center" : "justify-start",
+      ].join(" ")}>
+        <Link
+          href={resolveRouteHref("landing") ?? "/"}
+          className="flex items-center gap-2 hover:scale-105 transition-transform duration-200"
+        >
           {isExpanded || isHovered || isMobileOpen ? (
             <>
-              <ShootingStarIcon className="w-6 h-6 text-yellow-500 animate-pulse" />
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                SoleSpace
-              </span>
+              <ShootingStarIcon className="h-6 w-6 text-gray-900 dark:text-gray-100" />
+              <span className="text-xl font-bold text-gray-900 dark:text-gray-100">SoleSpace</span>
             </>
           ) : (
-            <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              SS
-            </span>
+            <span className="text-lg font-bold text-gray-900 dark:text-gray-100">SS</span>
           )}
         </Link>
       </div>
-      <div className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
+
+      <div
+        ref={sidebarScrollRef}
+        data-testid="super-admin-sidebar-scroll-region"
+        className="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar"
+      >
         <nav className="mb-6">
           <div className="flex flex-col gap-4">
             <div>
-              <h2
-                className={`mb-4 text-xs uppercase flex leading-[20px] text-gray-400 ${
-                  !isExpanded && !isHovered
-                    ? "lg:justify-center"
-                    : "justify-start"
-                }`}
-              >
-                {isExpanded || isHovered || isMobileOpen ? (
-                  "Menu"
-                ) : (
-                  <HorizontaLDots className="size-6" />
-                )}
+              <h2 className={[
+                "mb-4 text-xs uppercase flex leading-[20px] text-gray-400",
+                !isExpanded && !isHovered ? "lg:justify-center" : "justify-start",
+              ].join(" ")}>
+                {isExpanded || isHovered || isMobileOpen ? "Menu" : <HorizontaLDots className="size-6" />}
               </h2>
-              {renderMenuItems(navItems, "main")}
+              {renderSectionedMenuItems(navItems)}
             </div>
           </div>
         </nav>
-
       </div>
     </aside>
   );

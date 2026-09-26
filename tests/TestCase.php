@@ -2,10 +2,32 @@
 
 namespace Tests;
 
+use App\Models\Employee;
+use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\DB;
 
 abstract class TestCase extends BaseTestCase
 {
+    protected function clockInEmployee(User $user): void
+    {
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $user->shop_owner_id,
+            'email' => $user->email,
+        ]);
+        $now = now(config('app.shop_timezone', 'Asia/Manila'));
+
+        DB::table('attendance_records')->insert([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $user->shop_owner_id,
+            'date' => $now->toDateString(),
+            'check_in_time' => $now->format('H:i:s'),
+            'status' => 'present',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
     /**
      * Creates the application.
      *

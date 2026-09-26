@@ -3,22 +3,53 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use App\Enums\OrderStatus;
 use App\Models\OrderRefund;
+use App\Models\ShopOwner;
+use App\Models\Logistics\Shipment;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
 class Order extends Model
 {
-    use LogsActivity;
+    use HasFactory, LogsActivity;
+
+    public const TERMINAL_FULFILLMENT_STATUSES = ['delivered', 'completed'];
+
+    public const TERMINAL_REFUND_STATUSES = [
+        'succeeded',
+        'successful',
+        'rejected',
+        'cancelled',
+        'canceled',
+    ];
+
+    public const TERMINAL_RETURN_STATUSES = [
+        'not_required',
+        'received',
+        'rejected',
+        'cancelled',
+        'canceled',
+    ];
+
+    public const OPEN_PAYMENT_STATUSES = [
+        'pending',
+        'partially_paid',
+        'failed',
+        'expired',
+    ];
 
     protected $table = 'orders';
 
     protected $fillable = [
         'shop_owner_id',
+        'origin_channel',
         'customer_id',
         'order_number',
         'total_amount',
@@ -26,6 +57,9 @@ class Order extends Model
         'vat_amount',
         'vat_rate',
         'status',
+        'customer_receipt_status',
+        'customer_received_at',
+        'customer_receipt_disputed_at',
         'customer_name',
         'customer_email',
         'customer_phone',
@@ -64,10 +98,15 @@ class Order extends Model
         'product',
         'quantity',
         'total',
+        'delivery_method',
         // Pickup confirmation fields
         'pickup_enabled',
         'pickup_enabled_at',
         'pickup_enabled_by',
+        'assigned_staff_id',
+        'assigned_at',
+        'assignment_method',
+        'assigned_by',
     ];
 
     protected $casts = [
@@ -81,6 +120,9 @@ class Order extends Model
         'invoice_generated' => 'boolean',
         'pickup_enabled' => 'boolean',
         'pickup_enabled_at' => 'datetime',
+        'assigned_at' => 'datetime',
+        'customer_received_at' => 'datetime',
+        'customer_receipt_disputed_at' => 'datetime',
         'payment_link_created_at' => 'datetime',
         'payment_expires_at' => 'datetime',
         'payment_failed_at' => 'datetime',
@@ -165,6 +207,69 @@ class Order extends Model
             ->where('payment_expires_at', '<=', now());
     }
 
+    public function scopeTerminalFulfillment(Builder $query): Builder
+    {
+        return $query->whereIn(
+            $query->getModel()->qualifyColumn('status'),
+            self::TERMINAL_FULFILLMENT_STATUSES,
+        );
+    }
+
+    public function scopeBusinessClosed(Builder $query): Builder
+    {
+        $paymentStatusColumn = $query->getModel()->qualifyColumn('payment_status');
+        $refundStatusColumn = (new OrderRefund())->qualifyColumn('status');
+        $returnStatusColumn = (new OrderRefund())->qualifyColumn('return_status');
+        $normalizedPaymentStatus = "LOWER(TRIM(COALESCE({$paymentStatusColumn}, '')))";
+        $normalizedRefundStatus = "LOWER(TRIM(COALESCE({$refundStatusColumn}, '')))";
+        $normalizedReturnStatus = "LOWER(TRIM(COALESCE({$returnStatusColumn}, '')))";
+        $terminalRefundPlaceholders = implode(',', array_fill(0, count(self::TERMINAL_REFUND_STATUSES), '?'));
+        $terminalReturnPlaceholders = implode(',', array_fill(0, count(self::TERMINAL_RETURN_STATUSES), '?'));
+        $openPaymentPlaceholders = implode(',', array_fill(0, count(self::OPEN_PAYMENT_STATUSES), '?'));
+
+        return $query
+            ->terminalFulfillment()
+            ->whereDoesntHave('refunds', function (Builder $refundQuery) use (
+                $normalizedRefundStatus,
+                $normalizedReturnStatus,
+                $terminalRefundPlaceholders,
+                $terminalReturnPlaceholders,
+            ): void {
+                $refundQuery->where(function (Builder $openQuery) use (
+                    $normalizedRefundStatus,
+                    $normalizedReturnStatus,
+                    $terminalRefundPlaceholders,
+                    $terminalReturnPlaceholders,
+                ): void {
+                    $openQuery->where(function (Builder $statusQuery) use (
+                        $normalizedRefundStatus,
+                        $terminalRefundPlaceholders,
+                    ): void {
+                        $statusQuery
+                            ->whereRaw("{$normalizedRefundStatus} = ''")
+                            ->orWhereRaw(
+                                "{$normalizedRefundStatus} NOT IN ({$terminalRefundPlaceholders})",
+                                self::TERMINAL_REFUND_STATUSES,
+                            );
+                    })->orWhere(function (Builder $statusQuery) use (
+                        $normalizedReturnStatus,
+                        $terminalReturnPlaceholders,
+                    ): void {
+                        $statusQuery
+                            ->whereRaw("{$normalizedReturnStatus} <> ''")
+                            ->whereRaw(
+                                "{$normalizedReturnStatus} NOT IN ({$terminalReturnPlaceholders})",
+                                self::TERMINAL_RETURN_STATUSES,
+                            );
+                    });
+                });
+            })
+            ->whereRaw(
+                "{$normalizedPaymentStatus} NOT IN ({$openPaymentPlaceholders})",
+                self::OPEN_PAYMENT_STATUSES,
+            );
+    }
+
     /**
      * Get the order items
      */
@@ -176,6 +281,45 @@ class Order extends Model
     public function refunds(): HasMany
     {
         return $this->hasMany(OrderRefund::class);
+    }
+
+    public function platformFeeCharge(): HasOne
+    {
+        return $this->hasOne(PlatformFeeCharge::class, 'source_id')
+            ->where('source_type', 'order')
+            ->where('source_origin', 'marketplace');
+    }
+
+    public function codCollection(): HasOne
+    {
+        return $this->hasOne(CodCollection::class);
+    }
+
+    public function deliveryDisputes(): HasMany
+    {
+        return $this->hasMany(DeliveryDispute::class);
+    }
+
+    public function logisticsShipments(): HasMany
+    {
+        return $this->hasMany(Shipment::class, 'source_id')
+            ->where('source_type', 'order')
+            ->where('purpose', 'retail_delivery');
+    }
+
+    public function resolvedDeliveryMethod(): ?string
+    {
+        $method = strtolower(trim((string) $this->getAttribute('delivery_method')));
+        if (in_array($method, ['shop_owned', 'third_party'], true)) {
+            return $method;
+        }
+
+        $carrier = strtolower(trim((string) $this->carrier_company));
+        if ($carrier === 'shop-owned logistics') {
+            return 'shop_owned';
+        }
+
+        return $carrier !== '' ? 'third_party' : null;
     }
 
     /**
@@ -200,6 +344,11 @@ class Order extends Model
     public function assignedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'assigned_by');
+    }
+
+    public function assignedStaff(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'assigned_staff_id');
     }
 
     /**
@@ -245,11 +394,29 @@ class Order extends Model
     }
 
     /**
-     * Generate a unique order number
+     * Generate the next human-readable order reference for one shop.
+     *
+     * The caller must be inside the transaction that creates the order so the
+     * shop-owner row lock covers number generation and persistence.
      */
-    public static function generateOrderNumber(): string
+    public static function generateOrderNumber(int $shopOwnerId, string $prefix = 'ORD'): string
     {
-        return 'ORD-' . date('YmdHis') . '-' . str_pad(rand(0, 999), 3, '0', STR_PAD_LEFT);
+        ShopOwner::query()->whereKey($shopOwnerId)->lockForUpdate()->firstOrFail();
+        $year = now()->format('Y');
+        $maxSequence = 0;
+
+        $escapedPrefix = preg_quote($prefix, '/');
+
+        foreach (self::query()
+            ->where('shop_owner_id', $shopOwnerId)
+            ->where('order_number', 'LIKE', "{$prefix}-{$year}-%")
+            ->pluck('order_number') as $orderNumber) {
+            if (preg_match("/^{$escapedPrefix}-{$year}-(\\d+)$/", (string) $orderNumber, $matches) === 1) {
+                $maxSequence = max($maxSequence, (int) $matches[1]);
+            }
+        }
+
+        return sprintf('%s-%s-%03d', $prefix, $year, $maxSequence + 1);
     }
 
     /**

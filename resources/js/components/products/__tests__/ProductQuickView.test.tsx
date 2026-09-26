@@ -1,0 +1,210 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import ProductQuickView, { type ProductQuickViewProduct } from '../ProductQuickView';
+
+const addToCartProps = vi.hoisted(() => vi.fn());
+
+vi.mock('@inertiajs/react', () => ({
+  Link: ({ href, children, ...props }: { href: string; children: React.ReactNode }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
+vi.mock('../../CartActions', () => ({
+  default: (props: { label?: string; disabled?: boolean; onAdded?: () => void }) => {
+    addToCartProps(props);
+    return (
+      <button type="button" disabled={props.disabled} onClick={props.onAdded}>
+        {props.label}
+      </button>
+    );
+  },
+}));
+
+const product: ProductQuickViewProduct = {
+  id: 7,
+  name: 'SoleSpace Runner',
+  slug: 'solespace-runner',
+  price: 5555,
+  compare_at_price: 6000,
+  main_image: '/storage/products/runner.jpg',
+  gallery_images: ['/storage/products/runner-side.jpg'],
+  brand: 'SoleSpace',
+  stock_quantity: 4,
+  sizes_available: ['US 8', 'US 9'],
+  colors_available: ['Black', 'White'],
+};
+
+const productWithColorVariants: ProductQuickViewProduct = {
+  ...product,
+  main_image: '/storage/products/legacy-main.jpg',
+  gallery_images: ['/storage/products/unrelated-purple.jpg'],
+  color_variants: [
+    {
+      id: 1,
+      color_name: 'Black',
+      images: [
+        {
+          id: 11,
+          image_path: '/storage/products/black-front.jpg',
+          is_thumbnail: true,
+          sort_order: 0,
+        },
+        {
+          id: 12,
+          image_path: '/storage/products/black-side.jpg',
+          is_thumbnail: false,
+          sort_order: 1,
+        },
+      ],
+    },
+    {
+      id: 2,
+      color_name: 'White',
+      images: [
+        {
+          id: 21,
+          image_path: '/storage/products/white-front.jpg',
+          is_thumbnail: true,
+          sort_order: 0,
+        },
+      ],
+    },
+  ],
+};
+
+describe('ProductQuickView', () => {
+  beforeEach(() => {
+    addToCartProps.mockClear();
+  });
+
+  it('renders product details, image navigation, and a category-preserving details link', () => {
+    render(
+      <ProductQuickView
+        product={product}
+        detailsHref="/products/solespace-runner?category=men"
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('dialog', { name: 'SoleSpace Runner' })).toBeInTheDocument();
+    expect(screen.getByText('SoleSpace')).toBeInTheDocument();
+    expect(screen.getByText(/5,555/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View product details' })).toHaveAttribute(
+      'href',
+      '/products/solespace-runner?category=men',
+    );
+    expect(screen.getByRole('button', { name: 'Next product image' })).toBeInTheDocument();
+  });
+
+  it('centers the quick view modal in the viewport', () => {
+    render(<ProductQuickView product={product} detailsHref="/products/solespace-runner" onClose={vi.fn()} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'SoleSpace Runner' });
+    const overlay = dialog.parentElement;
+
+    expect(overlay).toHaveClass('items-center');
+    expect(overlay).not.toHaveClass('items-start');
+  });
+
+  it('uses a flexible white gallery without horizontal thumbnail scrolling', () => {
+    render(<ProductQuickView product={product} detailsHref="/products/solespace-runner" onClose={vi.fn()} />);
+
+    const dialog = screen.getByRole('dialog', { name: 'SoleSpace Runner' });
+    const gallery = screen.getByRole('region', { name: 'Product images' });
+    const imageFrame = screen.getByAltText('SoleSpace Runner image 1').parentElement;
+    const thumbnails = screen.getByLabelText('Product image thumbnails');
+
+    expect(dialog).toHaveClass('overflow-x-hidden');
+    expect(gallery).toHaveClass('h-fit', 'self-start', 'bg-white');
+    expect(imageFrame).toHaveClass('bg-white');
+    expect(imageFrame).not.toHaveClass('aspect-square');
+    expect(thumbnails).toHaveClass('flex-wrap');
+    expect(thumbnails).not.toHaveClass('overflow-x-auto');
+  });
+
+  it('shows only the selected color images and uses their shoe thumbnails as color selectors', () => {
+    render(
+      <ProductQuickView
+        product={productWithColorVariants}
+        detailsHref="/products/solespace-runner"
+        onClose={vi.fn()}
+      />,
+    );
+
+    const gallery = screen.getByRole('region', { name: 'Product images' });
+    const galleryImageSources = () =>
+      Array.from(gallery.querySelectorAll('img'))
+        .map((image) => image.getAttribute('src'));
+
+    expect(galleryImageSources()).toEqual([
+      '/storage/products/black-front.jpg',
+      '/storage/products/black-front.jpg',
+      '/storage/products/black-side.jpg',
+    ]);
+    expect(galleryImageSources()).not.toContain('/storage/products/unrelated-purple.jpg');
+    expect(galleryImageSources()).not.toContain('/storage/products/white-front.jpg');
+
+    expect(screen.getByRole('button', { name: 'Color Black' }).querySelector('img')).toHaveAttribute(
+      'src',
+      '/storage/products/black-front.jpg',
+    );
+    expect(screen.getByRole('button', { name: 'Color White' }).querySelector('img')).toHaveAttribute(
+      'src',
+      '/storage/products/white-front.jpg',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next product image' }));
+    expect(screen.getByAltText('SoleSpace Runner image 2')).toHaveAttribute(
+      'src',
+      '/storage/products/black-side.jpg',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Color White' }));
+
+    expect(screen.getByAltText('SoleSpace Runner image 1')).toHaveAttribute(
+      'src',
+      '/storage/products/white-front.jpg',
+    );
+    expect(galleryImageSources()).toEqual([
+      '/storage/products/white-front.jpg',
+    ]);
+  });
+
+  it('passes selected color, size, image, and quantity to the existing cart action', () => {
+    render(<ProductQuickView product={product} detailsHref="/products/solespace-runner" onClose={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Color White' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Size US 9' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Increase quantity' }));
+
+    const latestProps = addToCartProps.mock.lastCall?.[0];
+    expect(latestProps).toMatchObject({
+      productId: 7,
+      stockQuantity: 4,
+      disabled: false,
+      label: 'Add to Cart',
+    });
+    expect(latestProps.product).toMatchObject({
+      size: 'US 9',
+      color: 'White',
+      qty: 2,
+      selectedImage: '/storage/products/runner.jpg',
+    });
+  });
+
+  it('closes from Escape, backdrop click, and a successful cart add', () => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <ProductQuickView product={product} detailsHref="/products/solespace-runner" onClose={onClose} />,
+    );
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    fireEvent.click(container.firstElementChild as HTMLElement);
+    fireEvent.click(screen.getByRole('button', { name: 'Add to Cart' }));
+
+    expect(onClose).toHaveBeenCalledTimes(3);
+  });
+});

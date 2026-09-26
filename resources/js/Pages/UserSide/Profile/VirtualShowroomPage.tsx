@@ -23,6 +23,11 @@ interface Shop {
   showroom_slot_limit?: number | null;
   showroom_plan_code?: string | null;
   showroom_plan_name?: string | null;
+  showroom_placements?: Array<{ product_id: number; slot_key: string }>;
+  showroom_wall_art?: { left?: string | null; right?: string | null };
+  can_edit_showroom?: boolean;
+  can_manage_showroom_art?: boolean;
+  showroom_setup_required?: boolean;
 }
 
 interface Props {
@@ -32,22 +37,34 @@ interface Props {
 
 const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
   const [isFocusMode, setIsFocusMode] = useState(false);
+  const showroomOrigin =
+    typeof window !== 'undefined'
+      ? new URLSearchParams(window.location.search).get('from')
+      : null;
+  const fromStaffProducts = showroomOrigin === 'staff-products';
   const fromShopOwnerPremium =
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('from') === 'shop-owner-premium';
-  const backHref = fromShopOwnerPremium ? '/shop-owner/premium-benefits' : `/shop-profile/${shop.id}`;
-  const backLabel = fromShopOwnerPremium ? 'Back to Premium Benefits' : 'Back to Shop Profile';
+    showroomOrigin === 'shop-owner-premium';
+  const backHref = fromStaffProducts
+    ? '/erp/staff/products'
+    : fromShopOwnerPremium
+      ? '/shop-owner/premium-benefits'
+      : `/shop-profile/${shop.id}`;
+  const backLabel = fromStaffProducts
+    ? 'Back to Product Management'
+    : fromShopOwnerPremium
+      ? 'Back to Premium Benefits'
+      : 'Back to Shop Profile';
 
   return (
-    <div className="h-screen overflow-hidden bg-white">
+    <div className="h-dvh overflow-hidden bg-white">
       <Head title={`${shop.name} - Virtual Showroom`} />
 
-      <main className="h-screen">
+      <main className="h-dvh">
         {!isFocusMode && (
-          <div className="fixed left-4 top-4 z-50">
+          <div className="fixed left-3 top-3 z-50 max-w-[calc(100vw-8.5rem)] sm:left-20 sm:top-4 sm:max-w-none">
             <Link
               href={backHref}
-              className="rounded-md border border-gray-300 bg-white/95 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-white"
+              className="inline-flex min-h-11 max-w-full items-center break-words rounded-md border border-gray-300 bg-white/95 px-4 py-2 text-center text-sm font-medium leading-tight text-gray-700 hover:bg-white"
             >
               {backLabel}
             </Link>
@@ -56,6 +73,18 @@ const VirtualShowroomPage: React.FC<Props> = ({ shop, products }) => {
 
         <VirtualShowroom
           products={products}
+          shopName={shop.name}
+          showroomPlacements={(shop.showroom_placements ?? []).map((placement) => ({
+            productId: placement.product_id,
+            slotKey: placement.slot_key,
+          }))}
+          canEditShowroom={shop.can_edit_showroom === true}
+          canManageShowroomArt={shop.can_manage_showroom_art === true}
+          showroomWallArt={{
+            left: shop.showroom_wall_art?.left ?? null,
+            right: shop.showroom_wall_art?.right ?? null,
+          }}
+          showroomSetupRequired={shop.showroom_setup_required === true}
           isStandalonePage
           onFocusModeChange={setIsFocusMode}
           showroomSlotLimit={shop.showroom_slot_limit}

@@ -61,7 +61,7 @@ const Services: React.FC<Props> = () => {
   return (
     <>
       <Head title="Services - SoleSpace" />
-      <div className="min-h-screen overflow-x-hidden bg-[#f4f5f8] xl:bg-white font-outfit antialiased">
+      <div className="userside-services-page min-h-screen overflow-x-hidden bg-[#f4f5f8] xl:bg-white font-outfit antialiased">
         <div className="hidden xl:block">
           <Navigation />
         </div>
@@ -93,18 +93,6 @@ const Services: React.FC<Props> = () => {
           <div className="hidden xl:block text-[10px] text-black/55 tracking-[0.18em] uppercase mb-6">
             Home / Services
           </div>
-
-          <section className="rounded-3xl border border-gray-200 bg-white px-5 py-6 shadow-[0_12px_30px_-20px_rgba(15,23,42,0.35)] xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none">
-            <p className="mb-2 text-[11px] text-black/40 uppercase tracking-[0.16em] font-semibold xl:mb-0">
-              Exclusive for Shop Owners &amp; Repairers
-            </p>
-            <h1 className="text-3xl font-bold text-black mb-3 tracking-tight uppercase leading-tight xl:text-6xl xl:mb-4">
-              Premium Benefits
-            </h1>
-            <p className="text-sm sm:text-base text-black/65 max-w-3xl leading-relaxed font-light">
-              Unlock exclusive advantages designed specifically for shop owners and repairers in our premium program.
-            </p>
-          </section>
 
           {/* Pricing Plans */}
           <div className="mb-12 mt-8 xl:mt-0 xl:mb-16">

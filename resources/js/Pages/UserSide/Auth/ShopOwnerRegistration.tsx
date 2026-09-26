@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { route } from 'ziggy-js';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
+import { CUSTOMER_ACCOUNT_TERMS_HTML, openTermsPolicyModal } from '@/utils/termsPolicyModal';
+import { getFreshCsrfToken } from '@/utils/csrf';
 import 'leaflet/dist/leaflet.css';
 import Navigation from "../Shared/Navigation";
 import ComponentCard from "../../../components/common/ComponentCard";
@@ -10,6 +12,16 @@ import Input from "../../../components/form/input/InputField";
 import Select from "../../../components/form/Select";
 import Radio from "../../../components/form/input/Radio";
 import DropzoneComponent from "../../../components/form/form-elements/DropZone";
+import {
+  appendRegistrationDocuments,
+  type RegistrationDocumentMetadata,
+} from './registrationDocumentPayload';
+import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
+import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '@/utils/carto';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
+import CustomerAddressMapPicker from '../../../components/address/CustomerAddressMapPicker';
+import { getRegistrationAddressFields, type RegistrationAddress } from './registrationAddress';
+import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 
 const CAVITE_CENTER = {
   lat: '14.28140000',
@@ -81,11 +93,41 @@ const isWithinCaviteBounds = (lat: number, lng: number) => (
   && lng <= CAVITE_BOUNDS.maxLng
 );
 
+const getResubmissionPersonalAddress = (
+  form?: ResubmissionPayload['form'],
+): RegistrationAddress | null => {
+  const latitude = Number(form?.addressLatitude);
+  const longitude = Number(form?.addressLongitude);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  if (!form?.addressRegion || !form.addressProvince || !form.addressCity || !form.addressBarangay) {
+    return null;
+  }
+
+  return {
+    displayName: form.address ?? '',
+    region: form.addressRegion,
+    province: form.addressProvince,
+    city: form.addressCity,
+    barangay: form.addressBarangay,
+    postalCode: form.addressPostalCode ?? '',
+    latitude,
+    longitude,
+  };
+};
+
 interface ExistingDocumentPayload {
   id: number;
   type: string;
+  logical_slot?: string | null;
   url: string;
   fileName: string;
+  issuedOn?: string | null;
+  expirationMode?: 'dated' | 'none';
+  expiresOn?: string | null;
 }
 
 interface ResubmissionPayload {
@@ -101,6 +143,16 @@ interface ResubmissionPayload {
     lastName: string;
     email: string;
     phone: string;
+    suffix?: string | null;
+    age?: number | null;
+    address?: string | null;
+    addressRegion?: string | null;
+    addressProvince?: string | null;
+    addressCity?: string | null;
+    addressBarangay?: string | null;
+    addressPostalCode?: string | null;
+    addressLatitude?: string | number | null;
+    addressLongitude?: string | number | null;
     businessName: string;
     businessAddress: string;
     postalCode: string;
@@ -121,8 +173,16 @@ interface ResubmissionPayload {
 }
 
 export default function ShopOwnerRegistration({ resubmission }: { resubmission?: ResubmissionPayload | null }) {
-  type AdditionalDocument = { id: number; file: File | null; fileName: string; previewUrl: string };
+  type AdditionalDocument = {
+    id: string;
+    file: File | null;
+    fileName: string;
+    previewUrl: string;
+    metadata: RegistrationDocumentMetadata;
+    submissionKey: string;
+  };
   type UploadedDocumentKey = 'dti' | 'mayors_permit' | 'bir' | 'valid_id';
+  type FixedDocumentSlot = 'business_registration' | 'mayors_permit' | 'bir_certificate' | 'valid_id';
 
   const isResubmission = Boolean(resubmission?.isResubmission);
   const resubmissionMaxAttempts = resubmission?.maxAttempts ?? 3;
@@ -143,13 +203,27 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     lastName: resubmission?.form?.lastName ?? "",
     email: resubmission?.form?.email ?? "",
     phone: resubmission?.form?.phone ?? "",
+    suffix: resubmission?.form?.suffix ?? "",
+    age: resubmission?.form?.age != null ? String(resubmission.form.age) : "",
+    address: resubmission?.form?.address ?? "",
+    addressRegion: resubmission?.form?.addressRegion ?? "",
+    addressProvince: resubmission?.form?.addressProvince ?? "",
+    addressCity: resubmission?.form?.addressCity ?? "",
+    addressBarangay: resubmission?.form?.addressBarangay ?? "",
+    addressPostalCode: resubmission?.form?.addressPostalCode ?? "",
     businessName: resubmission?.form?.businessName ?? "",
     businessAddress: resubmission?.form?.businessAddress ?? "",
     postalCode: resubmission?.form?.postalCode ?? "",
     businessType: resubmission?.form?.businessType ?? "",
     registrationType: resubmission?.form?.registrationType ?? "individual",
   });
+  const [personalAddressLocation, setPersonalAddressLocation] = useState<RegistrationAddress | null>(
+    () => getResubmissionPersonalAddress(resubmission?.form),
+  );
   const [selectedCity, setSelectedCity] = useState(inferCaviteCity(resubmission?.form?.businessAddress ?? ""));
+  const [isCityDropdownOpen, setIsCityDropdownOpen] = useState(false);
+  const cityDropdownRef = useRef<HTMLDivElement>(null);
+  const hasShownDocumentReminder = useRef(false);
 
 
   const [uploadedDocuments, setUploadedDocuments] = useState({
@@ -159,7 +233,26 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     valid_id: { file: null as File | null, fileName: existingDocuments.valid_id?.fileName ?? '', previewUrl: existingDocuments.valid_id?.url ?? '' },
   });
   const [additionalDocuments, setAdditionalDocuments] = useState<AdditionalDocument[]>([]);
-  const nextAdditionalDocId = useRef(1);
+  const [replacedOtherDocuments, setReplacedOtherDocuments] = useState<Record<number, AdditionalDocument>>({});
+  const [removedOtherDocumentIds, setRemovedOtherDocumentIds] = useState<number[]>([]);
+  const [businessRegistrationType, setBusinessRegistrationType] = useState<'dti_registration' | 'sec_registration'>(
+    existingDocuments.dti?.type === 'sec_registration' ? 'sec_registration' : 'dti_registration',
+  );
+  const businessRegistrationLabel = businessRegistrationType === 'sec_registration'
+    ? 'Shop Registration (SEC)'
+    : 'Shop Registration (DTI)';
+  const [documentMetadata, setDocumentMetadata] = useState<Record<FixedDocumentSlot, RegistrationDocumentMetadata>>({
+    business_registration: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+    mayors_permit: { expirationMode: 'dated', expiresOn: '', issuedOn: '' },
+    bir_certificate: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+    valid_id: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+  });
+  const [submissionKeys] = useState(() => ({
+    businessRegistration: crypto.randomUUID(),
+    mayorsPermit: crypto.randomUUID(),
+    birCertificate: crypto.randomUUID(),
+    validId: crypto.randomUUID(),
+  }));
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
@@ -168,8 +261,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const [emailVerificationSent, setEmailVerificationSent] = useState(isResubmission);
   const [emailVerified, setEmailVerified] = useState(isResubmission);
   const [emailVerificationMessage, setEmailVerificationMessage] = useState(
-    isResubmission ? 'Resubmission mode: your verified email is locked to this application.' : ''
+    isResubmission ? 'Resubmission: your verified email is locked to this application.' : ''
   );
+  const [termsAccepted, setTermsAccepted] = useState(false);
   const [isSendingEmailCode, setIsSendingEmailCode] = useState(false);
   const [isVerifyingEmailCode, setIsVerifyingEmailCode] = useState(false);
   const [availabilityNote, setAvailabilityNote] = useState('');
@@ -194,6 +288,58 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const circleRef = useRef<any>(null);
+
+  useEffect(() => {
+    const closeCityDropdown = (event: MouseEvent) => {
+      if (cityDropdownRef.current && !cityDropdownRef.current.contains(event.target as Node)) {
+        setIsCityDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', closeCityDropdown);
+    return () => document.removeEventListener('mousedown', closeCityDropdown);
+  }, []);
+
+  useEffect(() => {
+    if (isResubmission) return;
+
+    let isMounted = true;
+
+    void Swal.fire({
+      icon: 'question',
+      title: 'Before You Proceed',
+      text: 'This account is intended for shop owners and repairers applying for SoleSpace services. Only shops located in Cavite are eligible to register here. Please continue only if you have a business or repair service to register.',
+      showCancelButton: true,
+      confirmButtonText: 'Proceed',
+      cancelButtonText: 'Cancel',
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+    }).then((result) => {
+      if (isMounted && !result.isConfirmed) {
+        router.visit(route('services'));
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      Swal.close();
+    };
+  }, [isResubmission]);
+
+  useEffect(() => {
+    if (currentStep !== 3 || hasShownDocumentReminder.current) return;
+
+    hasShownDocumentReminder.current = true;
+    void Swal.fire({
+      icon: 'info',
+      title: 'Document Submission Reminder',
+      text: 'Please submit accurate, authentic, and up-to-date documents. Read the instructions below before uploading and make sure every photo is clear, complete, and readable.',
+      confirmButtonText: 'I Understand',
+      confirmButtonColor: '#111827',
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+    });
+  }, [currentStep]);
 
   const businessTypeOptions = [
     { value: "retail", label: "Retail" },
@@ -235,6 +381,28 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return;
     }
 
+    if (name === 'age') {
+      const digitsOnly = value.slice(0, 3);
+
+      if (value && (!/^\d+$/.test(value) || Number(digitsOnly) <= 0)) {
+        setFormData(prev => ({ ...prev, age: '' }));
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid age',
+          text: 'Age must be a positive whole number.',
+          confirmButtonColor: '#3085d6',
+        });
+        return;
+      }
+
+      setFormData(prev => ({ ...prev, age: digitsOnly }));
+
+      if (errors.age) {
+        setErrors(prev => ({ ...prev, age: '' }));
+      }
+      return;
+    }
+
     if (name === 'postalCode') {
       const numericValue = value.replace(/\D/g, '');
       setFormData(prev => ({ ...prev, postalCode: numericValue }));
@@ -245,9 +413,26 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return;
     }
 
+    if (name === 'addressPostalCode') {
+      const numericValue = value.replace(/\D/g, '').slice(0, 10);
+      setFormData(prev => ({ ...prev, addressPostalCode: numericValue }));
+
+      if (errors.address_postal_code) {
+        setErrors(prev => ({ ...prev, address_postal_code: '' }));
+      }
+      return;
+    }
+
     const errorKeyMap: Record<string, string> = {
       firstName: 'first_name',
       lastName: 'last_name',
+      suffix: 'suffix',
+      age: 'age',
+      address: 'address',
+      addressRegion: 'address_region',
+      addressProvince: 'address_province',
+      addressCity: 'address_city',
+      addressBarangay: 'address_barangay',
       businessName: 'business_name',
       businessAddress: 'business_address',
       businessType: 'business_type',
@@ -264,6 +449,29 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       setErrors(prev => ({ ...prev, [resolvedErrorKey]: '' }));
     }
 
+  };
+
+  const handlePersonalAddressChange = (location: RegistrationAddress) => {
+    setPersonalAddressLocation(location);
+    setFormData(previous => ({
+      ...previous,
+      address: location.displayName,
+      addressRegion: location.region,
+      addressProvince: location.province,
+      addressCity: location.city,
+      addressBarangay: location.barangay,
+      addressPostalCode: location.postalCode,
+    }));
+    setErrors(previous => ({
+      ...previous,
+      address: '',
+      address_region: '',
+      address_province: '',
+      address_city: '',
+      address_barangay: '',
+      address_latitude: '',
+      address_longitude: '',
+    }));
   };
 
   const handleSelectChange = (value: string) => {
@@ -283,7 +491,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   };
 
   const handleAddAdditionalDocument = () => {
-    if (additionalDocuments.length >= MAX_ADDITIONAL_DOCUMENTS) {
+    if (additionalDocuments.length + existingDocuments.other.length - removedOtherDocumentIds.length >= MAX_ADDITIONAL_DOCUMENTS) {
       Swal.fire({
         icon: 'info',
         title: 'Limit Reached',
@@ -293,9 +501,15 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return;
     }
 
-    const newId = nextAdditionalDocId.current;
-    nextAdditionalDocId.current += 1;
-    setAdditionalDocuments((prev) => [...prev, { id: newId, file: null, fileName: '', previewUrl: '' }]);
+    const newId = crypto.randomUUID();
+    setAdditionalDocuments((prev) => [...prev, {
+      id: newId,
+      file: null,
+      fileName: '',
+      previewUrl: '',
+      metadata: { expirationMode: 'none', expiresOn: '', issuedOn: '' },
+      submissionKey: crypto.randomUUID(),
+    }]);
   };
 
   const createPreviewUrl = (file: File) => URL.createObjectURL(file);
@@ -318,6 +532,34 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     });
   };
 
+  const updateDocumentMetadata = (
+    slot: FixedDocumentSlot,
+    updates: Partial<RegistrationDocumentMetadata>,
+  ) => {
+    setDocumentMetadata((previous) => ({
+      ...previous,
+      [slot]: { ...previous[slot], ...updates },
+    }));
+
+    const errorKeys = [slot, `${slot}.expiration_mode`, `${slot}.expires_on`];
+    setErrors((previous) => {
+      const next = { ...previous };
+      errorKeys.forEach((key) => { delete next[key]; });
+      return next;
+    });
+  };
+
+  const updateSupportingMetadata = (
+    id: string,
+    updates: Partial<RegistrationDocumentMetadata>,
+  ) => {
+    setAdditionalDocuments((previous) => previous.map((document) => (
+      document.id === id
+        ? { ...document, metadata: { ...document.metadata, ...updates } }
+        : document
+    )));
+  };
+
   const isAllowedShopOwnerImageFile = (file: File) => {
     const extension = file.name.split('.').pop()?.toLowerCase() ?? '';
     const hasAllowedExtension = SHOP_OWNER_ALLOWED_EXTENSIONS.has(extension);
@@ -336,7 +578,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     });
   };
 
-  const handleAdditionalDocumentDrop = (id: number, files: File[]) => {
+  const handleAdditionalDocumentDrop = (id: string, files: File[]) => {
     if (!files || files.length === 0) {
       return;
     }
@@ -373,7 +615,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     });
   };
 
-  const handleRemoveAdditionalDocument = (id: number) => {
+  const handleRemoveAdditionalDocument = (id: string) => {
     setAdditionalDocuments((prev) => {
       const removed = prev.find((doc) => doc.id === id);
       if (removed?.previewUrl.startsWith('blob:')) {
@@ -381,6 +623,46 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       }
 
       return prev.filter((doc) => doc.id !== id);
+    });
+  };
+
+  const handleRemoveExistingOtherDocument = (id: number) => {
+    setRemovedOtherDocumentIds((previous) => [...previous, id]);
+  };
+
+  const existingSupportingDraft = (document: ExistingDocumentPayload): AdditionalDocument => ({
+    id: document.logical_slot?.replace(/^supporting_document:/, '') || `legacy:${document.id}`,
+    file: null,
+    fileName: document.fileName,
+    previewUrl: '',
+    metadata: {
+      issuedOn: document.issuedOn ?? '',
+      expirationMode: document.expirationMode ?? 'none',
+      expiresOn: document.expiresOn ?? '',
+    },
+    submissionKey: crypto.randomUUID(),
+  });
+
+  const handleReplaceExistingOtherDocument = (document: ExistingDocumentPayload, file: File) => {
+    if (!isAllowedShopOwnerImageFile(file)) {
+      showInvalidImageUploadAlert('Other Supporting Documents', file.name);
+      return;
+    }
+
+    setReplacedOtherDocuments((previous) => {
+      const current = previous[document.id] ?? existingSupportingDraft(document);
+      if (current.previewUrl.startsWith('blob:')) URL.revokeObjectURL(current.previewUrl);
+      return {
+        ...previous,
+        [document.id]: { ...current, file, fileName: file.name, previewUrl: createPreviewUrl(file) },
+      };
+    });
+  };
+
+  const updateExistingOtherMetadata = (document: ExistingDocumentPayload, updates: Partial<RegistrationDocumentMetadata>) => {
+    setReplacedOtherDocuments((previous) => {
+      const current = previous[document.id] ?? existingSupportingDraft(document);
+      return { ...previous, [document.id]: { ...current, metadata: { ...current.metadata, ...updates } } };
     });
   };
 
@@ -442,8 +724,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       const initLng = parseFloat(geoLng) || parseFloat(CAVITE_CENTER.lng);
 
       const map = L.map(mapRef.current).setView([initLat, initLng], 16);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
+      L.tileLayer(getCartoRasterUrl(), {
+        attribution: CARTO_ATTRIBUTION,
       }).addTo(map);
 
       const marker = L.marker([initLat, initLng], { draggable: true }).addTo(map);
@@ -501,7 +783,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     circleRef.current.setLatLng([lat, lng]);
   }, [geoLat, geoLng]);
 
-  const handleUseMyGPS = () => {
+  const handleUseMyGPS = async () => {
     if (!navigator.geolocation) {
       setGeoError('Geolocation is not supported by your browser.');
       return;
@@ -510,36 +792,38 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     setGettingGPS(true);
     setGeoError('');
 
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        const lat = pos.coords.latitude.toFixed(8);
-        const lng = pos.coords.longitude.toFixed(8);
-        setGeoLat(lat);
-        setGeoLng(lng);
+    try {
+      const pos = await getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS);
+      const lat = pos.coords.latitude.toFixed(8);
+      const lng = pos.coords.longitude.toFixed(8);
+      setGeoLat(lat);
+      setGeoLng(lng);
+      setGettingGPS(false);
 
-        try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-            { headers: { 'User-Agent': 'SoleSpace/1.0' } },
-          );
-          const data = await res.json();
-          if (data.display_name) {
-            setGeoAddress(data.display_name);
-            setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
-            setSelectedCity(inferCaviteCity(data.display_name));
-          }
-        } catch {
-          // Keep coordinates even if reverse geocoding fails.
+      try {
+        const res = await fetch(
+          `/api/address/geocode?latitude=${lat}&longitude=${lng}`,
+        );
+        if (!res.ok) throw new Error('Address lookup failed');
+        const data = await res.json();
+        const addressFields = getRegistrationAddressFields(data);
+        if (addressFields) {
+          setGeoAddress(addressFields.businessAddress);
+          setFormData(previous => ({
+            ...previous,
+            businessAddress: addressFields.businessAddress,
+            postalCode: addressFields.postalCode || previous.postalCode,
+          }));
+          setSelectedCity(inferCaviteCity(addressFields.businessAddress));
         }
-
-        setGettingGPS(false);
-      },
-      () => {
-        setGeoError('Could not get your location. Please allow location access.');
-        setGettingGPS(false);
-      },
-      { enableHighAccuracy: true },
-    );
+      } catch {
+        // Keep coordinates even if reverse geocoding fails.
+      }
+    } catch {
+      setGeoError('Could not get your location. Please allow location access.');
+    } finally {
+      setGettingGPS(false);
+    }
   };
 
   const handleSaveAddress = async () => {
@@ -552,14 +836,19 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
     try {
       const res = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
-        { headers: { 'User-Agent': 'SoleSpace/1.0' } },
+        `/api/address/geocode?latitude=${lat}&longitude=${lng}`,
       );
+      if (!res.ok) throw new Error('Address lookup failed');
       const data = await res.json();
-      if (data.display_name) {
-        setGeoAddress(data.display_name);
-        setFormData(prev => ({ ...prev, businessAddress: data.display_name }));
-        setSelectedCity(inferCaviteCity(data.display_name));
+      const addressFields = getRegistrationAddressFields(data);
+      if (addressFields) {
+        setGeoAddress(addressFields.businessAddress);
+        setFormData(previous => ({
+          ...previous,
+          businessAddress: addressFields.businessAddress,
+          postalCode: addressFields.postalCode || previous.postalCode,
+        }));
+        setSelectedCity(inferCaviteCity(addressFields.businessAddress));
       } else {
         setGeoError('Could not find an address for this location. Please type the address manually.');
       }
@@ -578,6 +867,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       const lastName = formData.lastName.trim();
       const email = formData.email.trim().toLowerCase();
       const phone = formData.phone.trim();
+      const age = Number(formData.age);
 
       if (!firstName) {
         stepErrors.first_name = 'Please enter your first name.';
@@ -601,6 +891,38 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
         stepErrors.phone = 'Please enter your phone number.';
       } else if (!PHONE_REGEX.test(phone)) {
         stepErrors.phone = 'Phone number must be exactly 11 digits (example: 09171234567).';
+      }
+
+      if (!formData.age.trim()) {
+        stepErrors.age = 'Please enter your age.';
+      } else if (!Number.isInteger(age) || age < 18 || age > 120) {
+        stepErrors.age = 'Age must be a whole number from 18 to 120.';
+      }
+
+      if (!formData.address.trim()) {
+        stepErrors.address = 'Please enter your personal address.';
+      }
+
+      if (!formData.addressRegion.trim()) {
+        stepErrors.address_region = 'Select a complete personal address on the map.';
+      }
+
+      if (!formData.addressProvince.trim()) {
+        stepErrors.address_province = 'Select a complete personal address on the map.';
+      }
+
+      if (!formData.addressCity.trim()) {
+        stepErrors.address_city = 'Select your city or municipality on the map.';
+      }
+
+      if (!formData.addressBarangay.trim()) {
+        stepErrors.address_barangay = 'Select your barangay on the map.';
+      }
+
+      if (!personalAddressLocation
+        || !Number.isFinite(personalAddressLocation.latitude)
+        || !Number.isFinite(personalAddressLocation.longitude)) {
+        stepErrors.address_latitude = 'Use the map or Use My GPS to set your personal location.';
       }
 
       const hasValidEmail = Boolean(email) && EMAIL_REGEX.test(email);
@@ -649,6 +971,42 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       if (!uploadedDocuments.valid_id.file && !existingDocuments.valid_id) {
         stepErrors.valid_id = 'Upload a valid government-issued ID of the owner.';
       }
+
+      const metadataSlots: Array<[FixedDocumentSlot, string]> = [
+        ['business_registration', 'dti_registration'],
+        ['mayors_permit', 'mayors_permit'],
+        ['bir_certificate', 'bir_certificate'],
+        ['valid_id', 'valid_id'],
+      ];
+      metadataSlots.forEach(([slot, errorKey]) => {
+        const metadata = documentMetadata[slot];
+        if (!metadata.expirationMode) {
+          stepErrors[errorKey] = 'Choose whether this document has an expiration date.';
+        } else if (metadata.expirationMode === 'dated' && !metadata.expiresOn) {
+          stepErrors[errorKey] = 'Enter an expiration date for this document.';
+        } else if (metadata.expirationMode === 'none' && metadata.expiresOn) {
+          stepErrors[errorKey] = 'Remove the expiration date or choose dated.';
+        }
+      });
+
+      if (documentMetadata.mayors_permit.expirationMode !== 'dated') {
+        stepErrors.mayors_permit = "Mayor's Permit must have a dated expiration.";
+      }
+
+      additionalDocuments.forEach((document) => {
+        if (document.metadata.expirationMode === 'dated' && !document.metadata.expiresOn) {
+          stepErrors[`supporting_document:${document.id}`] = 'Enter an expiration date or choose no expiration.';
+        }
+      });
+      Object.entries(replacedOtherDocuments).filter(([id]) => !removedOtherDocumentIds.includes(Number(id))).forEach(([, document]) => {
+        if (document.metadata.expirationMode === 'dated' && !document.metadata.expiresOn) {
+          stepErrors[`supporting_document:${document.id}`] = 'Enter an expiration date or choose no expiration.';
+        }
+      });
+    }
+
+    if (step === 4 && !termsAccepted) {
+      stepErrors.termsAccepted = 'Please read and accept the terms and conditions before submitting.';
     }
 
     return stepErrors;
@@ -658,12 +1016,27 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     ...getStepValidationErrors(1),
     ...getStepValidationErrors(2),
     ...getStepValidationErrors(3),
+    ...getStepValidationErrors(4),
   });
 
   const getFirstInvalidStep = (validationErrors: Record<string, string>): number => {
-    const stepOneKeys = ['first_name', 'last_name', 'email', 'phone', 'email_verification'];
+    const stepOneKeys = [
+      'first_name',
+      'last_name',
+      'email',
+      'phone',
+      'age',
+      'address',
+      'address_region',
+      'address_province',
+      'address_city',
+      'address_barangay',
+      'address_latitude',
+      'address_longitude',
+      'email_verification',
+    ];
     const stepTwoKeys = ['business_name', 'business_address', 'business_type', 'shop_latitude', 'shop_longitude'];
-    const stepThreeKeys = ['dti_registration', 'mayors_permit', 'bir_certificate', 'valid_id'];
+    const stepThreeKeys = ['dti_registration', 'mayors_permit', 'bir_certificate', 'valid_id', 'removed_other_document_ids'];
 
     if (stepOneKeys.some((key) => Boolean(validationErrors[key]))) {
       return 1;
@@ -773,11 +1146,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     setEmailVerificationMessage('');
 
     try {
+      const csrfToken = await getFreshCsrfToken();
       const response = await fetch('/shop-owner/email-verification/send-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+          'X-CSRF-TOKEN': csrfToken,
           Accept: 'application/json',
         },
         body: JSON.stringify({ email: trimmedEmail }),
@@ -843,11 +1217,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     setIsVerifyingEmailCode(true);
 
     try {
+      const csrfToken = await getFreshCsrfToken();
       const response = await fetch('/shop-owner/email-verification/verify-code', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+          'X-CSRF-TOKEN': csrfToken,
           Accept: 'application/json',
         },
         body: JSON.stringify({ email: trimmedEmail, otp: trimmedCode }),
@@ -881,6 +1256,20 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   };
 
   const handleNext = async () => {
+    if (currentStep === 1) {
+      const age = Number(formData.age);
+
+      if (formData.age.trim() && Number.isInteger(age) && age > 0 && age < 18) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Age requirement not met',
+          text: 'Applicants below 18 cannot register as a shop owner. You must be at least 18 years old to continue.',
+          confirmButtonColor: '#3085d6',
+        });
+        return;
+      }
+    }
+
     const stepErrors = getStepValidationErrors(currentStep);
     if (Object.keys(stepErrors).length > 0) {
       setErrors((prev) => ({ ...prev, ...stepErrors }));
@@ -913,6 +1302,26 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
   const handlePrev = () => {
     setCurrentStep(currentStep - 1);
+  };
+
+  const handleTermsChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.checked) {
+      setTermsAccepted(false);
+      setErrors((prev) => ({ ...prev, termsAccepted: '' }));
+      return;
+    }
+
+    const result = await openTermsPolicyModal('TERMS AND CONDITIONS', CUSTOMER_ACCOUNT_TERMS_HTML);
+    const accepted = Boolean(result.isConfirmed);
+    setTermsAccepted(accepted);
+    setErrors((prev) => ({
+      ...prev,
+      termsAccepted: accepted ? '' : 'Please accept the terms and conditions before submitting.',
+    }));
+  };
+
+  const handleViewTerms = () => {
+    void openTermsPolicyModal('TERMS AND CONDITIONS', CUSTOMER_ACCOUNT_TERMS_HTML);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -951,6 +1360,17 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
       return;
     }
 
+    if (!personalAddressLocation) {
+      setCurrentStep(1);
+      setErrors((prev) => ({
+        ...prev,
+        address_latitude: 'Use the map or Use My GPS to set your personal location.',
+      }));
+      return;
+    }
+
+    const personalAddress = personalAddressLocation;
+
     if (!caviteLocationState.allowed) {
       Swal.fire({
         icon: 'error',
@@ -984,11 +1404,22 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
         submitData.append('last_name', formData.lastName);
         submitData.append('email', formData.email);
         submitData.append('phone', formData.phone);
+        submitData.append('suffix', formData.suffix);
+        submitData.append('age', formData.age);
+        submitData.append('address', formData.address || personalAddress.displayName);
+        submitData.append('address_region', formData.addressRegion);
+        submitData.append('address_province', formData.addressProvince);
+        submitData.append('address_city', formData.addressCity);
+        submitData.append('address_barangay', formData.addressBarangay);
+        submitData.append('address_postal_code', formData.addressPostalCode || personalAddress.postalCode);
+        submitData.append('address_latitude', String(personalAddress.latitude));
+        submitData.append('address_longitude', String(personalAddress.longitude));
         submitData.append('business_name', formData.businessName);
         submitData.append('business_address', formData.businessAddress);
         submitData.append('postal_code', formData.postalCode);
         submitData.append('business_type', formData.businessType);
         submitData.append('registration_type', formData.registrationType);
+        submitData.append('terms_accepted', termsAccepted ? '1' : '0');
         // Only enable attendance geofence for company accounts (they have staff to clock in)
         const isIndividual = formData.registrationType === 'individual';
         submitData.append('attendance_geofence_enabled', isIndividual ? '0' : '1');
@@ -1001,23 +1432,36 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
         // Operating hours removed — nothing to append for operating hours
 
-        // Add document files
-        if (uploadedDocuments.dti.file) {
-          submitData.append('dti_registration', uploadedDocuments.dti.file);
-        }
-        if (uploadedDocuments.mayors_permit.file) {
-          submitData.append('mayors_permit', uploadedDocuments.mayors_permit.file);
-        }
-        if (uploadedDocuments.bir.file) {
-          submitData.append('bir_certificate', uploadedDocuments.bir.file);
-        }
-        if (uploadedDocuments.valid_id.file) {
-          submitData.append('valid_id', uploadedDocuments.valid_id.file);
-        }
-        additionalDocuments.forEach((doc) => {
-          if (doc.file) {
-            submitData.append('other_documents[]', doc.file);
-          }
+        appendRegistrationDocuments(submitData, {
+          businessRegistration: {
+            file: uploadedDocuments.dti.file,
+            metadata: documentMetadata.business_registration,
+          },
+          businessRegistrationType,
+          mayorsPermit: {
+            file: uploadedDocuments.mayors_permit.file,
+            metadata: documentMetadata.mayors_permit,
+          },
+          birCertificate: {
+            file: uploadedDocuments.bir.file,
+            metadata: documentMetadata.bir_certificate,
+          },
+          validId: {
+            file: uploadedDocuments.valid_id.file,
+            metadata: documentMetadata.valid_id,
+          },
+          submissionKeys,
+          supportingDocuments: [...additionalDocuments, ...Object.entries(replacedOtherDocuments)
+            .filter(([id]) => !removedOtherDocumentIds.includes(Number(id)))
+            .map(([, document]) => document)].map((document) => ({
+            slotId: document.id,
+            file: document.file,
+            metadata: document.metadata,
+            submissionKey: document.submissionKey,
+          })),
+        });
+        removedOtherDocumentIds.forEach((id, index) => {
+          submitData.append(`removed_other_document_ids[${index}]`, String(id));
         });
 
         const submitEndpoint = isResubmission ? (resubmission?.submitUrl ?? '') : route('shop-owner.register');
@@ -1032,9 +1476,14 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
           return;
         }
 
+        const csrfToken = await getFreshCsrfToken();
+
         // Submit to backend
         router.post(submitEndpoint, submitData, {
           forceFormData: true,
+          headers: {
+            'X-CSRF-TOKEN': csrfToken,
+          },
           onSuccess: () => {
             setIsSubmitting(false);
             Swal.fire({
@@ -1083,10 +1532,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     uploadedDocuments.bir.file || existingDocuments.bir,
     uploadedDocuments.valid_id.file || existingDocuments.valid_id,
   ].filter(Boolean).length;
-  const existingAdditionalCount = existingDocuments.other.length;
+  const remainingOtherDocuments = existingDocuments.other.filter((doc) => !removedOtherDocumentIds.includes(doc.id));
+  const existingAdditionalCount = remainingOtherDocuments.length;
   const additionalUploadCount = existingAdditionalCount + additionalDocuments.filter((doc) => !!doc.file).length;
   const hasAdditionalDocuments = additionalDocuments.length > 0 || existingAdditionalCount > 0;
-  const hasReachedAdditionalLimit = additionalDocuments.length >= MAX_ADDITIONAL_DOCUMENTS;
+  const hasReachedAdditionalLimit = additionalDocuments.length + existingAdditionalCount >= MAX_ADDITIONAL_DOCUMENTS;
   const registrationSteps = [
     { id: 1, label: 'Personal Info', shortLabel: 'Personal' },
     { id: 2, label: 'Shop Info', shortLabel: 'Shop' },
@@ -1097,22 +1547,10 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   return (
     <>
       <Head title={isResubmission ? "Shop Owner Resubmission" : "Shop Owner Registration"} />
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-        <Navigation />
+      <CustomerFooterReveal className="userside-shop-owner-registration-shell">
+      <div className="userside-shop-owner-registration-page userside-auth-page userside-auth-pattern relative min-h-screen font-outfit antialiased">
+        <Navigation hidePromoBar hideSearchAndCart />
         <div className="max-w-6xl mx-auto px-4 lg:px-8 pt-24 pb-8 md:pt-28 md:pb-12 lg:pt-32">
-          {/* Header Section */}
-          <div className="text-center mb-8 md:mb-10 lg:mb-12 px-1">
-            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-gray-900 mb-3 md:mb-4 tracking-tight leading-tight">
-              {isResubmission ? 'Shop Owner Application Resubmission' : 'Shop Owner Registration'}
-            </h1>
-            <p className="text-base sm:text-lg text-gray-600 max-w-2xl mx-auto mb-1.5 md:mb-2">
-              {isResubmission ? 'Update your details and submit for another review' : 'Join our platform and reach more customers'}
-            </p>
-            <p className="text-xs sm:text-sm text-gray-500">
-              Complete your registration to start selling products and services
-            </p>
-          </div>
-
           {/* Progress Indicator */}
           <div className="mb-6 md:mb-8 bg-white rounded-2xl shadow-sm border border-gray-200 p-4 md:p-5 lg:p-6">
             <div className="grid grid-cols-2 gap-2 md:gap-3 lg:hidden">
@@ -1170,16 +1608,16 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             {currentStep === 1 && (
               <ComponentCard title="Personal Information">
                 {isResubmission && (
-                  <div className="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4">
-                    <p className="text-sm font-semibold text-amber-900">Resubmission Mode</p>
-                    <p className="mt-1 text-sm text-amber-800">
+                  <div className="mb-6 rounded-lg border border-gray-900 bg-white p-4">
+                    <p className="text-sm font-semibold text-gray-900">Resubmission</p>
+                    <p className="mt-1 text-sm text-gray-700">
                       Your previous application was rejected. Update the details below, replace or add documents, then submit again.
                     </p>
-                    <p className="mt-2 text-sm text-amber-900">
+                    <p className="mt-2 text-sm text-gray-900">
                       <span className="font-semibold">Attempts:</span> {resubmissionUsedAttempts}/{resubmissionMaxAttempts} used, {resubmissionRemainingAttempts} remaining
                     </p>
                     {resubmission?.rejectionReason && (
-                      <p className="mt-2 text-sm text-amber-900">
+                      <p className="mt-2 text-sm text-gray-900">
                         <span className="font-semibold">Rejection reason:</span> {resubmission.rejectionReason}
                       </p>
                     )}
@@ -1218,6 +1656,33 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     {errors.last_name && <p className="mt-1 text-sm text-red-600">{errors.last_name}</p>}
                   </div>
                   <div>
+                    <Label htmlFor="suffix">Suffix <span className="font-normal text-gray-400">(optional)</span></Label>
+                    <Input
+                      type="text"
+                      id="suffix"
+                      name="suffix"
+                      value={formData.suffix}
+                      onChange={handleInputChange}
+                      placeholder="Jr., Sr., III"
+                      className={errors.suffix ? 'border-red-500' : ''}
+                    />
+                    {errors.suffix && <p className="mt-1 text-sm text-red-600">{errors.suffix}</p>}
+                  </div>
+                  <div>
+                    <Label htmlFor="age">Age</Label>
+                    <Input
+                      type="text"
+                      id="age"
+                      name="age"
+                      value={formData.age}
+                      onChange={handleInputChange}
+                      inputMode="numeric"
+                      placeholder="Enter age"
+                      className={errors.age ? 'border-red-500' : ''}
+                    />
+                    {errors.age && <p className="mt-1 text-sm text-red-600">{errors.age}</p>}
+                  </div>
+                  <div>
                     <Label htmlFor="email">Email</Label>
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                       <div className="w-full">
@@ -1237,7 +1702,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           type="button"
                           onClick={handleSendEmailVerificationCode}
                           disabled={isSendingEmailCode || emailVerified || !formData.email.trim()}
-                          className="w-full sm:w-auto whitespace-nowrap px-4 py-2 border border-blue-600 text-blue-600 font-semibold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50"
+                          className="w-full whitespace-nowrap rounded-lg border border-gray-900 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                         >
                           {emailVerified ? 'Email Verified' : (isSendingEmailCode ? 'Sending...' : (emailVerificationSent ? 'Resend Code' : 'Send Code'))}
                         </button>
@@ -1292,6 +1757,104 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     {errors.phone && <p className="mt-1 text-sm text-red-600">{errors.phone}</p>}
                   </div>
                 </div>
+                <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 md:p-5">
+                  <div className="mb-5">
+                    <h3 className="text-base font-semibold text-gray-900">Personal Address</h3>
+                    <p className="mt-1 text-sm text-gray-500">
+                      This is the shop owner&apos;s residential address. It is separate from the shop address in Shop Information.
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <div className="md:col-span-2">
+                      <Label htmlFor="personalAddress">Address</Label>
+                      <Input
+                        type="text"
+                        id="personalAddress"
+                        name="address"
+                        value={formData.address}
+                        onChange={handleInputChange}
+                        placeholder="House/Unit, Street, Barangay, City"
+                        className={errors.address ? 'border-red-500' : ''}
+                      />
+                      {errors.address && <p className="mt-1 text-sm text-red-600">{errors.address}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressPostalCode">Postal Code / ZIP Code</Label>
+                      <Input
+                        type="text"
+                        id="addressPostalCode"
+                        name="addressPostalCode"
+                        value={formData.addressPostalCode}
+                        onChange={handleInputChange}
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        placeholder="Enter postal or ZIP code"
+                        className={errors.address_postal_code ? 'border-red-500' : ''}
+                      />
+                      {errors.address_postal_code && <p className="mt-1 text-sm text-red-600">{errors.address_postal_code}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressRegion">Region</Label>
+                      <Input
+                        type="text"
+                        id="addressRegion"
+                        name="addressRegion"
+                        value={formData.addressRegion}
+                        onChange={handleInputChange}
+                        className={`w-full ${errors.address_region ? 'border-red-500' : ''}`}
+                      />
+                      {errors.address_region && <p className="mt-1 text-sm text-red-600">{errors.address_region}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressProvince">Province</Label>
+                      <Input
+                        type="text"
+                        id="addressProvince"
+                        name="addressProvince"
+                        value={formData.addressProvince}
+                        onChange={handleInputChange}
+                        className={`w-full ${errors.address_province ? 'border-red-500' : ''}`}
+                      />
+                      {errors.address_province && <p className="mt-1 text-sm text-red-600">{errors.address_province}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressCity">City / Municipality</Label>
+                      <Input
+                        type="text"
+                        id="addressCity"
+                        name="addressCity"
+                        value={formData.addressCity}
+                        onChange={handleInputChange}
+                        className={`w-full ${errors.address_city ? 'border-red-500' : ''}`}
+                      />
+                      {errors.address_city && <p className="mt-1 text-sm text-red-600">{errors.address_city}</p>}
+                    </div>
+                    <div>
+                      <Label htmlFor="addressBarangay">Barangay</Label>
+                      <Input
+                        type="text"
+                        id="addressBarangay"
+                        name="addressBarangay"
+                        value={formData.addressBarangay}
+                        onChange={handleInputChange}
+                        className={`w-full ${errors.address_barangay ? 'border-red-500' : ''}`}
+                      />
+                      {errors.address_barangay && <p className="mt-1 text-sm text-red-600">{errors.address_barangay}</p>}
+                    </div>
+                  </div>
+                  <div className="mt-6">
+                    <CustomerAddressMapPicker
+                      value={personalAddressLocation
+                        ? { latitude: personalAddressLocation.latitude, longitude: personalAddressLocation.longitude }
+                        : null}
+                      onChange={handlePersonalAddressChange}
+                      embeddedInForm
+                      gpsButtonLabel="Use My GPS"
+                    />
+                    {errors.address_latitude && <p className="mt-1 text-sm text-red-600">{errors.address_latitude}</p>}
+                    {errors.address_longitude && <p className="mt-1 text-sm text-red-600">{errors.address_longitude}</p>}
+                  </div>
+                </div>
                 <div className="flex justify-end pt-4">
                   <button
                     type="button"
@@ -1339,7 +1902,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           type="button"
                           onClick={handleUseMyGPS}
                           disabled={gettingGPS}
-                          className="shrink-0 px-4 py-2 border border-blue-600 text-blue-600 font-semibold text-sm hover:bg-blue-50 transition-colors disabled:opacity-50 whitespace-nowrap"
+                          className="min-h-11 shrink-0 whitespace-nowrap rounded-lg border border-gray-900 bg-white px-4 text-sm font-semibold text-gray-900 shadow-sm transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-black focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {gettingGPS ? 'Getting GPS...' : 'Use My GPS'}
                         </button>
@@ -1377,20 +1940,57 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                     <div>
                       <Label htmlFor="caviteCity">City / Municipality (optional)</Label>
-                      <select
-                        id="caviteCity"
-                        name="caviteCity"
-                        aria-label="Cavite city or municipality"
-                        title="Cavite city or municipality"
-                        value={selectedCity}
-                        onChange={(e) => setSelectedCity(e.target.value)}
-                        className="h-11 w-full appearance-none rounded-lg border border-gray-300 bg-transparent px-4 py-2.5 pr-11 text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10"
-                      >
-                        <option value="">Select Cavite city/municipality</option>
-                        {CAVITE_CITIES.map((city) => (
-                          <option key={city} value={city}>{city}</option>
-                        ))}
-                      </select>
+                      <div ref={cityDropdownRef} className="relative">
+                        <button
+                          id="caviteCity"
+                          type="button"
+                          aria-label="Cavite city or municipality"
+                          aria-haspopup="listbox"
+                          aria-expanded={isCityDropdownOpen}
+                          onClick={() => setIsCityDropdownOpen((open) => !open)}
+                          className="flex h-11 w-full items-center justify-between rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-left text-sm text-gray-800 shadow-theme-xs focus:border-brand-300 focus:outline-hidden focus:ring-3 focus:ring-brand-500/10"
+                        >
+                          <span className={selectedCity ? 'text-gray-800' : 'text-gray-400'}>
+                            {selectedCity || 'Select Cavite city/municipality'}
+                          </span>
+                          <span className={`text-gray-500 transition-transform ${isCityDropdownOpen ? 'rotate-180' : ''}`}>▾</span>
+                        </button>
+
+                        {isCityDropdownOpen && (
+                          <div
+                            role="listbox"
+                            className="absolute left-0 right-0 top-full z-50 mt-1 max-h-56 overflow-y-auto rounded-lg border border-gray-300 bg-white py-1 shadow-lg"
+                          >
+                            <button
+                              type="button"
+                              role="option"
+                              aria-selected={!selectedCity}
+                              onClick={() => {
+                                setSelectedCity('');
+                                setIsCityDropdownOpen(false);
+                              }}
+                              className="w-full px-4 py-2 text-left text-sm text-gray-500 hover:bg-gray-50"
+                            >
+                              Select Cavite city/municipality
+                            </button>
+                            {CAVITE_CITIES.map((city) => (
+                              <button
+                                key={city}
+                                type="button"
+                                role="option"
+                                aria-selected={selectedCity === city}
+                                onClick={() => {
+                                  setSelectedCity(city);
+                                  setIsCityDropdownOpen(false);
+                                }}
+                                className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-50 ${selectedCity === city ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-700'}`}
+                              >
+                                {city}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                       <p className="mt-1 text-xs text-gray-500">Use this to confirm the shop is within a Cavite locality.</p>
                     </div>
                   </div>
@@ -1495,7 +2095,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       Please upload clear photos of the following documents:
                     </p>
                     <ul className="list-disc list-inside text-sm text-gray-600 mb-4 space-y-1">
-                      <li>Shop Registration (DTI/SEC)</li>
+                      <li>Business registration (DTI or SEC; choose the issuing authority in Required Documents)</li>
                       <li>Mayor's Permit / Shop Permit</li>
                       <li>BIR Certificate of Registration (COR)</li>
                     </ul>
@@ -1512,29 +2112,51 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </ul>
                   </div>
                   <div className="rounded-xl border border-gray-200 bg-white p-4 md:p-5">
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                       <h4 className="text-sm font-semibold text-gray-900">Required Documents</h4>
-                      <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
-                        {requiredUploadCount} / 4 uploaded
-                      </span>
+                      <div className="flex items-center gap-3">
+                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700">
+                          {requiredUploadCount} / 4 uploaded
+                        </span>
+                        <div className="group relative">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={businessRegistrationType === 'sec_registration'}
+                            aria-label="Business registration authority"
+                            aria-describedby="business-registration-help"
+                            onClick={() => setBusinessRegistrationType((current) => current === 'dti_registration' ? 'sec_registration' : 'dti_registration')}
+                            className="inline-flex h-9 w-[108px] items-center justify-between rounded-full border border-gray-300 bg-white px-2 text-xs font-semibold text-gray-800 shadow-sm transition hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900"
+                          >
+                            <span className={businessRegistrationType === 'dti_registration' ? 'font-bold text-gray-900' : 'text-gray-500'}>DTI</span>
+                            <span className="relative h-5 w-10 shrink-0 rounded-full bg-gray-300" aria-hidden="true">
+                              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-[left] ${businessRegistrationType === 'sec_registration' ? 'left-6' : 'left-0.5'}`} />
+                            </span>
+                            <span className={businessRegistrationType === 'sec_registration' ? 'font-bold text-gray-900' : 'text-gray-500'}>SEC</span>
+                          </button>
+                          <div id="business-registration-help" role="tooltip" className="pointer-events-none absolute right-0 top-full z-20 mt-2 w-80 rounded-xl border border-gray-200 bg-white p-4 text-left text-xs leading-5 text-gray-700 opacity-0 shadow-xl transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                            <p className="font-semibold text-gray-900">Business registration authority</p>
+                            <p className="mt-1"><strong>DTI</strong> is for a sole proprietorship owned by one person.</p>
+                            <p className="mt-1"><strong>SEC</strong> is for corporations, partnerships, and other registered organizations.</p>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <p className="mb-4 text-xs text-gray-500">
                       Complete all required uploads before proceeding to the review step.
                     </p>
+                    <p className="mb-5 rounded-lg border border-gray-200 bg-gray-50 p-4 text-xs text-gray-600">
+                      Submit exactly one business registration document and identify its issuing authority using the DTI / SEC switch above.
+                    </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label>Shop Registration (DTI) {(uploadedDocuments.dti.file || existingDocuments.dti) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
-                      {existingDocuments.dti && !uploadedDocuments.dti.file && (
-                        <p className="mb-2 text-xs text-blue-700">
-                          Existing file: <a href={existingDocuments.dti.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.dti.fileName}</a>
-                        </p>
-                      )}
+                      <Label>{businessRegistrationLabel} {(uploadedDocuments.dti.file || existingDocuments.dti) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
                             const file = files[0];
                             if (!isAllowedShopOwnerImageFile(file)) {
-                              showInvalidImageUploadAlert('Shop Registration (DTI)', file.name);
+                              showInvalidImageUploadAlert(businessRegistrationLabel, file.name);
                               return;
                             }
 
@@ -1543,9 +2165,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             Swal.fire({
                               icon: 'info',
                               title: 'File Attached',
-                              html: `<p><strong>${file.name}</strong> was added to <strong>Shop Registration (DTI)</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
+                              html: `<p><strong>${file.name}</strong> was added to <strong>${businessRegistrationLabel}</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
-                              confirmButtonColor: '#3085d6',
+                              confirmButtonColor: '#111827',
                             });
 
                             // Clear error when file is uploaded
@@ -1557,14 +2179,18 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         accept={SHOP_OWNER_IMAGE_ACCEPT}
                         onInvalidFiles={(invalidFiles) => {
                           if (invalidFiles.length > 0) {
-                            showInvalidImageUploadAlert('Shop Registration (DTI)', invalidFiles[0].name);
+                            showInvalidImageUploadAlert(businessRegistrationLabel, invalidFiles[0].name);
                           }
                         }}
                         isUploaded={!!uploadedDocuments.dti.file || !!existingDocuments.dti}
+                        isExistingFile={!!existingDocuments.dti && !uploadedDocuments.dti.file}
                         fileName={uploadedDocuments.dti.fileName}
                         previewUrl={uploadedDocuments.dti.previewUrl || existingDocuments.dti?.url || undefined}
-                        previewAlt="Shop Registration (DTI) preview"
+                        previewAlt={`${businessRegistrationLabel} preview`}
                       />
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                        <RegistrationDocumentMetadataFields idPrefix="business_registration" label={businessRegistrationLabel} metadata={documentMetadata.business_registration} onChange={(updates) => updateDocumentMetadata('business_registration', updates)} />
+                      </div>
                       {(uploadedDocuments.dti.file || existingDocuments.dti) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -1577,11 +2203,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                     <div>
                       <Label>Mayor's Permit / Shop Permit {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
-                      {existingDocuments.mayors_permit && !uploadedDocuments.mayors_permit.file && (
-                        <p className="mb-2 text-xs text-blue-700">
-                          Existing file: <a href={existingDocuments.mayors_permit.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.mayors_permit.fileName}</a>
-                        </p>
-                      )}
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -1597,7 +2218,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               title: 'File Attached',
                               html: `<p><strong>${file.name}</strong> was added to <strong>Mayor's Permit / Shop Permit</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
-                              confirmButtonColor: '#3085d6',
+                              confirmButtonColor: '#111827',
                             });
 
                             // Clear error when file is uploaded
@@ -1613,10 +2234,14 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           }
                         }}
                         isUploaded={!!uploadedDocuments.mayors_permit.file || !!existingDocuments.mayors_permit}
+                        isExistingFile={!!existingDocuments.mayors_permit && !uploadedDocuments.mayors_permit.file}
                         fileName={uploadedDocuments.mayors_permit.fileName}
                         previewUrl={uploadedDocuments.mayors_permit.previewUrl || existingDocuments.mayors_permit?.url || undefined}
                         previewAlt="Mayor's Permit / Shop Permit preview"
                       />
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                        <RegistrationDocumentMetadataFields idPrefix="mayors_permit" label="Mayor's Permit / Shop Permit" metadata={documentMetadata.mayors_permit} expirationRequired onChange={(updates) => updateDocumentMetadata('mayors_permit', updates)} />
+                      </div>
                       {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -1629,11 +2254,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                     <div>
                       <Label>BIR Certificate of Registration (COR) {(uploadedDocuments.bir.file || existingDocuments.bir) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
-                      {existingDocuments.bir && !uploadedDocuments.bir.file && (
-                        <p className="mb-2 text-xs text-blue-700">
-                          Existing file: <a href={existingDocuments.bir.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.bir.fileName}</a>
-                        </p>
-                      )}
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -1649,7 +2269,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               title: 'File Attached',
                               html: `<p><strong>${file.name}</strong> was added to <strong>BIR Certificate of Registration (COR)</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
-                              confirmButtonColor: '#3085d6',
+                              confirmButtonColor: '#111827',
                             });
 
                             // Clear error when file is uploaded
@@ -1665,10 +2285,14 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           }
                         }}
                         isUploaded={!!uploadedDocuments.bir.file || !!existingDocuments.bir}
+                        isExistingFile={!!existingDocuments.bir && !uploadedDocuments.bir.file}
                         fileName={uploadedDocuments.bir.fileName}
                         previewUrl={uploadedDocuments.bir.previewUrl || existingDocuments.bir?.url || undefined}
                         previewAlt="BIR Certificate of Registration preview"
                       />
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                        <RegistrationDocumentMetadataFields idPrefix="bir_certificate" label="BIR Certificate of Registration (COR)" metadata={documentMetadata.bir_certificate} onChange={(updates) => updateDocumentMetadata('bir_certificate', updates)} />
+                      </div>
                       {(uploadedDocuments.bir.file || existingDocuments.bir) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -1681,11 +2305,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                     <div>
                       <Label>Valid ID of Owner {(uploadedDocuments.valid_id.file || existingDocuments.valid_id) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
-                      {existingDocuments.valid_id && !uploadedDocuments.valid_id.file && (
-                        <p className="mb-2 text-xs text-blue-700">
-                          Existing file: <a href={existingDocuments.valid_id.url} target="_blank" rel="noreferrer" className="underline">{existingDocuments.valid_id.fileName}</a>
-                        </p>
-                      )}
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -1701,7 +2320,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                               title: 'File Attached',
                               html: `<p><strong>${file.name}</strong> was added to <strong>Valid ID of Owner</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
                               confirmButtonText: 'OK',
-                              confirmButtonColor: '#3085d6',
+                              confirmButtonColor: '#111827',
                             });
 
                             // Clear error when file is uploaded
@@ -1717,10 +2336,14 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           }
                         }}
                         isUploaded={!!uploadedDocuments.valid_id.file || !!existingDocuments.valid_id}
+                        isExistingFile={!!existingDocuments.valid_id && !uploadedDocuments.valid_id.file}
                         fileName={uploadedDocuments.valid_id.fileName}
                         previewUrl={uploadedDocuments.valid_id.previewUrl || existingDocuments.valid_id?.url || undefined}
                         previewAlt="Valid ID of Owner preview"
                       />
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                        <RegistrationDocumentMetadataFields idPrefix="valid_id" label="Valid ID of Owner" metadata={documentMetadata.valid_id} onChange={(updates) => updateDocumentMetadata('valid_id', updates)} />
+                      </div>
                       {(uploadedDocuments.valid_id.file || existingDocuments.valid_id) && (
                         <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -1734,7 +2357,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </div>
                   </div>
 
-                  <div className="rounded-xl border border-dashed border-blue-200 bg-blue-50/40 p-4 md:p-5">
+                  <div className="rounded-xl border border-dashed border-gray-300 bg-white p-4 md:p-5">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <h4 className="text-sm font-semibold text-gray-900">Other Supporting Documents (Optional)</h4>
@@ -1746,7 +2369,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         type="button"
                         onClick={handleAddAdditionalDocument}
                         disabled={hasReachedAdditionalLimit}
-                        className="inline-flex items-center justify-center rounded-md border border-blue-600 px-4 py-2 text-sm font-semibold text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-transparent"
+                        className="inline-flex items-center justify-center rounded-md border border-gray-900 px-4 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 disabled:cursor-not-allowed disabled:border-gray-300 disabled:text-gray-400 disabled:hover:bg-transparent"
                       >
                         + Others
                       </button>
@@ -1754,22 +2377,53 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
                     {hasAdditionalDocuments ? (
                       <>
-                        <p className="mt-4 text-xs font-medium text-blue-700">
-                          {additionalUploadCount} of {existingDocuments.other.length + additionalDocuments.length} optional document(s) available
+                        <p className="mt-4 text-xs font-medium text-gray-700">
+                          {additionalUploadCount} of {existingAdditionalCount + additionalDocuments.length} optional document(s) available
                         </p>
-                        {existingDocuments.other.length > 0 && (
-                          <div className="mt-3 rounded-lg border border-blue-100 bg-white p-3">
+                        {remainingOtherDocuments.length > 0 && (
+                          <div className="mt-4">
                             <p className="text-sm font-semibold text-gray-900">Previously Uploaded Optional Documents</p>
-                            <div className="mt-2 space-y-1">
-                              {existingDocuments.other.map((doc, index) => (
-                                <p key={doc.id} className="text-xs text-blue-700">
-                                  Existing #{index + 1}: <a href={doc.url} target="_blank" rel="noreferrer" className="underline">{doc.fileName}</a>
-                                </p>
-                              ))}
+                            <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-2">
+                              {remainingOtherDocuments.map((doc, index) => {
+                                const replacement = replacedOtherDocuments[doc.id];
+                                const metadata = replacement?.metadata ?? {
+                                  issuedOn: doc.issuedOn ?? '',
+                                  expirationMode: doc.expirationMode ?? 'none',
+                                  expiresOn: doc.expiresOn ?? '',
+                                };
+                                return (
+                                  <div key={doc.id} className="min-w-0 rounded-lg border border-gray-200 bg-white p-3">
+                                    <div className="mb-2 flex items-start justify-between gap-3">
+                                      <p className="text-sm font-semibold text-gray-900">Supporting Document #{index + 1} <span className="text-green-700">✓ Ready</span></p>
+                                      <button type="button" onClick={() => handleRemoveExistingOtherDocument(doc.id)} aria-label={`Remove existing supporting document ${index + 1}`} className="inline-flex min-h-9 items-center rounded-md border border-red-200 px-3 text-xs font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700">
+                                        Remove
+                                      </button>
+                                    </div>
+                                    <DropzoneComponent
+                                      onDrop={(files) => { if (files[0]) handleReplaceExistingOtherDocument(doc, files[0]); }}
+                                      accept={SHOP_OWNER_IMAGE_ACCEPT}
+                                      onInvalidFiles={(files) => { if (files[0]) showInvalidImageUploadAlert('Other Supporting Documents', files[0].name); }}
+                                      isUploaded={true}
+                                      isExistingFile={!replacement?.file}
+                                      fileName={replacement?.fileName ?? doc.fileName}
+                                      previewUrl={replacement?.previewUrl || doc.url}
+                                      previewAlt={`Supporting document ${index + 1} preview`}
+                                      inputAriaLabel={`Replace supporting document ${index + 1}`}
+                                    />
+                                    <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                                      <RegistrationDocumentMetadataFields idPrefix={`existing-supporting-${doc.id}`} label={`Supporting document ${index + 1}`} metadata={metadata} onChange={(updates) => updateExistingOtherMetadata(doc, updates)} />
+                                    </div>
+                                    <p className="mt-2 text-xs font-semibold text-green-700">
+                                      {replacement?.file ? 'Replacement attached' : 'Existing document will be reused unless you replace it'}
+                                    </p>
+                                    {replacement && errors[`supporting_document:${replacement.id}`] && <p className="mt-1 text-xs text-red-600">{errors[`supporting_document:${replacement.id}`]}</p>}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </div>
                         )}
-                        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-2">
                           {additionalDocuments.map((doc, index) => (
                             <div key={doc.id} className="rounded-lg border border-gray-200 bg-white p-3">
                               <div className="mb-2 flex items-start justify-between gap-3">
@@ -1798,6 +2452,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                                 previewUrl={doc.previewUrl || undefined}
                                 previewAlt={`Supporting document ${index + 1} preview`}
                               />
+                              <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
+                                <RegistrationDocumentMetadataFields idPrefix={`supporting-${doc.id}`} label={`Supporting document ${index + 1}`} metadata={doc.metadata} onChange={(updates) => updateSupportingMetadata(doc.id, updates)} />
+                              </div>
                               {doc.file && (
                                 <p className="mt-2 text-sm text-green-600 font-semibold flex items-center">
                                   <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
@@ -1811,9 +2468,25 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         </div>
                       </>
                     ) : (
-                      <div className="mt-4 rounded-lg border border-blue-100 bg-white p-4 text-center">
+                      <div className="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-center">
                         <p className="text-sm font-medium text-gray-700">No optional document added yet.</p>
                         <p className="mt-1 text-xs text-gray-500">Use the Others button when you want to attach extra proof files.</p>
+                      </div>
+                    )}
+
+                    {removedOtherDocumentIds.length > 0 && (
+                      <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700">
+                        <p className="font-semibold">Removed when you resubmit</p>
+                        <div className="mt-2 space-y-2">
+                          {existingDocuments.other.filter((doc) => removedOtherDocumentIds.includes(doc.id)).map((doc) => (
+                            <div key={doc.id} className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="break-all">{doc.fileName}</span>
+                              <button type="button" onClick={() => setRemovedOtherDocumentIds((previous) => previous.filter((id) => id !== doc.id))} className="font-semibold underline hover:text-gray-900">
+                                Undo
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -1846,16 +2519,16 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             {currentStep === 4 && (
               <>
                 {/* Review Timeline */}
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 md:p-6">
+                <div className="bg-white border border-black rounded-lg p-4 md:p-6">
                   <div className="flex flex-col sm:flex-row gap-4">
                     <div className="flex-shrink-0">
-                      <svg className="w-6 h-6 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                      <svg className="w-6 h-6 text-black" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
                       </svg>
                     </div>
                     <div>
-                      <h4 className="font-semibold text-gray-900 mb-2">Review Timeline</h4>
-                      <ul className="text-sm text-gray-700 space-y-1">
+                      <h4 className="font-semibold text-black mb-2">Review Timeline</h4>
+                      <ul className="text-sm text-black space-y-1">
                         <li>• Review period: 3 to 7 business days</li>
                         <li>• Our team verifies all documents and shop details</li>
                         <li>• You'll receive status updates via email</li>
@@ -1864,9 +2537,51 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                   </div>
                 </div>
 
+                {/* Terms and Conditions */}
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 md:p-6">
+                  <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(24rem,auto)] lg:items-center lg:gap-8">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">Before you submit</p>
+                      <h3 className="mt-1 text-lg font-semibold text-gray-900">Terms and Conditions</h3>
+                      <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-600">
+                        Please review and accept the Terms and Conditions before submitting your shop owner application.
+                      </p>
+                    </div>
+                    <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 lg:min-w-[24rem]">
+                      <label htmlFor="shopOwnerTermsAccepted" className="flex items-start gap-3 text-sm font-medium leading-6 text-gray-900">
+                        <input
+                          type="checkbox"
+                          id="shopOwnerTermsAccepted"
+                          checked={termsAccepted}
+                          onChange={handleTermsChange}
+                          className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 text-black focus:ring-2 focus:ring-black/20"
+                        />
+                        <span>I agree to the Terms and Conditions</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleViewTerms}
+                        className="ml-7 mt-1 inline-flex min-h-8 items-center text-sm font-medium text-gray-700 underline underline-offset-4 transition-colors hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
+                      >
+                        Read Terms and Conditions
+                      </button>
+                    </div>
+                  </div>
+                  {errors.termsAccepted && (
+                    <p className="mt-4 border-t border-red-100 pt-3 text-sm font-medium text-red-600" role="alert">
+                      {errors.termsAccepted}
+                    </p>
+                  )}
+                  {!caviteLocationState.allowed && (
+                    <p className="mt-3 text-sm font-medium text-red-600">
+                      {caviteLocationState.message}
+                    </p>
+                  )}
+                </div>
+
                 {/* Submit Button Section */}
-                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 md:p-8">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:justify-between lg:items-center">
+                <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-5 md:p-6">
+                  <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[auto_minmax(0,1fr)_auto] lg:items-center lg:gap-8">
                     <button
                       type="button"
                       onClick={handlePrev}
@@ -1874,18 +2589,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     >
                       Previous
                     </button>
-                    <div className="text-center">
-                      <h3 className="text-lg font-semibold text-gray-900 mb-1">Ready to Submit?</h3>
-                      <p className="text-sm text-gray-600">
+                    <div className="min-w-0 text-center">
+                      <h3 className="text-lg font-semibold text-gray-900">Ready to Submit?</h3>
+                      <p className="mt-1 text-sm text-gray-600">
                         {isResubmission
                           ? 'Review your updates before resubmitting your application for approval.'
                           : 'Review all information before submitting your application for approval.'}
                       </p>
-                      {!caviteLocationState.allowed && (
-                        <p className="mt-2 text-sm font-medium text-red-600">
-                          {caviteLocationState.message}
-                        </p>
-                      )}
                     </div>
                     <button
                       type="submit"
@@ -1902,12 +2612,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
           </div>
         </div>
       </div>
+      </CustomerFooterReveal>
 
       {/* Success Modal */}
       {showSuccessModal && (
         <>
           {/* Backdrop */}
-          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50" />
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 erp-modal-backdrop" />
 
           {/* Modal */}
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
@@ -1977,7 +2688,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                       <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">
                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                       </svg>
-                      <span className="text-sm text-gray-700">Shop Registration (DTI)</span>
+                      <span className="text-sm text-gray-700">{businessRegistrationLabel}</span>
                     </div>
                     <div className="flex items-center space-x-2">
                       <svg className="w-4 h-4 text-green-600" fill="currentColor" viewBox="0 0 20 20">

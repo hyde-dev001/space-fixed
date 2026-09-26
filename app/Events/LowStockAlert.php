@@ -14,14 +14,16 @@ class LowStockAlert
     public InventoryItem $inventoryItem;
     public int $currentQuantity;
     public int $reorderLevel;
+    public ?array $target;
 
     /**
      * Create a new event instance.
      */
-    public function __construct(InventoryItem $inventoryItem, int $currentQuantity, int $reorderLevel)
+    public function __construct(InventoryItem $inventoryItem, int $currentQuantity, int $reorderLevel, ?array $target = null)
     {
         $this->inventoryItem = $inventoryItem;
         $this->currentQuantity = $currentQuantity;
         $this->reorderLevel = $reorderLevel;
+        $this->target = $target;
     }
 }

@@ -31,8 +31,8 @@ class RepairReviewController extends Controller
         $request->validate([
             'rating' => 'required|integer|min:1|max:5',
             'review_text' => 'nullable|string|max:1000',
-            'review_images' => 'nullable|array|max:3',
-            'review_images.*' => 'image|mimes:jpeg,png,jpg|max:2048',
+            'review_images' => 'nullable|array|max:5',
+            'review_images.*' => 'image|mimes:jpeg,png,jpg|max:5120',
         ]);
 
         // Verify repair belongs to customer and is picked up
@@ -111,13 +111,15 @@ class RepairReviewController extends Controller
     /**
      * Get all reviews for a shop owner
      */
-    public function getShopReviews($shopOwnerId)
+    public function getShopReviews(Request $request, $shopOwnerId)
     {
+        $perPage = min(max($request->integer('per_page', 10), 1), 100);
+
         $reviews = RepairReview::forShop($shopOwnerId)
             ->visible()
             ->with(['user:id,first_name,last_name', 'repairer:id,first_name,last_name'])
             ->orderBy('created_at', 'desc')
-            ->paginate(10);
+            ->paginate($perPage);
 
         $avgRating = RepairReview::forShop($shopOwnerId)
             ->visible()
@@ -157,7 +159,8 @@ class RepairReviewController extends Controller
             return response()->json([
                 'success' => false,
                 'can_review' => false,
-                'reason' => 'Not authenticated'
+                'reason' => 'Not authenticated',
+                'message' => 'Please log in to write a review.',
             ]);
         }
 
@@ -169,7 +172,8 @@ class RepairReviewController extends Controller
             return response()->json([
                 'success' => true,
                 'can_review' => false,
-                'reason' => 'Repair not found'
+                'reason' => 'Repair not found',
+                'message' => 'Repair not found or it does not belong to your account.',
             ]);
         }
 
@@ -177,7 +181,8 @@ class RepairReviewController extends Controller
             return response()->json([
                 'success' => true,
                 'can_review' => false,
-                'reason' => 'Repair must be picked up before reviewing'
+                'reason' => 'Repair must be picked up before reviewing',
+                'message' => 'You can review this repair after it has been picked up.',
             ]);
         }
 
@@ -189,7 +194,8 @@ class RepairReviewController extends Controller
                 'success' => true,
                 'can_review' => false,
                 'reason' => 'Already reviewed',
-                'review' => $existingReview
+                'message' => 'You have already reviewed this repair.',
+                'review' => $existingReview,
             ]);
         }
 
@@ -198,12 +204,14 @@ class RepairReviewController extends Controller
                 'success' => true,
                 'can_review' => false,
                 'reason' => 'Refund already requested or completed',
+                'message' => 'Review is not allowed after a refund request has been filed for this repair.',
             ]);
         }
 
         return response()->json([
             'success' => true,
             'can_review' => true,
+            'message' => 'You are eligible to review this repair.',
             'repair' => $repair->load(['shopOwner:id,business_name', 'repairer:id,first_name,last_name'])
         ]);
     }

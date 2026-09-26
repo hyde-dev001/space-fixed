@@ -25,7 +25,7 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
     const expiresDate = new Date(expires_at).toLocaleString();
 
     const passwordRequirements = [
-        { met: data.password.length >= 8, text: 'At least 8 characters' },
+        { met: data.password.length >= 12, text: 'At least 12 characters' },
         { met: /[A-Z]/.test(data.password), text: 'One uppercase letter (A-Z)' },
         { met: /[a-z]/.test(data.password), text: 'One lowercase letter (a-z)' },
         { met: /\d/.test(data.password), text: 'One number (0-9)' },
@@ -36,22 +36,17 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
         <>
             <Head title="Accept Invitation" />
             
-            <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-white dark:bg-gray-900 px-4 py-10">
-                <div className="pointer-events-none absolute inset-0">
-                    <div className="absolute -top-28 -left-20 h-80 w-80 rounded-full bg-blue-100/70 blur-3xl dark:bg-blue-900/20" />
-                    <div className="absolute -bottom-28 -right-20 h-96 w-96 rounded-full bg-indigo-100/70 blur-3xl dark:bg-indigo-900/20" />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(15,23,42,0.04),transparent_60%)] dark:bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.08),transparent_60%)]" />
-                </div>
+            <div className="userside-auth-page userside-auth-pattern relative flex min-h-screen items-center justify-center px-4 py-6 font-outfit antialiased sm:py-8">
 
-                <div className="relative max-w-md w-full rounded-3xl border border-gray-200/80 bg-white/95 dark:bg-gray-800/95 dark:border-gray-700 shadow-2xl backdrop-blur-xl p-8">
+                <div className="relative max-w-2xl w-full rounded-3xl border border-gray-200/80 bg-white/95 dark:bg-gray-800/95 dark:border-gray-700 shadow-2xl backdrop-blur-xl p-6">
                     {/* Header */}
-                    <div className="text-center mb-8">
-                        <div className="w-16 h-16 bg-black dark:bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg">
-                            <svg className="w-10 h-10 text-white dark:text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <div className="text-center mb-6">
+                        <div className="w-14 h-14 bg-black dark:bg-white rounded-full flex items-center justify-center mx-auto mb-3 shadow-lg">
+                            <svg className="w-8 h-8 text-white dark:text-black" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                             </svg>
                         </div>
-                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
+                        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
                             Welcome to SoleSpace!
                         </h1>
                         <p className="text-gray-600 dark:text-gray-400">
@@ -60,32 +55,33 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
                     </div>
 
                     {/* User Info */}
-                    <div className="bg-gray-50 dark:bg-gray-700/60 rounded-xl p-4 mb-6 border border-gray-200 dark:border-gray-700">
+                    <div className="bg-gray-50 dark:bg-gray-700/60 rounded-xl p-3 mb-4 border border-gray-200 dark:border-gray-700">
                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Account for:</p>
                         <p className="font-semibold text-gray-900 dark:text-white">{name}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-400">{email}</p>
                     </div>
 
                     {/* Form */}
-                    <form onSubmit={handleSubmit} className="space-y-6">
+                    <form onSubmit={handleSubmit} className="space-y-4">
                         {/* Password */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                                 Create Password <span className="text-red-500">*</span>
                             </label>
                             <div className="relative">
                                 <input
                                     type={showPassword ? 'text' : 'password'}
+                                    minLength={12}
                                     value={data.password}
                                     onChange={(e) => setData('password', e.target.value)}
-                                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white dark:bg-gray-700 dark:text-white"
+                                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white dark:bg-gray-700 dark:text-white"
                                     placeholder="Enter your password"
                                     autoComplete="new-password"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowPassword(!showPassword)}
-                                    className="absolute right-3 top-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                                    className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
                                 >
                                     {showPassword ? (
                                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -106,22 +102,23 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
 
                         {/* Confirm Password */}
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                                 Confirm Password <span className="text-red-500">*</span>
                             </label>
                             <div className="relative">
                                 <input
                                     type={showConfirmPassword ? 'text' : 'password'}
+                                    minLength={12}
                                     value={data.password_confirmation}
                                     onChange={(e) => setData('password_confirmation', e.target.value)}
-                                    className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white dark:bg-gray-700 dark:text-white"
+                                    className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white dark:bg-gray-700 dark:text-white"
                                     placeholder="Confirm your password"
                                     autoComplete="new-password"
                                 />
                                 <button
                                     type="button"
                                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                    className="absolute right-3 top-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
+                                    className="absolute right-3 top-2.5 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
                                 >
                                     {showConfirmPassword ? (
                                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -138,7 +135,7 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
                         </div>
 
                         {/* Password Requirements */}
-                        <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 border border-gray-200 dark:border-gray-600">
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 border border-gray-200 dark:border-gray-600">
                             <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Password must contain:</p>
                             <ul className="space-y-1">
                                 {passwordRequirements.map((req, index) => (
@@ -154,14 +151,14 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
                         <button
                             type="submit"
                             disabled={processing}
-                            className="w-full bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 text-white font-semibold py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            className="w-full bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {processing ? 'Setting up...' : 'Activate Account'}
                         </button>
                     </form>
 
                     {/* Expiry Warning */}
-                    <div className="mt-6 text-center">
+                    <div className="mt-4 text-center">
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                             ⏰ This invitation expires on {expiresDate}
                         </p>
