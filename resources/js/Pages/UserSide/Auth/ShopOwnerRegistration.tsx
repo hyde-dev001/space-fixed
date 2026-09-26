@@ -2383,7 +2383,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         {remainingOtherDocuments.length > 0 && (
                           <div className="mt-4">
                             <p className="text-sm font-semibold text-gray-900">Previously Uploaded Optional Documents</p>
-                            <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                            <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-2">
                               {remainingOtherDocuments.map((doc, index) => {
                                 const replacement = replacedOtherDocuments[doc.id];
                                 const metadata = replacement?.metadata ?? {
@@ -2423,7 +2423,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             </div>
                           </div>
                         )}
-                        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-2">
                           {additionalDocuments.map((doc, index) => (
                             <div key={doc.id} className="rounded-lg border border-gray-200 bg-white p-3">
                               <div className="mb-2 flex items-start justify-between gap-3">
