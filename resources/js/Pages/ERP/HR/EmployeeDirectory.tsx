@@ -3351,12 +3351,12 @@ export const EmployeeManagement: React.FC<{
                 <div className="p-6 max-h-[calc(90vh-112px)] overflow-y-auto">
                   <div className="space-y-4">
                     {/* Personal Information Section */}
-                    <div className="lg:grid lg:grid-cols-4 lg:gap-3">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3 pb-2 border-b border-gray-200 dark:border-gray-700 lg:col-span-4">
+                    <div className="lg:grid lg:grid-cols-6 lg:gap-3">
+                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white uppercase tracking-wide mb-3 pb-2 border-b border-gray-200 dark:border-gray-700 lg:col-span-6">
                         Personal Information
                       </h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 lg:contents">
-                        <div>
+                        <div className="lg:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             First Name <span className="text-red-500">*</span>
                           </label>
@@ -3373,7 +3373,7 @@ export const EmployeeManagement: React.FC<{
                           />
                         </div>
 
-                        <div>
+                        <div className="lg:col-span-2">
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Last Name <span className="text-red-500">*</span>
                           </label>
@@ -3391,7 +3391,7 @@ export const EmployeeManagement: React.FC<{
                         </div>
                       </div>
 
-                      <div className="mt-3 lg:mt-0">
+                      <div className="mt-3 lg:mt-0 lg:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                           Suffix
                         </label>
@@ -3410,30 +3410,7 @@ export const EmployeeManagement: React.FC<{
                         />
                       </div>
 
-                      <div className="mt-3 lg:mt-0">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                          Email <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          type="email"
-                          value={addEmployeeForm.email}
-                          onChange={(e) =>
-                            setAddEmployeeForm({
-                              ...addEmployeeForm,
-                              email: e.target.value,
-                            })
-                          }
-                          className={`w-full px-3 py-2.5 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all ${addEmployeeEmailValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
-                        />
-                        {addEmployeeEmailValidation.status === 'error' && (
-                          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{addEmployeeEmailValidation.message}</p>
-                        )}
-                        {addEmployeeEmailValidation.status === 'checking' && (
-                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{addEmployeeEmailValidation.message}</p>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 lg:mt-0 lg:grid-cols-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 lg:mt-0 lg:grid-cols-1 lg:col-span-3 lg:col-start-1">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Phone
@@ -3463,7 +3440,30 @@ export const EmployeeManagement: React.FC<{
 
                       </div>
 
-                      <div className="mt-3 lg:col-span-4 lg:mt-0">
+                      <div className="mt-3 lg:mt-0 lg:col-span-3 lg:col-start-4">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                          Email <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="email"
+                          value={addEmployeeForm.email}
+                          onChange={(e) =>
+                            setAddEmployeeForm({
+                              ...addEmployeeForm,
+                              email: e.target.value,
+                            })
+                          }
+                          className={`w-full px-3 py-2.5 rounded-lg border bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all ${addEmployeeEmailValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+                        />
+                        {addEmployeeEmailValidation.status === 'error' && (
+                          <p className="mt-1 text-xs text-red-600 dark:text-red-400">{addEmployeeEmailValidation.message}</p>
+                        )}
+                        {addEmployeeEmailValidation.status === 'checking' && (
+                          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{addEmployeeEmailValidation.message}</p>
+                        )}
+                      </div>
+
+                      <div className="mt-3 lg:col-span-6 lg:mt-0">
                         <PhilippineAddressFields
                           idPrefix="hr-employee"
                           value={{
