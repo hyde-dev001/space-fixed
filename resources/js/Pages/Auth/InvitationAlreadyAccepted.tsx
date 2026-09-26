@@ -12,13 +12,7 @@ export default function InvitationAlreadyAccepted({ email }: Props) {
 
             <div className="userside-auth-page userside-auth-pattern relative flex min-h-screen items-center justify-center px-4 py-6 font-outfit antialiased sm:py-8">
 
-                <div className="relative w-full max-w-2xl rounded-3xl border border-gray-200/80 bg-white/95 p-6 text-center shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-800/95 sm:p-7">
-                    {/* Success Icon */}
-                    <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 shadow-lg ring-1 ring-emerald-200/70 dark:bg-emerald-900/40 dark:ring-emerald-700/40">
-                        <svg className="h-8 w-8 text-emerald-600 dark:text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </div>
+                <div className="relative w-full max-w-xl rounded-3xl border border-gray-200/80 bg-white/95 p-6 text-center shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-800/95 sm:p-7">
 
                     <div className="mb-4">
                         <h2 className="text-4xl font-extrabold tracking-tight text-gray-900 dark:text-white leading-none">SoleSpace</h2>
