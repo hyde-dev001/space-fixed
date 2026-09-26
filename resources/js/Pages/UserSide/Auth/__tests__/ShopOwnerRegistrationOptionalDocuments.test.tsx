@@ -56,6 +56,7 @@ it('lets the owner remove and restore an existing optional document before resub
   fireEvent.click(screen.getByRole('button', { name: 'Next' }));
   await waitFor(() => expect(screen.getByText('Previously Uploaded Optional Documents')).toBeInTheDocument());
 
+  expect(screen.queryByText(/Existing file:/i)).not.toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Replace supporting document 1' })).toHaveTextContent('Drag & Drop Documents Here');
   expect(screen.getByLabelText('Supporting document 1 issued date')).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Replace supporting document 1' }));
