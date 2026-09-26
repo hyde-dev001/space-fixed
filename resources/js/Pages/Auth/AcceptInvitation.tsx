@@ -67,7 +67,7 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
                     </div>
 
                     {/* Form */}
-                    <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <form onSubmit={handleSubmit} className="space-y-4">
                         {/* Password */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
@@ -140,7 +140,7 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
                         </div>
 
                         {/* Password Requirements */}
-                        <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 border border-gray-200 dark:border-gray-600 md:col-span-2">
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-xl p-3 border border-gray-200 dark:border-gray-600">
                             <p className="text-xs font-semibold text-gray-700 dark:text-gray-300 mb-2">Password must contain:</p>
                             <ul className="space-y-1">
                                 {passwordRequirements.map((req, index) => (
@@ -156,7 +156,7 @@ export default function AcceptInvitation({ token, email, name, expires_at }: Pro
                         <button
                             type="submit"
                             disabled={processing}
-                            className="w-full bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed md:col-span-2"
+                            className="w-full bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 text-white font-semibold py-2.5 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             {processing ? 'Setting up...' : 'Activate Account'}
                         </button>
