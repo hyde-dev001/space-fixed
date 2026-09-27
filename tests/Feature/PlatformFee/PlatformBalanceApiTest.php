@@ -3,6 +3,8 @@
 namespace Tests\Feature\PlatformFee;
 
 use App\Models\Order;
+use App\Models\PlatformFeePayment;
+use App\Models\PlatformFeePaymentAllocation;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -57,6 +59,46 @@ class PlatformBalanceApiTest extends TestCase
             ->assertJsonCount(1, 'charges');
         $this->assertSame($shop->id, $response->json('charges.0.shop_id'));
         $this->assertNotSame($otherShop->id, $response->json('charges.0.shop_id'));
+    }
+
+    #[Test]
+    public function finance_read_initializes_missing_reliability_history_for_an_already_paid_business_fee(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
+        $finance = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $finance->givePermissionTo('access-finance-dashboard');
+        $order = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'origin_channel' => 'marketplace',
+            'status' => 'delivered',
+            'payment_status' => 'paid',
+        ]);
+        $charge = $order->platformFeeCharge;
+        $payment = PlatformFeePayment::create([
+            'shop_id' => $shop->id,
+            'amount' => $charge->total_charge,
+            'balance_snapshot' => $charge->total_charge,
+            'credit_snapshot' => '0.00',
+            'net_payable_snapshot' => $charge->total_charge,
+            'status' => 'paid',
+            'idempotency_key' => 'existing-business-platform-payment',
+            'paid_at' => now(),
+        ]);
+        PlatformFeePaymentAllocation::create([
+            'platform_fee_payment_id' => $payment->id,
+            'platform_fee_charge_id' => $charge->id,
+            'allocation_type' => 'payment',
+            'amount' => $charge->total_charge,
+            'idempotency_key' => 'existing-business-platform-payment-allocation',
+        ]);
+
+        $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/platform-balance')
+            ->assertOk()
+            ->assertJsonPath('balance.shop_type', 'business')
+            ->assertJsonPath('reliability.latest.metrics.marketplace_orders', 1)
+            ->assertJsonPath('reliability.latest.metrics.platform_fee_charges', 1)
+            ->assertJsonPath('reliability.latest.metrics.paid_platform_fee_charges', 1);
     }
 
     #[Test]

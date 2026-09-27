@@ -83,11 +83,15 @@ No frontend amount is trusted.
 Phase 3 adds a dedicated 0-100 daily score service/history, configurable
 individual/business recommendation tiers, admin-only limit approval, admin
 views/settings, terms disclosure, threshold notifications, and audit detail.
-No automatic limit increase or decrease is performed.
+No automatic limit increase or decrease is performed. Confirmed Platform Fee
+settlements refresh the score immediately; opening the balance when no score
+exists initializes history from the retained transaction window.
 
 ## Acceptance contract
 
 - Marketplace online and COD retail/repair completions create one charge.
+- A COD order accrues its marketplace fee only after Finance confirms the cash
+  remittance; rider collection alone does not mark the order paid.
 - Retail and repair POS, regardless of tender, create no charge and leave the
   platform balance, credits, restrictions, and marketplace volume unchanged.
 - Product VAT and customer-visible totals remain unchanged.

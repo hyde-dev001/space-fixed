@@ -130,3 +130,8 @@
 ## 2026-09-25 - Observer-aware delivery accounting
 
 - When an order status transition triggers financial observers, logistics completion must save the guarded order through Eloquent; query-builder bulk updates bypass the observer and silently omit ledger charges.
+
+## 2026-09-27 - Platform fee reliability and COD settlement
+
+- Refresh the reliability snapshot after confirmed platform-fee payment and initialize it from retained history when a balance page has no snapshot; otherwise paid business fees can remain absent from the score until the daily job runs.
+- Treat Finance-confirmed COD remittance—not rider-reported cash collection—as the authoritative paid transition that allows the marketplace-fee observer to create its charge.
