@@ -150,6 +150,7 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false, busines
         aria-haspopup="menu"
         aria-expanded={isOpen}
         data-testid="shop-owner-account-trigger"
+        data-tour="owner-account-menu"
         className={businessStyle
           ? "dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border-2 border-gray-300 bg-white p-1 text-gray-900 shadow-sm transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-500 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
           : "dropdown-toggle inline-flex h-10 w-10 items-center justify-center rounded-full border border-gray-200 bg-white p-1 text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:h-auto dark:w-auto dark:gap-2 dark:rounded-lg dark:border-transparent dark:bg-transparent dark:px-3 dark:py-2 dark:text-gray-400 dark:hover:bg-gray-800 dark:focus-visible:ring-gray-300"}
@@ -214,6 +215,7 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false, busines
         </div>
 
         <button
+          data-tour="owner-profile-link"
           onClick={() => {
             closeDropdown();
             router.visit(urls?.profile || '/shop-owner/shop-profile');
@@ -237,6 +239,7 @@ export default function ShopOwnerDropdown({ actor, urls, inline = false, busines
         <div className="mx-2 my-1 border-t border-gray-200 dark:border-gray-700" />
 
         <button
+          data-tour="owner-settings-link"
           onClick={() => {
             closeDropdown();
             router.visit(urls?.settings || '/shop-owner/settings');

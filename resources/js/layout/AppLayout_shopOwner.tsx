@@ -6,6 +6,7 @@ import CanonicalOwnerLayout from "./CanonicalOwnerLayout";
 import { isDirectShopOwnerContext, readCanonicalOwnerShell } from "./ownerShellMetadata";
 import { usePage } from "@inertiajs/react";
 import { ReactNode } from "react";
+import OwnerSetupGuide from "../components/shop-owner/OwnerSetupGuide";
 
 interface AppLayoutShopOwnerProps {
   children: ReactNode;
@@ -30,6 +31,7 @@ const LayoutContent: React.FC<{ children: ReactNode; fullBleed?: boolean; hideHe
         <div className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
           {children}
         </div>
+        <OwnerSetupGuide />
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import type { OwnerShellMetadata } from "../types/ownerShell";
 import CanonicalOwnerHeader from "./CanonicalOwnerHeader";
 import CanonicalOwnerSidebar from "./CanonicalOwnerSidebar";
 import Backdrop from "./Backdrop";
+import OwnerSetupGuide from "../components/shop-owner/OwnerSetupGuide";
 
 interface CanonicalOwnerLayoutProps {
   children: React.ReactNode;
@@ -42,6 +43,7 @@ const CanonicalOwnerLayoutContent: React.FC<CanonicalOwnerLayoutProps> = ({
         <main className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
           {children}
         </main>
+        <OwnerSetupGuide />
       </div>
     </div>
   );

@@ -222,7 +222,7 @@ export default function ArticleHub({
 
       </header>
 
-      <section aria-labelledby="article-categories">
+      <section data-tour="articles-categories" aria-labelledby="article-categories">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-gray-500 dark:text-gray-400">{languageCopy.categories}</p>
@@ -269,7 +269,7 @@ export default function ArticleHub({
         </section>
       )}
 
-      <section aria-labelledby="article-results">
+      <section data-tour="articles-results" aria-labelledby="article-results">
         <div className="flex items-center justify-between gap-4">
           <h2 id="article-results" className="text-xl font-semibold tracking-tight text-gray-950 dark:text-white">{languageCopy.results}</h2>
           {hasFilters && filteredArticles.length > 0 && (

@@ -1,4 +1,5 @@
 import MonochromeSelect from "@/components/form/Select";
+import OwnerSetupGuide from "../../../components/shop-owner/OwnerSetupGuide";
 																																								import React, { useEffect, useRef, useState } from 'react';
 import { Head, router, usePage } from '@inertiajs/react';
 import axios from 'axios';
@@ -1708,6 +1709,7 @@ const ShopSetting: React.FC = () => {
 				</label>
 				<textarea
 					id={`policy-section-${sectionKey}`}
+					data-tour="terms-policy"
 					value={editorValue}
 					onChange={(event) => updatePolicySection(sectionKey, event.target.value)}
 					rows={8}
@@ -1742,6 +1744,7 @@ const ShopSetting: React.FC = () => {
 	return (
 		<>
 			<Head title="Shop Settings" />
+			<OwnerSetupGuide />
 
 			<div data-testid="shop-settings-page" className="shop-settings-page min-h-screen bg-slate-50 text-gray-900 dark:bg-gray-950 dark:text-gray-100">
 				<div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:px-8 xl:max-w-[1440px] xl:px-10 2xl:px-16">
@@ -1753,6 +1756,7 @@ const ShopSetting: React.FC = () => {
 						>
 							Back
 						</button>
+						<button type="button" onClick={() => window.dispatchEvent(new Event("solespace:open-setup-guide"))} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Setup guide</button>
 						{saveSuccess && (
 							<div className="inline-flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-sm font-medium text-green-800">
 								<Check size={16} className="text-green-600" />
@@ -1776,6 +1780,7 @@ const ShopSetting: React.FC = () => {
 							{SETTINGS_SECTION_OPTIONS.filter((section) => section.key !== 'subscription' || premiumIsEligible).map((section) => (
 								<a
 									key={section.key}
+									data-tour={`settings-nav-${section.key}`}
 									href={`#settings-section-${section.key}`}
 									onClick={(event) => selectSettingsSection(section.key, event)}
 									aria-current={activeSettingsSection === section.key ? 'page' : undefined}
@@ -2077,7 +2082,7 @@ const ShopSetting: React.FC = () => {
 					{hasRepairSignal && (
 						<div className={`rounded-2xl border border-gray-200 bg-white shadow-sm lg:order-3 xl:order-9 xl:shadow-none ${showWideRepairPaymentPolicy ? 'lg:col-span-12' : 'lg:col-span-5'}`}>
 							<div className="border-b border-gray-200 p-6">
-								<h2 className="text-xl font-semibold text-gray-900">Repair Payment Policy</h2>
+								<h2 data-tour="repair-payment-policy" className="text-xl font-semibold text-gray-900">Repair Payment Policy</h2>
 								<p className="mt-1 text-sm text-gray-600">
 									All new repair requests require full payment before the service starts.
 								</p>
@@ -2229,6 +2234,7 @@ const ShopSetting: React.FC = () => {
 										<div className="flex w-full items-center rounded-lg border border-gray-300 bg-white px-3 sm:max-w-xs">
 											<input
 												id="order-refund-deadline-days"
+												data-tour="refund-deadline"
 												type="number"
 												min={1}
 												max={30}
@@ -2302,6 +2308,7 @@ const ShopSetting: React.FC = () => {
 											<span className="text-sm font-medium text-gray-500">₱</span>
 											<input
 												id="cod-order-threshold"
+												data-tour="cod-settings"
 												type="number"
 												min={0.01}
 												max={9999999.99}
@@ -2341,7 +2348,7 @@ const ShopSetting: React.FC = () => {
 						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-4 xl:order-5 xl:shadow-none">
 							<div className="border-b border-gray-200 p-6">
 								<h2 className="text-xl font-semibold text-gray-900">
-									{payCycle === 'monthly' ? 'Payroll Cycle' : 'Payroll Cutoff'}
+									<span data-tour="payroll-cutoff">{payCycle === 'monthly' ? 'Payroll Cycle' : 'Payroll Cutoff'}</span>
 								</h2>
 								<p className="mt-1 text-sm text-gray-600">
 									Choose monthly payroll or semi-monthly cutoff.
@@ -2527,6 +2534,7 @@ const ShopSetting: React.FC = () => {
 									<div className="relative flex-1">
 										<input
 											type={showKey ? 'text' : 'password'}
+											data-tour="paymongo-configure"
 											placeholder="sk_live_xxxxxxxxxxxxxxxxxxxx"
 											value={keyInput}
 											onChange={(e) => setKeyInput(e.target.value)}
@@ -2628,7 +2636,7 @@ const ShopSetting: React.FC = () => {
 									<div className="md:col-span-2">
 										<label htmlFor="xendit-secret-key" className="mb-1.5 block text-sm font-medium text-gray-700">Xendit Secret API Key</label>
 										<div className="relative">
-											<input id="xendit-secret-key" type={showXenditKey ? 'text' : 'password'} value={xenditSecretKey} onChange={(event) => setXenditSecretKey(event.target.value)} placeholder="Paste the server-side secret key" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
+											<input id="xendit-secret-key" data-tour="xendit-payouts" type={showXenditKey ? 'text' : 'password'} value={xenditSecretKey} onChange={(event) => setXenditSecretKey(event.target.value)} placeholder="Paste the server-side secret key" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
 											<button type="button" onClick={() => setShowXenditKey((value) => !value)} aria-label={showXenditKey ? 'Hide Xendit secret key' : 'Show Xendit secret key'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">{showXenditKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
 										</div>
 										<p className="mt-1 text-xs text-gray-500">The key is encrypted and never shown again. Balance verification may require Money-Out Read; payouts require Money-Out Write.</p>
@@ -2765,6 +2773,7 @@ const ShopSetting: React.FC = () => {
 									value={geoRadius}
 									onChange={(e) => setGeoRadius(Number(e.target.value))}
 									aria-label="Allowed geofence radius in meters"
+									data-tour="attendance-geofence"
 									title="Allowed geofence radius in meters"
 									className="w-full accent-gray-900"
 								/>

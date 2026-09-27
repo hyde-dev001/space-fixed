@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, usePage } from "@inertiajs/react";
+import SetupGuideNavButton from "../components/shop-owner/SetupGuideNavButton";
 import { route } from "ziggy-js";
 
 // Assume these icons are imported from an icon library
@@ -762,6 +763,7 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
             (nav.route || nav.path) && (
               <Link
                 href={getHref(nav.route, nav.path) || "#"}
+                data-tour={nav.path === "/shop-owner/erp/articles" ? "sidebar-articles" : undefined}
                 prefetch={SIDEBAR_PREFETCH}
                 cacheFor={SIDEBAR_PREFETCH_CACHE}
                 viewTransition
@@ -975,7 +977,8 @@ const AppSidebar_shopOwner: React.FC<AppSidebarShopOwnerProps> = ({ activeModule
               )}
             </div>
           </div>
-          {!activeModule && renderMenuItems([ownerArticlesItem], "main")}
+          <SetupGuideNavButton showLabel={isExpanded || isHovered || isMobileOpen} />
+          {renderMenuItems([ownerArticlesItem], "main")}
         </nav>
 
       </div>

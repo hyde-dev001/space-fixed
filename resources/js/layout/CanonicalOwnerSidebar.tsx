@@ -17,6 +17,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { useSidebar } from "../context/SidebarContext";
 import type { OwnerShellGroup, OwnerShellItem, OwnerShellMetadata } from "../types/ownerShell";
+import SetupGuideNavButton from "../components/shop-owner/SetupGuideNavButton";
 
 interface CanonicalOwnerSidebarProps {
   metadata: OwnerShellMetadata;
@@ -259,8 +260,10 @@ const CanonicalOwnerSidebar = ({ metadata }: CanonicalOwnerSidebarProps) => {
           })}
         </ul>
         <ul className="mt-auto space-y-1 border-t border-gray-200 pt-4 dark:border-gray-800" data-testid="canonical-owner-articles-navigation">
+          <li><SetupGuideNavButton showLabel={showLabels} /></li>
           <li>
             <Link
+              data-tour="sidebar-articles"
               href={OWNER_ARTICLES_PATH}
               viewTransition
               className={`flex min-h-10 items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors motion-reduce:transition-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#111111] dark:focus-visible:ring-gray-300 ${currentPath === OWNER_ARTICLES_PATH || currentPath.startsWith(`${OWNER_ARTICLES_PATH}/`)
