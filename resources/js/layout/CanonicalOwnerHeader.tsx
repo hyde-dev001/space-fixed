@@ -13,16 +13,26 @@ interface CanonicalOwnerHeaderProps {
   hideHeader?: boolean;
 }
 
+const sameOriginPath = (value: string) => {
+  try {
+    const url = new URL(value, "http://solespace.local");
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return value;
+  }
+};
 const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonRef, hideHeader = false }) => {
   const page = usePage();
   const props = page.props as Record<string, unknown>;
   const auth = (props.auth && typeof props.auth === "object" ? props.auth : {}) as Record<string, unknown>;
   const erpActor = auth.erpActor as ErpActor | undefined;
   const erpUrls = props.erpUrls as Partial<ErpUrls> | undefined;
-  const canonicalSettingsUrl = route("shop-owner.shell.settings.profile");
+  const canonicalSettingsUrl = sameOriginPath(route("shop-owner.shell.settings.profile"));
   const canonicalOwnerUrls: Partial<ErpUrls> = {
     ...(erpUrls ?? {}),
-    profile: typeof erpUrls?.profile === "string" ? erpUrls.profile : route("shop-owner.shop-profile"),
+    profile: typeof erpUrls?.profile === "string"
+      ? sameOriginPath(erpUrls.profile)
+      : sameOriginPath(route("shop-owner.shop-profile")),
     settings: canonicalSettingsUrl,
   };
   const [isApplicationMenuOpen, setApplicationMenuOpen] = useState(false);
@@ -74,6 +84,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
             className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-800 dark:text-gray-300 dark:hover:bg-gray-800"
             onClick={handleToggle}
             aria-label="Toggle Sidebar"
+            data-tour="owner-sidebar-toggle"
             aria-expanded={isMobileOpen || isExpanded}
             aria-controls="canonical-owner-sidebar"
           >
@@ -117,6 +128,7 @@ const CanonicalOwnerHeader: React.FC<CanonicalOwnerHeaderProps> = ({ menuButtonR
           type="button"
           className="rounded-lg p-2 text-gray-500 transition-colors motion-reduce:transition-none hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-300 dark:hover:bg-gray-800 lg:hidden"
           aria-label="Toggle Application Menu"
+          data-tour="owner-mobile-menu"
           aria-expanded={isApplicationMenuOpen}
           onClick={() => setApplicationMenuOpen((current) => !current)}
         >

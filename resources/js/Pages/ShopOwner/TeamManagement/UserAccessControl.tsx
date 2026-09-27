@@ -1794,6 +1794,7 @@ const UserAccessControl: React.FC = () => {
               </div>
               <button
                 onClick={openAddEmployeeModal}
+                data-tour="employee-access"
                 type="button"
                 className="inline-flex items-center gap-2 rounded-lg border border-brand-500 bg-brand-500 px-4 py-2.5 text-theme-sm font-medium text-white shadow-theme-xs hover:bg-brand-600 hover:text-white focus:ring-2 focus:ring-brand-500 focus:ring-offset-2 dark:border-brand-500 dark:bg-brand-500 dark:text-white dark:hover:bg-brand-600 dark:hover:text-white dark:focus:ring-brand-500 cursor-pointer"
               >
@@ -2223,7 +2224,7 @@ const UserAccessControl: React.FC = () => {
               <div className="bg-white dark:bg-gray-900 rounded-xl shadow-xl max-w-6xl w-full border border-gray-200 dark:border-gray-800 overflow-hidden">
                 {/* Header */}
                 <div className="border-b border-gray-200 dark:border-gray-800 px-6 py-4">
-                  <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add New Employee</h2>
+                  <h2 data-tour="employee-form" className="text-2xl font-bold text-gray-900 dark:text-white">Add New Employee</h2>
                   <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Fill in the employee details below</p>
                 </div>
 

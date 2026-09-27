@@ -8,12 +8,16 @@ use App\Http\Controllers\ShopOwner\CanonicalOwnerPaymentsController;
 use App\Http\Controllers\ShopOwner\OwnerActionCenterController;
 use App\Http\Controllers\ShopOwner\ShopOwnerDashboardController;
 use App\Http\Controllers\ShopOwner\ShopSettingsController;
+use App\Http\Controllers\ShopOwner\SetupGuideController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('shop-owner')
     ->name('shop-owner.shell.')
     ->middleware('auth:shop_owner')
     ->group(function (): void {
+        Route::get('/setup-guide', [SetupGuideController::class, 'show'])->name('setup-guide.show');
+        Route::post('/setup-guide/progress', [SetupGuideController::class, 'progress'])->name('setup-guide.progress');
+        Route::post('/setup-guide/welcome', [SetupGuideController::class, 'dismissWelcome'])->name('setup-guide.welcome');
         Route::get('/action-center', OwnerActionCenterController::class)
             ->name('action-center');
 

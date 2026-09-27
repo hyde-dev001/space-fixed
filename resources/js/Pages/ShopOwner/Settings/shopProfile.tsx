@@ -203,7 +203,7 @@ const OperatingHoursModal: React.FC<{
     <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 shadow-2xl">
         <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between">
-          <h3 className="text-xl font-bold text-gray-900 dark:text-white">Set Operating Hours</h3>
+          <h3 data-tour="shop-hours-modal" className="text-xl font-bold text-gray-900 dark:text-white">Set Operating Hours</h3>
           <button
             type="button"
             onClick={onClose}
@@ -556,6 +556,7 @@ const EditProfileModal: React.FC<{
                 </h3>
                 <button
                   type="button"
+                  data-tour="shop-hours-open-modal"
                   onClick={() => setIsHoursModalOpen(true)}
                   className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800"
                 >
@@ -962,6 +963,7 @@ const ShopProfile: React.FC = () => {
       <Head title="Shop Profile - Shop Owner" />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:bg-opacity-50">
         <div className="max-w-9xl mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 lg:py-8">
+          <div className="mb-3 flex justify-end px-3"><a data-tour="customer-preview" href={`/shop-profile/${shopOwner?.id}`} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100">Preview public shop</a></div>
           <div className="lg:hidden">
             <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-3 py-3 backdrop-blur-sm">
               <div className="flex items-center gap-2">
@@ -1013,12 +1015,14 @@ const ShopProfile: React.FC = () => {
 
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button
+                    data-tour="shop-profile-edit"
                     onClick={() => setIsEditModalOpen(true)}
                     className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900"
                   >
                     Edit Profile
                   </button>
                   <button
+                    data-tour="shop-profile-photos"
                     onClick={() => profilePhotoInputRef.current?.click()}
                     disabled={isUploadingPhoto}
                     className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 disabled:opacity-50"
@@ -1255,6 +1259,7 @@ const ShopProfile: React.FC = () => {
                       </button>
                       <button
                         type="button"
+                        data-tour="shop-profile-photos"
                         onClick={() => profilePhotoInputRef.current?.click()}
                         disabled={isUploadingPhoto}
                         className="absolute -bottom-2 -right-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border-2 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1274,6 +1279,7 @@ const ShopProfile: React.FC = () => {
                   </div>
 
                   <button
+                    data-tour="shop-profile-edit"
                     onClick={() => setIsEditModalOpen(true)}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-md hover:shadow-lg transition-all duration-200 dark:bg-blue-500 dark:hover:bg-blue-600"
                   >
