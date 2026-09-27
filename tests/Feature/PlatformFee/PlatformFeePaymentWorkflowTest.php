@@ -9,6 +9,7 @@ use App\Models\PlatformFeePayment;
 use App\Models\PlatformFeePaymentRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\PlatformReliabilityService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use PHPUnit\Framework\Attributes\Test;
@@ -95,6 +96,12 @@ class PlatformFeePaymentWorkflowTest extends TestCase
             'allocation_type' => 'payment',
             'amount' => '56.00',
         ]);
+
+        $score = app(PlatformReliabilityService::class)->latest($shop->id);
+        $this->assertNotNull($score);
+        $this->assertSame(1, $score->metrics['marketplace_orders']);
+        $this->assertSame(1, $score->metrics['platform_fee_charges']);
+        $this->assertSame(1, $score->metrics['paid_platform_fee_charges']);
 
         $this->assertSame('0.00', app(\App\Services\PlatformBalanceService::class)->summary($shop->id)['net_payable']);
         $this->assertNotNull($order->fresh());

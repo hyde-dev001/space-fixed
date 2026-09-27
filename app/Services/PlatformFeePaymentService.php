@@ -25,6 +25,7 @@ final class PlatformFeePaymentService
         private readonly PlatformFeeSettingsResolver $settings,
         private readonly NotificationService $notifications,
         private readonly PlatformFeeThresholdService $thresholds,
+        private readonly PlatformReliabilityService $reliability,
     ) {}
 
     public function createBusinessRequest(int $shopId, ?int $financeUserId = null, ?string $idempotencyKey = null): PlatformFeePaymentRequest
@@ -339,6 +340,12 @@ final class PlatformFeePaymentService
         [$settled, $confirmedNow, $creditMovements] = $settlement;
         if (! $confirmedNow) {
             return $settled;
+        }
+
+        try {
+            $this->reliability->recalculate((int) $settled->shop_id);
+        } catch (\Throwable $exception) {
+            report($exception);
         }
 
         $this->notifyCreditApplications((int) $settled->shop_id, $creditMovements);

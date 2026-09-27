@@ -132,6 +132,12 @@ class CodRemittanceTest extends TestCase
     public function test_finance_exact_confirmation_settles_collection_and_appends_one_payment(): void
     {
         [$shop, $rider, $finance, $collection] = $this->makeContext();
+        $order = Order::query()->findOrFail($collection->order_id);
+        $order->update(['status' => 'delivered']);
+        $this->assertDatabaseMissing('platform_fee_charges', [
+            'source_type' => 'order',
+            'source_id' => $order->id,
+        ]);
         $remittance = $this->submit($rider, $collection);
 
         $response = $this->actingAs($finance, 'user')
@@ -155,6 +161,13 @@ class CodRemittanceTest extends TestCase
         $this->assertDatabaseHas('orders', [
             'id' => $collection->order_id,
             'payment_status' => 'paid',
+        ]);
+        $this->assertDatabaseHas('platform_fee_charges', [
+            'shop_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'source_origin' => 'marketplace',
+            'total_charge' => '5.60',
         ]);
 
         $replay = $this->actingAs($finance, 'user')

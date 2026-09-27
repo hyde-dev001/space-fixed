@@ -257,6 +257,14 @@ final class PlatformFeeController extends Controller
         $shop = ShopOwner::query()->findOrFail($shopId);
         $config = $this->settings->forShop($shop);
         $latestScore = $this->reliability->latest($shopId);
+        if (! $latestScore) {
+            try {
+                $latestScore = $this->reliability->recalculate($shop);
+            } catch (\Throwable $exception) {
+                report($exception);
+            }
+        }
+
         $charges = PlatformFeeCharge::query()
             ->where('shop_id', $shopId)
             ->where('source_origin', 'marketplace')
