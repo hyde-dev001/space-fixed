@@ -93,6 +93,41 @@ interface IdentityVerification {
   reviewedAt?: string | null;
 }
 
+const getIdentityReviewBadge = (verification: IdentityVerification | null | undefined) => {
+  if (!verification) {
+    return {
+      label: 'No ID submitted',
+      className: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+    };
+  }
+
+  if (verification.reviewStatus === 'pending') {
+    return {
+      label: 'Needs review',
+      className: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200',
+    };
+  }
+
+  if (verification.reviewStatus === 'approved') {
+    return {
+      label: 'Approved',
+      className: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200',
+    };
+  }
+
+  if (verification.reviewStatus === 'rejected' || verification.screeningStatus === 'rejected') {
+    return {
+      label: verification.reviewStatus === 'rejected' ? 'Rejected' : 'Rejected by screening',
+      className: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
+    };
+  }
+
+  return {
+    label: 'No review needed',
+    className: 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200',
+  };
+};
+
 interface MetricData {
   title: string;
   value: number;
@@ -170,6 +205,7 @@ interface UserPage {
 interface UserStats {
   total?: number;
   pending?: number;
+  pending_identity_reviews?: number;
   active?: number;
   archived?: number;
 }
@@ -704,7 +740,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2 xl:grid-cols-5">
           <MetricCard
             title="Total Users"
             value={stats.total ?? (isServerPaginated ? pagination.total : users.length)}
@@ -713,11 +749,18 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
             description="Total registered users"
           />
           <MetricCard
-            title="Pending Approvals"
+            title="Pending Account Approvals"
             value={stats.pending ?? users.filter(u => u.status === 'pending').length}
             icon={AlertIcon}
             color="warning"
-            description="Users awaiting approval"
+            description="Users awaiting account approval"
+          />
+          <MetricCard
+            title="Pending Identity Reviews"
+            value={stats.pending_identity_reviews ?? users.filter(u => u.identityVerification?.reviewStatus === 'pending').length}
+            icon={AlertIcon}
+            color="warning"
+            description="Submitted IDs awaiting review"
           />
           <MetricCard
             title="Active Users"
@@ -816,6 +859,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">User</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Identity Review</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Created</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Last Login</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
@@ -825,6 +869,7 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                 {paginatedUsers.map((user) => {
                   const isArchived = user.archived === true || user.status === 'archived';
                   const accountStatus = user.accountStatus || user.status;
+                  const identityReviewBadge = getIdentityReviewBadge(user.identityVerification);
 
                   return (
                   <tr key={user.id}>
@@ -856,6 +901,11 @@ const SuperAdminUserManagement: React.FC<PageProps> = ({ users: initialUsers, st
                           suspended
                         </span>
                       )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${identityReviewBadge.className}`}>
+                        {identityReviewBadge.label}
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                       {new Date(user.createdAt).toLocaleDateString()}

@@ -198,6 +198,69 @@ describe('SuperAdminUserManagement lifecycle controls', () => {
     expect(screen.queryByText('12%')).not.toBeInTheDocument();
   });
 
+  it('separates account approvals from identity reviews and shows the review outcome per user', () => {
+    render(
+      <SuperAdminUserManagement
+        users={[
+          user({
+            id: 1,
+            name: 'Pending Identity Review',
+            identityVerification: {
+              id: 1,
+              documentType: 'passport',
+              screeningStatus: 'manual_review_required',
+              reviewStatus: 'pending',
+            },
+          }),
+          user({
+            id: 2,
+            name: 'Approved Identity Review',
+            identityVerification: {
+              id: 2,
+              documentType: 'passport',
+              screeningStatus: 'manual_review_required',
+              reviewStatus: 'approved',
+            },
+          }),
+          user({
+            id: 3,
+            name: 'Rejected Identity Review',
+            identityVerification: {
+              id: 3,
+              documentType: 'passport',
+              screeningStatus: 'manual_review_required',
+              reviewStatus: 'rejected',
+            },
+          }),
+          user({
+            id: 4,
+            name: 'No Identity Review Needed',
+            identityVerification: {
+              id: 4,
+              documentType: 'passport',
+              screeningStatus: 'automated_check_passed',
+              reviewStatus: 'not_required',
+            },
+          }),
+        ]}
+        stats={{
+          total: 4,
+          pending: 0,
+          pending_identity_reviews: 1,
+          active: 4,
+          archived: 0,
+        }}
+      />
+    );
+
+    expect(screen.getByText('Pending Account Approvals')).toBeInTheDocument();
+    expect(screen.getByText('Pending Identity Reviews')).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Needs review' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Approved' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'Rejected' })).toBeInTheDocument();
+    expect(screen.getByRole('cell', { name: 'No review needed' })).toBeInTheDocument();
+  });
+
   it('keeps legacy registration statuses visible but read-only', () => {
     render(
       <SuperAdminUserManagement

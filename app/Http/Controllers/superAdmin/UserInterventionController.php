@@ -10,6 +10,7 @@ use App\Http\Requests\SuperAdmin\AccountArchiveRequest;
 use App\Http\Requests\SuperAdmin\AccountReactivationRequest;
 use App\Http\Requests\SuperAdmin\AccountRestoreRequest;
 use App\Http\Requests\SuperAdmin\AccountSuspensionRequest;
+use App\Models\IdentityVerification;
 use App\Models\SuperAdmin;
 use App\Models\User;
 use App\Services\AccountLifecycleService;
@@ -161,9 +162,21 @@ final class UserInterventionController extends Controller
             ];
         });
 
+        $latestIdentityVerificationIds = IdentityVerification::query()
+            ->selectRaw('MAX(id)')
+            ->groupBy('user_id');
+        $activeCustomerIds = (clone $baseQuery)
+            ->whereNull('deleted_at')
+            ->select('id');
+
         $stats = [
             'total' => (clone $baseQuery)->count(),
             'pending' => (clone $baseQuery)->where('status', 'pending')->whereNull('deleted_at')->count(),
+            'pending_identity_reviews' => IdentityVerification::query()
+                ->whereIn('id', $latestIdentityVerificationIds)
+                ->where('review_status', IdentityVerification::REVIEW_PENDING)
+                ->whereIn('user_id', $activeCustomerIds)
+                ->count(),
             'active' => (clone $baseQuery)->whereIn('status', ['active', 'approved'])->whereNull('deleted_at')->count(),
             'suspended' => (clone $baseQuery)->where('status', 'suspended')->whereNull('deleted_at')->count(),
             'archived' => (clone $baseQuery)->whereNotNull('deleted_at')->count(),

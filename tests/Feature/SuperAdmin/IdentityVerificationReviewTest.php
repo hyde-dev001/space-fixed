@@ -219,6 +219,25 @@ final class IdentityVerificationReviewTest extends TestCase
                 ->missing('users.data.0.identityVerification.ocrConfidence'));
     }
 
+    public function test_admin_customer_list_reports_account_and_identity_approval_counts_separately(): void
+    {
+        $admin = $this->createAdmin();
+        $this->manualReview();
+        $supersededUser = User::factory()->create(['shop_owner_id' => null]);
+        $this->createVerification($supersededUser, ['review_status' => 'pending']);
+        $this->createVerification($supersededUser, ['review_status' => 'approved']);
+        User::factory()->create([
+            'shop_owner_id' => null,
+            'status' => 'pending',
+        ]);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.users.index'))
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('stats.pending', 1)
+                ->where('stats.pending_identity_reviews', 1));
+    }
+
     public function test_admin_customer_list_exposes_customer_suffix(): void
     {
         $admin = $this->createAdmin();
