@@ -33,6 +33,7 @@ interface PageProps {
         role: string;
         first_name?: string;
         last_name?: string;
+        suffix?: string;
         phone?: string;
         // bio removed
         job_title?: string;
@@ -61,6 +62,7 @@ export default function Profile({ user, requiresPasswordChange, security }: Page
     } = useForm({
         first_name: user.first_name || user.name?.split(' ')[0] || "",
         last_name: user.last_name || user.name?.split(' ').slice(1).join(' ') || "",
+        suffix: user.suffix || "",
         email: user.email || "",
         phone: user.phone || "",
         // bio removed
@@ -161,7 +163,7 @@ export default function Profile({ user, requiresPasswordChange, security }: Page
                             </div>
                             <div>
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                                    {personalData.first_name} {personalData.last_name}
+                                    {personalData.first_name} {personalData.last_name}{personalData.suffix ? ` ${personalData.suffix}` : ""}
                                 </h2>
                                 <p className="text-gray-600 dark:text-gray-400 mb-1">
                                     {personalData.job_title}
@@ -192,6 +194,10 @@ export default function Profile({ user, requiresPasswordChange, security }: Page
                             <div>
                                 <label className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Last Name</label>
                                 <p className="text-gray-900 dark:text-white font-medium mt-1">{personalData.last_name}</p>
+                            </div>
+                            <div>
+                                <label className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Suffix</label>
+                                <p className="text-gray-900 dark:text-white font-medium mt-1">{personalData.suffix || "N/A"}</p>
                             </div>
                             <div>
                                 <label className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Email address</label>

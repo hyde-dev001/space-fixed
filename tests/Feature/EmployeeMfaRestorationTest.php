@@ -33,6 +33,26 @@ final class EmployeeMfaRestorationTest extends TestCase
             );
     }
 
+    public function test_employee_profile_exposes_suffix(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create([
+            'business_type' => 'retail',
+        ]);
+        $employee = User::factory()->create([
+            'shop_owner_id' => $shop->getKey(),
+            'role' => 'STAFF',
+            'status' => 'active',
+            'suffix' => 'Jr.',
+        ]);
+
+        $this->actingAs($employee, 'user')
+            ->get(route('erp.profile'))
+            ->assertInertia(fn ($page) => $page
+                ->component('ERP/Profile')
+                ->where('user.suffix', 'Jr.')
+            );
+    }
+
     public function test_employee_can_start_mfa_setup_and_load_security_history(): void
     {
         $shop = ShopOwner::factory()->approved()->create([
