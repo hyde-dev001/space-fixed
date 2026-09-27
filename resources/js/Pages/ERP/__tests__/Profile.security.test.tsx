@@ -81,4 +81,22 @@ describe("ERP profile password requirements", () => {
     expect(screen.queryByText("Active Sessions")).not.toBeInTheDocument();
     expect(screen.queryByText("Log Out Other Sessions")).not.toBeInTheDocument();
   });
+
+  it("renders the suffix returned by the employee profile", () => {
+    render(
+      <Profile
+        user={{
+          id: 1,
+          name: "Test Employee",
+          email: "employee@example.com",
+          role: "STAFF",
+          suffix: "Jr.",
+        }}
+        requiresPasswordChange={false}
+      />,
+    );
+
+    expect(screen.getByText("Suffix")).toBeInTheDocument();
+    expect(screen.getByText("Jr.")).toBeInTheDocument();
+  });
 });

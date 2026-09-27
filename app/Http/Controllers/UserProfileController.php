@@ -52,6 +52,7 @@ class UserProfileController extends Controller
                 'role' => $user->role,
                 'first_name' => $user->first_name,
                 'last_name' => $user->last_name,
+                'suffix' => $user->suffix,
                 'phone' => $user->phone,
                 'job_title' => $user->position,
                 'country' => $user->country,
