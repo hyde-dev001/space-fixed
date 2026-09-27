@@ -40,7 +40,12 @@ export const SidebarProvider: React.FC<{ children: React.ReactNode }> = ({
   const [isHovered, setIsHovered] = useState(false);
   const [activeItem, setActiveItem] = useState<string | null>(null);
   const sidebarScrollTop = useRef(0);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set());
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(() => new Set([
+    "OVERVIEW",
+    "PEOPLE & ACCESS",
+    "SHOP OPERATIONS",
+    "SHOP OWNER APPROVALS",
+  ]));
   const [openSubmenu, setOpenSubmenuState] = useState<string | null>(() => {
     const saved = localStorage.getItem('sidebarOpenSubmenu');
     return saved || null;
