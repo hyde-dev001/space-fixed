@@ -1486,7 +1486,7 @@ const Products: React.FC<Props> = () => {
                           type="button"
                           aria-label={`Quick view ${p.name}`}
                           onClick={(event) => openQuickView(p, event)}
-                          className="absolute bottom-3 right-3 z-20 min-h-11 rounded-md bg-[#16233b] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-white opacity-100 transition-all hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white motion-reduce:transition-none xl:opacity-0 xl:group-hover:opacity-100 xl:group-focus-within:opacity-100"
+                          className="absolute bottom-3 right-3 z-20 hidden min-h-11 rounded-md bg-[#16233b] px-4 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-white opacity-100 transition-all hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white motion-reduce:transition-none xl:block xl:opacity-0 xl:group-hover:opacity-100 xl:group-focus-within:opacity-100"
                         >
                           Quick view
                         </button>

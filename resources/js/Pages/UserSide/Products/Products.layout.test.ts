@@ -35,6 +35,15 @@ describe('Products page layout', () => {
     expect(productsSource).toContain('className="group flex h-full');
   });
 
+  it('shows Quick View only on desktop layouts', () => {
+    const quickViewStart = productsSource.indexOf('aria-label={`Quick view');
+    const quickViewEnd = productsSource.indexOf('</button>', quickViewStart);
+
+    expect(quickViewStart).toBeGreaterThanOrEqual(0);
+    expect(productsSource.slice(quickViewStart, quickViewEnd)).toContain('hidden');
+    expect(productsSource.slice(quickViewStart, quickViewEnd)).toContain('xl:block');
+  });
+
   it('keeps the sort menu above animated catalog cards', () => {
     expect(productsSource).toContain(
       'data-scroll-reveal className="scroll-reveal relative z-30 mb-8 w-full md:max-w-none"',
