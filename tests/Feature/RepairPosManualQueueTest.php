@@ -3,10 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\PosTransaction;
+use App\Models\PosReceipt;
 use App\Models\RepairRequest;
+use App\Models\RepairWarrantyClaim;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use PHPUnit\Framework\Attributes\Test;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -68,6 +71,69 @@ class RepairPosManualQueueTest extends TestCase
     }
 
     #[Test]
+    public function pos_warranty_claim_does_not_require_evidence_images(): void
+    {
+        Storage::fake('public');
+
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'both',
+            'registration_type' => 'individual',
+            'warranty_enabled' => true,
+            'repair_warranty_days' => 30,
+        ]);
+        $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $repair = $this->createRepairRequest([
+            'shop_owner_id' => $shopOwner->id,
+            'request_id' => 'REP-POS-WARRANTY-IMAGELESS-0001',
+            'phone' => '09170000000',
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDay(),
+            'payment_status' => 'completed',
+            'payment_status_derived' => 'completed',
+        ]);
+        $transaction = PosTransaction::create([
+            'transaction_no' => 'POS-POS-WARRANTY-IMAGELESS-0001',
+            'shop_owner_id' => $shopOwner->id,
+            'module_type' => 'repair',
+            'module_reference_id' => $repair->id,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Walk-in Test',
+            'walk_in_phone' => '09170000000',
+            'due_type' => 'full',
+            'subtotal' => 500,
+            'tax_amount' => 0,
+            'discount_amount' => 0,
+            'total_amount' => 500,
+            'paid_amount' => 500,
+            'status' => 'paid',
+            'paid_at' => now(),
+        ]);
+        PosReceipt::create([
+            'pos_transaction_id' => $transaction->id,
+            'shop_owner_id' => $shopOwner->id,
+            'receipt_no' => 'RCP-POS-WARRANTY-IMAGELESS-0001',
+            'issued_at' => now(),
+            'print_payload' => [],
+            'digital_payload' => [],
+        ]);
+
+        $this->actingAs($cashier, 'user')
+            ->postJson('/api/repair-pos/warranty-claims', [
+                'repair_request_id' => $repair->id,
+                'receipt_no' => 'RCP-POS-WARRANTY-IMAGELESS-0001',
+                'walk_in_phone' => '09170000000',
+                'reason_code' => 'issue_returned',
+                'reason_details' => 'The issue returned after pickup.',
+                'same_issue_confirmation' => '1',
+                'preferred_return_method' => 'walk_in',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('success', true);
+
+        $this->assertSame([], RepairWarrantyClaim::query()->latest('id')->firstOrFail()->evidence_media);
+    }
+
+    #[Test]
     public function manual_queue_list_returns_only_queue_enabled_records(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create([
@@ -113,6 +179,41 @@ class RepairPosManualQueueTest extends TestCase
         $response->assertJsonPath('success', true);
         $this->assertCount(1, $response->json('data'));
         $this->assertSame((int) $included->id, (int) $response->json('data.0.id'));
+    }
+
+    #[Test]
+    public function manual_queue_exposes_the_linked_registered_customer_id(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
+        /** @var User $cashier */
+        $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $customer = User::factory()->create([
+            'name' => 'Linked Queue Customer',
+            'phone' => '09171234567',
+        ]);
+
+        $repair = $this->createRepairRequest([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'request_id' => 'REP-POS-20260406-CUSTOMER-ID',
+            'manual_pos_queue_enabled' => true,
+            'status' => 'pending',
+            'customer_name' => 'N/A',
+            'phone' => '',
+            'email' => 'N/A',
+        ]);
+
+        $response = $this->actingAs($cashier, 'user')->getJson('/api/repair-pos/manual-queue');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.id', (int) $repair->id)
+            ->assertJsonPath('data.0.customer_id', (int) $customer->id)
+            ->assertJsonPath('data.0.customer_name', 'Linked Queue Customer')
+            ->assertJsonPath('data.0.phone', '09171234567')
+            ->assertJsonPath('data.0.email', $customer->email);
     }
 
     #[Test]
@@ -272,6 +373,7 @@ class RepairPosManualQueueTest extends TestCase
 
         $response->assertOk()->assertJsonPath('success', true);
         $this->assertSame('picked_up', (string) $repair->fresh()->status);
+        $this->assertTrue((bool) $repair->fresh()->repair_warranty_issued);
     }
 
     private function createRepairRequest(array $overrides = []): RepairRequest

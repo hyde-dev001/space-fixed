@@ -1,8 +1,4 @@
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-} from "../../icons";
-import Badge from "../ui/badge/Badge";
+import { MoneyIcon } from "../common/MoneyIcon";
 
 // Type definitions
 interface DashboardStats {
@@ -10,7 +6,6 @@ interface DashboardStats {
     total: number;
     this_month: number;
     last_month: number;
-    growth_percentage: number;
     average_order: number;
   };
   orders: {
@@ -20,7 +15,6 @@ interface DashboardStats {
     shipped: number;
     completed: number;
     cancelled: number;
-    growth_percentage: number;
   };
   products: {
     total: number;
@@ -58,12 +52,6 @@ const BoxIconLine = ({ className = "" }) => (
   </svg>
 );
 
-const DollarIcon = ({ className = "" }) => (
-  <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM13.41 18.09V19.5C13.41 19.89 13.09 20.21 12.7 20.21H11.3C10.91 20.21 10.59 19.89 10.59 19.5V18.07C9.48 17.92 8.51 17.48 7.87 16.91C7.54 16.62 7.49 16.13 7.76 15.79L8.56 14.72C8.82 14.39 9.28 14.32 9.63 14.56C10.17 14.93 10.87 15.23 11.59 15.23C12.53 15.23 12.92 14.79 12.92 14.31C12.92 13.76 12.53 13.4 11.26 13.03C9.45 12.53 8.12 11.69 8.12 9.77C8.12 8.27 9.18 7.14 10.59 6.81V5.5C10.59 5.11 10.91 4.79 11.3 4.79H12.7C13.09 4.79 13.41 5.11 13.41 5.5V6.83C14.34 6.99 15.09 7.35 15.63 7.79C15.96 8.07 16.02 8.56 15.75 8.91L14.96 9.96C14.7 10.3 14.25 10.37 13.9 10.14C13.45 9.84 12.89 9.62 12.23 9.62C11.37 9.62 11.16 10.08 11.16 10.45C11.16 10.95 11.61 11.25 12.79 11.61C14.65 12.11 15.96 12.87 15.96 14.85C15.95 16.39 14.89 17.55 13.41 18.09Z" fill="currentColor"/>
-  </svg>
-);
-
 const PackageIcon = ({ className = "" }) => (
   <svg className={className} width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path d="M21 16V8C20.9996 7.64927 20.9071 7.30481 20.7315 7.00116C20.556 6.69751 20.3037 6.44536 20 6.27L13 2.27C12.696 2.09446 12.3511 2.00205 12 2.00205C11.6489 2.00205 11.304 2.09446 11 2.27L4 6.27C3.69626 6.44536 3.44398 6.69751 3.26846 7.00116C3.09294 7.30481 3.00036 7.64927 3 8V16C3.00036 16.3507 3.09294 16.6952 3.26846 16.9988C3.44398 17.3025 3.69626 17.5546 4 17.73L11 21.73C11.304 21.9055 11.6489 21.9979 12 21.9979C12.3511 21.9979 12.696 21.9055 13 21.73L20 17.73C20.3037 17.5546 20.556 17.3025 20.7315 16.9988C20.9071 16.6952 20.9996 16.3507 21 16Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -91,29 +79,15 @@ export default function EcommerceMetrics({
     return new Intl.NumberFormat('en-US').format(num);
   };
 
-  // Get growth badge color
-  const getGrowthColor = (growth: number) => {
-    return growth >= 0 ? 'success' : 'error';
-  };
-
-  // Normalize API growth values so badge UI never renders NaN%.
-  const normalizeGrowth = (growth: unknown) => {
-    const numericGrowth = Number(growth);
-    return Number.isFinite(numericGrowth) ? numericGrowth : 0;
-  };
-
-  const revenueGrowth = normalizeGrowth(stats?.revenue?.growth_percentage);
-  const ordersGrowth = normalizeGrowth(stats?.orders?.growth_percentage);
-
   return (
     <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${showOrdersMetric ? "lg:grid-cols-4" : "lg:grid-cols-3"} md:gap-6`}>
       {/* Revenue Metric */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
+      <div className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
         <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
-          <DollarIcon className="text-gray-800 size-6 dark:text-white/90" />
+          <MoneyIcon className="text-gray-800 size-6 dark:text-white/90" />
         </div>
 
-        <div className="flex items-end justify-between mt-5">
+        <div className="mt-5">
           <div>
             <span className="text-sm text-gray-500 dark:text-gray-400">
               Total Revenue
@@ -122,20 +96,16 @@ export default function EcommerceMetrics({
               {stats ? formatCurrency(stats.revenue.total) : '₱0.00'}
             </h4>
           </div>
-          <Badge color={getGrowthColor(revenueGrowth)}>
-            {revenueGrowth >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-            {Math.abs(revenueGrowth).toFixed(2)}%
-          </Badge>
         </div>
       </div>
 
       {/* Orders Metric */}
       {showOrdersMetric && (
-        <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
+        <div className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
           <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
             <BoxIconLine className="text-gray-800 size-6 dark:text-white/90" />
           </div>
-          <div className="flex items-end justify-between mt-5">
+          <div className="mt-5">
             <div>
               <span className="text-sm text-gray-500 dark:text-gray-400">
                 Total Orders
@@ -145,16 +115,12 @@ export default function EcommerceMetrics({
               </h4>
             </div>
 
-            <Badge color={getGrowthColor(ordersGrowth)}>
-              {ordersGrowth >= 0 ? <ArrowUpIcon /> : <ArrowDownIcon />}
-              {Math.abs(ordersGrowth).toFixed(2)}%
-            </Badge>
           </div>
         </div>
       )}
 
       {/* Products Metric */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
+      <div className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
         <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
           <PackageIcon className="text-gray-800 size-6 dark:text-white/90" />
         </div>
@@ -176,7 +142,7 @@ export default function EcommerceMetrics({
       </div>
 
       {/* Customers Metric */}
-      <div className="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
+      <div className="metrics-card rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 md:p-6">
         <div className="flex items-center justify-center w-12 h-12 bg-gray-100 rounded-xl dark:bg-gray-800">
           <GroupIcon className="text-gray-800 size-6 dark:text-white/90" />
         </div>

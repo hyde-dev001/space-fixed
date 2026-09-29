@@ -23,4 +23,15 @@ describe('myRepairs refund workflow labels', () => {
 
     expect(label).toBe('Rejected');
   });
+
+  it('moves to owner review after Finance gives initial approval', () => {
+    const label = refundStageLabel({
+      overall_status: 'requested',
+      repairer_status: 'approved',
+      finance_status: 'approved_initial',
+      shop_owner_status: 'pending',
+    });
+
+    expect(label).toBe('Under Owner Review');
+  });
 });

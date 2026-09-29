@@ -89,6 +89,11 @@ class ShopOwnerSubscription extends Model
         return $this->hasMany(ShopOwnerSubscriptionPayment::class, 'subscription_id');
     }
 
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(ShopOwnerSubscriptionRefund::class, 'subscription_id');
+    }
+
     public function scopeActive($query)
     {
         return $query->where('status', 'active')

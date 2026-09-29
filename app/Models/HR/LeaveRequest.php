@@ -34,6 +34,7 @@ class LeaveRequest extends Model
         'approved_by',
         'approval_date',
         'rejection_reason',
+        'approver_comments',
     ];
 
     protected $casts = [

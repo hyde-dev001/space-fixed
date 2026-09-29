@@ -238,6 +238,8 @@ class SupplierOrderService
         $notificationsSent = 0;
 
         foreach ($overdueOrders as $order) {
+            $actionUrl = '/erp/inventory/supplier-order-monitoring?supplier=' . rawurlencode((string) $order->po_number);
+
             $this->notificationService->sendToErpRole(
                 roleName: 'Procurement Manager',
                 shopId: (int) $order->shop_owner_id,
@@ -248,7 +250,7 @@ class SupplierOrderService
                     'supplier_order_id' => (int) $order->id,
                     'po_number' => (string) $order->po_number,
                 ],
-                actionUrl: '/erp/procurement/supplier-orders',
+                actionUrl: $actionUrl,
                 priority: 'high'
             );
 

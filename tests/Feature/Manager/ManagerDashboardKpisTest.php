@@ -3,10 +3,12 @@
 namespace Tests\Feature\Manager;
 
 use App\Models\RepairRequest;
+use App\Models\Order;
 use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
@@ -31,12 +33,13 @@ class ManagerDashboardKpisTest extends TestCase
     {
         parent::setUp();
 
-        $this->shop = ShopOwner::factory()
-            ->create(['timezone' => 'UTC']);
+        $this->shop = ShopOwner::factory()->create(['business_type' => 'both']);
 
         $this->manager = User::factory()
             ->for($this->shop)
             ->create(['role' => 'Manager']);
+        Role::findOrCreate('Manager', 'user');
+        $this->manager->assignRole('Manager');
     }
 
     /**
@@ -45,14 +48,11 @@ class ManagerDashboardKpisTest extends TestCase
     public function test_dashboard_accepts_last_7_days_range(): void
     {
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard?range=last_7_days');
+            ->getJson('/api/manager/dashboard/stats?range=last_7_days');
 
         $response->assertStatus(200);
-        $response->assertJson([
-            'success' => true,
-        ]);
         $response->assertJsonStructure([
-            'data' => ['dateRange']
+            'dateRange'
         ]);
     }
 
@@ -62,10 +62,10 @@ class ManagerDashboardKpisTest extends TestCase
     public function test_dashboard_accepts_last_30_days_range(): void
     {
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard?range=last_30_days');
+            ->getJson('/api/manager/dashboard/stats?range=last_30_days');
 
         $response->assertStatus(200);
-        $data = $response->json('data');
+        $data = $response->json();
         
         // Verify dateRange contains start and end dates
         $this->assertArrayHasKey('dateRange', $data);
@@ -79,7 +79,7 @@ class ManagerDashboardKpisTest extends TestCase
     public function test_dashboard_accepts_last_90_days_range(): void
     {
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard?range=last_90_days');
+            ->getJson('/api/manager/dashboard/stats?range=last_90_days');
 
         $response->assertStatus(200);
     }
@@ -90,10 +90,10 @@ class ManagerDashboardKpisTest extends TestCase
     public function test_dashboard_accepts_month_to_date_range(): void
     {
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard?range=month_to_date');
+            ->getJson('/api/manager/dashboard/stats?range=month_to_date');
 
         $response->assertStatus(200);
-        $data = $response->json('data');
+        $data = $response->json();
         
         // MTD should start at first day of current month
         $this->assertEquals(
@@ -109,24 +109,26 @@ class ManagerDashboardKpisTest extends TestCase
     {
         // Create old suspension (8 days ago)
         SuspensionRequest::factory()
-            ->for($this->shop)
             ->create([
                 'created_at' => now()->subDays(8),
-                'status' => 'pending'
+                'status' => 'pending_manager',
+                'owner_id' => $this->shop->id,
             ]);
 
         // Create recent suspension (2 days ago)
         SuspensionRequest::factory()
-            ->for($this->shop)
             ->create([
                 'created_at' => now()->subDays(2),
-                'status' => 'pending'
+                'status' => 'pending_manager',
+                'owner_id' => $this->shop->id,
             ]);
 
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard?range=last_7_days');
+            ->getJson('/api/manager/dashboard/stats?range=last_7_days');
 
-        $data = $response->json('data');
+        $data = $response->json();
+        $response->assertOk();
+        $this->assertSame('last_7_days', $data['dateRange']['key']);
         
         // Pending count should only include the recent one
         // (This depends on exact API structure - adjust based on actual response)
@@ -153,9 +155,11 @@ class ManagerDashboardKpisTest extends TestCase
             ]);
 
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard');
+            ->getJson('/api/manager/dashboard/stats');
 
-        $data = $response->json('data');
+        $data = $response->json();
+        $response->assertOk();
+        $this->assertArrayHasKey('previous_start', $data['dateRange']);
         
         // API should have separate retail/repair KPI breakdown
         $this->assertArrayHasKey('kpiBreakdown', $data);
@@ -171,24 +175,26 @@ class ManagerDashboardKpisTest extends TestCase
     {
         // Create requests in current period
         SuspensionRequest::factory(3)
-            ->for($this->shop)
             ->create([
                 'created_at' => now()->subDays(2),
-                'status' => 'approved'
+                'status' => 'approved',
+                'owner_id' => $this->shop->id,
             ]);
 
         // Create requests in previous period
         SuspensionRequest::factory(2)
-            ->for($this->shop)
             ->create([
                 'created_at' => now()->subDays(15),
-                'status' => 'approved'
+                'status' => 'approved',
+                'owner_id' => $this->shop->id,
             ]);
 
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard?range=last_7_days');
+            ->getJson('/api/manager/dashboard/stats?range=last_7_days');
 
-        $data = $response->json('data');
+        $data = $response->json();
+        $response->assertOk();
+        $this->assertArrayHasKey('previous_start', $data['dateRange']);
         
         // Check if previous period metrics are present
         if (isset($data['previousPeriod'])) {
@@ -202,9 +208,9 @@ class ManagerDashboardKpisTest extends TestCase
     public function test_dashboard_includes_kpi_semantic_metadata(): void
     {
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard?range=last_30_days');
+            ->getJson('/api/manager/dashboard/stats?range=last_30_days');
 
-        $data = $response->json('data');
+        $data = $response->json();
         
         // P3 work added kpiSemantics for reference
         $this->assertArrayHasKey('kpiSemantics', $data);
@@ -245,9 +251,9 @@ class ManagerDashboardKpisTest extends TestCase
             ]);
 
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard');
+            ->getJson('/api/manager/dashboard/stats');
 
-        $data = $response->json('data');
+        $data = $response->json();
         
         // Verify repair metrics distinguish between statuses
         if (isset($data['kpiBreakdown']['repair'])) {
@@ -263,21 +269,20 @@ class ManagerDashboardKpisTest extends TestCase
     public function test_suspension_status_counts_correctly(): void
     {
         SuspensionRequest::factory(2)
-            ->for($this->shop)
-            ->create(['status' => 'pending']);
+            ->create(['status' => 'pending_manager', 'owner_id' => $this->shop->id]);
 
         SuspensionRequest::factory(1)
-            ->for($this->shop)
-            ->create(['status' => 'approved']);
+            ->create(['status' => 'approved', 'owner_id' => $this->shop->id]);
 
         SuspensionRequest::factory(1)
-            ->for($this->shop)
-            ->create(['status' => 'rejected']);
+            ->create(['status' => 'rejected_manager', 'owner_id' => $this->shop->id]);
 
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard');
+            ->getJson('/api/manager/dashboard/stats');
 
-        $data = $response->json('data');
+        $data = $response->json();
+        $response->assertOk();
+        $this->assertArrayHasKey('kpiBreakdown', $data);
         
         // Should have metrics for suspension statuses
         if (isset($data['kpiBreakdown']['suspension'])) {
@@ -291,7 +296,7 @@ class ManagerDashboardKpisTest extends TestCase
     public function test_invalid_range_parameter_defaults(): void
     {
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard?range=invalid_range');
+            ->getJson('/api/manager/dashboard/stats?range=invalid_range');
 
         // Should either use default or return 422
         // If validation is strict:
@@ -313,7 +318,7 @@ class ManagerDashboardKpisTest extends TestCase
             ->create(['role' => 'Staff']);
 
         $response = $this->actingAs($staff, 'user')
-            ->getJson('/api/manager/dashboard');
+            ->getJson('/api/manager/dashboard/stats');
 
         $response->assertStatus(403);
     }
@@ -336,9 +341,9 @@ class ManagerDashboardKpisTest extends TestCase
             ->create();
 
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard');
+            ->getJson('/api/manager/dashboard/stats');
 
-        $data = $response->json('data');
+        $data = $response->json();
         
         // Metrics should reflect only this shop's counts
         // (Exact structure depends on API response format)
@@ -354,7 +359,7 @@ class ManagerDashboardKpisTest extends TestCase
      */
     public function test_date_range_start_is_inclusive(): void
     {
-        $startDate = now()->startOfDay()->subDays(7);
+        $startDate = now()->subDays(6)->startOfDay();
 
         // Create repair exactly at range start
         RepairRequest::factory()
@@ -362,9 +367,9 @@ class ManagerDashboardKpisTest extends TestCase
             ->create(['created_at' => $startDate]);
 
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson('/api/manager/dashboard?range=last_7_days');
+            ->getJson('/api/manager/dashboard/stats?range=last_7_days');
 
-        $data = $response->json('data');
+        $data = $response->json();
         
         // Should include data from start date
         if (isset($data['kpiBreakdown']['repair'])) {
@@ -381,9 +386,179 @@ class ManagerDashboardKpisTest extends TestCase
         $endDate = now()->toDateString();
 
         $response = $this->actingAs($this->manager, 'user')
-            ->getJson("/api/manager/dashboard?start_date={$startDate}&end_date={$endDate}");
+            ->getJson("/api/manager/dashboard/stats?start_date={$startDate}&end_date={$endDate}");
 
         // Should either work or be not implemented
-        $this->assertIn($response->status(), [200, 404, 422]);
+        $this->assertContains($response->status(), [200, 404, 422]);
+    }
+
+    public function test_dashboard_returns_one_authoritative_snapshot_with_operational_signals(): void
+    {
+        $inactiveStaff = User::factory()->for($this->shop)->create([
+            'role' => 'Staff',
+            'status' => 'inactive',
+        ]);
+        $inactiveRepairer = User::factory()->for($this->shop)->create([
+            'role' => 'Repairer',
+            'status' => 'inactive',
+        ]);
+
+        Order::factory()->for($this->shop)->create([
+            'assigned_staff_id' => $inactiveStaff->id,
+            'status' => 'processing',
+            'created_at' => now()->subDays(2),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'assigned_repairer_id' => $inactiveRepairer->id,
+            'status' => 'assigned_to_repairer',
+            'created_at' => now()->subDays(3),
+        ]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats?range=last_7_days');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertArrayHasKey('snapshot', $data);
+        $this->assertArrayHasKey('current_state', $data);
+        $this->assertArrayHasKey('period_metrics', $data);
+        $this->assertArrayHasKey('signals', $data);
+        $this->assertArrayHasKey('freshness', $data);
+        $this->assertSame($data['snapshot']['captured_at'], $data['freshness']['captured_at']);
+
+        $this->assertSame(1, $data['current_state']['job_orders']['reassignment_required']);
+        $this->assertSame(1, $data['current_state']['repair_jobs']['reassignment_required']);
+
+        $this->assertNotEmpty($data['signals']);
+        foreach ($data['signals'] as $signal) {
+            $this->assertArrayHasKey('age_days', $signal);
+            $this->assertArrayHasKey('severity', $signal);
+            $this->assertArrayHasKey('status', $signal);
+            $this->assertArrayHasKey('responsible', $signal);
+            $this->assertArrayHasKey('next_action', $signal);
+            $this->assertArrayHasKey('href', $signal);
+        }
+    }
+
+    public function test_dashboard_keeps_soft_deleted_assignees_visible_for_reassignment_signals(): void
+    {
+        $deletedStaff = User::factory()->for($this->shop)->create([
+            'role' => 'Staff',
+            'status' => 'active',
+        ]);
+        $deletedRepairer = User::factory()->for($this->shop)->create([
+            'role' => 'Repairer',
+            'status' => 'active',
+        ]);
+
+        Order::factory()->for($this->shop)->create([
+            'assigned_staff_id' => $deletedStaff->id,
+            'status' => 'processing',
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'assigned_repairer_id' => $deletedRepairer->id,
+            'status' => 'assigned_to_repairer',
+        ]);
+
+        $deletedStaff->delete();
+        $deletedRepairer->delete();
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertSame(1, $data['current_state']['job_orders']['reassignment_required']);
+        $this->assertSame(1, $data['current_state']['repair_jobs']['reassignment_required']);
+        $this->assertSame(2, $data['current_state']['staff']['unavailable_with_active_work']);
+    }
+
+    public function test_retail_only_dashboard_excludes_repair_operational_data(): void
+    {
+        $this->shop->update(['business_type' => 'retail']);
+
+        Order::factory()->for($this->shop)->create([
+            'status' => 'processing',
+            'created_at' => now(),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'in_progress',
+            'created_at' => now(),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'repairer_rejected',
+            'created_at' => now(),
+        ]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertSame('retail', $data['businessCapabilities']['businessType']);
+        $this->assertTrue($data['businessCapabilities']['canRetail']);
+        $this->assertFalse($data['businessCapabilities']['canRepair']);
+        $this->assertSame(0, $data['current_state']['repair_jobs']['active']);
+        $this->assertSame(0, $data['current_state']['repair_jobs']['reassignment_required']);
+        $this->assertSame(0, $data['current_state']['repair_jobs']['pending_manager_review']);
+        $this->assertSame(0, $data['current_state']['approvals']['repair_review']);
+        $this->assertSame(0, $data['period_metrics']['repairs']['received']);
+        $this->assertSame(0, $data['period_metrics']['repairs']['completed']);
+        $this->assertSame(0, $data['period_metrics']['repairs']['rejected']);
+
+        foreach ($data['signals'] as $signal) {
+            $this->assertNotSame('repair_review', $signal['type']);
+        }
+    }
+
+    public function test_dashboard_separates_current_state_from_selected_period_metrics(): void
+    {
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'pending',
+            'created_at' => now(),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'completed',
+            'created_at' => now()->subDays(2),
+            'completed_at' => now()->subDays(1),
+        ]);
+        RepairRequest::factory()->for($this->shop)->create([
+            'status' => 'completed',
+            'created_at' => now()->subDays(20),
+            'completed_at' => now()->subDays(20),
+        ]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats?range=last_7_days');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertSame(1, $data['current_state']['repair_jobs']['active']);
+        $this->assertSame(2, $data['period_metrics']['repairs']['received']);
+        $this->assertSame(1, $data['period_metrics']['repairs']['completed']);
+        $this->assertSame('last_7_days', $data['period_metrics']['range']['key']);
+        $this->assertArrayHasKey('comparison', $data['period_metrics']['range']);
+        $this->assertArrayHasKey('percent', $data['period_metrics']['trends']['repairs']);
+    }
+
+    public function test_dashboard_does_not_return_finance_or_full_queue_widgets(): void
+    {
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats');
+
+        $response->assertOk();
+        $data = $response->json();
+
+        $this->assertArrayNotHasKey('approvalSummary', $data);
+        $this->assertArrayNotHasKey('recentActivities', $data);
+        $this->assertArrayNotHasKey('complaints', $data);
+        $this->assertArrayHasKey('current_state', $data);
+        $this->assertArrayHasKey('leave', $data['current_state']['approvals']);
+        $this->assertArrayHasKey('suspension', $data['current_state']['approvals']);
+        $this->assertArrayHasKey('repair_review', $data['current_state']['approvals']);
     }
 }

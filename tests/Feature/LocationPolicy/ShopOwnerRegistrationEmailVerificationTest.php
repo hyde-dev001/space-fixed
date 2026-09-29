@@ -7,6 +7,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -17,13 +18,42 @@ class ShopOwnerRegistrationEmailVerificationTest extends TestCase
     private const LAT_DASMARINAS = 14.3294;
     private const LNG_DASMARINAS = 120.9367;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Http::fake([
+            'nominatim.openstreetmap.org/*' => Http::response([
+                'lat' => '14.3294',
+                'lon' => '120.9367',
+                'address' => [
+                    'country_code' => 'ph',
+                    'region' => 'Cavite',
+                    'province' => 'Cavite',
+                    'city' => 'Dasmarinas',
+                    'suburb' => 'Salitran I',
+                    'postcode' => '4114',
+                ],
+            ]),
+        ]);
+    }
+
     private function docs(): array
     {
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=');
+
         return [
-            'dti_registration' => UploadedFile::fake()->create('dti_registration.pdf', 120, 'application/pdf'),
-            'mayors_permit' => UploadedFile::fake()->create('mayors_permit.pdf', 120, 'application/pdf'),
-            'bir_certificate' => UploadedFile::fake()->create('bir_certificate.pdf', 120, 'application/pdf'),
-            'valid_id' => UploadedFile::fake()->create('valid_id.pdf', 120, 'application/pdf'),
+            'business_registration' => UploadedFile::fake()->createWithContent('dti_registration.png', $png),
+            'business_registration_type' => 'dti_registration',
+            'mayors_permit' => UploadedFile::fake()->createWithContent('mayors_permit.png', $png),
+            'bir_certificate' => UploadedFile::fake()->createWithContent('bir_certificate.png', $png),
+            'valid_id' => UploadedFile::fake()->createWithContent('valid_id.png', $png),
+            'document_metadata' => [
+                'business_registration' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'mayors_permit' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'dated', 'expires_on' => '2027-01-01'],
+                'bir_certificate' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+                'valid_id' => ['issued_on' => '2026-01-01', 'expiration_mode' => 'none', 'expires_on' => null],
+            ],
         ];
     }
 
@@ -34,10 +64,21 @@ class ShopOwnerRegistrationEmailVerificationTest extends TestCase
             'last_name' => 'Santos',
             'email' => 'shop-verify@solespaceph.com',
             'phone' => '09171234567',
+            'suffix' => 'Jr.',
+            'age' => 30,
+            'address' => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region' => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city' => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
+            'address_latitude' => self::LAT_DASMARINAS,
+            'address_longitude' => self::LNG_DASMARINAS,
             'business_name' => 'Ana Repair Hub',
             'business_address' => 'Dasmarinas, Cavite',
             'business_type' => 'repair',
             'registration_type' => 'individual',
+            'terms_accepted' => '1',
             'attendance_geofence_enabled' => true,
             'shop_latitude' => self::LAT_DASMARINAS,
             'shop_longitude' => self::LNG_DASMARINAS,

@@ -3,18 +3,17 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\Hash;
 
 /**
  * Create super_admins table
- * 
+ *
  * This table stores super administrator accounts with full system access.
  * Super admins can:
  * - Approve/reject shop owner registrations
  * - Manage all user accounts
  * - Access system analytics and reports
  * - Configure system settings
- * 
+ *
  * Security Features:
  * - Passwords are hashed using bcrypt
  * - Email must be unique
@@ -25,8 +24,6 @@ return new class extends Migration
 {
     /**
      * Run the migrations.
-     * 
-     * Creates super_admins table and seeds default admin account
      */
     public function up(): void
     {
@@ -67,24 +64,11 @@ return new class extends Migration
             $table->timestamps();
         });
 
-        // <!-- Create default super admin account -->
-        // <!-- IMPORTANT: Change these credentials in production! -->
-        DB::table('super_admins')->insert([
-            'first_name' => 'Super',
-            'last_name' => 'Administrator',
-            'email' => 'admin@thesis.com',
-            'password' => Hash::make('admin123'),  // Default password: admin123
-            'phone' => '09123456789',
-            'role' => 'super_admin',
-            'status' => 'active',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
     }
 
     /**
      * Reverse the migrations.
-     * 
+     *
      * Drops the super_admins table
      */
     public function down(): void

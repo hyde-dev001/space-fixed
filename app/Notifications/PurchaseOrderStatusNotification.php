@@ -57,7 +57,7 @@ class PurchaseOrderStatusNotification extends Notification implements ShouldQueu
             $message->line('**Cancellation Reason:** ' . ($this->purchaseOrder->cancellation_reason ?? 'Not specified'));
         }
 
-        return $message->action('View Purchase Order', url('/erp/procurement/purchase-orders/' . $this->purchaseOrder->id));
+        return $message->action('View Purchase Order', url('/erp/procurement/purchase-orders?purchase_order=' . $this->purchaseOrder->id));
     }
 
     /**

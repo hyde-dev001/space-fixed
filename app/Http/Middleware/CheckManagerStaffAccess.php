@@ -2,9 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\Manager\ManagerAuthorizationService;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -21,6 +21,11 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class CheckManagerStaffAccess
 {
+    public function __construct(
+        private readonly ManagerAuthorizationService $authorization,
+    ) {
+    }
+
     /**
      * Handle an incoming request.
      *
@@ -45,14 +50,6 @@ class CheckManagerStaffAccess
 
         $userRole = strtoupper($user->role ?? '');
 
-        $managerPermissions = [
-            'access-manager-dashboard',
-            'access-audit-logs',
-            'access-manager-reports',
-            'access-repair-reject-review',
-            'access-suspend-account',
-        ];
-
         $staffAndRepairerPermissions = [
             'access-staff-dashboard',
             'access-staff-job-orders',
@@ -73,7 +70,7 @@ class CheckManagerStaffAccess
         $canAccess = false;
 
         if ($requiredLevel === 'manager') {
-            $canAccess = ($userRole === 'MANAGER') || $user->hasAnyPermission($managerPermissions);
+            $canAccess = $this->authorization->canAccessManagerSurface($user);
         } elseif ($requiredLevel === 'staff') {
             $canAccess = in_array($userRole, ['STAFF', 'REPAIRER']) || $user->hasAnyPermission($staffAndRepairerPermissions);
         }

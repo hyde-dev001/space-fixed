@@ -3,13 +3,20 @@
 namespace App\Http\Controllers\ERP\HR;
 
 use App\Http\Controllers\Controller;
+use App\Enums\EmployeeStatus;
+use App\Enums\SuspensionStatus;
 use App\Models\Employee;
+use App\Models\SuspensionRequest;
 use App\Models\User;
 use App\Models\HR\LeaveBalance;
 use App\Models\HR\AuditLog;
 use App\Mail\EmployeeInvitation;
 use App\Models\ShopOwner;
 use App\Services\BusinessAccessControlService;
+use App\Services\HR\EmployeeLinkedUserSynchronizer;
+use App\Services\HR\EmployeeOwnerProjection;
+use App\Services\HR\EmployeeOperationalPolicy;
+use App\Services\Logistics\RiderProfileSyncService;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -20,6 +27,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Carbon\Carbon;
 use Spatie\Permission\Models\Role;
 
@@ -27,12 +35,19 @@ class EmployeeController extends Controller
 {
     use LogsHRActivity;
 
+    public function __construct(
+        private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
+        private readonly EmployeeOwnerProjection $employeeOwnerProjection,
+        private readonly EmployeeOperationalPolicy $employeePolicy,
+    ) {
+    }
+
     private function mapLegacyUserRole(string $normalizedRole): string
     {
         return match ($normalizedRole) {
             'CASHIER' => 'STAFF',
             'INVENTORY', 'INVENTORY_MANAGER' => 'INVENTORY',
-            'PROCUREMENT', 'PROCUREMENT_MANAGER' => 'STAFF',
+            'PROCUREMENT', 'PROCUREMENT_MANAGER', 'LOGISTICS_DISPATCHER', 'LOGISTICS_RIDER' => 'STAFF',
             default => $normalizedRole,
         };
     }
@@ -61,32 +76,20 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Keep linked user login status aligned with employee suspension/reactivation.
+     * Keep legacy employee address columns available through stable API names.
+     *
+     * @return array<string, mixed>
      */
-    private function syncLinkedUserStatus(Employee $employee, int $shopOwnerId, string $employeeStatus): void
+    private function employeePayload(Employee $employee): array
     {
-        $normalizedStatus = strtolower(trim($employeeStatus));
-        $targetUserStatus = match ($normalizedStatus) {
-            'active' => 'active',
-            'suspended' => 'suspended',
-            default => null,
-        };
+        $payload = $employee->toArray();
+        $payload['province'] = $employee->state;
+        $payload['city_municipality'] = $employee->city;
+        $payload['postal_code'] = $employee->zip_code;
 
-        if (!$targetUserStatus) {
-            return;
-        }
-
-        $linkedUser = $employee->user;
-        if (!$linkedUser) {
-            $linkedUser = User::where('shop_owner_id', $shopOwnerId)
-                ->where('email', $employee->email)
-                ->first();
-        }
-
-        if ($linkedUser && $linkedUser->status !== $targetUserStatus) {
-            $linkedUser->update(['status' => $targetUserStatus]);
-        }
+        return $payload;
     }
+
     /**
      * Display a listing of employees.
      */
@@ -99,7 +102,18 @@ class EmployeeController extends Controller
         }
 
         $query = Employee::byShop($user->shop_owner_id)
-            ->with(['attendanceRecords', 'leaveRequests', 'performanceReviews', 'user']);
+            ->with([
+                'attendanceRecords',
+                'leaveRequests',
+                'performanceReviews',
+                'employmentPeriods' => fn ($query) => $query->orderByDesc('start_date'),
+                'user',
+            ]);
+        $query->withExists([
+            'lifecycleRequests as has_pending_rehire_request' => fn ($requestQuery) => $requestQuery
+                ->where('request_type', 'rehire')
+                ->whereIn('status', ['pending_manager', 'pending_owner']),
+        ]);
 
         // Apply filters
         if ($request->filled('department')) {
@@ -123,6 +137,12 @@ class EmployeeController extends Controller
         $employees = $query->orderBy('name')
             ->paginate($request->get('per_page', 15));
 
+        $employees->setCollection($employees->getCollection()->map(function (Employee $employee): array {
+            return $this->employeePayload($employee) + [
+                'owner_projection' => $this->employeeOwnerProjection->project($employee),
+            ];
+        }));
+
         return response()->json($employees);
     }
 
@@ -138,9 +158,17 @@ class EmployeeController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        $request->merge([
+            'address' => $request->input('address', $request->input('location')),
+            'province' => $request->input('province', $request->input('state')),
+            'city_municipality' => $request->input('city_municipality', $request->input('city')),
+            'postal_code' => $request->input('postal_code', $request->input('zipCode', $request->input('zip_code'))),
+        ]);
+
         $validator = Validator::make($request->all(), [
             'firstName' => 'required|string|max:50',
             'lastName' => 'required|string|max:50',
+            'suffix' => 'nullable|string|max:50',
             'email' => 'required|email|unique:employees,email|unique:users,email',
             'phone' => ['nullable', 'regex:/^\d{11}$/', 'unique:employees,phone', 'unique:users,phone'],
             'position' => 'required|string|max:100',
@@ -151,12 +179,16 @@ class EmployeeController extends Controller
             'city' => 'nullable|string|max:100',
             'state' => 'nullable|string|max:100',
             'zipCode' => 'nullable|string|max:20',
+            'province' => 'nullable|string|max:100|required_with:address',
+            'city_municipality' => 'nullable|string|max:100|required_with:address',
+            'postal_code' => ['nullable', 'regex:/^\d{4}$/', 'required_with:address'],
             'emergencyContact' => 'nullable|string|max:100',
             'emergencyPhone' => 'nullable|string|max:20',
             'location' => 'nullable|string|max:100',
             'profileImage' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
         ], [
             'phone.regex' => 'Phone number must be exactly 11 digits.',
+            'postal_code.regex' => 'Postal code must be exactly 4 digits.',
         ]);
 
         if ($validator->fails()) {
@@ -177,6 +209,8 @@ class EmployeeController extends Controller
             'INVENTORY_MANAGER' => 'Inventory Manager',
             'PROCUREMENT' => 'Procurement Manager',
             'PROCUREMENT_MANAGER' => 'Procurement Manager',
+            'LOGISTICS_DISPATCHER' => 'Logistics Dispatcher',
+            'LOGISTICS_RIDER' => 'Logistics Rider',
             'STAFF' => 'Staff',
         ];
 
@@ -238,6 +272,7 @@ class EmployeeController extends Controller
                 'shop_owner_id' => $user->shop_owner_id,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
+                'suffix' => $request->input('suffix'),
                 'name' => $fullName,
                 'email' => $request->email,
                 'phone' => $request->phone ?? null,
@@ -246,9 +281,9 @@ class EmployeeController extends Controller
                 'hire_date' => $request->hireDate ?? $request->hire_date ?? now(),
                 'salary' => $request->salary ?? 0,
                 'address' => $request->location ?? $request->address ?? null,
-                'city' => $request->city ?? null,
-                'state' => $request->state ?? null,
-                'zip_code' => $request->zipCode ?? $request->zip_code ?? null,
+                'city' => $request->input('city_municipality') ?? $request->input('city'),
+                'state' => $request->input('province') ?? $request->input('state'),
+                'zip_code' => $request->input('postal_code') ?? $request->input('zipCode', $request->input('zip_code')),
                 'emergency_contact' => $request->emergencyContact ?? $request->emergency_contact ?? null,
                 'emergency_phone' => $request->emergencyPhone ?? $request->emergency_phone ?? null,
                 'status' => 'active',
@@ -267,9 +302,13 @@ class EmployeeController extends Controller
                 'name' => $fullName,
                 'first_name' => $firstName,
                 'last_name' => $lastName,
+                'suffix' => $request->input('suffix'),
                 'email' => $request->email,
                 'phone' => $request->phone ?? '',
                 'address' => $request->location ?? $request->address ?? '',
+                'province' => $request->input('province'),
+                'city' => $request->input('city_municipality') ?? $request->input('city'),
+                'postal_code' => $request->input('postal_code'),
                 'shop_owner_id' => $user->shop_owner_id,
                 // Keep legacy users.role enum-compatible; source of truth remains Spatie roles.
                 'role' => $legacyUserRole,
@@ -282,6 +321,7 @@ class EmployeeController extends Controller
             ]);
 
             $newUser->assignRole($resolvedSpatieRole);
+            app(RiderProfileSyncService::class)->syncUser($newUser);
 
             // Generate invitation URL
             $inviteUrl = url("/invite/{$inviteToken}");
@@ -295,6 +335,8 @@ class EmployeeController extends Controller
 
             return [$employee, $newUser, $inviteUrl];
         });
+
+        $this->linkedUserSynchronizer->sync($employee);
 
         // DON'T auto-send email - work email likely doesn't exist yet
         // HR will manually share the link via personal email/WhatsApp/SMS
@@ -310,7 +352,7 @@ class EmployeeController extends Controller
 
         return response()->json([
             'message' => 'Employee created successfully. Share the invitation link with the employee.',
-            'employee' => $employee->load(['leaveBalances']),
+            'employee' => $this->employeePayload($employee->load(['leaveBalances'])),
             'user_id' => $newUser->id,
             'invite_url' => $inviteUrl,
             'invite_expires_at' => $inviteExpiresAt->toDateTimeString(),
@@ -346,6 +388,9 @@ class EmployeeController extends Controller
                 'performanceReviews' => function ($query) {
                     $query->latest()->take(5);
                 },
+                'employmentPeriods' => function ($query) {
+                    $query->orderByDesc('start_date');
+                },
                 'leaveBalances' => function ($query) {
                     $query->where('year', date('Y'));
                 },
@@ -355,11 +400,12 @@ class EmployeeController extends Controller
             ->findOrFail($id);
 
         // Add user_id and permissions to response
-        $response = $employee->toArray();
+        $response = $this->employeePayload($employee);
         $response['user_id'] = $employee->user?->id;
         $response['permissions'] = $employee->user?->getAllPermissions()->pluck('name')->toArray() ?? [];
         $response['direct_permissions'] = $employee->user?->permissions->pluck('name')->toArray() ?? [];
         $response['role_permissions'] = $employee->user?->getPermissionsViaRoles()->pluck('name')->toArray() ?? [];
+        $response['owner_projection'] = $this->employeeOwnerProjection->project($employee);
 
         return response()->json($response);
     }
@@ -378,25 +424,39 @@ class EmployeeController extends Controller
 
         $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
 
+        if ($request->has('status')
+            && EmployeeStatus::tryFrom(strtolower(trim((string) $request->input('status')))) === EmployeeStatus::TERMINATED) {
+            return $this->terminationWorkflowRequiredResponse();
+        }
+
+        if ($request->has('status') && $this->isDirectSuspensionStateMutation($employee, (string) $request->input('status'))) {
+            return $this->suspensionWorkflowRequiredResponse();
+        }
+
         $validator = Validator::make($request->all(), [
             'firstName' => 'sometimes|required|string|max:50',
             'lastName' => 'sometimes|required|string|max:50',
+            'suffix' => 'sometimes|nullable|string|max:50',
             'email' => 'sometimes|required|email|unique:employees,email,' . $employee->id,
             'phone' => 'sometimes|required|regex:/^\d{11}$/',
             'position' => 'sometimes|required|string|max:100',
             'department' => 'sometimes|required|string|max:100',
             'hireDate' => 'sometimes|required|date',
-            'status' => 'sometimes|required|in:active,inactive,on-leave,suspended',
+            'status' => ['sometimes', 'required', Rule::enum(EmployeeStatus::class)],
             'address' => 'sometimes|required|string',
             'city' => 'sometimes|required|string|max:100',
             'state' => 'sometimes|required|string|max:100',
             'zipCode' => 'sometimes|required|string|max:20',
+            'province' => 'sometimes|nullable|string|max:100|required_with:address',
+            'city_municipality' => 'sometimes|nullable|string|max:100|required_with:address',
+            'postal_code' => ['sometimes', 'nullable', 'regex:/^\d{4}$/', 'required_with:address'],
             'emergencyContact' => 'sometimes|required|string|max:100',
             'emergencyPhone' => 'sometimes|required|string|max:20',
             'suspensionReason' => 'nullable|string',
             'profileImage' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
         ], [
             'phone.regex' => 'Phone number must be exactly 11 digits.',
+            'postal_code.regex' => 'Postal code must be exactly 4 digits.',
         ]);
 
         // Salary changes must go through the dedicated workflow (Phase 7).
@@ -411,6 +471,13 @@ class EmployeeController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
+        if ($request->has('status') && ! $this->employeePolicy->canChangeAccountState($employee, (string) $request->status)) {
+            return response()->json([
+                'error' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
+            ], 422);
+        }
+
         // Map camelCase to snake_case for database
         $data = [];
         if ($request->has('firstName')) $data['first_name'] = $request->firstName ?? '';
@@ -422,17 +489,24 @@ class EmployeeController extends Controller
         }
         if ($request->has('email')) $data['email'] = $request->email;
         if ($request->has('phone')) $data['phone'] = $request->phone;
+        if ($request->has('suffix')) $data['suffix'] = $request->input('suffix');
         if ($request->has('position')) $data['position'] = $request->position;
         if ($request->has('department')) $data['department'] = $request->department;
         if ($request->has('hireDate')) $data['hire_date'] = $request->hireDate;
         if ($request->has('salary')) $data['salary'] = $request->salary;
-        if ($request->has('status')) $data['status'] = $request->status;
+        if ($request->has('status')) {
+            $data['status'] = $request->status;
+            $data['privileged_suspension_id'] = null;
+        }
         if ($request->has('suspensionReason')) $data['suspension_reason'] = $request->suspensionReason;
         if ($request->has('location')) $data['address'] = $request->location;
         if ($request->has('address')) $data['address'] = $request->address;
         if ($request->has('city')) $data['city'] = $request->city;
         if ($request->has('state')) $data['state'] = $request->state;
         if ($request->has('zipCode')) $data['zip_code'] = $request->zipCode;
+        if ($request->has('province')) $data['state'] = $request->input('province');
+        if ($request->has('city_municipality')) $data['city'] = $request->input('city_municipality');
+        if ($request->has('postal_code')) $data['zip_code'] = $request->input('postal_code');
         if ($request->has('emergencyContact')) $data['emergency_contact'] = $request->emergencyContact;
         if ($request->has('emergencyPhone')) $data['emergency_phone'] = $request->emergencyPhone;
 
@@ -451,8 +525,21 @@ class EmployeeController extends Controller
 
         $employee->update($data);
 
+        if (array_intersect(array_keys($data), ['suffix', 'address', 'city', 'state', 'zip_code'])) {
+            $employee->loadMissing('user');
+            if ($employee->user) {
+                $employee->user->forceFill([
+                    'suffix' => $employee->suffix,
+                    'address' => $employee->address,
+                    'province' => $employee->state,
+                    'city' => $employee->city,
+                    'postal_code' => $employee->zip_code,
+                ])->save();
+            }
+        }
+
         if (isset($data['status'])) {
-            $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, (string) $data['status']);
+            $this->linkedUserSynchronizer->sync($employee);
         }
 
         // Audit log
@@ -466,7 +553,7 @@ class EmployeeController extends Controller
 
         return response()->json([
             'message' => 'Employee updated successfully',
-            'employee' => $employee
+            'employee' => $this->employeePayload($employee)
         ]);
     }
 
@@ -495,38 +582,11 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Suspend an employee.
+     * Keep the legacy direct suspension endpoint from bypassing the approval workflow.
      */
     public function suspend(Request $request, $id): JsonResponse
     {
-        $user = Auth::guard('user')->user();
-        
-        // Check if user is Manager or has any HR-related permissions
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $validator = Validator::make($request->all(), [
-            'reason' => 'required|string|max:500',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json(['errors' => $validator->errors()], 422);
-        }
-
-        $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
-
-        $employee->update([
-            'status' => 'suspended',
-            'suspensionReason' => $request->reason,
-        ]);
-
-        $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, 'suspended');
-
-        return response()->json([
-            'message' => 'Employee suspended successfully',
-            'employee' => $employee
-        ]);
+        return $this->suspensionWorkflowRequiredResponse();
     }
 
     /**
@@ -536,23 +596,85 @@ class EmployeeController extends Controller
     {
         $user = Auth::guard('user')->user();
 
-        if (!$user->hasRole('Manager') && !$user->can('access-employee-directory') && !$user->can('access-attendance-records') && !$user->can('access-payslip-generation')) {
+        if (! $user || (! $user->hasRole('Manager') && ! $user->can('access-employee-directory') && ! $user->can('access-attendance-records') && ! $user->can('access-payslip-generation'))) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $employee = Employee::forShopOwner($user->shop_owner_id)->findOrFail($id);
 
-        $employee->update([
-            'status' => 'active',
-            'suspension_reason' => null,
-        ]);
+        if (! $this->employeePolicy->canChangeAccountState($employee, EmployeeStatus::ACTIVE)) {
+            return response()->json([
+                'error' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
+            ], 422);
+        }
 
-        $this->syncLinkedUserStatus($employee, (int) $user->shop_owner_id, 'active');
+        $oldValues = [
+            'status' => $employee->getRawOriginal('status'),
+            'suspension_reason' => $employee->getRawOriginal('suspension_reason'),
+        ];
+
+        $employee = DB::transaction(function () use ($employee): Employee {
+            $lockedEmployee = Employee::query()
+                ->whereKey($employee->getKey())
+                ->where('shop_owner_id', $employee->shop_owner_id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedEmployee->forceFill([
+                'status' => EmployeeStatus::ACTIVE,
+                'suspension_reason' => null,
+                'privileged_suspension_id' => null,
+            ])->save();
+
+            $this->linkedUserSynchronizer->sync($lockedEmployee);
+
+            return $lockedEmployee->fresh();
+        });
+
+        $this->auditUpdated(
+            AuditLog::MODULE_EMPLOYEE,
+            $employee,
+            $oldValues,
+            "Employee account activated: {$employee->first_name} {$employee->last_name}",
+            ['employee_management', 'account_state']
+        );
 
         return response()->json([
             'message' => 'Employee account reactivated successfully',
             'employee' => $employee,
         ]);
+    }
+
+    private function isDirectSuspensionStateMutation(Employee $employee, string $targetStatus): bool
+    {
+        $target = EmployeeStatus::tryFrom(strtolower(trim($targetStatus)));
+        $current = $employee->status instanceof EmployeeStatus ? $employee->status : null;
+
+        if ($target === EmployeeStatus::SUSPENDED || $current === EmployeeStatus::SUSPENDED) {
+            return true;
+        }
+
+        return SuspensionRequest::query()
+            ->where('employee_id', $employee->getKey())
+            ->whereIn('status', [SuspensionStatus::PENDING_MANAGER, SuspensionStatus::PENDING_OWNER])
+            ->exists();
+    }
+
+    private function suspensionWorkflowRequiredResponse(): JsonResponse
+    {
+        return response()->json([
+            'error' => 'Employee suspension changes must go through the HR → Manager → Shop Owner workflow.',
+            'code' => 'SUSPENSION_WORKFLOW_REQUIRED',
+        ], 403);
+    }
+
+    private function terminationWorkflowRequiredResponse(): JsonResponse
+    {
+        return response()->json([
+            'error' => 'Employment termination must go through the HR → Manager → Shop Owner workflow.',
+            'code' => 'TERMINATION_WORKFLOW_REQUIRED',
+        ], 403);
     }
 
     /**
@@ -567,13 +689,17 @@ class EmployeeController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $totalEmployees = Employee::forShopOwner($user->shop_owner_id)->count();
-        $activeEmployees = Employee::forShopOwner($user->shop_owner_id)->active()->count();
-        $onLeaveEmployees = Employee::forShopOwner($user->shop_owner_id)
-            ->whereIn('status', ['on_leave', 'on-leave'])
-            ->count();
-        $probationEmployees = Employee::forShopOwner($user->shop_owner_id)->where('status', 'probation')->count();
-        $suspendedEmployees = Employee::forShopOwner($user->shop_owner_id)->where('status', 'suspended')->count();
+        $employees = Employee::forShopOwner($user->shop_owner_id)
+            ->with('leaveRequests')
+            ->get();
+        $projections = $employees->map(
+            fn (Employee $employee): array => $this->employeeOwnerProjection->project($employee),
+        );
+        $totalEmployees = $projections->count();
+        $activeEmployees = $projections->where('account_state', EmployeeStatus::ACTIVE->value)->count();
+        $onLeaveEmployees = $projections->where('on_leave', true)->count();
+        $probationEmployees = $projections->where('probation', true)->count();
+        $suspendedEmployees = $projections->where('account_state', EmployeeStatus::SUSPENDED->value)->count();
 
         return response()->json([
             'totalEmployees' => $totalEmployees,

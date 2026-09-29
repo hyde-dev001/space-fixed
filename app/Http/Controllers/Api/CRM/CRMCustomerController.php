@@ -13,6 +13,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
+use App\Support\Erp\ErpActorContext;
 use Inertia\Inertia;
 
 class CRMCustomerController extends Controller
@@ -21,6 +22,11 @@ class CRMCustomerController extends Controller
 
     private function shopOwnerId(): int
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
         $user = Auth::user();
         return $user->shop_owner_id ?? $user->id;
     }
@@ -35,6 +41,11 @@ class CRMCustomerController extends Controller
             || RepairRequest::where('shop_owner_id', $shopOwnerId)->where('user_id', $customerId)->exists();
     }
 
+    private function orderSpendExpression(): string
+    {
+        return 'COALESCE(total_amount, 0) + COALESCE(shipping_fee, 0) + COALESCE(vat_amount, 0)';
+    }
+
     // ─── Endpoints ────────────────────────────────────────────────────────────
 
     /**
@@ -47,12 +58,13 @@ class CRMCustomerController extends Controller
     public function indexPage(Request $request)
     {
         $user = Auth::guard('user')->user();
+        $context = $request->attributes->get('erp.actor_context');
 
-        if ($user?->force_password_change) {
+        if (! $context instanceof ErpActorContext && $user?->force_password_change) {
             return redirect()->route('erp.profile');
         }
 
-        $shopOwnerId = $user->shop_owner_id ?? $user->id;
+        $shopOwnerId = $this->shopOwnerId();
 
         // ── Per-customer order stats ──────────────────────────────────────────
         $orderStats = Order::where('shop_owner_id', $shopOwnerId)
@@ -60,7 +72,7 @@ class CRMCustomerController extends Controller
             ->select(
                 'customer_id as user_id',
                 DB::raw('COUNT(*) as order_count'),
-                DB::raw('COALESCE(SUM(total_amount), 0) as total_spent'),
+                DB::raw('COALESCE(SUM('.$this->orderSpendExpression().'), 0) as total_spent'),
                 DB::raw('MAX(created_at) as last_order_at')
             )
             ->groupBy('customer_id')
@@ -194,8 +206,8 @@ class CRMCustomerController extends Controller
 
             $customer->total_spent   = (float) Order::where('shop_owner_id', $shopOwnerId)
                 ->where('customer_id', $customer->id)
-                ->whereNotNull('total_amount')
-                ->sum('total_amount');
+                ->selectRaw('COALESCE(SUM('.$this->orderSpendExpression().'), 0) as total_spent')
+                ->value('total_spent');
 
             return $customer;
         });
@@ -243,7 +255,11 @@ class CRMCustomerController extends Controller
             'stats'    => [
                 'total_orders'  => $orders->count(),
                 'total_repairs' => $repairs->count(),
-                'total_spent'   => (float) $orders->sum('total_amount'),
+                'total_spent'   => (float) $orders->sum(function (Order $order): float {
+                    return (float) $order->total_amount
+                        + (float) $order->shipping_fee
+                        + (float) $order->vat_amount;
+                }),
                 'member_since'  => $customer->created_at?->toDateString(),
             ],
         ]);

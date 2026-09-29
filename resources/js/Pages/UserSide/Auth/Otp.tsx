@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
-import Navigation from '../Shared/Navigation';
+import AuthBrand from '../Shared/AuthBrand';
 import Form from '../../../components/form/Form';
 import Swal from '@/Pages/UserSide/Shared/UserModal';
 
@@ -167,24 +167,16 @@ export default function Otp() {
 		<>
 			<Head title="Verify Reset Code" />
 
-			<div className="min-h-screen bg-white font-outfit antialiased">
-				<Navigation />
+			<div className="userside-auth-page userside-auth-pattern relative min-h-screen font-outfit antialiased">
+				<AuthBrand />
 
-				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
-					<div className="text-center mb-12">
-						<h1 className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
-							VERIFY CODE
-						</h1>
-						<p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
-							We sent a 6-digit verification code to {email || 'your email'}. Enter it to continue.
-						</p>
+				<div className="flex min-h-screen w-full max-w-480 items-center justify-center mx-auto px-6 lg:px-12 py-24">
+					<div className="w-full max-w-lg mx-auto">
 						{status === 'otp-sent' && (
-							<p className="text-sm text-green-700 mt-4">Code sent. Please check your inbox and spam folder.</p>
+							<p className="mb-4 text-center text-sm text-green-700">Code sent. Please check your inbox and spam folder.</p>
 						)}
-					</div>
 
-					<div className="max-w-lg mx-auto">
-						<div className="bg-white rounded-2xl shadow-xl p-8">
+						<div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8">
 							<Form onSubmit={handleSubmit} className="space-y-6" autoComplete="off">
 								<div>
 									<label htmlFor="otp-0" className="block text-sm font-medium text-gray-900 mb-3">
@@ -223,7 +215,7 @@ export default function Otp() {
 										type="button"
 										disabled={secondsLeft > 0 || isResending}
 										onClick={handleResend}
-										className="font-semibold text-black hover:text-black/80 disabled:text-gray-400 disabled:cursor-not-allowed"
+										className="userside-auth-link font-semibold text-black hover:text-black/80 disabled:text-gray-400 disabled:cursor-not-allowed"
 									>
 										{secondsLeft > 0 ? `Resend in ${formatTime(secondsLeft)}` : (isResending ? 'Resending...' : 'Resend code')}
 									</button>
@@ -232,7 +224,7 @@ export default function Otp() {
 								<button
 									type="submit"
 									disabled={isLoading}
-									className="w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+									className="userside-auth-primary w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{isLoading ? 'Verifying code...' : 'Verify code'}
 								</button>
@@ -243,7 +235,7 @@ export default function Otp() {
 									Wrong email?{' '}
 									<Link
 										href={route('password.request')}
-										className="text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
+										className="userside-auth-link text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
 									>
 										Back to reset password
 									</Link>

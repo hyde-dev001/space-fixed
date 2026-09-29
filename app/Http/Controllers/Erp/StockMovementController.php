@@ -7,15 +7,26 @@ use App\Models\StockMovement;
 use App\Models\InventoryItem;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Support\Erp\ErpActorContext;
+use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 
 class StockMovementController extends Controller
 {
+    use AuthorizesRequests;
+
     /**
      * List all stock movements with filters
      */
     public function index(Request $request)
     {
-        $shopOwnerId = $request->user()->shop_owner_id;
+        $context = request()->attributes->get('erp.actor_context');
+        $shopOwnerId = $context instanceof ErpActorContext && $context->isOwnerMode()
+            ? (int) $context->tenantOwner()->getKey()
+            : $request->user()?->shop_owner_id;
+
+        if (!$shopOwnerId) {
+            return response()->json(['message' => 'Shop context is missing for this account.'], 403);
+        }
         
         $query = StockMovement::with(['inventoryItem', 'performer'])
             ->whereHas('inventoryItem', function ($q) use ($shopOwnerId) {
@@ -73,6 +84,8 @@ class StockMovementController extends Controller
         
         $item = InventoryItem::where('shop_owner_id', $shopOwnerId)
             ->findOrFail($validated['inventory_item_id']);
+
+        $this->authorize('adjustStock', $item);
         
         DB::transaction(function () use ($item, $validated, $request) {
             $quantityBefore = $item->available_quantity;

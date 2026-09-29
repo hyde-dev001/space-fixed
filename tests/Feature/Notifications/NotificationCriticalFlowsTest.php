@@ -3,6 +3,7 @@
 namespace Tests\Feature\Notifications;
 
 use App\Enums\SuspensionStatus;
+use App\Enums\NotificationType;
 use App\Models\Employee;
 use App\Models\Order;
 use App\Models\PosRefund;
@@ -13,13 +14,16 @@ use App\Models\SuspensionRequest;
 use App\Models\Supplier;
 use App\Models\SupplierOrder;
 use App\Models\HR\SalaryChange;
+use App\Services\NotificationService;
 use App\Models\User;
 use App\Services\HR\SalaryChangeApprovalService;
 use App\Services\RepairOnlineRefundWorkflowService;
 use App\Services\RepairPosRefundService;
 use App\Services\SupplierOrderService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Testing\AssertableInertia as Assert;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -133,7 +137,7 @@ class NotificationCriticalFlowsTest extends TestCase
             'customer_id' => $customer->id,
             'order_number' => 'ORD-TEST-2001',
             'total_amount' => 1499.00,
-            'status' => 'pending',
+            'status' => 'processing',
             'payment_status' => 'pending',
         ]);
 
@@ -235,6 +239,186 @@ class NotificationCriticalFlowsTest extends TestCase
     }
 
     #[Test]
+    public function salary_change_submission_does_not_notify_owner_when_owner_stage_is_disabled(): void
+    {
+        $shopOwner = $this->createShopOwner(['registration_type' => 'company']);
+
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        $proposer = User::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+        ]);
+
+        $change = SalaryChange::query()->create([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $shopOwner->id,
+            'proposed_by' => $proposer->id,
+            'previous_salary' => 20000,
+            'new_salary' => 22000,
+            'change_percent' => 10,
+            'change_type' => SalaryChange::TYPE_MAJOR,
+            'effective_date' => now()->addDay()->toDateString(),
+            'reason' => 'Non-owner review path',
+            'status' => SalaryChange::STATUS_PENDING,
+            'requires_owner_approval' => false,
+        ]);
+
+        app(SalaryChangeApprovalService::class)->notifySalaryChangeSubmitted(
+            $change->fresh(),
+            $employee,
+            $proposer,
+            $change->reason
+        );
+
+        $this->assertDatabaseMissing('notifications', [
+            'shop_owner_id' => $shopOwner->id,
+            'title' => 'New Salary Change Request',
+            'type' => 'salary_change_submitted',
+        ]);
+    }
+
+    #[Test]
+    public function owner_approval_notifications_use_typed_action_center_destinations(): void
+    {
+        $shopOwner = $this->createShopOwner();
+        $notificationService = app(NotificationService::class);
+
+        $notificationService->notifyRefundRequest($shopOwner->id, [
+            'refund_id' => 101,
+            'source_type' => 'order_refund',
+            'order_number' => 'ORD-101',
+            'amount' => '100.00',
+        ]);
+        $notificationService->notifyPriceChangeRequest($shopOwner->id, [
+            'price_change_id' => 102,
+            'product_name' => 'Action Center Shoe',
+            'old_price' => '100.00',
+            'new_price' => '120.00',
+        ]);
+        $notificationService->notifyRepairServiceRequest($shopOwner->id, [
+            'service_id' => 103,
+            'service_name' => 'Repair Service',
+            'price' => '500.00',
+        ]);
+        $notificationService->notifySalaryChangeSubmittedToShopOwner($shopOwner->id, [
+            'salary_change_id' => 104,
+            'employee_name' => 'Action Center Employee',
+            'proposed_by_name' => 'HR',
+            'new_salary' => '25000.00',
+        ]);
+        $expectedUrls = [
+            'Refund Request' => '/shop-owner/action-center?bucket=needs_my_decision&approval=order_refund:101',
+            'Price Change Approval Required' => '/shop-owner/action-center?bucket=needs_my_decision&approval=product_price_change:102',
+            'Repair Service Approval Required' => '/shop-owner/action-center?bucket=needs_my_decision&approval=repair_price_change:103',
+            'New Salary Change Request' => '/shop-owner/action-center?bucket=needs_my_decision&approval=salary_change:104',
+        ];
+
+        foreach ($expectedUrls as $title => $actionUrl) {
+            $this->assertDatabaseHas('notifications', [
+                'shop_owner_id' => $shopOwner->id,
+                'title' => $title,
+                'action_url' => $actionUrl,
+                'requires_action' => true,
+            ]);
+        }
+    }
+
+    #[Test]
+    public function warranty_owner_notifications_point_to_owner_reachable_repair_pages(): void
+    {
+        $individualOwner = $this->createShopOwner([
+            'business_type' => 'repair',
+            'registration_type' => 'individual',
+        ]);
+
+        app(NotificationService::class)->notifyRepairWarrantyClaimFiled($individualOwner->id, [
+            'claim_no' => 'WCLM-IND-1',
+            'request_id' => 'REP-IND-1',
+        ]);
+        app(NotificationService::class)->notifyRepairWarrantyClaimApproved($individualOwner->id, [
+            'claim_no' => 'WCLM-IND-2',
+            'request_id' => 'REP-IND-2',
+        ]);
+        app(NotificationService::class)->notifyRepairWarrantyClaimRejected($individualOwner->id, [
+            'claim_no' => 'WCLM-IND-3',
+            'request_id' => 'REP-IND-3',
+        ]);
+
+        foreach (['Warranty Claim Filed', 'Warranty Claim Approved', 'Warranty Claim Rejected'] as $title) {
+            $this->assertDatabaseHas('notifications', [
+                'shop_owner_id' => $individualOwner->id,
+                'title' => $title,
+                'action_url' => '/shop-owner/warranty-queue',
+            ]);
+        }
+
+        $this->actingAs($individualOwner, 'shop_owner')
+            ->get('/shop-owner/warranty-queue')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/Repairs/service management/WarrantyQueue'));
+
+        $companyOwner = $this->createShopOwner([
+            'business_type' => 'repair',
+            'registration_type' => 'company',
+        ]);
+
+        app(NotificationService::class)->notifyRepairWarrantyClaimFiled($companyOwner->id, [
+            'claim_no' => 'WCLM-COMP-1',
+            'request_id' => 'REP-COMP-1',
+        ]);
+        app(NotificationService::class)->notifyRepairWarrantyClaimApproved($companyOwner->id, [
+            'claim_no' => 'WCLM-COMP-2',
+            'request_id' => 'REP-COMP-2',
+        ]);
+        app(NotificationService::class)->notifyRepairWarrantyClaimRejected($companyOwner->id, [
+            'claim_no' => 'WCLM-COMP-3',
+            'request_id' => 'REP-COMP-3',
+        ]);
+
+        foreach (['Warranty Claim Filed', 'Warranty Claim Approved', 'Warranty Claim Rejected'] as $title) {
+            $this->assertDatabaseHas('notifications', [
+                'shop_owner_id' => $companyOwner->id,
+                'title' => $title,
+                'action_url' => '/shop-owner/job-orders-repair',
+            ]);
+        }
+
+        $this->actingAs($companyOwner, 'shop_owner')
+            ->get('/shop-owner/job-orders-repair')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/Operations/RepairJobs'));
+    }
+
+    #[Test]
+    public function owner_approval_action_url_rejects_unknown_or_unsafe_sources(): void
+    {
+        $notificationService = app(NotificationService::class);
+
+        foreach ([
+            ['unknown', 1],
+            ['payslip', 0],
+            ['expense', '9007199254740992'],
+        ] as [$sourceType, $sourceId]) {
+            $this->assertSame('/shop-owner/action-center', $notificationService->ownerApprovalActionUrl($sourceType, $sourceId));
+        }
+
+        foreach ([
+            ['payslip', 201],
+            ['purchase_request', 202],
+            ['expense', 203],
+        ] as [$sourceType, $sourceId]) {
+            $this->assertSame(
+                "/shop-owner/action-center?bucket=needs_my_decision&approval={$sourceType}:{$sourceId}",
+                $notificationService->ownerApprovalActionUrl($sourceType, $sourceId),
+            );
+        }
+    }
+
+    #[Test]
     public function repair_refund_finance_approve_emits_customer_and_owner_notifications(): void
     {
         $fixture = $this->createRepairRefundFixture('pos');
@@ -259,7 +443,8 @@ class NotificationCriticalFlowsTest extends TestCase
 
         $this->assertDatabaseHas('notifications', [
             'shop_owner_id' => $fixture['shop_owner']->id,
-            'title' => 'Repair Refund Approved',
+            'title' => 'Repair Refund Approved By Finance',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=repair_refund:{$fixture['refund']->id}",
         ]);
     }
 
@@ -287,6 +472,7 @@ class NotificationCriticalFlowsTest extends TestCase
             'shop_owner_id' => $fixture['shop_owner']->id,
             'title' => 'Repair Refund Requires Review',
             'type' => 'refund_request',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=repair_refund:{$fixture['refund']->id}",
         ]);
     }
 
@@ -299,7 +485,7 @@ class NotificationCriticalFlowsTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
         ]);
 
-        SupplierOrder::factory()->create([
+        $supplierOrder = SupplierOrder::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'supplier_id' => $supplier->id,
             'status' => 'sent',
@@ -323,6 +509,7 @@ class NotificationCriticalFlowsTest extends TestCase
             'user_id' => $inventoryUser->id,
             'title' => 'Supplier Order Overdue',
             'type' => 'purchase_request_submitted',
+            'action_url' => '/erp/inventory/supplier-order-monitoring?supplier=' . rawurlencode((string) $supplierOrder->po_number),
         ]);
     }
 
@@ -369,6 +556,89 @@ class NotificationCriticalFlowsTest extends TestCase
             'user_id' => $recipientB->id,
             'title' => 'Supplier Order Overdue',
             'type' => 'purchase_request_submitted',
+        ]);
+    }
+
+    #[Test]
+    public function procurement_workflow_notifications_are_tenant_scoped(): void
+    {
+        $shopA = $this->createShopOwner();
+        $shopB = $this->createShopOwner();
+        $procurementA = User::factory()->create(['shop_owner_id' => $shopA->id]);
+        $financeA = User::factory()->create(['shop_owner_id' => $shopA->id]);
+        $inventoryA = User::factory()->create(['shop_owner_id' => $shopA->id]);
+        $procurementB = User::factory()->create(['shop_owner_id' => $shopB->id]);
+        $financeRole = Role::findOrCreate('Finance', 'user');
+        $procurementRole = Role::findOrCreate('Procurement Manager', 'user');
+        $inventoryPermission = Permission::findOrCreate('inventory.view', 'user');
+        $financeA->assignRole($financeRole);
+        $procurementA->assignRole($procurementRole);
+        $inventoryA->givePermissionTo($inventoryPermission);
+        $procurementB->assignRole($procurementRole);
+
+        $service = app(NotificationService::class);
+        $service->notifyProcurementExpenseReleased($shopA->id, [
+            'expense_id' => 10,
+            'po_number' => 'PO-2026-001',
+            'amount' => '100.00',
+        ]);
+        $service->notifyPurchaseOrderInTransit($shopA->id, [
+            'purchase_order_id' => 11,
+            'po_number' => 'PO-2026-002',
+            'supplier_id' => 21,
+            'supplier_name' => 'Supplier A',
+            'expected_delivery' => '2026-09-20',
+            'status' => 'in_transit',
+            'shop_id' => $shopA->id,
+        ]);
+        $service->notifySupplierIssueReported($shopA->id, [
+            'adjustment_id' => 12,
+            'po_number' => 'PO-2026-003',
+        ]);
+        $service->notifySupplierReplacementRequested($shopA->id, [
+            'adjustment_id' => 12,
+            'po_number' => 'PO-2026-003',
+        ]);
+        $service->notifySupplierPaymentAwaitingVerification($shopA->id, [
+            'attempt_id' => 13,
+            'po_number' => 'PO-2026-004',
+        ]);
+        $service->notifySupplierPaymentVerified($shopA->id, [
+            'attempt_id' => 13,
+            'po_number' => 'PO-2026-004',
+        ]);
+        $service->notifySupplierPaymentRejected($shopA->id, [
+            'attempt_id' => 14,
+            'po_number' => 'PO-2026-005',
+        ]);
+        $service->notifySupplierRefundProofSubmitted($shopA->id, [
+            'adjustment_id' => 15,
+            'po_number' => 'PO-2026-006',
+        ]);
+        $service->notifySupplierRefundConfirmed($shopA->id, [
+            'adjustment_id' => 15,
+            'po_number' => 'PO-2026-006',
+        ]);
+
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $procurementA->id,
+            'type' => NotificationType::SUPPLIER_PAYMENT_VERIFIED->value,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $financeA->id,
+            'type' => NotificationType::SUPPLIER_PAYMENT_REJECTED->value,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $inventoryA->id,
+            'type' => NotificationType::PURCHASE_ORDER_IN_TRANSIT->value,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $shopA->id,
+            'type' => NotificationType::SUPPLIER_PAYMENT_AWAITING_VERIFICATION->value,
+        ]);
+        $this->assertDatabaseMissing('notifications', [
+            'user_id' => $procurementB->id,
+            'type' => NotificationType::SUPPLIER_PAYMENT_VERIFIED->value,
         ]);
     }
 }

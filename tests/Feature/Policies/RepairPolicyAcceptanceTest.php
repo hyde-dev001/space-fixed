@@ -14,6 +14,14 @@ class RepairPolicyAcceptanceTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function repairImage(): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent(
+            'repair.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=')
+        );
+    }
+
     public function test_repair_request_requires_policy_acceptance_payload(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
@@ -51,7 +59,7 @@ class RepairPolicyAcceptanceTest extends TestCase
             'shoe_type' => 'Sneakers',
             'shop_owner_id' => $shopOwner->id,
             'services' => [$service->id],
-            'images' => [UploadedFile::fake()->image('repair.jpg')],
+            'images' => [$this->repairImage()],
             'total' => 100,
             'service_type' => 'walkin',
             'return_delivery_method' => 'walk_in',
@@ -98,7 +106,7 @@ class RepairPolicyAcceptanceTest extends TestCase
             'shoe_type' => 'Sneakers',
             'shop_owner_id' => $shopOwner->id,
             'services' => [$service->id],
-            'images' => [UploadedFile::fake()->image('repair.jpg')],
+            'images' => [$this->repairImage()],
             'total' => 120,
             'service_type' => 'walkin',
             'return_delivery_method' => 'walk_in',

@@ -3,7 +3,9 @@
 namespace Tests\Feature;
 
 use App\Models\Order;
+use App\Models\OrderItem;
 use App\Models\Product;
+use App\Models\ProductVariant;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -34,6 +36,13 @@ class ProductVatInclusiveCheckoutTest extends TestCase
             'is_active' => true,
             'is_featured' => false,
         ]);
+        $variant = ProductVariant::create([
+            'product_id' => $product->id,
+            'size' => '42',
+            'color' => 'Black',
+            'quantity' => 5,
+            'is_active' => true,
+        ]);
 
         $payload = [
             'items' => [
@@ -43,8 +52,8 @@ class ProductVatInclusiveCheckoutTest extends TestCase
                     'qty' => 1,
                     'name' => $product->name,
                     'price' => 1000,
-                    'size' => null,
-                    'color' => null,
+                    'size' => '42',
+                    'color' => 'Black',
                     'image' => null,
                 ],
             ],
@@ -66,6 +75,7 @@ class ProductVatInclusiveCheckoutTest extends TestCase
         $this->assertGreaterThan(0, $orderId);
 
         $order = Order::query()->findOrFail($orderId);
+        $this->assertSame($variant->id, OrderItem::where('order_id', $orderId)->value('product_variant_id'));
 
         $this->assertSame('892.86', number_format((float) $order->total_amount, 2, '.', ''));
         $this->assertSame('107.14', number_format((float) $order->vat_amount, 2, '.', ''));

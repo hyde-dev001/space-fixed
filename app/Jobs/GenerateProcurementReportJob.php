@@ -37,6 +37,10 @@ class GenerateProcurementReportJob implements ShouldQueue
      */
     public function handle(): void
     {
+        if (!$this->shopOwnerId) {
+            return;
+        }
+
         try {
             Log::info('Starting procurement report generation', [
                 'shop_owner_id' => $this->shopOwnerId,
@@ -52,10 +56,8 @@ class GenerateProcurementReportJob implements ShouldQueue
             $prQuery = PurchaseRequest::whereBetween('created_at', [$startDate, $endDate]);
             $poQuery = PurchaseOrder::whereBetween('created_at', [$startDate, $endDate]);
 
-            if ($this->shopOwnerId) {
-                $prQuery->where('shop_owner_id', $this->shopOwnerId);
-                $poQuery->where('shop_owner_id', $this->shopOwnerId);
-            }
+            $prQuery->where('shop_owner_id', $this->shopOwnerId);
+            $poQuery->where('shop_owner_id', $this->shopOwnerId);
 
             // Collect metrics
             $reportData = [
@@ -79,9 +81,10 @@ class GenerateProcurementReportJob implements ShouldQueue
             ];
 
             // Get management users to send report to
-            $managementUsers = User::whereHas('roles', function ($query) {
-                $query->whereIn('name', ['admin', 'finance', 'procurement']);
-            })->get();
+            $managementUsers = User::where('shop_owner_id', $this->shopOwnerId)
+                ->whereHas('roles', function ($query) {
+                    $query->whereIn('name', ['Admin', 'Finance', 'Procurement Manager']);
+                })->get();
 
             // Send report emails
             foreach ($managementUsers as $user) {

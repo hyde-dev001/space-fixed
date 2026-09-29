@@ -168,7 +168,12 @@ class CustomerReviewController extends Controller
             ];
         } elseif ($type === 'repair') {
             $review = RepairReview::where('id', $reviewId)
-                ->where('shop_owner_id', $shopOwner->id)
+                ->where(function ($query) use ($shopOwner) {
+                    $query->where('shop_owner_id', $shopOwner->id)
+                        ->orWhereHas('repairRequest', function ($repairRequestQuery) use ($shopOwner) {
+                            $repairRequestQuery->where('shop_owner_id', $shopOwner->id);
+                        });
+                })
                 ->with('user:id,name,email')
                 ->first();
             if (!$review) {
@@ -232,7 +237,7 @@ class CustomerReviewController extends Controller
             type: NotificationType::REVIEW_REPORTED,
             title: 'Malicious Review Reported',
             message: "{$shopName} reported a customer review for: {$reasonLabel}",
-            actionUrl: '/superAdmin/flagged-accounts',
+            actionUrl: '/admin/flagged-accounts',
             data: ['review_report_id' => $report->id],
         );
 

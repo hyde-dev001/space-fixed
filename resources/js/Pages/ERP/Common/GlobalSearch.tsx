@@ -113,7 +113,7 @@ export default function GlobalSearch({
                     className="w-full pl-10 pr-10 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg
                              bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100
                              placeholder-gray-500 dark:placeholder-gray-400
-                             focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent
+                             focus:outline-none focus:ring-2 focus:ring-gray-950 focus:border-gray-950
                              transition-colors"
                 />
 
@@ -130,10 +130,10 @@ export default function GlobalSearch({
 
             {/* Search Results Dropdown */}
             {isOpen && (
-                <div className="absolute z-50 mt-2 w-full max-w-2xl bg-white dark:bg-gray-800 
-                              rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 
+                <div className="absolute z-50 mt-2 w-full max-w-2xl bg-white dark:bg-gray-800
+                              rounded-lg shadow-xl border border-gray-200 dark:border-gray-700
                               max-h-96 overflow-y-auto">
-                    
+
                     {/* Loading State */}
                     {isLoading && (
                         <div className="px-4 py-8 text-center">
@@ -253,8 +253,7 @@ function SearchResultItem({ result, isSelected, onClick }: SearchResultItemProps
         <Link
             href={result.url}
             onClick={onClick}
-            className={`block px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors
-                      ${isSelected ? 'bg-indigo-50 dark:bg-indigo-900/20' : ''}`}
+            className={`block px-4 py-3 transition-colors ${isSelected ? 'bg-gray-950 text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black' : 'hover:bg-gray-50 dark:hover:bg-gray-700'}`}
         >
             <div className="flex items-center gap-3">
                 {/* Icon */}
@@ -265,24 +264,24 @@ function SearchResultItem({ result, isSelected, onClick }: SearchResultItemProps
                 {/* Content */}
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                        <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        <p className={`text-sm font-medium truncate ${isSelected ? 'text-white' : 'text-gray-900 dark:text-gray-100'}`}>
                             {result.title}
                         </p>
                         <span className={getBadgeClasses(result.badgeColor)}>
                             {result.badge}
                         </span>
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+                    <p className={`text-xs truncate ${isSelected ? 'text-gray-200' : 'text-gray-500 dark:text-gray-400'}`}>
                         {result.subtitle}
                     </p>
                 </div>
 
                 {/* Amount and Date */}
                 <div className="shrink-0 text-right">
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                    <p className={`text-sm font-medium ${isSelected ? 'text-white' : 'text-gray-900 dark:text-gray-100'}`}>
                         {formatAmount(result.amount)}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                    <p className={`text-xs ${isSelected ? 'text-gray-200' : 'text-gray-500 dark:text-gray-400'}`}>
                         {formatSearchDate(result.date)}
                     </p>
                 </div>

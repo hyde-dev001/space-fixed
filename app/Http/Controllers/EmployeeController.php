@@ -2,15 +2,21 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\EmployeeStatus;
 use App\Models\Employee;
 use App\Models\User;
 use App\Models\AuditLog;
 use App\Mail\EmployeeInvitation;
+use App\Services\HR\EmployeeLinkedUserSynchronizer;
+use App\Services\HR\EmployeeOwnerProjection;
+use App\Services\HR\EmployeeOperationalPolicy;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\Response;
 use Carbon\Carbon;
 
@@ -24,6 +30,14 @@ use Carbon\Carbon;
  */
 class EmployeeController extends Controller
 {
+    public function __construct(
+        private readonly EmployeeLinkedUserSynchronizer $linkedUserSynchronizer,
+        private readonly EmployeeOwnerProjection $employeeOwnerProjection,
+        private readonly EmployeeOperationalPolicy $employeePolicy,
+    )
+    {
+    }
+
     /**
      * Get all employees for the authenticated user's shop
      * 
@@ -84,7 +98,7 @@ class EmployeeController extends Controller
                 'functional_role' => 'nullable|string|in:HR Handler,Finance Handler,Inventory Handler,Attendance Manager,Performance Reviewer',
                 'salary' => 'required|numeric|min:0',
                 'hire_date' => 'required|date',
-                'status' => 'required|in:active,inactive,on_leave',
+                'status' => ['required', Rule::enum(EmployeeStatus::class)],
                 'role' => 'required|in:HR,FINANCE_STAFF,FINANCE_MANAGER,MANAGER,STAFF,CRM,SCM,MRP',
             ];
 
@@ -94,6 +108,14 @@ class EmployeeController extends Controller
                 'email.unique' => 'This email is already registered',
                 'salary.numeric' => 'Salary must be a valid number',
             ]);
+
+            if (($validated['status'] ?? null) === EmployeeStatus::TERMINATED->value) {
+                return response()->json([
+                    'message' => 'Employment termination must go through the HR → Manager → Company Shop Owner workflow.',
+                    'error' => 'TERMINATION_WORKFLOW_REQUIRED',
+                    'code' => 'TERMINATION_WORKFLOW_REQUIRED',
+                ], Response::HTTP_FORBIDDEN);
+            }
 
             // Automatically assign to user's shop
             $validated['shop_owner_id'] = $request->user_shop_id;
@@ -138,6 +160,7 @@ class EmployeeController extends Controller
                 'invited_at' => now(),
                 'invited_by' => $request->user()->id,
             ]);
+            $this->linkedUserSynchronizer->sync($employee);
 
             // Generate invitation URL
             $inviteUrl = url("/invite/{$inviteToken}");
@@ -243,8 +266,16 @@ class EmployeeController extends Controller
                 'salary_effective_date' => 'required_with:salary|date',
                 'salary_change_reason' => 'required_with:salary|string|max:500',
                 'salary_approved_by' => 'nullable|integer|exists:users,id',
-                'status' => 'sometimes|in:active,inactive,on_leave',
+                'status' => ['sometimes', Rule::enum(EmployeeStatus::class)],
             ]);
+
+            if (($validated['status'] ?? null) === EmployeeStatus::TERMINATED->value) {
+                return response()->json([
+                    'message' => 'Employment termination must go through the HR → Manager → Shop Owner workflow.',
+                    'error' => 'TERMINATION_WORKFLOW_REQUIRED',
+                    'code' => 'TERMINATION_WORKFLOW_REQUIRED',
+                ], Response::HTTP_FORBIDDEN);
+            }
 
             $salaryAuditData = null;
 
@@ -296,7 +327,23 @@ class EmployeeController extends Controller
                 $employeeUpdateData['salary_approved_by']
             );
 
+            if (array_key_exists('status', $employeeUpdateData)) {
+                if (! $this->employeePolicy->canChangeAccountState($employee, $employeeUpdateData['status'])) {
+                    return response()->json([
+                        'message' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
+                        'error' => 'EMPLOYEE_REHIRE_REQUIRED',
+                        'code' => 'EMPLOYEE_REHIRE_REQUIRED',
+                    ], Response::HTTP_UNPROCESSABLE_ENTITY);
+                }
+
+                $employeeUpdateData['privileged_suspension_id'] = null;
+            }
+
             $employee->update($employeeUpdateData);
+
+            if (array_key_exists('status', $employeeUpdateData)) {
+                $this->linkedUserSynchronizer->sync($employee);
+            }
 
             if ($salaryAuditData) {
                 AuditLog::create([
@@ -365,169 +412,91 @@ class EmployeeController extends Controller
     }
 
     /**
-     * Suspend an employee (temporary) - sets status to 'inactive' and records reason in AuditLog
-     *
-     * @param Request $request
-     * @param Employee $employee
-     * @return \Illuminate\Http\JsonResponse
+     * Keep the legacy direct suspension endpoint from bypassing the approval workflow.
      */
     public function suspend(Request $request, Employee $employee)
     {
-        try {
-            if ($employee->shop_owner_id !== $request->user_shop_id) {
-                return response()->json([
-                    'message' => 'Employee not found',
-                    'error' => 'NOT_FOUND',
-                ], Response::HTTP_NOT_FOUND);
-            }
-
-            $validated = $request->validate([
-                'suspension_reason' => 'nullable|string|max:500',
-            ]);
-
-            $employee->update(['status' => 'inactive']);
-
-            // Audit log the suspension
-            try {
-                AuditLog::create([
-                    'shop_owner_id' => $request->user_shop_id,
-                    'actor_user_id' => $request->user()->id ?? null,
-                    'action' => 'employee_suspended',
-                    'target_type' => 'employee',
-                    'target_id' => $employee->id,
-                    'metadata' => [
-                        'reason' => $validated['suspension_reason'] ?? null,
-                    ],
-                ]);
-            } catch (\Exception $e) {
-                // non-fatal
-            }
-
-            // Also sync the User record (if any) so Super Admin sees suspension in user management
-            try {
-                $user = User::where('email', $employee->email)->first();
-                if ($user) {
-                    $user->update(['status' => 'suspended']);
-
-                    // Audit log for user suspension caused by shop owner
-                    try {
-                        AuditLog::create([
-                            'shop_owner_id' => $request->user_shop_id,
-                            'actor_user_id' => $request->user()->id ?? null,
-                            'action' => 'user_suspended_by_shop_owner',
-                            'target_type' => 'user',
-                            'target_id' => $user->id,
-                            'metadata' => [
-                                'email' => $user->email,
-                                'employee_id' => $employee->id,
-                                'reason' => $validated['suspension_reason'] ?? null,
-                            ],
-                        ]);
-                    } catch (\Exception $e) {
-                        // non-fatal
-                    }
-                }
-            } catch (\Exception $e) {
-                // non-fatal
-            }
-
-            // If this was an AJAX/JSON request, return JSON; otherwise redirect back so Inertia receives a proper response
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'message' => 'Employee suspended successfully',
-                    'data' => $employee,
-                ], Response::HTTP_OK);
-            }
-
-            return redirect()->back()->with('success', 'Employee suspended successfully');
-        } catch (\Exception $e) {
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'message' => 'Error suspending employee',
-                    'error' => $e->getMessage(),
-                ], Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
-
-            return redirect()->back()->withErrors(['error' => 'Error suspending employee']);
-        }
+        return $this->suspensionWorkflowRequiredResponse($request);
     }
 
     /**
-     * Activate an employee - sets status back to 'active'
-     *
-     * @param Request $request
-     * @param Employee $employee
-     * @return \Illuminate\Http\JsonResponse
+     * Keep the legacy direct activation endpoint from bypassing the approval workflow.
      */
     public function activate(Request $request, Employee $employee)
     {
-        try {
-            if ($employee->shop_owner_id !== $request->user_shop_id) {
-                return response()->json([
-                    'message' => 'Employee not found',
-                    'error' => 'NOT_FOUND',
-                ], Response::HTTP_NOT_FOUND);
-            }
+        $shopOwnerId = (int) $request->user_shop_id;
 
-            $employee->update(['status' => 'active']);
-
-            try {
-                AuditLog::create([
-                    'shop_owner_id' => $request->user_shop_id,
-                    'actor_user_id' => $request->user()->id ?? null,
-                    'action' => 'employee_activated',
-                    'target_type' => 'employee',
-                    'target_id' => $employee->id,
-                    'metadata' => [],
-                ]);
-            } catch (\Exception $e) {
-                // non-fatal
-            }
-
-            // Also sync the User record (if any) so Super Admin sees activation in user management
-            try {
-                $user = User::where('email', $employee->email)->first();
-                if ($user) {
-                    $user->update(['status' => 'active']);
-
-                    try {
-                        AuditLog::create([
-                            'shop_owner_id' => $request->user_shop_id,
-                            'actor_user_id' => $request->user()->id ?? null,
-                            'action' => 'user_activated_by_shop_owner',
-                            'target_type' => 'user',
-                            'target_id' => $user->id,
-                            'metadata' => [
-                                'email' => $user->email,
-                                'employee_id' => $employee->id,
-                            ],
-                        ]);
-                    } catch (\Exception $e) {
-                        // non-fatal
-                    }
-                }
-            } catch (\Exception $e) {
-                // non-fatal
-            }
-
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'message' => 'Employee activated successfully',
-                    'data' => $employee,
-                ], Response::HTTP_OK);
-            }
-
-            return redirect()->back()->with('success', 'Employee activated successfully');
-        } catch (\Exception $e) {
-            if ($request->ajax() || $request->wantsJson()) {
-                return response()->json([
-                    'message' => 'Error activating employee',
-                    'error' => $e->getMessage(),
-                ], Response::HTTP_INTERNAL_SERVER_ERROR);
-            }
-
-            return redirect()->back()->withErrors(['error' => 'Error activating employee']);
+        if ((int) $employee->shop_owner_id !== $shopOwnerId) {
+            return response()->json([
+                'message' => 'Employee not found',
+                'error' => 'NOT_FOUND',
+            ], Response::HTTP_NOT_FOUND);
         }
+
+        if (! $this->employeePolicy->canChangeAccountState($employee, EmployeeStatus::ACTIVE)) {
+            return response()->json([
+                'message' => 'Terminated employees must use the Rehire / Reinstate Employee workflow.',
+                'error' => 'EMPLOYEE_REHIRE_REQUIRED',
+                'code' => 'EMPLOYEE_REHIRE_REQUIRED',
+            ], Response::HTTP_UNPROCESSABLE_ENTITY);
+        }
+
+        $oldValues = [
+            'status' => $employee->getRawOriginal('status'),
+            'suspension_reason' => $employee->getRawOriginal('suspension_reason'),
+        ];
+
+        $employee = DB::transaction(function () use ($employee, $shopOwnerId): Employee {
+            $lockedEmployee = Employee::query()
+                ->whereKey($employee->getKey())
+                ->where('shop_owner_id', $shopOwnerId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $lockedEmployee->forceFill([
+                'status' => EmployeeStatus::ACTIVE,
+                'suspension_reason' => null,
+                'privileged_suspension_id' => null,
+            ])->save();
+
+            $this->linkedUserSynchronizer->sync($lockedEmployee);
+
+            return $lockedEmployee->fresh();
+        });
+
+        AuditLog::create([
+            'shop_owner_id' => $shopOwnerId,
+            'actor_user_id' => $request->user()?->id,
+            'action' => 'employee_activated',
+            'target_type' => 'employee',
+            'target_id' => $employee->id,
+            'metadata' => [],
+        ]);
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'message' => 'Employee account reactivated successfully',
+                'employee' => $employee,
+                'data' => $employee,
+            ], Response::HTTP_OK);
+        }
+
+        return redirect()->back()->with('success', 'Employee account reactivated successfully');
+    }
+
+    private function suspensionWorkflowRequiredResponse(Request $request)
+    {
+        $message = 'Employee suspension changes must go through the HR → Manager → Shop Owner workflow.';
+
+        if ($request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'message' => $message,
+                'error' => 'SUSPENSION_WORKFLOW_REQUIRED',
+                'code' => 'SUSPENSION_WORKFLOW_REQUIRED',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        return redirect()->back()->withErrors(['error' => $message]);
     }
 
     /**
@@ -541,16 +510,23 @@ class EmployeeController extends Controller
         try {
             $shopId = $request->user_shop_id;
 
+            $employees = Employee::query()
+                ->where('shop_owner_id', $shopId)
+                ->with('leaveRequests')
+                ->get();
+            $projections = $employees->map(
+                fn (Employee $employee): array => $this->employeeOwnerProjection->project($employee),
+            );
+
             $stats = [
-                'total_employees' => Employee::where('shop_owner_id', $shopId)->count(),
-                'active_employees' => Employee::where('shop_owner_id', $shopId)
-                    ->where('status', 'active')->count(),
-                'inactive_employees' => Employee::where('shop_owner_id', $shopId)
-                    ->where('status', 'inactive')->count(),
-                'on_leave' => Employee::where('shop_owner_id', $shopId)
-                    ->where('status', 'on_leave')->count(),
-                'total_payroll' => Employee::where('shop_owner_id', $shopId)
-                    ->sum('salary'),
+                'total_employees' => $projections->count(),
+                'active_employees' => $projections->where('account_state', EmployeeStatus::ACTIVE->value)->count(),
+                'inactive_employees' => $projections->whereIn('account_state', [
+                    EmployeeStatus::INACTIVE->value,
+                    EmployeeStatus::TERMINATED->value,
+                ])->count(),
+                'on_leave' => $projections->where('on_leave', true)->count(),
+                'total_payroll' => $employees->sum('salary'),
             ];
 
             return response()->json([

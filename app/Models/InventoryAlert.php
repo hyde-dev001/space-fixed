@@ -10,6 +10,8 @@ class InventoryAlert extends Model
 {
     protected $fillable = [
         'inventory_item_id',
+        'inventory_color_variant_id',
+        'inventory_size_id',
         'alert_type',
         'threshold_value',
         'current_value',
@@ -32,6 +34,16 @@ class InventoryAlert extends Model
     {
         return $this->belongsTo(InventoryItem::class);
     }
+    public function colorVariant(): BelongsTo
+    {
+        return $this->belongsTo(InventoryColorVariant::class, 'inventory_color_variant_id');
+    }
+
+    public function size(): BelongsTo
+    {
+        return $this->belongsTo(InventorySize::class, 'inventory_size_id');
+    }
+
 
     /**
      * Get the user who resolved the alert

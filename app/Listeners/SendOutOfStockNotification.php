@@ -42,7 +42,7 @@ class SendOutOfStockNotification implements ShouldQueue
         }
 
         // Send notification to all relevant users
-        Notification::send($users, new OutOfStockNotification($inventoryItem));
+        Notification::send($users, new OutOfStockNotification($inventoryItem, $event->target));
 
         Log::info("Out of stock notification sent to " . $users->count() . " users for item: {$inventoryItem->name}");
     }

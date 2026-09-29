@@ -49,7 +49,7 @@ class PurchaseRequestRejectedMail extends Mailable
                 'reviewer' => $this->purchaseRequest->reviewer?->name ?? 'Finance Team',
                 'reviewedDate' => $this->purchaseRequest->reviewed_date,
                 'rejectionReason' => $this->purchaseRequest->rejection_reason,
-                'viewUrl' => url('/erp/procurement/purchase-requests/' . $this->purchaseRequest->id),
+                'viewUrl' => url('/erp/procurement/purchase-request?purchase_request=' . $this->purchaseRequest->id),
             ],
         );
     }

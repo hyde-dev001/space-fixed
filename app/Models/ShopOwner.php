@@ -11,6 +11,8 @@ use Spatie\OpeningHours\OpeningHours;
 use App\Enums\ShopOwnerStatus;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * ShopOwner Model
@@ -30,7 +32,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  */
 class ShopOwner extends Authenticatable implements MustVerifyEmail
 {
-    use HasFactory, Notifiable, HasRoles;
+    use HasFactory, Notifiable, HasRoles, SoftDeletes;
 
     /**
      * The guard name for this model (for Spatie Permission)
@@ -48,8 +50,20 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'first_name',           // Shop owner's first name
         'last_name',            // Shop owner's last name
         'email',                // Contact email (must be unique)
+        'suffix',               // Optional name suffix
+        'age',                  // Shop owner's age
+        'address',              // Shop owner's personal address
+        'address_region',
+        'address_province',
+        'address_city',
+        'address_barangay',
+        'address_postal_code',
+        'address_latitude',
+        'address_longitude',
         'profile_photo',        // Profile photo path
         'cover_photo',          // Cover photo path
+        'showroom_left_wall_art_path',
+        'showroom_right_wall_art_path',
         'bio',                  // Shop/owner bio
         'phone',                // Contact phone number
         'password',             // Hashed password for authentication
@@ -62,13 +76,21 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'tax_id',               // Tax identification number
         'business_type',        // Type: retail, repair, or both
         'registration_type',    // Individual or company registration
+        'registration_terms_version',
+        'registration_terms_accepted_at',
+        'platform_fee_terms_version',
+        'platform_fee_terms_accepted_by',
+        'platform_fee_terms_accepted_at',
         'high_value_threshold', // Approval threshold for high value repairs
         'require_two_way_approval', // Require owner approval on high value repairs
-        'repair_payment_policy', // deposit_50 | full_upfront
+        'repair_payment_policy', // full_upfront; deposit_50 is legacy-only
         'repair_workload_limit', // Max concurrent active repairs (default 20)
         'repair_warranty_days', // Warranty period in days for repair claims
+        'repair_warranty_duration_unit', // Warranty period unit: days, weeks, or months
         'warranty_enabled', // Toggle warranty claim filing for this shop
         'order_refund_deadline_days', // Refund/cancellation eligibility window for product orders
+        'cod_enabled', // Allow Cash on Delivery for retail orders
+        'cod_order_threshold', // Maximum discounted merchandise amount eligible for COD
         'two_factor_email_enabled', // Require OTP code on login
         'paymongo_secret_key',  // Encrypted PayMongo secret key for this shop
         'operating_hours',      // JSON field storing weekly schedule
@@ -92,6 +114,10 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'attendance_geofence_enabled',
     ];
 
+    protected $attributes = [
+        'repair_warranty_duration_unit' => 'days',
+    ];
+
     /**
      * The attributes that should be hidden for serialization.
      *
@@ -101,6 +127,18 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'password',
         'remember_token',
         'paymongo_secret_key', // Never expose the key in API responses
+        'shop_owner_totp_secret',
+        'shop_owner_totp_recovery_codes',
+        'suffix',
+        'age',
+        'address',
+        'address_region',
+        'address_province',
+        'address_city',
+        'address_barangay',
+        'address_postal_code',
+        'address_latitude',
+        'address_longitude',
     ];
 
     /**
@@ -114,6 +152,9 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     protected $casts = [
         'operating_hours' => 'array',  // Auto JSON encode/decode
         'email_verified_at' => 'datetime',
+        'age' => 'integer',
+        'address_latitude' => 'decimal:8',
+        'address_longitude' => 'decimal:8',
         'password' => 'hashed',
         'status' => \App\Enums\ShopOwnerStatus::class,
         'resubmission_count' => 'integer',
@@ -123,11 +164,27 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'shop_geofence_radius' => 'integer',
         'attendance_geofence_enabled' => 'boolean',
         'established_year' => 'integer',
+        'registration_terms_accepted_at' => 'datetime',
         'repair_warranty_days' => 'integer',
+        'repair_warranty_duration_unit' => 'string',
         'warranty_enabled' => 'boolean',
         'order_refund_deadline_days' => 'integer',
+        'cod_enabled' => 'boolean',
+        'cod_order_threshold' => 'decimal:2',
         'two_factor_email_enabled' => 'boolean',
+        'shop_owner_totp_secret' => 'encrypted',
+        'shop_owner_totp_enabled_at' => 'datetime',
+        'shop_owner_totp_recovery_codes' => 'encrypted:array',
+        'shop_owner_totp_last_used_timestep' => 'integer',
+        'platform_fee_terms_accepted_at' => 'datetime',
     ];
+
+    public function hasTotpEnabled(): bool
+    {
+        return $this->shop_owner_totp_enabled_at !== null
+            && is_string($this->shop_owner_totp_secret)
+            && trim($this->shop_owner_totp_secret) !== '';
+    }
 
     /**
      * Get all documents uploaded for this shop owner
@@ -139,6 +196,37 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     public function documents()
     {
         return $this->hasMany(ShopDocument::class);
+    }
+
+    public function currentSuspension(): BelongsTo
+    {
+        return $this->belongsTo(AccountSuspension::class, 'current_suspension_id');
+    }
+
+    public function suspensionHistory(): HasMany
+    {
+        return $this->hasMany(AccountSuspension::class, 'account_id')
+            ->where('account_type', AccountSuspension::ACCOUNT_TYPE_SHOP_OWNER);
+    }
+
+    public function upgradeRequests(): HasMany
+    {
+        return $this->hasMany(ShopOwnerUpgradeRequest::class, 'shop_owner_id');
+    }
+
+    public function modules(): HasMany
+    {
+        return $this->hasMany(ShopOwnerModule::class, 'shop_owner_id');
+    }
+
+    public function reliabilityScores(): HasMany
+    {
+        return $this->hasMany(PlatformReliabilityScore::class, 'shop_owner_id');
+    }
+
+    public function paymentIntegrations(): HasMany
+    {
+        return $this->hasMany(ShopPaymentIntegration::class, 'shop_owner_id');
     }
 
     /**
@@ -159,6 +247,20 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         return $this->hasOne(ShopOwnerSubscription::class, 'shop_owner_id')
             ->where('status', 'active')
             ->latestOfMany('ends_at');
+    }
+
+    public function logisticsSetting(): HasOne
+    {
+        return $this->hasOne(\App\Models\Logistics\LogisticsSetting::class);
+    }
+
+    public function logisticsModules(): array
+    {
+        return match (strtolower(trim((string) $this->business_type))) {
+            'repair' => ['repair'],
+            'both', 'both (retail & repair)' => ['retail', 'repair'],
+            default => ['retail'],
+        };
     }
 
     /**
@@ -413,6 +515,18 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
     public function isIndividual(): bool
     {
         return $this->registration_type === 'individual';
+    }
+
+    public function supportsCashOnDelivery(): bool
+    {
+        $businessType = strtolower(trim((string) $this->business_type));
+        $isRetailCapable = $businessType === 'retail'
+            || $businessType === 'both'
+            || str_contains($businessType, 'retail');
+
+        return $isRetailCapable
+            && (bool) ($this->cod_enabled ?? false)
+            && (float) ($this->cod_order_threshold ?? 5000) > 0;
     }
 
     /**
