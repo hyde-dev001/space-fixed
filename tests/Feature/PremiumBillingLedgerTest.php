@@ -166,6 +166,132 @@ final class PremiumBillingLedgerTest extends TestCase
         $this->assertSame('failed', $failedPayment->fresh()->status);
     }
 
+    public function test_paid_webhook_repairs_an_active_subscription_with_pending_ledger(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-active-webhook-repair', 249);
+        $subscription = $this->createActiveSubscription($owner, $plan, [
+            'paymongo_session_id' => 'cs_ledger_active_webhook_repair',
+            'paymongo_payment_id' => 'pay_ledger_active_webhook_repair',
+            'paid_amount' => 0,
+        ]);
+        $startsAt = $subscription->starts_at;
+        $endsAt = $subscription->ends_at;
+        $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, 'cs_ledger_active_webhook_repair');
+        $mismatchedPayload = $this->checkoutPayload(
+            sessionId: 'cs_ledger_active_webhook_repair',
+            subscription: $subscription,
+            paymentId: 'pay_different_payment',
+            paymentRecordId: $payment->id,
+            amountInCentavos: 24900,
+        );
+        $payload = $this->checkoutPayload(
+            sessionId: 'cs_ledger_active_webhook_repair',
+            subscription: $subscription,
+            paymentId: 'pay_ledger_active_webhook_repair',
+            paymentRecordId: $payment->id,
+            amountInCentavos: 24900,
+        );
+
+        $this->postJson('/api/webhooks/paymongo', $mismatchedPayload)->assertOk();
+        $this->assertSame('pending', $payment->fresh()->status);
+        $this->assertSame('0.00', (string) $subscription->fresh()->paid_amount);
+
+        $this->postJson('/api/webhooks/paymongo', $payload)->assertOk();
+
+        $this->assertSame('active', $subscription->fresh()->status);
+        $this->assertSame('249.00', (string) $subscription->fresh()->paid_amount);
+        $this->assertEquals($startsAt, $subscription->fresh()->starts_at);
+        $this->assertEquals($endsAt, $subscription->fresh()->ends_at);
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('pay_ledger_active_webhook_repair', $payment->fresh()->paymongo_payment_id);
+        $this->assertSame('249.00', (string) $payment->fresh()->amount_paid);
+    }
+
+    public function test_paid_checkout_return_settles_the_subscription_and_payment_ledger(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-success-return', 249);
+        $subscription = $this->createPendingSubscription($owner, $plan, 'cs_ledger_success_return');
+        $subscription->update(['paid_amount' => 0]);
+        $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, 'cs_ledger_success_return');
+        $this->fakeCheckoutSession('cs_ledger_success_return', 'pay_ledger_success_return', 'paid');
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.premium-success', ['subscription_id' => $subscription->id]))
+            ->assertRedirect(route('shop-owner.premium-benefits'));
+
+        $this->assertSame('active', $subscription->fresh()->status);
+        $this->assertSame('249.00', (string) $subscription->fresh()->paid_amount);
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('pay_ledger_success_return', $payment->fresh()->paymongo_payment_id);
+        $this->assertSame('249.00', (string) $payment->fresh()->amount_paid);
+        $this->assertNotNull($payment->fresh()->paid_at);
+    }
+
+    public function test_checkout_return_does_not_activate_for_a_pending_payment_entry(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-pending-return', 249);
+        $subscription = $this->createPendingSubscription($owner, $plan, 'cs_ledger_pending_return');
+        $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, 'cs_ledger_pending_return');
+        $this->fakeCheckoutSession('cs_ledger_pending_return', 'pay_ledger_pending_return', 'pending');
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.premium-success', ['subscription_id' => $subscription->id]));
+
+        $this->assertSame('pending', $subscription->fresh()->status);
+        $this->assertSame('pending', $payment->fresh()->status);
+        $this->assertNull($payment->fresh()->amount_paid);
+        $this->assertNull($payment->fresh()->paymongo_payment_id);
+    }
+
+    public function test_paid_checkout_return_repairs_an_active_subscription_with_pending_ledger(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-active-repair', 249);
+        $subscription = $this->createActiveSubscription($owner, $plan, [
+            'paymongo_session_id' => 'cs_ledger_active_repair',
+            'paid_amount' => 0,
+        ]);
+        $startsAt = $subscription->starts_at;
+        $endsAt = $subscription->ends_at;
+        $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, 'cs_ledger_active_repair');
+        $this->fakeCheckoutSession('cs_ledger_active_repair', 'pay_ledger_active_repair', 'paid');
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.premium-success', ['subscription_id' => $subscription->id]));
+
+        $this->assertSame('active', $subscription->fresh()->status);
+        $this->assertSame('249.00', (string) $subscription->fresh()->paid_amount);
+        $this->assertEquals($startsAt, $subscription->fresh()->starts_at);
+        $this->assertEquals($endsAt, $subscription->fresh()->ends_at);
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('249.00', (string) $payment->fresh()->amount_paid);
+    }
+
+    public function test_checkout_return_rejects_amount_or_currency_mismatches(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-mismatch-return', 249);
+
+        foreach ([
+            ['cs_ledger_wrong_amount', 'pay_ledger_wrong_amount', 24800, 'PHP'],
+            ['cs_ledger_wrong_currency', 'pay_ledger_wrong_currency', 24900, 'USD'],
+        ] as [$sessionId, $providerPaymentId, $amountInCentavos, $currency]) {
+            $subscription = $this->createPendingSubscription($owner, $plan, $sessionId);
+            $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, $sessionId);
+            $this->fakeCheckoutSession($sessionId, $providerPaymentId, 'paid', $amountInCentavos, $currency);
+
+            $this->actingAs($owner, 'shop_owner')
+                ->get(route('shop-owner.premium-success', ['subscription_id' => $subscription->id]));
+
+            $this->assertSame('pending', $subscription->fresh()->status);
+            $this->assertSame('pending', $payment->fresh()->status);
+            $this->assertNull($payment->fresh()->amount_paid);
+        }
+    }
+
     public function test_paid_webhook_rejects_metadata_bound_to_a_different_subscription(): void
     {
         $owner = $this->createOwner();
@@ -403,6 +529,32 @@ final class PremiumBillingLedgerTest extends TestCase
             'metadata' => ['payment_record_id' => null],
             'paid_at' => $status === 'paid' ? now() : null,
         ]);
+    }
+
+    private function fakeCheckoutSession(
+        string $sessionId,
+        string $paymentId,
+        string $status,
+        int $amountInCentavos = 24900,
+        string $currency = 'PHP',
+    ): void {
+        config()->set('services.paymongo.secret_key', 'sk_test_ledger');
+        Http::fake(["https://api.paymongo.com/v1/checkout_sessions/{$sessionId}" => Http::response([
+            'data' => [
+                'id' => $sessionId,
+                'attributes' => [
+                    'payment_status' => $status,
+                    'payments' => [[
+                        'id' => $paymentId,
+                        'attributes' => [
+                            'status' => $status,
+                            'amount' => $amountInCentavos,
+                            'currency' => $currency,
+                        ],
+                    ]],
+                ],
+            ],
+        ])]);
     }
 
     private function checkoutPayload(

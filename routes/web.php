@@ -1062,116 +1062,181 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
 
     Route::get('/premium/success', function (Request $request) {
         $subscriptionId = $request->query('subscription_id');
-
         $shopOwner = \Illuminate\Support\Facades\Auth::guard('shop_owner')->user();
+        $settled = false;
 
-        if ($shopOwner && ! empty($subscriptionId)) {
+        if ($shopOwner && is_numeric($subscriptionId) && (int) $subscriptionId > 0) {
             $subscription = \App\Models\ShopOwnerSubscription::with('premiumPlan')
                 ->where('id', (int) $subscriptionId)
                 ->where('shop_owner_id', (int) $shopOwner->id)
                 ->first();
 
-            if ($subscription && in_array($subscription->status, ['pending', 'failed'], true) && ! empty($subscription->paymongo_session_id)) {
-                try {
-                    $apiKey = config('services.paymongo.secret_key');
+            if (
+                $subscription
+                && in_array($subscription->status, ['pending', 'active'], true)
+                && filled($subscription->paymongo_session_id)
+            ) {
+                $sessionId = (string) $subscription->paymongo_session_id;
+                $payment = \App\Models\ShopOwnerSubscriptionPayment::query()
+                    ->where('subscription_id', $subscription->id)
+                    ->where('shop_owner_id', (int) $shopOwner->id)
+                    ->where('gateway', 'paymongo')
+                    ->where('paymongo_session_id', $sessionId)
+                    ->first();
 
-                    if (! empty($apiKey)) {
-                        $response = \Illuminate\Support\Facades\Http::withHeaders([
-                            'Content-Type' => 'application/json',
-                            'Authorization' => 'Basic '.base64_encode($apiKey.':'),
-                        ])->get('https://api.paymongo.com/v1/checkout_sessions/'.$subscription->paymongo_session_id);
+                if ($payment && in_array($payment->status, ['pending', 'paid'], true)) {
+                    try {
+                        $apiKey = config('services.paymongo.secret_key');
 
-                        if ($response->ok()) {
-                            $attributes = (array) $response->json('data.attributes', []);
-                            $payments = is_array($attributes['payments'] ?? null) ? $attributes['payments'] : [];
-                            $paymentStatus = strtolower((string) ($attributes['payment_status'] ?? ''));
-                            $hasPaidSignal = $paymentStatus === 'paid' || count($payments) > 0;
+                        if (! empty($apiKey)) {
+                            $response = \Illuminate\Support\Facades\Http::timeout(10)
+                                ->connectTimeout(3)
+                                ->withHeaders([
+                                    'Content-Type' => 'application/json',
+                                    'Authorization' => 'Basic '.base64_encode($apiKey.':'),
+                                ])->get('https://api.paymongo.com/v1/checkout_sessions/'.rawurlencode($sessionId));
 
-                            if ($hasPaidSignal && in_array($subscription->status, ['pending', 'failed'], true)) {
-                                $startsAt = now();
-                                $paymentId = $payments[0]['id'] ?? null;
-                                $durationDays = max(1, (int) ($subscription->premiumPlan?->duration_days ?? 30));
-                                $endsAt = $startsAt->copy()->addDays($durationDays);
+                            if ($response->ok()) {
+                                $sessionData = (array) $response->json('data', []);
+                                $attributes = is_array($sessionData['attributes'] ?? null) ? $sessionData['attributes'] : [];
+                                $payments = is_array($attributes['payments'] ?? null) ? $attributes['payments'] : [];
+                                $providerPayment = is_array($payments[0] ?? null) ? $payments[0] : [];
+                                $paymentAttributes = is_array($providerPayment['attributes'] ?? null) ? $providerPayment['attributes'] : [];
+                                $providerPaymentId = $providerPayment['id'] ?? null;
+                                $paymentStatus = strtolower((string) ($attributes['payment_status'] ?? ''));
+                                $rawPaidAmount = $paymentAttributes['amount'] ?? $attributes['amount_total'] ?? null;
+                                $paidAmount = is_numeric($rawPaidAmount) ? round((float) $rawPaidAmount / 100, 2) : null;
+                                $currency = strtoupper((string) ($paymentAttributes['currency'] ?? $attributes['currency'] ?? ''));
 
-                                \Illuminate\Support\Facades\DB::transaction(function () use ($subscription, $startsAt, $endsAt, $paymentId) {
-                                    $lockedSubscription = \App\Models\ShopOwnerSubscription::query()
-                                        ->where('id', $subscription->id)
-                                        ->lockForUpdate()
-                                        ->first();
-
-                                    if (! $lockedSubscription || ! in_array($lockedSubscription->status, ['pending', 'failed'], true)) {
-                                        return;
-                                    }
-
-                                    $updatePayload = [
-                                        'status' => 'active',
-                                        'paymongo_payment_id' => $paymentId,
-                                        'starts_at' => $startsAt,
-                                        'ends_at' => $endsAt,
-                                    ];
-
-                                    if (
-                                        \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
-                                        && \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status')
-                                    ) {
-                                        $updatePayload['auto_renew'] = true;
-                                        $updatePayload['auto_renew_status'] = \App\Models\ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED;
-                                    }
-
-                                    $lockedSubscription->update($updatePayload);
-
-                                    if ($lockedSubscription->replaces_subscription_id) {
-                                        $source = \App\Models\ShopOwnerSubscription::query()
-                                            ->where('id', (int) $lockedSubscription->replaces_subscription_id)
+                                if (
+                                    ($sessionData['id'] ?? null) === $sessionId
+                                    && $paymentStatus === 'paid'
+                                    && is_string($providerPaymentId)
+                                    && trim($providerPaymentId) !== ''
+                                    && $paidAmount !== null
+                                    && $currency !== ''
+                                    && $currency === strtoupper((string) $payment->currency)
+                                    && abs($paidAmount - (float) $payment->amount_due) <= 0.009
+                                ) {
+                                    $settled = \Illuminate\Support\Facades\DB::transaction(function () use ($subscription, $payment, $sessionId, $providerPaymentId, $paidAmount, $currency) {
+                                        $lockedPayment = \App\Models\ShopOwnerSubscriptionPayment::query()
+                                            ->whereKey($payment->id)
+                                            ->lockForUpdate()
+                                            ->first();
+                                        $lockedSubscription = \App\Models\ShopOwnerSubscription::query()
+                                            ->whereKey($subscription->id)
+                                            ->where('shop_owner_id', (int) $subscription->shop_owner_id)
                                             ->lockForUpdate()
                                             ->first();
 
-                                        if ($source && $source->status === 'active') {
-                                            $sourceUpdate = [
-                                                'status' => 'cancelled',
-                                                'ends_at' => $startsAt,
+                                        if (
+                                            ! $lockedPayment
+                                            || ! $lockedSubscription
+                                            || (int) $lockedPayment->shop_owner_id !== (int) $lockedSubscription->shop_owner_id
+                                            || (int) $lockedPayment->subscription_id !== (int) $lockedSubscription->id
+                                            || $lockedPayment->paymongo_session_id !== $sessionId
+                                            || $lockedSubscription->paymongo_session_id !== $sessionId
+                                            || strtoupper((string) $lockedPayment->currency) !== $currency
+                                            || abs($paidAmount - (float) $lockedPayment->amount_due) > 0.009
+                                            || ! in_array($lockedPayment->status, ['pending', 'paid'], true)
+                                            || ! in_array($lockedSubscription->status, ['pending', 'active'], true)
+                                            || ($lockedPayment->paymongo_payment_id && $lockedPayment->paymongo_payment_id !== $providerPaymentId)
+                                            || ($lockedSubscription->paymongo_payment_id && $lockedSubscription->paymongo_payment_id !== $providerPaymentId)
+                                        ) {
+                                            return false;
+                                        }
+
+                                        $shouldActivate = $lockedSubscription->status === 'pending';
+                                        $now = now();
+                                        $lockedPayment->update([
+                                            'paymongo_payment_id' => $providerPaymentId,
+                                            'status' => 'paid',
+                                            'amount_paid' => $paidAmount,
+                                            'paid_at' => $lockedPayment->paid_at ?? $now,
+                                        ]);
+
+                                        $subscriptionUpdate = [
+                                            'paymongo_payment_id' => $providerPaymentId,
+                                            'paid_amount' => $paidAmount,
+                                        ];
+
+                                        if ($shouldActivate) {
+                                            $lockedSubscription->loadMissing('premiumPlan');
+                                            $durationDays = max(1, (int) ($lockedSubscription->premiumPlan?->duration_days ?? 30));
+                                            $subscriptionUpdate += [
+                                                'status' => 'active',
+                                                'starts_at' => $now,
+                                                'ends_at' => $now->copy()->addDays($durationDays),
                                             ];
 
                                             if (
                                                 \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
                                                 && \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status')
                                             ) {
-                                                $sourceUpdate['auto_renew'] = false;
-                                                $sourceUpdate['auto_renew_status'] = \App\Models\ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED;
+                                                $subscriptionUpdate['auto_renew'] = true;
+                                                $subscriptionUpdate['auto_renew_status'] = \App\Models\ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED;
                                             }
-
-                                            if (\Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'pending_premium_plan_id')) {
-                                                $sourceUpdate['pending_premium_plan_id'] = null;
-                                            }
-
-                                            if (\Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'pending_plan_effective_at')) {
-                                                $sourceUpdate['pending_plan_effective_at'] = null;
-                                            }
-
-                                            $source->update($sourceUpdate);
                                         }
-                                    }
-                                });
 
-                                return redirect()
-                                    ->route('shop-owner.premium-benefits')
-                                    ->with('success', 'Payment confirmed. Your premium subscription is now active.');
+                                        $lockedSubscription->update($subscriptionUpdate);
+
+                                        if ($shouldActivate && $lockedSubscription->replaces_subscription_id) {
+                                            $source = \App\Models\ShopOwnerSubscription::query()
+                                                ->whereKey((int) $lockedSubscription->replaces_subscription_id)
+                                                ->lockForUpdate()
+                                                ->first();
+
+                                            if ($source && $source->status === 'active') {
+                                                $sourceUpdate = [
+                                                    'status' => 'cancelled',
+                                                    'ends_at' => $now,
+                                                ];
+
+                                                if (
+                                                    \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
+                                                    && \Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status')
+                                                ) {
+                                                    $sourceUpdate['auto_renew'] = false;
+                                                    $sourceUpdate['auto_renew_status'] = \App\Models\ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED;
+                                                }
+
+                                                if (\Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'pending_premium_plan_id')) {
+                                                    $sourceUpdate['pending_premium_plan_id'] = null;
+                                                }
+
+                                                if (\Illuminate\Support\Facades\Schema::hasColumn('shop_owner_subscriptions', 'pending_plan_effective_at')) {
+                                                    $sourceUpdate['pending_plan_effective_at'] = null;
+                                                }
+
+                                                $source->update($sourceUpdate);
+                                            }
+                                        }
+
+                                        return true;
+                                    });
+                                }
                             }
                         }
+                    } catch (\Throwable $e) {
+                        \Illuminate\Support\Facades\Log::warning('Premium success verification fallback failed', [
+                            'subscription_id' => $subscription->id,
+                            'session_id' => $subscription->paymongo_session_id,
+                            'error' => $e->getMessage(),
+                        ]);
                     }
-                } catch (\Throwable $e) {
-                    \Illuminate\Support\Facades\Log::warning('Premium success verification fallback failed', [
-                        'subscription_id' => $subscription->id,
-                        'session_id' => $subscription->paymongo_session_id,
-                        'error' => $e->getMessage(),
-                    ]);
                 }
             }
         }
 
+        if ($settled) {
+            return redirect()
+                ->route('shop-owner.premium-benefits')
+                ->with('success', 'Payment confirmed. Your premium subscription is now active.');
+        }
+
         return redirect()
             ->route('shop-owner.premium-benefits')
-            ->with('success', 'Premium subscription payment was completed successfully. Activation may take a moment while payment is being confirmed.')
+            ->with('success', 'Your payment is being verified. Your subscription will activate once PayMongo confirms the payment.')
             ->with('premium_subscription_id', $subscriptionId);
     })->name('premium-success');
 

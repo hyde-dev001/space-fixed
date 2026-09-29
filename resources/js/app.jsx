@@ -14,7 +14,7 @@ import { syncPageTheme } from './utils/pageTheme';
 import { installSweetAlertSelectObserver } from './utils/monochromeSweetAlertSelect';
 import { CustomerPageTransition } from './components/common/CustomerPageTransition';
 
-const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
+const appName = 'SoleSpace';
 const USER_SIDE_SCROLLBAR_CLASS = 'userside-hide-scrollbar';
 const BACKOFFICE_SCROLLBAR_CLASS = 'backoffice-hide-scrollbar';
 
