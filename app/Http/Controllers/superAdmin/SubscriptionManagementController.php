@@ -58,6 +58,7 @@ final class SubscriptionManagementController extends Controller
                 'replacedSubscription.premiumPlan:id,name',
             ])
             ->selectSub($this->grossCollectedSubquery(), 'gross_collected')
+            ->selectSub($this->legacyPaidAmountSubquery(), 'legacy_paid_amount')
             ->selectSub($this->refundedAmountSubquery(), 'refunded_amount')
             ->selectSub($this->unresolvedRefundSubquery(), 'has_unresolved_refund')
             ->selectSub($this->pendingLifecycleChildSubquery($hasPlanChangeColumns), 'has_pending_lifecycle_child')
@@ -243,6 +244,7 @@ final class SubscriptionManagementController extends Controller
         $grossCollected = (float) ShopOwnerSubscriptionPayment::query()
             ->where('status', 'paid')
             ->sum('amount_paid');
+        $grossCollected += (float) $this->legacyPaidAmountQuery()->sum('legacy_subscription.paid_amount');
         $refundedAmount = (float) ShopOwnerSubscriptionRefund::query()
             ->where('status', 'succeeded')
             ->sum('amount');
@@ -268,6 +270,7 @@ final class SubscriptionManagementController extends Controller
 
         if ($status === 'deactivated') {
             $query->where('shop_owner_subscriptions.status', 'deactivated');
+
             return;
         }
 
@@ -283,6 +286,7 @@ final class SubscriptionManagementController extends Controller
                             ->whereRaw("({$effectiveEndExpression}) >= ?", [$nowValue]);
                     });
             });
+
             return;
         }
 
@@ -300,6 +304,65 @@ final class SubscriptionManagementController extends Controller
             ->selectRaw('COALESCE(SUM(amount_paid), 0)')
             ->whereColumn('subscription_id', 'shop_owner_subscriptions.id')
             ->where('status', 'paid');
+    }
+
+    private function legacyPaidAmountSubquery(): Builder
+    {
+        return $this->legacyPaidAmountQuery()
+            ->select('legacy_subscription.paid_amount')
+            ->whereColumn('legacy_subscription.id', 'shop_owner_subscriptions.id')
+            ->limit(1);
+    }
+
+    private function legacyPaidAmountQuery(): Builder
+    {
+        return ShopOwnerSubscription::query()
+            ->from('shop_owner_subscriptions as legacy_subscription')
+            ->whereIn('legacy_subscription.status', ['active', 'cancelled', 'expired', 'deactivated'])
+            ->where('legacy_subscription.paid_amount', '>', 0)
+            ->whereRaw("TRIM(COALESCE(legacy_subscription.paymongo_payment_id, '')) <> ''")
+            ->whereNotExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('shop_owner_subscription_payments as existing_payment')
+                    ->whereColumn('existing_payment.subscription_id', 'legacy_subscription.id');
+            })
+            ->whereNotExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('shop_owner_subscription_payments as duplicate_payment')
+                    ->whereColumn('duplicate_payment.paymongo_payment_id', 'legacy_subscription.paymongo_payment_id')
+                    ->where(function ($conflictQuery): void {
+                        $conflictQuery->whereNull('duplicate_payment.subscription_id')
+                            ->orWhereColumn('duplicate_payment.subscription_id', '!=', 'legacy_subscription.id');
+                    });
+            })
+            ->whereNotExists(function ($query): void {
+                $query->selectRaw('1')
+                    ->from('shop_owner_subscriptions as duplicate_subscription')
+                    ->whereColumn('duplicate_subscription.paymongo_payment_id', 'legacy_subscription.paymongo_payment_id')
+                    ->whereColumn('duplicate_subscription.id', '!=', 'legacy_subscription.id');
+            })
+            ->where(function ($sessionQuery): void {
+                $sessionQuery
+                    ->whereRaw("TRIM(COALESCE(legacy_subscription.paymongo_session_id, '')) = ''")
+                    ->orWhere(function ($hasSessionQuery): void {
+                        $hasSessionQuery
+                            ->whereNotExists(function ($query): void {
+                                $query->selectRaw('1')
+                                    ->from('shop_owner_subscription_payments as duplicate_session_payment')
+                                    ->whereColumn('duplicate_session_payment.paymongo_session_id', 'legacy_subscription.paymongo_session_id')
+                                    ->where(function ($conflictQuery): void {
+                                        $conflictQuery->whereNull('duplicate_session_payment.subscription_id')
+                                            ->orWhereColumn('duplicate_session_payment.subscription_id', '!=', 'legacy_subscription.id');
+                                    });
+                            })
+                            ->whereNotExists(function ($query): void {
+                                $query->selectRaw('1')
+                                    ->from('shop_owner_subscriptions as duplicate_session_subscription')
+                                    ->whereColumn('duplicate_session_subscription.paymongo_session_id', 'legacy_subscription.paymongo_session_id')
+                                    ->whereColumn('duplicate_session_subscription.id', '!=', 'legacy_subscription.id');
+                            });
+                    });
+            });
     }
 
     private function refundedAmountSubquery(): Builder
@@ -385,7 +448,8 @@ final class SubscriptionManagementController extends Controller
             $nextBillingAt = $effectiveEndsAt;
         }
 
-        $grossCollected = (float) ($subscription->gross_collected ?? 0);
+        $grossCollected = (float) ($subscription->gross_collected ?? 0)
+            + (float) ($subscription->legacy_paid_amount ?? 0);
         $refundedAmount = (float) ($subscription->refunded_amount ?? 0);
         $hasPendingLifecycleChild = (bool) ($subscription->has_pending_lifecycle_child ?? false);
         $eligiblePaymentId = $subscription->eligible_refund_payment_id

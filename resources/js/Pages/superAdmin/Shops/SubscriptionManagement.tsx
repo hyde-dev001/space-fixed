@@ -1,7 +1,7 @@
 import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { router, useForm, usePage } from '@inertiajs/react';
+import { Head, router, useForm, usePage } from '@inertiajs/react';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import AppLayout from '../../../layout/AppLayout';
@@ -584,7 +584,7 @@ export default function SubscriptionManagement() {
       value: formatMoney(stats.gross_collected ?? stats.total_revenue),
       icon: CreditCardIcon,
       color: 'info' as const,
-      description: 'Paid payment-ledger totals',
+      description: 'Paid ledger + verified legacy payments',
     },
     {
       title: 'Expired',
@@ -618,6 +618,7 @@ export default function SubscriptionManagement() {
 
   return (
     <AppLayout>
+      <Head title="Subscription Management" />
       <div className="min-h-screen bg-gray-50 p-6 dark:bg-gray-900">
         <div className="mx-auto max-w-7xl space-y-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">

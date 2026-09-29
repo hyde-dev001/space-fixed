@@ -57,7 +57,7 @@ final class SubscriptionManagementScaleTest extends TestCase
 
         $this->get(route('admin.subscriptions.index', ['per_page' => 1]))
             ->assertOk()
-            ->assertInertia(function ($page) use ($subscription, $firstPayment, $secondPayment, $firstRefund, $secondRefund): void {
+            ->assertInertia(function ($page) use ($subscription): void {
                 $props = $page->toArray()['props'];
                 self::assertSame(1, $props['subscriptions']['per_page']);
                 $row = collect($props['subscriptions']['data'])->firstWhere('id', $subscription->id);
@@ -127,6 +127,45 @@ final class SubscriptionManagementScaleTest extends TestCase
                 self::assertSame(498.0, (float) $stats['gross_collected']);
                 self::assertSame(498.0, (float) $stats['total_revenue']);
                 self::assertSame(2, $props['subscriptions']['total']);
+            });
+    }
+
+    public function test_legacy_paid_amount_is_shown_only_when_no_payment_ledger_exists(): void
+    {
+        $admin = SuperAdmin::factory()->superAdmin()->create();
+        $plan = $this->createPlan();
+        $owner = ShopOwner::factory()->approved()->create();
+        $legacy = $this->createSubscription($owner, $plan, [
+            'paymongo_payment_id' => 'legacy-paymongo-payment-1',
+        ]);
+        $unverified = $this->createSubscription($owner, $plan, [
+            'paid_amount' => 999,
+        ]);
+        $duplicateOne = $this->createSubscription($owner, $plan, [
+            'paymongo_payment_id' => 'duplicate-paymongo-payment-1',
+        ]);
+        $duplicateTwo = $this->createSubscription($owner, $plan, [
+            'paymongo_payment_id' => 'duplicate-paymongo-payment-1',
+        ]);
+        $ledgerBacked = $this->createSubscription($owner, $plan, [
+            'paymongo_payment_id' => 'ledger-paymongo-payment-1',
+        ]);
+        $this->createPayment($owner, $ledgerBacked, 'paid', 249);
+
+        $this->actingAsCompletedPrivileged($admin);
+
+        $this->get(route('admin.subscriptions.index'))
+            ->assertOk()
+            ->assertInertia(function ($page) use ($legacy, $unverified, $duplicateOne, $duplicateTwo, $ledgerBacked): void {
+                $props = $page->toArray()['props'];
+                $rows = collect($props['subscriptions']['data'])->keyBy('id');
+
+                self::assertSame(498.0, (float) $props['stats']['gross_collected']);
+                self::assertSame(249.0, (float) $rows[$legacy->id]['amount_paid']);
+                self::assertSame(0.0, (float) $rows[$unverified->id]['amount_paid']);
+                self::assertSame(0.0, (float) $rows[$duplicateOne->id]['amount_paid']);
+                self::assertSame(0.0, (float) $rows[$duplicateTwo->id]['amount_paid']);
+                self::assertSame(249.0, (float) $rows[$ledgerBacked->id]['amount_paid']);
             });
     }
 

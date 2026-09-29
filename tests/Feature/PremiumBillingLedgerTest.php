@@ -151,6 +151,7 @@ final class PremiumBillingLedgerTest extends TestCase
         $this->assertSame('active', $paidSubscription->fresh()->status);
         $this->assertSame('paid', $paidPayment->fresh()->status);
         $this->assertSame('pay_ledger_paid', $paidPayment->fresh()->paymongo_payment_id);
+        $this->assertSame('249.00', (string) $paidPayment->fresh()->amount_paid);
 
         $failedSubscription = $this->createPendingSubscription($owner, $plan, 'cs_ledger_failed');
         $failedPayment = $this->createPayment($owner, $failedSubscription, 'new_subscription', 249, 'cs_ledger_failed');

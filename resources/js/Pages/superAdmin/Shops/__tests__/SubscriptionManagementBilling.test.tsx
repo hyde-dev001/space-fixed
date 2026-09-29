@@ -64,12 +64,17 @@ const mocks = vi.hoisted(() => ({
   routerPost: vi.fn(),
   routerGet: vi.fn(),
   routerReload: vi.fn(),
+  headTitle: vi.fn(),
   swalFire: vi.fn(),
   axiosPost: vi.fn(),
   axiosGet: vi.fn(),
 }));
 
 vi.mock('@inertiajs/react', () => ({
+  Head: ({ title }: { title: string }) => {
+    mocks.headTitle(title);
+    return null;
+  },
   router: { get: mocks.routerGet, post: mocks.routerPost, reload: mocks.routerReload },
   usePage: () => mocks.page,
   useForm: () => ({
@@ -94,6 +99,7 @@ beforeEach(() => {
   mocks.routerPost.mockReset();
   mocks.routerGet.mockReset();
   mocks.routerReload.mockReset();
+  mocks.headTitle.mockReset();
   mocks.axiosPost.mockReset();
   mocks.axiosGet.mockReset();
   mocks.axiosPost.mockResolvedValue({ data: { success: true } });
@@ -107,6 +113,19 @@ beforeEach(() => {
 });
 
 describe('SubscriptionManagement billing controls', () => {
+  it('sets a page title for the browser tab', () => {
+    render(<SubscriptionManagement />);
+
+    expect(mocks.headTitle).toHaveBeenCalledWith('Subscription Management');
+  });
+
+  it('renders the paid amount supplied by the server for each shop', () => {
+    render(<SubscriptionManagement />);
+
+    const row = screen.getByText('Eligible Shoes').closest('tr');
+    expect(row).toHaveTextContent('₱249.00');
+  });
+
   it('shows only server-declared cancellation, correction, and full-refund controls', async () => {
     render(<SubscriptionManagement />);
 
