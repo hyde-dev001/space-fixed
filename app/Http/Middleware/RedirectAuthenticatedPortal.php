@@ -12,6 +12,10 @@ final class RedirectAuthenticatedPortal
 {
     public function handle(Request $request, Closure $next): Response
     {
+        if (Auth::guard('super_admin')->check()) {
+            return redirect('/admin');
+        }
+
         if (Auth::guard('shop_owner')->check()) {
             return redirect()->route('shop-owner.dashboard');
         }

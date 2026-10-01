@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Tests\Feature\Manager;
 
 use App\Models\Employee;
+use App\Models\HR\AttendanceRecord;
 use App\Models\HR\LeaveBalance;
 use App\Models\HR\LeaveRequest;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
@@ -37,6 +39,12 @@ final class ManagerLeaveApprovalTest extends TestCase
         Permission::findOrCreate('access-manager-leave-approvals', 'user');
         Permission::findOrCreate('decide-manager-leave-approvals', 'user');
         $this->shop = ShopOwner::factory()->approved()->create();
+        $this->shop->update(['registration_type' => 'company', 'business_type' => 'both']);
+        ShopOwnerModule::updateOrCreate(
+            ['shop_owner_id' => $this->shop->id, 'module_key' => 'hr_employees'],
+            ['enabled' => true],
+        );
+        config(['shop_modules.enforcement_enabled' => true]);
         $this->manager = User::factory()->for($this->shop)->create([
             'role' => 'MANAGER',
             'status' => 'active',
@@ -46,6 +54,7 @@ final class ManagerLeaveApprovalTest extends TestCase
             'access-manager-leave-approvals',
             'decide-manager-leave-approvals',
         ]);
+        $this->clockInUser($this->manager);
 
         $this->employeeUser = User::factory()->for($this->shop)->create([
             'role' => 'STAFF',
@@ -54,6 +63,7 @@ final class ManagerLeaveApprovalTest extends TestCase
         $this->employee = Employee::factory()->active()->for($this->shop)->create([
             'email' => $this->employeeUser->email,
         ]);
+        $this->clockInUser($this->employeeUser);
 
         LeaveBalance::createForNewEmployee($this->employee->id, $this->shop->id, now()->year);
     }
@@ -125,7 +135,7 @@ final class ManagerLeaveApprovalTest extends TestCase
             'role' => 'STAFF',
             'status' => 'active',
         ]);
-        Employee::factory()->active()->for($this->shop)->create(['email' => $otherUser->email]);
+        $this->clockInUser($otherUser);
 
         $this->actingAs($otherUser, 'user')
             ->deleteJson("/api/staff/leave/{$leaveRequest->id}/cancel")
@@ -138,6 +148,7 @@ final class ManagerLeaveApprovalTest extends TestCase
         Permission::findOrCreate('access-employee-directory', 'user');
         $hr = User::factory()->for($this->shop)->create(['role' => 'HR']);
         $hr->givePermissionTo('access-employee-directory');
+        $this->clockInUser($hr);
 
         $this->actingAs($hr, 'user')
             ->deleteJson("/api/leave/{$leaveRequest->id}/cancel")
@@ -165,6 +176,7 @@ final class ManagerLeaveApprovalTest extends TestCase
         Permission::findOrCreate('access-employee-directory', 'user');
         $hr = User::factory()->for($this->shop)->create(['role' => 'HR']);
         $hr->givePermissionTo('access-employee-directory');
+        $this->clockInUser($hr);
 
         $this->actingAs($hr, 'user')
             ->postJson("/api/hr/leave-requests/{$leaveRequest->id}/approve")
@@ -211,13 +223,58 @@ final class ManagerLeaveApprovalTest extends TestCase
         );
     }
 
+    public function test_request_id_filter_returns_only_the_linked_leave_request(): void
+    {
+        $this->createLeaveRequest();
+        $target = $this->createLeaveRequest(['reason' => 'Linked leave request']);
+
+        $this->actingAs($this->manager, 'user')
+            ->getJson('/api/hr/leave-requests?status=pending&request_id=' . $target->id . '&per_page=10')
+            ->assertOk()
+            ->assertJsonCount(1, 'data')
+            ->assertJsonPath('data.0.id', $target->id);
+    }
+
+    public function test_hr_and_manager_approval_pages_require_the_hr_module_even_when_rbac_allows_them(): void
+    {
+        $this->shop->update([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::updateOrCreate(
+            ['shop_owner_id' => $this->shop->id, 'module_key' => 'hr_employees'],
+            ['enabled' => true],
+        );
+        config(['shop_modules.enforcement_enabled' => true]);
+
+        Permission::findOrCreate('access-hr-dashboard', 'user');
+        $hr = User::factory()->for($this->shop)->create([
+            'role' => 'HR',
+            'status' => 'active',
+        ]);
+        $hr->givePermissionTo('access-hr-dashboard');
+
+        $this->actingAs($hr, 'user')->get('/erp/hr')->assertOk();
+        $this->actingAs($this->manager, 'user')->get('/erp/manager/leave-approvals')->assertOk();
+
+        ShopOwnerModule::query()
+            ->where('shop_owner_id', $this->shop->id)
+            ->where('module_key', 'hr_employees')
+            ->update(['enabled' => false]);
+
+        $this->actingAs($hr, 'user')->get('/erp/hr')->assertRedirect(url('/erp/staff/dashboard'));
+        $this->actingAs($this->manager, 'user')->get('/erp/manager/leave-approvals')->assertRedirect(url('/erp/staff/dashboard'));
+        $this->actingAs($hr, 'user')->getJson('/api/hr/leave-requests')->assertForbidden();
+        $this->actingAs($this->manager, 'user')->getJson('/api/hr/leave-requests')->assertForbidden();
+    }
+
     public function test_manager_role_can_read_and_decide_leave_without_legacy_hr_permission(): void
     {
         $leaveRequest = $this->createLeaveRequest();
 
         // The Manager capability middleware and LeaveController authorize the
-        // modern Manager flow. The old HR route gate must not be required for
-        // a Manager whose account predates the legacy permission mapping.
+        // modern Manager flow when the shop HR module is enabled. The Manager
+        // capability remains distinct from the legacy HR permission mapping.
         $this->manager->syncPermissions([]);
         app(PermissionRegistrar::class)->forgetCachedPermissions();
 
@@ -261,5 +318,22 @@ final class ManagerLeaveApprovalTest extends TestCase
             'status' => 'pending',
             'approval_level' => 1,
         ], $overrides));
+    }
+
+    private function clockInUser(User $user): void
+    {
+        $employee = Employee::query()
+            ->where('shop_owner_id', $this->shop->id)
+            ->whereRaw('LOWER(email) = ?', [strtolower($user->email)])
+            ->first()
+            ?? Employee::factory()->active()->for($this->shop)->create(['email' => $user->email]);
+
+        AttendanceRecord::create([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $this->shop->id,
+            'date' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(),
+            'check_in_time' => '08:00:00',
+            'status' => 'present',
+        ]);
     }
 }

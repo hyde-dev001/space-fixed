@@ -799,7 +799,7 @@ class NotificationService
             title: 'Leave Request Pending',
             message: "{$leaveData['employee_name']} has requested leave from {$leaveData['start_date']} to {$leaveData['end_date']}",
             data: $leaveData,
-            actionUrl: '/erp/manager/leave-approvals',
+            actionUrl: '/erp/manager/leave-approvals' . (!empty($leaveData['leave_request_id']) ? '?request=' . (int) $leaveData['leave_request_id'] : ''),
             shopId: $shopId,
             requiresAction: true
         );
@@ -921,6 +921,9 @@ class NotificationService
         $employeeName = $leaveData['employee_name'] ?? 'An employee';
         $title = 'New Leave Request';
         $message = "{$employeeName} submitted a {$leaveData['leave_type']} leave request for {$leaveData['no_of_days']} day(s).";
+        $requestId = (int) ($leaveData['leave_request_id'] ?? 0);
+        $managerUrl = '/erp/manager/leave-approvals' . ($requestId > 0 ? '?request=' . $requestId : '');
+        $hrUrl = '/erp/hr?section=leaves' . ($requestId > 0 ? '&request=' . $requestId : '');
 
         // Use permission/role targeting so notifications still work even when role labels vary.
         $recipients = User::query()
@@ -943,7 +946,7 @@ class NotificationService
                 title: $title,
                 message: $message,
                 data: $leaveData,
-                actionUrl: '/erp/hr?section=leaves',
+                actionUrl: $hrUrl,
                 priority: 'medium',
                 requiresAction: true,
             );
@@ -951,13 +954,14 @@ class NotificationService
         }
 
         foreach ($recipients as $recipient) {
+            $isManager = $recipient->hasRole('Manager') || $recipient->can('access-manager-leave-approvals');
             $this->sendToUser(
                 userId: (int) $recipient->id,
                 type: NotificationType::LEAVE_SUBMITTED,
                 title: $title,
                 message: $message,
                 data: $leaveData,
-                actionUrl: '/erp/hr?section=leaves',
+                actionUrl: $isManager ? $managerUrl : $hrUrl,
                 shopId: $shopId,
                 priority: 'medium',
                 requiresAction: true,
@@ -971,7 +975,7 @@ class NotificationService
         $this->sendToUser($userId, NotificationType::LEAVE_REQUEST_APPROVED,
             'Leave Request Approved',
             "Your {$leaveData['leave_type']} leave from {$leaveData['start_date']} to {$leaveData['end_date']} has been approved.",
-            $leaveData, '/erp/my-payslips', $shopId
+            $leaveData, '/erp/time-in?request=' . (int) ($leaveData['leave_request_id'] ?? 0), $shopId
         );
     }
 
@@ -982,7 +986,7 @@ class NotificationService
         $this->sendToUser($userId, NotificationType::LEAVE_REQUEST_REJECTED,
             'Leave Request Rejected',
             "Your {$leaveData['leave_type']} leave request was rejected. {$reason}",
-            $leaveData, '/erp/my-payslips', $shopId
+            $leaveData, '/erp/time-in?request=' . (int) ($leaveData['leave_request_id'] ?? 0), $shopId
         );
     }
 
@@ -1056,7 +1060,7 @@ class NotificationService
         $this->sendToUser($userId, NotificationType::OVERTIME_REQUEST_REJECTED,
             'Overtime Request Rejected',
             "Your overtime request for {$otData['overtime_date']} was rejected. {$reason}",
-            $otData, '/erp/my-payslips', $shopId
+            $otData, '/erp/time-in?overtime=' . (int) ($otData['overtime_id'] ?? $otData['overtime_request_id'] ?? 0), $shopId
         );
     }
 
@@ -1598,10 +1602,26 @@ class NotificationService
     /** Notify employee their overtime request was approved */
     public function notifyOvertimeApproved(int $userId, int $shopId, array $otData): void
     {
+        $overtimeId = (int) ($otData['overtime_id'] ?? $otData['overtime_request_id'] ?? 0);
         $this->sendToUser($userId, NotificationType::OVERTIME_REQUEST_APPROVED,
             'Overtime Request Approved',
             "Your overtime request for {$otData['date']} has been approved.",
-            $otData, '/erp/my-payslips', $shopId
+            $otData, '/erp/time-in?overtime=' . $overtimeId, $shopId
+        );
+    }
+
+    /** Notify an employee about manager-assigned overtime, not an employee request. */
+    public function notifyOvertimeAssigned(int $userId, int $shopId, array $otData): void
+    {
+        $overtimeId = (int) ($otData['overtime_id'] ?? $otData['overtime_request_id'] ?? 0);
+        $this->sendToUser(
+            userId: $userId,
+            type: NotificationType::OVERTIME_ASSIGNED,
+            title: 'Overtime Assigned',
+            message: "Overtime has been assigned to you for {$otData['date']}.",
+            data: $otData,
+            actionUrl: '/erp/time-in?overtime=' . $overtimeId,
+            shopId: $shopId,
         );
     }
 
@@ -2501,7 +2521,7 @@ class NotificationService
             title: 'Leave Request Pending',
             message: "{$leaveData['employee_name']} requests leave: {$leaveData['leave_type']}",
             data: $leaveData,
-            actionUrl: '/erp/manager/leave-approvals',
+            actionUrl: '/erp/manager/leave-approvals' . (!empty($leaveData['leave_request_id']) ? '?request=' . (int) $leaveData['leave_request_id'] : ''),
             shopId: $shopId,
             priority: 'medium',
             requiresAction: true

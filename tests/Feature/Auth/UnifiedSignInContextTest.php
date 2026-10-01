@@ -3,6 +3,7 @@
 namespace Tests\Feature\Auth;
 
 use App\Models\ShopOwner;
+use App\Models\SuperAdmin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -52,6 +53,16 @@ class UnifiedSignInContextTest extends TestCase
             ->get('/')
             ->assertRedirect(route('shop-owner.dashboard'));
         $this->get('/shop-owner/login')->assertRedirect(route('shop-owner.dashboard'));
+    }
+
+    #[Test]
+    public function authenticated_super_admins_are_redirected_to_the_admin_portal_from_the_root(): void
+    {
+        $admin = SuperAdmin::factory()->superAdmin()->create();
+
+        $this->actingAs($admin, 'super_admin')
+            ->get('/')
+            ->assertRedirect('/admin');
     }
 
     #[Test]

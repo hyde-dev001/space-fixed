@@ -19,4 +19,10 @@ describe('Manager Leave Approvals refresh contract', () => {
     expect(hooks).toContain('refetchInterval: 30000');
     expect(hooks).toContain('refetchOnWindowFocus: true');
   });
+
+  it('uses the request query parameter to fetch the linked leave request', () => {
+    expect(page).toContain('window.location.search');
+    expect(page).toContain('request_id');
+    expect(hooks).toContain('request_id?: number;');
+  });
 });

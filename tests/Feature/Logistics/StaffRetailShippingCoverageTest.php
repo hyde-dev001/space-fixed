@@ -7,6 +7,7 @@ use App\Models\Logistics\Shipment;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\Logistics\DeliveryScheduleService;
@@ -33,9 +34,15 @@ class StaffRetailShippingCoverageTest extends TestCase
 
         $this->shop = ShopOwner::factory()->create([
             'business_type' => 'retail',
+            'registration_type' => 'company',
             'status' => 'approved',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
+        ]);
+        ShopOwnerModule::create([
+            'shop_owner_id' => $this->shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
         ]);
         $this->staff = User::factory()->create([
             'shop_owner_id' => $this->shop->id,
@@ -197,6 +204,126 @@ class StaffRetailShippingCoverageTest extends TestCase
         ]);
     }
 
+    public function test_disabled_logistics_blocks_new_shop_owned_shipping_but_keeps_third_party_shipping_available(): void
+    {
+        $this->setLogisticsEnabled(false);
+
+        $this->actingAs($this->staff, 'user')
+            ->patchJson("/api/staff/orders/{$this->order->id}/status", [
+                'status' => 'shipped',
+                'carrier_company' => 'Shop-owned logistics',
+            ])
+            ->assertForbidden()
+            ->assertJsonPath('code', 'MODULE_DISABLED');
+
+        $this->assertSame('processing', $this->order->fresh()->status->value);
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order',
+            'source_id' => $this->order->id,
+        ]);
+
+        $this->actingAs($this->staff, 'user')
+            ->patchJson("/api/staff/orders/{$this->order->id}/status", [
+                'status' => 'shipped',
+                'carrier_company' => 'J&T Express',
+                'tracking_number' => 'JT-123456',
+                'carrier_name' => 'Juan Rider',
+                'carrier_phone' => '09170000000',
+                'tracking_link' => 'https://example.test/track/JT-123456',
+            ])
+            ->assertOk();
+
+        $this->assertSame('shipped', $this->order->fresh()->status->value);
+    }
+
+    public function test_disabled_logistics_does_not_interrupt_an_already_assigned_shop_owned_shipment(): void
+    {
+        Order::query()->whereKey($this->order->id)->update(['carrier_company' => 'Shop-owned logistics']);
+        $this->assertSame('Shop-owned logistics', $this->order->fresh()->carrier_company);
+        $this->setLogisticsEnabled(false);
+
+        $this->actingAs($this->staff, 'user')
+            ->patchJson("/api/staff/orders/{$this->order->id}/status", [
+                'status' => 'shipped',
+                'carrier_company' => 'Shop-owned logistics',
+            ])
+            ->assertOk();
+
+        $this->assertSame('shipped', $this->order->fresh()->status->value);
+        $this->assertDatabaseHas('shipments', [
+            'source_type' => 'order',
+            'source_id' => $this->order->id,
+            'purpose' => 'retail_delivery',
+        ]);
+    }
+
+    public function test_disabled_logistics_blocks_new_shop_owned_return_but_keeps_third_party_return_available(): void
+    {
+        $refund = OrderRefund::factory()->create([
+            'order_id' => $this->order->id,
+            'customer_id' => $this->order->customer_id,
+            'shop_owner_id' => $this->shop->id,
+            'return_status' => 'pending_customer_shipment',
+            'return_source' => 'customer',
+        ]);
+        $this->setLogisticsEnabled(false);
+
+        $this->actingAs($this->staff, 'user')
+            ->postJson("/api/staff/orders/{$this->order->id}/arrange-return-pickup", [
+                'delivery_method' => 'shop_owned',
+            ])
+            ->assertForbidden()
+            ->assertJsonPath('code', 'MODULE_DISABLED');
+
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $refund->id,
+            'return_status' => 'pending_customer_shipment',
+        ]);
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+
+        $this->actingAs($this->staff, 'user')
+            ->postJson("/api/staff/orders/{$this->order->id}/arrange-return-pickup", [
+                'delivery_method' => 'third_party',
+                'carrier_company' => 'J&T Express',
+                'rider_name' => 'Juan Rider',
+                'rider_phone' => '09171234567',
+                'tracking_number' => 'JT-RETURN-003',
+                'tracking_link' => 'https://example.test/returns/JT-RETURN-003',
+            ])
+            ->assertOk()
+            ->assertJsonPath('refund.return_status', 'in_transit');
+    }
+
+    public function test_disabled_logistics_does_not_interrupt_an_already_selected_shop_owned_return(): void
+    {
+        $refund = OrderRefund::factory()->create([
+            'order_id' => $this->order->id,
+            'customer_id' => $this->order->customer_id,
+            'shop_owner_id' => $this->shop->id,
+            'return_status' => 'pending_customer_shipment',
+            'return_source' => 'customer',
+            'staff_return_carrier' => 'Shop-owned logistics',
+        ]);
+        $this->setLogisticsEnabled(false);
+
+        $this->actingAs($this->staff, 'user')
+            ->postJson("/api/staff/orders/{$this->order->id}/arrange-return-pickup", [
+                'delivery_method' => 'shop_owned',
+            ])
+            ->assertOk()
+            ->assertJsonPath('refund.return_status', 'pending_staff_pickup');
+
+        $this->assertDatabaseHas('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+    }
+
     public function test_outside_coverage_rejects_shop_owned_return_but_allows_third_party_return(): void
     {
         $this->moveAddressOutsideCoverage();
@@ -325,5 +452,13 @@ class StaffRetailShippingCoverageTest extends TestCase
     {
         $this->address->update(['latitude' => 14.6760, 'longitude' => 121.0437]);
         $this->settings->update(['coverage_radius_km' => 1]);
+    }
+
+    private function setLogisticsEnabled(bool $enabled): void
+    {
+        ShopOwnerModule::query()
+            ->where('shop_owner_id', $this->shop->id)
+            ->where('module_key', 'logistics')
+            ->update(['enabled' => $enabled]);
     }
 }

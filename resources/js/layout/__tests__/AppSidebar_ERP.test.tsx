@@ -477,6 +477,33 @@ it('preserves the employee HR attendance and payroll groups', () => {
   expect(screen.getByRole('link', { name: 'Salary Changes' })).toBeInTheDocument();
 });
 
+it('hides HR navigation when the HR module is disabled', () => {
+  state.url = '/erp/hr?section=overview';
+  state.role = 'HR';
+  state.roles = ['HR'];
+  state.shopModules = moduleStates({ hr_employees: false });
+  state.moduleStates = state.shopModules;
+  state.moduleEnforcementEnabled = true;
+  state.permissions = [
+    'access-hr-dashboard',
+    'access-employee-directory',
+    'access-attendance-records',
+    'access-leave-approvals',
+    'access-overtime-approvals',
+    'access-payslip-generation',
+    'access-view-payslip',
+    'manage-salary-changes',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('link', { name: 'Dashboard' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Employees' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Attendance Monitoring' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Payroll' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Articles' })).toBeInTheDocument();
+});
+
 it.each([
   { url: '/erp/hr?section=overview', activeLink: 'Dashboard' },
   { url: '/erp/hr?section=employees', activeLink: 'Employees' },
@@ -604,6 +631,39 @@ it('shows Manager operational pages when the Manager role has an incomplete perm
   expect(screen.getByRole('link', { name: 'Repair Jobs' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Staff & Workload' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Leave Approvals' })).toBeInTheDocument();
+});
+
+it('hides Manager HR approvals when the HR module is disabled but keeps operations available', () => {
+  state.url = '/erp/manager/dashboard';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+  state.shopOwner.business_type = 'both';
+  state.shopModules = moduleStates({ hr_employees: false });
+  state.moduleStates = state.shopModules;
+  state.moduleEnforcementEnabled = true;
+  state.permissions = [
+    'access-manager-dashboard',
+    'access-manager-job-orders',
+    'access-manager-repair-jobs',
+    'access-inventory-overview',
+    'access-manager-staff-workload',
+    'access-manager-leave-approvals',
+    'access-manager-suspension-approvals',
+    'access-manager-termination-approvals',
+    'access-manager-rehire-approvals',
+    'access-manager-reports',
+    'access-audit-logs',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: 'Manager Dashboard' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Job Orders' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Reports & Analytics' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Leave Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Suspension Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Termination Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Rehire Approvals' })).not.toBeInTheDocument();
 });
 
 it('hides only the Manager page whose read capability is missing', () => {

@@ -436,7 +436,7 @@ class PaymongoWebhookController extends Controller
             return response()->json(['message' => 'Subscription not found'], 200);
         }
 
-        $activated = DB::transaction(function () use ($subscription, $payment, $sessionId, $paymentId, $paidAmount, $providerCurrency, $metadata) {
+        $activation = DB::transaction(function () use ($subscription, $payment, $sessionId, $paymentId, $paidAmount, $providerCurrency, $metadata) {
             // Lock the specific row; prevents duplicate activation under concurrent webhooks
             $lockedPayment = ShopOwnerSubscriptionPayment::query()
                 ->whereKey($payment->id)
@@ -462,6 +462,8 @@ class PaymongoWebhookController extends Controller
                 || $metadataShopOwnerId !== (string) $locked->shop_owner_id
                 || ! is_string($paymentId)
                 || trim($paymentId) === ''
+                || (filled($lockedPayment->paymongo_payment_id) && $lockedPayment->paymongo_payment_id !== $paymentId)
+                || (filled($locked->paymongo_payment_id) && $locked->paymongo_payment_id !== $paymentId)
                 || ($paidAmount === null)
                 || $providerCurrency === ''
                 || $providerCurrency !== strtoupper((string) $lockedPayment->currency)
@@ -475,24 +477,49 @@ class PaymongoWebhookController extends Controller
                 return false;
             }
 
-            // Idempotency: already active — nothing to do
-            if ($lockedPayment->status === 'paid' || $locked->status === 'active') {
-                Log::info('Premium subscription already active — duplicate webhook ignored', [
+            // Idempotency: an already-paid ledger row is a duplicate webhook.
+            if ($lockedPayment->status === 'paid') {
+                Log::info('Premium subscription payment already recorded — duplicate webhook ignored', [
                     'subscription_id' => $locked->id,
                     'session_id'      => $sessionId,
                 ]);
                 return false;
             }
 
-            // Guard: only activate subscriptions that are in the expected pre-payment states.
-            // 'expired', 'cancelled' must never be reactivated through a payment webhook.
-            if ($lockedPayment->status !== 'pending' || $locked->status !== 'pending') {
+            // A paid event may settle an active subscription whose success return
+            // arrived first, but must never revive a terminal subscription.
+            if ($lockedPayment->status !== 'pending' || ! in_array($locked->status, ['pending', 'active'], true)) {
                 Log::warning('Premium subscription in non-activatable state — skipping', [
                     'subscription_id' => $locked->id,
                     'current_status'  => $locked->status,
                     'session_id'      => $sessionId,
                 ]);
                 return false;
+            }
+
+            if ($locked->status === 'active') {
+                $lockedPayment->update([
+                    'paymongo_payment_id' => $paymentId,
+                    'status' => 'paid',
+                    'amount_paid' => $paidAmount,
+                    'paid_at' => now(),
+                ]);
+                $locked->update([
+                    'paymongo_payment_id' => $paymentId,
+                    'paid_amount' => $paidAmount,
+                ]);
+
+                activity()
+                    ->performedOn($locked)
+                    ->withProperties([
+                        'subscription_id' => $locked->id,
+                        'payment_id' => $paymentId,
+                        'session_id' => $sessionId,
+                        'paid_amount' => $paidAmount,
+                    ])
+                    ->log('Premium subscription payment reconciled: '.$locked->plan_code);
+
+                return ['subscription' => $locked->fresh(), 'newly_activated' => false];
             }
 
             $startsAt = now();
@@ -581,25 +608,27 @@ class PaymongoWebhookController extends Controller
                 'session_id'      => $sessionId,
             ]);
 
-            return $locked->fresh();
+            return ['subscription' => $locked->fresh(), 'newly_activated' => true];
         });
 
         // Send in-app + email notification to the shop owner (outside the transaction,
         // so a notification failure never rolls back the subscription activation)
-        if ($activated) {
+        if ($activation && $activation['newly_activated']) {
+            $activatedSubscription = $activation['subscription'];
+
             try {
-                $appUrl    = rtrim(config('app.url'), '/');
-                $planLabel = ucfirst($activated->plan_code);
+                $appUrl = rtrim(config('app.url'), '/');
+                $planLabel = ucfirst($activatedSubscription->plan_code);
 
                 app(NotificationService::class)->sendToShopOwner(
-                    $activated->shop_owner_id,
+                    $activatedSubscription->shop_owner_id,
                     NotificationType::PAYMENT_RECEIVED,
                     'Premium Subscription Activated',
                     "Your SoleSpace {$planLabel} subscription is now active and will continue until you cancel it.",
                     [
-                        'subscription_id' => $activated->id,
-                        'plan_code'       => $activated->plan_code,
-                        'ends_at'         => $activated->ends_at?->toISOString(),
+                        'subscription_id' => $activatedSubscription->id,
+                        'plan_code'       => $activatedSubscription->plan_code,
+                        'ends_at'         => $activatedSubscription->ends_at?->toISOString(),
                     ],
                     $appUrl . '/shop-owner/premium/benefits',
                     'high'
@@ -607,13 +636,17 @@ class PaymongoWebhookController extends Controller
             } catch (\Exception $e) {
                 // Never let a notification error surface as a webhook failure
                 Log::error('Failed to send premium activation notification', [
-                    'subscription_id' => $activated->id,
+                    'subscription_id' => $activatedSubscription->id,
                     'exception_class' => $e::class,
                 ]);
             }
         }
 
-        return response()->json(['message' => $activated ? 'Subscription activated' : 'Already processed'], 200);
+        return response()->json([
+            'message' => ! $activation
+                ? 'Already processed'
+                : ($activation['newly_activated'] ? 'Subscription activated' : 'Payment recorded'),
+        ], 200);
     }
 
     /**

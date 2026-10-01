@@ -2,9 +2,12 @@
 
 namespace Tests\Feature\Manager;
 
+use App\Models\Employee;
+use App\Models\HR\LeaveRequest;
 use App\Models\RepairRequest;
 use App\Models\Order;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\SuspensionRequest;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -439,6 +442,44 @@ class ManagerDashboardKpisTest extends TestCase
             $this->assertArrayHasKey('next_action', $signal);
             $this->assertArrayHasKey('href', $signal);
         }
+    }
+
+    public function test_dashboard_hides_hr_approvals_when_hr_module_is_disabled_but_keeps_operational_signals(): void
+    {
+        $this->shop->update(['registration_type' => 'company']);
+        ShopOwnerModule::create([
+            'shop_owner_id' => $this->shop->id,
+            'module_key' => 'hr_employees',
+            'enabled' => false,
+        ]);
+        $employee = Employee::factory()->for($this->shop)->active()->create();
+        LeaveRequest::create([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $this->shop->id,
+            'leave_type' => 'vacation',
+            'start_date' => now()->addDay()->toDateString(),
+            'end_date' => now()->addDay()->toDateString(),
+            'no_of_days' => 1,
+            'reason' => 'Family commitment',
+            'status' => 'pending',
+        ]);
+        $inactiveStaff = User::factory()->for($this->shop)->create([
+            'role' => 'Staff',
+            'status' => 'inactive',
+        ]);
+        Order::factory()->for($this->shop)->create([
+            'assigned_staff_id' => $inactiveStaff->id,
+            'status' => 'processing',
+        ]);
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson('/api/manager/dashboard/stats');
+
+        $response->assertOk()
+            ->assertJsonPath('current_state.approvals.leave', 0);
+        $signalTypes = collect($response->json('signals'))->pluck('type');
+        $this->assertNotContains('leave_approval', $signalTypes);
+        $this->assertContains('order_reassignment', $signalTypes);
     }
 
     public function test_dashboard_keeps_soft_deleted_assignees_visible_for_reassignment_signals(): void

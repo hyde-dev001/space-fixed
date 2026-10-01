@@ -134,6 +134,7 @@ const navItems: NavItem[] = [
     name: "Dashboard",
     route: "erp.hr",
     params: { section: "overview" },
+    moduleKey: "hr_employees",
   },
   {
     icon: (
@@ -147,6 +148,7 @@ const navItems: NavItem[] = [
     name: "Employees",
     route: "erp.hr",
     params: { section: "employees" },
+    moduleKey: "hr_employees",
   },
   {
     icon: (
@@ -210,6 +212,7 @@ const navItems: NavItem[] = [
       </svg>
     ),
     name: "Payroll",
+    moduleKey: "hr_employees",
     subItems: [
       {
         name: "View Slip",
@@ -524,6 +527,7 @@ const managerItems: NavItem[] = [
     name: "Leave Approvals",
     route: "erp.manager.leave-approvals",
     managerSection: "people",
+    moduleKey: "hr_employees",
   },
   {
     icon: (
@@ -536,6 +540,7 @@ const managerItems: NavItem[] = [
     name: "Suspension Approvals",
     route: "erp.manager.suspension-approvals",
     managerSection: "people",
+    moduleKey: "hr_employees",
   },
   {
     icon: (
@@ -546,6 +551,7 @@ const managerItems: NavItem[] = [
     name: "Termination Approvals",
     route: "erp.manager.termination-approvals",
     managerSection: "people",
+    moduleKey: "hr_employees",
   },
   {
     icon: (
@@ -556,6 +562,7 @@ const managerItems: NavItem[] = [
     name: "Rehire Approvals",
     route: "erp.manager.rehire-approvals",
     managerSection: "people",
+    moduleKey: "hr_employees",
   },
   {
     icon: (
@@ -1884,6 +1891,8 @@ const EmployeeSidebarERP: React.FC = () => {
 
   const getFilteredManagerItems = () => {
     return managerItems.filter((item) => {
+      if (!isModuleVisible(item)) return false;
+
       if (item.route === 'erp.manager.dashboard') {
         return hasManagerPageReadAccess('access-manager-dashboard');
       }
