@@ -475,6 +475,7 @@ interface ManagerLeaveApprovalResponse {
 interface ManagerLeaveApprovalFilters {
   search?: string;
   status?: string;
+  request_id?: number;
   leave_type?: string;
   date_from?: string;
   date_to?: string;

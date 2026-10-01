@@ -157,6 +157,7 @@ class LeaveController extends Controller
         $validated = $request->validate([
             'search' => ['nullable', 'string', 'max:100'],
             'status' => ['nullable', 'in:pending,approved,rejected'],
+            'request_id' => ['nullable', 'integer', 'min:1'],
             'employee_id' => ['nullable', 'integer'],
             'leave_type' => ['nullable', 'in:' . implode(',', array_keys(LeaveRequest::LEAVE_TYPES))],
             'start_date' => ['nullable', 'date'],
@@ -168,6 +169,10 @@ class LeaveController extends Controller
 
         $query = LeaveRequest::forShopOwner($shopOwnerId)
             ->with(['employee:id,first_name,last_name,name,email,position,department', 'approver:id,name']);
+
+        if (isset($validated['request_id'])) {
+            $query->whereKey((int) $validated['request_id']);
+        }
 
         // Apply search filter
         if (!empty($validated['search'])) {

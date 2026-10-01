@@ -241,6 +241,15 @@ class RetailPosRefundService
 
     public function execute(PosRefund $refund, int $actorId, string $executionMode = 'manual', ?string $executionNote = null): PosRefund
     {
+        return DB::transaction(function () use ($refund, $actorId, $executionMode, $executionNote): PosRefund {
+            $lockedRefund = PosRefund::query()->lockForUpdate()->findOrFail((int) $refund->id);
+
+            return $this->executeWithinTransaction($lockedRefund, $actorId, $executionMode, $executionNote);
+        });
+    }
+
+    private function executeWithinTransaction(PosRefund $refund, int $actorId, string $executionMode, ?string $executionNote): PosRefund
+    {
         if ((string) $refund->module_type !== 'retail') {
             throw ValidationException::withMessages([
                 'module_type' => ['Only retail refunds can be executed from this service.'],
@@ -253,7 +262,7 @@ class RetailPosRefundService
             ]);
         }
 
-        $source = $refund->sourceTransaction()->with('paymentLines')->firstOrFail();
+        $source = $refund->sourceTransaction()->with('paymentLines')->lockForUpdate()->firstOrFail();
         $approvedAmount = round((float) ($refund->approved_amount ?? $refund->requested_amount), 2);
 
         if ($approvedAmount <= 0) {

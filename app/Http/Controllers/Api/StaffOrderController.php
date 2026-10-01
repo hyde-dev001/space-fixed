@@ -15,6 +15,7 @@ use App\Services\CodCollectionService;
 use App\Services\Orders\OrderFulfillmentService;
 use App\Services\Orders\OrderOwnerProjection;
 use App\Services\RetailPosRefundSummaryService;
+use App\Services\ShopModuleAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -47,6 +48,7 @@ class StaffOrderController extends Controller
         private readonly RetailPosRefundSummaryService $retailPosRefundSummaryService,
         private readonly DeliveryScheduleService $deliveryScheduleService,
         private readonly CodCollectionService $codCollectionService,
+        private readonly ShopModuleAccessService $shopModuleAccessService,
     ) {}
 
     public function index(Request $request)
@@ -672,24 +674,31 @@ class StaffOrderController extends Controller
 
         $carrierCompany = $validated['carrier_company'] ?? $order->carrier_company;
         $isShopOwned = strtolower(trim((string) $carrierCompany)) === 'shop-owned logistics';
+        $wasShopOwned = strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics';
         if ($isShopOwned) {
             $validated['carrier_company'] = 'Shop-owned logistics';
         }
 
         if ($validated['status'] === 'shipped' && $isShopOwned) {
-            $order->unsetRelation('address');
-            $order->unsetRelation('shopOwner');
-            $coverage = $this->shopOwnedCoverage($order);
+            if (! $wasShopOwned) {
+                if ($blocked = $this->logisticsModuleBlocked($order)) {
+                    return $blocked;
+                }
 
-            if (! $coverage['available']) {
-                $message = 'Shop-owned logistics is unavailable for this delivery address.';
+                $order->unsetRelation('address');
+                $order->unsetRelation('shopOwner');
+                $coverage = $this->shopOwnedCoverage($order);
 
-                return response()->json([
-                    'success' => false,
-                    'message' => $message,
-                    'errors' => ['carrier_company' => [$message]],
-                    'shop_owned_coverage' => $coverage,
-                ], 422);
+                if (! $coverage['available']) {
+                    $message = 'Shop-owned logistics is unavailable for this delivery address.';
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => $message,
+                        'errors' => ['carrier_company' => [$message]],
+                        'shop_owned_coverage' => $coverage,
+                    ], 422);
+                }
             }
         }
 
@@ -770,6 +779,23 @@ class StaffOrderController extends Controller
                 'coverage_radius_km' => null,
             ];
         }
+    }
+
+    private function logisticsModuleBlocked(Order $order)
+    {
+        $decision = $order->shopOwner
+            ? $this->shopModuleAccessService->decide($order->shopOwner, 'logistics')
+            : null;
+
+        if ($decision?->allowed) {
+            return null;
+        }
+
+        return response()->json([
+            'success' => false,
+            'code' => $decision?->code ?? 'LOGISTICS_MODULE_UNAVAILABLE',
+            'message' => $decision?->message ?? 'Logistics is unavailable for this shop.',
+        ], 403);
     }
 
     public function confirmReturnReceived(Request $request, $id)
@@ -882,20 +908,6 @@ class StaffOrderController extends Controller
             return response()->json(['error' => 'Order not found'], 404);
         }
 
-        if ($isShopOwned) {
-            $coverage = $this->shopOwnedCoverage($order);
-            if (! ($coverage['available'] ?? false)) {
-                $message = 'Shop-owned logistics is unavailable for this return address.';
-
-                return response()->json([
-                    'success' => false,
-                    'message' => $message,
-                    'errors' => ['delivery_method' => [$message]],
-                    'shop_owned_coverage' => $coverage,
-                ], 422);
-            }
-        }
-
         $refund = OrderRefund::query()
             ->where('order_id', $order->id)
             ->where('shop_owner_id', $shopOwnerId)
@@ -909,6 +921,25 @@ class StaffOrderController extends Controller
                 'success' => false,
                 'message' => 'No active refund request found for this order.',
             ], 404);
+        }
+
+        $existingShopOwnedReturn = $refund->isShopOwnedReturn();
+        if ($isShopOwned && ! $existingShopOwnedReturn) {
+            if ($blocked = $this->logisticsModuleBlocked($order)) {
+                return $blocked;
+            }
+
+            $coverage = $this->shopOwnedCoverage($order);
+            if (! ($coverage['available'] ?? false)) {
+                $message = 'Shop-owned logistics is unavailable for this return address.';
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'errors' => ['delivery_method' => [$message]],
+                    'shop_owned_coverage' => $coverage,
+                ], 422);
+            }
         }
 
         try {

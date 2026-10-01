@@ -7,7 +7,9 @@ namespace App\Services\Manager;
 use App\Models\HR\LeaveRequest;
 use App\Models\Order;
 use App\Models\RepairRequest;
+use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
+use App\Services\ShopModuleAccessService;
 use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
@@ -51,6 +53,7 @@ final class ManagerDashboardService
 
     public function __construct(
         private readonly ManagerAssignmentEligibilityService $assignmentEligibility,
+        private readonly ShopModuleAccessService $shopModuleAccess,
     ) {
     }
 
@@ -68,9 +71,11 @@ final class ManagerDashboardService
         $snapshotAt = CarbonImmutable::now();
         $range = $this->resolveRange($requestedRange, $snapshotAt);
         $businessCapabilities = $this->businessCapabilities($shopOwnerId);
-        $currentState = $this->currentState($shopOwnerId, $snapshotAt, $businessCapabilities);
+        $shopOwner = ShopOwner::query()->find($shopOwnerId);
+        $hrEnabled = $shopOwner !== null && $this->shopModuleAccess->canAccess($shopOwner, 'hr_employees');
+        $currentState = $this->currentState($shopOwnerId, $snapshotAt, $businessCapabilities, $hrEnabled);
         $periodMetrics = $this->periodMetrics($shopOwnerId, $range, $businessCapabilities);
-        $signals = $this->signals($shopOwnerId, $snapshotAt, $currentState, $businessCapabilities);
+        $signals = $this->signals($shopOwnerId, $snapshotAt, $currentState, $businessCapabilities, $hrEnabled);
 
         $capturedAt = $snapshotAt->toIso8601String();
         $rangePayload = $this->rangePayload($range);
@@ -209,7 +214,7 @@ final class ManagerDashboardService
 
     /** @return array<string, mixed> */
     /** @param array{businessType: string, canRetail: bool, canRepair: bool} $businessCapabilities */
-    private function currentState(int $shopOwnerId, CarbonImmutable $snapshotAt, array $businessCapabilities): array
+    private function currentState(int $shopOwnerId, CarbonImmutable $snapshotAt, array $businessCapabilities, bool $hrEnabled): array
     {
         $canRetail = (bool) ($businessCapabilities['canRetail'] ?? false);
         $canRepair = (bool) ($businessCapabilities['canRepair'] ?? false);
@@ -268,14 +273,18 @@ final class ManagerDashboardService
             }
         }
 
-        $leaveApprovals = LeaveRequest::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->where('status', 'pending')
-            ->count();
-        $suspensionApprovals = SuspensionRequest::query()
-            ->where('status', 'pending_manager')
-            ->whereHas('employee', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
-            ->count();
+        $leaveApprovals = $hrEnabled
+            ? LeaveRequest::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('status', 'pending')
+                ->count()
+            : 0;
+        $suspensionApprovals = $hrEnabled
+            ? SuspensionRequest::query()
+                ->where('status', 'pending_manager')
+                ->whereHas('employee', fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
+                ->count()
+            : 0;
         $repairReviewApprovals = $canRepair
             ? RepairRequest::query()
                 ->where('shop_owner_id', $shopOwnerId)
@@ -403,7 +412,7 @@ final class ManagerDashboardService
     }
 
     /** @param array{businessType: string, canRetail: bool, canRepair: bool} $businessCapabilities @return array<string, mixed> */
-    private function signals(int $shopOwnerId, CarbonImmutable $snapshotAt, array $currentState, array $businessCapabilities): array
+    private function signals(int $shopOwnerId, CarbonImmutable $snapshotAt, array $currentState, array $businessCapabilities, bool $hrEnabled): array
     {
         $signals = [];
         $canRetail = (bool) ($businessCapabilities['canRetail'] ?? false);
@@ -460,12 +469,14 @@ final class ManagerDashboardService
             );
         }
 
-        $pendingLeaves = LeaveRequest::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->where('status', 'pending')
-            ->orderBy('created_at')
-            ->limit(5)
-            ->get(['id', 'created_at']);
+        $pendingLeaves = $hrEnabled
+            ? LeaveRequest::query()
+                ->where('shop_owner_id', $shopOwnerId)
+                ->where('status', 'pending')
+                ->orderBy('created_at')
+                ->limit(5)
+                ->get(['id', 'created_at'])
+            : collect();
 
         foreach ($pendingLeaves as $leave) {
             $signals[] = $this->signal(

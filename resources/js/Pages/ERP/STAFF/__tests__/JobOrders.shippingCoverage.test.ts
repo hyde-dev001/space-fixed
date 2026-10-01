@@ -66,6 +66,7 @@ const jsonResponse = (status: number, body: unknown) => ({
 });
 
 beforeEach(() => {
+  mockPage.props.auth = { user: { role: 'STAFF', roles: [] }, permissions: ['access-staff-job-orders'] };
   mockPage.props.initialOrders = [makeOrder(1), makeOrder(2)];
   mockSwalFire.mockClear();
 });
@@ -237,9 +238,9 @@ describe('staff order shipping coverage integration', () => {
   });
 
   it('defaults only eligible orders to shop-owned logistics and disables only that option', () => {
-    expect(source).toContain('const shopOwnedEligible = order.shopOwnedCoverage?.available === true;');
-    expect(source).toContain('existingCarrier === SHOP_OWNED_LOGISTICS && !shopOwnedEligible');
-    expect(source).toContain('existingCarrier || (shopOwnedEligible ? SHOP_OWNED_LOGISTICS : "")');
+    expect(source).toContain('const canStartShopOwned = logisticsModuleEnabled && order.shopOwnedCoverage?.available === true;');
+    expect(source).toContain('const existingShopOwned = existingCarrier.trim().toLowerCase() === SHOP_OWNED_LOGISTICS.toLowerCase();');
+    expect(source).toContain('existingCarrier || (canStartShopOwned ? SHOP_OWNED_LOGISTICS : "")');
     expect(source).toMatch(/<option value=\{SHOP_OWNED_LOGISTICS\} disabled=\{!shopOwnedEligible\}>/);
     expect(source).toContain('<option value="Lalamove">Lalamove</option>');
     expect(source).toContain('<option value="J&T">J&amp;T</option>');
@@ -289,6 +290,63 @@ describe('staff order shipping coverage integration', () => {
     expect(dialogConfig.html).toContain(expectedOption);
   });
 
+  it('disables new shop-owned return selection when Logistics is disabled, even inside coverage', async () => {
+    const returnOrder = {
+      ...makeOrder(77),
+      status: 'refund',
+      latest_refund: {
+        id: 77,
+        status: 'processing',
+        shop_owner_status: 'approved',
+        finance_status: 'approved',
+        return_status: 'pending_customer_shipment',
+        flow_type: 'request_approval',
+      },
+    };
+    mockPage.props.auth = {
+      user: { role: 'STAFF', roles: [] },
+      permissions: ['access-staff-job-orders'],
+      shopModuleEnforcementEnabled: true,
+      shopModules: { logistics: { accessible: false } },
+    };
+    mockPage.props.initialOrders = [returnOrder];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [returnOrder]))));
+    mockSwalFire.mockResolvedValueOnce({ isConfirmed: false });
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Refund (1)' }));
+    fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Arrange Return Pickup' }));
+
+    await waitFor(() => expect(mockSwalFire).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Arrange Return Pickup' }),
+    ));
+    const dialogConfig = mockSwalFire.mock.calls[0][0] as { html: string };
+    expect(dialogConfig.html).toMatch(/<option value="shop_owned" disabled>/);
+    expect(dialogConfig.html).toContain('<option value="third_party">Third-party courier</option>');
+  });
+
+  it('disables new shop-owned shipment selection when Logistics is disabled', async () => {
+    const order = makeOrder(78);
+    mockPage.props.auth = {
+      user: { role: 'STAFF', roles: [] },
+      permissions: ['access-staff-job-orders'],
+      shopModuleEnforcementEnabled: true,
+      shopModules: { logistics: { accessible: false } },
+    };
+    mockPage.props.initialOrders = [order];
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(jsonResponse(200, [order]))));
+
+    render(React.createElement(JobOrdersPage));
+    fireEvent.click(await screen.findByRole('button', { name: 'Processing (1)' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Mark as shipped' }));
+
+    const selects = await screen.findAllByRole('combobox');
+    fireEvent.click(selects[selects.length - 1]);
+    expect(await screen.findByRole('option', { name: 'Shop-owned logistics' })).toBeDisabled();
+    expect(screen.getByText('Logistics module is disabled for this shop.')).toBeInTheDocument();
+  });
+
   it('announces plain-language coverage states with distance context and an icon', () => {
     expect(source).toContain('Outside shop-owned coverage:');
     expect(source).toContain('km away; coverage radius is');
@@ -302,7 +360,8 @@ describe('staff order shipping coverage integration', () => {
   });
 
   it('guards stale shop-owned selections and refreshes coverage after a carrier validation response', () => {
-    expect(source).toContain('usesShopOwnedLogistics && selectedOrder.shopOwnedCoverage?.available !== true');
+    expect(source).toContain('usesShopOwnedLogistics && !isExistingShopOwnedShipment');
+    expect(source).toContain('!logisticsModuleEnabled || selectedOrder.shopOwnedCoverage?.available !== true');
     expect(source).toContain("'Accept': 'application/json'");
     expect(source).toContain('response.status === 422');
     expect(source).toContain('errorData?.errors?.carrier_company');

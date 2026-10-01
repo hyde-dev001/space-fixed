@@ -6,8 +6,10 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use App\Models\Finance\Expense;
 use App\Models\Finance\ExpenseSettlement;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -49,6 +51,66 @@ class FinanceSummaryTest extends TestCase
             ]);
         $this->assertSame('0.00', $response->json('primary.net_revenue'));
         $this->assertCount(6, $response->json('trend'));
+    }
+
+    public function test_succeeded_retail_pos_refund_is_included_in_finance_dashboard_totals(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company',
+            'business_type' => 'both',
+        ]);
+        ShopOwnerModule::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'finance',
+            'enabled' => true,
+        ]);
+        $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $user->givePermissionTo('access-finance-dashboard');
+        $paidAt = now();
+
+        $transactionId = DB::table('pos_transactions')->insertGetId([
+            'transaction_no' => 'FINANCE-POS-' . random_int(100000, 999999),
+            'shop_owner_id' => $shop->id,
+            'module_type' => 'retail',
+            'module_reference_id' => 1,
+            'customer_type' => 'walk_in',
+            'walk_in_name' => 'Finance summary test',
+            'due_type' => 'full',
+            'subtotal' => 50.00,
+            'tax_amount' => 6.00,
+            'total_amount' => 56.00,
+            'paid_amount' => 56.00,
+            'status' => 'refunded',
+            'paid_at' => $paidAt,
+            'created_at' => $paidAt,
+            'updated_at' => $paidAt,
+        ]);
+
+        DB::table('pos_refunds')->insert([
+            'refund_no' => 'FINANCE-REFUND-' . random_int(100000, 999999),
+            'shop_owner_id' => $shop->id,
+            'source_transaction_id' => $transactionId,
+            'module_type' => 'retail',
+            'module_reference_id' => 1,
+            'request_type' => 'full',
+            'requested_amount' => 56.00,
+            'approved_amount' => 56.00,
+            'reason_code' => 'customer_return',
+            'status' => 'succeeded',
+            'execution_amount' => 56.00,
+            'execution_channel' => 'manual',
+            'requested_at' => $paidAt,
+            'executed_at' => $paidAt,
+            'created_at' => $paidAt,
+            'updated_at' => $paidAt,
+        ]);
+
+        $this->actingAs($user, 'user')
+            ->getJson('/api/finance/dashboard')
+            ->assertOk()
+            ->assertJsonPath('supporting.gross_revenue', '50.00')
+            ->assertJsonPath('supporting.executed_refunds', '50.00')
+            ->assertJsonPath('primary.net_revenue', '0.00');
     }
 
     /** @return array<string,array<string,mixed>> */

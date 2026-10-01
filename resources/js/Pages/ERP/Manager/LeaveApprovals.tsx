@@ -178,7 +178,10 @@ const EmptyState = () => (
 
 export default function LeaveApprovals() {
     const [form, setForm] = useState<LeaveFilterForm>(initialFilterForm);
-    const [filters, setFilters] = useState<ManagerLeaveApprovalFilters>({ status: "pending", page: 1, per_page: 20 });
+    const requestParam = new URLSearchParams(typeof window === "undefined" ? "" : window.location.search).get("request");
+    const parsedRequestId = requestParam && /^\d+$/.test(requestParam) ? Number(requestParam) : undefined;
+    const linkedRequestId = parsedRequestId && parsedRequestId > 0 && Number.isSafeInteger(parsedRequestId) ? parsedRequestId : undefined;
+    const [filters, setFilters] = useState<ManagerLeaveApprovalFilters>({ status: "pending", request_id: linkedRequestId, page: 1, per_page: 20 });
     const approvals = useManagerLeaveApprovals(filters);
     const payload = approvals.data;
     const requests = payload?.data ?? [];
@@ -190,7 +193,12 @@ export default function LeaveApprovals() {
     useEffect(() => {
         const timeout = window.setTimeout(() => {
             setActionError(null);
-            setFilters({ ...form, page: 1, per_page: 20 });
+            setFilters((current) => ({
+                ...form,
+                request_id: current.request_id,
+                page: 1,
+                per_page: 20,
+            }));
         }, form.search.trim() ? 300 : 0);
 
         return () => window.clearTimeout(timeout);

@@ -57,6 +57,7 @@ enum NotificationType: string
     case LEAVE_REQUEST_APPROVED = 'leave_request_approved';
     case LEAVE_REQUEST_REJECTED = 'leave_request_rejected';
     case OVERTIME_REQUEST_APPROVED = 'overtime_request_approved';
+    case OVERTIME_ASSIGNED = 'overtime_assigned';
     case OVERTIME_REQUEST_REJECTED = 'overtime_request_rejected';
     case PAYSLIP_READY = 'payslip_ready';
     case PAYSLIP_REJECTED = 'payslip_rejected';
@@ -195,6 +196,7 @@ enum NotificationType: string
             self::LEAVE_REQUEST_APPROVED => 'Leave Request Approved',
             self::LEAVE_REQUEST_REJECTED => 'Leave Request Rejected',
             self::OVERTIME_REQUEST_APPROVED => 'Overtime Request Approved',
+            self::OVERTIME_ASSIGNED => 'Overtime Assigned',
             self::OVERTIME_REQUEST_REJECTED => 'Overtime Request Rejected',
             self::PAYSLIP_READY => 'Payslip Ready',
             self::PAYSLIP_REJECTED => 'Payslip Rejected',
@@ -297,6 +299,7 @@ enum NotificationType: string
             self::OVERTIME_SUBMITTED, self::OVERTIME_REQUEST_PENDING,
             self::SALARY_CHANGE_SUBMITTED, self::SALARY_CHANGE_APPROVED,
             self::OVERTIME_REQUEST_APPROVED, self::OVERTIME_REQUEST_REJECTED,
+            self::OVERTIME_ASSIGNED,
             self::ATTENDANCE_REMINDER, self::DOCUMENT_EXPIRING,
             self::PAYROLL_GENERATED, self::PAYSLIP_READY, self::PAYSLIP_REJECTED, self::TRAINING_ASSIGNED,
             self::EMPLOYEE_TERMINATION_REQUEST, self::EMPLOYEE_REHIRE_REQUEST,

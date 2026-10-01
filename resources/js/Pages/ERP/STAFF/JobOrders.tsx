@@ -16,6 +16,7 @@ import {
   type OrderStatus,
 } from "../../../utils/orderStatusPresentation";
 import { formatPaymentMethod } from "../../../utils/paymentMethodLabel";
+import { canRenderShopModule } from "../../../utils/shopModuleAccess";
 import axios from "axios";
 
 const SHOP_OWNED_LOGISTICS = "Shop-owned logistics";
@@ -503,7 +504,10 @@ const getReturnDeliveryMethod = (refund: Order['latest_refund']): ReturnDelivery
 
 export const isPosOrder = (order: Pick<Order, "isPosOrder">) => order.isPosOrder === true;
 
-export const canSelectShopOwnedReturn = (coverage?: Order['shopOwnedCoverage']) => coverage?.available === true;
+export const canSelectShopOwnedReturn = (
+  coverage?: Order['shopOwnedCoverage'],
+  logisticsEnabled = true,
+) => logisticsEnabled && coverage?.available === true;
 
 export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund">) => {
   const latestRefund = order.latest_refund;
@@ -556,7 +560,16 @@ export const canArrangeReturnPickup = (order: Pick<Order, "latest_refund">) => {
 
 export default function JobOrdersPage() {
   const [error, setError] = useState<string | null>(null);
-  const { auth, initialOrders } = usePage().props as any;
+  const pageProps = usePage().props as any;
+  const { auth, initialOrders } = pageProps;
+  const authModuleStates = auth?.shopModules;
+  const shopModules = authModuleStates && typeof authModuleStates === 'object' && Object.keys(authModuleStates).length > 0
+    ? authModuleStates
+    : pageProps.moduleStates;
+  const moduleEnforcementEnabled = auth?.shopModuleEnforcementEnabled
+    ?? pageProps.shopModuleEnforcementEnabled
+    ?? Boolean(shopModules);
+  const logisticsModuleEnabled = canRenderShopModule(shopModules, 'logistics', moduleEnforcementEnabled);
   const userRole = String(auth?.user?.role || '').toUpperCase();
   const userRoles = Array.isArray(auth?.user?.roles)
     ? auth.user.roles.map((role: string) => String(role).toUpperCase())
@@ -713,7 +726,9 @@ export default function JobOrdersPage() {
     return `${base}${trackingPart}${linkPart}`;
   };
 
-  const shopOwnedEligible = selectedOrder?.shopOwnedCoverage?.available === true;
+  const existingShopOwnedShipment = selectedOrder?.carrierCompany?.trim().toLowerCase() === SHOP_OWNED_LOGISTICS.toLowerCase();
+  const shopOwnedEligible = existingShopOwnedShipment
+    || (logisticsModuleEnabled && selectedOrder?.shopOwnedCoverage?.available === true);
 
   if (!canAccessStaffModule) {
     return (
@@ -1124,8 +1139,10 @@ export default function JobOrdersPage() {
     const customerName = String(order.customer || 'Customer').trim() || 'Customer';
     const customerPhone = String(order.phone || '').trim() || 'No phone provided';
     const existingPickup = order.latest_refund || null;
-    const shopOwnedEligible = canSelectShopOwnedReturn(order.shopOwnedCoverage);
     const existingReturnMethod = getReturnDeliveryMethod(existingPickup);
+    const existingShopOwnedReturn = existingReturnMethod === 'shop_owned';
+    const shopOwnedEligible = existingShopOwnedReturn
+      || canSelectShopOwnedReturn(order.shopOwnedCoverage, logisticsModuleEnabled);
     const defaultCarrier = String(
       existingReturnMethod === 'third_party'
         ? (existingPickup?.staff_return_carrier || existingPickup?.customer_return_carrier || '')
@@ -1153,7 +1170,9 @@ export default function JobOrdersPage() {
     ).trim();
     const shopOwnedOptionLabel = shopOwnedEligible
       ? 'Shop-owned logistics'
-      : 'Shop-owned logistics — unavailable (' + getShopOwnedCoverageMessage(order.shopOwnedCoverage) + ')';
+      : 'Shop-owned logistics — unavailable (' + (logisticsModuleEnabled
+        ? getShopOwnedCoverageMessage(order.shopOwnedCoverage)
+        : 'Logistics module is disabled for this shop.') + ')';
 
     const shipmentInput = await Swal.fire({
       title: 'Arrange Return Pickup',
@@ -1260,8 +1279,10 @@ export default function JobOrdersPage() {
       preConfirm: () => {
         const deliveryMethod = (document.getElementById('swal-delivery-method') as HTMLSelectElement | null)?.value || 'third_party';
         if (deliveryMethod === 'shop_owned') {
-          if (!canSelectShopOwnedReturn(order.shopOwnedCoverage)) {
-            Swal.showValidationMessage(getShopOwnedCoverageMessage(order.shopOwnedCoverage));
+          if (!existingShopOwnedReturn && !canSelectShopOwnedReturn(order.shopOwnedCoverage, logisticsModuleEnabled)) {
+            Swal.showValidationMessage(logisticsModuleEnabled
+              ? getShopOwnedCoverageMessage(order.shopOwnedCoverage)
+              : 'Logistics module is disabled for this shop.');
             return null;
           }
 
@@ -1437,16 +1458,17 @@ export default function JobOrdersPage() {
   const handleShipOrder = (order: Order) => {
     shippingRequestTokenRef.current += 1;
     activeShippingOrderIdRef.current = order.id;
-    const shopOwnedEligible = order.shopOwnedCoverage?.available === true;
     const existingCarrier = order.carrierCompany || "";
+    const existingShopOwned = existingCarrier.trim().toLowerCase() === SHOP_OWNED_LOGISTICS.toLowerCase();
+    const canStartShopOwned = logisticsModuleEnabled && order.shopOwnedCoverage?.available === true;
     setIsConfirmingShipping(false);
     setSelectedOrder(order);
     setEta("");
     setEtaPreset(order.eta || "1-2 business days");
     // Prepopulate if values already exist (view-only for shipped orders)
-    setCarrierCompany(existingCarrier === SHOP_OWNED_LOGISTICS && !shopOwnedEligible
-      ? ""
-      : existingCarrier || (shopOwnedEligible ? SHOP_OWNED_LOGISTICS : ""));
+    setCarrierCompany(existingShopOwned
+      ? SHOP_OWNED_LOGISTICS
+      : existingCarrier || (canStartShopOwned ? SHOP_OWNED_LOGISTICS : ""));
     setCarrierName(order.carrierName || "");
     setCarrierPhone(order.carrierPhone || "");
     setTrackingNumber(order.trackingNumber || "");
@@ -1681,11 +1703,15 @@ export default function JobOrdersPage() {
     }
 
     const usesShopOwnedLogistics = carrierCompany === SHOP_OWNED_LOGISTICS;
+    const isExistingShopOwnedShipment = selectedOrder.carrierCompany?.trim().toLowerCase() === SHOP_OWNED_LOGISTICS.toLowerCase();
 
-    if (usesShopOwnedLogistics && selectedOrder.shopOwnedCoverage?.available !== true) {
+    if (usesShopOwnedLogistics && !isExistingShopOwnedShipment
+      && (!logisticsModuleEnabled || selectedOrder.shopOwnedCoverage?.available !== true)) {
       await Swal.fire({
         title: "Shop-owned logistics unavailable",
-        text: getShopOwnedCoverageMessage(selectedOrder.shopOwnedCoverage),
+        text: logisticsModuleEnabled
+          ? getShopOwnedCoverageMessage(selectedOrder.shopOwnedCoverage)
+          : 'Logistics module is disabled for this shop.',
         icon: "warning",
         confirmButtonColor: "#2563eb",
       });
@@ -2567,7 +2593,9 @@ export default function JobOrdersPage() {
                           <path fillRule="evenodd" d="M8.3 2.9a2 2 0 013.4 0l6.1 10.7a2 2 0 01-1.7 3H3.9a2 2 0 01-1.7-3L8.3 2.9zM10 7a1 1 0 00-1 1v3a1 1 0 002 0V8a1 1 0 00-1-1zm0 7a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
                         )}
                       </svg>
-                      <span>{getShopOwnedCoverageMessage(selectedOrder.shopOwnedCoverage)}</span>
+                      <span>{logisticsModuleEnabled
+                        ? getShopOwnedCoverageMessage(selectedOrder.shopOwnedCoverage)
+                        : 'Logistics module is disabled for this shop.'}</span>
                     </div>
                   </div>
 

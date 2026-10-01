@@ -14,6 +14,29 @@ final class ShopModuleRouteCoverageTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_hr_pages_and_manager_approvals_are_classified_by_the_hr_module(): void
+    {
+        $routes = config('shop_modules.routes', []);
+
+        foreach ([
+            'erp.hr',
+            'erp.hr.audit-logs',
+            'erp.manager.leave-approvals',
+            'erp.manager.suspension-approvals',
+            'erp.manager.suspend-approval',
+            'erp.manager.termination-approvals',
+            'erp.manager.rehire-approvals',
+            'hr.dashboard',
+            'hr.employees.reset_mfa',
+            'hr.employees.reset_password',
+        ] as $routeName) {
+            $entry = $routes[$routeName] ?? null;
+
+            $this->assertSame('module', is_array($entry) ? ($entry['classification'] ?? null) : null, $routeName);
+            $this->assertSame(['hr_employees'], is_array($entry) ? ($entry['module_keys'] ?? null) : null, $routeName);
+        }
+    }
+
     public function test_session_starts_before_authentication_on_inventory_api_routes(): void
     {
         $route = RouteFacade::getRoutes()->getByName('inventory.items.index');
