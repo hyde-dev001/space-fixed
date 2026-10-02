@@ -8,15 +8,25 @@ use App\Models\PremiumPlan;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Models\ShopOwnerSubscriptionPayment;
+use App\Models\SuperAdmin;
 use App\Services\PremiumSubscriptionRenewalService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Http;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 final class PremiumBillingLedgerTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
+
+    public function test_premium_success_return_rejects_unsigned_requests(): void
+    {
+        $this->get(route('shop-owner.premium-success-return', ['subscription_id' => 1]))
+            ->assertForbidden();
+    }
 
     public function test_initial_checkout_creates_one_deterministic_pending_ledger_row(): void
     {
@@ -615,7 +625,7 @@ final class PremiumBillingLedgerTest extends TestCase
             ->assertStatus(409);
     }
 
-    public function test_paid_upgrade_uses_the_locked_quote_and_starts_its_term_at_payment_time(): void
+    public function test_paid_upgrade_webhook_then_success_return_is_idempotent_and_uses_the_locked_quote(): void
     {
         $paidAt = now()->startOfSecond();
         $this->travelTo($paidAt);
@@ -655,6 +665,204 @@ final class PremiumBillingLedgerTest extends TestCase
         $this->assertSame('250.00', (string) $payment->fresh()->amount_due);
         $this->assertSame('250.00', (string) $payment->fresh()->amount_paid);
         $this->assertSame('pay_ledger_upgrade_settle', $payment->fresh()->paymongo_payment_id);
+
+        $settledStartsAt = $upgrade->fresh()->starts_at;
+        $settledEndsAt = $upgrade->fresh()->ends_at;
+        $this->fakeCheckoutSession(
+            'cs_ledger_upgrade_settle',
+            'pay_ledger_upgrade_settle',
+            'paid',
+            amountInCentavos: 25000,
+        );
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.premium-success', ['subscription_id' => $upgrade->id]))
+            ->assertRedirect(route('shop-owner.premium-benefits'));
+
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('cancelled', $source->fresh()->status);
+        $this->assertEquals($settledStartsAt, $upgrade->fresh()->starts_at);
+        $this->assertEquals($settledEndsAt, $upgrade->fresh()->ends_at);
+        $this->assertSame('250.00', (string) $payment->fresh()->amount_paid);
+    }
+
+    public function test_paid_upgrade_success_return_settles_the_checkout_once_and_updates_admin_reporting(): void
+    {
+        $paidAt = now()->startOfSecond();
+        $this->travelTo($paidAt);
+        $owner = $this->createOwner();
+        $currentPlan = $this->createPlan('basic', 249);
+        $currentPlan->update(['duration_days' => 15, 'showroom_slot_limit' => 48]);
+        $targetPlan = $this->createPlan('pro', 500.19);
+        $targetPlan->update(['showroom_slot_limit' => 60]);
+        $source = $this->createActiveSubscription($owner, $currentPlan, [
+            'starts_at' => now()->subDays(5),
+            'ends_at' => now()->addDays(10),
+        ]);
+        $providerMetadata = [];
+        $providerSuccessUrl = '';
+        config()->set('services.paymongo.secret_key', 'sk_test_upgrade_return');
+        Http::fake(function ($request) use (&$providerMetadata, &$providerSuccessUrl) {
+            if ($request->method() === 'POST') {
+                $providerMetadata = $request['data']['attributes']['metadata'];
+                $providerSuccessUrl = $request['data']['attributes']['success_url'];
+
+                return Http::response(['data' => [
+                    'id' => 'cs_paid_upgrade_return',
+                    'attributes' => ['checkout_url' => 'https://paymongo.test/cs_paid_upgrade_return'],
+                ]]);
+            }
+
+            return Http::response(['data' => [
+                'id' => 'cs_paid_upgrade_return',
+                'attributes' => [
+                    'payment_status' => 'paid',
+                    'metadata' => $providerMetadata,
+                    'payments' => [
+                        ['id' => 'pay_upgrade_first_failed', 'attributes' => [
+                            'status' => 'failed', 'amount' => 33419, 'currency' => 'PHP',
+                        ]],
+                        ['id' => 'pay_upgrade_retry_paid', 'attributes' => [
+                            'status' => 'paid', 'amount' => 33419, 'currency' => 'PHP',
+                        ]],
+                    ],
+                ],
+            ]]);
+        });
+
+        $checkout = $this->actingAs($owner, 'shop_owner')
+            ->postJson('/api/shop-owner/premium/confirm-upgrade', ['new_plan_id' => $targetPlan->id])
+            ->assertOk()
+            ->assertJsonPath('final_price', 334.19);
+        $target = ShopOwnerSubscription::query()
+            ->where('replaces_subscription_id', $source->id)
+            ->where('status', 'pending')
+            ->sole();
+        $payment = ShopOwnerSubscriptionPayment::query()
+            ->where('subscription_id', $target->id)
+            ->sole();
+
+        Auth::guard('shop_owner')->logout();
+        $this->get($providerSuccessUrl)
+            ->assertRedirect(route('shop-owner.login.form'));
+
+        self::assertSame((string) $owner->id, $providerMetadata['shop_owner_id'] ?? null);
+        self::assertSame($target->paymongo_session_id, $checkout->json('session_id'));
+        self::assertSame('cancelled', $source->fresh()->status);
+        self::assertSame('active', $target->fresh()->status);
+        self::assertSame('paid', $payment->fresh()->status);
+        self::assertSame('334.19', (string) $payment->fresh()->amount_due);
+        self::assertSame('334.19', (string) $payment->fresh()->amount_paid);
+        self::assertSame('pay_upgrade_retry_paid', $payment->fresh()->paymongo_payment_id);
+        self::assertEquals($paidAt, $payment->fresh()->paid_at);
+        self::assertEquals($paidAt, $target->fresh()->starts_at);
+        self::assertEquals($paidAt->copy()->addDays(30), $target->fresh()->ends_at);
+
+        $this->postJson('/api/webhooks/paymongo', $this->checkoutPayload(
+            sessionId: 'cs_paid_upgrade_return',
+            subscription: $target,
+            paymentId: 'pay_upgrade_retry_paid',
+            paymentRecordId: $payment->id,
+            amountInCentavos: 33419,
+            paymentAttempts: [
+                ['id' => 'pay_upgrade_first_failed', 'attributes' => [
+                    'status' => 'failed', 'amount' => 33419, 'currency' => 'PHP',
+                ]],
+                ['id' => 'pay_upgrade_retry_paid', 'attributes' => [
+                    'status' => 'paid', 'amount' => 33419, 'currency' => 'PHP',
+                ]],
+            ],
+        ))->assertOk();
+        $this->actingAs($owner, 'shop_owner')
+            ->get($providerSuccessUrl)
+            ->assertRedirect(route('shop-owner.premium-benefits'));
+        self::assertEquals($paidAt, $payment->fresh()->paid_at);
+        self::assertEquals($paidAt, $target->fresh()->starts_at);
+
+        $this->travel(2)->seconds();
+        $entitled = ShopOwnerSubscription::query()
+            ->where('shop_owner_id', $owner->id)
+            ->showroomEntitled()
+            ->sole();
+        self::assertSame($target->id, $entitled->id);
+        self::assertSame(60, (int) $entitled->showroom_slot_limit);
+
+        $admin = SuperAdmin::factory()->superAdmin()->create();
+        $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.subscriptions.index'))
+            ->assertOk()
+            ->assertInertia(function ($page) use ($target): void {
+                $props = $page->toArray()['props'];
+                $row = collect($props['subscriptions']['data'])->firstWhere('id', $target->id);
+
+                self::assertSame(334.19, (float) $props['stats']['gross_collected']);
+                self::assertSame(334.19, (float) $props['stats']['net_collected']);
+                self::assertSame(334.19, (float) $row['amount_paid']);
+                self::assertSame('active', $row['status']);
+                self::assertNotNull($row['starts_at']);
+                self::assertNotNull($row['ends_at']);
+                self::assertNotNull($row['next_billing_at']);
+            });
+        $this->get(route('admin.subscriptions.history', ['subscription' => $target]))
+            ->assertOk()
+            ->assertJsonPath('payments.data.0.payment_type', 'upgrade')
+            ->assertJsonPath('payments.data.0.amount_paid', 334.19)
+            ->assertJsonPath('payments.data.0.status', 'paid');
+    }
+
+    public function test_reconciliation_settles_legacy_upgrade_metadata_without_provider_owner_id(): void
+    {
+        $owner = $this->createOwner();
+        $sourcePlan = $this->createPlan('legacy-upgrade-basic', 249);
+        $targetPlan = $this->createPlan('legacy-upgrade-pro', 500.19);
+        $source = $this->createActiveSubscription($owner, $sourcePlan, [
+            'ends_at' => now()->addDays(10),
+        ]);
+        $sessionId = 'cs_legacy_upgrade_without_owner';
+        $target = $this->createPendingSubscription($owner, $targetPlan, $sessionId);
+        $target->update(['replaces_subscription_id' => $source->id]);
+        $payment = $this->createPayment($owner, $target, 'upgrade', 334.19, $sessionId);
+        $ledgerKey = ShopOwnerSubscriptionPayment::ledgerKeyFor($target->id, 'upgrade');
+        $payment->update([
+            'ledger_key' => $ledgerKey,
+            'source_subscription_id' => $source->id,
+            'from_premium_plan_id' => $sourcePlan->id,
+            'to_premium_plan_id' => $targetPlan->id,
+        ]);
+        $metadata = [
+            'type' => 'premium_subscription_upgrade',
+            'subscription_id' => (string) $target->id,
+            'source_subscription_id' => (string) $source->id,
+            'plan_code' => $targetPlan->plan_code,
+            'payment_record_id' => (string) $payment->id,
+            'ledger_key' => $ledgerKey,
+        ];
+        config()->set('services.paymongo.secret_key', 'sk_test_legacy_upgrade');
+        Http::fake([
+            "https://api.paymongo.com/v1/checkout_sessions/{$sessionId}" => Http::response(['data' => [
+                'id' => $sessionId,
+                'attributes' => [
+                    'payment_status' => 'paid',
+                    'metadata' => $metadata,
+                    'payments' => [[
+                        'id' => 'pay_legacy_upgrade_paid',
+                        'attributes' => ['status' => 'paid', 'amount' => 33419, 'currency' => 'PHP'],
+                    ]],
+                ],
+            ]]),
+        ]);
+
+        $this->artisan('premium-payments:reconcile-pending', [
+            '--apply' => true,
+            '--shop-owner' => (string) $owner->id,
+        ])->expectsOutputToContain('settled')->assertExitCode(0);
+
+        self::assertSame('paid', $payment->fresh()->status);
+        self::assertSame('334.19', (string) $payment->fresh()->amount_paid);
+        self::assertNotNull($payment->fresh()->paid_at);
+        self::assertSame('active', $target->fresh()->status);
+        self::assertSame('cancelled', $source->fresh()->status);
+        self::assertNotNull($target->fresh()->starts_at);
+        self::assertNotNull($target->fresh()->ends_at);
     }
 
     public function test_zero_charge_upgrade_is_an_explicit_settled_zero_value_ledger_event(): void

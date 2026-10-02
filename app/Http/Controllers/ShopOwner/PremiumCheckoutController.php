@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\URL;
 
 class PremiumCheckoutController extends Controller
 {
@@ -321,7 +322,9 @@ class PremiumCheckoutController extends Controller
 
         $checkoutResult = $this->createCheckoutSession(
             amount: $finalPrice,
-            successUrl: route('shop-owner.premium-success', ['subscription_id' => $pendingSubscription->id]),
+            successUrl: URL::temporarySignedRoute('shop-owner.premium-success-return', now()->addDays(7), [
+                'subscription_id' => $pendingSubscription->id,
+            ]),
             cancelUrl: route('shop-owner.premium-cancel', ['subscription_id' => $pendingSubscription->id]),
             description: 'SoleSpace ' . $targetPlan->name . ' upgrade charge (after prorated credit)',
             lineItemName: 'SoleSpace ' . $targetPlan->name . ' Upgrade',
@@ -329,6 +332,7 @@ class PremiumCheckoutController extends Controller
                 'type' => 'premium_subscription_upgrade',
                 'subscription_id' => (string) $pendingSubscription->id,
                 'source_subscription_id' => (string) $currentSubscription->id,
+                'shop_owner_id' => (string) $shopOwner->id,
                 'payment_record_id' => (string) $payment->id,
                 'plan_code' => $targetPlan->plan_code,
                 'proration_credit' => (string) $prorationCredit,
@@ -509,7 +513,7 @@ class PremiumCheckoutController extends Controller
             return [$subscription, $payment];
         });
 
-        $successUrl  = route('shop-owner.premium-success', [
+        $successUrl  = URL::temporarySignedRoute('shop-owner.premium-success-return', now()->addDays(7), [
             'subscription_id' => $subscription->id,
         ]);
         $cancelUrl   = route('shop-owner.premium-cancel', [

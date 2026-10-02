@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\URL;
 
 class PremiumSubscriptionRenewalService
 {
@@ -122,7 +123,7 @@ class PremiumSubscriptionRenewalService
             return [$renewalSubscription, $payment->fresh()];
         });
 
-        $successUrl = route('shop-owner.premium-success', [
+        $successUrl = URL::temporarySignedRoute('shop-owner.premium-success-return', now()->addDays(7), [
             'subscription_id' => $renewalSubscription->id,
         ]);
         $cancelUrl = route('shop-owner.premium-cancel', [

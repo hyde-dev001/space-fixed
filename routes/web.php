@@ -807,6 +807,68 @@ Route::get('/test-auth', function () {
 
 Route::get('/api/shop-owner/me', [ShopOwnerAuthController::class, 'me'])->middleware('auth:shop_owner')->name('shop-owner.me');
 
+$premiumSuccessReturn = static function (Request $request, \App\Services\PremiumSubscriptionPaymentService $payments) {
+    $subscriptionId = $request->query('subscription_id');
+    $isSignedReturn = $request->routeIs('shop-owner.premium-success-return');
+    $shopOwner = Auth::guard('shop_owner')->user();
+    $subscriptionQuery = \App\Models\ShopOwnerSubscription::query();
+
+    if ($isSignedReturn) {
+        abort_unless($request->hasValidSignature(), 403);
+    } else {
+        abort_unless($shopOwner, 403);
+        $subscriptionQuery->where('shop_owner_id', (int) $shopOwner->id);
+    }
+
+    $subscription = is_numeric($subscriptionId) && (int) $subscriptionId > 0
+        ? $subscriptionQuery->whereKey((int) $subscriptionId)->first()
+        : null;
+    $settled = false;
+
+    if ($subscription && filled($subscription->paymongo_session_id)) {
+        $sessionId = (string) $subscription->paymongo_session_id;
+        $payment = \App\Models\ShopOwnerSubscriptionPayment::query()
+            ->where('subscription_id', $subscription->id)
+            ->where('shop_owner_id', $subscription->shop_owner_id)
+            ->where('gateway', 'paymongo')
+            ->where('paymongo_session_id', $sessionId)
+            ->first();
+
+        if ($payment && in_array($payment->status, ['pending', 'failed', 'paid'], true)) {
+            $settlement = $payments->verifyAndSettleProviderSession($sessionId);
+            $settled = in_array($settlement['result'] ?? null, ['settled', 'already_settled'], true)
+                && $subscription->fresh()->status === 'active';
+        }
+    }
+
+    $canViewBenefits = ! $isSignedReturn
+        || ($shopOwner && $subscription && (int) $shopOwner->id === (int) $subscription->shop_owner_id);
+    $destination = $canViewBenefits
+        ? 'shop-owner.premium-benefits'
+        : 'shop-owner.login.form';
+
+    if ($settled) {
+        return redirect()
+            ->route($destination)
+            ->with('success', 'Payment confirmed. Your premium subscription is now active.');
+    }
+
+    return redirect()
+        ->route($destination)
+        ->with('success', 'Your payment is being verified. Your subscription will activate once PayMongo confirms the payment.')
+        ->with('premium_subscription_id', $subscriptionId);
+};
+
+// New checkouts use the signed public return so payment recovery does not depend on a Shop Owner session.
+Route::get('/shop-owner/premium/success-return', $premiumSuccessReturn)
+    ->middleware('signed')
+    ->name('shop-owner.premium-success-return');
+
+// Keep the authenticated callback for checkout sessions created before signed returns were introduced.
+Route::get('/shop-owner/premium/success', $premiumSuccessReturn)
+    ->middleware('auth:shop_owner')
+    ->name('shop-owner.premium-success');
+
 // Common Routes (for testing/development)
 Route::group([], function () {
     Route::get('/profile', function () {
@@ -1049,47 +1111,6 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
     Route::get('/premium/cancel', function (Request $request) {
         return redirect()->route('shop-owner.premium-benefits');
     })->name('premium-cancel');
-
-    Route::get('/premium/success', function (Request $request) {
-        $subscriptionId = $request->query('subscription_id');
-        $shopOwner = \Illuminate\Support\Facades\Auth::guard('shop_owner')->user();
-        $settled = false;
-
-        if ($shopOwner && is_numeric($subscriptionId) && (int) $subscriptionId > 0) {
-            $subscription = \App\Models\ShopOwnerSubscription::query()
-                ->where('id', (int) $subscriptionId)
-                ->where('shop_owner_id', (int) $shopOwner->id)
-                ->first();
-
-            if ($subscription && filled($subscription->paymongo_session_id)) {
-                $sessionId = (string) $subscription->paymongo_session_id;
-                $payment = \App\Models\ShopOwnerSubscriptionPayment::query()
-                    ->where('subscription_id', $subscription->id)
-                    ->where('shop_owner_id', (int) $shopOwner->id)
-                    ->where('gateway', 'paymongo')
-                    ->where('paymongo_session_id', $sessionId)
-                    ->first();
-
-                if ($payment && in_array($payment->status, ['pending', 'failed', 'paid'], true)) {
-                    $settlement = app(\App\Services\PremiumSubscriptionPaymentService::class)
-                        ->verifyAndSettleProviderSession($sessionId);
-                    $settled = in_array($settlement['result'] ?? null, ['settled', 'already_settled'], true)
-                        && $subscription->fresh()->status === 'active';
-                }
-            }
-        }
-
-        if ($settled) {
-            return redirect()
-                ->route('shop-owner.premium-benefits')
-                ->with('success', 'Payment confirmed. Your premium subscription is now active.');
-        }
-
-        return redirect()
-            ->route('shop-owner.premium-benefits')
-            ->with('success', 'Your payment is being verified. Your subscription will activate once PayMongo confirms the payment.')
-            ->with('premium_subscription_id', $subscriptionId);
-    })->name('premium-success');
 
     // DSS INSIGHTS - Company owners only
     Route::get('/dss-insights', function () {
