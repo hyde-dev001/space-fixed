@@ -383,13 +383,17 @@ class ShipmentLegService
             if ($rider) {
                 $this->activeWork->assertCanAdvanceLeg($rider, $leg);
             }
+            $awaitingProofApproval = $leg->status->value === 'awaiting_proof_approval';
             $this->assertTransitionAllowed(
                 $leg,
-                $leg->requires_delivery_proof ? ['awaiting_proof_approval'] : ['in_transit', 'delivery_attempted'],
+                $leg->requires_delivery_proof || $awaitingProofApproval
+                    ? ['awaiting_proof_approval']
+                    : ['in_transit', 'delivery_attempted'],
                 'delivered'
             );
 
-            if (! $this->proofs->hasRequiredDeliveryProof($leg)) {
+            if (($leg->requires_delivery_proof || $awaitingProofApproval)
+                && ! $this->proofs->hasApprovedDeliveryProof($leg)) {
                 throw ValidationException::withMessages(['proof' => 'Delivery proof is required before marking this leg delivered.']);
             }
 

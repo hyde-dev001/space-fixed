@@ -127,55 +127,83 @@ class SourceShipmentService
 
     public function ensureRefundReturnShipment(OrderRefund $refund): Shipment
     {
-        $refund->loadMissing('order.shopOwner', 'order.address', 'customer');
-        if ($refund->returnDeliveryMethod() === 'third_party') {
-            throw ValidationException::withMessages([
-                'delivery_method' => ['Third-party returns do not create Shop-owned logistics shipments.'],
+        return DB::transaction(function () use ($refund): Shipment {
+            $refund = OrderRefund::query()
+                ->with('order.shopOwner', 'order.address', 'customer')
+                ->lockForUpdate()
+                ->findOrFail($refund->id);
+
+            if ($refund->shop_owner_status !== 'approved' || $refund->finance_status !== 'approved') {
+                throw ValidationException::withMessages([
+                    'finance_status' => ['Staff and Finance approvals are required before arranging a return shipment.'],
+                ]);
+            }
+            if ($refund->returnDeliveryMethod() === 'third_party') {
+                throw ValidationException::withMessages([
+                    'delivery_method' => ['Third-party returns do not create Shop-owned logistics shipments.'],
+                ]);
+            }
+            if ($refund->returnDeliveryMethod() !== 'shop_owned') {
+                throw ValidationException::withMessages([
+                    'delivery_method' => ['Staff must select Shop-owned logistics before requesting a return shipment.'],
+                ]);
+            }
+            if ($refund->return_source !== 'staff'
+                || ! in_array($refund->return_status, ['pending_staff_pickup', 'in_transit'], true)) {
+                throw ValidationException::withMessages([
+                    'return_status' => ['Staff must arrange the Shop-owned return after both approvals.'],
+                ]);
+            }
+
+            $existing = $this->findExisting(
+                'order_refund',
+                (int) $refund->id,
+                'refund_return',
+                (int) $refund->shop_owner_id,
+                activeOnly: true,
+            );
+            if ($existing) {
+                return $existing;
+            }
+
+            $order = $refund->order;
+            $address = $order?->address;
+            $sourceAttempt = (int) Shipment::query()
+                ->where('source_type', 'order_refund')
+                ->where('source_id', (int) $refund->id)
+                ->where('purpose', 'refund_return')
+                ->max('source_attempt') + 1;
+
+            return $this->shipments->requestShipment([
+                'shop_owner_id' => (int) $refund->shop_owner_id,
+                'source_type' => 'order_refund',
+                'source_id' => (int) $refund->id,
+                'purpose' => 'refund_return',
+                'source_attempt' => $sourceAttempt,
+                'legs' => [[
+                    'leg_type' => 'return_to_shop',
+                    'origin_snapshot' => [
+                        'type' => 'customer',
+                        'name' => (string) ($refund->customer?->name ?? $order?->customer_name ?? 'Customer'),
+                        'phone' => (string) ($order?->customer_phone ?? ''),
+                        'address' => (string) ($order?->full_shipping_address ?? $order?->customer_address ?? ''),
+                        'latitude' => $address?->latitude !== null ? (float) $address->latitude : null,
+                        'longitude' => $address?->longitude !== null ? (float) $address->longitude : null,
+                    ],
+                    'destination_snapshot' => [
+                        'type' => 'shop',
+                        'name' => (string) ($order?->shopOwner?->business_name ?? 'Shop'),
+                        'address' => (string) ($order?->shopOwner?->business_address ?? ''),
+                        'latitude' => $order?->shopOwner?->shop_latitude !== null
+                            ? (float) $order->shopOwner->shop_latitude
+                            : null,
+                        'longitude' => $order?->shopOwner?->shop_longitude !== null
+                            ? (float) $order->shopOwner->shop_longitude
+                            : null,
+                    ],
+                ]],
             ]);
-        }
-
-        $existing = $this->findExisting(
-            'order_refund',
-            (int) $refund->id,
-            'refund_return',
-            (int) $refund->shop_owner_id,
-            activeOnly: true,
-        );
-        if ($existing) {
-            return $existing;
-        }
-
-        $order = $refund->order;
-        $address = $order?->address;
-
-        return $this->shipments->requestShipment([
-            'shop_owner_id' => (int) $refund->shop_owner_id,
-            'source_type' => 'order_refund',
-            'source_id' => (int) $refund->id,
-            'purpose' => 'refund_return',
-            'legs' => [[
-                'leg_type' => 'return_to_shop',
-                'origin_snapshot' => [
-                    'type' => 'customer',
-                    'name' => (string) ($refund->customer?->name ?? $order?->customer_name ?? 'Customer'),
-                    'phone' => (string) ($order?->customer_phone ?? ''),
-                    'address' => (string) ($order?->full_shipping_address ?? $order?->customer_address ?? ''),
-                    'latitude' => $address?->latitude !== null ? (float) $address->latitude : null,
-                    'longitude' => $address?->longitude !== null ? (float) $address->longitude : null,
-                ],
-                'destination_snapshot' => [
-                    'type' => 'shop',
-                    'name' => (string) ($order?->shopOwner?->business_name ?? 'Shop'),
-                    'address' => (string) ($order?->shopOwner?->business_address ?? ''),
-                    'latitude' => $order?->shopOwner?->shop_latitude !== null
-                        ? (float) $order->shopOwner->shop_latitude
-                        : null,
-                    'longitude' => $order?->shopOwner?->shop_longitude !== null
-                        ? (float) $order->shopOwner->shop_longitude
-                        : null,
-                ],
-            ]],
-        ]);
+        });
     }
 
     public function ensureRepairInboundShipment(RepairRequest $repair): Shipment

@@ -20,4 +20,10 @@ describe("Create Invoice layout", () => {
     );
     expect(createInvoice).not.toContain("min-h-screen bg-gray-50");
   });
+
+  it("uses the shared invoice mutation so the invoice list query is invalidated after creation", () => {
+    expect(createInvoice).toContain("useCreateInvoice");
+    expect(createInvoice).toContain("createInvoice.mutateAsync(invoiceData)");
+    expect(createInvoice).not.toContain('api.post("/api/finance/invoices"');
+  });
 });

@@ -10,6 +10,7 @@ use App\Models\ShopOwnerSubscription;
 use App\Models\ShopOwnerSubscriptionPayment;
 use App\Models\ShopOwnerSubscriptionRefund;
 use App\Models\SuperAdmin;
+use App\Services\PremiumSubscriptionPaymentService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
@@ -127,6 +128,69 @@ final class SubscriptionManagementScaleTest extends TestCase
                 self::assertSame(498.0, (float) $stats['gross_collected']);
                 self::assertSame(498.0, (float) $stats['total_revenue']);
                 self::assertSame(2, $props['subscriptions']['total']);
+            });
+    }
+
+    public function test_verified_subscription_settlement_populates_admin_amount_and_revenue_cards(): void
+    {
+        $admin = SuperAdmin::factory()->superAdmin()->create();
+        $plan = $this->createPlan();
+        $owner = ShopOwner::factory()->approved()->create();
+        $sessionId = 'cs_admin_reporting_settlement';
+        $subscription = $this->createSubscription($owner, $plan, [
+            'paymongo_session_id' => $sessionId,
+            'paid_amount' => 0,
+        ]);
+        $payment = $this->createPayment($owner, $subscription, 'pending', 0);
+        $ledgerKey = ShopOwnerSubscriptionPayment::ledgerKeyFor($subscription->id, 'new_subscription');
+        $payment->update([
+            'ledger_key' => $ledgerKey,
+            'paymongo_session_id' => $sessionId,
+            'paymongo_payment_id' => null,
+            'amount_paid' => null,
+            'metadata' => [
+                'type' => 'premium_subscription',
+                'payment_record_id' => (string) $payment->id,
+                'ledger_key' => $ledgerKey,
+            ],
+        ]);
+        $subscription->update(['paymongo_session_id' => $sessionId]);
+
+        $settlement = app(PremiumSubscriptionPaymentService::class)->settleCheckoutSession([
+            'id' => $sessionId,
+            'attributes' => [
+                'payment_status' => 'paid',
+                'metadata' => [
+                    'type' => 'premium_subscription',
+                    'subscription_id' => (string) $subscription->id,
+                    'shop_owner_id' => (string) $owner->id,
+                    'plan_code' => $plan->plan_code,
+                    'payment_record_id' => (string) $payment->id,
+                    'ledger_key' => $ledgerKey,
+                ],
+                'payments' => [[
+                    'id' => 'pay_admin_reporting_settlement',
+                    'attributes' => [
+                        'status' => 'paid',
+                        'amount' => 24900,
+                        'currency' => 'PHP',
+                    ],
+                ]],
+            ],
+        ]);
+        self::assertSame('settled', $settlement['result']);
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.subscriptions.index'))
+            ->assertOk()
+            ->assertInertia(function ($page) use ($subscription): void {
+                $props = $page->toArray()['props'];
+                $row = collect($props['subscriptions']['data'])->firstWhere('id', $subscription->id);
+
+                self::assertSame(249.0, (float) $props['stats']['gross_collected']);
+                self::assertSame(249.0, (float) $props['stats']['net_collected']);
+                self::assertSame(249.0, (float) $row['amount_paid']);
+                self::assertSame(249.0, (float) $row['net_collected']);
             });
     }
 

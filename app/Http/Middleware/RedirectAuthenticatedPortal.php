@@ -13,7 +13,7 @@ final class RedirectAuthenticatedPortal
     public function handle(Request $request, Closure $next): Response
     {
         if (Auth::guard('super_admin')->check()) {
-            return redirect('/admin');
+            return redirect()->route('admin.system-monitoring');
         }
 
         if (Auth::guard('shop_owner')->check()) {

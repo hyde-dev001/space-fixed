@@ -2,8 +2,7 @@ import MonochromeSelect from "@/components/form/Select";
 import { Head, router, usePage } from "@inertiajs/react";
 import React, { useMemo, useState, useEffect } from "react";
 import Swal from "sweetalert2";
-import { useTaxRates } from "../../../hooks/useFinanceQueries";
-import { useFinanceApi } from "../../../hooks/useFinanceApi";
+import { useCreateInvoice, useTaxRates } from "../../../hooks/useFinanceQueries";
 
 
 type TaxRate = {
@@ -74,7 +73,7 @@ export default function FinanceCreateInvoice() {
 	const { auth, ownerMode: pageOwnerMode } = usePage().props as any;
 	const ownerMode = pageOwnerMode === true || auth?.erpActor?.ownerMode === true;
 	const invoicesUrl = ownerMode ? '/shop-owner/erp/finance/invoices' : '/finance?section=invoice-generation';
-	const api = useFinanceApi();
+	const createInvoice = useCreateInvoice();
 	const [rows, setRows] = useState<ProductRow[]>([]);
 	const [editingRow, setEditingRow] = useState<ProductRow | null>(null);
 	const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -327,10 +326,7 @@ export default function FinanceCreateInvoice() {
 				items: items,
 			};
 
-			const response = await api.post("/api/finance/invoices", invoiceData);
-			if (!response.ok) {
-				throw new Error(response.error || "Failed to create invoice");
-			}
+			await createInvoice.mutateAsync(invoiceData);
 
 			await Swal.fire({
 				title: "Invoice saved!",

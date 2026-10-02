@@ -17,7 +17,6 @@ use App\Enums\NotificationType;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 
 class PaymongoWebhookController extends Controller
 {
@@ -373,26 +372,31 @@ class PaymongoWebhookController extends Controller
         }
     }
 
-    /**
-     * Handle checkout_session.payment.paid — activates a premium subscription.
-     *
-     * Lookup order:
-     *   1. By paymongo_session_id stored at checkout creation.
-     *   2. Fallback: by subscription_id embedded in session metadata.
-     *
-     * Idempotency: the row is locked inside a DB transaction; only rows in
-     * 'pending' status are transitioned — all other statuses are skipped.
-     */
+    /** Settle provider-confirmed premium payments through the shared ledger service. */
     private function handleCheckoutSessionPaid($eventData)
     {
         $sessionId  = $eventData['id'] ?? null;
         $attributes = $eventData['attributes'] ?? [];
-        $metadata   = $attributes['metadata'] ?? [];
-        $payments   = $attributes['payments'] ?? [];
-        $paymentId  = $payments[0]['id'] ?? null;
-        $paymentAttributes = $payments[0]['attributes'] ?? [];
-        $paidAmount = $this->extractPaidAmount($attributes, $paymentAttributes);
-        $providerCurrency = strtoupper((string) ($paymentAttributes['currency'] ?? $attributes['currency'] ?? ''));
+        $payments   = is_array($attributes['payments'] ?? null) ? $attributes['payments'] : [];
+        $paidAttempts = array_values(array_filter($payments, fn ($attempt) =>
+            is_array($attempt)
+            && strtolower((string) data_get($attempt, 'attributes.status')) === 'paid'
+        ));
+        if (count($paidAttempts) !== 1) {
+            Log::warning('PayMongo checkout paid event did not identify exactly one paid attempt', [
+                'session_id' => $sessionId,
+                'paid_attempt_count' => count($paidAttempts),
+            ]);
+
+            return response()->json(['message' => 'No single successful payment attempt'], 200);
+        }
+
+        $successfulAttempt = $paidAttempts[0];
+        $paymentId = $successfulAttempt['id'] ?? null;
+        $paymentAttributes = $successfulAttempt['attributes'] ?? [];
+        $rawAmount = $paymentAttributes['amount'] ?? null;
+        $paidAmount = is_numeric($rawAmount) ? round((float) $rawAmount / 100, 2) : null;
+        $providerCurrency = strtoupper((string) ($paymentAttributes['currency'] ?? ''));
 
         $platformPayment = app(\App\Services\PlatformFeePaymentService::class)->settleFromWebhook(
             checkoutId: (string) ($sessionId ?? ''),
@@ -417,243 +421,20 @@ class PaymongoWebhookController extends Controller
             return $this->handleRepairPayment($repairSession->repairRequest, $paymentId, $repairSession);
         }
 
-        $payment = $this->resolveSubscriptionPayment($sessionId, $metadata);
-        if (!$payment) {
-            Log::warning('Premium payment record not found for checkout_session.payment.paid', [
-                'session_id' => $sessionId,
-            ]);
-
-            return response()->json(['message' => 'Payment record not found'], 200);
-        }
-
-        // Resolve the subscription record (outside the transaction is fine for the lookup)
-        $subscription = $this->resolveSubscription($sessionId, $metadata);
-
-        if (!$subscription || (int) $payment->subscription_id !== (int) $subscription->id) {
-            Log::warning('Premium subscription not found for checkout_session.payment.paid', [
-                'session_id' => $sessionId,
-            ]);
-            return response()->json(['message' => 'Subscription not found'], 200);
-        }
-
-        $activation = DB::transaction(function () use ($subscription, $payment, $sessionId, $paymentId, $paidAmount, $providerCurrency, $metadata) {
-            // Lock the specific row; prevents duplicate activation under concurrent webhooks
-            $lockedPayment = ShopOwnerSubscriptionPayment::query()
-                ->whereKey($payment->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-            $locked = ShopOwnerSubscription::where('id', $subscription->id)
-                ->lockForUpdate()
-                ->firstOrFail();
-            $metadataSubscriptionId = array_key_exists('subscription_id', $metadata)
-                && is_scalar($metadata['subscription_id'])
-                ? (string) $metadata['subscription_id']
-                : (string) $locked->id;
-            $metadataShopOwnerId = array_key_exists('shop_owner_id', $metadata)
-                && is_scalar($metadata['shop_owner_id'])
-                ? (string) $metadata['shop_owner_id']
-                : (string) $locked->shop_owner_id;
-
-            if ((int) $lockedPayment->subscription_id !== (int) $locked->id
-                || (int) $lockedPayment->shop_owner_id !== (int) $locked->shop_owner_id
-                || ($sessionId && $lockedPayment->paymongo_session_id && $lockedPayment->paymongo_session_id !== $sessionId)
-                || ($sessionId && $locked->paymongo_session_id && $locked->paymongo_session_id !== $sessionId)
-                || $metadataSubscriptionId !== (string) $locked->id
-                || $metadataShopOwnerId !== (string) $locked->shop_owner_id
-                || ! is_string($paymentId)
-                || trim($paymentId) === ''
-                || (filled($lockedPayment->paymongo_payment_id) && $lockedPayment->paymongo_payment_id !== $paymentId)
-                || (filled($locked->paymongo_payment_id) && $locked->paymongo_payment_id !== $paymentId)
-                || ($paidAmount === null)
-                || $providerCurrency === ''
-                || $providerCurrency !== strtoupper((string) $lockedPayment->currency)
-                || abs($paidAmount - (float) $lockedPayment->amount_due) > 0.009) {
-                Log::warning('Premium payment webhook failed local verification', [
-                    'subscription_id' => $locked->id,
-                    'payment_record_id' => $lockedPayment->id,
-                    'session_id' => $sessionId,
-                ]);
-
-                return false;
-            }
-
-            // Idempotency: an already-paid ledger row is a duplicate webhook.
-            if ($lockedPayment->status === 'paid') {
-                Log::info('Premium subscription payment already recorded — duplicate webhook ignored', [
-                    'subscription_id' => $locked->id,
-                    'session_id'      => $sessionId,
-                ]);
-                return false;
-            }
-
-            // A paid event may settle an active subscription whose success return
-            // arrived first, but must never revive a terminal subscription.
-            if ($lockedPayment->status !== 'pending' || ! in_array($locked->status, ['pending', 'active'], true)) {
-                Log::warning('Premium subscription in non-activatable state — skipping', [
-                    'subscription_id' => $locked->id,
-                    'current_status'  => $locked->status,
-                    'session_id'      => $sessionId,
-                ]);
-                return false;
-            }
-
-            if ($locked->status === 'active') {
-                $lockedPayment->update([
-                    'paymongo_payment_id' => $paymentId,
-                    'status' => 'paid',
-                    'amount_paid' => $paidAmount,
-                    'paid_at' => now(),
-                ]);
-                $locked->update([
-                    'paymongo_payment_id' => $paymentId,
-                    'paid_amount' => $paidAmount,
-                ]);
-
-                activity()
-                    ->performedOn($locked)
-                    ->withProperties([
-                        'subscription_id' => $locked->id,
-                        'payment_id' => $paymentId,
-                        'session_id' => $sessionId,
-                        'paid_amount' => $paidAmount,
-                    ])
-                    ->log('Premium subscription payment reconciled: '.$locked->plan_code);
-
-                return ['subscription' => $locked->fresh(), 'newly_activated' => false];
-            }
-
-            $startsAt = now();
-            $locked->loadMissing('premiumPlan');
-            $durationDays = max(1, (int) ($locked->premiumPlan?->duration_days ?? 30));
-            $endsAt = $startsAt->copy()->addDays($durationDays);
-
-            $updatePayload = [
-                'status'                => 'active',
-                'paymongo_payment_id'   => $paymentId,
-                'paid_amount'           => $paidAmount,
-                'starts_at'             => $startsAt,
-                'ends_at'               => $endsAt,
-            ];
-
-            if (
-                Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
-                && Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status')
-            ) {
-                $updatePayload['auto_renew'] = true;
-                $updatePayload['auto_renew_status'] = ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED;
-            }
-
-            $lockedPayment->update([
-                'paymongo_payment_id' => $paymentId,
-                'status' => 'paid',
-                'amount_paid' => $paidAmount,
-                'paid_at' => now(),
-            ]);
-            $locked->update($updatePayload);
-
-            // Upgrade path: once the new paid subscription is active, immediately end
-            // access for the previous subscription and clear stale pending downgrade data.
-            if ($locked->replaces_subscription_id) {
-                $source = ShopOwnerSubscription::query()
-                    ->where('id', (int) $locked->replaces_subscription_id)
-                    ->lockForUpdate()
-                    ->first();
-
-                if ($source && $source->status === 'active') {
-                    $sourceUpdate = [
-                        'status' => 'cancelled',
-                        'ends_at' => now(),
-                    ];
-
-                    if (
-                        Schema::hasColumn('shop_owner_subscriptions', 'auto_renew')
-                        && Schema::hasColumn('shop_owner_subscriptions', 'auto_renew_status')
-                    ) {
-                        $sourceUpdate['auto_renew'] = false;
-                        $sourceUpdate['auto_renew_status'] = ShopOwnerSubscription::AUTO_RENEW_STATUS_DISABLED;
-                    }
-
-                    if (Schema::hasColumn('shop_owner_subscriptions', 'pending_premium_plan_id')) {
-                        $sourceUpdate['pending_premium_plan_id'] = null;
-                    }
-
-                    if (Schema::hasColumn('shop_owner_subscriptions', 'pending_plan_effective_at')) {
-                        $sourceUpdate['pending_plan_effective_at'] = null;
-                    }
-
-                    $source->update($sourceUpdate);
-                }
-            }
-
-            activity()
-                ->performedOn($locked)
-                ->withProperties([
-                    'subscription_id' => $locked->id,
-                    'shop_owner_id'   => $locked->shop_owner_id,
-                    'plan_code'       => $locked->plan_code,
-                    'starts_at'       => $startsAt->toDateTimeString(),
-                    'ends_at'         => $endsAt->toDateTimeString(),
-                    'payment_id'      => $paymentId,
-                    'session_id'      => $sessionId,
-                    'paid_amount'     => $paidAmount,
-                ])
-                ->log('Premium subscription activated: ' . $locked->plan_code);
-
-            Log::info('Premium subscription activated', [
-                'subscription_id' => $locked->id,
-                'shop_owner_id'   => $locked->shop_owner_id,
-                'plan_code'       => $locked->plan_code,
-                'ends_at'         => $endsAt->toDateTimeString(),
-                'payment_id'      => $paymentId,
-                'session_id'      => $sessionId,
-            ]);
-
-            return ['subscription' => $locked->fresh(), 'newly_activated' => true];
-        });
-
-        // Send in-app + email notification to the shop owner (outside the transaction,
-        // so a notification failure never rolls back the subscription activation)
-        if ($activation && $activation['newly_activated']) {
-            $activatedSubscription = $activation['subscription'];
-
-            try {
-                $appUrl = rtrim(config('app.url'), '/');
-                $planLabel = ucfirst($activatedSubscription->plan_code);
-
-                app(NotificationService::class)->sendToShopOwner(
-                    $activatedSubscription->shop_owner_id,
-                    NotificationType::PAYMENT_RECEIVED,
-                    'Premium Subscription Activated',
-                    "Your SoleSpace {$planLabel} subscription is now active and will continue until you cancel it.",
-                    [
-                        'subscription_id' => $activatedSubscription->id,
-                        'plan_code'       => $activatedSubscription->plan_code,
-                        'ends_at'         => $activatedSubscription->ends_at?->toISOString(),
-                    ],
-                    $appUrl . '/shop-owner/premium/benefits',
-                    'high'
-                );
-            } catch (\Exception $e) {
-                // Never let a notification error surface as a webhook failure
-                Log::error('Failed to send premium activation notification', [
-                    'subscription_id' => $activatedSubscription->id,
-                    'exception_class' => $e::class,
-                ]);
-            }
-        }
+        $settlement = app(\App\Services\PremiumSubscriptionPaymentService::class)
+            ->settleCheckoutSession($eventData);
 
         return response()->json([
-            'message' => ! $activation
-                ? 'Already processed'
-                : ($activation['newly_activated'] ? 'Subscription activated' : 'Payment recorded'),
+            'message' => match ($settlement['result'] ?? 'unsafe') {
+                'settled' => 'Subscription payment settled',
+                'already_settled' => 'Subscription payment was already settled',
+                'paid_requires_review' => 'Payment recorded for review',
+                default => 'Subscription payment was not settled',
+            },
         ], 200);
     }
 
-    /**
-     * Handle checkout_session.payment.failed — marks the pending subscription as failed.
-     *
-     * Idempotent: only updates rows that are currently 'pending'.
-     */
+    /** A failed attempt is retryable; only an expired checkout is terminal. */
     private function handleCheckoutSessionFailed($eventData, string $reason = 'paymongo_payment_failed')
     {
         $sessionId = $eventData['id'] ?? null;
@@ -709,6 +490,16 @@ class PaymongoWebhookController extends Controller
                     || (string) $metadata['shop_owner_id'] !== (string) $subscription->shop_owner_id))
         ) {
             return response()->json(['message' => 'Subscription webhook binding mismatch'], 200);
+        }
+
+        if ($reason !== 'paymongo_checkout_expired') {
+            Log::info('Premium checkout payment attempt failed; session remains retryable', [
+                'subscription_id' => $subscription->id,
+                'payment_record_id' => $payment->id,
+                'session_id' => $sessionId,
+            ]);
+
+            return response()->json(['message' => 'Payment attempt failed; checkout remains retryable'], 200);
         }
 
         $failed = DB::transaction(function () use ($subscription, $payment, $sessionId) {
@@ -832,21 +623,6 @@ class PaymongoWebhookController extends Controller
         }
 
         return null;
-    }
-
-    private function extractPaidAmount(array $sessionAttributes, array $paymentAttributes): ?float
-    {
-        $rawAmount = $paymentAttributes['amount']
-            ?? $sessionAttributes['payments'][0]['attributes']['amount']
-            ?? $sessionAttributes['amount_total']
-            ?? null;
-
-        if (!is_numeric($rawAmount)) {
-            return null;
-        }
-
-        // PayMongo amounts are usually in centavos
-        return round(((float) $rawAmount) / 100, 2);
     }
 
     private function handleRefundEvent(string $eventType, array $eventData)

@@ -20,6 +20,7 @@ class Shipment extends Model
         'source_type',
         'source_id',
         'purpose',
+        'source_attempt',
         'status',
         'requested_by_type',
         'requested_by_id',
@@ -29,6 +30,7 @@ class Shipment extends Model
 
     protected $casts = [
         'shipment_number' => 'integer',
+        'source_attempt' => 'integer',
         'status' => ShipmentStatus::class,
         'completed_at' => 'datetime',
         'cancelled_at' => 'datetime',

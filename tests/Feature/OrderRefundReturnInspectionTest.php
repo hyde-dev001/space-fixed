@@ -6,10 +6,16 @@ use App\Models\Order;
 use App\Models\OrderItem;
 use App\Models\OrderRefund;
 use App\Models\OrderRefundItem;
+use App\Models\InventoryColorVariant;
+use App\Models\InventoryItem;
+use App\Models\InventorySize;
 use App\Models\Logistics\Shipment;
 use App\Models\Product;
+use App\Models\ProductVariant;
+use App\Models\StockMovement;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Services\RefundInventoryDispositionService;
 use App\Services\OrderRefundService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -111,6 +117,7 @@ class OrderRefundReturnInspectionTest extends TestCase
     public function test_individual_damaged_return_is_written_off_without_restocking(): void
     {
         [$refund, $staff, $line, $product] = $this->fixture('individual');
+        [$inventory, $color, $size, $variant] = $this->linkVariantInventory($line, $product, 7);
         $startingStock = (int) $product->stock_quantity;
 
         $result = app(OrderRefundService::class)->confirmReturnReceived(
@@ -129,6 +136,61 @@ class OrderRefundReturnInspectionTest extends TestCase
             'inventory_action' => 'write_off',
         ]);
         $this->assertSame($startingStock, (int) $product->fresh()->stock_quantity);
+        $this->assertSame(7, (int) $inventory->fresh()->available_quantity);
+        $this->assertSame(7, (int) $color->fresh()->quantity);
+        $this->assertSame(7, (int) $size->fresh()->quantity);
+        $this->assertSame(7, (int) $variant->fresh()->quantity);
+        $this->assertDatabaseMissing('stock_movements', [
+            'reference_type' => 'order_refund_item',
+            'reference_id' => $line->id,
+        ]);
+    }
+
+    public function test_resellable_third_party_return_restores_exact_variant_and_records_one_movement(): void
+    {
+        [$refund, $staff, $line, $product] = $this->fixture('individual');
+        [$inventory, $color, $size, $variant] = $this->linkVariantInventory($line, $product, 7);
+        $line->update(['requested_qty' => 2, 'approved_qty' => 2]);
+        $refund->update([
+            'return_status' => 'in_transit',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'LBC',
+            'staff_return_tracking_number' => 'LBC-RETURN-2',
+        ]);
+
+        $result = app(OrderRefundService::class)->confirmReturnReceived(
+            $refund->fresh(),
+            $staff->id,
+            lineDispositions: [[
+                'order_item_id' => $line->order_item_id,
+                'approved_qty' => 2,
+                'inspection_disposition' => 'resellable',
+            ]],
+        );
+
+        $this->assertSame('received', $result['result']);
+        $this->assertSame(9, (int) $product->fresh()->stock_quantity);
+        $this->assertSame(9, (int) $inventory->fresh()->available_quantity);
+        $this->assertSame(9, (int) $color->fresh()->quantity);
+        $this->assertSame(9, (int) $size->fresh()->quantity);
+        $this->assertSame(9, (int) $variant->fresh()->quantity);
+        $this->assertDatabaseHas('stock_movements', [
+            'inventory_item_id' => $inventory->id,
+            'movement_type' => 'return',
+            'quantity_change' => 2,
+            'quantity_before' => 7,
+            'quantity_after' => 9,
+            'reference_type' => 'order_refund_item',
+            'reference_id' => $line->id,
+        ]);
+
+        app(RefundInventoryDispositionService::class)->applyOrderLine($line->fresh());
+
+        $this->assertSame(1, StockMovement::query()
+            ->where('reference_type', 'order_refund_item')
+            ->where('reference_id', $line->id)
+            ->count());
+        $this->assertSame(9, (int) $inventory->fresh()->available_quantity);
     }
 
     public function test_individual_return_cannot_be_confirmed_before_customer_submits_shipment(): void
@@ -457,5 +519,46 @@ class OrderRefundReturnInspectionTest extends TestCase
             'approved_qty' => 1,
             'inspection_disposition' => 'resellable',
         ];
+    }
+
+    private function linkVariantInventory(OrderRefundItem $line, Product $product, int $quantity): array
+    {
+        $variant = ProductVariant::query()->create([
+            'product_id' => $product->id,
+            'size' => '11',
+            'color' => 'Black',
+            'sku' => 'RETURN-'.$product->id,
+            'quantity' => $quantity,
+            'is_active' => true,
+        ]);
+        $inventory = InventoryItem::factory()->create([
+            'product_id' => $product->id,
+            'shop_owner_id' => $product->shop_owner_id,
+            'name' => $product->name,
+            'category' => 'shoes',
+            'available_quantity' => $quantity,
+        ]);
+        $color = InventoryColorVariant::query()->create([
+            'inventory_item_id' => $inventory->id,
+            'color_name' => 'Black',
+            'quantity' => $quantity,
+        ]);
+        $size = InventorySize::query()->create([
+            'inventory_item_id' => $inventory->id,
+            'inventory_color_variant_id' => $color->id,
+            'size' => '11',
+            'size_system' => 'US',
+            'quantity' => $quantity,
+        ]);
+
+        $line->orderItem()->update([
+            'product_variant_id' => $variant->id,
+            'size' => '11',
+            'color' => 'Black',
+        ]);
+        $line->update(['product_variant_id' => $variant->id]);
+        $product->update(['stock_quantity' => $quantity]);
+
+        return [$inventory, $color, $size, $variant];
     }
 }

@@ -104,6 +104,38 @@ final class PremiumBillingLedgerTest extends TestCase
         $this->assertSame('cs_ledger_renewal', $payment->paymongo_session_id);
     }
 
+    public function test_paid_renewal_webhook_settles_its_child_ledger_without_ending_the_source(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-paid-renewal', 399);
+        $source = $this->createActiveSubscription($owner, $plan, [
+            'ends_at' => now()->addDay(),
+        ]);
+        Http::fake(['https://api.paymongo.com/v1/checkout_sessions' => Http::response([
+            'data' => [
+                'id' => 'cs_ledger_paid_renewal',
+                'attributes' => ['checkout_url' => 'https://paymongo.test/cs_ledger_paid_renewal'],
+            ],
+        ])]);
+
+        $result = app(PremiumSubscriptionRenewalService::class)->createRenewalCheckout($source);
+        $renewal = $result['renewal_subscription'];
+        $payment = ShopOwnerSubscriptionPayment::query()->where('subscription_id', $renewal->id)->sole();
+
+        $this->postJson('/api/webhooks/paymongo', $this->checkoutPayload(
+            sessionId: 'cs_ledger_paid_renewal',
+            subscription: $renewal,
+            paymentId: 'pay_ledger_paid_renewal',
+            paymentRecordId: $payment->id,
+            amountInCentavos: 39900,
+        ))->assertOk();
+
+        $this->assertSame('active', $source->fresh()->status);
+        $this->assertSame('active', $renewal->fresh()->status);
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('399.00', (string) $payment->fresh()->amount_paid);
+    }
+
     public function test_renewal_provider_exception_fails_both_new_rows_without_exposing_provider_error(): void
     {
         $owner = $this->createOwner();
@@ -133,7 +165,7 @@ final class PremiumBillingLedgerTest extends TestCase
         $this->assertStringNotContainsString('renewal provider secret must not escape', json_encode($result));
     }
 
-    public function test_paid_and_failed_webhooks_finalize_their_existing_ledger_rows(): void
+    public function test_paid_webhook_settles_and_failed_attempt_leaves_the_checkout_retryable(): void
     {
         $owner = $this->createOwner();
         $plan = $this->createPlan('ledger-webhooks', 249);
@@ -162,8 +194,28 @@ final class PremiumBillingLedgerTest extends TestCase
             paymentRecordId: $failedPayment->id,
         ))->assertOk();
 
-        $this->assertSame('failed', $failedSubscription->fresh()->status);
-        $this->assertSame('failed', $failedPayment->fresh()->status);
+        $this->assertSame('pending', $failedSubscription->fresh()->status);
+        $this->assertSame('pending', $failedPayment->fresh()->status);
+
+        $this->postJson('/api/webhooks/paymongo', $this->checkoutPayload(
+            sessionId: 'cs_ledger_failed',
+            subscription: $failedSubscription,
+            paymentId: 'pay_ledger_retry_succeeded',
+            paymentRecordId: $failedPayment->id,
+            amountInCentavos: 24900,
+            paymentAttempts: [
+                ['id' => 'pay_ledger_retry_failed', 'attributes' => [
+                    'status' => 'failed', 'amount' => 24900, 'currency' => 'PHP',
+                ]],
+                ['id' => 'pay_ledger_retry_succeeded', 'attributes' => [
+                    'status' => 'paid', 'amount' => 24900, 'currency' => 'PHP',
+                ]],
+            ],
+        ))->assertOk();
+
+        $this->assertSame('active', $failedSubscription->fresh()->status);
+        $this->assertSame('paid', $failedPayment->fresh()->status);
+        $this->assertSame('pay_ledger_retry_succeeded', $failedPayment->fresh()->paymongo_payment_id);
     }
 
     public function test_paid_webhook_repairs_an_active_subscription_with_pending_ledger(): void
@@ -292,6 +344,139 @@ final class PremiumBillingLedgerTest extends TestCase
         }
     }
 
+    public function test_pending_payment_reconciliation_is_dry_run_by_default_and_can_apply_a_verified_payment(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-reconciliation', 249);
+        $subscription = $this->createPendingSubscription($owner, $plan, 'cs_ledger_reconciliation');
+        $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, 'cs_ledger_reconciliation');
+        $this->fakeCheckoutSession('cs_ledger_reconciliation', 'pay_ledger_reconciliation', 'paid');
+
+        $this->artisan('premium-payments:reconcile-pending')
+            ->expectsOutputToContain('would_settle')
+            ->assertExitCode(0);
+        $this->assertSame('pending', $payment->fresh()->status);
+        $this->assertSame('pending', $subscription->fresh()->status);
+
+        $this->artisan('premium-payments:reconcile-pending', ['--apply' => true])
+            ->expectsOutputToContain('settled')
+            ->assertExitCode(0);
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('active', $subscription->fresh()->status);
+        $this->assertSame('pay_ledger_reconciliation', $payment->fresh()->paymongo_payment_id);
+
+        $unpaidSubscription = $this->createPendingSubscription($owner, $plan, 'cs_ledger_reconciliation_unpaid');
+        $unpaidPayment = $this->createPayment($owner, $unpaidSubscription, 'new_subscription', 249, 'cs_ledger_reconciliation_unpaid');
+        $this->fakeCheckoutSession('cs_ledger_reconciliation_unpaid', 'pay_ledger_reconciliation_unpaid', 'pending');
+
+        $this->artisan('premium-payments:reconcile-pending', ['--apply' => true])
+            ->expectsOutputToContain('unpaid')
+            ->assertExitCode(0);
+        $this->assertSame('pending', $unpaidPayment->fresh()->status);
+        $this->assertSame('pending', $unpaidSubscription->fresh()->status);
+    }
+
+    public function test_duplicate_webhook_after_success_return_does_not_double_collect_or_reset_period(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-return-webhook-order', 249);
+        $subscription = $this->createPendingSubscription($owner, $plan, 'cs_ledger_return_webhook_order');
+        $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, 'cs_ledger_return_webhook_order');
+        $this->fakeCheckoutSession('cs_ledger_return_webhook_order', 'pay_ledger_return_webhook_order', 'paid');
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.premium-success', ['subscription_id' => $subscription->id]));
+        $settledStart = $subscription->fresh()->starts_at;
+        $settledEnd = $subscription->fresh()->ends_at;
+
+        $this->postJson('/api/webhooks/paymongo', $this->checkoutPayload(
+            sessionId: 'cs_ledger_return_webhook_order',
+            subscription: $subscription,
+            paymentId: 'pay_ledger_return_webhook_order',
+            paymentRecordId: $payment->id,
+            amountInCentavos: 24900,
+        ))->assertOk();
+
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('249.00', (string) $payment->fresh()->amount_paid);
+        $this->assertEquals($settledStart, $subscription->fresh()->starts_at);
+        $this->assertEquals($settledEnd, $subscription->fresh()->ends_at);
+    }
+
+    public function test_success_return_after_webhook_uses_the_paid_retry_attempt_and_is_idempotent(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-webhook-return-order', 249);
+        $subscription = $this->createPendingSubscription($owner, $plan, 'cs_ledger_webhook_return_order');
+        $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, 'cs_ledger_webhook_return_order');
+        $attempts = [
+            ['id' => 'pay_ledger_first_failed', 'attributes' => [
+                'status' => 'failed', 'amount' => 24900, 'currency' => 'PHP',
+            ]],
+            ['id' => 'pay_ledger_retry_paid', 'attributes' => [
+                'status' => 'paid', 'amount' => 24900, 'currency' => 'PHP',
+            ]],
+        ];
+        $this->fakeCheckoutSession(
+            'cs_ledger_webhook_return_order',
+            'pay_ledger_retry_paid',
+            'paid',
+            paymentAttempts: $attempts,
+        );
+
+        $this->postJson('/api/webhooks/paymongo', $this->checkoutPayload(
+            sessionId: 'cs_ledger_webhook_return_order',
+            subscription: $subscription,
+            paymentId: 'pay_ledger_retry_paid',
+            paymentRecordId: $payment->id,
+            amountInCentavos: 24900,
+            paymentAttempts: $attempts,
+        ))->assertOk();
+        $settledEnd = $subscription->fresh()->ends_at;
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.premium-success', ['subscription_id' => $subscription->id]))
+            ->assertRedirect(route('shop-owner.premium-benefits'));
+
+        $this->assertSame('active', $subscription->fresh()->status);
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('pay_ledger_retry_paid', $payment->fresh()->paymongo_payment_id);
+        $this->assertEquals($settledEnd, $subscription->fresh()->ends_at);
+    }
+
+    public function test_browser_cancel_return_does_not_expire_a_retryable_checkout(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-browser-cancel', 249);
+        $subscription = $this->createPendingSubscription($owner, $plan, 'cs_ledger_browser_cancel');
+        $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, 'cs_ledger_browser_cancel');
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get(route('shop-owner.premium-cancel', ['subscription_id' => $subscription->id]))
+            ->assertRedirect(route('shop-owner.premium-benefits'));
+
+        $this->assertSame('pending', $subscription->fresh()->status);
+        $this->assertSame('pending', $payment->fresh()->status);
+    }
+
+    public function test_paymongo_checkout_expiration_is_still_terminal(): void
+    {
+        $owner = $this->createOwner();
+        $plan = $this->createPlan('ledger-expired-checkout', 249);
+        $subscription = $this->createPendingSubscription($owner, $plan, 'cs_ledger_expired_checkout');
+        $payment = $this->createPayment($owner, $subscription, 'new_subscription', 249, 'cs_ledger_expired_checkout');
+
+        $this->postJson('/api/webhooks/paymongo', $this->checkoutFailedPayload(
+            sessionId: 'cs_ledger_expired_checkout',
+            subscription: $subscription,
+            paymentRecordId: $payment->id,
+            eventType: 'checkout_session.expired',
+        ))->assertOk();
+
+        $this->assertSame('failed', $subscription->fresh()->status);
+        $this->assertSame('failed', $payment->fresh()->status);
+    }
+
     public function test_paid_webhook_rejects_metadata_bound_to_a_different_subscription(): void
     {
         $owner = $this->createOwner();
@@ -396,6 +581,82 @@ final class PremiumBillingLedgerTest extends TestCase
         $this->assertSame((string) $payment->id, (string) data_get($payment->metadata, 'payment_record_id'));
     }
 
+    public function test_repeated_pending_upgrade_reuses_the_same_checkout_and_blocks_a_different_target(): void
+    {
+        $owner = $this->createOwner();
+        $currentPlan = $this->createPlan('ledger-upgrade-reuse-current', 249);
+        $targetPlan = $this->createPlan('ledger-upgrade-reuse-target', 499);
+        $otherPlan = $this->createPlan('ledger-upgrade-reuse-other', 699);
+        $current = $this->createActiveSubscription($owner, $currentPlan, [
+            'ends_at' => now()->addDays(10),
+        ]);
+        Http::fake(['https://api.paymongo.com/v1/checkout_sessions' => Http::response([
+            'data' => [
+                'id' => 'cs_ledger_upgrade_reused',
+                'attributes' => ['checkout_url' => 'https://paymongo.test/cs_ledger_upgrade_reused'],
+            ],
+        ])]);
+
+        $first = $this->actingAs($owner, 'shop_owner')
+            ->postJson('/api/shop-owner/premium/confirm-upgrade', ['new_plan_id' => $targetPlan->id])
+            ->assertOk();
+        $second = $this->actingAs($owner, 'shop_owner')
+            ->postJson('/api/shop-owner/premium/confirm-upgrade', ['new_plan_id' => $targetPlan->id])
+            ->assertOk();
+
+        $this->assertSame($first->json('session_id'), $second->json('session_id'));
+        $this->assertSame($first->json('checkout_url'), $second->json('checkout_url'));
+        $this->assertSame(1, ShopOwnerSubscription::query()->where('replaces_subscription_id', $current->id)->count());
+        $this->assertSame(1, ShopOwnerSubscriptionPayment::query()->where('payment_type', 'upgrade')->count());
+        Http::assertSentCount(1);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->postJson('/api/shop-owner/premium/confirm-upgrade', ['new_plan_id' => $otherPlan->id])
+            ->assertStatus(409);
+    }
+
+    public function test_paid_upgrade_uses_the_locked_quote_and_starts_its_term_at_payment_time(): void
+    {
+        $paidAt = now()->startOfSecond();
+        $this->travelTo($paidAt);
+        $owner = $this->createOwner();
+        $currentPlan = $this->createPlan('ledger-upgrade-settle-current', 249);
+        $targetPlan = $this->createPlan('ledger-upgrade-settle-target', 499);
+        $source = $this->createActiveSubscription($owner, $currentPlan, [
+            'ends_at' => now()->addDays(10),
+        ]);
+        $upgrade = $this->createPendingSubscription($owner, $targetPlan, 'cs_ledger_upgrade_settle');
+        $upgrade->update(['replaces_subscription_id' => $source->id]);
+        $payment = $this->createPayment($owner, $upgrade, 'upgrade', 250, 'cs_ledger_upgrade_settle');
+        $payment->update([
+            'source_subscription_id' => $source->id,
+            'from_premium_plan_id' => $currentPlan->id,
+            'to_premium_plan_id' => $targetPlan->id,
+            'metadata' => [
+                'payment_record_id' => (string) $payment->id,
+                'ledger_key' => $payment->ledger_key,
+                'source_subscription_id' => (string) $source->id,
+            ],
+        ]);
+        $targetPlan->update(['price' => 899]);
+
+        $this->postJson('/api/webhooks/paymongo', $this->checkoutPayload(
+            sessionId: 'cs_ledger_upgrade_settle',
+            subscription: $upgrade,
+            paymentId: 'pay_ledger_upgrade_settle',
+            paymentRecordId: $payment->id,
+            amountInCentavos: 25000,
+        ))->assertOk();
+
+        $this->assertSame('cancelled', $source->fresh()->status);
+        $this->assertSame('active', $upgrade->fresh()->status);
+        $this->assertEquals($paidAt, $upgrade->fresh()->starts_at);
+        $this->assertEquals($paidAt->copy()->addDays(30), $upgrade->fresh()->ends_at);
+        $this->assertSame('250.00', (string) $payment->fresh()->amount_due);
+        $this->assertSame('250.00', (string) $payment->fresh()->amount_paid);
+        $this->assertSame('pay_ledger_upgrade_settle', $payment->fresh()->paymongo_payment_id);
+    }
+
     public function test_zero_charge_upgrade_is_an_explicit_settled_zero_value_ledger_event(): void
     {
         $owner = $this->createOwner();
@@ -437,8 +698,11 @@ final class PremiumBillingLedgerTest extends TestCase
         ))->assertOk();
 
         $this->assertSame('failed', $subscription->fresh()->status);
-        $this->assertSame('failed', $payment->fresh()->status);
-        $this->assertNull($payment->fresh()->paymongo_payment_id);
+        $this->assertNull($subscription->fresh()->starts_at);
+        $this->assertSame('paid', $payment->fresh()->status);
+        $this->assertSame('pay_ledger_late', $payment->fresh()->paymongo_payment_id);
+        $this->assertSame('249.00', (string) $payment->fresh()->amount_paid);
+        $this->assertTrue((bool) data_get($payment->fresh()->metadata, 'settlement_review_required'));
     }
 
     public function test_shop_owner_cannot_cancel_an_unpaid_pending_checkout_as_paid_cancellation(): void
@@ -537,14 +801,39 @@ final class PremiumBillingLedgerTest extends TestCase
         string $status,
         int $amountInCentavos = 24900,
         string $currency = 'PHP',
+        ?array $paymentAttempts = null,
     ): void {
         config()->set('services.paymongo.secret_key', 'sk_test_ledger');
+        $payment = ShopOwnerSubscriptionPayment::query()
+            ->where('paymongo_session_id', $sessionId)
+            ->firstOrFail();
+        $subscription = $payment->subscription;
+        $metadata = [
+            'type' => match ($payment->payment_type) {
+                'upgrade' => 'premium_subscription_upgrade',
+                'renewal' => 'premium_subscription_renewal',
+                default => 'premium_subscription',
+            },
+            'payment_record_id' => (string) $payment->id,
+            'subscription_id' => (string) $subscription->id,
+            'shop_owner_id' => (string) $subscription->shop_owner_id,
+            'plan_code' => $subscription->plan_code,
+            'ledger_key' => $payment->ledger_key,
+        ];
+        if ($subscription->replaces_subscription_id) {
+            $metadata['source_subscription_id'] = (string) $subscription->replaces_subscription_id;
+        }
+        if ($subscription->renewal_of_subscription_id) {
+            $metadata['renewal_of_subscription_id'] = (string) $subscription->renewal_of_subscription_id;
+        }
+
         Http::fake(["https://api.paymongo.com/v1/checkout_sessions/{$sessionId}" => Http::response([
             'data' => [
                 'id' => $sessionId,
                 'attributes' => [
+                    'metadata' => $metadata,
                     'payment_status' => $status,
-                    'payments' => [[
+                    'payments' => $paymentAttempts ?? [[
                         'id' => $paymentId,
                         'attributes' => [
                             'status' => $status,
@@ -563,7 +852,28 @@ final class PremiumBillingLedgerTest extends TestCase
         string $paymentId,
         int $paymentRecordId,
         int $amountInCentavos,
+        ?array $paymentAttempts = null,
     ): array {
+        $payment = ShopOwnerSubscriptionPayment::query()->findOrFail($paymentRecordId);
+        $metadata = [
+            'type' => match ($payment->payment_type) {
+                'upgrade' => 'premium_subscription_upgrade',
+                'renewal' => 'premium_subscription_renewal',
+                default => 'premium_subscription',
+            },
+            'subscription_id' => (string) $subscription->id,
+            'shop_owner_id' => (string) $subscription->shop_owner_id,
+            'plan_code' => $subscription->plan_code,
+            'payment_record_id' => (string) $paymentRecordId,
+            'ledger_key' => $payment->ledger_key,
+        ];
+        if ($subscription->replaces_subscription_id) {
+            $metadata['source_subscription_id'] = (string) $subscription->replaces_subscription_id;
+        }
+        if ($subscription->renewal_of_subscription_id) {
+            $metadata['renewal_of_subscription_id'] = (string) $subscription->renewal_of_subscription_id;
+        }
+
         return [
             'data' => [
                 'attributes' => [
@@ -571,15 +881,15 @@ final class PremiumBillingLedgerTest extends TestCase
                     'data' => [
                         'id' => $sessionId,
                         'attributes' => [
-                            'metadata' => [
-                                'subscription_id' => (string) $subscription->id,
-                                'shop_owner_id' => (string) $subscription->shop_owner_id,
-                                'plan_code' => $subscription->plan_code,
-                                'payment_record_id' => (string) $paymentRecordId,
-                            ],
-                            'payments' => [[
+                            'metadata' => $metadata,
+                            'payment_status' => 'paid',
+                            'payments' => $paymentAttempts ?? [[
                                 'id' => $paymentId,
-                                'attributes' => ['amount' => $amountInCentavos, 'currency' => 'PHP'],
+                                'attributes' => [
+                                    'status' => 'paid',
+                                    'amount' => $amountInCentavos,
+                                    'currency' => 'PHP',
+                                ],
                             ]],
                         ],
                     ],
@@ -592,11 +902,12 @@ final class PremiumBillingLedgerTest extends TestCase
         string $sessionId,
         ShopOwnerSubscription $subscription,
         int $paymentRecordId,
+        string $eventType = 'checkout_session.payment.failed',
     ): array {
         return [
             'data' => [
                 'attributes' => [
-                    'type' => 'checkout_session.payment.failed',
+                    'type' => $eventType,
                     'data' => [
                         'id' => $sessionId,
                         'attributes' => [

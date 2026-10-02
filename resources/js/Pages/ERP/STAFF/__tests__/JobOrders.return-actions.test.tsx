@@ -84,6 +84,37 @@ describe("staff customer refund actions", () => {
     })).toBe(false);
   });
 
+  it("hides Arrange while a shop-owned pickup is active and permits retry only after a terminal failure", () => {
+    const arrangedReturn = refund({
+      shop_owner_status: "approved",
+      finance_status: "approved",
+      return_status: "pending_staff_pickup",
+      return_source: "staff",
+      staff_return_carrier: "Shop-owned logistics",
+      return_logistics: { shipment_status: "requested", leg_status: "pending" },
+    });
+    expect(canArrangeReturnPickup(arrangedReturn)).toBe(false);
+
+    expect(canArrangeReturnPickup(refund({
+      ...arrangedReturn.latest_refund,
+      return_logistics: { shipment_status: "cancelled", leg_status: "cancelled" },
+    }))).toBe(true);
+    expect(canArrangeReturnPickup(refund({
+      ...arrangedReturn.latest_refund,
+      return_logistics: { shipment_status: "active", leg_status: "in_transit" },
+    }))).toBe(false);
+  });
+
+  it("does not offer return arrangement while Finance approval is pending or rejected", () => {
+    for (const financeStatus of ["pending", "rejected"]) {
+      expect(canArrangeReturnPickup(refund({
+        shop_owner_status: "approved",
+        finance_status: financeStatus,
+        return_status: "pending_customer_shipment",
+      }))).toBe(false);
+    }
+  });
+
   it('does not treat an undelivered Shop-owned return shipment as inspection-ready', () => {
     expect(canConfirmReturnReceived({
       latest_refund: {

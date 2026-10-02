@@ -3,6 +3,7 @@
 namespace Tests\Feature\Logistics;
 
 use App\Enums\Logistics\RiderProgressState;
+use App\Models\Order;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
@@ -220,6 +221,41 @@ class ProofReviewFlowTest extends TestCase
             'shipment_leg_id' => $leg->id,
             'event_type' => 'proof_approved',
         ]);
+    }
+
+    public function test_approved_delivery_proof_advances_optional_proof_retail_delivery(): void
+    {
+        [$shop, $rider, $leg] = $this->riderLeg(withArrival: true);
+        $order = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg->shipment()->update([
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'purpose' => 'retail_delivery',
+        ]);
+        $leg->update(['requires_delivery_proof' => false]);
+        Storage::fake('local');
+
+        $proof = $this->actingAs($rider, 'user')->post(
+            "/api/logistics/legs/{$leg->id}/proof",
+            [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'photo',
+                'idempotency_key' => 'd4f804b6-5e89-4d13-b717-0d58d0520101',
+                'proof_file' => $this->photo('retail-delivery.png'),
+            ],
+            ['Accept' => 'application/json']
+        )->assertCreated()->json('proof');
+
+        $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
+        $approver = $this->proofApprover($shop);
+        $this->actingAs($approver, 'user')
+            ->postJson("/api/logistics/proofs/{$proof['id']}/approve")
+            ->assertOk();
+
+        $this->assertSame('delivered', $leg->fresh()->status->value);
+        $this->assertSame('completed', $leg->shipment->fresh()->status->value);
+        $this->assertSame((int) $order->id, (int) $leg->shipment->fresh()->source_id);
+        $this->assertDatabaseCount('shipments', 1);
     }
 
     public function test_rejecting_delivery_proof_only_creates_a_correction_requirement(): void

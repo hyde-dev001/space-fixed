@@ -11,6 +11,7 @@ use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\Logistics\SourceShipmentService;
@@ -189,6 +190,11 @@ class SourceModuleShipmentRequestTest extends TestCase
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        ShopOwnerModule::create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
+        ]);
         $staff = User::factory()->create([
             'shop_owner_id' => $shop->id,
             'role' => 'STAFF',
@@ -286,10 +292,39 @@ class SourceModuleShipmentRequestTest extends TestCase
             'order_id' => $order->id,
             'customer_id' => $customer->id,
             'shop_owner_id' => $shop->id,
-            'return_status' => 'pending_customer_shipment',
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'pending',
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
         ]);
 
-        app(OrderRefundService::class)->ensureReturnShipment($refund);
+        try {
+            app(OrderRefundService::class)->ensureReturnShipment($refund);
+            $this->fail('A return shipment was created before Finance approval.');
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->assertArrayHasKey('finance_status', $exception->errors());
+        }
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+
+        $refund->update(['finance_status' => 'approved']);
+        try {
+            app(OrderRefundService::class)->ensureReturnShipment($refund->fresh());
+            $this->fail('A shipment was created before Staff selected Shop-owned logistics.');
+        } catch (\Illuminate\Validation\ValidationException $exception) {
+            $this->assertArrayHasKey('delivery_method', $exception->errors());
+        }
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
+
+        $refund->update(['staff_return_carrier' => 'Shop-owned logistics']);
+        app(OrderRefundService::class)->ensureReturnShipment($refund->fresh());
 
         $this->assertDatabaseHas('shipments', [
             'source_type' => 'order_refund',
@@ -354,11 +389,13 @@ class SourceModuleShipmentRequestTest extends TestCase
             'return_status' => 'pending_customer_shipment',
         ]);
 
-        $this->actingAs($staff, 'user')
-            ->postJson("/api/staff/orders/{$order->id}/arrange-return-pickup", [
-                'delivery_method' => 'shop_owned',
-            ])
-            ->assertOk();
+        $refundService = app(OrderRefundService::class);
+        $shopOwnedPickup = [
+            'delivery_method' => 'shop_owned',
+            'carrier_company' => 'Shop-owned logistics',
+        ];
+        $this->assertSame('pickup_arranged', $refundService
+            ->arrangeStaffReturnPickup($refund, $shopOwnedPickup, (int) $staff->id)['result']);
 
         $this->assertDatabaseHas('order_refunds', [
             'id' => $refund->id,
@@ -371,13 +408,47 @@ class SourceModuleShipmentRequestTest extends TestCase
             'purpose' => 'refund_return',
         ]);
 
-        $this->actingAs($staff, 'user')
-            ->postJson("/api/staff/orders/{$order->id}/arrange-return-pickup", [
-                'delivery_method' => 'shop_owned',
-            ])
-            ->assertStatus(422);
+        $this->assertSame('invalid_state', $refundService
+            ->arrangeStaffReturnPickup($refund, $shopOwnedPickup, (int) $staff->id)['result']);
 
         $this->assertDatabaseCount('shipments', 1);
+
+        $this->assertSame('invalid_state', $refundService->arrangeStaffReturnPickup($refund, [
+            'delivery_method' => 'third_party',
+            'tracking_number' => 'TP-123',
+            'carrier_company' => 'LBC',
+            'rider_name' => 'Rider Two',
+            'rider_phone' => '09171234567',
+            'tracking_link' => 'https://example.com/TP-123',
+        ], (int) $staff->id)['result']);
+
+        $shipment = Shipment::query()
+            ->where('source_type', 'order_refund')
+            ->where('source_id', $refund->id)
+            ->where('purpose', 'refund_return')
+            ->firstOrFail();
+        $this->assertSame('requested', $shipment->status->value);
+        $this->assertSame('shop_owned', $refund->fresh()->returnDeliveryMethod());
+
+        $shipment->legs()->update(['status' => 'cancelled']);
+        $shipment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+
+        $this->assertSame('pickup_arranged', $refundService
+            ->arrangeStaffReturnPickup($refund, $shopOwnedPickup, (int) $staff->id)['result']);
+
+        $this->assertDatabaseCount('shipments', 2);
+        $this->assertDatabaseHas('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+            'source_attempt' => 2,
+        ]);
+        $this->assertSame(1, Shipment::query()
+            ->where('source_type', 'order_refund')
+            ->where('source_id', $refund->id)
+            ->where('purpose', 'refund_return')
+            ->where('status', '!=', 'cancelled')
+            ->count());
     }
 
     public function test_staff_cannot_arrange_a_third_party_return_twice(): void

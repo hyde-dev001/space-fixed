@@ -52,6 +52,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@inertiajs/react', () => ({
+  Head: () => null,
   router: { get: mocks.routerGet, post: mocks.routerPost },
   usePage: () => mocks.page,
   useForm: () => ({

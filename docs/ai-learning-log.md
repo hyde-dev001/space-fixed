@@ -135,3 +135,7 @@
 
 - Refresh the reliability snapshot after confirmed platform-fee payment and initialize it from retained history when a balance page has no snapshot; otherwise paid business fees can remain absent from the score until the daily job runs.
 - Treat Finance-confirmed COD remittance—not rider-reported cash collection—as the authoritative paid transition that allows the marketplace-fee observer to create its charge.
+
+## 2026-10-02 - Refund approval stages
+
+- Treat the `requires_owner_approval` value captured when a refund is reserved as authoritative. An explicit disabled setting skips only the Shop Owner decision; it must not skip Finance or the return and payout gates. Persist Staff, Shop Owner, and Finance decisions in their own audit fields.

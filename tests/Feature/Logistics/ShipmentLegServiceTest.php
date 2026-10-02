@@ -91,6 +91,23 @@ class ShipmentLegServiceTest extends TestCase
         app(ShipmentLegService::class)->markDelivered($leg);
     }
 
+    public function test_optional_proof_leg_cannot_skip_review_from_awaiting_proof_approval(): void
+    {
+        $leg = ShipmentLeg::factory()->create([
+            'status' => 'awaiting_proof_approval',
+            'requires_delivery_proof' => false,
+        ]);
+
+        try {
+            app(ShipmentLegService::class)->markDelivered($leg);
+            $this->fail('A leg advanced before its submitted delivery proof was approved.');
+        } catch (ValidationException $exception) {
+            $this->assertArrayHasKey('proof', $exception->errors());
+        }
+
+        $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
+    }
+
     public function test_leg_can_be_delivered_after_delivery_proof_is_recorded(): void
     {
         $leg = ShipmentLeg::factory()->create([

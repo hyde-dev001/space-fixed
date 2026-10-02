@@ -540,6 +540,15 @@ export const canStaffReviewRefund = (order: Pick<Order, "latest_refund">) => {
     && String(refund.status || '').toLowerCase() === 'requested';
 };
 
+export const isRetryableShopOwnedReturn = (order: Pick<Order, "latest_refund">) => {
+  const refund = order.latest_refund;
+  return Boolean(refund
+    && getReturnDeliveryMethod(refund) === 'shop_owned'
+    && String(refund.return_status || '').toLowerCase() === 'pending_staff_pickup'
+    && String(refund.return_logistics?.shipment_status || '').toLowerCase() === 'cancelled'
+    && String(refund.return_logistics?.leg_status || '').toLowerCase() === 'cancelled');
+};
+
 export const canArrangeReturnPickup = (order: Pick<Order, "latest_refund">) => {
   const refund = order.latest_refund;
   if (!refund || String(refund.flow_type || '').toLowerCase() !== 'request_approval') return false;
@@ -549,12 +558,11 @@ export const canArrangeReturnPickup = (order: Pick<Order, "latest_refund">) => {
   const isUnassignedStaffReturn = String(refund.return_source || '').toLowerCase() === 'staff'
     && returnStatus === 'pending_staff_pickup'
     && returnMethod === null;
-  const canSwitchUnstartedShopOwnedReturn = returnMethod === 'shop_owned'
-    && returnStatus === 'pending_staff_pickup';
+  const canRetryCancelledShopOwnedReturn = isRetryableShopOwnedReturn(order);
 
   return String(refund.shop_owner_status || '').toLowerCase() === 'approved'
     && String(refund.finance_status || '').toLowerCase() === 'approved'
-    && (returnStatus === 'pending_customer_shipment' || isUnassignedStaffReturn || canSwitchUnstartedShopOwnedReturn)
+    && (returnStatus === 'pending_customer_shipment' || isUnassignedStaffReturn || canRetryCancelledShopOwnedReturn)
     && !['rejected', 'failed', 'succeeded'].includes(String(refund.status || '').toLowerCase());
 };
 
@@ -2433,8 +2441,8 @@ export default function JobOrdersPage() {
                               type="button"
                               onClick={() => handleArrangeReturnPickup(order)}
                               className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-amber-600 transition-colors hover:bg-amber-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 dark:text-amber-400 dark:hover:bg-amber-900/20"
-                              title="Arrange return pickup"
-                              aria-label="Arrange return pickup"
+                              title={isRetryableShopOwnedReturn(order) ? 'Retry return pickup' : 'Arrange return pickup'}
+                              aria-label={isRetryableShopOwnedReturn(order) ? 'Retry return pickup' : 'Arrange return pickup'}
                             >
                               <PencilIcon className="size-5" />
                             </button>
@@ -3076,9 +3084,9 @@ export default function JobOrdersPage() {
                   <button
                     onClick={() => handleArrangeReturnPickup(viewOrder)}
                     className="px-4 py-2 border border-amber-600 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-medium transition-colors"
-                    title="Arrange return pickup"
+                    title={isRetryableShopOwnedReturn(viewOrder) ? 'Retry return pickup' : 'Arrange return pickup'}
                   >
-                    Arrange Return Pickup
+                    {isRetryableShopOwnedReturn(viewOrder) ? 'Retry Return Pickup' : 'Arrange Return Pickup'}
                   </button>
                 )}
                 {viewOrder.status === "shipped" && !isPosOrder(viewOrder) && viewOrder.carrierCompany !== SHOP_OWNED_LOGISTICS && !canConfirmReturnReceived(viewOrder) && (
