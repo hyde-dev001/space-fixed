@@ -37,6 +37,11 @@ class StaffOrderRefundPayloadTest extends TestCase
     public function test_staff_list_show_and_finance_share_refund_payout_evidence_and_return_logistics(): void
     {
         [$shop, $staff, $finance, $order, $refund] = $this->refundFixture();
+        $refund->update([
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'Shop-owned logistics',
+        ]);
 
         $product = Product::create([
             'shop_owner_id' => $shop->id,
@@ -235,6 +240,11 @@ class StaffOrderRefundPayloadTest extends TestCase
     public function test_non_delivered_return_leg_does_not_expose_proof(): void
     {
         [, $staff, , $order, $refund] = $this->refundFixture();
+        $refund->update([
+            'return_status' => 'pending_staff_pickup',
+            'return_source' => 'staff',
+            'staff_return_carrier' => 'Shop-owned logistics',
+        ]);
         $shipment = app(SourceShipmentService::class)->ensureRefundReturnShipment($refund);
         $leg = $shipment->legs()->firstOrFail();
         $leg->update(['status' => 'in_transit']);

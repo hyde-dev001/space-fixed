@@ -56,20 +56,8 @@ class RefundInventoryDispositionService
 
             if ($action === 'restock') {
                 $product = Product::query()->lockForUpdate()->find((int) $line->product_id);
-                if ($product && $channel === 'retail_pos' && $line instanceof PosRefundItem) {
-                    $this->restorePosLine($line, $product, $qty);
-                } elseif ($product) {
-                    $product->increment('stock_quantity', $qty);
-
-                    $variantId = (int) ($line->product_variant_id ?? 0);
-                    if ($variantId > 0) {
-                        ProductVariant::query()
-                            ->where('product_id', $product->id)
-                            ->whereKey($variantId)
-                            ->lockForUpdate()
-                            ->first()
-                            ?->increment('quantity', $qty);
-                    }
+                if ($product) {
+                    $this->restoreLine($line, $product, $qty);
                 }
             }
 
@@ -94,7 +82,7 @@ class RefundInventoryDispositionService
         });
     }
 
-    private function restorePosLine(PosRefundItem $line, Product $product, int $qty): void
+    private function restoreLine(OrderRefundItem|PosRefundItem $line, Product $product, int $qty): void
     {
         $orderItem = $line->orderItem;
         $selection = app(InventoryCheckoutService::class)->resolveSelection($product, [
@@ -104,10 +92,10 @@ class RefundInventoryDispositionService
         ], true);
 
         $inventoryItem = $selection['inventory_item'];
+        $variantId = (int) ($line->product_variant_id ?? 0);
         if (! $inventoryItem) {
             $product->increment('stock_quantity', $qty);
 
-            $variantId = (int) ($line->product_variant_id ?? 0);
             if ($variantId > 0) {
                 ProductVariant::query()
                     ->where('product_id', $product->id)
@@ -140,11 +128,21 @@ class RefundInventoryDispositionService
             'inventory_item_id' => $inventoryItem->id,
             'movement_type' => 'return',
             'quantity_change' => $qty,
-            'reference_type' => 'pos_refund_item',
+            'reference_type' => $line instanceof PosRefundItem ? 'pos_refund_item' : 'order_refund_item',
             'reference_id' => $line->id,
-            'notes' => "POS refund {$line->pos_refund_id} restocked item {$line->id}.",
+            'notes' => $line instanceof PosRefundItem
+                ? "POS refund {$line->pos_refund_id} restocked item {$line->id}."
+                : "Retail return for refund {$line->order_refund_id} restocked item {$line->id}.",
         ]);
 
         $product->update(['stock_quantity' => (int) $movement->quantity_after]);
+        if ($line instanceof OrderRefundItem && $variantId > 0) {
+            ProductVariant::query()
+                ->where('product_id', $product->id)
+                ->whereKey($variantId)
+                ->lockForUpdate()
+                ->first()
+                ?->increment('quantity', $qty);
+        }
     }
 }

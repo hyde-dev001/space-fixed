@@ -19,15 +19,20 @@ class OrderRefundApprovalWorkflowTest extends TestCase
     {
         [$shop, $staff, $refund] = $this->fixture();
 
-        $this->actingAs($staff, 'user')
-            ->postJson("/api/staff/orders/{$refund->order_id}/refund/approve")
-            ->assertOk();
+        $result = app(\App\Services\OrderRefundService::class)
+            ->approveRequestedRefund($refund, 'staff', (int) $staff->id);
+        $this->assertSame('approved', $result['result']);
 
         $this->assertDatabaseHas('order_refunds', [
             'id' => $refund->id,
             'shop_owner_status' => 'approved',
             'shop_owner_approved_by' => $staff->id,
             'finance_status' => 'pending',
+        ]);
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
         ]);
 
         $finance = User::factory()->create();
@@ -37,6 +42,11 @@ class OrderRefundApprovalWorkflowTest extends TestCase
         $this->assertSame('approved', $result['result']);
         $this->assertSame('approved', $refund->fresh()->finance_status);
         $this->assertSame('pending_customer_shipment', $refund->fresh()->return_status);
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
+        ]);
     }
 
     public function test_staff_can_reject_a_pending_refund(): void
@@ -52,6 +62,11 @@ class OrderRefundApprovalWorkflowTest extends TestCase
             'id' => $refund->id,
             'status' => 'rejected',
             'shop_owner_status' => 'rejected',
+        ]);
+        $this->assertDatabaseMissing('shipments', [
+            'source_type' => 'order_refund',
+            'source_id' => $refund->id,
+            'purpose' => 'refund_return',
         ]);
     }
 

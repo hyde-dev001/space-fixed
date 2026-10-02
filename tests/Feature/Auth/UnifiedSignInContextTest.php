@@ -56,13 +56,13 @@ class UnifiedSignInContextTest extends TestCase
     }
 
     #[Test]
-    public function authenticated_super_admins_are_redirected_to_the_admin_portal_from_the_root(): void
+    public function authenticated_super_admins_are_redirected_to_system_monitoring_from_the_root(): void
     {
         $admin = SuperAdmin::factory()->superAdmin()->create();
 
         $this->actingAs($admin, 'super_admin')
             ->get('/')
-            ->assertRedirect('/admin');
+            ->assertRedirect(route('admin.system-monitoring'));
     }
 
     #[Test]

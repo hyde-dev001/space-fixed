@@ -7,7 +7,6 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\CodCollection;
 use App\Models\Order;
 use App\Models\OrderRefund;
-use App\Models\User;
 use App\Enums\NotificationType;
 use App\Services\Finance\CodRefundPayoutService;
 use Illuminate\Database\QueryException;
@@ -1175,23 +1174,15 @@ class OrderRefundService
             $isUnassignedStaffReturn = (string) ($lockedRefund->return_source ?? '') === 'staff'
                 && $returnStatus === 'pending_staff_pickup'
                 && $returnMethod === null;
-            $canSwitchUnstartedShopOwnedReturn = $isExplicitThirdParty
-                && $returnStatus === 'pending_staff_pickup'
-                && $lockedRefund->isShopOwnedReturn();
+            $canRetryCancelledShopOwnedReturn = $returnStatus === 'pending_staff_pickup'
+                && $returnMethod === 'shop_owned'
+                && $this->hasOnlyCancelledReturnShipments($lockedRefund);
             if ($returnStatus !== 'pending_customer_shipment'
                 && !$isUnassignedStaffReturn
-                && !$canSwitchUnstartedShopOwnedReturn) {
+                && !$canRetryCancelledShopOwnedReturn) {
                 return [
                     'result' => 'invalid_state',
                     'message' => 'Return pickup has already been arranged or cannot be arranged in the current state.',
-                    'refund' => $lockedRefund,
-                ];
-            }
-
-            if ($isExplicitThirdParty && !$this->cancelPendingReturnShipments($lockedRefund, $staffId)) {
-                return [
-                    'result' => 'invalid_state',
-                    'message' => 'The existing Shop-owned return has already started and cannot be changed to a third-party return.',
                     'refund' => $lockedRefund,
                 ];
             }
@@ -1221,7 +1212,9 @@ class OrderRefundService
                 $this->updateOrderRefundCompat($lockedRefund, [
                     'return_status' => $staffShippedAt ? 'in_transit' : 'pending_staff_pickup',
                     'staff_return_tracking_number' => $pickupData['tracking_number'] ?? $lockedRefund->staff_return_tracking_number,
-                    'staff_return_carrier' => $pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? $lockedRefund->staff_return_carrier),
+                    'staff_return_carrier' => $isShopOwnedPickup
+                        ? 'Shop-owned logistics'
+                        : ($pickupData['carrier_company'] ?? ($pickupData['carrier'] ?? $lockedRefund->staff_return_carrier)),
                     'staff_return_rider_name' => $pickupData['rider_name'] ?? $lockedRefund->staff_return_rider_name,
                     'staff_return_rider_phone' => $pickupData['rider_phone'] ?? $lockedRefund->staff_return_rider_phone,
                     'staff_return_tracking_link' => $pickupData['tracking_link'] ?? $lockedRefund->staff_return_tracking_link,
@@ -1280,10 +1273,10 @@ class OrderRefundService
             && filter_var((string) $required[4], FILTER_VALIDATE_URL) !== false;
     }
 
-    private function cancelPendingReturnShipments(OrderRefund $refund, ?int $staffId): bool
+    private function hasOnlyCancelledReturnShipments(OrderRefund $refund): bool
     {
-        if (!$refund->exists || !Schema::hasTable('shipments')) {
-            return true;
+        if (! $refund->exists || ! Schema::hasTable('shipments')) {
+            return false;
         }
 
         $shipments = Shipment::query()
@@ -1291,56 +1284,18 @@ class OrderRefundService
             ->where('source_type', 'order_refund')
             ->where('source_id', (int) $refund->id)
             ->where('purpose', 'refund_return')
-            ->where('status', '!=', 'cancelled')
             ->with('legs')
             ->lockForUpdate()
             ->get();
 
-        $startedStatuses = [
-            'picked_up',
-            'in_transit',
-            'delivery_attempted',
-            'needs_resolution',
-            'awaiting_proof_approval',
-            'proof_correction_required',
-            'delivered',
-        ];
-        $hasStartedShipment = $shipments->contains(fn (Shipment $shipment) => $shipment->legs->contains(
-            fn ($leg) => in_array(
-                $leg->status instanceof \BackedEnum ? $leg->status->value : (string) $leg->status,
-                $startedStatuses,
-                true,
-            ),
-        ));
-
-        if ($hasStartedShipment) {
-            return false;
-        }
-
-        foreach ($shipments as $shipment) {
-            foreach ($shipment->legs as $leg) {
-                $leg->assignments()
-                    ->whereIn('status', ['assigned', 'accepted'])
-                    ->update(['status' => 'cancelled', 'cancelled_at' => now()]);
-                $leg->update(['status' => 'cancelled']);
-            }
-
-            $shipment->update([
-                'status' => 'cancelled',
-                'completed_at' => null,
-                'cancelled_at' => now(),
-            ]);
-            $shipment->events()->create([
-                'event_type' => 'return_method_changed',
-                'visibility' => 'internal',
-                'message' => 'Shop-owned return shipment superseded after switching to a third-party return.',
-                'metadata' => ['return_method' => 'third_party'],
-                'created_by_type' => $staffId ? User::class : null,
-                'created_by_id' => $staffId,
-            ]);
-        }
-
-        return true;
+        return $shipments->isNotEmpty() && $shipments->every(fn (Shipment $shipment) =>
+            $shipment->status->value === 'cancelled'
+            && $shipment->legs->isNotEmpty()
+            && $shipment->legs->every(fn ($leg) =>
+                $leg->status->value === 'cancelled'
+                && $leg->resolution_type !== 'loss_confirmed'
+            )
+        );
     }
 
     public function confirmReturnReceived(

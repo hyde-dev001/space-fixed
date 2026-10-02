@@ -180,10 +180,11 @@ class ProofService
 
     public function hasRequiredDeliveryProof(ShipmentLeg $leg): bool
     {
-        if (!$leg->requires_delivery_proof) {
-            return true;
-        }
+        return ! $leg->requires_delivery_proof || $this->hasApprovedDeliveryProof($leg);
+    }
 
+    public function hasApprovedDeliveryProof(ShipmentLeg $leg): bool
+    {
         return $leg->proofs()
             ->where('handoff_type', 'delivery')
             ->orderByDesc('recorded_at')
