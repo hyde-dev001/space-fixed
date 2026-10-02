@@ -946,6 +946,7 @@ $routeBuckets = [
         'api.customer.repairs.warranty-claims',
         'api.customer.repairs.warranty-claims.latest',
         'api.shops.report',
+        'shop-owner.premium-success-return',
     ],
 ];
 

@@ -181,14 +181,18 @@ class PremiumFeatureTest extends TestCase
                     'data' => [
                         'id' => 'cs_webhook_123',
                         'attributes' => [
+                            'payment_status' => 'paid',
                             'metadata' => [
+                                'type' => 'premium_subscription',
                                 'subscription_id' => (string) $subscription->id,
                                 'shop_owner_id' => (string) $shopOwner->id,
                                 'plan_code' => $plan->plan_code,
                                 'payment_record_id' => (string) $payment->id,
+                                'ledger_key' => $payment->ledger_key,
                             ],
                             'payments' => [
                                 ['id' => 'pay_test_123', 'attributes' => [
+                                    'status' => 'paid',
                                     'amount' => 24900,
                                     'currency' => 'PHP',
                                 ]],
@@ -202,7 +206,7 @@ class PremiumFeatureTest extends TestCase
         $firstResponse = $this->postJson('/api/webhooks/paymongo', $payload);
 
         $firstResponse->assertOk()->assertJson([
-            'message' => 'Subscription activated',
+            'message' => 'Subscription payment settled',
         ]);
 
         $subscription->refresh();
@@ -219,7 +223,7 @@ class PremiumFeatureTest extends TestCase
         $secondResponse = $this->postJson('/api/webhooks/paymongo', $payload);
 
         $secondResponse->assertOk()->assertJson([
-            'message' => 'Already processed',
+            'message' => 'Subscription payment was already settled',
         ]);
 
         $subscription->refresh();

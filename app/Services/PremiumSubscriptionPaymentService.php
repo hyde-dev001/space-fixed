@@ -106,6 +106,10 @@ final class PremiumSubscriptionPaymentService
             Log::warning('Premium payment provider reconciliation failed local verification', [
                 'session_id' => $sessionId,
                 'payment_record_id' => $payment->id,
+                'subscription_id' => $payment->subscription_id,
+                'shop_owner_id' => $payment->shop_owner_id,
+                'local_payment_status' => $payment->status,
+                'result' => 'unsafe',
             ]);
 
             return ['result' => 'unsafe', 'payment_id' => $payment->id];
@@ -278,9 +282,10 @@ final class PremiumSubscriptionPaymentService
             && isset($metadata['subscription_id'])
             && is_scalar($metadata['subscription_id'])
             && (string) $metadata['subscription_id'] === (string) $subscription->id
-            && isset($metadata['shop_owner_id'])
-            && is_scalar($metadata['shop_owner_id'])
-            && (string) $metadata['shop_owner_id'] === (string) $subscription->shop_owner_id
+            && (array_key_exists('shop_owner_id', $metadata)
+                ? (is_scalar($metadata['shop_owner_id'])
+                    && (string) $metadata['shop_owner_id'] === (string) $subscription->shop_owner_id)
+                : $payment->payment_type === 'upgrade')
             && ($metadata['plan_code'] ?? null) === $subscription->plan_code
             && ($metadata['ledger_key'] ?? null) === $payment->ledger_key
             && ($payment->payment_type !== 'upgrade'
