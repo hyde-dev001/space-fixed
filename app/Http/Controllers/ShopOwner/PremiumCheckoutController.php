@@ -142,6 +142,11 @@ class PremiumCheckoutController extends Controller
             ], 422);
         }
 
+        $pendingUpgradeResponse = $this->pendingUpgradeResponse($currentSubscription, $targetPlan);
+        if ($pendingUpgradeResponse) {
+            return $pendingUpgradeResponse;
+        }
+
         if ((float) $targetPlan->price <= (float) $currentPlan->price) {
             return response()->json([
                 'success' => false,
@@ -155,11 +160,24 @@ class PremiumCheckoutController extends Controller
         $newEndsAt = now()->addDays(max(1, (int) $targetPlan->duration_days));
 
         if ($finalPrice <= 0) {
-            $newSubscription = DB::transaction(function () use ($shopOwner, $currentSubscription, $targetPlan, $newEndsAt, $prorationCredit) {
+            $result = DB::transaction(function () use ($shopOwner, $currentSubscription, $targetPlan, $newEndsAt, $prorationCredit) {
                 $lockedCurrent = ShopOwnerSubscription::query()
                     ->where('id', $currentSubscription->id)
+                    ->where('shop_owner_id', $shopOwner->id)
                     ->lockForUpdate()
                     ->firstOrFail();
+                if ($lockedCurrent->status !== 'active') {
+                    return ['stale' => true];
+                }
+
+                $pending = ShopOwnerSubscription::query()
+                    ->where('replaces_subscription_id', $lockedCurrent->id)
+                    ->where('status', 'pending')
+                    ->lockForUpdate()
+                    ->first();
+                if ($pending) {
+                    return ['pending' => $pending];
+                }
 
                 $newSubscription = ShopOwnerSubscription::create([
                     'shop_owner_id' => $shopOwner->id,
@@ -204,8 +222,19 @@ class PremiumCheckoutController extends Controller
                     'paid_at' => now(),
                 ]);
 
-                return $newSubscription;
+                return ['subscription' => $newSubscription];
             });
+
+            if (isset($result['stale'])) {
+                return response()->json(['success' => false, 'message' => 'The active subscription changed. Refresh and try again.'], 409);
+            }
+
+            if (isset($result['pending'])) {
+                return $this->pendingUpgradeResponse($result['pending'], $targetPlan)
+                    ?? response()->json(['success' => false, 'message' => 'A pending upgrade already exists.'], 409);
+            }
+
+            $newSubscription = $result['subscription'];
 
             return response()->json([
                 'success' => true,
@@ -218,7 +247,7 @@ class PremiumCheckoutController extends Controller
             ]);
         }
 
-        [$pendingSubscription, $payment] = DB::transaction(function () use (
+        $result = DB::transaction(function () use (
             $shopOwner,
             $targetPlan,
             $currentSubscription,
@@ -226,6 +255,24 @@ class PremiumCheckoutController extends Controller
             $prorationCredit,
             $newEndsAt,
         ) {
+            $lockedCurrent = ShopOwnerSubscription::query()
+                ->whereKey($currentSubscription->id)
+                ->where('shop_owner_id', $shopOwner->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            if ($lockedCurrent->status !== 'active') {
+                return ['stale' => true];
+            }
+
+            $pending = ShopOwnerSubscription::query()
+                ->where('replaces_subscription_id', $lockedCurrent->id)
+                ->where('status', 'pending')
+                ->lockForUpdate()
+                ->first();
+            if ($pending) {
+                return ['pending' => $pending];
+            }
+
             $pendingSubscription = ShopOwnerSubscription::create([
                 'shop_owner_id' => $shopOwner->id,
                 'premium_plan_id' => $targetPlan->id,
@@ -234,15 +281,15 @@ class PremiumCheckoutController extends Controller
                 'status' => 'pending',
                 'auto_renew' => true,
                 'auto_renew_status' => ShopOwnerSubscription::AUTO_RENEW_STATUS_ENABLED,
-                'replaces_subscription_id' => $currentSubscription->id,
+                'replaces_subscription_id' => $lockedCurrent->id,
                 'payment_method' => 'paymongo',
                 'paid_amount' => $finalPrice,
             ]);
 
             $payment = $this->createPaymentRecord($pendingSubscription, [
                 'shop_owner_id' => $shopOwner->id,
-                'source_subscription_id' => $currentSubscription->id,
-                'from_premium_plan_id' => $currentSubscription->premium_plan_id,
+                'source_subscription_id' => $lockedCurrent->id,
+                'from_premium_plan_id' => $lockedCurrent->premium_plan_id,
                 'to_premium_plan_id' => $targetPlan->id,
                 'payment_type' => 'upgrade',
                 'gateway' => 'paymongo',
@@ -252,13 +299,25 @@ class PremiumCheckoutController extends Controller
                 'amount_due' => $finalPrice,
                 'status' => 'pending',
                 'metadata' => [
-                    'source_subscription_id' => $currentSubscription->id,
+                    'source_subscription_id' => $lockedCurrent->id,
                     'new_expiry' => $newEndsAt->toISOString(),
                 ],
             ]);
 
-            return [$pendingSubscription, $payment];
+            return ['subscription' => $pendingSubscription, 'payment' => $payment];
         });
+
+        if (isset($result['stale'])) {
+            return response()->json(['success' => false, 'message' => 'The active subscription changed. Refresh and try again.'], 409);
+        }
+
+        if (isset($result['pending'])) {
+            return $this->pendingUpgradeResponse($result['pending'], $targetPlan)
+                ?? response()->json(['success' => false, 'message' => 'A pending upgrade already exists.'], 409);
+        }
+
+        $pendingSubscription = $result['subscription'];
+        $payment = $result['payment'];
 
         $checkoutResult = $this->createCheckoutSession(
             amount: $finalPrice,
@@ -288,11 +347,16 @@ class PremiumCheckoutController extends Controller
         }
 
         DB::transaction(function () use ($pendingSubscription, $payment, $checkoutResult): void {
-            ShopOwnerSubscriptionPayment::query()
+            $lockedPayment = ShopOwnerSubscriptionPayment::query()
                 ->whereKey($payment->id)
                 ->lockForUpdate()
-                ->firstOrFail()
-                ->update(['paymongo_session_id' => $checkoutResult['session_id']]);
+                ->firstOrFail();
+            $paymentMetadata = is_array($lockedPayment->metadata) ? $lockedPayment->metadata : [];
+            $paymentMetadata['checkout_url'] = $checkoutResult['checkout_url'];
+            $lockedPayment->update([
+                'paymongo_session_id' => $checkoutResult['session_id'],
+                'metadata' => $paymentMetadata,
+            ]);
 
             ShopOwnerSubscription::query()
                 ->whereKey($pendingSubscription->id)
@@ -818,6 +882,59 @@ class PremiumCheckoutController extends Controller
         return Schema::hasColumn('shop_owner_subscriptions', 'pending_premium_plan_id')
             && Schema::hasColumn('shop_owner_subscriptions', 'pending_plan_effective_at')
             && Schema::hasColumn('shop_owner_subscriptions', 'replaces_subscription_id');
+    }
+
+    private function pendingUpgradeResponse(
+        ShopOwnerSubscription $current,
+        PremiumPlan $target,
+    ): ?\Illuminate\Http\JsonResponse {
+        $pending = ShopOwnerSubscription::query()
+            ->where('shop_owner_id', $current->shop_owner_id)
+            ->where('replaces_subscription_id', $current->id)
+            ->where('status', 'pending')
+            ->orderBy('id')
+            ->get();
+
+        if ($pending->isEmpty()) {
+            return null;
+        }
+
+        if ($pending->count() !== 1 || (int) $pending[0]->premium_plan_id !== (int) $target->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'A different upgrade is already pending. Complete or wait for it before starting another upgrade.',
+            ], 409);
+        }
+
+        $subscription = $pending[0];
+        $payment = ShopOwnerSubscriptionPayment::query()
+            ->where('subscription_id', $subscription->id)
+            ->where('shop_owner_id', $current->shop_owner_id)
+            ->where('payment_type', 'upgrade')
+            ->first();
+        $checkoutUrl = data_get($payment?->metadata, 'checkout_url');
+
+        if (! $payment || $payment->status !== 'pending'
+            || ! filled($payment->paymongo_session_id)
+            || $subscription->paymongo_session_id !== $payment->paymongo_session_id
+            || ! is_string($checkoutUrl)
+            || ! str_starts_with($checkoutUrl, 'https://')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'An upgrade checkout is already being prepared. Please retry shortly.',
+            ], 409);
+        }
+
+        return response()->json([
+            'success' => true,
+            'immediate_applied' => false,
+            'payment_required' => true,
+            'checkout_url' => $checkoutUrl,
+            'session_id' => $payment->paymongo_session_id,
+            'remaining_value' => (float) $payment->proration_credit,
+            'final_price' => (float) $payment->amount_due,
+            'new_expiry' => data_get($payment->metadata, 'new_expiry'),
+        ]);
     }
 
     /**

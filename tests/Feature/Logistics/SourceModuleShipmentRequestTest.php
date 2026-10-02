@@ -11,6 +11,7 @@ use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use App\Models\User;
 use App\Models\UserAddress;
 use App\Services\Logistics\SourceShipmentService;
@@ -188,6 +189,11 @@ class SourceModuleShipmentRequestTest extends TestCase
             'status' => 'approved',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
+        ]);
+        ShopOwnerModule::create([
+            'shop_owner_id' => $shop->id,
+            'module_key' => 'logistics',
+            'enabled' => true,
         ]);
         $staff = User::factory()->create([
             'shop_owner_id' => $shop->id,

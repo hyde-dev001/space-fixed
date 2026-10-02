@@ -25,8 +25,9 @@ class OrderRefundApprovalWorkflowTest extends TestCase
 
         $this->assertDatabaseHas('order_refunds', [
             'id' => $refund->id,
-            'shop_owner_status' => 'approved',
-            'shop_owner_approved_by' => $staff->id,
+            'staff_approved_by' => $staff->id,
+            'shop_owner_status' => 'pending',
+            'shop_owner_approved_by' => null,
             'finance_status' => 'pending',
         ]);
         $this->assertDatabaseMissing('shipments', [
@@ -61,7 +62,8 @@ class OrderRefundApprovalWorkflowTest extends TestCase
         $this->assertDatabaseHas('order_refunds', [
             'id' => $refund->id,
             'status' => 'rejected',
-            'shop_owner_status' => 'rejected',
+            'shop_owner_status' => 'pending',
+            'staff_approved_by' => null,
         ]);
         $this->assertDatabaseMissing('shipments', [
             'source_type' => 'order_refund',
@@ -91,8 +93,9 @@ class OrderRefundApprovalWorkflowTest extends TestCase
 
     public function test_user_without_staff_order_permission_is_forbidden(): void
     {
-        [$shop, , $refund] = $this->fixture();
-        $user = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'CUSTOMER']);
+        [, , $refund] = $this->fixture();
+        $user = User::factory()->create(['role' => 'CUSTOMER']);
+        $this->assertFalse($user->isEmployeeAccount());
 
         $this->actingAs($user, 'user')
             ->postJson("/api/staff/orders/{$refund->order_id}/refund/approve")
@@ -142,16 +145,141 @@ class OrderRefundApprovalWorkflowTest extends TestCase
         $this->setRefundApproval($shop, false);
         $offRefund = $this->reserveRefund($shop, $customer, 'off');
         $this->assertSame(false, $offRefund->requires_owner_approval);
+        $this->assertSame('pending_approval', $offRefund->status);
 
         $this->setRefundApproval($shop, true);
         $onRefund = $this->reserveRefund($shop, $customer, 'on');
         $this->assertSame(true, $onRefund->requires_owner_approval);
+        $this->assertSame('requested', $onRefund->status);
+    }
+
+    public function test_individual_paymongo_refund_setting_controls_only_the_owner_stage(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual']);
+        $customer = User::factory()->create();
+        $finance = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'Finance']);
+        $finance->givePermissionTo(Permission::findOrCreate('access-refund-approval', 'user'));
+        $this->clockInEmployee($finance);
+        $service = app(\App\Services\OrderRefundService::class);
+
+        $this->setRefundApproval($shop, false);
+        $offRefund = $this->reserveRefund($shop, $customer, 'individual-off-flow');
+        $this->actingAs($shop, 'shop_owner')
+            ->getJson('/api/shop-owner/refunds?status=pending')
+            ->assertOk()
+            ->assertJsonCount(0, 'data');
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/refunds/{$offRefund->id}/approve")
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Shop owner approval is not required by policy for this refund request.');
+
+        $financeRows = $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/refunds?status=pending')
+            ->assertOk()
+            ->json('data');
+        $this->assertContains($offRefund->id, collect($financeRows)->pluck('id')->all());
+
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/refunds/{$offRefund->id}/approve")
+            ->assertOk()
+            ->assertJsonPath('refund.financeStatus', 'approved');
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $offRefund->id,
+            'requires_owner_approval' => 0,
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'shop_owner_approved_by' => null,
+            'return_status' => 'pending_customer_shipment',
+        ]);
+        $this->assertFalse($service->canExecuteApprovedRefund($offRefund->fresh()));
+
+        $this->setRefundApproval($shop, true);
+        $onRefund = $this->reserveRefund($shop, $customer, 'individual-on-flow');
+        $ownerRows = $this->actingAs($shop, 'shop_owner')
+            ->getJson('/api/shop-owner/refunds?status=pending')
+            ->assertOk()
+            ->json('data');
+        $this->assertContains($onRefund->id, collect($ownerRows)->pluck('id')->all());
+
+        $this->actingAs($shop, 'shop_owner')
+            ->postJson("/api/shop-owner/refunds/{$onRefund->id}/approve")
+            ->assertOk()
+            ->assertJsonPath('refund.shopOwnerStatus', 'approved')
+            ->assertJsonPath('refund.financeStatus', 'pending');
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $onRefund->id,
+            'requires_owner_approval' => 1,
+            'shop_owner_status' => 'approved',
+            'finance_status' => 'pending',
+            'return_status' => 'awaiting_approval',
+        ]);
+
+        $financeRows = $this->actingAs($finance, 'user')
+            ->getJson('/api/finance/refunds?status=pending')
+            ->assertOk()
+            ->json('data');
+        $this->assertContains($onRefund->id, collect($financeRows)->pluck('id')->all());
+
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/refunds/{$onRefund->id}/approve")
+            ->assertOk()
+            ->assertJsonPath('refund.financeStatus', 'approved');
+        $this->assertDatabaseHas('order_refunds', [
+            'id' => $onRefund->id,
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'return_status' => 'pending_customer_shipment',
+        ]);
+        $this->assertFalse($service->canExecuteApprovedRefund($onRefund->fresh()));
+    }
+
+    public function test_company_paymongo_refunds_keep_staff_finance_and_owner_stages_separate(): void
+    {
+        $service = app(\App\Services\OrderRefundService::class);
+
+        foreach ([false, true] as $ownerApprovalEnabled) {
+            $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
+            $customer = User::factory()->create();
+            $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+            $finance = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'Finance']);
+            $this->setRefundApproval($shop, $ownerApprovalEnabled);
+            $refund = $this->reserveRefund($shop, $customer, 'company-' . (int) $ownerApprovalEnabled);
+
+            $this->assertSame('invalid_state', $service->approveRequestedRefund($refund, 'finance', $finance->id)['result']);
+            $this->assertSame('approved', $service->approveRequestedRefund($refund, 'staff', $staff->id)['result']);
+            $this->assertDatabaseHas('order_refunds', [
+                'id' => $refund->id,
+                'requires_owner_approval' => (int) $ownerApprovalEnabled,
+                'staff_approved_by' => $staff->id,
+                'shop_owner_status' => 'pending',
+                'shop_owner_approved_by' => null,
+                'status' => 'pending_approval',
+            ]);
+
+            $this->assertSame('approved', $service->approveRequestedRefund($refund->fresh(), 'finance', $finance->id)['result']);
+            if ($ownerApprovalEnabled) {
+                $this->assertSame('approved_initial', $refund->fresh()->finance_status);
+                $this->assertSame('approved', $service->approveRequestedRefund($refund->fresh(), 'shop_owner')['result']);
+                $this->assertSame('approved', $service->approveRequestedRefund($refund->fresh(), 'finance', $finance->id)['result']);
+            } else {
+                $this->assertSame('invalid_state', $service->approveRequestedRefund($refund->fresh(), 'shop_owner')['result']);
+            }
+
+            $this->assertDatabaseHas('order_refunds', [
+                'id' => $refund->id,
+                'finance_status' => 'approved',
+                'shop_owner_status' => 'approved',
+                'return_status' => 'pending_customer_shipment',
+            ]);
+            $this->assertFalse($service->canExecuteApprovedRefund($refund->fresh()));
+        }
     }
 
     private function fixture(): array
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
         $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($staff);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $staff->givePermissionTo('access-staff-job-orders');
         $order = Order::factory()->create([
