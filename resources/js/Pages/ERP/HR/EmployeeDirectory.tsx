@@ -2674,20 +2674,6 @@ export const EmployeeManagement: React.FC<{
                               </IconButton>
                             )
                           )}
-                          {canRequestEmployeeLifecycle && employee.status !== 'terminated' && (
-                            <IconButton
-                              variant="danger"
-                              onClick={() => handleTerminateClick(employee)}
-                              className={employeeActionButtonClass}
-                              title="Request Termination"
-                              aria-label={`Request termination for ${buildName(employee)}`}
-                              disabled={isProcessingId === employee.id || isSelfEmployeeAccount(employee)}
-                            >
-                              <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19a6 6 0 00-12 0m6-8a4 4 0 100-8 4 4 0 000 8zm5-5h6" />
-                              </svg>
-                            </IconButton>
-                          )}
                           {!ownerReadOnly && employee.status !== 'terminated' && (
                             <>
                           <IconButton

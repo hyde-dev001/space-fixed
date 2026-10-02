@@ -61,7 +61,7 @@ describe('employee termination and rehire directory workflow', () => {
     expect(actionColumn).toContain('variant="neutral"');
     expect(actionColumn).toContain('variant="primary"');
     expect(actionColumn).toContain('variant="warning"');
-    expect(actionColumn).toContain('variant="danger"');
+    expect(actionColumn).not.toContain('variant="danger"');
     expect(actionColumn).toContain('variant="success"');
     const activationActionStart = source.indexOf("{['inactive', 'suspended'].includes(employee.status)");
     const activationAction = source.slice(
@@ -78,18 +78,27 @@ describe('employee termination and rehire directory workflow', () => {
     expect(actionColumn).toContain('aria-label={`Request rehire for ${buildName(employee)}`}');
     expect(actionColumn).toContain('<UserCheckIcon');
     expect(actionColumn).toContain('Rehire Pending');
-    expect(actionColumn).toContain('title="Request Termination"');
-    expect(actionColumn).toContain('aria-label={`Request termination for ${buildName(employee)}`}');
+    expect(actionColumn).not.toContain('title="Request Termination"');
+    expect(actionColumn).not.toContain('aria-label={`Request termination for ${buildName(employee)}`}');
     expect(actionColumn).not.toContain('>\n                              Request Termination\n');
     expect(actionColumn).not.toContain('text-purple-600');
     expect(actionColumn).not.toContain('text-orange-600');
+
+    const viewModalStart = source.indexOf('{isViewModalOpen &&');
+    const viewModal = source.slice(
+      viewModalStart,
+      source.indexOf('{/* Add Employee Modal */}', viewModalStart),
+    );
+
+    expect(viewModal).toContain('Request Termination');
+    expect(viewModal).toContain('variant="danger"');
   });
 
   it('does not offer Activate Account for terminated employee rows', () => {
     expect(source).toContain("employee.status === 'terminated'");
     expect(source).toContain("['inactive', 'suspended'].includes(employee.status)");
     expect(source).toContain("onClick={() => handleRehireClick(employee)}");
-    expect(source).toContain("onClick={() => handleTerminateClick(employee)}");
+    expect(source).toContain("onClick={() => handleTerminateClick(selectedEmployee)}");
   });
 
   it('limits terminated employee rows to details and rehire actions', () => {
