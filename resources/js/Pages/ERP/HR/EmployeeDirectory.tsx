@@ -2606,7 +2606,7 @@ export const EmployeeManagement: React.FC<{
                       </td>
                       <td className="px-3 py-3 align-top text-right text-sm font-medium">
                         <div className="ml-auto flex w-full max-w-[340px] flex-nowrap items-center justify-end gap-2">
-                          {!ownerReadOnly && (
+                          {!ownerReadOnly && employee.status !== 'terminated' && (
                             <>
                           <IconButton
                             variant="warning"
@@ -2688,7 +2688,7 @@ export const EmployeeManagement: React.FC<{
                               </svg>
                             </IconButton>
                           )}
-                          {!ownerReadOnly && (
+                          {!ownerReadOnly && employee.status !== 'terminated' && (
                             <>
                           <IconButton
                             variant="neutral"

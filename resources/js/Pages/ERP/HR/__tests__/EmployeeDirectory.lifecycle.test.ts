@@ -92,6 +92,18 @@ describe('employee termination and rehire directory workflow', () => {
     expect(source).toContain("onClick={() => handleTerminateClick(employee)}");
   });
 
+  it('limits terminated employee rows to details and rehire actions', () => {
+    const actionColumnStart = source.indexOf('<td className="px-3 py-3 align-top text-right');
+    const actionColumn = source.slice(
+      actionColumnStart,
+      source.indexOf('</td>', actionColumnStart),
+    );
+
+    expect(actionColumn.match(/!ownerReadOnly && employee\.status !== 'terminated'/g)).toHaveLength(2);
+    expect(actionColumn).toContain('title="View Details"');
+    expect(actionColumn).toContain('title="Request Rehire"');
+  });
+
   it('shows a contextual SweetAlert when a rehire request fails', () => {
     expect(source).toContain('errorTitle?: string;');
     expect(source).toContain('title: errorTitle');
