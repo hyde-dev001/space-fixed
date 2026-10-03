@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\Feature\SuperAdmin;
 
+use App\Enums\AdminPage;
+use App\Models\AdminPagePermission;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
@@ -51,6 +53,15 @@ final class PrivilegedAuditHistoryTest extends TestCase
             ->assertUnauthorized();
     }
 
+    public function test_admin_without_audit_page_assignment_is_denied(): void
+    {
+        $viewer = SuperAdmin::factory()->admin()->create();
+
+        $this->actingAsCompletedPrivileged($viewer)
+            ->get('/admin/audit')
+            ->assertForbidden();
+    }
+
     public function test_super_admin_sees_all_privileged_activity_but_not_other_logs(): void
     {
         $viewer = SuperAdmin::factory()->superAdmin()->create();
@@ -88,6 +99,7 @@ final class PrivilegedAuditHistoryTest extends TestCase
     public function test_admin_sees_own_events_and_capability_scoped_operational_events_only(): void
     {
         $viewer = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($viewer, AdminPage::AUDIT_HISTORY);
         $otherAdmin = SuperAdmin::factory()->admin()->create();
         $shop = ShopOwner::factory()->create();
 
@@ -140,8 +152,95 @@ final class PrivilegedAuditHistoryTest extends TestCase
             );
 
         $this->actingAsCompletedPrivileged($viewer)
-            ->get('/admin/audit?event=not-an-allowlisted-event&per_page=101')
-            ->assertSessionHasErrors(['event', 'per_page']);
+            ->get('/admin/audit?event=not-an-allowlisted-event&per_page=101'
+                .'&result=secret&source=../invalid&sort=sideways&ip_address=not-an-ip')
+            ->assertSessionHasErrors(['event', 'per_page', 'result', 'source', 'sort', 'ip_address']);
+    }
+
+    public function test_friendly_text_result_source_and_sort_filters_are_server_side(): void
+    {
+        $viewer = SuperAdmin::factory()->superAdmin()->create();
+        $actor = SuperAdmin::factory()->admin()->create([
+            'first_name' => 'Ada',
+            'last_name' => 'Lovelace',
+            'email' => 'ada.audit@example.test',
+        ]);
+        $target = User::factory()->create(['name' => 'Ava Customer']);
+
+        $failedProviderEvent = $this->activity(
+            'subscription_refund_failed',
+            $actor,
+            User::class,
+            $target->id,
+            ['source' => 'provider_webhook', 'status' => 'failed'],
+            '2026-08-12 12:00:00',
+        );
+        $this->activity(
+            'subscription_refund_succeeded',
+            $actor,
+            User::class,
+            $target->id,
+            ['source' => 'http', 'status' => 'succeeded'],
+            '2026-08-10 12:00:00',
+        );
+        $this->activity(
+            'privileged_mfa_failed',
+            $actor,
+            SuperAdmin::class,
+            $actor->id,
+            ['source' => 'http'],
+            '2026-08-11 12:00:00',
+        );
+
+        $this->actingAsCompletedPrivileged($viewer)
+            ->get('/admin/audit?search=refund&actor_search=ada.audit%40example.test'
+                .'&target_search=Ava&result=failed&source=provider_webhook&sort=oldest')
+            ->assertInertia(fn (Assert $page) => $page
+                ->has('entries', 1)
+                ->where('entries.0.id', $failedProviderEvent->id)
+                ->where('filters.result', 'failed')
+                ->where('filters.source', 'provider_webhook')
+                ->where('filters.sort', 'oldest'));
+
+        $this->actingAsCompletedPrivileged($viewer)
+            ->get('/admin/audit?sort=oldest&per_page=25')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.event', 'subscription_refund_succeeded')
+                ->where('entries.1.event', 'privileged_mfa_failed')
+                ->where('entries.2.event', 'subscription_refund_failed'));
+    }
+
+    public function test_subscription_audit_events_have_human_labels_and_safe_technical_references(): void
+    {
+        $viewer = SuperAdmin::factory()->superAdmin()->create();
+
+        $this->activity(
+            'subscription_refund_failed',
+            $viewer,
+            \App\Models\ShopOwnerSubscription::class,
+            987,
+            [
+                'source' => 'provider_webhook',
+                'correlation_id' => '11111111-1111-4111-8111-111111111111',
+                'password' => 'never-send-this',
+                'provider_refund_id' => 'provider-reference',
+            ],
+        );
+
+        $this->actingAsCompletedPrivileged($viewer)
+            ->get('/admin/audit')
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('entries.0.event_label', 'Subscription refund failed')
+                ->where('entries.0.source_label', 'Payment provider webhook')
+                ->where('entries.0.target.type', 'Subscription')
+                ->where('entries.0.result.key', 'failed')
+                ->where('entries.0.audit_reference', 'AUD-00000001')
+                ->where('entries.0.actor.id', $viewer->id)
+                ->where('entries.0.target.id', 987)
+                ->where('entries.0.correlation_id', '11111111-1111-4111-8111-111111111111')
+                ->missing('entries.0.metadata.password')
+                ->missing('entries.0.metadata.provider_refund_id')
+                ->missing('entries.0.properties'));
     }
 
     public function test_safe_serialization_excludes_raw_properties_and_sensitive_values(): void
@@ -172,6 +271,7 @@ final class PrivilegedAuditHistoryTest extends TestCase
     public function test_document_renewal_audit_is_visible_with_allowlisted_metadata_only(): void
     {
         $viewer = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($viewer, AdminPage::AUDIT_HISTORY);
         $owner = ShopOwner::factory()->approved()->create();
         $predecessor = ShopDocument::create([
             'shop_owner_id' => $owner->id,
@@ -244,6 +344,7 @@ final class PrivilegedAuditHistoryTest extends TestCase
     public function test_legacy_report_aliases_redirect_to_canonical_audit_history(): void
     {
         $viewer = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($viewer, AdminPage::AUDIT_HISTORY);
 
         $this->actingAsCompletedPrivileged($viewer)
             ->get('/admin/data-reports')

@@ -29,6 +29,13 @@ final class PrivilegedAuditController extends Controller
             'target_type' => '',
             'target_id' => '',
             'correlation_id' => '',
+            'search' => '',
+            'actor_search' => '',
+            'target_search' => '',
+            'result' => '',
+            'source' => '',
+            'ip_address' => '',
+            'sort' => 'newest',
             'date_from' => '',
             'date_to' => '',
             'per_page' => 25,
@@ -54,6 +61,8 @@ final class PrivilegedAuditController extends Controller
             ],
             'event_options' => $this->visibility->eventOptions($viewer),
             'target_type_options' => $this->visibility->targetTypeOptions(),
+            'result_options' => $this->visibility->resultOptions(),
+            'source_options' => $this->visibility->sourceOptions(),
         ]);
     }
 }

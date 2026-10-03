@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\AccountSuspension;
+use App\Models\IdentityVerification;
+use App\Models\MaintenanceWindow;
 use App\Models\PremiumPlan;
 use App\Models\ReviewReport;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerSubscription;
 use App\Models\ShopOwnerUpgradeRequest;
 use App\Models\ShopReportModerationAction;
 use App\Models\SuperAdmin;
@@ -80,6 +83,26 @@ final class PrivilegedAuditVisibility
         'premium_plan_reactivated' => 'Premium plan reactivated',
         'shop_owner_upgrade_reviewed' => 'Shop owner upgrade reviewed',
         'shop_owner_upgrade_superseded' => 'Shop owner upgrade superseded',
+        'identity_verification_approved' => 'Identity verification approved',
+        'identity_verification_rejected' => 'Identity verification rejected',
+        'identity_verification_inspected' => 'Identity verification reviewed',
+        'legacy_subscription_corrected' => 'Legacy subscription corrected',
+        'subscription_cancelled' => 'Subscription cancelled',
+        'subscription_refund_initiated' => 'Subscription refund initiated',
+        'subscription_refund_succeeded' => 'Subscription refund completed',
+        'subscription_refund_processing' => 'Subscription refund processing',
+        'subscription_refund_failed' => 'Subscription refund failed',
+        'subscription_refund_unknown' => 'Subscription refund needs review',
+        'subscription_refund_reconciled' => 'Subscription refund reconciled',
+        'platform_maintenance_created' => 'Maintenance window created',
+        'platform_maintenance_scheduled' => 'Maintenance scheduled',
+        'platform_maintenance_updated' => 'Maintenance window updated',
+        'platform_maintenance_cancelled' => 'Maintenance cancelled',
+        'platform_maintenance_activated' => 'Maintenance activated',
+        'platform_maintenance_extended' => 'Maintenance extended',
+        'platform_maintenance_progress_updated' => 'Maintenance progress updated',
+        'platform_maintenance_public_update_changed' => 'Maintenance update published',
+        'platform_maintenance_ended' => 'Maintenance ended',
         'privileged_capability_denied' => 'Privileged capability denied',
         'privileged_page_denied' => 'Privileged page access denied',
         'privileged_admin_page_access_changed' => 'Administrator page access changed',
@@ -133,6 +156,27 @@ final class PrivilegedAuditVisibility
         'shop_owner_upgrade_request' => ShopOwnerUpgradeRequest::class,
         'shop_report_moderation_action' => ShopReportModerationAction::class,
         'account_suspension' => AccountSuspension::class,
+        'identity_verification' => IdentityVerification::class,
+        'maintenance_window' => MaintenanceWindow::class,
+        'shop_owner_subscription' => ShopOwnerSubscription::class,
+    ];
+
+    /** @var array<string, string> */
+    private const SOURCE_LABELS = [
+        'http' => 'Admin dashboard',
+        'console' => 'System process',
+        'legacy_import' => 'Historical import',
+        'provider_webhook' => 'Payment provider webhook',
+        'provider_reconciliation' => 'Payment provider reconciliation',
+    ];
+
+    /** @var array<string, string> */
+    private const RESULT_LABELS = [
+        'completed' => 'Completed',
+        'failed' => 'Failed',
+        'denied' => 'Denied',
+        'in_progress' => 'In progress',
+        'needs_review' => 'Needs review',
     ];
 
     /** @return array<int, string> */
@@ -145,6 +189,18 @@ final class PrivilegedAuditVisibility
     public static function targetTypeValues(): array
     {
         return array_keys(self::TARGET_CLASSES);
+    }
+
+    /** @return array<int, string> */
+    public static function sourceValues(): array
+    {
+        return array_keys(self::SOURCE_LABELS);
+    }
+
+    /** @return array<int, string> */
+    public static function resultValues(): array
+    {
+        return array_keys(self::RESULT_LABELS);
     }
 
     /** @return array<int, array{value: string, label: string}> */
@@ -169,10 +225,28 @@ final class PrivilegedAuditVisibility
         return array_values(array_map(
             fn (string $value): array => [
                 'value' => $value,
-                'label' => Str::headline($value),
+                'label' => $this->friendlyTargetType($value),
             ],
             self::targetTypeValues(),
         ));
+    }
+
+    /** @return array<int, array{value: string, label: string}> */
+    public function resultOptions(): array
+    {
+        return array_map(
+            fn (string $value): array => ['value' => $value, 'label' => self::RESULT_LABELS[$value]],
+            array_keys(self::RESULT_LABELS),
+        );
+    }
+
+    /** @return array<int, array{value: string, label: string}> */
+    public function sourceOptions(): array
+    {
+        return array_map(
+            fn (string $value): array => ['value' => $value, 'label' => self::SOURCE_LABELS[$value]],
+            array_keys(self::SOURCE_LABELS),
+        );
     }
 
     public function visibleQuery(SuperAdmin $viewer): Builder
@@ -204,8 +278,8 @@ final class PrivilegedAuditVisibility
         $perPage = max(1, min(100, (int) ($filters['per_page'] ?? 25)));
         $query = $this->visibleQuery($viewer)
             ->with(['causer', 'subject'])
-            ->orderByDesc('created_at')
-            ->orderByDesc('id');
+            ->orderBy('created_at', ($filters['sort'] ?? 'newest') === 'oldest' ? 'asc' : 'desc')
+            ->orderBy('id', ($filters['sort'] ?? 'newest') === 'oldest' ? 'asc' : 'desc');
 
         if (isset($filters['event']) && $filters['event'] !== '') {
             $query->where('event', $filters['event']);
@@ -229,7 +303,31 @@ final class PrivilegedAuditVisibility
         }
 
         if (isset($filters['correlation_id']) && $filters['correlation_id'] !== '') {
-            $query->where('properties', 'like', '%"correlation_id":"'.$filters['correlation_id'].'"%');
+            $query->where('properties->correlation_id', $filters['correlation_id']);
+        }
+
+        foreach (['search', 'actor_search', 'target_search'] as $searchFilter) {
+            $term = trim((string) ($filters[$searchFilter] ?? ''));
+            if ($term === '') {
+                continue;
+            }
+
+            $this->applyTextFilter($query, $term, $searchFilter);
+        }
+
+        if (! empty($filters['result'])) {
+            $query->whereIn('event', $this->eventsForResult((string) $filters['result']));
+        }
+
+        if (! empty($filters['source'])) {
+            $query->where('properties->source', $filters['source']);
+        }
+
+        if (! empty($filters['ip_address'])) {
+            if ($viewer->role !== SuperAdmin::ROLE_SUPER_ADMIN) {
+                $query->where('causer_type', SuperAdmin::class)->where('causer_id', (int) $viewer->getKey());
+            }
+            $query->where('properties->ip_address', $filters['ip_address']);
         }
 
         if (isset($filters['date_from']) && $filters['date_from'] !== '') {
@@ -260,22 +358,30 @@ final class PrivilegedAuditVisibility
 
         return [
             'id' => (int) $activity->getKey(),
+            'audit_reference' => sprintf('AUD-%08d', (int) $activity->getKey()),
             'event' => $event,
             'event_label' => $event === 'unclassified'
                 ? 'Unclassified privileged event'
                 : self::EVENT_LABELS[$event],
             'actor' => [
                 'id' => $actorId,
+                'type' => $actorId === null ? 'system' : 'super_admin',
                 'label' => $this->actorLabel($activity, $actorId),
                 'role' => $this->safeRole($properties['actor_role'] ?? $activity->causer?->role),
             ],
             'target' => [
                 'id' => $targetId,
+                'internal_type' => $this->targetInternalType($activity, $properties),
                 'type' => $this->targetType($activity, $properties),
                 'label' => $this->targetLabel($activity),
             ],
             'outcome' => $this->outcome($properties),
+            'result' => [
+                'key' => $this->resultKey($event),
+                'label' => self::RESULT_LABELS[$this->resultKey($event)],
+            ],
             'source' => $source,
+            'source_label' => self::SOURCE_LABELS[$source] ?? 'Unknown source',
             'ip_address' => $isOwnAction || $viewer->role === SuperAdmin::ROLE_SUPER_ADMIN
                 ? $this->safeIpAddress($properties['ip_address'] ?? null)
                 : null,
@@ -310,25 +416,47 @@ final class PrivilegedAuditVisibility
         $actor = $activity->causer;
         if ($actor instanceof SuperAdmin) {
             $name = trim((string) $actor->first_name.' '.(string) $actor->last_name);
-            return $name !== '' ? $name : 'Administrator #'.$actor->getKey();
+            return $name !== '' ? $name : 'Administrator';
         }
 
-        return $actorId === null ? 'System' : 'Administrator #'.$actorId;
+        return $actorId === null ? 'System' : 'Administrator';
     }
 
     private function targetType(Activity $activity, array $properties): string
     {
         $classToType = array_flip(self::TARGET_CLASSES);
         if (isset($classToType[$activity->subject_type])) {
-            return Str::headline($classToType[$activity->subject_type]);
+            return $this->friendlyTargetType($classToType[$activity->subject_type]);
         }
 
         $propertyType = $properties['target_type'] ?? null;
         if (is_string($propertyType) && in_array($propertyType, self::targetTypeValues(), true)) {
-            return Str::headline($propertyType);
+            return $this->friendlyTargetType($propertyType);
         }
 
         return 'Record';
+    }
+
+    private function targetInternalType(Activity $activity, array $properties): string
+    {
+        $classToType = array_flip(self::TARGET_CLASSES);
+        $type = $classToType[$activity->subject_type] ?? ($properties['target_type'] ?? null);
+
+        return is_string($type) && in_array($type, self::targetTypeValues(), true) ? $type : 'unknown';
+    }
+
+    private function friendlyTargetType(string $type): string
+    {
+        return match ($type) {
+            'user' => 'Customer account',
+            'shop_owner' => 'Shop account',
+            'super_admin' => 'Administrator',
+            'premium_plan' => 'Subscription plan',
+            'shop_owner_subscription' => 'Subscription',
+            'maintenance_window' => 'Maintenance window',
+            'identity_verification' => 'Identity verification',
+            default => Str::headline($type),
+        };
     }
 
     private function targetLabel(Activity $activity): string
@@ -350,6 +478,14 @@ final class PrivilegedAuditVisibility
             return trim((string) $subject->name) ?: 'Premium plan';
         }
 
+        if ($subject instanceof MaintenanceWindow) {
+            return trim((string) $subject->title) ?: 'Maintenance window';
+        }
+
+        if ($subject instanceof ShopOwnerSubscription) {
+            return Str::headline((string) ($subject->plan_code ?: 'subscription'));
+        }
+
         return match (true) {
             $subject instanceof ShopDocument => 'Private document',
             $subject instanceof ReviewReport => 'Flagged account report',
@@ -357,6 +493,7 @@ final class PrivilegedAuditVisibility
             $subject instanceof ShopOwnerUpgradeRequest => 'Shop owner upgrade request',
             $subject instanceof ShopReportModerationAction => 'Shop report moderation',
             $subject instanceof AccountSuspension => 'Account suspension',
+            $subject instanceof IdentityVerification => 'Identity verification',
             default => 'Record',
         };
     }
@@ -375,9 +512,85 @@ final class PrivilegedAuditVisibility
 
     private function safeSource(mixed $source): string
     {
-        return is_string($source) && in_array($source, ['http', 'console', 'legacy_import'], true)
+        return is_string($source) && in_array($source, self::sourceValues(), true)
             ? $source
             : 'unknown';
+    }
+
+    private function resultKey(string $event): string
+    {
+        if (in_array($event, ['privileged_capability_denied'], true) || str_ends_with($event, '_rejected')) {
+            return 'denied';
+        }
+
+        if ($event === 'privileged_workflow_conflict' || $event === 'subscription_refund_unknown') {
+            return 'needs_review';
+        }
+
+        if (in_array($event, ['subscription_refund_initiated', 'subscription_refund_processing'], true)) {
+            return 'in_progress';
+        }
+
+        if (str_ends_with($event, '_failed')) {
+            return 'failed';
+        }
+
+        return 'completed';
+    }
+
+    /** @return array<int, string> */
+    private function eventsForResult(string $result): array
+    {
+        return array_values(array_filter(
+            self::eventValues(),
+            fn (string $event): bool => $this->resultKey($event) === $result,
+        ));
+    }
+
+    private function applyTextFilter(Builder $query, string $term, string $filter): void
+    {
+        $like = '%'.addcslashes($term, '\\%_').'%';
+        $query->where(function (Builder $matches) use ($like, $filter): void {
+            if ($filter !== 'actor_search') {
+                $matches->whereHasMorph('subject', [
+                    User::class,
+                    ShopOwner::class,
+                    SuperAdmin::class,
+                    ShopDocument::class,
+                    PremiumPlan::class,
+                    MaintenanceWindow::class,
+                    ShopOwnerSubscription::class,
+                ], function (Builder $subject, string $type) use ($like): void {
+                        $columns = match ($type) {
+                            User::class => ['name', 'email'],
+                            ShopOwner::class => ['business_name', 'email'],
+                            SuperAdmin::class => ['first_name', 'last_name', 'email'],
+                            ShopDocument::class => ['document_type', 'logical_slot'],
+                            PremiumPlan::class => ['name'],
+                            MaintenanceWindow::class => ['title'],
+                            ShopOwnerSubscription::class => ['plan_code', 'status'],
+                            default => [],
+                        };
+
+                        $subject->where(function (Builder $fields) use ($columns, $like): void {
+                            foreach ($columns as $column) {
+                                $fields->orWhere($column, 'like', $like);
+                            }
+                        });
+                    });
+                if ($filter === 'search') {
+                    $matches->orWhere('event', 'like', $like);
+                }
+            }
+
+            if ($filter !== 'target_search') {
+                $matches->orWhereHasMorph('causer', [SuperAdmin::class], function (Builder $actor) use ($like): void {
+                    $actor->where('first_name', 'like', $like)
+                        ->orWhere('last_name', 'like', $like)
+                        ->orWhere('email', 'like', $like);
+                });
+            }
+        });
     }
 
     private function safeRole(mixed $role): string
@@ -442,6 +655,7 @@ final class PrivilegedAuditVisibility
             'submitted_expires_on',
             'mime',
             'disposition',
+            'method',
             'account_type',
             'account_id',
             'suspension_id',
@@ -463,6 +677,9 @@ final class PrivilegedAuditVisibility
             }
 
             $value = $properties[$key];
+            if ($key === 'method' && ! in_array($value, ['totp', 'recovery_code'], true)) {
+                continue;
+            }
             if (is_int($value) || is_bool($value)) {
                 $metadata[$key] = $value;
             } elseif (is_string($value) && trim($value) !== '') {
