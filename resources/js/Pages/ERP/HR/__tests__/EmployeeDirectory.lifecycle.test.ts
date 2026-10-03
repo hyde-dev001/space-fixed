@@ -113,6 +113,26 @@ describe('employee termination and rehire directory workflow', () => {
     expect(actionColumn).toContain('title="Request Rehire"');
   });
 
+  it('renders the employee suffix and complete address in details', () => {
+    const buildNameStart = source.indexOf('const buildName =');
+    const buildName = source.slice(buildNameStart, source.indexOf('\n\n', buildNameStart));
+    const viewModalStart = source.indexOf('{isViewModalOpen &&');
+    const viewModal = source.slice(
+      viewModalStart,
+      source.indexOf('{/* Add Employee Modal */}', viewModalStart),
+    );
+
+    expect(buildName).toContain('employee.suffix');
+    expect(viewModal).toContain('Address');
+    expect(viewModal).toContain('selectedEmployee.location');
+    expect(viewModal).toContain('Province');
+    expect(viewModal).toContain('selectedEmployee.province');
+    expect(viewModal).toContain('City/Municipality');
+    expect(viewModal).toContain('selectedEmployee.cityMunicipality');
+    expect(viewModal).toContain('Postal Code');
+    expect(viewModal).toContain('selectedEmployee.postalCode');
+  });
+
   it('shows a contextual SweetAlert when a rehire request fails', () => {
     expect(source).toContain('errorTitle?: string;');
     expect(source).toContain('title: errorTitle');

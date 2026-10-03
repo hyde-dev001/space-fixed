@@ -318,7 +318,7 @@ const nextDateAfter = (value?: string) => {
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 };
 
-const buildName = (employee: Employee) => `${employee.firstName} ${employee.lastName}`;
+const buildName = (employee: Employee) => [employee.firstName, employee.lastName, employee.suffix].filter(Boolean).join(' ');
 
 const employeeActionButtonClass = "inline-flex size-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:focus-visible:ring-offset-gray-800";
 
@@ -2811,8 +2811,20 @@ export const EmployeeManagement: React.FC<{
                       <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.position}</p>
                     </div>
                     <div>
-                      <p className="text-base text-gray-500 dark:text-gray-400">Location</p>
+                      <p className="text-base text-gray-500 dark:text-gray-400">Address</p>
                       <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.location || "N/A")}</p>
+                    </div>
+                    <div>
+                      <p className="text-base text-gray-500 dark:text-gray-400">Province</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.province || "N/A")}</p>
+                    </div>
+                    <div>
+                      <p className="text-base text-gray-500 dark:text-gray-400">City/Municipality</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.cityMunicipality || "N/A")}</p>
+                    </div>
+                    <div>
+                      <p className="text-base text-gray-500 dark:text-gray-400">Postal Code</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.postalCode || "N/A")}</p>
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Status</p>
