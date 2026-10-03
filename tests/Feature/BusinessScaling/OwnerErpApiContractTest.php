@@ -637,6 +637,7 @@ final class OwnerErpApiContractTest extends TestCase
         $this->actingAs($owner, 'shop_owner')
             ->postJson('/shop-owner/employees', [
                 'name' => 'Directory Employee',
+                'age' => 30,
                 'email' => 'directory.employee@example.test',
                 'phone' => '09170000001',
                 'position' => 'General Staff',
@@ -651,6 +652,7 @@ final class OwnerErpApiContractTest extends TestCase
         $this->assertDatabaseHas('employees', [
             'shop_owner_id' => $owner->id,
             'email' => 'directory.employee@example.test',
+            'age' => 30,
             'status' => 'active',
         ]);
     }

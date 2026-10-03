@@ -52,6 +52,7 @@ class LogisticsEmployeeRoleAccessTest extends TestCase
         $response = $this->actingAs($shop, 'shop_owner')
             ->post(route('shop-owner.employees.store'), [
                 'name' => 'Logistics Rider One',
+                'age' => 30,
                 'email' => 'logistics-rider@example.com',
                 'phone' => '09171234567',
                 'role' => 'Logistics Rider',
@@ -94,6 +95,7 @@ class LogisticsEmployeeRoleAccessTest extends TestCase
             ->postJson('/api/hr/employees', [
                 'firstName' => 'Logistics',
                 'lastName' => 'Dispatcher',
+                'age' => 30,
                 'email' => 'logistics-dispatcher@example.com',
                 'phone' => '09171234568',
                 'position' => 'Dispatcher',

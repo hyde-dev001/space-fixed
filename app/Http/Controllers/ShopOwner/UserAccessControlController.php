@@ -333,6 +333,7 @@ class UserAccessControlController extends Controller
                 'phone' => ['nullable', 'regex:/^\d{11}$/', 'unique:employees,phone', 'unique:users,phone'],
                 'address' => 'nullable|string|max:255',
                 'suffix' => 'nullable|string|max:50',
+                'age' => ['required', 'integer', 'min:0', 'max:100'],
                 'province' => 'nullable|string|max:100|required_with:address',
                 'city_municipality' => 'nullable|string|max:100|required_with:address',
                 'postal_code' => ['nullable', 'regex:/^\d{4}$/', 'required_with:address'],
@@ -446,7 +447,7 @@ class UserAccessControlController extends Controller
             
             [$employee, $user] = DB::transaction(function () use ($validated, $shopOwner, $inviteToken, $inviteExpiresAt, $legacyUserRole) {
                 $employeeData = collect($validated)->only([
-                    'shop_owner_id','name','email','phone','address','suffix','city','state','zip_code','position','department','branch','salary','hire_date','status'
+                    'shop_owner_id','name','email','phone','address','suffix','age','city','state','zip_code','position','department','branch','salary','hire_date','status'
                 ])->toArray();
                 $employee = Employee::create($employeeData);
 
@@ -467,6 +468,7 @@ class UserAccessControlController extends Controller
                         'first_name' => $firstName,
                         'last_name' => $lastName,
                         'suffix' => $validated['suffix'] ?? null,
+                        'age' => $validated['age'],
                         'email' => $validated['email'],
                         'phone' => $validated['phone'] ?? '',
                         'address' => $validated['address'] ?? '',
@@ -1654,6 +1656,7 @@ class UserAccessControlController extends Controller
             'first_name' => $firstName,
             'last_name' => $lastName,
             'suffix' => $employee->suffix ?? $linkedUser?->suffix,
+            'age' => $employee->age ?? $linkedUser?->age,
             'email' => $employee->email,
             'phone' => $employee->phone ?? $linkedUser?->phone,
             'address' => $employee->address ?? $linkedUser?->address,

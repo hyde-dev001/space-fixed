@@ -42,6 +42,7 @@ class Employee extends Model
         'first_name',
         'last_name',
         'suffix',
+        'age',
         'email',
         'password',
         'phone',
@@ -79,6 +80,7 @@ class Employee extends Model
      */
     protected $casts = [
         'hire_date' => 'date',
+        'age' => 'integer',
         'terminated_at' => 'datetime',
         'salary' => 'decimal:2',
         'sales_commission_rate' => 'decimal:4',
