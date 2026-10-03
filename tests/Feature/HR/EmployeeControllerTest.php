@@ -61,6 +61,7 @@ class EmployeeControllerTest extends TestCase
             'firstName' => 'John',
             'lastName' => 'Doe',
             'suffix' => 'Jr.',
+            'age' => 35,
             'email' => 'john.doe@example.com',
             'phone' => '09171234567',
             'address' => '123 Main Street',
@@ -91,11 +92,13 @@ class EmployeeControllerTest extends TestCase
             'state' => 'Abra',
             'city' => 'Bangued',
             'zip_code' => '2800',
+            'age' => 35,
         ]);
 
         $this->assertDatabaseHas('users', [
             'email' => 'john.doe@example.com',
             'suffix' => 'Jr.',
+            'age' => 35,
             'address' => '123 Main Street',
             'province' => 'Abra',
             'city' => 'Bangued',
@@ -104,7 +107,45 @@ class EmployeeControllerTest extends TestCase
 
         $response->assertJsonPath('employee.province', 'Abra')
             ->assertJsonPath('employee.city_municipality', 'Bangued')
-            ->assertJsonPath('employee.postal_code', '2800');
+            ->assertJsonPath('employee.postal_code', '2800')
+            ->assertJsonPath('employee.age', 35);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->getJson('/api/hr/employees')
+            ->assertOk()
+            ->assertJsonFragment(['age' => 35]);
+    }
+
+    #[Test]
+    public function test_age_is_required_and_must_be_an_integer_from_zero_to_one_hundred(): void
+    {
+        $baseData = [
+            'firstName' => 'Age',
+            'lastName' => 'Validation',
+            'email' => 'age.validation@example.com',
+            'department' => 'Engineering',
+            'position' => 'Tester',
+        ];
+
+        foreach ([
+            'missing' => null,
+            'negative' => -1,
+            'over_limit' => 101,
+            'decimal' => 35.5,
+            'text' => 'thirty-five',
+        ] as $case => $age) {
+            $data = $baseData;
+            $data['email'] = "age.{$case}@example.com";
+
+            if ($case !== 'missing') {
+                $data['age'] = $age;
+            }
+
+            $this->actingAs($this->hrUser, 'user')
+                ->postJson('/api/hr/employees', $data)
+                ->assertStatus(422)
+                ->assertJsonValidationErrors(['age']);
+        }
     }
 
     #[Test]

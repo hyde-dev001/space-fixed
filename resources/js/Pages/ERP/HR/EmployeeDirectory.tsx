@@ -17,6 +17,7 @@ type Employee = {
   email: string;
   phone?: string;
   suffix?: string;
+  age?: number | null;
   province?: string;
   cityMunicipality?: string;
   postalCode?: string;
@@ -318,7 +319,7 @@ const nextDateAfter = (value?: string) => {
   return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 };
 
-const buildName = (employee: Employee) => `${employee.firstName} ${employee.lastName}`;
+const buildName = (employee: Employee) => [employee.firstName, employee.lastName, employee.suffix].filter(Boolean).join(' ');
 
 const employeeActionButtonClass = "inline-flex size-11 shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:focus-visible:ring-offset-gray-800";
 
@@ -389,6 +390,7 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     email: apiEmployee.email,
     phone: apiEmployee.phone,
     suffix: apiEmployee.suffix || '',
+    age: apiEmployee.age ?? null,
     province: apiEmployee.province || apiEmployee.state || '',
     cityMunicipality: apiEmployee.city_municipality || apiEmployee.cityMunicipality || apiEmployee.city || '',
     postalCode: apiEmployee.postal_code || apiEmployee.postalCode || apiEmployee.zip_code || '',
@@ -649,6 +651,7 @@ export const EmployeeManagement: React.FC<{
     firstName: "",
     lastName: "",
     suffix: "",
+    age: "",
     email: "",
     phone: "",
     department: "",
@@ -2033,12 +2036,24 @@ export const EmployeeManagement: React.FC<{
       return;
     }
     
-    if (!addEmployeeForm.firstName || !addEmployeeForm.lastName || !addEmployeeForm.email || !addEmployeeForm.department) {
+    if (!addEmployeeForm.firstName || !addEmployeeForm.lastName || !addEmployeeForm.email || !addEmployeeForm.department || !addEmployeeForm.age.trim()) {
       Swal.fire({
         icon: 'error',
         title: 'Validation Error',
-        text: 'Please fill in all required fields (First name, Last name, Email, Role)',
+        text: 'Please fill in all required fields (First name, Last name, Email, Age, Role)',
         confirmButtonColor: '#ef4444'
+      });
+      return;
+    }
+
+    const normalizedAge = addEmployeeForm.age.trim();
+    const age = Number(normalizedAge);
+    if (!/^\d+$/.test(normalizedAge) || !Number.isInteger(age) || age < 0 || age > 100) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Invalid Age',
+        text: 'Age must be a whole number from 0 to 100.',
+        confirmButtonColor: '#2563eb',
       });
       return;
     }
@@ -2182,6 +2197,7 @@ export const EmployeeManagement: React.FC<{
                   suffix: addEmployeeForm.suffix,
                   email: trimmedEmail,
                   phone: normalizedPhone,
+                  age: Number(addEmployeeForm.age),
                   address: addEmployeeForm.location,
                   province: addEmployeeForm.province,
                   city_municipality: addEmployeeForm.cityMunicipality,
@@ -2199,6 +2215,7 @@ export const EmployeeManagement: React.FC<{
                   suffix: addEmployeeForm.suffix,
                   email: trimmedEmail,
                   phone: normalizedPhone,
+                  age: Number(addEmployeeForm.age),
                   address: addEmployeeForm.location,
                   position: addEmployeeForm.position || 'General Staff',
                   department: addEmployeeForm.department || 'General',
@@ -2238,6 +2255,7 @@ export const EmployeeManagement: React.FC<{
             firstName: "", 
             lastName: "", 
             suffix: "",
+            age: "",
             email: "", 
             phone: "", 
             department: "", 
@@ -2803,6 +2821,10 @@ export const EmployeeManagement: React.FC<{
                       <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.phone || "N/A")}</p>
                     </div>
                     <div>
+                      <p className="text-base text-gray-500 dark:text-gray-400">Age</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.age ?? "—"}</p>
+                    </div>
+                    <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Role</p>
                       <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.department}</p>
                     </div>
@@ -2811,8 +2833,20 @@ export const EmployeeManagement: React.FC<{
                       <p className="text-base font-medium text-gray-900 dark:text-white">{selectedEmployee.position}</p>
                     </div>
                     <div>
-                      <p className="text-base text-gray-500 dark:text-gray-400">Location</p>
+                      <p className="text-base text-gray-500 dark:text-gray-400">Address</p>
                       <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.location || "N/A")}</p>
+                    </div>
+                    <div>
+                      <p className="text-base text-gray-500 dark:text-gray-400">Province</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.province || "N/A")}</p>
+                    </div>
+                    <div>
+                      <p className="text-base text-gray-500 dark:text-gray-400">City/Municipality</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.cityMunicipality || "N/A")}</p>
+                    </div>
+                    <div>
+                      <p className="text-base text-gray-500 dark:text-gray-400">Postal Code</p>
+                      <p className="text-base font-medium text-gray-900 dark:text-white">{ownerReadOnly ? 'Restricted' : (selectedEmployee.postalCode || "N/A")}</p>
                     </div>
                     <div>
                       <p className="text-base text-gray-500 dark:text-gray-400">Status</p>
@@ -3396,7 +3430,7 @@ export const EmployeeManagement: React.FC<{
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 lg:mt-0 lg:grid-cols-1 lg:col-span-3 lg:col-start-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 lg:mt-0 lg:grid-cols-1 lg:col-span-2 lg:col-start-1">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                             Phone
@@ -3426,7 +3460,7 @@ export const EmployeeManagement: React.FC<{
 
                       </div>
 
-                      <div className="mt-3 lg:mt-0 lg:col-span-3 lg:col-start-4">
+                      <div className="mt-3 lg:mt-0 lg:col-span-2 lg:col-start-3">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
                           Email <span className="text-red-500">*</span>
                         </label>
@@ -3447,6 +3481,36 @@ export const EmployeeManagement: React.FC<{
                         {addEmployeeEmailValidation.status === 'checking' && (
                           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{addEmployeeEmailValidation.message}</p>
                         )}
+                      </div>
+
+                      <div className="mt-3 lg:mt-0 lg:col-span-2 lg:col-start-5">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
+                          Age <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          step="1"
+                          inputMode="numeric"
+                          required
+                          value={addEmployeeForm.age}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === '' || (/^\d{0,3}$/.test(value) && Number(value) <= 100)) {
+                              setAddEmployeeForm({
+                                ...addEmployeeForm,
+                                age: value,
+                              });
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (['-', '+', 'e', 'E', '.', ','].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                          }}
+                          className="w-full px-3 py-2.5 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-gray-400 focus:border-transparent outline-none transition-all"
+                        />
                       </div>
 
                       <div className="mt-3 lg:col-span-6 lg:mt-0">

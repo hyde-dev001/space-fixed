@@ -59,6 +59,7 @@ interface Employee {
   phone?: string;
   address?: string;
   suffix?: string;
+  age?: number | null;
   province?: string;
   cityMunicipality?: string;
   postalCode?: string;
@@ -419,6 +420,7 @@ const UserAccessControl: React.FC = () => {
       position: emp.position ?? '',
       personalEmail: emp.personalEmail ?? emp.personal_email ?? null,
       suffix: emp.suffix ?? '',
+      age: emp.age ?? null,
       province: emp.province ?? emp.state ?? '',
       cityMunicipality: emp.cityMunicipality ?? emp.city_municipality ?? emp.city ?? '',
       postalCode: emp.postalCode ?? emp.postal_code ?? emp.zip_code ?? '',
@@ -467,6 +469,7 @@ const UserAccessControl: React.FC = () => {
     phone: '',
     address: '',
     suffix: '',
+    age: '',
     province: '',
     cityMunicipality: '',
     postalCode: '',
@@ -1009,13 +1012,26 @@ const UserAccessControl: React.FC = () => {
 
   const handleAddEmployee = async () => {
     // Check required fields
-    if (!employeeForm.firstName || !employeeForm.lastName || !employeeForm.email || !employeeForm.department) {
+    if (!employeeForm.firstName || !employeeForm.lastName || !employeeForm.email || !employeeForm.department || !employeeForm.age.trim()) {
       Swal.fire({
         icon: 'error',
         title: 'Validation Error',
-        text: 'Please fill in all required fields (First name, Last name, Email, Role)',
+        text: 'Please fill in all required fields (First name, Last name, Age, Email, Role)',
         timer: 3000,
         showConfirmButton: false
+      });
+      return;
+    }
+
+    const normalizedAge = employeeForm.age.trim();
+    const age = Number(normalizedAge);
+    if (!/^\d+$/.test(normalizedAge) || !Number.isInteger(age) || age < 0 || age > 100) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Invalid Age',
+        text: 'Age must be a whole number from 0 to 100.',
+        timer: 3000,
+        showConfirmButton: false,
       });
       return;
     }
@@ -1120,6 +1136,7 @@ const UserAccessControl: React.FC = () => {
           first_name: employeeForm.firstName,
           last_name: employeeForm.lastName,
           suffix: employeeForm.suffix,
+          age,
           name: `${employeeForm.firstName} ${employeeForm.lastName}`,
           email: trimmedEmail,
           phone: normalizedPhone,
@@ -1151,6 +1168,7 @@ const UserAccessControl: React.FC = () => {
               phone: '',
               address: '',
               suffix: '',
+              age: '',
               province: '',
               cityMunicipality: '',
               postalCode: '',
@@ -1615,6 +1633,7 @@ const UserAccessControl: React.FC = () => {
       phone: '',
       address: '',
       suffix: '',
+      age: '',
       province: '',
       cityMunicipality: '',
       postalCode: '',
@@ -2128,6 +2147,7 @@ const UserAccessControl: React.FC = () => {
           fields: [
             ['Name', viewingEmployee.name],
             ['Suffix', viewingEmployee.suffix || 'Not available'],
+            ['Age', viewingEmployee.age ?? 'Not available'],
           ],
         },
         {
@@ -2251,7 +2271,7 @@ const UserAccessControl: React.FC = () => {
                         <input type="text" value={employeeForm.suffix} onChange={(e) => setEmployeeForm({ ...employeeForm, suffix: e.target.value })} placeholder="Jr., Sr., III" maxLength={50} className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white" />
                       </div>
 
-                      <div className="lg:col-span-3">
+                      <div className="lg:col-span-2">
                         <div>
                           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Phone</label>
                           <input type="tel" value={employeeForm.phone} onChange={(e) => setEmployeeForm({ ...employeeForm, phone: e.target.value.replace(/\D/g, '').slice(0, 11) })} inputMode="numeric" pattern="[0-9]*" maxLength={11} placeholder="09XXXXXXXXX" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeePhoneValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
@@ -2264,7 +2284,7 @@ const UserAccessControl: React.FC = () => {
                         </div>
                       </div>
 
-                      <div className="lg:col-span-3">
+                      <div className="lg:col-span-2">
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Email *</label>
                         <input type="email" value={employeeForm.email} onChange={(e) => setEmployeeForm({ ...employeeForm, email: e.target.value })} placeholder="Email address" className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white ${employeeEmailValidation.status === 'error' ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
                         {employeeEmailValidation.status === 'error' && (
@@ -2273,6 +2293,32 @@ const UserAccessControl: React.FC = () => {
                         {employeeEmailValidation.status === 'checking' && (
                           <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">{employeeEmailValidation.message}</p>
                         )}
+                      </div>
+
+                      <div className="lg:col-span-2">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Age *</label>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={1}
+                          inputMode="numeric"
+                          required
+                          value={employeeForm.age}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === '' || (/^\d{0,3}$/.test(value) && Number(value) <= 100)) {
+                              setEmployeeForm({ ...employeeForm, age: value });
+                            }
+                          }}
+                          onKeyDown={(e) => {
+                            if (['-', '+', 'e', 'E', '.', ','].includes(e.key)) {
+                              e.preventDefault();
+                            }
+                          }}
+                          placeholder="Age"
+                          className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                        />
                       </div>
 
                       <div className="mt-3 lg:col-span-6 lg:mt-0">

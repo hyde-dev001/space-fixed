@@ -38,6 +38,7 @@ class UserAccessControlEmployeeRoleCreationTest extends TestCase
             ->from('/shopOwner/user-access-control')
             ->post('/shop-owner/employees', [
                 'name' => 'Inventory User',
+                'age' => 30,
                 'email' => 'inventory.user@example.com',
                 'phone' => '09171112223',
                 'position' => 'Inventory Controller',
@@ -65,6 +66,7 @@ class UserAccessControlEmployeeRoleCreationTest extends TestCase
             ->post('/shop-owner/employees', [
                 'name' => 'Inventory User Jr.',
                 'suffix' => 'Jr.',
+                'age' => 31,
                 'email' => 'inventory.address@example.com',
                 'phone' => '09171112225',
                 'address' => '123 Main Street',
@@ -84,6 +86,7 @@ class UserAccessControlEmployeeRoleCreationTest extends TestCase
         $this->assertDatabaseHas('employees', [
             'email' => 'inventory.address@example.com',
             'suffix' => 'Jr.',
+            'age' => 31,
             'address' => '123 Main Street',
             'state' => 'Abra',
             'city' => 'Bangued',
@@ -93,6 +96,7 @@ class UserAccessControlEmployeeRoleCreationTest extends TestCase
         $this->assertDatabaseHas('users', [
             'email' => 'inventory.address@example.com',
             'suffix' => 'Jr.',
+            'age' => 31,
             'address' => '123 Main Street',
             'province' => 'Abra',
             'city' => 'Bangued',
@@ -115,6 +119,7 @@ class UserAccessControlEmployeeRoleCreationTest extends TestCase
             ->from('/shopOwner/user-access-control')
             ->post('/shop-owner/employees', [
                 'name' => 'Procurement User',
+                'age' => 32,
                 'email' => 'procurement.user@example.com',
                 'phone' => '09171112224',
                 'position' => 'Procurement Officer',

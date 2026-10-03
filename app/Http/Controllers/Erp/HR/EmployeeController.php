@@ -86,6 +86,7 @@ class EmployeeController extends Controller
         $payload['province'] = $employee->state;
         $payload['city_municipality'] = $employee->city;
         $payload['postal_code'] = $employee->zip_code;
+        $payload['age'] = $employee->age;
 
         return $payload;
     }
@@ -169,6 +170,7 @@ class EmployeeController extends Controller
             'firstName' => 'required|string|max:50',
             'lastName' => 'required|string|max:50',
             'suffix' => 'nullable|string|max:50',
+            'age' => ['required', 'integer', 'min:0', 'max:100'],
             'email' => 'required|email|unique:employees,email|unique:users,email',
             'phone' => ['nullable', 'regex:/^\d{11}$/', 'unique:employees,phone', 'unique:users,phone'],
             'position' => 'required|string|max:100',
@@ -273,6 +275,7 @@ class EmployeeController extends Controller
                 'first_name' => $firstName,
                 'last_name' => $lastName,
                 'suffix' => $request->input('suffix'),
+                'age' => $request->input('age'),
                 'name' => $fullName,
                 'email' => $request->email,
                 'phone' => $request->phone ?? null,
@@ -303,6 +306,7 @@ class EmployeeController extends Controller
                 'first_name' => $firstName,
                 'last_name' => $lastName,
                 'suffix' => $request->input('suffix'),
+                'age' => $request->input('age'),
                 'email' => $request->email,
                 'phone' => $request->phone ?? '',
                 'address' => $request->location ?? $request->address ?? '',
@@ -437,6 +441,7 @@ class EmployeeController extends Controller
             'firstName' => 'sometimes|required|string|max:50',
             'lastName' => 'sometimes|required|string|max:50',
             'suffix' => 'sometimes|nullable|string|max:50',
+            'age' => ['sometimes', 'required', 'integer', 'min:0', 'max:100'],
             'email' => 'sometimes|required|email|unique:employees,email,' . $employee->id,
             'phone' => 'sometimes|required|regex:/^\d{11}$/',
             'position' => 'sometimes|required|string|max:100',
@@ -490,6 +495,7 @@ class EmployeeController extends Controller
         if ($request->has('email')) $data['email'] = $request->email;
         if ($request->has('phone')) $data['phone'] = $request->phone;
         if ($request->has('suffix')) $data['suffix'] = $request->input('suffix');
+        if ($request->has('age')) $data['age'] = $request->input('age');
         if ($request->has('position')) $data['position'] = $request->position;
         if ($request->has('department')) $data['department'] = $request->department;
         if ($request->has('hireDate')) $data['hire_date'] = $request->hireDate;
@@ -525,11 +531,12 @@ class EmployeeController extends Controller
 
         $employee->update($data);
 
-        if (array_intersect(array_keys($data), ['suffix', 'address', 'city', 'state', 'zip_code'])) {
+        if (array_intersect(array_keys($data), ['suffix', 'age', 'address', 'city', 'state', 'zip_code'])) {
             $employee->loadMissing('user');
             if ($employee->user) {
                 $employee->user->forceFill([
                     'suffix' => $employee->suffix,
+                    'age' => $employee->age,
                     'address' => $employee->address,
                     'province' => $employee->state,
                     'city' => $employee->city,
