@@ -46,6 +46,16 @@ const normalizedStatus = (value: unknown): string => (
 );
 
 const isTerminal = (detail: ApprovalDetail, sourceType: string): boolean => {
+  if (sourceType === "repair_refund" || sourceType === "order_refund") {
+    if (isRecord(detail.owner_projection) && detail.owner_projection.owner_action_required === false) {
+      return true;
+    }
+
+    const status = normalizedStatus(detail.rawStatus ?? detail.status ?? detail.approval_status
+      ?? (isRecord(detail.approval) ? detail.approval.status : null));
+    return terminalStatuses.has(status) || status === "refunded" || status === "processing";
+  }
+
   const status = sourceType === "repair_package_price_change"
     ? detail.approval_status ?? detail.status ?? (isRecord(detail.approval) ? detail.approval.status : null)
     : detail.status ?? detail.approval_status ?? (isRecord(detail.approval) ? detail.approval.status : null);
@@ -196,8 +206,10 @@ export default function OwnerApprovalDetailPanel({
     }
   };
 
+  const canDecide = item.owner_action_required && item.primary_bucket === "needs_my_decision" && detail !== null && !isTerminal(detail, item.source_type);
+
   const submitDecision = async (action: ApprovalAction, reason?: string) => {
-    if (!definition || submitting) return;
+    if (!definition || submitting || !canDecide) return;
     const config = definition[action];
     if (!config) return;
 
@@ -270,7 +282,6 @@ export default function OwnerApprovalDetailPanel({
     );
   }
 
-  const canDecide = item.owner_action_required && item.primary_bucket === "needs_my_decision" && detail !== null && !isTerminal(detail, item.source_type);
   const Renderer = definition.renderer;
 
   return (

@@ -1640,7 +1640,10 @@ class RepairPosRefundService
                 $resolvedOwnerMessage = trim((string) $ownerMessage) !== '' ? trim((string) $ownerMessage) : $message;
                 $resolvedOwnerActionUrl = trim((string) $ownerActionUrl) !== ''
                     ? trim((string) $ownerActionUrl)
-                    : $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id);
+                    : $this->notificationService->ownerApprovalActionUrl(
+                        'repair_refund', $refund->id,
+                        history: in_array((string) $refund->status, ['processing', 'succeeded', 'failed', 'rejected', 'cancelled'], true),
+                    );
 
                 Notification::create([
                     'shop_owner_id' => (int) $refund->shop_owner_id,

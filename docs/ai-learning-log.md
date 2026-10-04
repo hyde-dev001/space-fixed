@@ -188,3 +188,5 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 
 - A rebase invalidates earlier build output. Regenerate tracked deployment assets from the rebased source, check every manifest reference, and stage source/documentation paths and build output explicitly; keep runtime cache and unrelated local work outside the commit.
 - Failure comparisons across upstream updates must account for shifted source lines. Match an exact case first, then a uniquely identified class/case when only its location moved; retain failure-reason and response-status checks. Ambiguous matches require investigation, and baseline matching does not make a failing full suite green.
+
+- Notification links preserve historical intent and may outlive a decision. Derive refund controls from current raw workflow status and the server's owner-action projection, preserving legacy status fallbacks; a display label such as Refunded is not the stored status succeeded. Resolved notifications should open the existing read-only History view, while old links still require the same live-detail gate.

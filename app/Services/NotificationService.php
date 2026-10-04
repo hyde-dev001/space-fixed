@@ -33,7 +33,7 @@ class NotificationService
         $this->recipientResolver ??= app(RecipientResolver::class);
     }
 
-    public function ownerApprovalActionUrl(string $sourceType, mixed $sourceId): string
+    public function ownerApprovalActionUrl(string $sourceType, mixed $sourceId, bool $history = false): string
     {
         $allowedSourceTypes = [
             'order_refund',
@@ -61,9 +61,11 @@ class NotificationService
             ],
         ]);
 
+        $view = $history ? 'view=history' : 'bucket=needs_my_decision';
+
         return $sourceId === false
             ? '/shop-owner/action-center'
-            : "/shop-owner/action-center?bucket=needs_my_decision&approval={$sourceType}:{$sourceId}";
+            : "/shop-owner/action-center?{$view}&approval={$sourceType}:{$sourceId}";
     }
 
     // ==================== CORE METHODS ====================
