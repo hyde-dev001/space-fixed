@@ -139,4 +139,22 @@ describe('employee termination and rehire directory workflow', () => {
     expect(source).toContain("errorTitle: 'Rehire Request Failed'");
     expect(source).toContain("icon: 'error'");
   });
+
+  it('shows missing rehire fields in a warning before submitting', () => {
+    const submitHandler = source.slice(
+      source.indexOf('const handleRehireRequestSubmit'),
+      source.indexOf('const handleSuspendClick'),
+    );
+    const rehireModal = source.slice(
+      source.indexOf('{isRehireRequestModalOpen &&'),
+      source.indexOf('{/* Add Employee Modal */}'),
+    );
+
+    expect(submitHandler).toContain('const missingRehireFields');
+    expect(submitHandler).toContain("!rehireRequestForm.rehireSalary.trim() ? 'Daily Rate' : null");
+    expect(submitHandler).toContain('missingRehireFields.join');
+    expect(rehireModal).toContain('Daily Rate <span className="text-red-500">*</span>');
+    expect(rehireModal).toContain('disabled={isProcessingId === employeeToRehire.id}');
+    expect(rehireModal).not.toContain('rehireRequestForm.reason.trim().length < 3 ||');
+  });
 });

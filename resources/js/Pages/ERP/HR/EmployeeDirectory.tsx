@@ -1292,10 +1292,18 @@ export const EmployeeManagement: React.FC<{
     const rehireStartDate = rehireRequestForm.rehireStartDate.trim();
     if (!employee) return;
 
-    if (reason.length < 3 || !rehireStartDate || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()) {
+    const missingRehireFields = [
+      !rehireStartDate ? 'New Start Date' : null,
+      !rehireRequestForm.rehireRole.trim() ? 'Department / Role' : null,
+      !rehireRequestForm.rehirePosition.trim() ? 'Position / Job Title' : null,
+      !rehireRequestForm.rehireSalary.trim() ? 'Daily Rate' : null,
+      reason.length < 3 ? 'Reason for Rehire' : null,
+    ].filter((field): field is string => field !== null);
+
+    if (missingRehireFields.length > 0) {
       await Swal.fire({
         title: 'Complete Rehire Details',
-        text: 'Provide a reason, start date, position, and role before submitting.',
+        text: `Please complete: ${missingRehireFields.join(', ')}.`,
         icon: 'warning',
         confirmButtonColor: '#f59e0b',
       });
@@ -3259,7 +3267,7 @@ export const EmployeeManagement: React.FC<{
                       <div className="grid grid-cols-2 gap-4 mt-4">
                         <div>
                           <label htmlFor="rehire-salary" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5">
-                            Daily Rate
+                            Daily Rate <span className="text-red-500">*</span>
                           </label>
                           <div className="relative">
                             <span className="absolute left-3 top-2.5 text-gray-500 dark:text-gray-400">&#8369;</span>
@@ -3268,6 +3276,7 @@ export const EmployeeManagement: React.FC<{
                               type="number"
                               min="0"
                               step="0.01"
+                              required
                               value={rehireRequestForm.rehireSalary}
                               onChange={(event) => setRehireRequestForm({ ...rehireRequestForm, rehireSalary: event.target.value })}
                               placeholder="0.00"
@@ -3339,7 +3348,7 @@ export const EmployeeManagement: React.FC<{
                     <button
                       type="button"
                       onClick={handleRehireRequestSubmit}
-                      disabled={isProcessingId === employeeToRehire.id || rehireRequestForm.reason.trim().length < 3 || !rehireRequestForm.rehireStartDate || !rehireRequestForm.rehirePosition.trim() || !rehireRequestForm.rehireRole.trim()}
+                      disabled={isProcessingId === employeeToRehire.id}
                       className={`px-5 py-2.5 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-all duration-200 hover:shadow-md active:shadow-sm ${isProcessingId === employeeToRehire.id ? 'opacity-50 cursor-not-allowed' : ''}`}
                     >
                       {isProcessingId === employeeToRehire.id ? 'Submitting...' : 'Submit Rehire Request'}
