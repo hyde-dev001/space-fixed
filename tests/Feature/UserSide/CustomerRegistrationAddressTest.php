@@ -165,6 +165,30 @@ class CustomerRegistrationAddressTest extends TestCase
         $this->assertDatabaseMissing('users', ['email' => 'short-password@example.test']);
     }
 
+    public function test_customer_registration_rejects_age_above_100(): void
+    {
+        Http::fake(['nominatim.openstreetmap.org/*' => Http::response([
+            'lat' => '14.5832',
+            'lon' => '120.9822',
+            'address' => [
+                'country_code' => 'ph',
+                'region' => 'National Capital Region',
+                'state' => 'Metro Manila',
+                'city' => 'Manila',
+                'suburb' => 'Ermita',
+                'postcode' => '1000',
+            ],
+        ])]);
+
+        $this->post('/user/register', $this->payload([
+            'email' => 'age-over-100@example.test',
+            'age' => 101,
+        ]))
+            ->assertSessionHasErrors(['age' => 'Please enter a valid age (100 or below).']);
+
+        $this->assertDatabaseMissing('users', ['email' => 'age-over-100@example.test']);
+    }
+
     public function test_registration_rejects_a_phone_registered_to_any_account_type(): void
     {
         foreach ([User::class, Employee::class, ShopOwner::class] as $index => $modelClass) {

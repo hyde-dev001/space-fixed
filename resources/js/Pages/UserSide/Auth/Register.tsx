@@ -456,8 +456,8 @@ export default function Register() {
         newErrors.age = 'Age must be a whole number.';
       } else if (ageNumber < 18) {
         newErrors.age = 'You must be at least 18 years old to register.';
-      } else if (ageNumber > 120) {
-        newErrors.age = 'Please enter a valid age (120 or below).';
+      } else if (ageNumber > 100) {
+        newErrors.age = 'Age must be a whole number from 18 to 100.';
       }
 
       if (!formData.address.trim()) {
@@ -758,7 +758,16 @@ export default function Register() {
     const stepErrors = getStepValidationErrors(currentStep);
     if (Object.keys(stepErrors).length > 0) {
       setErrors(prev => ({ ...prev, ...stepErrors }));
-      showValidationModal('Please fix the highlighted fields', stepErrors);
+      if (currentStep === 2 && stepErrors.age) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid age',
+          text: stepErrors.age,
+          confirmButtonColor: '#000000',
+        });
+      } else {
+        showValidationModal('Please fix the highlighted fields', stepErrors);
+      }
       return;
     }
 
@@ -1300,6 +1309,10 @@ export default function Register() {
                         type="number"
                         id="age"
                         name="age"
+                        min="18"
+                        max="100"
+                        step="1"
+                        inputMode="numeric"
                         placeholder="Enter your age"
                         value={formData.age}
                         onChange={handleInputChange}

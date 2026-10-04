@@ -2307,7 +2307,7 @@ const UserAccessControl: React.FC = () => {
                           value={employeeForm.age}
                           onChange={(e) => {
                             const value = e.target.value;
-                            if (value === '' || (/^\d{0,3}$/.test(value) && Number(value) <= 100)) {
+                            if (value === '' || /^\d{0,3}$/.test(value)) {
                               setEmployeeForm({ ...employeeForm, age: value });
                             }
                           }}

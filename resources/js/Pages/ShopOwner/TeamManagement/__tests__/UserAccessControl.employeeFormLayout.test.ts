@@ -32,7 +32,10 @@ describe('add employee form layout', () => {
     expect(source).toContain('          age,');
     expect(source).toContain('min={0}');
     expect(source).toContain('max={100}');
-    expect(source).toContain('Number(value) <= 100');
+    expect(source).toContain('/^\\d{0,3}$/.test(value)');
+    expect(source).not.toContain('Number(value) <= 100');
+    expect(source).toContain("title: 'Invalid Age'");
+    expect(source).toContain('Age must be a whole number from 0 to 100.');
     expect(personalInformation).toMatch(/<div className="mt-3 lg:col-span-6 lg:mt-0">[\s\S]*PhilippineAddressFields/);
   });
 });
