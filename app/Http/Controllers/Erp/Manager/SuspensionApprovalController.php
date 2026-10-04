@@ -320,7 +320,7 @@ final class SuspensionApprovalController extends Controller
             'approvalDate' => optional($suspensionRequest->manager_reviewed_at)->toDateTimeString(),
             'approvalNote' => $suspensionRequest->manager_note,
             'rejectionReason' => $status === SuspensionStatus::REJECTED_MANAGER ? $suspensionRequest->manager_note : null,
-            'age_days' => $createdAt ? $createdAt->diffInDays(now()) : 0,
+            'age_days' => $createdAt ? (int) $createdAt->diffInDays(now()) : 0,
             'overdue' => $slaConfigured && $ageMinutes > (int) $slaMinutes,
             'sla' => [
                 'configured' => $slaConfigured,

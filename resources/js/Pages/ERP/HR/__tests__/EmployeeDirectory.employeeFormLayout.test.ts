@@ -45,4 +45,11 @@ describe('ERP employee form layout', () => {
     expect(detailsModal).toContain('Age');
     expect(detailsModal).toContain('selectedEmployee.age');
   });
+
+  it('lets an out-of-range age reach submit validation', () => {
+    expect(source).toContain('/^\\d{0,3}$/.test(value)');
+    expect(source).not.toContain('Number(value) <= 100');
+    expect(source).toContain("title: 'Invalid Age'");
+    expect(source).toContain('Age must be a whole number from 0 to 100.');
+  });
 });

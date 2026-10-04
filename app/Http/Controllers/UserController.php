@@ -207,7 +207,7 @@ class UserController extends Controller
                     Rule::unique('employees', 'phone'),
                     Rule::unique('shop_owners', 'phone'),
                 ],
-                'age' => 'required|integer|min:18|max:120',
+                'age' => 'required|integer|min:18|max:100',
                 'password' => [
                     'required',
                     'string',
@@ -267,7 +267,7 @@ class UserController extends Controller
                 'age.required' => 'Please enter your age.',
                 'age.integer' => 'Age must be a whole number.',
                 'age.min' => 'You must be at least 18 years old to register.',
-                'age.max' => 'Please enter a valid age (120 or below).',
+                'age.max' => 'Please enter a valid age (100 or below).',
                 'password.required' => 'Please enter a password.',
                 'password.min' => 'Password must be at least 12 characters.',
                 'password.confirmed' => 'Passwords do not match.',

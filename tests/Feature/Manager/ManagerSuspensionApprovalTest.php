@@ -316,6 +316,21 @@ class ManagerSuspensionApprovalTest extends TestCase
         $response->assertJsonPath('evidence', 'HR incident report #42');
     }
 
+    public function test_suspension_age_is_returned_as_whole_elapsed_days(): void
+    {
+        $this->suspension->forceFill([
+            'created_at' => now()->subSeconds(43),
+            'updated_at' => now(),
+        ])->save();
+
+        $response = $this->actingAs($this->manager, 'user')
+            ->getJson("/api/manager/suspension-requests/{$this->suspension->id}");
+
+        $response->assertOk();
+        $this->assertIsInt($response->json('age_days'));
+        $this->assertSame(0, $response->json('age_days'));
+    }
+
     /**
      * Test: Cannot view nonexistent suspension
      */

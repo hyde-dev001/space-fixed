@@ -216,6 +216,36 @@ beforeEach(() => {
 });
 
 describe('customer registration document screening UI', () => {
+  it('shows an invalid-age alert when 101 is submitted from Step 2', async () => {
+    render(<Register />);
+    fireEvent.change(screen.getByLabelText('First Name'), { target: { value: 'Juan' } });
+    fireEvent.change(screen.getByLabelText('Last Name'), { target: { value: 'Dela Cruz' } });
+    fireEvent.change(screen.getByLabelText('Email'), { target: { value: 'juan@example.com' } });
+    fireEvent.change(screen.getByLabelText('Phone Number'), { target: { value: '09171234567' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getByLabelText('Age')).toBeInTheDocument());
+    expect(screen.getByLabelText('Age')).toHaveAttribute('max', '100');
+    fireEvent.change(screen.getByLabelText('Age'), { target: { value: '101' } });
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(mocks.swalFire).toHaveBeenCalledWith(expect.objectContaining({
+      icon: 'error',
+      title: 'Invalid age',
+      text: 'Age must be a whole number from 18 to 100.',
+    })));
+    expect(screen.getByLabelText('Age')).toHaveValue(101);
+    expect(screen.queryByLabelText('ID Type')).not.toBeInTheDocument();
+  });
+
   it('shows and hides both registration password fields', async () => {
     render(<Register />);
     fireEvent.change(screen.getByLabelText('First Name'), { target: { value: 'Juan' } });

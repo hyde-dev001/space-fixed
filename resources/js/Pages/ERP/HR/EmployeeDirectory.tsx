@@ -3497,7 +3497,7 @@ export const EmployeeManagement: React.FC<{
                           value={addEmployeeForm.age}
                           onChange={(e) => {
                             const value = e.target.value;
-                            if (value === '' || (/^\d{0,3}$/.test(value) && Number(value) <= 100)) {
+                            if (value === '' || /^\d{0,3}$/.test(value)) {
                               setAddEmployeeForm({
                                 ...addEmployeeForm,
                                 age: value,
