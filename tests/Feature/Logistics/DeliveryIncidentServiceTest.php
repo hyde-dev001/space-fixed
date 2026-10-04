@@ -50,7 +50,12 @@ class DeliveryIncidentServiceTest extends TestCase
 
     public function test_open_incident_is_singleton_per_delivery_and_enters_dispatcher_resolution(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create([
             'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id,
@@ -132,6 +137,11 @@ class DeliveryIncidentServiceTest extends TestCase
         $customer = User::factory()->create();
         $finance = User::factory()->create(['shop_owner_id' => $shop->id]);
         $finance->assignRole(Role::findOrCreate('Finance', 'user'));
+        $foreignFinance = User::factory()->create(['shop_owner_id' => ShopOwner::factory()->create()->id]);
+        $foreignFinance->assignRole(Role::findOrCreate('Finance', 'user'));
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $staff->assignRole(Role::findOrCreate('Staff', 'user'));
+        $staff->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate('access-staff-job-orders', 'user'));
         $product = Product::create([
             'shop_owner_id' => $shop->id,
             'name' => 'Lost parcel shoe',
@@ -213,6 +223,9 @@ class DeliveryIncidentServiceTest extends TestCase
             ->latest('id')
             ->firstOrFail();
         $this->assertSame($claim->id, (int) data_get($notification->data, 'refund_id'));
+        $this->assertSame(1, Notification::query()->where('user_id', $finance->id)->where('type', 'refund_request')->count());
+        $this->assertSame(0, Notification::query()->whereIn('user_id', [$staff->id, $foreignFinance->id])
+            ->where('type', 'refund_request')->count());
     }
 
     public function test_service_rejects_client_supplied_paths_outside_the_incident_evidence_prefix(): void

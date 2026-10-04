@@ -14,6 +14,7 @@ use App\Models\UserAddress;
 use App\Services\Logistics\DeliveryEventService;
 use App\Services\Logistics\DeliveryScheduleService;
 use App\Services\Logistics\SourceShipmentService;
+use App\Services\Logistics\LogisticsMovementEligibility;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -26,7 +27,32 @@ final class RepairDeliveryService
         private SourceShipmentService $sourceShipments,
         private NotificationService $notifications,
         private DeliveryEventService $events,
+        private LogisticsMovementEligibility $movements,
     ) {}
+
+    /** @return array{intake: array<int, string>, return: array<int, string>} */
+    public function allowedWarrantyDeliveryMethods(RepairRequest $repair): array
+    {
+        if ($repair->parent_repair_request_id && ((bool) $repair->is_warranty_job || $repair->billing_mode === 'warranty_no_charge')) {
+            $repair = RepairRequest::query()->whereKey($repair->parent_repair_request_id)
+                ->where('shop_owner_id', $repair->shop_owner_id)->firstOrFail();
+        }
+        $intake = $repair->intake_delivery_method
+            ?: ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery');
+        $return = $repair->return_delivery_method
+            ?: ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup');
+        if ($intake === 'walk_in' && $return === 'walk_in') {
+            return ['intake' => ['walk_in'], 'return' => ['walk_in']];
+        }
+
+        $methods = ['intake' => ['walk_in', 'customer_delivery'], 'return' => ['walk_in', 'customer_pickup']];
+        $shop = $repair->shopOwner ?: ShopOwner::query()->find($repair->shop_owner_id);
+        if ($shop && $this->movements->canStart($shop)) {
+            $methods['intake'][] = 'shop_pickup';
+            $methods['return'][] = 'shop_delivery';
+        }
+        return $methods;
+    }
 
     public function snapshot(UserAddress $address, string $method): array
     {
@@ -70,6 +96,11 @@ final class RepairDeliveryService
                 'fee' => null,
                 'estimate' => null,
             ];
+        }
+
+        if (! $this->movements->canStart($shop)) {
+            return ['available' => false, 'reason' => 'logistics_disabled', 'distance_km' => null,
+                'coverage_radius_km' => null, 'fee' => null, 'estimate' => null];
         }
 
         $coverage = $this->schedules->coverage($shop, $address->latitude, $address->longitude);
@@ -347,6 +378,9 @@ final class RepairDeliveryService
             if (in_array($currentStatus, ['resolved', 'paid'], true)) {
                 abort(409, 'This pickup recovery plan is already final.');
             }
+            if (! in_array($method, $this->allowedWarrantyDeliveryMethods($locked)['intake'], true)) {
+                throw ValidationException::withMessages(['method' => ['This delivery method is unavailable for the original repair and current Logistics setting.']]);
+            }
 
             RepairPaymentSession::query()
                 ->where('repair_request_id', $locked->id)
@@ -437,6 +471,10 @@ final class RepairDeliveryService
                 ->first();
 
             if ($existing && $existing->status->value !== 'cancelled') {
+                if (! $this->movements->canStart($lockedRepair->shopOwner)
+                    && ! $this->movements->canContinueShipment($lockedRepair->shopOwner, $existing)) {
+                    return null;
+                }
                 return $existing->load('legs');
             }
 
@@ -457,11 +495,13 @@ final class RepairDeliveryService
             }
 
             $snapshot = is_array($lockedRepair->intake_address) ? $lockedRepair->intake_address : [];
-            $coverage = $this->schedules->coverage(
-                $lockedRepair->shopOwner,
-                isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
-                isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
-            );
+            $coverage = ! $this->movements->canStart($lockedRepair->shopOwner)
+                ? ['available' => false, 'reason' => 'logistics_disabled']
+                : $this->schedules->coverage(
+                    $lockedRepair->shopOwner,
+                    isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
+                    isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
+                );
 
             if (! ($coverage['available'] ?? false)) {
                 $createdCompensation = $this->startIntakeCompensation($lockedRepair, $coverage);
@@ -571,6 +611,10 @@ final class RepairDeliveryService
                 ->where('purpose', 'repair_return')
                 ->first();
             if ($existing && $existing->status->value !== 'cancelled') {
+                if (! $this->movements->canStart($lockedRepair->shopOwner)
+                    && ! $this->movements->canContinueShipment($lockedRepair->shopOwner, $existing)) {
+                    return null;
+                }
                 if ((string) $lockedRepair->status !== 'shipped') {
                     $lockedRepair->update(['status' => 'shipped', 'shipped_at' => now()]);
                 }
@@ -601,11 +645,13 @@ final class RepairDeliveryService
             }
 
             $snapshot = is_array($lockedRepair->return_address) ? $lockedRepair->return_address : [];
-            $coverage = $this->schedules->coverage(
-                $lockedRepair->shopOwner,
-                isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
-                isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
-            );
+            $coverage = ! $this->movements->canStart($lockedRepair->shopOwner)
+                ? ['available' => false, 'reason' => 'logistics_disabled']
+                : $this->schedules->coverage(
+                    $lockedRepair->shopOwner,
+                    isset($snapshot['latitude']) ? (float) $snapshot['latitude'] : null,
+                    isset($snapshot['longitude']) ? (float) $snapshot['longitude'] : null,
+                );
             if (! ($coverage['available'] ?? false)) {
                 $createdCompensation = $this->startReturnCompensation($lockedRepair, $coverage);
                 if ($sponsoredWarranty) {
@@ -1183,6 +1229,11 @@ final class RepairDeliveryService
             $entry = $entryIndex === false ? null : $entries->get($entryIndex);
 
             if ($action === 'schedule_redelivery') {
+                if ($this->isSponsoredWarranty($locked)
+                    && ! in_array('shop_delivery', $this->allowedWarrantyDeliveryMethods($locked)['return'], true)) {
+                    throw ValidationException::withMessages(['action' => ['Re-delivery is unavailable for the original repair and current Logistics setting.']]);
+                }
+                $this->movements->assertCanStart($locked->shopOwner);
                 if ((string) ($entry['status'] ?? '') === 'shop_pickup_selected') {
                     throw ValidationException::withMessages([
                         'status' => ['This repair is already set for shop pickup.'],

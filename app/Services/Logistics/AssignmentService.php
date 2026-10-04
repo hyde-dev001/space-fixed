@@ -18,6 +18,7 @@ class AssignmentService
     public function __construct(
         private DeliveryEventService $events,
         private EmployeeOperationalPolicy $employeePolicy,
+        private LogisticsMovementEligibility $movements,
     )
     {
     }
@@ -48,11 +49,15 @@ class AssignmentService
         }
 
         return DB::transaction(function () use ($leg, $rider, $actor, $eventMetadata) {
+            $shop = $this->movements->lockShopForLeg($leg);
+            $this->movements->assertCanStart($shop);
             $rider = RiderProfile::query()->lockForUpdate()->findOrFail($rider->id);
             $leg = ShipmentLeg::query()
                 ->with(['shipment', 'shippingMethod'])
                 ->lockForUpdate()
                 ->findOrFail($leg->id);
+
+            $this->movements->assertInternalLeg($leg);
 
             if ((int) $rider->shop_owner_id !== (int) $leg->shipment->shop_owner_id) {
                 throw ValidationException::withMessages(['rider_profile_id' => 'Rider does not belong to this shop.']);
@@ -159,6 +164,7 @@ class AssignmentService
         }
 
         return DB::transaction(function () use ($leg, $rider, $accepted, $reason) {
+            $shop = $this->movements->lockShopForLeg($leg);
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
             if ($leg->status->value === 'proof_correction_required') {
                 throw ValidationException::withMessages([
@@ -188,6 +194,11 @@ class AssignmentService
 
             if ($assignment->status === 'accepted') {
                 return $assignment;
+            }
+
+            if ($accepted) {
+                $this->movements->assertCanStart($shop);
+                $this->movements->assertInternalLeg($leg);
             }
 
             $assignment->update($accepted

@@ -44,6 +44,7 @@ class RepairPosManualQueueTest extends TestCase
         /** @var User $user */
         $user = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
 
+        $this->clockInEmployee($user);
         $response = $this->actingAs($user, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
             'due_type' => 'deposit',
@@ -82,6 +83,7 @@ class RepairPosManualQueueTest extends TestCase
             'repair_warranty_days' => 30,
         ]);
         $cashier = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($cashier);
         $repair = $this->createRepairRequest([
             'shop_owner_id' => $shopOwner->id,
             'request_id' => 'REP-POS-WARRANTY-IMAGELESS-0001',
@@ -117,6 +119,7 @@ class RepairPosManualQueueTest extends TestCase
             'digital_payload' => [],
         ]);
 
+        $repair = app(\App\Services\RepairWarrantyService::class)->issueAtHandover($repair);
         $this->actingAs($cashier, 'user')
             ->postJson('/api/repair-pos/warranty-claims', [
                 'repair_request_id' => $repair->id,
@@ -291,6 +294,7 @@ class RepairPosManualQueueTest extends TestCase
             'status' => 'pending',
         ]);
 
+        $this->clockInEmployee($user);
         $invalid = $this->actingAs($user, 'user')->patchJson("/api/repair-pos/manual-queue/{$repair->id}/status", [
             'status' => 'in_progress',
         ]);
@@ -333,6 +337,7 @@ class RepairPosManualQueueTest extends TestCase
             'payment_status_derived' => 'paid',
         ]);
 
+        $this->clockInEmployee($user);
         $response = $this->actingAs($user, 'user')->patchJson("/api/repair-pos/manual-queue/{$repair->id}/status", [
             'status' => 'picked_up',
         ]);
@@ -367,6 +372,7 @@ class RepairPosManualQueueTest extends TestCase
             'payment_status_derived' => 'completed',
         ]);
 
+        $this->clockInEmployee($user);
         $response = $this->actingAs($user, 'user')->patchJson("/api/repair-pos/manual-queue/{$repair->id}/status", [
             'status' => 'picked_up',
         ]);

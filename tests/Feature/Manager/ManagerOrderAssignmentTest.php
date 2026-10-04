@@ -263,6 +263,12 @@ final class ManagerOrderAssignmentTest extends TestCase
         $staff->assignRole('Staff');
         $staff->givePermissionTo('access-staff-job-orders');
 
+        $now = now(config('app.shop_timezone', 'Asia/Manila'));
+        \Illuminate\Support\Facades\DB::table('attendance_records')->insert([
+            'employee_id' => $employee->id, 'shop_owner_id' => $shop->id,
+            'date' => $now->toDateString(), 'check_in_time' => $now->format('H:i:s'),
+            'status' => 'present', 'created_at' => now(), 'updated_at' => now(),
+        ]);
         return [$staff, $employee];
     }
 
@@ -277,6 +283,7 @@ final class ManagerOrderAssignmentTest extends TestCase
             $manager->givePermissionTo($permission);
         }
 
+        $this->clockInEmployee($manager);
         return $manager;
     }
 

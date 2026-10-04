@@ -114,4 +114,141 @@ class PlatformBalanceApiTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->component('ERP/Finance/PlatformBalance', false));
     }
+    private function chargeSource(ShopOwner $shop, string $type, string $reference): \App\Models\PlatformFeeCharge
+    {
+        config()->set('platform_fee.defaults.platform_fee_rate', '5');
+        config()->set('platform_fee.defaults.platform_fee_vat_enabled', false);
+        if ($type === 'order') {
+            $source = Order::factory()->create([
+                'shop_owner_id' => $shop->id, 'order_number' => $reference,
+                'origin_channel' => 'marketplace', 'total_amount' => 6000,
+                'payment_status' => 'paid', 'status' => 'completed',
+            ]);
+        } else {
+            $source = \App\Models\RepairRequest::factory()->create([
+                'shop_owner_id' => $shop->id, 'request_id' => $reference, 'origin_channel' => 'marketplace',
+                'total' => 6000, 'final_total' => 6000, 'total_paid_amount' => 6000,
+                'payment_status' => 'completed', 'status' => 'completed',
+            ]);
+        }
+        return \App\Models\PlatformFeeCharge::where('source_type', $type)->where('source_id', $source->id)->firstOrFail();
+    }
+
+    #[Test]
+    public function two_actual_300_charges_total_600_with_tenant_scoped_finance_and_owner_reads(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create();
+        $other = ShopOwner::factory()->approved()->create();
+        $this->chargeSource($shop, 'order', 'ORD-QA-300');
+        $this->chargeSource($shop, 'repair', 'REP-QA-300');
+        $this->chargeSource($other, 'order', 'ORD-OTHER-300');
+        $finance = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $finance->givePermissionTo('access-finance-dashboard');
+        $this->actingAs($finance, 'user')->getJson('/api/finance/platform-balance')
+            ->assertOk()->assertJsonPath('balance.outstanding_balance', '600.00')
+            ->assertJsonPath('balance.net_payable', '600.00')->assertJsonCount(2, 'charges');
+        $this->getJson('/api/finance/platform-balance?shop_id='.$other->id)->assertForbidden();
+        $this->actingAs($shop, 'shop_owner')->getJson('/api/shop-owner/finance/platform-balance')
+            ->assertOk()->assertJsonPath('balance.outstanding_balance', '600.00')->assertJsonCount(2, 'charges');
+        $this->actingAs($other, 'shop_owner')->getJson('/api/shop-owner/finance/platform-balance')
+            ->assertOk()->assertJsonPath('balance.outstanding_balance', '300.00')->assertJsonCount(1, 'charges');
+        $otherFinance = User::factory()->create(['shop_owner_id' => $other->id]);
+        $otherFinance->givePermissionTo('access-finance-dashboard');
+        $this->actingAs($otherFinance, 'user')->getJson('/api/finance/platform-balance')
+            ->assertOk()->assertJsonPath('balance.outstanding_balance', '300.00')->assertJsonCount(1, 'charges');
+        $proxy = User::factory()->create(['id' => 1000, 'shop_owner_id' => $shop->id, 'role' => null]);
+        ShopOwner::factory()->approved()->create(['id' => 1000]);
+        $proxy->assignRole(\Spatie\Permission\Models\Role::findOrCreate('Shop Owner', 'user'));
+        $proxy->givePermissionTo('access-finance-dashboard');
+        $this->actingAs($proxy, 'user')->getJson('/api/finance/platform-balance')
+            ->assertOk()->assertJsonPath('balance.outstanding_balance', '600.00')->assertJsonCount(2, 'charges');
+
+    }
+
+    #[Test]
+    public function charge_and_credit_references_use_snapshots_and_scoped_legacy_sources(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create();
+        $orderCharge = $this->chargeSource($shop, 'order', 'ORD-SNAPSHOT');
+        $repairCharge = $this->chargeSource($shop, 'repair', 'REP-LEGACY');
+        $repairCharge->update(['metadata' => null]);
+        Order::whereKey($orderCharge->source_id)->update(['order_number' => 'ORD-CHANGED']);
+        \App\Models\PlatformCreditApplication::create([
+            'shop_id' => $shop->id, 'platform_fee_charge_id' => $orderCharge->id, 'source_type' => 'order_refund',
+            'source_id' => 700, 'source_origin' => 'marketplace', 'credit_amount' => 10,
+            'status' => 'available', 'reason' => 'QA credit', 'idempotency_key' => 'qa-credit-reference',
+        ]);
+        $response = $this->actingAs($shop, 'shop_owner')->getJson('/api/shop-owner/finance/platform-balance')->assertOk();
+        $rows = collect($response->json('charges'))->keyBy('id');
+        $this->assertSame('ORD-SNAPSHOT', $rows[$orderCharge->id]['source_reference'] ?? null);
+        $this->assertSame('REP-LEGACY', $rows[$repairCharge->id]['source_reference'] ?? null);
+        $response->assertJsonPath('balance.credit_movements.0.source_reference', 'ORD-SNAPSHOT');
+        $this->assertArrayNotHasKey('metadata', $rows[$orderCharge->id]);
+    }
+
+    #[Test]
+    public function missing_metadata_never_resolves_a_source_or_credit_charge_from_another_shop(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create();
+        $other = ShopOwner::factory()->approved()->create();
+        $owned = $this->chargeSource($shop, 'order', 'ORD-OWN');
+        $foreign = $this->chargeSource($other, 'order', 'ORD-SECRET');
+        $foreignSource = Order::factory()->create(['shop_owner_id' => $other->id, 'order_number' => 'ORD-SECRET-UNFINALIZED', 'status' => 'pending']);
+        $owned->update(['source_id' => $foreignSource->id, 'metadata' => null, 'source_origin' => 'marketplace']);
+        \App\Models\PlatformCreditApplication::create([
+            'shop_id' => $shop->id, 'platform_fee_charge_id' => $foreign->id, 'source_type' => 'order_refund',
+            'source_id' => 701, 'source_origin' => 'marketplace', 'credit_amount' => 10,
+            'status' => 'available', 'reason' => 'QA corrupt link', 'idempotency_key' => 'qa-corrupt-credit-reference',
+        ]);
+        $response = $this->actingAs($shop, 'shop_owner')->getJson('/api/shop-owner/finance/platform-balance')->assertOk();
+        $response->assertJsonPath('charges.0.source_reference', 'Order #'.$foreignSource->id)
+            ->assertJsonPath('balance.credit_movements.0.source_reference', 'Order refund #701');
+        $this->assertStringNotContainsString('ORD-SECRET', $response->getContent());
+    }
+
+    #[Test]
+    public function payment_applied_credit_and_void_reduce_the_600_pair_once(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create();
+        $orderCharge = $this->chargeSource($shop, 'order', 'ORD-REDUCTIONS');
+        $repairCharge = $this->chargeSource($shop, 'repair', 'REP-REDUCTIONS');
+        $payment = PlatformFeePayment::create([
+            'shop_id' => $shop->id, 'amount' => 100, 'balance_snapshot' => 600,
+            'credit_snapshot' => 0, 'net_payable_snapshot' => 600, 'status' => 'paid',
+            'idempotency_key' => 'qa-pair-payment',
+        ]);
+        PlatformFeePaymentAllocation::create([
+            'platform_fee_payment_id' => $payment->id, 'platform_fee_charge_id' => $orderCharge->id,
+            'allocation_type' => 'payment', 'amount' => 100, 'idempotency_key' => 'qa-pair-payment-allocation',
+        ]);
+        $credit = \App\Models\PlatformCreditApplication::create([
+            'shop_id' => $shop->id, 'platform_fee_charge_id' => $orderCharge->id, 'source_type' => 'order_refund',
+            'source_id' => 702, 'source_origin' => 'marketplace', 'credit_amount' => 50,
+            'status' => 'applied', 'reason' => 'QA applied credit', 'idempotency_key' => 'qa-pair-credit',
+        ]);
+        PlatformFeePaymentAllocation::create([
+            'platform_credit_application_id' => $credit->id, 'platform_fee_charge_id' => $orderCharge->id,
+            'allocation_type' => 'credit', 'amount' => 50, 'idempotency_key' => 'qa-pair-credit-allocation',
+        ]);
+        $repairCharge->update(['status' => 'void']);
+        $this->actingAs($shop, 'shop_owner')->getJson('/api/shop-owner/finance/platform-balance')
+            ->assertOk()->assertJsonPath('balance.outstanding_balance', '150.00')
+            ->assertJsonPath('balance.available_credits', '0.00')->assertJsonPath('balance.net_payable', '150.00');
+    }
+
+    #[Test]
+    public function detail_limit_does_not_truncate_balance_totals(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create();
+        $base = $this->chargeSource($shop, 'order', 'ORD-DETAIL-LIMIT');
+        for ($i = 1; $i <= 100; $i++) {
+            $row = $base->replicate();
+            $row->source_id = 100000 + $i;
+            $row->save();
+        }
+        $this->actingAs($shop, 'shop_owner')->getJson('/api/shop-owner/finance/platform-balance')
+            ->assertOk()->assertJsonCount(100, 'charges')
+            ->assertJsonPath('balance.outstanding_balance', '30300.00');
+    }
+
 }

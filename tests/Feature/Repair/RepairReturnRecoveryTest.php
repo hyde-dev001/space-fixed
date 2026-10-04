@@ -478,6 +478,11 @@ class RepairReturnRecoveryTest extends TestCase
             'business_type' => 'repair',
             'registration_type' => 'company',
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'shipped',

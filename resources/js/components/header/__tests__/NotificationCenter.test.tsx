@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest';
 import NotificationCenter from '../NotificationCenter';
 
 vi.mock('@inertiajs/react', () => ({
+    usePage: () => ({ props: { auth: { super_admin: { id: 1 } } } }),
     Link: ({ children, ...props }: { children: React.ReactNode; [key: string]: unknown }) => (
         <a {...props}>{children}</a>
     ),

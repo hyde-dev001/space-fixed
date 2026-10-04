@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Tests\Feature\Manager;
 
 use App\Models\Order;
+use App\Models\Employee;
 use App\Models\RepairRequest;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Spatie\Permission\Models\Role;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 final class ManagerStaffWorkloadTest extends TestCase
@@ -136,6 +138,7 @@ final class ManagerStaffWorkloadTest extends TestCase
         ]);
 
         $this->createOrders($staff, 1, now()->subMinutes(10));
+        Employee::factory()->active()->create(['shop_owner_id' => $this->shop->id, 'email' => $repairer->email]);
         $this->createRepairs($repairer, 2, now()->subMinutes(10));
 
         $response = $this->actingAs($this->manager, 'user')
@@ -171,12 +174,74 @@ final class ManagerStaffWorkloadTest extends TestCase
         $this->assertNotSame($staffB->id, (int) $response->json('data.data.0.id'));
     }
 
+    #[DataProvider('nonEmployeeIdentities')]
+    public function test_workload_excludes_owner_customer_and_admin_even_with_staff_history(string $legacyRole, string $spatieRole): void
+    {
+        Role::findOrCreate($spatieRole, 'user');
+        $actor = $this->staff(['role' => $legacyRole]);
+        $actor->assignRole($spatieRole);
+        $this->createOrders($actor, 2, now());
+        $employee = $this->staff(['name' => 'Actual Employee']);
+
+        $response = $this->actingAs($this->manager, 'user')->getJson('/api/manager/staff-workload')->assertOk();
+        $this->assertSame([$employee->id], collect($response->json('data.data'))->pluck('id')->all());
+        $this->assertDatabaseHas('orders', ['assigned_staff_id' => $actor->id]);
+    }
+
+    public static function nonEmployeeIdentities(): array
+    {
+        return [
+            'owner with legacy staff' => ['STAFF', 'Shop Owner'],
+            'owner with Staff role' => ['SHOP_OWNER', 'Staff'],
+            'owner alias' => ['shop-owner', 'Staff'],
+            'owner with surrounding spaces' => [' Shop Owner ', 'Staff'],
+            'customer with Staff role' => ['CUSTOMER', 'Staff'],
+            'admin with Staff role' => ['SUPER_ADMIN', 'Staff'],
+        ];
+    }
+
+    public function test_staff_requires_an_employee_record_in_the_same_shop(): void
+    {
+        $employee = $this->staff();
+        $unlinked = User::factory()->for($this->shop)->create(['role' => 'STAFF']);
+        $wrongShopEmployee = User::factory()->for($this->shop)->create(['role' => 'REPAIRER']);
+        Employee::factory()->active()->create(['email' => $wrongShopEmployee->email]);
+
+        $response = $this->actingAs($this->manager, 'user')->getJson('/api/manager/staff-workload')->assertOk();
+        $this->assertSame([$employee->id], collect($response->json('data.data'))->pluck('id')->all());
+    }
+
+    public function test_owner_email_fallback_is_excluded_even_with_legacy_employee_history(): void
+    {
+        $owner = $this->staff(['email' => $this->shop->email]);
+        $employee = $this->staff();
+        $this->createRepairs($owner, 1, now());
+        $response = $this->actingAs($this->manager, 'user')->getJson('/api/manager/staff-workload')->assertOk();
+        $this->assertSame([$employee->id], collect($response->json('data.data'))->pluck('id')->all());
+    }
+
+    public function test_real_employee_is_not_excluded_when_user_id_equals_shop_owner_id(): void
+    {
+        $this->shop = ShopOwner::factory()->approved()->create(['id' => 91, 'business_type' => 'both']);
+        $this->manager->update(['shop_owner_id' => $this->shop->id]);
+        $employee = $this->staff(['id' => $this->shop->id]);
+        $response = $this->actingAs($this->manager, 'user')->getJson('/api/manager/staff-workload')->assertOk();
+        $this->assertSame([$employee->id], collect($response->json('data.data'))->pluck('id')->all());
+    }
+
     private function staff(array $attributes = []): User
     {
-        return User::factory()->for($this->shop)->create(array_merge([
+        $user = User::factory()->for($this->shop)->create(array_merge([
             'role' => 'STAFF',
             'status' => 'active',
         ], $attributes));
+
+        Employee::factory()->create([
+            'shop_owner_id' => $this->shop->id, 'email' => $user->email,
+            'status' => $user->status === 'active' ? 'active' : 'inactive',
+        ]);
+
+        return $user;
     }
 
     private function createOrders(User $staff, int $count, $createdAt): void

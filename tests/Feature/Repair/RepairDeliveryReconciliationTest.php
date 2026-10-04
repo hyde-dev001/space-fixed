@@ -224,6 +224,7 @@ class RepairDeliveryReconciliationTest extends TestCase
             'status' => 'active',
         ]);
 
+        $this->clockInEmployee($otherStaff);
         $this->actingAs($otherStaff, 'user')->postJson(
             "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
             $this->cancellationPayload($repair->fresh(), 'intake', 'Wrong shop.'),
@@ -428,6 +429,7 @@ class RepairDeliveryReconciliationTest extends TestCase
             $sourceShipments,
             app(NotificationService::class),
             app(DeliveryEventService::class),
+            app(\App\Services\Logistics\LogisticsMovementEligibility::class),
         );
 
         try {
@@ -441,6 +443,22 @@ class RepairDeliveryReconciliationTest extends TestCase
         $this->assertDatabaseCount('shipments', 0);
         $this->assertNotNull(app(RepairDeliveryService::class)->tryCreateIntakeShipment($repair->fresh()));
         $this->assertDatabaseCount('shipments', 1);
+    }
+
+    public function test_unstarted_paid_pickup_can_be_explicitly_cancelled_for_compensation_when_logistics_is_off(): void
+    {
+        [$repair, , $repairer, , , $shop] = $this->paidIntakeRepair();
+        $shipment = app(RepairDeliveryService::class)->tryCreateIntakeShipment($repair->fresh());
+        $shop->modules()->where('module_key', 'logistics')->update(['enabled' => false]);
+        $this->actingAs($repairer, 'user')->postJson(
+            "/api/repairer/repairs/{$repair->id}/cancel-delivery-leg",
+            $this->cancellationPayload($repair->fresh(), 'intake', 'Logistics was disabled before pickup.'),
+        )->assertOk();
+        $this->assertSame('cancelled', $shipment->fresh()->status->value);
+        $this->assertSame('pending', data_get($repair->fresh()->logistics_payment_reconciliation, 'status'));
+        $this->assertCount(1, data_get($repair->fresh()->logistics_payment_reconciliation, 'entries'));
+        $this->assertNotNull($repair->fresh()->intake_logistics_locked_at);
+        $this->assertDatabaseCount('shipment_legs', 1);
     }
 
     private function paidIntakeRepair(): array
@@ -474,6 +492,8 @@ class RepairDeliveryReconciliationTest extends TestCase
             'status' => 'active',
         ]);
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($repairer);
+        $this->clockInEmployee($finance);
         $address = UserAddress::create([
             'user_id' => $customer->id,
             'name' => $customer->name,

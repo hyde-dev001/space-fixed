@@ -7,6 +7,8 @@ namespace App\Services;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
+use Spatie\Permission\Models\Role;
 use Illuminate\Support\Str;
 
 final class ShopOwnerActorUserResolver
@@ -48,6 +50,15 @@ final class ShopOwnerActorUserResolver
 
     public function ensure(ShopOwner $shopOwner): ?int
     {
+        try {
+            return DB::transaction(fn (): ?int => $this->ensureActor($shopOwner));
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function ensureActor(ShopOwner $shopOwner): ?int
+    {
         $resolvedId = $this->resolve((int) $shopOwner->id);
         if ($resolvedId) {
             return $resolvedId;
@@ -67,7 +78,7 @@ final class ShopOwnerActorUserResolver
             }
 
             $existingUser->shop_owner_id = (int) $shopOwner->id;
-            $existingUser->role = $existingUser->role ?: 'STAFF';
+            $existingUser->role = $existingUser->role ?: null;
             $existingUser->name = $existingUser->name ?: trim((string) $shopOwner->first_name . ' ' . (string) $shopOwner->last_name);
             $existingUser->email_verified_at ??= now();
             $existingUser->save();
@@ -76,35 +87,29 @@ final class ShopOwnerActorUserResolver
             return (int) $existingUser->id;
         }
 
-        try {
-            $user = User::query()->create([
-                'first_name' => (string) ($shopOwner->first_name ?? 'Shop'),
-                'last_name' => (string) ($shopOwner->last_name ?? 'Owner'),
-                'name' => trim((string) ($shopOwner->first_name ?? 'Shop') . ' ' . (string) ($shopOwner->last_name ?? 'Owner')),
-                'email' => $fallbackEmail,
-                'password' => Hash::make(Str::random(40)),
-                'shop_owner_id' => (int) $shopOwner->id,
-                'role' => 'STAFF',
-                'status' => 'active',
-                'email_verified_at' => now(),
-            ]);
+        $user = User::query()->create([
+            'first_name' => (string) ($shopOwner->first_name ?? 'Shop'),
+            'last_name' => (string) ($shopOwner->last_name ?? 'Owner'),
+            'name' => trim((string) ($shopOwner->first_name ?? 'Shop') . ' ' . (string) ($shopOwner->last_name ?? 'Owner')),
+            'email' => $fallbackEmail,
+            'password' => Hash::make(Str::random(40)),
+            'shop_owner_id' => (int) $shopOwner->id,
+            'role' => null,
+            'status' => 'active',
+            'email_verified_at' => now(),
+        ]);
 
-            $this->assignShopOwnerRole($user);
+        $this->assignShopOwnerRole($user);
 
-            return (int) $user->id;
-        } catch (\Throwable) {
-            return null;
-        }
+        return (int) $user->id;
     }
 
     private function assignShopOwnerRole(User $user): void
     {
-        try {
-            if (! $user->hasRole('Shop Owner')) {
-                $user->assignRole('Shop Owner');
-            }
-        } catch (\Throwable) {
-            // The legacy role column remains the authorization fallback.
+        // The legacy MySQL role enum has no owner value; Spatie is the canonical owner identity.
+        $role = Role::findOrCreate('Shop Owner', 'user');
+        if (! $user->hasRole($role)) {
+            $user->assignRole($role);
         }
     }
 }

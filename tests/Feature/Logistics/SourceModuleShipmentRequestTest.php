@@ -142,6 +142,8 @@ class SourceModuleShipmentRequestTest extends TestCase
         $order = Order::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'processing',
+            'delivery_method' => 'third_party',
+            'carrier_company' => 'Lalamove',
         ]);
 
         $this->actingAs($shop, 'shop_owner')
@@ -266,10 +268,15 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_approved_refund_return_creates_dispatcher_return_to_shop_leg(): void
     {
-        $shop = ShopOwner::factory()->create([
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company',
             'shop_latitude' => 14.3011,
             'shop_longitude' => 120.9522,
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $customer = User::factory()->create();
         $address = UserAddress::create([
             'user_id' => $customer->id,
@@ -353,6 +360,11 @@ class SourceModuleShipmentRequestTest extends TestCase
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         LogisticsSetting::create([
             'shop_owner_id' => $shop->id,
             'coverage_radius_km' => 20,
@@ -487,10 +499,15 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_repair_pickup_creates_inbound_shipment(): void
     {
-        $shop = ShopOwner::factory()->create([
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         LogisticsSetting::create(['shop_owner_id' => $shop->id, 'coverage_radius_km' => 12]);
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -535,10 +552,15 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_repair_return_creates_outbound_shipment(): void
     {
-        $shop = ShopOwner::factory()->create([
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company',
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         LogisticsSetting::create(['shop_owner_id' => $shop->id, 'coverage_radius_km' => 20]);
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -580,7 +602,12 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_shop_owned_retail_delivery_stays_unscheduled_until_dispatcher_selects_slot(): void
     {
-        $shop = ShopOwner::factory()->create(['shop_latitude' => 14.5995, 'shop_longitude' => 120.9842]);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'shop_latitude' => 14.5995, 'shop_longitude' => 120.9842]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         LogisticsSetting::create(['shop_owner_id' => $shop->id, 'lead_time_days' => 0]);
         RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
         $customer = User::factory()->create();
@@ -627,7 +654,12 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_unscheduled_shop_owned_delivery_records_dispatcher_attention(): void
     {
-        $shop = ShopOwner::factory()->create(['shop_latitude' => 14.5995, 'shop_longitude' => 120.9842]);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'shop_latitude' => 14.5995, 'shop_longitude' => 120.9842]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $customer = User::factory()->create();
         $order = Order::factory()->create([
             'shop_owner_id' => $shop->id,

@@ -33,7 +33,7 @@ class NotificationService
         $this->recipientResolver ??= app(RecipientResolver::class);
     }
 
-    public function ownerApprovalActionUrl(string $sourceType, mixed $sourceId): string
+    public function ownerApprovalActionUrl(string $sourceType, mixed $sourceId, bool $history = false): string
     {
         $allowedSourceTypes = [
             'order_refund',
@@ -61,9 +61,11 @@ class NotificationService
             ],
         ]);
 
+        $view = $history ? 'view=history' : 'bucket=needs_my_decision';
+
         return $sourceId === false
             ? '/shop-owner/action-center'
-            : "/shop-owner/action-center?bucket=needs_my_decision&approval={$sourceType}:{$sourceId}";
+            : "/shop-owner/action-center?{$view}&approval={$sourceType}:{$sourceId}";
     }
 
     // ==================== CORE METHODS ====================
@@ -2611,6 +2613,7 @@ class NotificationService
             'high_value_approval' => 'browser_approvals',
             'refund_request' => 'browser_approvals',
             'low_stock_alert' => 'browser_alerts',
+            'supplier_order_overdue' => 'browser_alerts',
             'employee_suspension_request' => 'browser_approvals',
             'employee_termination_request' => 'browser_approvals',
             'employee_rehire_request' => 'browser_approvals',
@@ -2680,6 +2683,7 @@ class NotificationService
             'high_value_approval' => 'email_approvals',
             'refund_request' => 'email_approvals',
             'low_stock_alert' => 'email_alerts',
+            'supplier_order_overdue' => 'email_alerts',
             'employee_suspension_request' => 'email_approvals',
             'employee_termination_request' => 'email_approvals',
             'employee_rehire_request' => 'email_approvals',

@@ -317,6 +317,8 @@ class RepairPosController extends Controller
             $repair->services()->sync($resolvedServiceIds->all());
         }
 
+        app(\App\Services\RepairMaterialPlanningService::class)->snapshot($repair);
+
         if (!$isIndividualShop) {
             $this->assignManualPosRepairOwner($repair, $actor, $shopOwnerId);
         }

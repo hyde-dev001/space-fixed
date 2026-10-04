@@ -455,6 +455,10 @@ class RepairRequestController extends Controller
                 $activePolicyVersion,
                 $policyAcceptanceService
             ) {
+                if ($intakeDeliveryMethod === 'shop_pickup' || $returnDeliveryMethod === 'shop_delivery') {
+                    $currentShop = ShopOwner::query()->whereKey($shopOwner->id)->lockForUpdate()->firstOrFail();
+                    app(\App\Services\Logistics\LogisticsMovementEligibility::class)->assertCanStart($currentShop);
+                }
                 $repairRequest = RepairRequest::create([
                     'request_id' => $requestId,
                     'customer_name' => $request->customer_name,
@@ -513,6 +517,8 @@ class RepairRequestController extends Controller
                     $repairRequest->services()->attach($serviceIds);
                 }
 
+                app(\App\Services\RepairMaterialPlanningService::class)->snapshot($repairRequest);
+
                 if ($activePolicyVersion) {
                     $repairRequest->accepted_shop_policy_version_id = (int) $activePolicyVersion->id;
                     $repairRequest->save();
@@ -562,6 +568,8 @@ class RepairRequestController extends Controller
                     'repair_package_id' => $repairRequest->fresh()->repair_package_id,
                 ],
             ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -853,6 +861,8 @@ class RepairRequestController extends Controller
         $settlementService = app(PaymentSettlementService::class);
         $repairDeliveryService = app(RepairDeliveryService::class);
         $warrantyService = app(RepairWarrantyService::class);
+        $resolutionEligibility = app(\App\Services\RepairResolutionEligibilityService::class);
+        $refundService = app(RepairPosRefundService::class);
 
         if ($request->boolean('reconcile_payments')) {
             $hasReconciledChanges = false;
@@ -915,7 +925,7 @@ class RepairRequestController extends Controller
 
         return response()->json([
             'success' => true,
-            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup, $logisticsShipmentLookup, $settlementService, $repairDeliveryService, $warrantyService, $user) {
+            'data' => $repairRequests->map(function (RepairRequest $repair) use ($childrenByParent, $reviewedLookup, $logisticsShipmentLookup, $settlementService, $repairDeliveryService, $warrantyService, $resolutionEligibility, $refundService, $user) {
                 // Images are already cast as array, so no need to json_decode
                 $images = is_array($repair->images) ? $repair->images : (is_string($repair->images) ? json_decode($repair->images, true) : []);
                 $pricingSnapshot = $this->calculateRepairPricingSnapshot($repair);
@@ -967,6 +977,14 @@ class RepairRequestController extends Controller
                     }
                 }
 
+                $refundBlockReason = $resolutionEligibility->refundBlockReason($repair, 'online_myrepair');
+                if ($refundBlockReason === null && $hasReview) {
+                    $refundBlockReason = 'Refund is not allowed after a review has been submitted.';
+                }
+                if ($refundBlockReason === null && $refundService->computeRepairRefundableAmount((int) $repair->id) <= 0) {
+                    $refundBlockReason = 'No refundable service balance remains for this repair.';
+                }
+
                 return [
                     'id' => $repair->id,
                     'order_number' => $repair->request_id,
@@ -993,6 +1011,10 @@ class RepairRequestController extends Controller
                     'shop_name' => $repair->shopOwner ? $repair->shopOwner->business_name : 'Unknown Shop',
                     'shop_address' => $repair->shopOwner ? $repair->shopOwner->business_address : '',
                     'shop_registration_type' => strtolower((string) ($repair->shopOwner?->registration_type ?? '')),
+                    'shop_owned_logistics_available' => $repair->shopOwner
+                        && app(\App\Services\Logistics\LogisticsMovementEligibility::class)->canStart($repair->shopOwner),
+                    'warranty_delivery_methods' => ((bool) $repair->is_warranty_job || $repair->billing_mode === 'warranty_no_charge')
+                        ? $warrantyService->availableDeliveryMethods($repair) : null,
                     'image' => ! empty($images) ? Storage::url($images[0]) : null,
                     'delivery_method' => $repair->delivery_method,
                     'pickup_address' => $repair->pickup_address,
@@ -1056,6 +1078,10 @@ class RepairRequestController extends Controller
                     'refund_requires_payout_destination' => $refundPaymentProfile['requires_payout_destination'],
                     'refund_original_method_only' => $refundPaymentProfile['original_method_only'],
                     'has_review' => $hasReview,
+                    'can_modify_services' => app(\App\Services\RepairResolutionEligibilityService::class)
+                        ->serviceModificationBlockReason($repair) === null,
+                    'can_refund' => $refundBlockReason === null,
+                    'refund_block_reason' => $refundBlockReason,
                     'vat_rate' => self::REPAIR_VAT_RATE_PERCENT,
                     'vat_amount' => $taxSummary['vat_amount'],
                     'grand_total' => $taxSummary['grand_total'],
@@ -1105,6 +1131,8 @@ class RepairRequestController extends Controller
             'data' => [
                 'id' => $repair->id,
                 'request_id' => $repair->request_id,
+                'can_modify_services' => app(\App\Services\RepairResolutionEligibilityService::class)
+                    ->serviceModificationBlockReason($repair) === null,
                 'customer_name' => $repair->customer_name,
                 'email' => $repair->email,
                 'phone' => $repair->phone,
@@ -1212,30 +1240,11 @@ class RepairRequestController extends Controller
             }
         }
 
-        $latestWarrantyClaim = RepairWarrantyClaim::query()
-            ->where('original_repair_request_id', $anchorRepairId)
-            ->with('approvedRepair:id,status')
-            ->latest('id')
-            ->first();
-
-        $latestWarrantyClaimStatus = (string) ($latestWarrantyClaim?->status ?? '');
-        $approvedWarrantyJobStatus = strtolower((string) ($latestWarrantyClaim?->approvedRepair?->status ?? ''));
-        $completedWarrantyStatuses = [
-            'completed',
-            'ready_for_pickup',
-            'ready-for-pickup',
-            'shipped',
-            'picked_up',
-            'received',
-        ];
-        $hasActiveWarrantyClaim = $latestWarrantyClaimStatus === RepairWarrantyClaim::STATUS_PENDING_REPAIRER
-            || ($latestWarrantyClaimStatus === RepairWarrantyClaim::STATUS_APPROVED
-                && ($approvedWarrantyJobStatus === '' || ! in_array($approvedWarrantyJobStatus, $completedWarrantyStatuses, true)));
-
-        if ($hasActiveWarrantyClaim) {
+        $refundBlockReason = app(\App\Services\RepairResolutionEligibilityService::class)->refundBlockReason($repair, 'online_myrepair');
+        if ($refundBlockReason !== null) {
             return response()->json([
                 'success' => false,
-                'message' => 'Refund cannot be requested while a warranty claim is active for this repair.',
+                'message' => $refundBlockReason,
             ], 422);
         }
 
@@ -1759,6 +1768,14 @@ class RepairRequestController extends Controller
                     && hash_equals($storedVersion, (string) $delivery->snapshot($address, $method)['version']);
             };
             $buildPlan = function (string $leg, string $method, int $addressId) use ($delivery, $repair, $user): array {
+                if ((bool) $repair->is_warranty_job || $repair->billing_mode === 'warranty_no_charge') {
+                    $methods = app(RepairWarrantyService::class)->allowedDeliveryMethods($repair);
+                    if (! in_array($method, $methods[$leg], true)) {
+                        throw \Illuminate\Validation\ValidationException::withMessages([
+                            "{$leg}_delivery_method" => ['Choose a delivery method allowed by the original repair and current Logistics setting.'],
+                        ]);
+                    }
+                }
                 if ($method === 'walk_in') {
                     return [null, 0.0, null];
                 }
@@ -2283,27 +2300,10 @@ class RepairRequestController extends Controller
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            if ($repair->status !== 'repairer_accepted' || ! $repair->conversation_id) {
-                abort(409, 'Services can only be modified after repairer acceptance and before confirmation.');
-            }
-
-            $paidStatuses = [
-                'paid',
-                'completed',
-                'down_payment_paid',
-                'partially_paid',
-                'partially_refunded',
-                'refunded',
-            ];
-            $hasRecordedPayment = (float) $repair->total_paid_amount > 0
-                || $repair->payment_completed_at
-                || in_array(strtolower((string) $repair->payment_status), $paidStatuses, true)
-                || $repair->posTransactions()
-                    ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
-                    ->exists();
-
-            if ($hasRecordedPayment) {
-                abort(409, 'Paid repairs can no longer be modified.');
+            $blockReason = app(\App\Services\RepairResolutionEligibilityService::class)
+                ->serviceModificationBlockReason($repair);
+            if ($blockReason !== null) {
+                abort(409, $blockReason);
             }
 
             if ($repair->repair_package_id && ! ($validated['remove_package'] ?? false)) {
@@ -2374,6 +2374,8 @@ class RepairRequestController extends Controller
                 'payment_failure_reason' => null,
                 'payment_expired_at' => null,
             ]);
+
+            app(\App\Services\RepairMaterialPlanningService::class)->snapshot($repair, 'service_edit');
 
             $added = $newNames->diff($oldNames)->values()->join(', ') ?: 'None';
             $removed = $oldNames->diff($newNames)->values()->join(', ') ?: 'None';

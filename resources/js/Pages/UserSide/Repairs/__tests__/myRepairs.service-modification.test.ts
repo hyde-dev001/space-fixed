@@ -11,10 +11,7 @@ describe('My Repairs service modification integration', () => {
   it('offers modification only for accepted unpaid repairs and calls the update endpoint', () => {
     expect(source).toContain("order.status === 'repairer_accepted'");
     expect(source).toContain('order.conversation_id');
-    expect(source).toContain("'down_payment_paid'");
-    expect(source).toContain("'partially_paid'");
-    expect(source).toContain("'partially_refunded'");
-    expect(source).toContain('!order.payment_completed_at');
+    expect(source).toContain('order.can_modify_services === true');
     expect(source).toContain('MODIFY');
     expect(source).toContain('Modify Repair Services');
     expect(source).toContain('/api/repair-services?shop_id=');

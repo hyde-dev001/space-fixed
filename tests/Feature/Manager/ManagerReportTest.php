@@ -28,6 +28,7 @@ class ManagerReportTest extends TestCase
             ->for($this->shop)
             ->create(['role' => 'Manager']);
         $this->manager->assignRole('Manager');
+        $this->clockInEmployee($this->manager);
     }
 
     private function generateReport(array $overrides = [])
@@ -43,6 +44,7 @@ class ManagerReportTest extends TestCase
     public function test_non_manager_cannot_generate_reports(): void
     {
         $staff = User::factory()->for($this->shop)->create(['role' => 'Staff']);
+        $this->clockInEmployee($staff);
 
         $this->actingAs($staff, 'user')
             ->postJson('/api/manager/reports/generate', [
@@ -54,6 +56,7 @@ class ManagerReportTest extends TestCase
 
     public function test_legacy_staff_performance_endpoint_uses_canonical_assignment_identity(): void
     {
+        $this->shop->update(['business_type' => 'retail']);
         $staffA = User::factory()->for($this->shop)->create([
             'role' => 'STAFF',
             'status' => 'active',
@@ -62,6 +65,9 @@ class ManagerReportTest extends TestCase
             'role' => 'STAFF',
             'status' => 'active',
         ]);
+
+        $this->clockInEmployee($staffA);
+        $this->clockInEmployee($staffB);
 
         Order::factory()->for($this->shop)->create([
             'order_number' => 'PERF-A-1-'.$staffA->id,
@@ -391,6 +397,7 @@ class ManagerReportTest extends TestCase
         $otherShop = ShopOwner::factory()->create();
         $otherManager = User::factory()->for($otherShop)->create(['role' => 'Manager']);
         $otherManager->assignRole('Manager');
+        $this->clockInEmployee($otherManager);
 
         $reportId = $this->actingAs($otherManager, 'user')
             ->postJson('/api/manager/reports/generate', [

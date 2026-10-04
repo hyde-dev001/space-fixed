@@ -36,6 +36,7 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $this->assertNotNull($claim->approved_repair_request_id);
 
         $linked = RepairRequest::query()->findOrFail((int) $claim->approved_repair_request_id);
+        $this->assertSame('booking', $linked->material_plan_snapshot['source']);
         $this->assertTrue((bool) $linked->is_warranty_job);
         $this->assertSame((int) $repair->id, (int) $linked->parent_repair_request_id);
         $this->assertSame('warranty_no_charge', (string) $linked->billing_mode);
@@ -63,6 +64,34 @@ class RepairWarrantyClaimFlowTest extends TestCase
                 ->where('is_warranty_job', true)
                 ->count()
         );
+    }
+
+    public function test_warranty_job_snapshots_current_materials_without_copying_original_usage(): void
+    {
+        [$shop, $repairer, $original, $claim] = $this->seedPendingClaimContext();
+        $service = \App\Models\RepairService::create([
+            'shop_owner_id' => $shop->id, 'name' => 'Reglue', 'category' => 'General',
+            'price' => 500, 'duration' => '1 day', 'status' => 'Active',
+        ]);
+        $material = \App\Models\InventoryItem::factory()->create([
+            'shop_owner_id' => $shop->id, 'category' => 'repair_materials', 'available_quantity' => 100,
+        ]);
+        $service->materialTemplateItems()->create([
+            'shop_owner_id' => $shop->id, 'inventory_item_id' => $material->id,
+            'template_type' => 'repair_service', 'default_quantity' => 4,
+        ]);
+        $original->services()->sync([$service->id]);
+        $original->materialPlanItems()->create([
+            'inventory_item_id' => $material->id, 'planned_quantity' => 1, 'actual_quantity' => 1,
+        ]);
+        $this->actingAs($repairer, 'user')->postJson("/api/repairer/warranty-claims/{$claim->id}/approve")->assertOk();
+        $linked = RepairRequest::findOrFail($claim->fresh()->approved_repair_request_id);
+        $this->assertSame('booking', $linked->material_plan_snapshot['source']);
+        $this->assertSame(4.0, $linked->materialPlanItems()->sole()->planned_quantity);
+        $this->assertSame(0.0, $linked->materialPlanItems()->sole()->actual_quantity);
+        $this->assertSame(1.0, $original->materialPlanItems()->sole()->planned_quantity);
+        $this->assertSame(1.0, $original->materialPlanItems()->sole()->actual_quantity);
+        $this->assertSame(100, (int) $material->fresh()->available_quantity);
     }
 
     public function test_approve_claim_does_not_reduce_existing_recognized_revenue(): void
@@ -522,6 +551,8 @@ class RepairWarrantyClaimFlowTest extends TestCase
         );
         $delivery = app(RepairDeliveryService::class);
         $repair->forceFill([
+            'intake_delivery_method' => 'customer_delivery',
+            'return_delivery_method' => 'customer_pickup',
             'intake_address' => $delivery->snapshot($address, 'customer_delivery'),
             'pickup_address' => $delivery->snapshot($address, 'customer_delivery'),
         ])->save();
@@ -769,6 +800,11 @@ class RepairWarrantyClaimFlowTest extends TestCase
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
 
         $customer = User::factory()->create();
         $repairer = User::factory()->create([
@@ -807,6 +843,8 @@ class RepairWarrantyClaimFlowTest extends TestCase
             'warranty_expires_at_snapshot' => now()->addDays(20),
         ]);
 
+        $this->clockInEmployee($repairer);
+
         return [$shopOwner, $repairer, $repair, $claim];
     }
 
@@ -828,6 +866,8 @@ class RepairWarrantyClaimFlowTest extends TestCase
         $delivery = app(RepairDeliveryService::class);
 
         $repair->forceFill([
+            'intake_delivery_method' => 'customer_delivery',
+            'return_delivery_method' => 'customer_pickup',
             'intake_address' => $delivery->snapshot($address, 'customer_delivery'),
             'pickup_address' => $delivery->snapshot($address, 'customer_delivery'),
             'return_address' => $delivery->snapshot($address, 'customer_pickup'),

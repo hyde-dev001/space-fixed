@@ -199,6 +199,7 @@ class InvoicePaymentTest extends TestCase
     {
         $shop = ShopOwner::factory()->create();
         $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($user);
         $invoice = Invoice::create([
             'reference' => 'INV-' . uniqid(),
             'customer_name' => 'Test Customer',

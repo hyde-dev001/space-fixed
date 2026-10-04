@@ -454,7 +454,7 @@ class PaymongoWebhookController extends Controller
             ->first();
 
         if ($repairSession?->repairRequest) {
-            DB::transaction(function () use ($repairSession): void {
+            DB::transaction(function () use ($repairSession, $reason): void {
                 $lockedSession = RepairPaymentSession::query()->lockForUpdate()->findOrFail($repairSession->id);
                 if ($lockedSession->status !== 'pending') {
                     return;

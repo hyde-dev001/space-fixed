@@ -373,6 +373,7 @@ class PaymentLifecycleFeatureTest extends TestCase
         ]);
 
         /** @var \App\Models\User $repairer */
+        $this->clockInEmployee($repairer);
 
         $response = $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/mark-paid-in-shop");

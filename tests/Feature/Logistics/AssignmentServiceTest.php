@@ -21,7 +21,7 @@ class AssignmentServiceTest extends TestCase
 
     public function test_owner_rider_can_only_be_assigned_for_individual_shop(): void
     {
-        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $company = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $company->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
         $rider = RiderProfile::factory()->create([
@@ -36,7 +36,7 @@ class AssignmentServiceTest extends TestCase
 
     public function test_employee_rider_can_be_assigned_for_company_shop(): void
     {
-        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $company = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company']);
         $user = User::factory()->create(['shop_owner_id' => $company->id]);
         Employee::factory()->active()->create([
             'shop_owner_id' => $company->id,
@@ -59,7 +59,7 @@ class AssignmentServiceTest extends TestCase
 
     public function test_unlinked_employee_rider_cannot_be_assigned(): void
     {
-        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $company = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $company->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
         $rider = RiderProfile::query()->create([
@@ -84,7 +84,7 @@ class AssignmentServiceTest extends TestCase
     #[DataProvider('blockedEmployeeStatuses')]
     public function test_employee_rider_cannot_receive_new_assignment_when_account_state_is_blocked(string $status): void
     {
-        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $company = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company']);
         $user = User::factory()->create(['shop_owner_id' => $company->id]);
         Employee::factory()->create([
             'shop_owner_id' => $company->id,
@@ -121,7 +121,7 @@ class AssignmentServiceTest extends TestCase
 
     public function test_status_change_does_not_delete_existing_assignment_history(): void
     {
-        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $company = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company']);
         $user = User::factory()->create(['shop_owner_id' => $company->id]);
         $employee = Employee::factory()->active()->create([
             'shop_owner_id' => $company->id,
@@ -150,7 +150,7 @@ class AssignmentServiceTest extends TestCase
     #[DataProvider('unsupportedInternalAssignmentMethods')]
     public function test_assignment_service_rejects_unsupported_internal_methods(array $attributes): void
     {
-        $company = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $company = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company']);
         $user = User::factory()->create(['shop_owner_id' => $company->id]);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $company->id]);
         $method = ShippingMethod::factory()->create($attributes);

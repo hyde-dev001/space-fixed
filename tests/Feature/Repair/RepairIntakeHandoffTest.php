@@ -182,6 +182,7 @@ class RepairIntakeHandoffTest extends TestCase
             'role' => 'REPAIRER',
             'status' => 'active',
         ]);
+        $this->clockInEmployee($unassigned);
 
         $this->actingAs($unassigned, 'user')
             ->postJson("/api/repairer/repairs/{$repair->id}/mark-received")
@@ -189,9 +190,10 @@ class RepairIntakeHandoffTest extends TestCase
 
         $unauthorized = User::factory()->create([
             'shop_owner_id' => $shop->id,
-            'role' => 'CUSTOMER',
+            'role' => null,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($unauthorized);
         $repair->update(['assigned_repairer_id' => $unauthorized->id]);
 
         $this->actingAs($unauthorized, 'user')
@@ -199,6 +201,27 @@ class RepairIntakeHandoffTest extends TestCase
             ->assertForbidden();
 
         $this->assertSame('pending', $repair->fresh()->status);
+    }
+
+    public function test_clocked_out_repairer_cannot_confirm_receipt(): void
+    {
+        [$repair, $repairer, $shop] = $this->repairFixture('walk_in');
+        $employee = $repairer->employee()
+            ->where('shop_owner_id', $shop->id)
+            ->firstOrFail();
+
+        $this->assertSame(1, DB::table('attendance_records')
+            ->where('shop_owner_id', $shop->id)
+            ->where('employee_id', $employee->id)
+            ->update(['check_out_time' => now()->format('H:i:s')]));
+
+        $this->actingAs($repairer, 'user')
+            ->postJson("/api/repairer/repairs/{$repair->id}/mark-received")
+            ->assertStatus(423)
+            ->assertJsonPath('code', 'EMPLOYEE_NOT_CLOCKED_IN');
+
+        $this->assertSame('pending', $repair->fresh()->status);
+        $this->assertNull($repair->fresh()->received_at);
     }
 
     public function test_unpaid_or_premature_repair_cannot_be_received(): void
@@ -382,6 +405,7 @@ class RepairIntakeHandoffTest extends TestCase
             'status' => 'active',
         ]);
         $customer = User::factory()->create();
+        $this->clockInEmployee($repairer);
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
             'user_id' => $customer->id,

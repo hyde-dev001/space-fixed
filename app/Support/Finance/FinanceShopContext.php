@@ -28,6 +28,10 @@ final class FinanceShopContext
             if ($shopOwner instanceof ShopOwner) {
                 return (int) $shopOwner->getKey();
             }
+            throw new HttpResponseException(response()->json([
+                'message' => 'Authentication is required.',
+                'error' => 'UNAUTHENTICATED',
+            ], 401));
         }
 
         $actor = $request->user('user');
@@ -39,8 +43,7 @@ final class FinanceShopContext
             ], 401));
         }
 
-        $isShopOwner = $this->isShopOwner($actor);
-        $shopId = $isShopOwner ? $actor->getKey() : $actor->shop_owner_id;
+        $shopId = $actor->shop_owner_id;
 
         if (! is_numeric($shopId) || (int) $shopId < 1) {
             throw new HttpResponseException(response()->json([
@@ -52,20 +55,4 @@ final class FinanceShopContext
         return (int) $shopId;
     }
 
-    private function isShopOwner(object $actor): bool
-    {
-        if (method_exists($actor, 'getRoleNames')) {
-            try {
-                foreach ($actor->getRoleNames() as $role) {
-                    if (in_array(strtolower(str_replace(['-', '_'], ' ', trim((string) $role))), ['shop owner'], true)) {
-                        return true;
-                    }
-                }
-            } catch (\Throwable) {
-                // Fall through to the legacy role column.
-            }
-        }
-
-        return strtolower(str_replace(['-', '_'], ' ', trim((string) ($actor->role ?? '')))) === 'shop owner';
-    }
 }

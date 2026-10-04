@@ -13,6 +13,7 @@ final class PlatformBalanceService
 {
     public function __construct(
         private readonly PlatformFeeSettingsResolver $settings,
+        private readonly PlatformFeeSourceReferenceResolver $references,
     ) {}
 
     /** @return array<string, mixed> */
@@ -34,12 +35,15 @@ final class PlatformBalanceService
             'amount',
         );
         $creditApplications = PlatformCreditApplication::query()
+            ->with(['charge' => fn ($query) => $query->where('shop_id', $shopId)
+                ->select(['id', 'shop_id', 'source_type', 'source_id', 'metadata'])])
             ->where('shop_id', $shopId)
             ->where('source_origin', 'marketplace')
             ->oldest('created_at')
             ->oldest('id')
             ->get([
                 'id',
+                'platform_fee_charge_id',
                 'source_type',
                 'source_id',
                 'source_origin',
@@ -68,6 +72,7 @@ final class PlatformBalanceService
             $creditApplications,
             $allocationsByCredit,
             $outstandingBeforeCredits,
+            $shopId,
         );
         $availableCredits = $remainingCredits;
         $netPayable = $this->maxZero($outstanding->minus($availableCredits));
@@ -115,12 +120,14 @@ final class PlatformBalanceService
     }
 
     /** @return array<int, array<string, mixed>> */
-    private function creditMovements($creditApplications, $allocationsByCredit, BigDecimal $outstandingBeforeCredits): array
+    private function creditMovements($creditApplications, $allocationsByCredit, BigDecimal $outstandingBeforeCredits, int $shopId): array
     {
         $runningOutstanding = $outstandingBeforeCredits;
+        $charges = $creditApplications->pluck('charge')->filter()->values();
+        $references = $this->references->forCharges($charges, $shopId);
 
         return $creditApplications
-            ->map(function (PlatformCreditApplication $credit) use ($allocationsByCredit, &$runningOutstanding): array {
+            ->map(function (PlatformCreditApplication $credit) use ($allocationsByCredit, &$runningOutstanding, $references): array {
                 $allocations = $allocationsByCredit->get($credit->id, collect());
                 $applied = $this->sumValues($allocations->pluck('amount'));
                 $creditAmount = $this->decimal((string) $credit->credit_amount);
@@ -135,6 +142,8 @@ final class PlatformBalanceService
                     'id' => (int) $credit->id,
                     'source_type' => (string) $credit->source_type,
                     'source_id' => (int) $credit->source_id,
+                    'source_reference' => $references[$credit->platform_fee_charge_id]
+                        ?? $this->references->fallback((string) $credit->source_type, (int) $credit->source_id),
                     'source_origin' => (string) $credit->source_origin,
                     'credit_amount' => $creditAmount->toScale(2, RoundingMode::HALF_UP)->__toString(),
                     'applied_amount' => $applied->toScale(2, RoundingMode::HALF_UP)->__toString(),

@@ -26,7 +26,9 @@ class LogisticsConcurrencyTest extends TestCase
 
     public function test_duplicate_return_creation_converges_on_one_leg(): void
     {
-        $shipment = Shipment::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        \App\Models\ShopOwnerModule::updateOrCreate(['shop_owner_id' => $shop->id, 'module_key' => 'logistics'], ['enabled' => true]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shipment->shop_owner_id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'needs_resolution', 'resolution_type' => 'return_required']);
         DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'rider_profile_id' => $rider->id, 'status' => 'accepted']);
@@ -125,6 +127,11 @@ class LogisticsConcurrencyTest extends TestCase
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         LogisticsSetting::create([
             'shop_owner_id' => $shop->id,
             'coverage_radius_km' => 12,

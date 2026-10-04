@@ -27,7 +27,7 @@ class ShipmentLegStatusConsumerTest extends TestCase
 
     public function test_correction_required_leg_cannot_be_assigned_as_new_work(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create([
             'shipment_id' => $shipment->id,

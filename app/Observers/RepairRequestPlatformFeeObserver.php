@@ -18,7 +18,11 @@ final class RepairRequestPlatformFeeObserver
 
     public function updated(RepairRequest $repair): void
     {
-        if ($repair->wasChanged(['status', 'payment_status', 'total_paid_amount'])) {
+        if ($repair->wasChanged([
+            'status', 'payment_status', 'total_paid_amount', 'total', 'final_total',
+            'origin_channel', 'billing_mode', 'is_warranty_job', 'pricing_breakdown',
+            'logistics_payment_reconciliation',
+        ])) {
             $this->ledger->finalizeRepair($repair);
         }
     }

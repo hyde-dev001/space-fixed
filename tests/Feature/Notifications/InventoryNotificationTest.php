@@ -5,14 +5,18 @@ namespace Tests\Feature\Notifications;
 use App\Enums\NotificationType;
 use App\Events\LowStockAlert;
 use App\Events\OutOfStockAlert;
+use App\Events\SupplierOrderOverdue;
 use App\Listeners\SendLowStockNotification;
 use App\Listeners\SendOutOfStockNotification;
+use App\Listeners\NotifySupplierOrderOverdue;
 use App\Models\InventoryColorVariant;
 use App\Models\InventoryItem;
 use App\Models\InventorySize;
 use App\Models\Notification as DatabaseNotification;
 use App\Models\ShopOwner;
 use App\Models\StockRequestApproval;
+use App\Models\Supplier;
+use App\Models\SupplierOrder;
 use App\Models\User;
 use App\Notifications\LowStockNotification;
 use App\Notifications\OutOfStockNotification;
@@ -21,7 +25,6 @@ use App\Services\NotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\Notification;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
@@ -29,6 +32,69 @@ use Tests\TestCase;
 final class InventoryNotificationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_low_stock_material_entry_saves_with_real_notification_mail_builder(): void
+    {
+        Mail::fake();
+        $shop = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'company', 'business_type' => 'repair',
+        ]);
+        $viewer = User::factory()->for($shop)->create(['status' => 'active', 'role' => 'INVENTORY']);
+        $viewer->givePermissionTo([
+            Permission::findOrCreate('access-upload-inventory', 'user'),
+            Permission::findOrCreate('inventory.create', 'user'),
+            Permission::findOrCreate('inventory.view', 'user'),
+        ]);
+        $this->clockInEmployee($viewer);
+
+        $response = $this->actingAs($viewer, 'user')->postJson('/api/erp/inventory/items', [
+            'name' => 'Repair Glue', 'category' => 'repair_materials', 'available_quantity' => 1,
+            'reorder_level' => 10, 'reorder_quantity' => 50, 'unit' => 'grams',
+        ]);
+        $this->assertSame(201, $response->status(), $response->getContent());
+
+        $itemId = $response->json('item.id');
+        $this->assertDatabaseHas('inventory_items', [
+            'id' => $itemId, 'shop_owner_id' => $shop->id, 'available_quantity' => 1,
+        ]);
+        $this->assertDatabaseHas('stock_movements', [
+            'inventory_item_id' => $itemId, 'movement_type' => 'initial', 'quantity_after' => 1,
+        ]);
+        $this->assertDatabaseHas('inventory_alerts', [
+            'inventory_item_id' => $itemId, 'alert_type' => 'low_stock', 'is_resolved' => false,
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $viewer->id, 'shop_id' => $shop->id, 'type' => 'low_stock_alert',
+        ]);
+    }
+
+    public function test_overdue_supplier_alert_uses_the_central_inbox_and_same_shop_permission(): void
+    {
+        Mail::fake();
+        $shop = ShopOwner::factory()->create();
+        $otherShop = ShopOwner::factory()->create();
+        $permission = Permission::findOrCreate('inventory.manage_orders', 'user');
+        $viewer = User::factory()->for($shop)->create();
+        $viewer->givePermissionTo($permission);
+        $otherViewer = User::factory()->for($otherShop)->create();
+        $otherViewer->givePermissionTo($permission);
+        $unpermitted = User::factory()->for($shop)->create();
+        $supplier = Supplier::factory()->create(['shop_owner_id' => $shop->id]);
+        $order = SupplierOrder::factory()->create([
+            'shop_owner_id' => $shop->id, 'supplier_id' => $supplier->id,
+            'status' => 'sent', 'expected_delivery_date' => now()->subDays(3),
+        ]);
+
+        (new NotifySupplierOrderOverdue())->handle(new SupplierOrderOverdue($order, 3));
+
+        $notification = DatabaseNotification::where('user_id', $viewer->id)->sole();
+        $this->assertSame('supplier_order_overdue', $notification->type->value);
+        $this->assertSame('Overdue Supplier Order', $notification->type->label());
+        $this->assertSame($order->id, $notification->data['supplier_order_id']);
+        $this->assertSame(3, $notification->data['days_overdue']);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $otherViewer->id]);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $unpermitted->id]);
+    }
 
     public function test_purchase_order_in_transit_notifies_active_same_shop_inventory_viewers_once(): void
     {
@@ -110,7 +176,7 @@ final class InventoryNotificationTest extends TestCase
 
     public function test_variant_alert_notifications_are_queued_and_only_reach_same_shop_inventory_viewers(): void
     {
-        Notification::fake();
+        Mail::fake();
 
         $shop = ShopOwner::factory()->create();
         $otherShop = ShopOwner::factory()->create();
@@ -151,31 +217,22 @@ final class InventoryNotificationTest extends TestCase
         (new SendLowStockNotification())->handle(new LowStockAlert($item, 3, 5, $target));
         (new SendOutOfStockNotification())->handle(new OutOfStockAlert($item, $target));
 
-        Notification::assertSentTo($viewer, LowStockNotification::class, function (LowStockNotification $notification, array $channels) use ($viewer, $item, $color, $size): bool {
-            $data = $notification->toArray($viewer);
-
-            return in_array('database', $channels, true)
-                && $data['inventory_item_id'] === $item->id
-                && $data['inventory_color_variant_id'] === $color->id
-                && $data['inventory_size_id'] === $size->id
-                && $data['target_name'] === $item->name . ' - Black - US 8'
-                && $data['current_quantity'] === 3
-                && $data['reorder_level'] === 5;
-        });
-        Notification::assertSentTo($viewer, OutOfStockNotification::class, function (OutOfStockNotification $notification, array $channels) use ($viewer, $item, $color, $size): bool {
-            $data = $notification->toArray($viewer);
-
-            return in_array('database', $channels, true)
-                && $data['inventory_item_id'] === $item->id
-                && $data['inventory_color_variant_id'] === $color->id
-                && $data['inventory_size_id'] === $size->id
-                && $data['target_name'] === $item->name . ' - Black - US 8'
-                && $data['reorder_quantity'] === 20;
-        });
-        Notification::assertNotSentTo($sameShopWithoutPermission, LowStockNotification::class);
-        Notification::assertNotSentTo($sameShopWithoutPermission, OutOfStockNotification::class);
-        Notification::assertNotSentTo($otherShopViewer, LowStockNotification::class);
-        Notification::assertNotSentTo($otherShopViewer, OutOfStockNotification::class);
+        $notifications = DatabaseNotification::where('user_id', $viewer->id)->orderBy('id')->get();
+        $this->assertCount(2, $notifications);
+        $this->assertSame(['low_stock', 'out_of_stock'], $notifications->pluck('data.type')->all());
+        foreach ($notifications as $notification) {
+            $this->assertSame(NotificationType::LOW_STOCK_ALERT, $notification->type);
+            $this->assertSame($shop->id, $notification->shop_id);
+            $this->assertSame($item->id, $notification->data['inventory_item_id']);
+            $this->assertSame($color->id, $notification->data['inventory_color_variant_id']);
+            $this->assertSame($size->id, $notification->data['inventory_size_id']);
+            $this->assertSame($item->name.' - Black - US 8', $notification->data['target_name']);
+            $this->assertSame(20, $notification->data['reorder_quantity']);
+        }
+        $this->assertSame(3, $notifications->first()->data['current_quantity']);
+        $this->assertSame(5, $notifications->first()->data['reorder_level']);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $sameShopWithoutPermission->id]);
+        $this->assertDatabaseMissing('notifications', ['user_id' => $otherShopViewer->id]);
         self::assertInstanceOf(ShouldQueue::class, new SendLowStockNotification());
         self::assertInstanceOf(ShouldQueue::class, new SendOutOfStockNotification());
         self::assertInstanceOf(ShouldQueue::class, new LowStockNotification($item, 3, 5, $target));

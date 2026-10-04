@@ -2470,13 +2470,15 @@ class OrderRefundService
         $isIndividualRegistration = $this->isIndividualRegistrationType(
             (string) ($order->shopOwner?->registration_type ?? '')
         );
-        $isThirdPartyCustomerRefund = $this->isThirdPartyCustomerRefund($refund, $order);
+        $isSystemDeliveryRefund = in_array((string) $refund->reason_code,
+            ['delivery_attempts_exhausted', 'delivery_loss_confirmed'], true);
+        $isThirdPartyCustomerRefund = ! $isSystemDeliveryRefund && $this->isThirdPartyCustomerRefund($refund, $order);
         $isCompanyCustomerRefund = strtolower(trim((string) ($order->shopOwner?->registration_type ?? ''))) === 'company'
-            && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted';
+            && ! $isSystemDeliveryRefund;
         $isIndividualOwnerRefund = $isIndividualRegistration
             && !$isCodRefund
             && (string) ($refund->flow_type ?? '') !== 'cancel_auto'
-            && (string) ($refund->reason_code ?? '') !== 'delivery_attempts_exhausted';
+            && ! $isSystemDeliveryRefund;
 
         if ($isCodRefund) {
             return;

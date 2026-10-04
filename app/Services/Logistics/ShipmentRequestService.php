@@ -4,6 +4,7 @@ namespace App\Services\Logistics;
 
 use App\Enums\Logistics\CarrierType;
 use App\Models\ShopOwner;
+use App\Models\Order;
 use App\Models\Logistics\ShippingMethod;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -13,7 +14,7 @@ use Illuminate\Validation\ValidationException;
 
 class ShipmentRequestService
 {
-    public function __construct(private DeliveryEventService $events)
+    public function __construct(private DeliveryEventService $events, private LogisticsMovementEligibility $movements)
     {
     }
 
@@ -50,10 +51,25 @@ class ShipmentRequestService
         $data = $validator->validated();
 
         return DB::transaction(function () use ($data) {
-            ShopOwner::query()
+            $shop = ShopOwner::query()
                 ->whereKey($data['shop_owner_id'])
                 ->lockForUpdate()
                 ->firstOrFail();
+            $thirdParty = $data['source_type'] === 'order'
+                && $data['purpose'] === 'retail_delivery'
+                && Order::query()->whereKey($data['source_id'])
+                    ->where('shop_owner_id', $shop->id)->first()?->resolvedDeliveryMethod() === 'third_party';
+            if (! $thirdParty) {
+                $this->movements->assertCanStart($shop);
+            } elseif (count($data['legs']) !== 1
+                || ($data['legs'][0]['leg_type'] ?? null) !== 'outbound'
+                || ! empty($data['legs'][0]['shipping_method_id'])
+                || ($data['legs'][0]['requires_pickup_proof'] ?? false)
+                || ($data['legs'][0]['requires_delivery_proof'] ?? true)) {
+                throw ValidationException::withMessages([
+                    'logistics' => ['Third-party orders support courier tracking only, not shop-owned movements.'],
+                ]);
+            }
             $shipmentNumber = (int) Shipment::query()
                 ->where('shop_owner_id', $data['shop_owner_id'])
                 ->max('shipment_number') + 1;

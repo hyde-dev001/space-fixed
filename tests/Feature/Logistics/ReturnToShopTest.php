@@ -26,7 +26,12 @@ class ReturnToShopTest extends TestCase
 
     public function test_return_is_singleton_and_receipt_ends_custody(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'needs_resolution', 'resolution_type' => 'return_required']);
@@ -168,7 +173,12 @@ class ReturnToShopTest extends TestCase
 
     public function test_return_receipt_rejects_proof_from_another_leg(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $original = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'needs_resolution']);
         $return = ShipmentLeg::factory()->create([

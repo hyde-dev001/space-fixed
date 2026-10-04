@@ -70,6 +70,7 @@ class ShipmentLegService
         private RiderActiveWorkGuard $activeWork,
         private NotificationService $notifications,
         private RepairDeliveryService $repairDelivery,
+        private LogisticsMovementEligibility $movements,
         private ArrivalService $arrivals,
         private CodCollectionService $codCollections,
     ) {}
@@ -77,6 +78,7 @@ class ShipmentLegService
     public function markPickedUp(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
     {
         return DB::transaction(function () use ($leg, $rider) {
+            $shop = $this->movements->lockShopForLeg($leg);
             $leg = ShipmentLeg::query()
                 ->with(['shipment', 'deliveryBatch'])
                 ->lockForUpdate()
@@ -90,6 +92,10 @@ class ShipmentLegService
                 return $leg;
             }
 
+            $this->movements->assertInternalLeg($leg);
+            if (! $this->movements->canContinue($shop, $leg)) {
+                $this->movements->assertCanStart($shop);
+            }
             $this->assertTransitionAllowed($leg, ['assigned', 'pickup_scheduled', 'delivery_attempted'], 'picked up');
 
             if ($leg->shipment->source_type === 'order_refund' && $leg->shipment->purpose === 'refund_return') {
@@ -206,15 +212,18 @@ class ShipmentLegService
     public function markInTransit(ShipmentLeg $leg, ?RiderProfile $rider = null): ShipmentLeg
     {
         return DB::transaction(function () use ($leg, $rider) {
+            $shop = $this->movements->lockShopForLeg($leg);
             $leg = ShipmentLeg::query()
                 ->with('shipment.shopOwner')
                 ->lockForUpdate()
                 ->findOrFail($leg->id);
+            $leg->shipment->setRelation('shopOwner', $shop);
             if ($leg->status->value === 'in_transit') {
                 return $leg;
             }
 
             if ($leg->status->value === 'needs_resolution' && $leg->resolution_type === 'retry') {
+                $this->movements->assertCanStart($leg->shipment->shopOwner);
                 if (! $rider) {
                     throw ValidationException::withMessages([
                         'rider' => 'A rider must start a scheduled delivery retry.',
@@ -564,7 +573,9 @@ class ShipmentLegService
         }
 
         return DB::transaction(function () use ($leg, $reason) {
+            $shop = $this->movements->lockShopForLeg($leg);
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
+            $this->movements->assertCanStart($shop);
             $this->assertTransitionAllowed($leg, ['needs_resolution'], 'scheduled for retry');
             $failedPickup = $leg->shipment->purpose === 'repair_pickup'
                 && $leg->resolution_type === 'pickup_failed';
@@ -707,7 +718,8 @@ class ShipmentLegService
             return $existing;
         }
 
-        ShopOwner::query()->whereKey($leg->shipment->shop_owner_id)->lockForUpdate()->firstOrFail();
+        $shop = ShopOwner::query()->whereKey($leg->shipment->shop_owner_id)->lockForUpdate()->firstOrFail();
+        $this->movements->assertCanStart($shop);
 
         $return = $leg->shipment->legs()->create([
             'sequence' => $leg->shipment->legs()->max('sequence') + 1,

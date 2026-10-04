@@ -410,7 +410,12 @@ class DeliveryExecutionTest extends TestCase
 
     private function fixture(): array
     {
-        $shop = ShopOwner::factory()->create(['shop_latitude' => 14.5, 'shop_longitude' => 121]);
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'shop_latitude' => 14.5, 'shop_longitude' => 121]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
         $batch = DeliveryBatch::factory()->create(['shop_owner_id' => $shop->id, 'rider_profile_id' => $rider->id, 'status' => 'in_progress']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);

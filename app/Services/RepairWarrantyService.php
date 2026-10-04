@@ -98,6 +98,7 @@ class RepairWarrantyService
 
         return [
             'issued' => true,
+            'delivery_methods' => $this->availableDeliveryMethods($repair),
             'active' => $active,
             'started_at' => $startedAt->toISOString(),
             'expires_at' => $expiresAt->toISOString(),
@@ -146,7 +147,7 @@ class RepairWarrantyService
             ]);
         }
 
-        $eligibleStatuses = ['picked_up', 'received'];
+        $eligibleStatuses = ['picked_up'];
         if (! in_array((string) $originalRepair->status, $eligibleStatuses, true)) {
             throw ValidationException::withMessages([
                 'repair' => ['Warranty claims can only be filed after pickup/receipt confirmation.'],
@@ -158,6 +159,8 @@ class RepairWarrantyService
                 'repair' => ['Warranty was not issued for this repair request.'],
             ]);
         }
+
+        app(RepairResolutionEligibilityService::class)->assertWarrantyAllowed($originalRepair);
 
         $windowStart = Carbon::parse($originalRepair->repair_warranty_started_at);
         $windowExpiry = Carbon::parse($originalRepair->repair_warranty_expires_at);
@@ -222,6 +225,15 @@ class RepairWarrantyService
      */
     public function createCustomerClaim(RepairRequest $repair, User $customer, array $validated, array $images): RepairWarrantyClaim
     {
+        return DB::transaction(function () use ($repair, $customer, $validated, $images): RepairWarrantyClaim {
+            $lockedRepair = RepairRequest::query()->whereKey($repair->id)->lockForUpdate()->firstOrFail();
+
+            return $this->createCustomerClaimLocked($lockedRepair, $customer, $validated, $images);
+        });
+    }
+
+    private function createCustomerClaimLocked(RepairRequest $repair, User $customer, array $validated, array $images): RepairWarrantyClaim
+    {
         if ((int) ($repair->user_id ?? 0) <= 0) {
             throw ValidationException::withMessages([
                 'repair' => ['This repair request is not linked to a registered customer account.'],
@@ -257,6 +269,16 @@ class RepairWarrantyService
 
     public function createPosWalkInClaim(RepairRequest $repair, array $validated, int $actorId): RepairWarrantyClaim
     {
+        return DB::transaction(function () use ($repair, $validated, $actorId): RepairWarrantyClaim {
+            $lockedRepair = RepairRequest::query()->whereKey($repair->id)
+                ->where('shop_owner_id', $repair->shop_owner_id)->lockForUpdate()->firstOrFail();
+
+            return $this->createPosWalkInClaimLocked($lockedRepair, $validated, $actorId);
+        });
+    }
+
+    private function createPosWalkInClaimLocked(RepairRequest $repair, array $validated, int $actorId): RepairWarrantyClaim
+    {
         if (! $this->isManualPosRepair($repair)) {
             throw ValidationException::withMessages([
                 'repair' => ['POS walk-in warranty claims are only allowed for manual POS walk-in repairs.'],
@@ -279,8 +301,14 @@ class RepairWarrantyService
     public function approveClaim(RepairWarrantyClaim $claim, int $actorId): RepairWarrantyClaim
     {
         return DB::transaction(function () use ($claim, $actorId) {
+            // Every competing resolution locks the original repair first.
+            $original = RepairRequest::query()->with(['services', 'shopOwner'])
+                ->whereKey($claim->original_repair_request_id)
+                ->where('shop_owner_id', $claim->shop_owner_id)->lockForUpdate()->firstOrFail();
             /** @var RepairWarrantyClaim $lockedClaim */
-            $lockedClaim = RepairWarrantyClaim::query()->whereKey($claim->id)->lockForUpdate()->firstOrFail();
+            $lockedClaim = RepairWarrantyClaim::query()->whereKey($claim->id)
+                ->where('original_repair_request_id', $original->id)
+                ->where('shop_owner_id', $original->shop_owner_id)->lockForUpdate()->firstOrFail();
 
             if ((string) $lockedClaim->status !== RepairWarrantyClaim::STATUS_PENDING_REPAIRER) {
                 throw ValidationException::withMessages([
@@ -297,13 +325,6 @@ class RepairWarrantyService
                     'claim' => ['Warranty claim expired before approval.'],
                 ]);
             }
-
-            /** @var RepairRequest $original */
-            $original = RepairRequest::query()
-                ->with(['services', 'shopOwner'])
-                ->whereKey($lockedClaim->original_repair_request_id)
-                ->lockForUpdate()
-                ->firstOrFail();
 
             // Re-run key eligibility checks at approval time.
             $this->validateEligibility($original, null, (int) $lockedClaim->id);
@@ -432,6 +453,8 @@ class RepairWarrantyService
             if (! empty($serviceIds)) {
                 $linked->services()->sync($serviceIds);
             }
+
+            app(RepairMaterialPlanningService::class)->snapshot($linked);
 
             $lockedClaim->forceFill([
                 'status' => RepairWarrantyClaim::STATUS_APPROVED,
@@ -711,11 +734,12 @@ class RepairWarrantyService
             properties: $notificationPayload
         );
 
-        $this->dispatchNotificationSafely(function () use ($notificationPayload): void {
-            $this->notificationService?->notifyRepairWarrantyClaimFiled(
-                (int) $notificationPayload['shop_owner_id'],
-                $notificationPayload
-            );
+        DB::afterCommit(function () use ($notificationPayload): void {
+            $this->dispatchNotificationSafely(function () use ($notificationPayload): void {
+                $this->notificationService?->notifyRepairWarrantyClaimFiled(
+                    (int) $notificationPayload['shop_owner_id'], $notificationPayload
+                );
+            });
         });
 
         return $claim;
@@ -837,22 +861,40 @@ class RepairWarrantyService
         string $intakeMethod,
         string $returnMethod,
     ): void {
-        $shopOwner = $repair->shopOwner ?: ShopOwner::query()->find($repair->shop_owner_id);
-        if (strtolower(trim((string) ($shopOwner?->registration_type ?? ''))) !== 'individual') {
-            return;
-        }
-
+        $methods = $this->allowedDeliveryMethods($repair);
         $errors = [];
-        if ($intakeMethod === 'shop_pickup') {
-            $errors['preferred_return_method'][] = 'Individual Repair shops accept warranty items by walk-in or customer-arranged delivery only.';
+        if (! in_array($intakeMethod, $methods['intake'], true)) {
+            $errors['preferred_return_method'][] = 'This intake method is unavailable for the original repair and current Logistics setting.';
         }
-        if ($returnMethod === 'shop_delivery') {
-            $errors['preferred_receive_method'][] = 'Individual Repair shops return warranty items by shop pickup or customer-arranged delivery only.';
+        if (! in_array($returnMethod, $methods['return'], true)) {
+            $errors['preferred_receive_method'][] = 'This return method is unavailable for the original repair and current Logistics setting.';
         }
-
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);
         }
+    }
+
+    /** @return array{intake: array<int, string>, return: array<int, string>} */
+    public function allowedDeliveryMethods(RepairRequest $repair): array
+    {
+        return $this->repairDeliveryService->allowedWarrantyDeliveryMethods($repair);
+    }
+
+    /** @return array{intake: array<int, string>, return: array<int, string>} */
+    public function availableDeliveryMethods(RepairRequest $repair): array
+    {
+        $methods = $this->allowedDeliveryMethods($repair);
+        foreach ($methods as $leg => $choices) {
+            $methods[$leg] = array_values(array_filter($choices, function (string $method) use ($repair, $leg): bool {
+                try {
+                    $this->warrantyDeliveryLeg($repair, $leg, $method);
+                    return true;
+                } catch (ValidationException) {
+                    return false;
+                }
+            }));
+        }
+        return $methods;
     }
 
     private function warrantyDeliveryLeg(RepairRequest $repair, string $leg, string $method): array
@@ -875,7 +917,7 @@ class RepairWarrantyService
                 ->first()
             : null;
 
-        if (! $address) {
+        if (! $address || $address->latitude === null || $address->longitude === null) {
             throw ValidationException::withMessages([
                 $field => ['Choose a pinned saved address on the original repair before selecting this delivery method.'],
             ]);

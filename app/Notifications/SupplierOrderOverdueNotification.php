@@ -39,7 +39,6 @@ class SupplierOrderOverdueNotification extends Notification implements ShouldQue
     {
         return (new MailMessage)
             ->subject('Overdue Supplier Order: ' . $this->supplierOrder->po_number)
-            ->warning()
             ->line('Supplier order **' . $this->supplierOrder->po_number . '** is overdue by **' . $this->daysOverdue . ' days**.')
             ->line('Supplier: **' . $this->supplierOrder->supplier->name . '**')
             ->line('Expected Delivery: **' . $this->supplierOrder->expected_delivery_date . '**')

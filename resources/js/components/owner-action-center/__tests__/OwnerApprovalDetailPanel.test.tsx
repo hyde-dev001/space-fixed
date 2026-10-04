@@ -180,6 +180,65 @@ describe("OwnerApprovalDetailPanel", () => {
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ request_type: "package" });
   });
 
+  it.each([
+    ["repair_refund", { status: "Refunded", rawStatus: "succeeded" }],
+    ["repair_refund", { status: "Refunded" }],
+    ["repair_refund", { status: "Processing", rawStatus: "processing" }],
+    ["repair_refund", { status: "Pending", rawStatus: "requested", owner_projection: { owner_action_required: false } }],
+    ["order_refund", { status: "Processing", rawStatus: "processing" }],
+    ["order_refund", { approval: { status: "approved" } }],
+  ] as const)("keeps a stale %s decision link read-only for %j", async (sourceType, refund) => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: { id: 13, refundAmountValue: 300, ...refund } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <OwnerApprovalDetailPanel
+        item={item({ source_type: sourceType, source_id: 13, owner_action_required: true })}
+        selection={{ sourceType, sourceId: 13 }}
+        onClose={vi.fn()}
+        onDecisionComplete={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Decision summary" });
+    expect(screen.queryByRole("button", { name: /^Approve$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Reject$/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/no longer assigned to your decision queue/i)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves a pending repair refund decision from its current API projection", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: {
+          id: 13, status: "Pending", rawStatus: "requested", refundAmountValue: 300,
+          shopOwnerStatus: "pending", financeStatus: "approved_initial",
+          owner_projection: { owner_action_required: true },
+        } }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ success: true }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <OwnerApprovalDetailPanel
+        item={item({ source_type: "repair_refund", source_id: 13 })}
+        selection={{ sourceType: "repair_refund", sourceId: 13 }}
+        onClose={vi.fn()}
+        onDecisionComplete={vi.fn()}
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Decision summary" });
+    expect(screen.getByRole("button", { name: /^Reject$/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Approve$/i }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/shop-owner/repair-refunds/13/approve");
+  });
+
   it("keeps the selected context and offers refresh after a stale decision response", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({

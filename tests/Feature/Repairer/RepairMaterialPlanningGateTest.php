@@ -17,6 +17,7 @@ class RepairMaterialPlanningGateTest extends TestCase
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($repairer);
 
         $repair = RepairRequest::create([
             'request_id' => 'REP-PLAN-' . strtoupper(substr((string) str()->uuid(), 0, 8)),
@@ -57,6 +58,7 @@ class RepairMaterialPlanningGateTest extends TestCase
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($repairer);
 
         $repair = RepairRequest::create([
             'request_id' => 'REP-RISK-' . strtoupper(substr((string) str()->uuid(), 0, 8)),

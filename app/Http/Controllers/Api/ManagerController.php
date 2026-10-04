@@ -258,20 +258,23 @@ class ManagerController extends Controller
 
     public function downloadReport(Request $request, int $id)
     {
-        $actor = $this->managerReportActor(ManagerAuthorizationService::REPORTS_READ);
-
-        if ($actor instanceof \Illuminate\Http\JsonResponse) {
-            return $actor;
+        $context = $request->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext && $context->isOwnerMode()) {
+            $shopOwnerId = (int) $context->tenantOwner()->getKey();
+        } else {
+            $actor = $this->managerReportActor(ManagerAuthorizationService::REPORTS_READ);
+            if ($actor instanceof \Illuminate\Http\JsonResponse) {
+                return $actor;
+            }
+            [, $shopOwnerId] = $actor;
         }
-
-        [, $shopOwnerId] = $actor;
 
         try {
             $service = app(ManagerReportService::class);
             $report = $service->reportForDownload($shopOwnerId, $id);
 
             return response()->download(
-                Storage::disk('local')->path($report->file_path),
+                Storage::disk('local')->path($service->formattedFilePath($report)),
                 $service->downloadFileName($report),
                 ['Content-Type' => 'text/csv'],
             );
@@ -347,6 +350,14 @@ class ManagerController extends Controller
             $staffQuery = User::query()
                 ->with(['employee.leaveRequests', 'roles'])
                 ->where('shop_owner_id', $shopOwnerId)
+                ->whereHas('employee', fn ($employee) => $employee->where('shop_owner_id', $shopOwnerId))
+                ->whereRaw("LOWER(REPLACE(REPLACE(TRIM(COALESCE(role, '')), '_', ' '), '-', ' ')) NOT IN (?, ?, ?, ?, ?)", [
+                    'shop owner', 'customer', 'super admin', 'superadmin', 'admin',
+                ])
+                ->whereDoesntHave('roles', fn ($roles) => $roles->whereRaw("LOWER(REPLACE(REPLACE(TRIM(name), '_', ' '), '-', ' ')) IN (?, ?, ?, ?, ?)", [
+                    'shop owner', 'customer', 'super admin', 'superadmin', 'admin',
+                ]))
+                ->whereDoesntHave('shopOwner', fn ($owner) => $owner->whereRaw('LOWER(TRIM(shop_owners.email)) = LOWER(TRIM(users.email))'))
                 ->where(function ($query): void {
                     $query
                         ->whereRaw("UPPER(COALESCE(role, '')) IN (?, ?)", ['STAFF', 'REPAIRER'])

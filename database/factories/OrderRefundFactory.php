@@ -19,7 +19,7 @@ class OrderRefundFactory extends Factory
             'customer_id' => User::factory(),
             'shop_owner_id' => ShopOwner::factory(),
             'flow_type' => 'request_approval',
-            'status' => 'approved',
+            'status' => 'processing',
             'shop_owner_status' => 'approved',
             'finance_status' => 'approved',
             'return_status' => 'pending_customer_shipment',

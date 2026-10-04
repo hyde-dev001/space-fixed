@@ -30,6 +30,32 @@ const INTAKE_CARRIER_OPTIONS = ['Lalamove', 'J&T', 'Flash Express', 'Gogo Xpress
 
 const repairPaymentReturnMarker = (repairId: number): string => `${REPAIR_PAYMENT_RETURN_MARKER}${repairId}`;
 
+const PENDING_REPAIR_PAYMENT_RETURN = 'pendingRepairPaymentReturn';
+type RepairPaymentReturnContext = { repairId: number; returnTs: number; returnSig: string };
+type RepairPaymentVerificationResult = { success?: boolean; payment_verified?: boolean; expired?: boolean; message?: string };
+
+const readPaymentReturnStorage = (key: string): string | null => {
+  try { return sessionStorage.getItem(key); } catch { return null; }
+};
+const writePaymentReturnStorage = (key: string, value: string | null): boolean => {
+  try {
+    if (value === null) sessionStorage.removeItem(key);
+    else sessionStorage.setItem(key, value);
+    return true;
+  } catch { return false; }
+};
+const readPendingPaymentReturn = (): RepairPaymentReturnContext | null => {
+  try {
+    const value: unknown = JSON.parse(readPaymentReturnStorage(PENDING_REPAIR_PAYMENT_RETURN) || 'null');
+    if (!value || typeof value !== 'object') return null;
+    const row = value as Record<string, unknown>;
+    if (typeof row.repairId !== 'number' || !Number.isInteger(row.repairId) || row.repairId <= 0
+      || typeof row.returnTs !== 'number' || !Number.isFinite(row.returnTs)
+      || typeof row.returnSig !== 'string') return null;
+    return { repairId: row.repairId, returnTs: row.returnTs, returnSig: row.returnSig };
+  } catch { return null; }
+};
+
 const getFileExtension = (fileName: string): string => {
   const pieces = fileName.toLowerCase().split('.');
   return pieces.length > 1 ? pieces[pieces.length - 1] : '';
@@ -125,6 +151,7 @@ type DeliveryQuote = {
 };
 
 type RepairWarrantyState = {
+  delivery_methods?: { intake: WarrantyIntakeMethod[]; return: WarrantyReceiveMethod[] };
   issued: true;
   active: boolean;
   started_at: string;
@@ -136,6 +163,8 @@ type RepairWarrantyState = {
 };
 
 type RepairOrder = {
+  shop_owned_logistics_available?: boolean;
+  warranty_delivery_methods?: { intake: WarrantyIntakeMethod[]; return: WarrantyReceiveMethod[] } | null;
   id: number;
   order_number: string;
   repair_type: string;
@@ -249,6 +278,9 @@ type RepairOrder = {
   display_total_paid_amount?: number | null;
   total_refunded_amount?: number | null;
   has_review?: boolean;
+  can_modify_services?: boolean;
+  can_refund?: boolean;
+  refund_block_reason?: string | null;
   latest_pos_transaction_id?: number | null;
   refund_payment_type?: 'pure_online' | 'mixed' | 'manual_only' | string;
   refund_requires_payout_destination?: boolean;
@@ -319,6 +351,15 @@ type ConversationShop = {
 
 type WarrantyIntakeMethod = 'walk_in' | 'customer_delivery' | 'shop_pickup';
 type WarrantyReceiveMethod = 'walk_in' | 'customer_pickup' | 'shop_delivery';
+
+const getWarrantyDeliveryMethods = (order?: RepairOrder): { intake: string[]; return: string[] } => {
+  const methods = order?.warranty_delivery_methods ?? order?.warranty?.delivery_methods ?? { intake: ['walk_in'], return: ['walk_in'] };
+  const individual = String(order?.shop_registration_type ?? '').toLowerCase() === 'individual';
+  return {
+    intake: methods.intake.filter((method) => !individual || method !== 'shop_pickup'),
+    return: methods.return.filter((method) => !individual || method !== 'shop_delivery'),
+  };
+};
 
 const getMonthKey = (date: Date): string => {
   const year = date.getFullYear();
@@ -502,6 +543,19 @@ const getReturnMethod = (order: RepairOrder): 'walk_in' | 'customer_pickup' | 's
   return order.delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup';
 };
 
+const getRepairDeliveryMethods = (order: RepairOrder): { intake: string[]; return: string[] } => {
+  const methods = isWarrantyNoChargeOrder(order)
+    ? getWarrantyDeliveryMethods(order)
+    : {
+        intake: ['walk_in', 'customer_delivery', 'shop_pickup'],
+        return: ['walk_in', 'customer_pickup', 'shop_delivery'],
+      };
+  return {
+    intake: methods.intake.filter((method) => order.shop_owned_logistics_available !== false || method !== 'shop_pickup'),
+    return: methods.return.filter((method) => order.shop_owned_logistics_available !== false || method !== 'shop_delivery'),
+  };
+};
+
 const isOnlineIntakeFlow = (order: RepairOrder): boolean => {
   return getIntakeMethod(order) !== 'walk_in';
 };
@@ -620,9 +674,19 @@ const SponsoredIntakeReplanCard: React.FC<{
   const [success, setSuccess] = useState<string | null>(null);
   const effectiveAddressId = selectedAddress?.id ?? currentAddressId;
   const shopId = order.shop_owner_id ?? order.shop_id;
+  const allowedMethods = getRepairDeliveryMethods(order).intake;
+  const methodAllowed = allowedMethods.includes(method);
   const addressRequired = method !== 'walk_in';
   const shopPickupUnavailable = method === 'shop_pickup'
     && (coverageLoading || !coverage?.available || !deliveryDate || !deliveryWindow);
+
+  useEffect(() => {
+    if (order.pickup_recovery?.state === 'awaiting_arrangement' && !methodAllowed) {
+      setMethod('walk_in');
+      setError(null);
+      setSuccess(null);
+    }
+  }, [methodAllowed, order.pickup_recovery?.state]);
 
   useEffect(() => {
     if (!shopId || !effectiveAddressId) {
@@ -671,6 +735,11 @@ const SponsoredIntakeReplanCard: React.FC<{
   }, []);
 
   const handleRebook = async () => {
+    if (!methodAllowed) {
+      setError('Choose an available intake method.');
+      return;
+    }
+
     if (addressRequired && !effectiveAddressId) {
       setError('Choose one of your saved addresses.');
       return;
@@ -770,40 +839,44 @@ const SponsoredIntakeReplanCard: React.FC<{
             <span className="text-xs text-gray-500">Bring the shoes directly to the shop.</span>
           </span>
         </label>
-        <label className="flex items-start gap-3 text-sm text-gray-800">
-          <input
-            type="radio"
-            name={`sponsored-intake-method-${order.id}`}
-            checked={method === 'customer_delivery'}
-            disabled={saving}
-            onChange={() => {
-              setMethod('customer_delivery');
-              setError(null);
-              setSuccess(null);
-            }}
-          />
-          <span>
-            <span className="block font-semibold">Customer-arranged delivery</span>
-            <span className="text-xs text-gray-500">Use your own third-party courier.</span>
-          </span>
-        </label>
-        <label className="flex items-start gap-3 text-sm text-gray-800">
-          <input
-            type="radio"
-            name={`sponsored-intake-method-${order.id}`}
-            checked={method === 'shop_pickup'}
-            disabled={saving || coverageLoading || !coverage?.available}
-            onChange={() => {
-              setMethod('shop_pickup');
-              setError(null);
-              setSuccess(null);
-            }}
-          />
-          <span>
-            <span className="block font-semibold">Shop rider pickup</span>
-            <span className="text-xs text-gray-500">Schedule and pay for a new pickup from a supported address.</span>
-          </span>
-        </label>
+        {allowedMethods.includes('customer_delivery') && (
+          <label className="flex items-start gap-3 text-sm text-gray-800">
+            <input
+              type="radio"
+              name={`sponsored-intake-method-${order.id}`}
+              checked={method === 'customer_delivery'}
+              disabled={saving}
+              onChange={() => {
+                setMethod('customer_delivery');
+                setError(null);
+                setSuccess(null);
+              }}
+            />
+            <span>
+              <span className="block font-semibold">Customer-arranged delivery</span>
+              <span className="text-xs text-gray-500">Use your own third-party courier.</span>
+            </span>
+          </label>
+        )}
+        {allowedMethods.includes('shop_pickup') && (
+          <label className="flex items-start gap-3 text-sm text-gray-800">
+            <input
+              type="radio"
+              name={`sponsored-intake-method-${order.id}`}
+              checked={method === 'shop_pickup'}
+              disabled={saving || coverageLoading || !coverage?.available}
+              onChange={() => {
+                setMethod('shop_pickup');
+                setError(null);
+                setSuccess(null);
+              }}
+            />
+            <span>
+              <span className="block font-semibold">Shop rider pickup</span>
+              <span className="text-xs text-gray-500">Schedule and pay for a new pickup from a supported address.</span>
+            </span>
+          </label>
+        )}
       </fieldset>
 
       {addressRequired && (
@@ -872,7 +945,7 @@ const SponsoredIntakeReplanCard: React.FC<{
       <button
         type="button"
         onClick={handleRebook}
-        disabled={saving || (addressRequired && !effectiveAddressId) || shopPickupUnavailable}
+        disabled={saving || !methodAllowed || (addressRequired && !effectiveAddressId) || shopPickupUnavailable}
         className="mt-4 inline-flex w-full items-center justify-center rounded-full bg-[#16233b] px-5 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300 sm:w-auto"
       >
         {saving ? 'Saving...' : 'Save intake plan'}
@@ -885,6 +958,7 @@ const CustomerReturnRecoveryActions: React.FC<{
   order: RepairOrder;
   onRefresh: () => Promise<unknown>;
 }> = ({ order, onRefresh }) => {
+  const canRedeliver = getRepairDeliveryMethods(order).return.includes('shop_delivery');
   const [deliveryDate, setDeliveryDate] = useState('');
   const [deliveryWindow, setDeliveryWindow] = useState('');
   const [saving, setSaving] = useState(false);
@@ -899,6 +973,10 @@ const CustomerReturnRecoveryActions: React.FC<{
   ].join('-');
 
   const chooseRecovery = async (action: 'schedule_redelivery' | 'shop_pickup') => {
+    if (action === 'schedule_redelivery' && !canRedeliver) {
+      setError('Shop rider re-delivery is unavailable. Choose free shop pickup.');
+      return;
+    }
     if (action === 'schedule_redelivery' && (!deliveryDate || !deliveryWindow)) {
       setError('Choose a delivery date and time window.');
       return;
@@ -935,30 +1013,32 @@ const CustomerReturnRecoveryActions: React.FC<{
           <p className="mt-1">{order.return_recovery.shop.address}</p>
         </div>
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="text-sm font-semibold text-gray-800">
-          Re-delivery date
-          <input
-            type="date"
-            min={tomorrow}
-            value={deliveryDate}
-            onChange={(event) => setDeliveryDate(event.target.value)}
-            className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
-          />
-        </label>
-        <label className="text-sm font-semibold text-gray-800">
-          Delivery window
-          <MonochromeSelect
-            value={deliveryWindow}
-            onChange={(event) => setDeliveryWindow(event.target.value)}
-            className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
-          >
-            <option value="">Choose a time</option>
-            <option value="morning">Morning</option>
-            <option value="afternoon">Afternoon</option>
-          </MonochromeSelect>
-        </label>
-      </div>
+      {canRedeliver && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="text-sm font-semibold text-gray-800">
+            Re-delivery date
+            <input
+              type="date"
+              min={tomorrow}
+              value={deliveryDate}
+              onChange={(event) => setDeliveryDate(event.target.value)}
+              className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+            />
+          </label>
+          <label className="text-sm font-semibold text-gray-800">
+            Delivery window
+            <MonochromeSelect
+              value={deliveryWindow}
+              onChange={(event) => setDeliveryWindow(event.target.value)}
+              className="mt-1 min-h-12 w-full rounded-xl border border-gray-300 bg-white px-3 text-base text-gray-900"
+            >
+              <option value="">Choose a time</option>
+              <option value="morning">Morning</option>
+              <option value="afternoon">Afternoon</option>
+            </MonochromeSelect>
+          </label>
+        </div>
+      )}
 
       {error && (
         <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -972,14 +1052,16 @@ const CustomerReturnRecoveryActions: React.FC<{
       )}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <button
-          type="button"
-          onClick={() => chooseRecovery('schedule_redelivery')}
-          disabled={saving || !deliveryDate || !deliveryWindow}
-          className="min-h-12 rounded-xl bg-[#16233b] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
-        >
-          {saving ? 'Saving...' : 'Schedule re-delivery'}
-        </button>
+        {canRedeliver && (
+          <button
+            type="button"
+            onClick={() => chooseRecovery('schedule_redelivery')}
+            disabled={saving || !deliveryDate || !deliveryWindow}
+            className="min-h-12 rounded-xl bg-[#16233b] px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+          >
+            {saving ? 'Saving...' : 'Schedule re-delivery'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => chooseRecovery('shop_pickup')}
@@ -1040,6 +1122,8 @@ const ReturnDeliveryPlanCard: React.FC<{
   const coverageRequestKeyRef = useRef<string | null>(null);
 
   const locked = Boolean(order.return_logistics_locked_at);
+  const allowedMethods = getRepairDeliveryMethods(order).return;
+  const methodAllowed = allowedMethods.includes(method);
   const returnAddressId = order.return_address?.address_id
     ? Number(order.return_address.address_id)
     : null;
@@ -1074,8 +1158,7 @@ const ReturnDeliveryPlanCard: React.FC<{
       ? serviceOutstandingBalance + displayedFee
       : serverOutstandingBalance;
   const shopDeliveryQuoteUnavailable = method === 'shop_delivery'
-    && !coverageLoading
-    && !coverage?.available;
+    && (order.shop_owned_logistics_available === false || (!coverageLoading && !coverage?.available));
 
   useEffect(() => {
     coverageRequestKeyRef.current = currentCoverageKey;
@@ -1150,6 +1233,18 @@ const ReturnDeliveryPlanCard: React.FC<{
     setAcceptedFee(0);
   }, []);
 
+  useEffect(() => {
+    if (!locked && !methodAllowed) {
+      setMethod('walk_in');
+      invalidateCoverage();
+      setDirty(true);
+      setPlanSavedLocally(false);
+      setConfirmedLocally(false);
+      setError(null);
+      setSuccess(null);
+    }
+  }, [locked, methodAllowed, invalidateCoverage]);
+
   const handleAddressSelect = useCallback((address: CustomerAddress) => {
     setSelectedAddress(address);
     invalidateCoverage();
@@ -1174,6 +1269,11 @@ const ReturnDeliveryPlanCard: React.FC<{
   };
 
   const handleConfirm = async () => {
+    if (!locked && !methodAllowed) {
+      setError('Choose an available return method.');
+      return;
+    }
+
     setError(null);
     setSuccess(null);
 
@@ -1312,25 +1412,28 @@ const ReturnDeliveryPlanCard: React.FC<{
             <span className="text-xs text-gray-500">Collect the repaired shoes directly from the shop.</span>
           </span>
         </label>
-        <label className="flex items-start gap-3 text-sm text-gray-800">
-          <input
-            type="radio"
-            name={`return-method-${order.id}`}
-            value="customer_pickup"
-            checked={method === 'customer_pickup'}
-            disabled={locked || saving}
-            onChange={() => {
-              setMethod('customer_pickup');
-              invalidateCoverage();
-              markEdited();
-            }}
-          />
-          <span>
-            <span className="block font-semibold">Customer-arranged courier</span>
-            <span className="text-xs text-gray-500">Arrange and pay for your own third-party courier.</span>
-          </span>
-        </label>
-        {(coverage?.available || method === 'shop_delivery' || Boolean(effectiveAddressId)) && (
+        {(allowedMethods.includes('customer_pickup') || (locked && method === 'customer_pickup')) && (
+          <label className="flex items-start gap-3 text-sm text-gray-800">
+            <input
+              type="radio"
+              name={`return-method-${order.id}`}
+              value="customer_pickup"
+              checked={method === 'customer_pickup'}
+              disabled={locked || saving}
+              onChange={() => {
+                setMethod('customer_pickup');
+                invalidateCoverage();
+                markEdited();
+              }}
+            />
+            <span>
+              <span className="block font-semibold">Customer-arranged courier</span>
+              <span className="text-xs text-gray-500">Arrange and pay for your own third-party courier.</span>
+            </span>
+          </label>
+        )}
+        {(allowedMethods.includes('shop_delivery') || (locked && method === 'shop_delivery'))
+          && (coverage?.available || method === 'shop_delivery' || Boolean(effectiveAddressId)) && (
           <label className="flex items-start gap-3 text-sm text-gray-800">
             <input
               type="radio"
@@ -2227,16 +2330,18 @@ const MyRepairs: React.FC = () => {
     return latestRefundByRepairId[getRefundAnchorRepairId(order)];
   };
 
+  const getRefundEligibilityForOrder = (order: RepairOrder): RepairOrder =>
+    orders.find((entry) => entry.id === getRefundAnchorRepairId(order)) ?? order;
+
+  const canRequestRefund = (order: RepairOrder): boolean =>
+    getRefundEligibilityForOrder(order).can_refund === true;
+
   const isCompletedWarrantyJob = (order?: RepairOrder): boolean => {
     if (!order) return false;
 
     return [
       'completed',
-      'ready_for_pickup',
-      'ready-for-pickup',
-      'shipped',
       'picked_up',
-      'received',
     ].includes(String(order.status || '').toLowerCase());
   };
 
@@ -2475,169 +2580,151 @@ const MyRepairs: React.FC = () => {
   }, [highlightRepairId, orders]);
 
   useEffect(() => {
-    const checkPaymentReturn = async () => {
-      const urlParams         = new URLSearchParams(window.location.search);
-      const isPaymongoSuccess = urlParams.get('paymongo_success') === '1';
-      const isPaymongoFailed  = urlParams.get('paymongo_failed')  === '1';
-      const pendingRepairIdFromSession = Number(sessionStorage.getItem('pendingRepairId') || '0');
-      const pendingRepairIdFromQuery = Number(urlParams.get('pending_repair_id') || '0');
-      const returnTs = Number(urlParams.get('return_ts') || '0');
-      const returnSig = String(urlParams.get('return_sig') || '');
-      const parsedPendingRepairId = Number.isFinite(pendingRepairIdFromSession) && pendingRepairIdFromSession > 0
-        ? pendingRepairIdFromSession
-        : (Number.isFinite(pendingRepairIdFromQuery) && pendingRepairIdFromQuery > 0 ? pendingRepairIdFromQuery : null);
+    let active = true;
+    let processing = false;
+    let queued = false;
+    let controller: AbortController | null = null;
 
-      const paymentReturnKey = parsedPendingRepairId ? repairPaymentReturnMarker(parsedPendingRepairId) : null;
-      let paymentReturnAlreadyHandled = false;
-      if ((isPaymongoSuccess || isPaymongoFailed) && paymentReturnKey) {
-        if (sessionStorage.getItem(paymentReturnKey) === '1') {
-          sessionStorage.removeItem('pendingRepairId');
-          paymentReturnAlreadyHandled = true;
-        } else {
-          // Consume the return before awaiting verification so a remount/replay cannot open another Swal.
-          sessionStorage.setItem(paymentReturnKey, '1');
-        }
+    const cleanReturnUrl = (context: RepairPaymentReturnContext) => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('paymongo_success') !== '1' && params.get('paymongo_failed') !== '1') return;
+      const queryId = Number(params.get('pending_repair_id') || '0');
+      if ((queryId > 0 && queryId !== context.repairId)
+        || (params.has('return_sig') && params.get('return_sig') !== context.returnSig)) return;
+      for (const key of ['paymongo_success', 'paymongo_failed', 'pending_repair_id', 'return_ts', 'return_sig']) {
+        params.delete(key);
       }
-
-      // Always clean up URL params and session storage
-      if (isPaymongoSuccess || isPaymongoFailed) {
-        const cleanedParams = new URLSearchParams(urlParams);
-        cleanedParams.delete('paymongo_success');
-        cleanedParams.delete('paymongo_failed');
-        cleanedParams.delete('pending_repair_id');
-        cleanedParams.delete('return_ts');
-        cleanedParams.delete('return_sig');
-        const cleanedQuery = cleanedParams.toString();
-        window.history.replaceState({}, '', `/my-repairs${cleanedQuery ? `?${cleanedQuery}` : ''}`);
+      const query = params.toString();
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`);
+    };
+    const clearPendingContext = (context: RepairPaymentReturnContext) => {
+      const pending = readPendingPaymentReturn();
+      if (pending?.repairId === context.repairId && pending.returnSig === context.returnSig && pending.returnTs === context.returnTs) {
+        writePaymentReturnStorage(PENDING_REPAIR_PAYMENT_RETURN, null);
       }
-
-      if (paymentReturnAlreadyHandled) {
-        void fetchRepairs();
-        return;
-      }
-
-      if (isPaymongoFailed) {
-        sessionStorage.removeItem('pendingRepairId');
-        fetchRepairs();
-        const retryResult = await Swal.fire({
-          icon: 'error',
-          title: 'Payment Not Completed',
-          text: 'You did not finish the payment. Create a new payment session to try again.',
-          showCancelButton: true,
-          confirmButtonText: 'Create New Payment',
-          cancelButtonText: 'Close',
-          confirmButtonColor: '#000000',
-        });
-
-        if (retryResult.isConfirmed && parsedPendingRepairId && Number.isFinite(parsedPendingRepairId)) {
-          await handlePayNow(parsedPendingRepairId);
-        }
-
-        fetchRepairs();
-        return;
-      }
-
-      if (parsedPendingRepairId && isPaymongoSuccess) {
-        sessionStorage.removeItem('pendingRepairId');
-        Swal.fire({
-          icon: 'info',
-          title: 'Verifying Payment...',
-          text: 'Please wait while we confirm your payment with PayMongo.',
-          allowOutsideClick: false,
-          showConfirmButton: false,
-          didOpen: () => { Swal.showLoading(); },
-        });
-
-        try {
-          const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-
-          // PayMongo redirects back before its own status update propagates.
-          // Retry up to 6 times (12 seconds total) waiting for payment_status = 'paid'.
-          const MAX_ATTEMPTS = 6;
-          const RETRY_DELAY  = 2000;
-          let result: any = null;
-
-          for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-            const response = await fetch(`/api/customer/repairs/${parsedPendingRepairId}/verify-payment-return`, {
-              method: 'POST',
-              credentials: 'include',
-              headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-CSRF-TOKEN': csrfToken || '',
-              },
-              body: JSON.stringify({
-                return_ts: returnTs,
-                return_sig: returnSig,
-              }),
-            });
-            result = await response.json();
-
-            if (result.success && result.payment_verified) break;
-
-            if (response.status === 410) break;
-
-            // Stop retrying on hard errors (network, server crash, wrong ID)
-            if (response.status >= 500 || response.status === 404) break;
-
-            if (attempt < MAX_ATTEMPTS) {
-              await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
-            }
-          }
-
-          void fetchRepairs();
-
-          if (result?.success && result?.payment_verified) {
-            await Swal.fire({
-              icon: 'success',
-              title: 'Payment Confirmed!',
-              text: 'Your payment has been received. Your repair will begin shortly.',
-              confirmButtonColor: '#000000',
-              timer: 3000,
-              timerProgressBar: true,
-            });
-
-            window.location.reload();
-          } else if (result?.expired) {
-            const retryResult = await Swal.fire({
-              icon: 'warning',
-              title: 'Payment Session Expired',
-              text: 'Your payment session expired. Create a new payment session to continue.',
-              showCancelButton: true,
-              confirmButtonText: 'Create New Payment',
-              cancelButtonText: 'Close',
-              confirmButtonColor: '#000000',
-            });
-
-            if (retryResult.isConfirmed && parsedPendingRepairId && Number.isFinite(parsedPendingRepairId)) {
-              await handlePayNow(parsedPendingRepairId);
-            }
-          } else {
-            await Swal.fire({
-              icon: 'warning',
-              title: 'Payment Not Verified',
-              text: result?.message || 'We could not confirm your payment yet. Please try again or contact support.',
-              confirmButtonColor: '#000000',
-            });
-          }
-        } catch (error) {
-          console.error('Payment verification error:', error);
-          void fetchRepairs();
-          await Swal.fire({
-            icon: 'error',
-            title: 'Verification Error',
-            text: 'There was an issue verifying your payment. Please contact support.',
-            confirmButtonColor: '#000000',
-          });
-
-        }
-      } else {
-        sessionStorage.removeItem('pendingRepairId');
-        fetchRepairs();
+      if (Number(readPaymentReturnStorage('pendingRepairId')) === context.repairId) {
+        writePaymentReturnStorage('pendingRepairId', null);
       }
     };
 
-    checkPaymentReturn();
+    const checkPaymentReturn = async () => {
+      if (!active) return;
+      if (processing) { queued = true; return; }
+      processing = true;
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const successReturn = params.get('paymongo_success') === '1';
+        const failedReturn = params.get('paymongo_failed') === '1';
+        const queryId = Number(params.get('pending_repair_id') || '0');
+        const legacyId = Number(readPaymentReturnStorage('pendingRepairId') || '0');
+        const repairId = params.has('pending_repair_id') ? queryId : legacyId;
+        const context = successReturn || failedReturn
+          ? (Number.isInteger(repairId) && repairId > 0 ? {
+              repairId, returnTs: Number(params.get('return_ts') || '0'), returnSig: params.get('return_sig') || '',
+            } : null)
+          : readPendingPaymentReturn();
+        if (!context) { void fetchRepairs(); return; }
+
+        const marker = repairPaymentReturnMarker(context.repairId);
+        const verifiedContextKey = `${marker}:verifiedContext`;
+        const signedContext = JSON.stringify([context.returnTs, context.returnSig]);
+        const previouslyHandled = readPaymentReturnStorage(marker) === '1';
+        if (!failedReturn && previouslyHandled && readPaymentReturnStorage(verifiedContextKey) === signedContext) {
+          clearPendingContext(context);
+          cleanReturnUrl(context);
+          void fetchRepairs();
+          return;
+        }
+        if (previouslyHandled) void fetchRepairs();
+        if (failedReturn) {
+          clearPendingContext(context);
+          cleanReturnUrl(context);
+          void fetchRepairs();
+          const retry = await Swal.fire({
+            icon: 'error', title: 'Payment Not Completed',
+            text: 'You did not finish the payment. Create a new payment session to try again.',
+            showCancelButton: true, confirmButtonText: 'Create New Payment', cancelButtonText: 'Close', confirmButtonColor: '#000000',
+          });
+          if (active && retry.isConfirmed) await handlePayNow(context.repairId);
+          return;
+        }
+
+        // Persist the signed continuation before cleaning the URL. If storage is denied,
+        // keep the callback URL until verification succeeds so a refresh can still retry.
+        if (writePaymentReturnStorage(PENDING_REPAIR_PAYMENT_RETURN, JSON.stringify(context))) cleanReturnUrl(context);
+        void Swal.fire({
+          icon: 'info', title: 'Verifying Payment...', text: 'Please wait while we confirm your payment with PayMongo.',
+          allowOutsideClick: false, showConfirmButton: false, didOpen: () => { Swal.showLoading(); },
+        });
+        controller = new AbortController();
+        try {
+          const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+          let result: RepairPaymentVerificationResult | null = null;
+          for (let attempt = 1; attempt <= 6; attempt++) {
+            if (!active) return;
+            const response = await fetch(`/api/customer/repairs/${context.repairId}/verify-payment-return`, {
+              method: 'POST', credentials: 'include', signal: controller.signal,
+              headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrfToken || '' },
+              body: JSON.stringify({ return_ts: context.returnTs, return_sig: context.returnSig }),
+            });
+            result = await response.json();
+            if (!active) return;
+            if (result?.success === true && result.payment_verified === true) break;
+            if (response.status >= 500 || [401, 403, 404, 410].includes(response.status)) break;
+            if (attempt < 6) await new Promise(resolve => setTimeout(resolve, 2000));
+          }
+          if (!active) return;
+          void fetchRepairs();
+          if (result?.success === true && result.payment_verified === true) {
+            writePaymentReturnStorage(marker, '1');
+            writePaymentReturnStorage(verifiedContextKey, signedContext);
+            clearPendingContext(context);
+            cleanReturnUrl(context);
+            await Swal.fire({
+              icon: 'success', title: 'Payment Confirmed!',
+              text: 'Your payment has been received. Your repair will begin shortly.',
+              confirmButtonColor: '#000000', timer: 3000, timerProgressBar: true,
+            });
+            if (active) window.location.reload();
+          } else if (result?.expired) {
+            clearPendingContext(context);
+            cleanReturnUrl(context);
+            const retry = await Swal.fire({
+              icon: 'warning', title: 'Payment Session Expired',
+              text: 'Your payment session expired. Create a new payment session to continue.',
+              showCancelButton: true, confirmButtonText: 'Create New Payment', cancelButtonText: 'Close', confirmButtonColor: '#000000',
+            });
+            if (active && retry.isConfirmed) await handlePayNow(context.repairId);
+          } else {
+            await Swal.fire({
+              icon: 'warning', title: 'Payment Not Verified',
+              text: result?.message || 'We could not confirm your payment yet. Please try again or contact support.', confirmButtonColor: '#000000',
+            });
+          }
+        } catch (error) {
+          if (!active) return;
+          console.error('Payment verification error:', error);
+          void fetchRepairs();
+          await Swal.fire({
+            icon: 'error', title: 'Verification Error',
+            text: 'There was an issue verifying your payment. Please contact support.', confirmButtonColor: '#000000',
+          });
+        }
+      } finally {
+        processing = false;
+        if (active && queued) { queued = false; void checkPaymentReturn(); }
+      }
+    };
+    const onNavigation = () => { void checkPaymentReturn(); };
+    void checkPaymentReturn();
+    document.addEventListener('inertia:navigate', onNavigation);
+    window.addEventListener('popstate', onNavigation);
+    return () => {
+      active = false;
+      controller?.abort();
+      document.removeEventListener('inertia:navigate', onNavigation);
+      window.removeEventListener('popstate', onNavigation);
+    };
   }, []);
 
   useEffect(() => {
@@ -3073,11 +3160,11 @@ const MyRepairs: React.FC = () => {
     setWarrantyOrderId(order.id);
     setWarrantyReasonCode('issue_returned');
     setWarrantyReasonDetails('');
-    const isIndividualRepairShop = String(order.shop_registration_type ?? '').toLowerCase() === 'individual';
+    const methods = getWarrantyDeliveryMethods(order);
     const intakeMethod = getIntakeMethod(order);
     const receiveMethod = getReturnMethod(order);
-    setWarrantyIntakeMethod(isIndividualRepairShop && intakeMethod === 'shop_pickup' ? 'walk_in' : intakeMethod);
-    setWarrantyReceiveMethod(isIndividualRepairShop && receiveMethod === 'shop_delivery' ? 'walk_in' : receiveMethod);
+    setWarrantyIntakeMethod(methods.intake.includes(intakeMethod) ? intakeMethod : 'walk_in');
+    setWarrantyReceiveMethod(methods.return.includes(receiveMethod) ? receiveMethod : 'walk_in');
     setWarrantyImages([]);
     setShowWarrantyModal(true);
   };
@@ -3144,7 +3231,7 @@ const MyRepairs: React.FC = () => {
       return false;
     }
 
-    if (isIndividualWarrantyShop && (warrantyIntakeMethod === 'shop_pickup' || warrantyReceiveMethod === 'shop_delivery')) {
+    if (!warrantyDeliveryMethods.intake.includes(warrantyIntakeMethod) || !warrantyDeliveryMethods.return.includes(warrantyReceiveMethod)) {
       return false;
     }
 
@@ -3168,11 +3255,11 @@ const MyRepairs: React.FC = () => {
       return;
     }
 
-    if (isIndividualWarrantyShop && (warrantyIntakeMethod === 'shop_pickup' || warrantyReceiveMethod === 'shop_delivery')) {
+    if (!warrantyDeliveryMethods.intake.includes(warrantyIntakeMethod) || !warrantyDeliveryMethods.return.includes(warrantyReceiveMethod)) {
       await Swal.fire({
         icon: 'warning',
         title: 'Shop delivery is unavailable',
-        text: 'Individual Repair warranty claims support walk-in or customer-arranged delivery only.',
+        text: 'Choose one of the available warranty delivery methods for this repair.',
         confirmButtonColor: '#000000',
       });
       return;
@@ -3407,8 +3494,10 @@ const MyRepairs: React.FC = () => {
       }
 
       // Store repair info so we can verify on return
-      sessionStorage.setItem('pendingRepairId', orderId.toString());
-      sessionStorage.removeItem(repairPaymentReturnMarker(orderId));
+      writePaymentReturnStorage('pendingRepairId', orderId.toString());
+      writePaymentReturnStorage(repairPaymentReturnMarker(orderId), null);
+      writePaymentReturnStorage(`${repairPaymentReturnMarker(orderId)}:verifiedContext`, null);
+      writePaymentReturnStorage(PENDING_REPAIR_PAYMENT_RETURN, null);
 
       // Redirect to PayMongo payment page
       window.location.href = checkoutUrl;
@@ -4166,7 +4255,7 @@ const MyRepairs: React.FC = () => {
 
   const refundOrder = refundOrderId ? orders.find((o) => o.id === refundOrderId) : null;
   const warrantyOrder = warrantyOrderId ? orders.find((order) => order.id === warrantyOrderId) : undefined;
-  const isIndividualWarrantyShop = String(warrantyOrder?.shop_registration_type ?? '').toLowerCase() === 'individual';
+  const warrantyDeliveryMethods = getWarrantyDeliveryMethods(warrantyOrder);
   const warrantyIntakeAddress = getWarrantyAddress(warrantyOrder, 'intake');
   const warrantyReturnAddress = getWarrantyAddress(warrantyOrder, 'return');
   const refundTotal = refundOrder ? getOrderGrandTotal(refundOrder) : 0;
@@ -4823,7 +4912,9 @@ const MyRepairs: React.FC = () => {
                         <p className="mt-2 text-sm text-gray-700">
                           {order.return_recovery.message
                             || (order.return_recovery.state === 'awaiting_arrangement'
-                              ? 'Your repaired shoes are safely at the shop. Choose re-delivery or free shop pickup.'
+                              ? (getRepairDeliveryMethods(order).return.includes('shop_delivery')
+                                  ? 'Your repaired shoes are safely at the shop. Choose re-delivery or free shop pickup.'
+                                  : 'Your repaired shoes are safely at the shop. Arrange free shop pickup.')
                               : order.return_recovery.state === 'awaiting_payment'
                                 ? 'Confirm your return address, then pay the new delivery fee.'
                                 : order.return_recovery.state === 'shop_pickup'
@@ -5056,19 +5147,7 @@ const MyRepairs: React.FC = () => {
                         </button>
                       )}
                       {/* Chat with Repairer actions */}
-                      {order.status === 'repairer_accepted' &&
-                        order.conversation_id &&
-                        order.shop_owner_id &&
-                        ![
-                          'paid',
-                          'completed',
-                          'down_payment_paid',
-                          'partially_paid',
-                          'partially_refunded',
-                          'refunded',
-                        ].includes(String(order.payment_status || '').toLowerCase()) &&
-                        !order.payment_completed_at &&
-                        Number(order.total_paid_amount || 0) === 0 && (
+                      {order.can_modify_services === true && (
                           <button
                             type="button"
                             onClick={() => openModifyModal(order)}
@@ -5228,9 +5307,11 @@ const MyRepairs: React.FC = () => {
                               setRefundNote('');
                               setShowRefundModal(true);
                             }}
-                            disabled={repairRefundFrozen || hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)}
+                            disabled={repairRefundFrozen || !canRequestRefund(order) || hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)}
                             title={repairRefundFrozen
                               ? 'Refund requests are temporarily paused for maintenance.'
+                              : !canRequestRefund(order)
+                              ? getRefundEligibilityForOrder(order).refund_block_reason ?? 'Refund eligibility is unavailable. Refresh the repair list.'
                               : hasReviewForOrder(order)
                               ? 'Refund is not allowed after a review has been submitted.'
                               : hasActiveWarrantyClaim(order)
@@ -5238,7 +5319,7 @@ const MyRepairs: React.FC = () => {
                                 : isRefundFlowLocked(getLatestRefundForOrder(order)?.status)
                                   ? 'Refund is already filed or completed for this repair.'
                                   : undefined}
-                            className={`${actionButtonBaseClass} ${(repairRefundFrozen || hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)) ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
+                            className={`${actionButtonBaseClass} ${(repairRefundFrozen || !canRequestRefund(order) || hasActiveWarrantyClaim(order) || hasReviewForOrder(order) || isRefundFlowLocked(getLatestRefundForOrder(order)?.status) || isRefundInProgress(getLatestRefundForOrder(order)?.status)) ? actionButtonDisabledClass : actionButtonSecondaryClass}`}
                           >
                             {repairRefundFrozen ? 'REFUND (PAUSED)' : 'REFUND'}
                           </button>
@@ -5908,8 +5989,8 @@ const MyRepairs: React.FC = () => {
                       {[
                         { value: 'walk_in', label: 'Walk-in', hint: 'Bring the item to the shop yourself.' },
                         { value: 'customer_delivery', label: 'Third-party courier', hint: 'You arrange and pay the courier directly.' },
-                        ...(!isIndividualWarrantyShop ? [{ value: 'shop_pickup', label: 'Shop rider pickup', hint: 'Coverage and the delivery fee are checked before approval.' }] : []),
-                      ].map((method) => (
+                        { value: 'shop_pickup', label: 'Shop rider pickup', hint: 'Coverage and the delivery fee are checked before approval.' },
+                      ].filter((method) => warrantyDeliveryMethods.intake.includes(method.value)).map((method) => (
                         <label
                           key={method.value}
                           className={`flex items-start gap-3 p-4 border-2 rounded-lg transition-all ${
@@ -5952,8 +6033,8 @@ const MyRepairs: React.FC = () => {
                       {[
                         { value: 'walk_in', label: 'Pick Up At Shop', hint: 'Pick up your repaired item at the shop once ready.' },
                         { value: 'customer_pickup', label: 'Third-party courier', hint: 'You arrange and pay the courier directly.' },
-                        ...(!isIndividualWarrantyShop ? [{ value: 'shop_delivery', label: 'Shop rider delivery', hint: 'Coverage and the delivery fee are checked before approval.' }] : []),
-                      ].map((method) => (
+                        { value: 'shop_delivery', label: 'Shop rider delivery', hint: 'Coverage and the delivery fee are checked before approval.' },
+                      ].filter((method) => warrantyDeliveryMethods.return.includes(method.value)).map((method) => (
                         <label
                           key={method.value}
                           className={`flex items-start gap-3 p-4 border-2 rounded-lg transition-all ${

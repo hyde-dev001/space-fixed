@@ -17,18 +17,23 @@ class SourceShipmentService
         private ShipmentRequestService $shipments,
         private DeliveryScheduleService $schedules,
         private DeliveryEventService $events,
+        private LogisticsMovementEligibility $movements,
     ) {}
 
     public function ensureRetailOrderShipment(Order $order): Shipment
     {
         return DB::transaction(function () use ($order) {
-            ShopOwner::query()->whereKey($order->shop_owner_id)->lockForUpdate()->firstOrFail();
-            $order->loadMissing('shopOwner', 'address');
+            $shop = ShopOwner::query()->whereKey($order->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $order = Order::query()->with('address')->whereKey($order->id)
+                ->where('shop_owner_id', $shop->id)->lockForUpdate()->firstOrFail();
+            $order->setRelation('shopOwner', $shop);
             $deliveryMethod = $order->resolvedDeliveryMethod();
-            $existing = $this->findExisting('order', (int) $order->id, 'retail_delivery');
+            $existing = $this->findExisting('order', (int) $order->id, 'retail_delivery', (int) $shop->id);
             if ($existing) {
                 if ($deliveryMethod === 'third_party') {
                     $this->syncThirdPartyLeg($existing, $order);
+                } else {
+                    $this->movements->assertExistingShipmentAllowed($shop, $existing);
                 }
 
                 return $existing->load('legs');
@@ -163,6 +168,8 @@ class SourceShipmentService
                 activeOnly: true,
             );
             if ($existing) {
+                $shop = ShopOwner::query()->whereKey($refund->shop_owner_id)->lockForUpdate()->firstOrFail();
+                $this->movements->assertExistingShipmentAllowed($shop, $existing);
                 return $existing;
             }
 
@@ -223,11 +230,13 @@ class SourceShipmentService
                 ]);
             }
 
-            $existing = $this->findExisting('repair_request', (int) $lockedRepair->id, 'repair_pickup');
+            $existing = $this->findExisting('repair_request', (int) $lockedRepair->id, 'repair_pickup', (int) $shop->id);
 
             if ($existing && $existing->status->value !== 'cancelled') {
+                $this->movements->assertExistingShipmentAllowed($shop, $existing);
                 return $existing->load('legs');
             }
+            $this->movements->assertCanStart($shop);
 
             $snapshot = is_array($lockedRepair->intake_address)
                 ? $lockedRepair->intake_address
@@ -344,10 +353,12 @@ class SourceShipmentService
                 ]);
             }
 
-            $existing = $this->findExisting('repair_request', (int) $lockedRepair->id, 'repair_return');
+            $existing = $this->findExisting('repair_request', (int) $lockedRepair->id, 'repair_return', (int) $shop->id);
             if ($existing && $existing->status->value !== 'cancelled') {
+                $this->movements->assertExistingShipmentAllowed($shop, $existing);
                 return $existing->load('legs');
             }
+            $this->movements->assertCanStart($shop);
 
             $snapshot = is_array($lockedRepair->return_address) ? $lockedRepair->return_address : [];
             $coverage = $this->schedules->coverage(
@@ -457,18 +468,23 @@ class SourceShipmentService
         string $sourceType,
         int $sourceId,
         string $purpose,
-        ?int $shopOwnerId = null,
+        int $shopOwnerId,
         bool $activeOnly = false,
     ): ?Shipment
     {
-        return Shipment::query()
+        $shipment = Shipment::query()
             ->where('source_type', $sourceType)
             ->where('source_id', $sourceId)
             ->where('purpose', $purpose)
-            ->when($shopOwnerId !== null && $shopOwnerId > 0, fn ($query) => $query->where('shop_owner_id', $shopOwnerId))
             ->when($activeOnly, fn ($query) => $query->where('status', '!=', 'cancelled'))
             ->latest('id')
             ->first();
+        if ($shipment && (int) $shipment->shop_owner_id !== $shopOwnerId) {
+            throw ValidationException::withMessages([
+                'shipment' => ['The shipment source is not available in this shop.'],
+            ]);
+        }
+        return $shipment;
     }
 
     private function formatAddress(mixed $address): string

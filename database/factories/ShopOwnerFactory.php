@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 
@@ -67,6 +68,14 @@ class ShopOwnerFactory extends Factory
         return $this->state(fn(array $attributes) => [
             'status' => 'approved',
         ]);
+    }
+
+    public function withLogistics(): static
+    {
+        return $this->state(['registration_type' => 'company'])
+            ->afterCreating(fn (ShopOwner $shop) => ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]));
     }
 
     /**

@@ -139,3 +139,54 @@
 ## 2026-10-02 - Refund approval stages
 
 - Treat the `requires_owner_approval` value captured when a refund is reserved as authoritative. An explicit disabled setting skips only the Shop Owner decision; it must not skip Finance or the return and payout gates. Persist Staff, Shop Owner, and Finance decisions in their own audit fields.
+
+
+## 2026-10-04 - Private notification identity and competing repair resolutions
+
+- Scope private query data and mutation completions to guard, authenticated principal and tenant. Cancel departed reads and reset local notification UI state when that identity changes; endpoint-only keys cannot isolate account switching.
+- Refund and warranty admission must lock the same original repair before checking current competing records. Intake receipt is not customer handover. Delivery-only compensation and service refunds have different warranty consequences.
+- Persist provider refund reservation before contacting the payment provider, then submit outside the admission transaction. Send workflow notifications after commit so a rollback cannot leave a customer with an approval email for an uncommitted decision.
+
+
+## 2026-10-04 - Owner proxies and workload identity
+
+- New owner audit proxies use the canonical Spatie Shop Owner role with a null legacy role. The MySQL legacy role enum cannot store Shop Owner; SQLite tests alone do not establish enum compatibility.
+- Workload membership requires a same-shop Employee relationship and excludes owner identity even when old Staff roles or assignments remain. Never infer owner identity by comparing User and ShopOwner primary keys.
+
+
+## 2026-10-04 - Logistics movement admission and continuation
+
+- Geographical coverage does not grant Logistics permission. Recheck persisted module eligibility under the shop/source transaction before each new internal shipment, replacement, return or retry movement. Derive third-party tracking exceptions from the persisted source rather than caller flags.
+- OFF continuation must use the particular persisted started leg, its tenant and parent lifecycle. An active parent, saved carrier or assignment is insufficient, and a later pending leg does not inherit an earlier leg's start. Preserve original warranty transport constraints through claim approval and child recovery/plan editing.
+
+
+### Repair material planning
+
+Freeze quantities and source IDs when the selected work is booked, and replace them only during an authorized pre-lock edit. A null legacy snapshot and an intentionally empty snapshot have different meanings. Preserve stored legacy plans and actual usage; any initialization from current templates must identify that provenance. Reversed usage still leaves stock history, so deleting the live usage row must not reopen service editing.
+
+- Payment return completion markers must describe verified signed context, not merely resource identity. Preserve SPA history state and a retryable signed continuation when canonicalizing; storage access can fail. Flags do not establish provider payment.
+- Platform Fee service collection must exclude delivery and use the shared persisted collection authority, while comparing against the fee's existing service base. Terminal aliases and observer eligibility fields matter; current settings cannot prove historical fee rates. User, owner and POS evidence tenant namespaces require explicit linkage.
+
+
+## 2026-10-04 — Tenant references and read-only exports
+
+- User IDs and shop owner IDs are separate namespaces. Finance user actors must resolve the tenant through shop_owner_id; a coincident primary key cannot confer shop access.
+- Read-only owner controls should use the same projected capabilities as guarded handlers, while backend mutation boundaries remain enforced. A report download does not imply report generation or review permission.
+- A historical CSV presentation change must address already stored files. Serve a versioned sibling built from the saved report snapshot; retain original artifact/path and generation/review decisions, including when the original file is missing. Snapshot assignee names for new reports and batch legacy fallbacks within the tenant.
+- Spreadsheet escaping belongs to textual presentation boundaries. Escape formula-leading user text after leading whitespace/control characters, while preserving known numeric monetary/count cells. CSV delimiter quoting alone does not prevent spreadsheet formulas.
+
+- For an existing Employee fixture, clock in that exact record. The repository's clockInEmployee helper creates a new Employee; calling it on an already linked fixture can create ambiguous duplicate email/tenant links and correctly trigger fail-closed authorization.
+- System-created delivery-loss refund claims are not ordinary company customer submissions. Notification recipient classification should follow their saved workflow while retaining existing after-commit, idempotency and tenant boundaries; do not alter payment approval rules to repair an alert.
+- UTF-8 CSV bytes alone do not establish spreadsheet auto-detection. Default Excel opening misread accented names and peso/item symbols; a UTF-8 signature at the shared export boundary preserves those characters without changing numeric cells. Verify the actual application import as well as CSV parsing, and retain historical original artifacts.
+
+- Controller preflight cannot authorize a later internal dispatch after a module toggle. Revalidate persisted module state in the shared assignment/batch/start transaction, taking the shop lock before dispatch records. Enabled positive fixtures should declare their module state rather than depend on missing initialization.
+- External courier tracking can legitimately record in_transit and pickup timestamps. Those fields are not evidence of internal custody; classify the persisted source before granting internal assignment or continued shop-owned movement. Retain external tracking updates and historical records.
+- Under InnoDB repeatable read, acquiring a row lock does not refresh an earlier consistent-read snapshot. State checked after waiting for a competing mutation must use a locking current read, with a consistent parent-before-child lock order. Verify the competing connection's actual wait and final revalidation; stale-model sequential tests cannot prove this behavior.
+- When an application replaces Laravel's default notifications table with a custom inbox schema, framework database-channel sends are incompatible even if Notification::fake tests pass. Exercise the real inbox write and after-commit path, fake only external delivery, and reuse the application's notification service. An after-commit delivery exception can appear as a failed API response after the business record has already been saved.
+
+## 2026-10-05 — Publishing verified work after rebase
+
+- A rebase invalidates earlier build output. Regenerate tracked deployment assets from the rebased source, check every manifest reference, and stage source/documentation paths and build output explicitly; keep runtime cache and unrelated local work outside the commit.
+- Failure comparisons across upstream updates must account for shifted source lines. Match an exact case first, then a uniquely identified class/case when only its location moved; retain failure-reason and response-status checks. Ambiguous matches require investigation, and baseline matching does not make a failing full suite green.
+
+- Notification links preserve historical intent and may outlive a decision. Derive refund controls from current raw workflow status and the server's owner-action projection, preserving legacy status fallbacks; a display label such as Refunded is not the stored status succeeded. Resolved notifications should open the existing read-only History view, while old links still require the same live-detail gate.

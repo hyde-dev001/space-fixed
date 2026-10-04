@@ -144,6 +144,23 @@ class NotificationCriticalFlowsTest extends TestCase
         $response = $this->actingAs($shopOwner, 'shop_owner')
             ->patchJson("/api/shop-owner/orders/{$order->id}/status", [
                 'status' => 'shipped',
+                'delivery_method' => 'shop_owned',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('logistics');
+        $this->assertSame('processing', $order->fresh()->status->value);
+        $this->assertDatabaseMissing('notifications', [
+            'user_id' => $customer->id,
+            'type' => 'order_status_update',
+        ]);
+        $this->assertDatabaseCount('shipments', 0);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->patchJson("/api/shop-owner/orders/{$order->id}/status", [
+                'status' => 'shipped',
+                'delivery_method' => 'third_party',
+                'carrier_company' => 'LBC',
+                'tracking_number' => 'ORD-TEST-2001-TRACKING',
             ]);
 
         $response->assertOk();
@@ -474,6 +491,46 @@ class NotificationCriticalFlowsTest extends TestCase
             'type' => 'refund_request',
             'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=repair_refund:{$fixture['refund']->id}",
         ]);
+    }
+
+    #[Test]
+    public function executed_repair_refund_notification_opens_owner_history_and_retains_decision_guards(): void
+    {
+        $fixture = $this->createRepairRefundFixture();
+        $fixture['refund']->update([
+            'status' => 'approved',
+            'approved_amount' => 300,
+            'finance_status' => 'approved',
+            'shop_owner_status' => 'approved',
+            'approved_at' => now(),
+        ]);
+
+        $executed = app(RepairPosRefundService::class)->execute(
+            refund: $fixture['refund'], actorId: $fixture['customer']->id, executionMode: 'manual',
+        );
+        $this->assertSame('succeeded', $executed->status);
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $fixture['shop_owner']->id,
+            'title' => 'Repair Refund Executed',
+            'action_url' => "/shop-owner/action-center?view=history&approval=repair_refund:{$executed->id}",
+        ]);
+        $this->assertDatabaseHas('notifications', [
+            'user_id' => $fixture['customer']->id,
+            'title' => 'Repair Refund Executed',
+            'action_url' => '/my-repairs',
+        ]);
+
+        $this->actingAs($fixture['shop_owner'], 'shop_owner')
+            ->getJson("/api/shop-owner/repair-refunds/{$executed->id}")
+            ->assertOk()
+            ->assertJsonPath('data.status', 'Refunded')
+            ->assertJsonPath('data.rawStatus', 'succeeded')
+            ->assertJsonPath('data.owner_projection.owner_action_required', false);
+        $this->postJson("/api/shop-owner/repair-refunds/{$executed->id}/approve")->assertStatus(422);
+        $this->postJson("/api/shop-owner/repair-refunds/{$executed->id}/reject", [
+            'reason' => 'Repeat rejection must be denied',
+        ])->assertStatus(422);
+        $this->assertSame('succeeded', $executed->fresh()->status);
     }
 
     #[Test]
