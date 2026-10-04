@@ -8,8 +8,9 @@ import {
     useDeleteNotification,
     type Notification,
 } from '@/hooks/useNotifications';
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import { resolveNotificationActionUrl } from '@/utils/resolveNotificationActionUrl';
+import { notificationIdentity, type NotificationAuth } from '@/hooks/useNotificationIdentity';
 
 interface NotificationCenterProps {
     apiBasePath?: string;
@@ -21,7 +22,12 @@ interface NotificationCenterProps {
     badgeClassName?: string;
 }
 
-export default function NotificationCenter({
+export default function NotificationCenter(props: NotificationCenterProps) {
+    const { auth } = usePage<{ auth?: NotificationAuth }>().props;
+    return <NotificationCenterContent key={notificationIdentity(auth)} {...props} />;
+}
+
+function NotificationCenterContent({
     apiBasePath = '/api/notifications',
     viewAllHref = '/erp/notifications',
     containerClassName = 'relative',
@@ -38,7 +44,7 @@ export default function NotificationCenter({
     const markAsRead = useMarkAsRead(apiBasePath);
     const deleteNotification = useDeleteNotification(apiBasePath);
 
-    const notifications = notificationsData?.notifications || [];
+    const notifications = notificationsData?.notifications || notificationsData?.data || [];
 
     const handleNotificationClick = (notification: Notification) => {
         if (!notification.is_read) {

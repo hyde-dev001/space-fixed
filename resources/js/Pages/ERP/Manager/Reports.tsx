@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { DashboardMetricCard } from "../../../components/dashboard";
-import { erpUrl } from "@/utils/erpCapabilities";
+import { erpUrl, erpUrlWithParams } from "@/utils/erpCapabilities";
 import { fetchWithCsrf } from "@/utils/fetch-with-csrf";
 
 type IconComponent = ({ className }: { className?: string }) => JSX.Element;
@@ -320,11 +320,18 @@ export default function ERPReports() {
     }
   };
 
-  const handleDownloadReport = async (reportId: number) => {
-    if (ownerMode) return;
+  const reportDownloadUrl = (report: ReportRecord): string | null => {
+    if (! ['generated', 'reviewed', 'sent'].includes(report.status)) return null;
+    return erpUrlWithParams(erpCapabilities, 'GET:api.manager.reports.download', { id: report.id })
+      ?? (ownerMode ? null : `/api/manager/reports/${report.id}/download`);
+  };
+
+  const handleDownloadReport = async (report: ReportRecord) => {
+    const downloadUrl = reportDownloadUrl(report);
+    if (!downloadUrl) return;
 
     try {
-      const response = await fetch(`/api/manager/reports/${reportId}/download`, {
+      const response = await fetch(downloadUrl, {
         credentials: "include",
         headers: {
           Accept: "text/csv,application/octet-stream,application/json",
@@ -444,9 +451,8 @@ export default function ERPReports() {
                       Last generated: {formatDateTime(latestReport?.generated_at ?? null)}
                     </p>
 
-                    {!ownerMode && (
-                      <div className="flex flex-wrap gap-2">
-                        <button
+                    <div className="flex flex-wrap gap-2">
+                        {!ownerMode && <button
                           type="button"
                           onClick={() => openGenerateModal(report.id)}
                           className="flex min-w-36 flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700"
@@ -454,11 +460,11 @@ export default function ERPReports() {
                         >
                           <DocumentIcon className="h-4 w-4" />
                           Generate report
-                        </button>
-                        {latestReport && (
+                        </button>}
+                        {latestReport && reportDownloadUrl(latestReport) && (
                           <button
                             type="button"
-                            onClick={() => handleDownloadReport(latestReport.id)}
+                            onClick={() => handleDownloadReport(latestReport)}
                             className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-950 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:border-gray-600 dark:text-white dark:hover:bg-gray-800 dark:focus:ring-white"
                             aria-label={`Download latest ${report.title}`}
                             title={`Download latest ${report.title}`}
@@ -467,7 +473,6 @@ export default function ERPReports() {
                           </button>
                         )}
                       </div>
-                    )}
                   </div>
                 );
               })}
@@ -495,13 +500,13 @@ export default function ERPReports() {
                   <th className="pb-2">Generated</th>
                   <th className="pb-2">Reviewed</th>
                   <th className="pb-2">Status</th>
-                  {!ownerMode && <th className="pb-2 text-right">Actions</th>}
+                  <th className="pb-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {!loading && reportsData.recent_reports.length === 0 ? (
                   <tr>
-                    <td colSpan={ownerMode ? 5 : 6} className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                    <td colSpan={6} className="py-8 text-center text-sm text-gray-500 dark:text-gray-400">
                       No reports generated yet.
                     </td>
                   </tr>
@@ -517,10 +522,9 @@ export default function ERPReports() {
                           {getStatusLabel(report.status)}
                         </span>
                       </td>
-                      {!ownerMode && (
                         <td className="py-3 text-right">
                           <div className="flex justify-end gap-2">
-                            {!isReviewed(report.status) && report.status !== "failed" && (
+                            {!ownerMode && !isReviewed(report.status) && report.status !== "failed" && (
                               <button
                                 type="button"
                                 onClick={() => openReviewModal(report)}
@@ -531,18 +535,17 @@ export default function ERPReports() {
                                 <CheckIcon className="h-4 w-4" />
                               </button>
                             )}
-                            <button
+                            {reportDownloadUrl(report) && <button
                               type="button"
-                              onClick={() => handleDownloadReport(report.id)}
+                              onClick={() => handleDownloadReport(report)}
                               className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-gray-300 text-gray-950 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-gray-900 dark:border-gray-600 dark:text-white dark:hover:bg-gray-800 dark:focus:ring-white"
                               aria-label={`Download ${report.report_title}`}
                               title={`Download ${report.report_title}`}
                             >
                               <DownloadIcon className="h-4 w-4" />
-                            </button>
+                            </button>}
                           </div>
                         </td>
-                      )}
                     </tr>
                   ))
                 )}

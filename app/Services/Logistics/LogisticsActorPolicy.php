@@ -11,7 +11,6 @@ use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
 use App\Models\ShopOwner;
 use App\Models\User;
-use App\Services\ShopModuleAccessService;
 use App\Support\Erp\ErpActorContext;
 use Illuminate\Contracts\Auth\Authenticatable;
 
@@ -92,7 +91,7 @@ final class LogisticsActorPolicy
     ];
 
     public function __construct(
-        private readonly ShopModuleAccessService $modules,
+        private readonly LogisticsMovementEligibility $movements,
     ) {}
 
     /**
@@ -141,8 +140,15 @@ final class LogisticsActorPolicy
             return $this->deny($action, 'cross_shop');
         }
 
-        if (! $this->modules->canAccess($shop, 'logistics')) {
+        if (! $this->movements->canStart($shop)
+            && (! in_array($action, [LogisticsAction::SUBMIT_PROOF, LogisticsAction::REVIEW_PROOF,
+                LogisticsAction::CONFIRM_RETURN_RECEIPT, LogisticsAction::RESOLVE_EXCEPTION], true)
+                || ! $this->movements->canContinue($shop, $leg))) {
             return $this->deny($action, 'module_unavailable');
+        }
+
+        if ($this->movements->isThirdPartyTracking($leg)) {
+            return $this->deny($action, 'action_not_allowed');
         }
 
         if (! $this->hasValidSourceState($action, $leg)
@@ -335,7 +341,7 @@ final class LogisticsActorPolicy
             return $this->deny(self::BATCH_MANAGEMENT_ACTION, 'cross_shop');
         }
 
-        if (! $this->modules->canAccess($shop, 'logistics')) {
+        if (! $this->movements->canStart($shop)) {
             return $this->deny(self::BATCH_MANAGEMENT_ACTION, 'module_unavailable');
         }
 
@@ -387,7 +393,7 @@ final class LogisticsActorPolicy
             return $this->deny($action, 'cross_shop');
         }
 
-        if (! $this->modules->canAccess($shop, 'logistics')) {
+        if (! $this->movements->canStart($shop) && ! $this->movements->canContinue($shop, $leg)) {
             return $this->deny($action, 'module_unavailable');
         }
 

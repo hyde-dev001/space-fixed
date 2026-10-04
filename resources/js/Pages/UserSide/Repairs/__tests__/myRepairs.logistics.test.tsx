@@ -93,6 +93,10 @@ vi.mock("@/components/address/CustomerAddressManager", () => ({
 import MyRepairs from "../myRepairs";
 
 const activeWarranty = {
+  delivery_methods: {
+    intake: ["walk_in", "customer_delivery", "shop_pickup"],
+    return: ["walk_in", "customer_pickup", "shop_delivery"],
+  },
   issued: true,
   active: true,
   started_at: "2026-07-26T10:00:00.000Z",
@@ -137,6 +141,10 @@ const repair = (overrides: Record<string, unknown> = {}) => ({
   created_at: "2026-07-20T08:00:00.000Z",
   shop_id: 9,
   shop_owner_id: 9,
+  shop_owned_logistics_available: true,
+  warranty_delivery_methods: overrides.is_warranty_job || overrides.billing_mode === "warranty_no_charge"
+    ? activeWarranty.delivery_methods
+    : null,
   shop_name: "SoleSpace Makati",
   shop_address: "9 Repair Avenue",
   intake_delivery_method: "shop_pickup",
@@ -290,6 +298,41 @@ const openReturnDeliveryPlan = () => {
   fireEvent.click(screen.getByRole("button", { name: "Open return delivery plan" }));
   return screen.getByRole("dialog", { name: "Return delivery plan" });
 };
+
+it('keeps refund disabled from the authoritative payload while claim reads are still pending', async () => {
+  mocks.repair = repair({
+    status: 'picked_up', can_refund: false,
+    refund_block_reason: 'Refund cannot be requested while a warranty claim is active for this repair.',
+  });
+  const defaultGet = mocks.get.getMockImplementation()!;
+  mocks.get.mockImplementation((url: string, ...args: unknown[]) => {
+    if (url === '/api/customer/repairs/77/warranty-claims/latest') return new Promise(() => {});
+    return defaultGet(url, ...args);
+  });
+  window.history.replaceState({}, '', '/my-repairs?tab=picked_up');
+  render(<MyRepairs />);
+  const button = await screen.findByRole('button', { name: 'REFUND', exact: true });
+  expect(button).toBeDisabled();
+  expect(button).toHaveAttribute('title', mocks.repair.refund_block_reason);
+});
+
+it.each([
+  { status: "pending", canModify: true },
+  { status: "repairer_accepted", canModify: false },
+])("uses server service-edit eligibility for $status ($canModify)", async ({ status, canModify }) => {
+  mocks.repair = repair({
+    status, can_modify_services: canModify, conversation_id: 15,
+    payment_status: "unpaid", total_paid_amount: 0, payment_completed_at: null,
+  });
+  render(<MyRepairs />);
+  fireEvent.click((await screen.findAllByRole("button", { name: /Pending/i }))[0]);
+  await screen.findAllByText("Scuffed sneakers");
+  if (canModify) {
+    expect(screen.getByRole("button", { name: "MODIFY", exact: true })).toBeEnabled();
+  } else {
+    expect(screen.queryByRole("button", { name: "MODIFY", exact: true })).not.toBeInTheDocument();
+  }
+});
 
 describe("MyRepairs loading performance", () => {
   it("shows the primary repair list without waiting for optional metadata", async () => {
@@ -506,6 +549,77 @@ describe("MyRepairs intake payment", () => {
       }),
     ));
   });
+});
+
+it("hides a new shop-rider return choice when the module is off despite a stale successful quote", async () => {
+  mocks.repair = repair({ shop_owned_logistics_available: false, return_delivery_method: "customer_pickup" });
+  await renderReadyRepair();
+  const modal = within(openReturnDeliveryPlan());
+  expect(modal.queryByRole("radio", { name: /Shop rider delivery/i })).not.toBeInTheDocument();
+  expect(modal.getByRole("radio", { name: /Customer-arranged courier/i })).toBeEnabled();
+});
+
+it("corrects an unlocked stale shop-rider selection when Logistics becomes unavailable", async () => {
+  mocks.repair = repair({
+    shop_owned_logistics_available: false,
+    return_delivery_method: "shop_delivery",
+    return_logistics_locked_at: null,
+  });
+  await renderReadyRepair();
+  const modal = within(openReturnDeliveryPlan());
+  expect(modal.queryByRole("radio", { name: /Shop rider delivery/i })).not.toBeInTheDocument();
+  expect(modal.getByRole("radio", { name: /Customer pickup at shop/i })).toBeChecked();
+});
+
+it("preserves the locked paid rider plan while Logistics is off", async () => {
+  mocks.repair = repair({
+    shop_owned_logistics_available: false,
+    return_delivery_method: "shop_delivery",
+    return_logistics_locked_at: "2026-07-26T10:00:00.000Z",
+  });
+  await renderReadyRepair();
+  const modal = within(openReturnDeliveryPlan());
+  const rider = modal.getByRole("radio", { name: /Shop rider delivery/i });
+  expect(rider).toBeChecked();
+  expect(rider).toBeDisabled();
+  expect(modal.getByRole("radio", { name: /Customer pickup at shop/i })).not.toBeChecked();
+  expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it("preserves a walk-in-only original in the warranty child's return form", async () => {
+  mocks.repair = repair({
+    is_warranty_job: true,
+    billing_mode: "warranty_no_charge",
+    return_delivery_method: "walk_in",
+    return_logistics_locked_at: null,
+    warranty_delivery_methods: { intake: ["walk_in"], return: ["walk_in"] },
+  });
+  await renderReadyRepair();
+  const modal = within(openReturnDeliveryPlan());
+  expect(modal.queryByRole("radio", { name: /Shop rider delivery/i })).not.toBeInTheDocument();
+  expect(modal.queryByRole("radio", { name: /Customer-arranged courier/i })).not.toBeInTheDocument();
+  expect(modal.getByRole("radio", { name: /Customer pickup at shop/i })).toBeEnabled();
+});
+
+it("hides new shop pickup during warranty recovery when Logistics is off", async () => {
+  mocks.repair = repair({
+    status: "cancelled",
+    is_warranty_job: true,
+    billing_mode: "warranty_no_charge",
+    payment_status: "completed",
+    payment_enabled: false,
+    intake_delivery_method: "customer_delivery",
+    intake_logistics_locked_at: null,
+    shop_owned_logistics_available: false,
+    warranty_delivery_methods: { intake: ["walk_in", "customer_delivery"], return: ["walk_in", "customer_pickup"] },
+    pickup_recovery: { state: "awaiting_arrangement", status: "awaiting_arrangement" },
+  });
+  render(<MyRepairs />);
+  fireEvent.click((await screen.findAllByRole("button", { name: /Cancelled/i }))[0]);
+  const recovery = within(await screen.findByRole("region", { name: "Warranty pickup recovery" }));
+  expect(recovery.queryByRole("radio", { name: /Shop rider pickup/i })).not.toBeInTheDocument();
+  expect(recovery.getByRole("radio", { name: /Customer-arranged delivery/i })).toBeEnabled();
+  expect(recovery.getByRole("radio", { name: /Walk-in delivery to shop/i })).toBeEnabled();
 });
 
 describe("MyRepairs repair cancellation", () => {
@@ -1122,6 +1236,26 @@ describe("MyRepairs return logistics", () => {
     expect(mocks.get).not.toHaveBeenCalledWith("/tracking/shipments/22", expect.anything());
   });
 
+  it("keeps free shop pickup without offering a new re-delivery when Logistics is off", async () => {
+    mocks.repair = repair({
+      payment_status: "completed",
+      shop_owned_logistics_available: false,
+      return_recovery: {
+        code: "returned_to_shop_awaiting_arrangement",
+        label: "Returned to shop?awaiting customer arrangement",
+        state: "awaiting_arrangement",
+      },
+    });
+    await renderReadyRepair();
+    const recovery = within(screen.getByRole("region", { name: "Repair return recovery" }));
+    expect(recovery.queryByRole("button", { name: "Schedule re-delivery" })).not.toBeInTheDocument();
+    expect(recovery.queryByLabelText("Re-delivery date")).not.toBeInTheDocument();
+    fireEvent.click(recovery.getByRole("button", { name: "Set for shop pickup" }));
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
+      "/api/customer/repairs/77/return-recovery", { action: "shop_pickup" },
+    ));
+  });
+
   it("lets the customer choose free shop pickup from the returned-to-shop state", async () => {
     mocks.repair = repair({
       payment_status: "completed",
@@ -1650,6 +1784,26 @@ describe("MyRepairs warranty logistics", () => {
     expect(warrantyModal.getByText(/Pinned intake address: 5 Intake Street/)).toBeInTheDocument();
     expect(warrantyModal.getByText(/Pinned return address: 5 Intake Street/)).toBeInTheDocument();
     expect(warrantyModal.queryByPlaceholderText("House no., street, building")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    { name: "Logistics OFF", intake: ["walk_in", "customer_delivery"], receive: ["walk_in", "customer_pickup"], courierCount: 2 },
+    { name: "walk-in-only original", intake: ["walk_in"], receive: ["walk_in"], courierCount: 0 },
+  ])("uses authoritative warranty methods for $name even with saved addresses", async ({ intake, receive, courierCount }) => {
+    mocks.repair = repair({
+      status: "picked_up",
+      warranty: { ...activeWarranty, delivery_methods: { intake, return: receive } },
+      picked_up_at: "2026-07-26T10:00:00.000Z",
+    });
+    render(<MyRepairs />);
+    fireEvent.click((await screen.findAllByRole("button", { name: /Completed/i }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "WARRANTY CLAIM" }));
+    const modal = within(screen.getByText("File Warranty Claim").closest("div.fixed") as HTMLElement);
+    expect(modal.queryByRole("radio", { name: /Shop rider pickup/i })).not.toBeInTheDocument();
+    expect(modal.queryByRole("radio", { name: /Shop rider delivery/i })).not.toBeInTheDocument();
+    expect(modal.queryAllByRole("radio", { name: /Third-party courier/i })).toHaveLength(courierCount);
+    expect(modal.getByRole("radio", { name: /Walk-in/i })).toBeEnabled();
+    expect(modal.getByRole("radio", { name: /Pick Up At Shop/i })).toBeEnabled();
   });
 
   it("hides shop-owned warranty logistics for an individual repair shop", async () => {

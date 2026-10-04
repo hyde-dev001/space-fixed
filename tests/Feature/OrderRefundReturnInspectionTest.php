@@ -310,7 +310,10 @@ class OrderRefundReturnInspectionTest extends TestCase
 
     public function test_customer_can_request_shop_owned_return_for_dispatcher_assignment(): void
     {
-        [$refund] = $this->fixture('individual');
+        [$refund] = $this->fixture('company');
+        \App\Models\ShopOwnerModule::updateOrCreate([
+            'shop_owner_id' => $refund->shop_owner_id, 'module_key' => 'logistics',
+        ], ['enabled' => true]);
         $refund->update([
             'shop_owner_status' => 'approved',
             'finance_status' => 'approved',
@@ -342,6 +345,23 @@ class OrderRefundReturnInspectionTest extends TestCase
         $this->assertDatabaseHas('shipment_legs', [
             'leg_type' => 'return_to_shop',
         ]);
+    }
+
+    public function test_customer_cannot_start_shop_owned_return_for_an_individual_or_logistics_disabled_shop(): void
+    {
+        foreach (['individual', 'company'] as $registrationType) {
+            [$refund] = $this->fixture($registrationType);
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $refund->shop_owner_id, 'module_key' => 'logistics',
+            ], ['enabled' => false]);
+            $refund->update(['shop_owner_status' => 'approved', 'finance_status' => 'approved',
+                'return_status' => 'pending_customer_shipment']);
+            $this->actingAs($refund->customer, 'user')
+                ->postJson("/orders/refunds/{$refund->id}/mark-shipped-return", ['delivery_method' => 'shop_owned'])
+                ->assertUnprocessable()->assertJsonValidationErrors('logistics');
+            $this->assertSame('pending_customer_shipment', $refund->fresh()->return_status);
+            $this->assertDatabaseMissing('shipments', ['source_type' => 'order_refund', 'source_id' => $refund->id]);
+        }
     }
 
     public function test_company_staff_third_party_tracking_starts_staff_return_and_allows_physical_receipt_inspection(): void

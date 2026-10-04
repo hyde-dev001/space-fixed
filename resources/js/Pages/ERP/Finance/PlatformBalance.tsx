@@ -43,6 +43,7 @@ interface PlatformCreditMovement {
     id: number;
     source_type: string;
     source_id: number;
+    source_reference?: string;
     source_origin: string;
     credit_amount: Money;
     applied_amount: Money;
@@ -59,6 +60,7 @@ interface PlatformFeeCharge {
     id: number;
     source_type: string;
     source_id: number;
+    source_reference?: string;
     source_origin: string;
     fee_base: Money;
     fee_rate: string;
@@ -399,7 +401,7 @@ export default function PlatformBalancePage() {
                                         <tbody>
                                             {payload.charges.map((charge) => (
                                                 <tr key={charge.id} className="border-b border-gray-100 last:border-0 dark:border-gray-900">
-                                                    <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{sourceLabel(charge.source_type)} #{charge.source_id}</td>
+                                                    <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{charge.source_reference || `${sourceLabel(charge.source_type)} #${charge.source_id}`}</td>
                                                     <td className="px-3 py-3">{formatMoney(charge.fee_base)}</td>
                                                     <td className="px-3 py-3">{charge.fee_rate}%</td>
                                                     <td className="px-3 py-3">{formatMoney(charge.vat_amount)}</td>
@@ -475,7 +477,7 @@ function CreditMovementTable({ movements }: { movements: PlatformCreditMovement[
                 <tbody>
                     {movements.map((movement) => (
                         <tr key={movement.id} className="border-b border-gray-100 last:border-0 dark:border-gray-900">
-                            <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{sourceLabel(movement.source_type)} #{movement.source_id}</td>
+                            <td className="px-3 py-3 font-medium text-gray-900 dark:text-white">{movement.source_reference || `${sourceLabel(movement.source_type)} #${movement.source_id}`}</td>
                             <td className="px-3 py-3">{formatMoney(movement.credit_amount)}</td>
                             <td className="px-3 py-3 font-semibold text-emerald-700 dark:text-emerald-300">{formatMoney(movement.applied_amount)}</td>
                             <td className="px-3 py-3">{formatMoney(movement.remaining_amount)}</td>

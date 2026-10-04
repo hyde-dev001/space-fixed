@@ -30,6 +30,9 @@ Route::prefix('api/shop-owner/erp')
             ->name('finance.audit-logs');
         Route::get('/manager/reports', [ManagerController::class, 'getReports'])
             ->name('manager.reports');
+        Route::get('/manager/reports/{id}/download', [ManagerController::class, 'downloadReport'])
+            ->whereNumber('id')
+            ->name('manager.reports.download');
         Route::get('/manager/audit-logs', [ActivityLogController::class, 'index'])
             ->name('manager.audit-logs');
 

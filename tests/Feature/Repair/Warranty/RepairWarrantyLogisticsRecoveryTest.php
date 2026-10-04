@@ -278,6 +278,11 @@ class RepairWarrantyLogisticsRecoveryTest extends TestCase
     {
         $customer = User::factory()->create();
         $shop = ShopOwner::factory()->create(['paymongo_secret_key' => 'sk_test_cancelled_repair']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
             'user_id' => $customer->id,
@@ -301,6 +306,11 @@ class RepairWarrantyLogisticsRecoveryTest extends TestCase
             'shop_longitude' => 120.9842,
             'paymongo_secret_key' => 'sk_test_warranty_pickup_recovery',
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         LogisticsSetting::create([
             'shop_owner_id' => $shop->id,
             'max_delivery_attempts' => 1,

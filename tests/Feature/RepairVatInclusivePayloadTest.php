@@ -154,6 +154,13 @@ class RepairVatInclusivePayloadTest extends TestCase
 
         $inclusiveRepair = $this->createRepairForCustomer($shopOwner, $customer, [
             'request_id' => 'REP-VAT-RETRY-INC-001',
+            'intake_delivery_method' => 'customer_delivery',
+            'intake_address' => [
+                'external_tracking' => [
+                    'carrier' => 'LBC',
+                    'tracking_number' => 'VAT-RETRY-INC-001',
+                ],
+            ],
             'pricing_breakdown' => [
                 'tax_mode' => 'vat_inclusive',
             ],
@@ -162,6 +169,13 @@ class RepairVatInclusivePayloadTest extends TestCase
 
         $legacyRepair = $this->createRepairForCustomer($shopOwner, $customer, [
             'request_id' => 'REP-VAT-RETRY-LEG-001',
+            'intake_delivery_method' => 'customer_delivery',
+            'intake_address' => [
+                'external_tracking' => [
+                    'carrier' => 'LBC',
+                    'tracking_number' => 'VAT-RETRY-LEG-001',
+                ],
+            ],
             'pricing_breakdown' => [],
             'payment_enabled' => true,
         ]);

@@ -20,12 +20,14 @@ class BatchDispatchService
         private AssignmentService $assignments,
         private DeliveryEventService $events,
         private RiderActiveWorkGuard $activeWork,
+        private LogisticsMovementEligibility $movements,
     ) {}
 
     public function schedule(ShopOwner $shop, string $date, string $window, array $legIds): void
     {
         DB::transaction(function () use ($shop, $date, $window, $legIds) {
             $shop = ShopOwner::query()->whereKey($shop->id)->lockForUpdate()->firstOrFail();
+            $this->movements->assertCanStart($shop);
             $this->assertOperatingDeliveryDate($shop, $date);
             $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
             if ($legs->count() !== count(array_unique($legIds)) || $legs->contains(fn ($leg) => $leg->shipment->shop_owner_id !== $shop->id || $leg->delivery_batch_id
@@ -37,6 +39,7 @@ class BatchDispatchService
                 throw ValidationException::withMessages(['legs' => 'This shop cannot schedule one or more delivery modules.']);
             }
             foreach ($legs as $leg) {
+                $this->movements->assertInternalLeg($leg);
                 $leg->update([
                     'scheduled_delivery_date' => $date, 'delivery_window' => $window,
                     'schedule_status' => 'scheduled', 'estimated_at' => now(),
@@ -49,6 +52,7 @@ class BatchDispatchService
     {
         return DB::transaction(function () use ($shop, $date, $window, $legIds, $overrideReason) {
             $shop = ShopOwner::query()->whereKey($shop->id)->lockForUpdate()->firstOrFail();
+            $this->movements->assertCanStart($shop);
             $this->assertOperatingDeliveryDate($shop, $date);
             $legs = ShipmentLeg::query()->with('shipment')->whereIn('id', $legIds)->orderBy('id')->lockForUpdate()->get();
             if ($legs->count() !== count(array_unique($legIds)) || $legs->contains(fn ($leg) => $leg->shipment->shop_owner_id !== $shop->id || $leg->delivery_batch_id
@@ -78,6 +82,7 @@ class BatchDispatchService
     public function offer(DeliveryBatch $batch, RiderProfile $rider, ShopOwner $actor, ?string $capacityOverrideReason = null): DeliveryBatch
     {
         return DB::transaction(function () use ($batch, $rider, $actor, $capacityOverrideReason) {
+            $shop = ShopOwner::query()->whereKey($batch->shop_owner_id)->lockForUpdate()->firstOrFail();
             $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
             $rider = RiderProfile::query()->lockForUpdate()->findOrFail($rider->id);
             $this->assertRiderBelongsToBatch($batch, $rider);
@@ -87,6 +92,7 @@ class BatchDispatchService
             if ($batch->status !== 'draft') {
                 throw ValidationException::withMessages(['batch' => 'Batch cannot be offered to this rider.']);
             }
+            $this->movements->assertCanStart($shop);
             $date = $batch->delivery_date;
             $linkedUser = $rider->linked_type === User::class ? User::find($rider->linked_id) : null;
             $employeeId = $linkedUser?->employee()->where('shop_owner_id', $batch->shop_owner_id)->value('employees.id');
@@ -98,7 +104,7 @@ class BatchDispatchService
                 throw ValidationException::withMessages(['rider_profile_id' => 'Rider is unavailable on this delivery date.']);
             }
             $capacity = $rider->daily_capacity ?? $actor->logisticsSetting()->firstOrCreate([])->daily_rider_capacity;
-            $existingStopCount = DeliveryBatch::query()
+            $existingStopCount = (int) DeliveryBatch::query()
                 ->where('shop_owner_id', $batch->shop_owner_id)
                 ->where('rider_profile_id', $rider->id)
                 ->whereDate('delivery_date', $date->toDateString())
@@ -230,6 +236,7 @@ class BatchDispatchService
         }
 
         return $this->riderTransition($batch, $rider, 'offered', function ($locked) use ($rider) {
+            $this->assertBatchCanStart($locked);
             $locked->legs()->each(fn ($leg) => $leg->assignments()->where('rider_profile_id', $rider->id)
                 ->where('status', 'assigned')->update(['status' => 'accepted', 'accepted_at' => now()]));
             $locked->update(['status' => 'accepted', 'accepted_at' => now()]);
@@ -279,6 +286,7 @@ class BatchDispatchService
         }
 
         return $this->riderTransition($batch, $rider, 'accepted', function ($locked) use ($rider) {
+            $this->assertBatchCanStart($locked);
             $this->activeWork->assertCanStartBatch($rider, $locked);
             $locked->update(['status' => 'in_progress', 'started_at' => now()]);
             $this->recordBatchEvent($locked, 'batch_started', 'Delivery batch started.');
@@ -319,6 +327,8 @@ class BatchDispatchService
     public function restore(DeliveryBatch $batch): DeliveryBatch
     {
         return DB::transaction(function () use ($batch) {
+            $shop = ShopOwner::query()->whereKey($batch->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $this->movements->assertCanStart($shop);
             $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
             $stops = filled($batch->stop_snapshot) ? $batch->stop_snapshot : $batch->cancelled_stops;
             $legIds = collect($stops)->map(fn ($stop) => data_get($stop, 'id'))->values();
@@ -334,7 +344,6 @@ class BatchDispatchService
                 || $leg->status->value !== 'pending')) {
                 throw ValidationException::withMessages(['batch' => 'One or more stops are no longer available for restoration.']);
             }
-            $shop = ShopOwner::query()->whereKey($batch->shop_owner_id)->lockForUpdate()->firstOrFail();
             $this->validateBatchComposition($legs, $shop);
             foreach ($legIds as $index => $id) {
                 $legs->firstWhere('id', $id)->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1]);
@@ -352,6 +361,9 @@ class BatchDispatchService
 
     private function validateBatchComposition($legs, ShopOwner $shop): void
     {
+        foreach ($legs as $leg) {
+            $this->movements->assertInternalLeg($leg);
+        }
         if ($legs->contains(fn ($leg) => $leg->status->value === 'proof_correction_required')) {
             throw ValidationException::withMessages([
                 'legs' => 'Proof-correction stops cannot be batched as ordinary delivery work.',
@@ -393,7 +405,9 @@ class BatchDispatchService
     private function riderTransition(DeliveryBatch $batch, RiderProfile $rider, string $from, callable $change): DeliveryBatch
     {
         return DB::transaction(function () use ($batch, $rider, $from, $change) {
+            $shop = ShopOwner::query()->whereKey($batch->shop_owner_id)->lockForUpdate()->firstOrFail();
             $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            $batch->setRelation('shopOwner', $shop);
             $rider = RiderProfile::query()->lockForUpdate()->findOrFail($rider->id);
             $this->assertRiderBelongsToBatch($batch, $rider);
             if ($batch->rider_profile_id !== $rider->id || $batch->status !== $from) {
@@ -403,6 +417,14 @@ class BatchDispatchService
 
             return $batch->fresh('legs.assignments');
         });
+    }
+
+    private function assertBatchCanStart(DeliveryBatch $batch): void
+    {
+        $this->movements->assertCanStart($batch->shopOwner);
+        foreach ($batch->legs()->with('shipment')->orderBy('id')->lockForUpdate()->get() as $leg) {
+            $this->movements->assertInternalLeg($leg);
+        }
     }
 
     private function assertRiderBelongsToBatch(DeliveryBatch $batch, RiderProfile $rider): void

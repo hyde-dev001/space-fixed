@@ -528,7 +528,7 @@ class PayslipApprovalWorkflowTest extends TestCase
             ->where('email', 'shopowner+' . $this->shopOwnerAuth->id . '@solespace.local')
             ->firstOrFail();
 
-        $this->assertSame('STAFF', $actor->role);
+        $this->assertNull($actor->role);
         $this->assertTrue($actor->hasRole('Shop Owner'));
     }
 

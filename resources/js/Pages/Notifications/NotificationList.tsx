@@ -16,6 +16,7 @@ import NotificationItem from '../../Components/common/NotificationItem';
 import ExportModal from "../../components/Notifications/ExportModal";
 import type { Notification } from '../../hooks/useNotifications';
 import { resolveNotificationActionUrl } from '../../utils/resolveNotificationActionUrl';
+import { notificationIdentity, type NotificationAuth } from '../../hooks/useNotificationIdentity';
 
 interface NotificationListProps {
   basePath?: string;
@@ -23,7 +24,12 @@ interface NotificationListProps {
   showSettings?: boolean;
 }
 
-const NotificationList: React.FC<NotificationListProps> = ({ 
+const NotificationList: React.FC<NotificationListProps> = (props) => {
+  const { auth } = usePage<{ auth?: NotificationAuth }>().props;
+  return <NotificationListContent key={notificationIdentity(auth)} {...props} />;
+};
+
+const NotificationListContent: React.FC<NotificationListProps> = ({
   basePath = '/api/notifications',
   title = 'Notifications',
   showSettings = true,

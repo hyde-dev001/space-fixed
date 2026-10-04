@@ -32,6 +32,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         LogisticsSetting::query()->create([
             'shop_owner_id' => $shopOwner->id,
             'coverage_radius_km' => 12,
@@ -49,6 +54,7 @@ class RepairWarrantyEligibilityTest extends TestCase
             'received_at' => now()->subDays(3),
             'payment_status' => 'completed',
             'total_paid_amount' => 900,
+            'return_delivery_method' => 'customer_pickup',
             'return_address' => $delivery->snapshot($address, 'customer_pickup'),
         ]);
 
@@ -85,6 +91,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         $customer = User::factory()->create();
         $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
@@ -126,6 +137,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         $customer = User::factory()->create();
         $repair = $this->createWarrantyRepair([
             'shop_owner_id' => $shopOwner->id,
@@ -166,6 +182,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         /** @var User $customer */
         $customer = User::factory()->create();
 
@@ -176,6 +197,7 @@ class RepairWarrantyEligibilityTest extends TestCase
             'picked_up_at' => now()->subDays(2),
             'payment_status' => 'completed',
             'total_paid_amount' => 900,
+            'return_delivery_method' => 'customer_pickup',
         ]);
 
         $response = $this->actingAs($customer, 'user')->post(
@@ -207,6 +229,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         LogisticsSetting::query()->create([
             'shop_owner_id' => $shopOwner->id,
             'coverage_radius_km' => 12,
@@ -259,6 +286,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'warranty_enabled' => true,
             'repair_warranty_days' => 7,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         /** @var User $customer */
         $customer = User::factory()->create();
 
@@ -295,6 +327,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         /** @var User $customer */
         $customer = User::factory()->create();
 
@@ -348,6 +385,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         /** @var User $customer */
         $customer = User::factory()->create();
 
@@ -404,6 +446,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         /** @var User $customer */
         $customer = User::factory()->create();
 
@@ -457,6 +504,11 @@ class RepairWarrantyEligibilityTest extends TestCase
             'warranty_enabled' => true,
             'repair_warranty_days' => 30,
         ]);
+        if ($shopOwner->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopOwner->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
 
         /** @var User $staff */
         $staff = User::factory()->create([
@@ -500,6 +552,7 @@ class RepairWarrantyEligibilityTest extends TestCase
             'digital_payload' => ['sample' => true],
         ]);
 
+        $this->clockInEmployee($staff);
         $success = $this->actingAs($staff, 'user')->post(
             '/api/repair-pos/warranty-claims',
             [

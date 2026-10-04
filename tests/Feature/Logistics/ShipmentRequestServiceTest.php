@@ -17,7 +17,12 @@ class ShipmentRequestServiceTest extends TestCase
 
     public function test_it_creates_shipment_with_one_outbound_leg_for_order(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         $order = Order::factory()->create(['shop_owner_id' => $shop->id]);
 
         $shipment = app(ShipmentRequestService::class)->requestShipment([
@@ -42,8 +47,18 @@ class ShipmentRequestServiceTest extends TestCase
 
     public function test_shipment_numbers_restart_for_each_shop_owner(): void
     {
-        $shopA = ShopOwner::factory()->create();
-        $shopB = ShopOwner::factory()->create();
+        $shopA = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shopA->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopA->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
+        $shopB = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shopB->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shopB->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         $requestShipment = fn (ShopOwner $shop, int $sourceId) => app(ShipmentRequestService::class)->requestShipment([
             'shop_owner_id' => $shop->id,
             'source_type' => 'order',
@@ -63,7 +78,12 @@ class ShipmentRequestServiceTest extends TestCase
 
     public function test_it_accepts_an_active_internal_assignment_method(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         $method = ShippingMethod::factory()->create([
             'carrier_type' => 'internal',
             'requires_assignment' => true,
@@ -87,7 +107,12 @@ class ShipmentRequestServiceTest extends TestCase
     #[DataProvider('unsupportedShopOwnedMethods')]
     public function test_it_rejects_methods_that_cannot_run_through_shop_owned_logistics(array $attributes): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         $method = ShippingMethod::factory()->create($attributes);
 
         try {

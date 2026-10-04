@@ -17,8 +17,18 @@ class BusinessReferenceNumberTest extends TestCase
 
     public function test_order_numbers_are_scoped_to_each_shop_and_keep_order_sequence_independent(): void
     {
-        $shopA = ShopOwner::factory()->create();
-        $shopB = ShopOwner::factory()->create();
+        $shopA = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shopA->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shopA->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
+        $shopB = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shopB->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shopB->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
 
         $firstA = DB::transaction(function () use ($shopA): string {
             $number = Order::generateOrderNumber($shopA->id);
@@ -56,8 +66,18 @@ class BusinessReferenceNumberTest extends TestCase
 
     public function test_delivery_and_delivery_proof_numbers_are_scoped_independently_to_each_shop(): void
     {
-        $shopA = ShopOwner::factory()->create();
-        $shopB = ShopOwner::factory()->create();
+        $shopA = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shopA->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shopA->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
+        $shopB = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shopB->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shopB->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $requestShipment = fn (ShopOwner $shop, int $sourceId) => app(ShipmentRequestService::class)->requestShipment([
             'shop_owner_id' => $shop->id,
             'source_type' => 'order',

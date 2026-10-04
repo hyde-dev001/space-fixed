@@ -21,6 +21,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $actor = \App\Models\User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
         ]);
+        $this->clockInEmployee($actor);
 
         foreach ([
             ['cash', null],
@@ -61,6 +62,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $actor = \App\Models\User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
         ]);
+        $this->clockInEmployee($actor);
         $customer = \App\Models\User::factory()->create([
             'phone' => null,
         ]);
@@ -260,6 +262,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
@@ -303,6 +306,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         /** @var \App\Models\User $cashier */
         $cashier = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($cashier);
 
         $response = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
@@ -332,6 +336,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         /** @var \App\Models\User $cashier */
         $cashier = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($cashier);
 
         $response = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
@@ -363,6 +368,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         /** @var \App\Models\User $cashier */
         $cashier = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($cashier);
         $package = \App\Models\RepairPackage::create([
             'shop_owner_id' => $shopOwner->id,
             'name' => 'Pending Price Package',
@@ -406,6 +412,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         /** @var \App\Models\User $cashier */
         $cashier = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($cashier);
         $payload = [
             'repair_request_id' => null,
             'due_type' => 'full',
@@ -628,6 +635,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($cashier);
         $cashier->assignRole($cashierRole);
 
         /** @var \App\Models\User $repairer */
@@ -635,6 +643,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($repairer);
         $repairer->assignRole($repairerRole);
 
         $checkout = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
@@ -690,6 +699,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($repairer);
         $repairer->assignRole($repairerRole);
 
         $assignedRepair = \App\Models\RepairRequest::factory()->create([
@@ -742,6 +752,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($cashier);
         $cashier->assignRole($cashierRole);
 
         /** @var \App\Models\User $repairer */
@@ -749,6 +760,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($repairer);
         $repairer->assignRole($repairerRole);
 
         $checkout = $this->actingAs($cashier, 'user')->postJson('/api/repair-pos/checkout', [
@@ -841,6 +853,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($cashier);
         $cashier->assignRole($cashierRole);
 
         $repairer = \App\Models\User::factory()->create([
@@ -848,6 +861,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'status' => 'active',
             'role' => 'REPAIRER',
         ]);
+        $this->clockInEmployee($repairer);
         $repairer->assignRole($repairerRole);
 
         $customer = \App\Models\User::factory()->create([
@@ -908,6 +922,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($actor);
 
         $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => null,
@@ -963,12 +978,14 @@ class RepairPosPaymentFlowTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($cashier);
         $cashier->assignRole($cashierRole);
 
         $repairer = \App\Models\User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
             'status' => 'active',
         ]);
+        $this->clockInEmployee($repairer);
         $repairer->assignRole($repairerRole);
 
         $manager = \App\Models\User::factory()->create([
@@ -976,6 +993,7 @@ class RepairPosPaymentFlowTest extends TestCase
             'role' => 'Manager',
             'status' => 'active',
         ]);
+        $this->clockInEmployee($manager);
         $manager->assignRole($managerRole);
 
         $finance = \App\Models\User::factory()->create([
@@ -1100,6 +1118,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-VAT-INC-001',
@@ -1149,6 +1168,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-IDEM-001',
@@ -1258,6 +1278,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-CANON-001',
@@ -1510,6 +1531,7 @@ class RepairPosPaymentFlowTest extends TestCase
 
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/checkout', [
             'repair_request_id' => $repair->id,
@@ -1535,6 +1557,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
         /** @var \App\Models\User $customer */
         $customer = \App\Models\User::factory()->create();
 
@@ -1571,6 +1594,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-003',
@@ -1619,6 +1643,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-004',
@@ -1676,6 +1701,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-005',
@@ -1720,6 +1746,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-006',
@@ -1763,6 +1790,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-007',
@@ -1811,6 +1839,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-008',
@@ -1854,6 +1883,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-009',
@@ -1897,6 +1927,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-010',
@@ -1940,6 +1971,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-011',
@@ -1986,6 +2018,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $shopActor */
         $shopActor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($shopActor);
         $managerRole = \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'Manager', 'guard_name' => 'user']);
         $shopActor->assignRole($managerRole);
 
@@ -2072,6 +2105,7 @@ class RepairPosPaymentFlowTest extends TestCase
         $otherCustomer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $shopActor */
         $shopActor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($shopActor);
 
         $repair = \App\Models\RepairRequest::create([
             'request_id' => 'REP-TDD-013',

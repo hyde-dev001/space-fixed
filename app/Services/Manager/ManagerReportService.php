@@ -318,16 +318,33 @@ final class ManagerReportService
     {
         $report = ManagerReport::query()
             ->where('shop_owner_id', $shopOwnerId)
+            ->whereIn('status', ['generated', 'reviewed', 'sent'])
             ->findOrFail($reportId);
 
-        if (! $report->file_path || ! Storage::disk('local')->exists($report->file_path)) {
+        $path = (string) ($report->file_path ?? '');
+        $unsafePath = $path !== '' && (! str_starts_with($path, "manager-reports/{$shopOwnerId}/")
+            || str_contains($path, '\\') || str_contains($path, "\0")
+            || preg_match('#(?:^|/)\.\.?(?:/|$)#', $path) || ! str_ends_with($path, '.csv'));
+        if (! is_array(data_get($report->report_data, 'summary'))
+            || ! is_array(data_get($report->report_data, 'rows')) || $unsafePath) {
+            throw (new \Illuminate\Database\Eloquent\ModelNotFoundException)->setModel(ManagerReport::class, [$reportId]);
+        }
+
+        if (! $report->file_path) {
             $this->storeFile($report);
             $report->refresh();
         }
 
+        // Export the stored snapshot, preserving the original artifact and its path.
+        Storage::disk('local')->put($this->formattedFilePath($report), $this->buildCsvContent($report));
         $report->update(['downloaded_at' => now()]);
 
         return $report->fresh() ?? $report;
+    }
+
+    public function formattedFilePath(ManagerReport $report): string
+    {
+        return "manager-reports/{$report->shop_owner_id}/report-{$report->id}-formatted-v1.csv";
     }
 
     public function downloadFileName(ManagerReport $report): string
@@ -416,12 +433,17 @@ final class ManagerReportService
             return in_array($this->valueOf($order->status), ['completed', 'delivered'], true);
         })->count();
 
-        $rows = $orders->map(function (Order $order): array {
+        $staff = User::query()->where('shop_owner_id', $shopOwnerId)
+            ->whereIn('id', $orders->pluck('assigned_staff_id')->filter()->unique())
+            ->pluck('name', 'id');
+        $rows = $orders->map(function (Order $order) use ($staff): array {
             return [
                 'order_id' => $order->id,
                 'order_number' => $order->order_number,
                 'customer_name' => (string) ($order->customer_name ?? ''),
                 'assigned_staff_id' => $order->assigned_staff_id,
+                'assigned_staff_name' => $order->assigned_staff_id
+                    ? ($staff->get($order->assigned_staff_id) ?? 'Unknown staff') : 'Unassigned',
                 'status' => $this->valueOf($order->status),
                 'total_amount' => number_format((float) $order->total_amount, 2, '.', ''),
                 'order_items' => $order->items->map(fn ($item): array => [
@@ -600,8 +622,7 @@ final class ManagerReportService
 
     private function storeFile(ManagerReport $report): void
     {
-        $reportData = $report->report_data ?? [];
-        $content = $this->buildCsvContent($reportData['summary'] ?? [], $reportData['rows'] ?? []);
+        $content = $this->buildCsvContent($report);
         $path = "manager-reports/{$report->shop_owner_id}/report-{$report->id}.csv";
 
         Storage::disk('local')->put($path, $content);
@@ -611,13 +632,17 @@ final class ManagerReportService
         }
     }
 
-    private function buildCsvContent(array $summary, array $rows): string
+    private function buildCsvContent(ManagerReport $report): string
     {
+        $summary = $report->report_data['summary'] ?? [];
+        $rows = $report->report_data['rows'] ?? [];
         $stream = fopen('php://temp', 'w+');
+        // Let spreadsheet applications detect UTF-8 when opening the CSV directly.
+        fwrite($stream, "\xEF\xBB\xBF");
         fputcsv($stream, ['Summary']);
 
         foreach ($summary as $key => $value) {
-            fputcsv($stream, [$key, is_scalar($value) || $value === null ? (string) $value : json_encode($value)]);
+            fputcsv($stream, [$this->safeCsvText(Str::headline($key)), $this->csvCell($key, $value)]);
         }
 
         fputcsv($stream, []);
@@ -626,14 +651,37 @@ final class ManagerReportService
         if ($rows === []) {
             fputcsv($stream, ['No records found for selected date range']);
         } else {
-            $headers = array_keys((array) $rows[0]);
-            fputcsv($stream, $headers);
+            $sales = $report->report_type === 'sales';
+            $headers = $sales ? [
+                'order_number' => 'Order Number', 'customer_name' => 'Customer',
+                'assigned_staff_name' => 'Assigned Staff', 'status' => 'Status',
+                'total_amount' => 'Total Amount', 'order_items' => 'Order Items', 'created_at' => 'Created At',
+            ] : collect($rows)->flatMap(fn ($row) => array_keys((array) $row))->unique()
+                ->reject(fn ($key) => $key === 'id' || str_ends_with($key, '_id'))
+                ->mapWithKeys(fn ($key) => [$key => $this->safeCsvText(Str::headline($key))])->all();
+            // Legacy snapshots may only have an assignee ID; resolve names once, within this tenant.
+            $staff = $sales ? User::query()->where('shop_owner_id', $report->shop_owner_id)
+                ->whereIn('id', collect($rows)->filter(fn ($row) => empty($row['assigned_staff_name']))
+                    ->pluck('assigned_staff_id')->filter()->unique())->pluck('name', 'id') : collect();
+            fputcsv($stream, array_values($headers));
 
             foreach ($rows as $row) {
-                fputcsv($stream, array_map(
-                    fn ($value): string => is_scalar($value) || $value === null ? (string) $value : (string) json_encode($value),
-                    array_values((array) $row),
-                ));
+                $row = (array) $row;
+                if ($sales && empty($row['assigned_staff_name'])) {
+                    $row['assigned_staff_name'] = ! empty($row['assigned_staff_id'])
+                        ? ($staff->get($row['assigned_staff_id']) ?? 'Unknown staff') : 'Unassigned';
+                }
+                $cells = [];
+                foreach ($headers as $key => $label) {
+                    $value = $row[$key] ?? null;
+                    if ($key === 'order_items') {
+                        $value = $this->formatOrderItems($value);
+                    } elseif ($key === 'status' && is_string($value)) {
+                        $value = Str::headline($value);
+                    }
+                    $cells[] = $this->csvCell($key, $value);
+                }
+                fputcsv($stream, $cells);
             }
         }
 
@@ -642,6 +690,72 @@ final class ManagerReportService
         fclose($stream);
 
         return $content ?: '';
+    }
+
+    private function formatOrderItems(mixed $items): string
+    {
+        if (is_string($items)) {
+            $decoded = json_decode($items, true);
+            if (! is_array($decoded)) {
+                return $items;
+            }
+            $items = $decoded;
+        }
+        if (! is_array($items)) {
+            return '';
+        }
+        if (isset($items['product_name']) || isset($items['name'])) {
+            $items = [$items];
+        }
+        $formatted = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                $formatted[] = $this->readableValue($item);
+                continue;
+            }
+            $name = $item['product_name'] ?? $item['name'] ?? '';
+            $quantity = $item['quantity'] ?? $item['qty'] ?? null;
+            $subtotal = $item['subtotal'] ?? $item['total'] ?? null;
+            $description = $this->readableValue($name);
+            if (is_numeric($quantity)) {
+                $description .= ' × '.(string) $quantity;
+            }
+            if (is_numeric($subtotal)) {
+                $description .= ' — ₱'.number_format((float) $subtotal, 2);
+            }
+            // Also protect a later item, rather than only the first item in the cell.
+            $formatted[] = $this->safeCsvText($description);
+        }
+        return implode('; ', $formatted);
+    }
+
+    private function csvCell(string $key, mixed $value): string
+    {
+        $numericFields = ['total_amount', 'total_revenue', 'average_order_value', 'price', 'subtotal',
+            'quantity', 'available_quantity', 'reorder_level', 'total_quantity', 'total_orders',
+            'completed_orders', 'total_items', 'low_stock_count', 'out_of_stock_count', 'staff_count',
+            'order_count', 'damaged_count', 'missing_count'];
+        if (is_numeric($value) && in_array($key, $numericFields, true)) {
+            return (string) $value;
+        }
+        return $this->safeCsvText($this->readableValue($value));
+    }
+
+    private function readableValue(mixed $value): string
+    {
+        if (! is_array($value)) {
+            return is_scalar($value) ? (string) $value : '';
+        }
+        $parts = [];
+        foreach ($value as $key => $nested) {
+            $parts[] = (is_string($key) ? Str::headline($key).': ' : '').$this->readableValue($nested);
+        }
+        return implode('; ', $parts);
+    }
+
+    private function safeCsvText(string $value): string
+    {
+        return preg_match('/^[\s\x00-\x20\x{FEFF}]*[=+\-@]/u', $value) ? "'".$value : $value;
     }
 
     private function valueOf(mixed $value): string

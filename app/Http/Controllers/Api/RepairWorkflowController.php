@@ -7,8 +7,6 @@ use Illuminate\Http\Request;
 use App\Models\RepairRequest;
 use App\Models\RepairMaterialPlanItem;
 use App\Models\RepairMaterialUsage;
-use App\Models\RepairPackage;
-use App\Models\RepairService;
 use App\Models\InventoryItem;
 use App\Models\StockRequestApproval;
 use App\Models\User;
@@ -3477,6 +3475,9 @@ class RepairWorkflowController extends Controller
                 $shopOwnerId,
                 $actorUserId
             ) {
+                // Serialize material history with service edits and snapshot replacement.
+                RepairRequest::query()->whereKey($repairRequest->id)->lockForUpdate()->firstOrFail();
+
                 $movementNote = $usageNotes !== ''
                     ? $usageNotes
                     : "Material used for repair {$repairRequest->request_id}";
@@ -3726,6 +3727,7 @@ class RepairWorkflowController extends Controller
             $pricingTotals = null;
 
             DB::transaction(function () use ($usage, $repairRequest, $actorUserId, &$pricingTotals) {
+                RepairRequest::query()->whereKey($repairRequest->id)->lockForUpdate()->firstOrFail();
                 if ($usage->inventoryItem) {
                     $restoreMovement = $usage->inventoryItem->incrementStock(
                         (int) $usage->quantity_used,
@@ -4111,171 +4113,14 @@ class RepairWorkflowController extends Controller
 
     private function ensureRepairMaterialPlanItems(RepairRequest $repairRequest): void
     {
-        $templatePlan = $this->buildTemplateMaterialPlan($repairRequest);
-        if (empty($templatePlan)) {
-            return;
-        }
-
-        $existing = RepairMaterialPlanItem::query()
-            ->where('repair_request_id', $repairRequest->id)
-            ->get()
-            ->keyBy('inventory_item_id');
-
-        foreach ($templatePlan as $inventoryItemId => $line) {
-            /** @var RepairMaterialPlanItem|null $existingLine */
-            $existingLine = $existing->get((int) $inventoryItemId);
-
-            if ($existingLine) {
-                $existingLine->planned_quantity = (float) $line['planned_quantity'];
-                $existingLine->is_critical = (bool) $line['is_critical'];
-                $existingLine->tolerance_percent = (float) $line['tolerance_percent'];
-                $existingLine->save();
-                continue;
-            }
-
-            RepairMaterialPlanItem::query()->create([
-                'repair_request_id' => $repairRequest->id,
-                'inventory_item_id' => (int) $inventoryItemId,
-                'planned_quantity' => (float) $line['planned_quantity'],
-                'actual_quantity' => 0,
-                'is_critical' => (bool) $line['is_critical'],
-                'tolerance_percent' => (float) $line['tolerance_percent'],
-            ]);
-        }
-    }
-
-    private function buildTemplateMaterialPlan(RepairRequest $repairRequest): array
-    {
-        $repairRequest->loadMissing([
-            'repairPackage.materialTemplateItems',
-            'repairPackage.services.materialTemplateItems',
-            'services.materialTemplateItems',
-        ]);
-
-        $templateRows = collect();
-
-        if ($repairRequest->repairPackage) {
-            $templateRows = $templateRows->concat($repairRequest->repairPackage->materialTemplateItems);
-        }
-
-        if ($repairRequest->services->isNotEmpty()) {
-            foreach ($repairRequest->services as $service) {
-                $templateRows = $templateRows->concat($service->materialTemplateItems);
-            }
-        }
-
-        // If no rows were resolved from explicitly attached services, use package services as fallback.
-        if ($templateRows->isEmpty() && $repairRequest->repairPackage) {
-            foreach ($repairRequest->repairPackage->services as $packageService) {
-                $templateRows = $templateRows->concat($packageService->materialTemplateItems);
-            }
-        }
-
-        // Fallback for records where relationships are missing but service snapshots still exist.
-        if ($templateRows->isEmpty()) {
-            $snapshotRows = array_merge(
-                (array) ($repairRequest->included_services_snapshot ?? []),
-                (array) ($repairRequest->add_on_services_snapshot ?? [])
-            );
-
-            $snapshotServiceIds = collect($snapshotRows)
-                ->map(function ($row) {
-                    if (!is_array($row)) {
-                        return 0;
-                    }
-
-                    return (int) (
-                        $row['id']
-                        ?? $row['service_id']
-                        ?? $row['repair_service_id']
-                        ?? data_get($row, 'service.id')
-                        ?? 0
-                    );
-                })
-                ->filter(fn ($id) => $id > 0)
-                ->unique()
-                ->values();
-
-            if ($snapshotServiceIds->isNotEmpty()) {
-                $snapshotServices = RepairService::withTrashed()
-                    ->whereIn('id', $snapshotServiceIds)
-                    ->where('shop_owner_id', $repairRequest->shop_owner_id)
-                    ->with(['materialTemplateItems'])
-                    ->get();
-
-                foreach ($snapshotServices as $snapshotService) {
-                    $templateRows = $templateRows->concat($snapshotService->materialTemplateItems);
-                }
-            }
-        }
-
-        // Fallback for archived packages that are no longer returned by the default relation.
-        if ($templateRows->isEmpty() && !empty($repairRequest->repair_package_id) && !$repairRequest->repairPackage) {
-            $archivedPackage = RepairPackage::withTrashed()
-                ->with([
-                    'materialTemplateItems',
-                    'services.materialTemplateItems',
-                ])
-                ->find((int) $repairRequest->repair_package_id);
-
-            if ($archivedPackage) {
-                $templateRows = $templateRows->concat($archivedPackage->materialTemplateItems);
-
-                if ($repairRequest->services->isEmpty()) {
-                    foreach ($archivedPackage->services as $archivedPackageService) {
-                        $templateRows = $templateRows->concat($archivedPackageService->materialTemplateItems);
-                    }
-                }
-            }
-        }
-
-        $grouped = [];
-        foreach ($templateRows as $row) {
-            $inventoryItemId = (int) ($row->inventory_item_id ?? 0);
-            if ($inventoryItemId <= 0) {
-                continue;
-            }
-
-            if (!isset($grouped[$inventoryItemId])) {
-                $grouped[$inventoryItemId] = [
-                    'planned_quantity' => 0.0,
-                    'is_critical' => false,
-                    'tolerance_percent' => 0.0,
-                ];
-            }
-
-            $grouped[$inventoryItemId]['planned_quantity'] += (float) ($row->default_quantity ?? 0);
-            $grouped[$inventoryItemId]['is_critical'] =
-                $grouped[$inventoryItemId]['is_critical'] || (bool) ($row->is_critical ?? false);
-
-            $rowTolerance = (float) ($row->tolerance_percent ?? 20);
-            $grouped[$inventoryItemId]['tolerance_percent'] = max(
-                (float) $grouped[$inventoryItemId]['tolerance_percent'],
-                $rowTolerance
-            );
-        }
-
-        foreach ($grouped as $inventoryItemId => $line) {
-            $grouped[$inventoryItemId]['planned_quantity'] = round(max((float) $line['planned_quantity'], 0), 2);
-            $grouped[$inventoryItemId]['tolerance_percent'] = round(max((float) $line['tolerance_percent'], 0), 2);
-        }
-
-        return array_filter($grouped, fn ($line) => (float) $line['planned_quantity'] > 0);
+        app(RepairMaterialPlanningService::class)->ensurePlan($repairRequest);
     }
 
     private function repairHasConfiguredMaterialTemplates(RepairRequest $repairRequest): bool
     {
-        $repairRequest->loadMissing([
-            'repairPackage.materialTemplateItems:id,template_id,template_type',
-            'services.materialTemplateItems:id,template_id,template_type',
-        ]);
+        $this->ensureRepairMaterialPlanItems($repairRequest);
 
-        $packageTemplateCount = (int) ($repairRequest->repairPackage?->materialTemplateItems?->count() ?? 0);
-        $serviceTemplateCount = (int) $repairRequest->services->sum(
-            fn ($service) => (int) $service->materialTemplateItems->count()
-        );
-
-        return ($packageTemplateCount + $serviceTemplateCount) > 0;
+        return !empty($repairRequest->material_plan_snapshot['items']);
     }
 
     private function validateMaterialLoggingGateForTransition(

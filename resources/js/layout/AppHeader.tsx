@@ -144,8 +144,8 @@ const AppHeader: React.FC = () => {
         >
           <div className="flex items-center gap-2 2xsm:gap-3">
             <NotificationCenter
-              apiBasePath={auth?.super_admin ? '/api/admin/notifications' : '/api/notifications'}
-              viewAllHref={auth?.super_admin ? '/admin/notifications' : '/erp/notifications'}
+              apiBasePath={auth?.super_admin ? '/api/admin/notifications' : auth?.shop_owner ? '/api/shop-owner/notifications' : '/api/staff/notifications'}
+              viewAllHref={auth?.super_admin ? '/admin/notifications' : auth?.shop_owner ? '/shop-owner/notifications' : '/erp/notifications'}
               triggerClassName="relative inline-flex h-11 w-11 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-900 transition-colors hover:bg-gray-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100 dark:hover:bg-gray-800"
               iconClassName="h-5 w-5 text-gray-900 dark:text-gray-100"
               unreadIconClassName="h-5 w-5 text-gray-900 dark:text-gray-100"

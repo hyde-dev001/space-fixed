@@ -34,6 +34,7 @@ enum NotificationType: string
     case HIGH_VALUE_APPROVAL = 'high_value_approval';
     case REFUND_REQUEST = 'refund_request';
     case LOW_STOCK_ALERT = 'low_stock_alert';
+    case SUPPLIER_ORDER_OVERDUE = 'supplier_order_overdue';
     case EMPLOYEE_SUSPENSION_REQUEST = 'employee_suspension_request';
     case EMPLOYEE_TERMINATION_REQUEST = 'employee_termination_request';
     case EMPLOYEE_REHIRE_REQUEST = 'employee_rehire_request';
@@ -164,6 +165,7 @@ enum NotificationType: string
             self::HIGH_VALUE_APPROVAL => 'High Value Approval',
             self::REFUND_REQUEST => 'Refund Request',
             self::LOW_STOCK_ALERT => 'Low Stock Alert',
+            self::SUPPLIER_ORDER_OVERDUE => 'Overdue Supplier Order',
             self::EMPLOYEE_SUSPENSION_REQUEST => 'Employee Suspension Request',
             self::EMPLOYEE_TERMINATION_REQUEST => 'Employee Termination Request',
             self::EMPLOYEE_REHIRE_REQUEST => 'Employee Rehire Request',

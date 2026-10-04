@@ -273,6 +273,11 @@ const Invoice: React.FC = () => {
     page.props.erpCapabilities,
     'GET:finance.create-invoice',
   );
+  const canMutateInvoice = (capability: string) => !ownerMode && canUseErpCapability(page.props.erpCapabilities, capability);
+  const canMarkSent = canMutateInvoice('POST:finance.invoices.mark_sent');
+  const canRecordPayment = canMutateInvoice('POST:finance.invoices.payments.store');
+  const canArchiveInvoice = canMutateInvoice('DELETE:finance.invoices.destroy');
+  const canRestoreInvoice = canMutateInvoice('POST:finance.invoices.restore');
   const api = useFinanceApi();
   
   const [selectedTab, setSelectedTab] = useState<TabFilter>("all");
@@ -289,6 +294,7 @@ const Invoice: React.FC = () => {
   const itemsPerPage = 10;
 
   const handleMarkInvoiceSent = async (invoiceId: string) => {
+    if (!canMarkSent) return;
     const result = await Swal.fire({
       title: 'Mark invoice as sent?',
       text: 'This records an internal status change only. It does not send email or notify the customer.',
@@ -320,6 +326,7 @@ const Invoice: React.FC = () => {
   };
 
   const handleMarkAsPaid = async (invoiceId: string) => {
+    if (!canRecordPayment) return;
     const currentInvoice = invoices.find((invoice) => String(invoice.id) === String(invoiceId));
     const defaultAmount = currentInvoice?.payment_state?.remaining_balance ?? currentInvoice?.total ?? 0;
     const { value: formValues } = await Swal.fire({
@@ -726,6 +733,7 @@ const Invoice: React.FC = () => {
   };
 
   const handleArchiveInvoice = async (invoice: Invoice) => {
+    if (!canArchiveInvoice) return;
     const result = await Swal.fire({
       title: 'Archive Invoice?',
       text: `This will move ${invoice.reference} to the archived list.`,
@@ -760,6 +768,7 @@ const Invoice: React.FC = () => {
   };
 
   const handleRestoreInvoice = async (invoice: Invoice) => {
+    if (!canRestoreInvoice) return;
     const result = await Swal.fire({
       title: 'Restore Invoice?',
       text: `This will return ${invoice.reference} to the active list.`,
@@ -847,6 +856,7 @@ const Invoice: React.FC = () => {
   };
 
   const handleModalMarkSent = async (invoice: Invoice) => {
+    if (!canMarkSent) return;
     const status = getEffectiveInvoiceStatus(invoice);
     if (status !== 'draft') {
       await Swal.fire('Already Processed', 'This invoice has already been sent or finalized.', 'info');
@@ -857,6 +867,7 @@ const Invoice: React.FC = () => {
   };
 
   const handleCreateInvoice = () => {
+    if (!canCreateInvoice) return;
     router.visit('/finance?section=create-invoice');
   };
 
@@ -1173,7 +1184,7 @@ const Invoice: React.FC = () => {
                         >
                           <EyeIcon className="size-5 text-gray-700 dark:text-gray-300" />
                         </button>
-                        {effectiveStatus === 'draft' && (
+                        {canMarkSent && effectiveStatus === 'draft' && (
                           <button 
                             onClick={() => handleMarkInvoiceSent(invoice.id)}
                             disabled={markingSentId === invoice.id}
@@ -1192,7 +1203,7 @@ const Invoice: React.FC = () => {
                             )}
                           </button>
                         )}
-                        {(effectiveStatus === 'sent' || effectiveStatus === 'overdue') && !invoice.job_order_id && (
+                        {canRecordPayment && (effectiveStatus === 'sent' || effectiveStatus === 'overdue') && !invoice.job_order_id && (
                           <button 
                             onClick={() => handleMarkAsPaid(invoice.id)}
                             disabled={markingPaidId === invoice.id}
@@ -1210,7 +1221,7 @@ const Invoice: React.FC = () => {
                           </button>
                         )}
                         {showArchived ? (
-                          <button 
+                          canRestoreInvoice && <button
                             onClick={() => handleRestoreInvoice(invoice)}
                             className="p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
                             title="Restore Invoice"
@@ -1218,7 +1229,7 @@ const Invoice: React.FC = () => {
                             <ArchiveRestoreIcon className="size-5 text-gray-700 dark:text-gray-300" />
                           </button>
                         ) : (
-                          !invoice.deleted_at && (
+                          canArchiveInvoice && !invoice.deleted_at && (
                             <button 
                               onClick={() => handleArchiveInvoice(invoice)}
                               className="p-2 rounded-lg transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
@@ -1448,7 +1459,7 @@ const Invoice: React.FC = () => {
                     <ArrowDownTrayIcon className="size-4" />
                   </button>
                   {!selectedInvoice.deleted_at ? (
-                    <button
+                    canArchiveInvoice && <button
                       onClick={() => handleArchiveInvoice(selectedInvoice)}
                       className="flex-1 px-3 py-2.5 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
@@ -1456,7 +1467,7 @@ const Invoice: React.FC = () => {
                       Archive
                     </button>
                   ) : (
-                    <button
+                    canRestoreInvoice && <button
                       onClick={() => handleRestoreInvoice(selectedInvoice)}
                       className="flex-1 px-3 py-2.5 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                     >
@@ -1464,7 +1475,7 @@ const Invoice: React.FC = () => {
                       Restore
                     </button>
                   )}
-                  <button
+                  {canMarkSent && getEffectiveInvoiceStatus(selectedInvoice) === 'draft' && <button
                     onClick={() => handleModalMarkSent(selectedInvoice)}
                     className="flex-1 px-3 py-2.5 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
@@ -1472,7 +1483,7 @@ const Invoice: React.FC = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                     Mark as sent
-                  </button>
+                  </button>}
                   <button
                     onClick={() => setIsViewModalOpen(false)}
                     className="px-3 py-2.5 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg text-sm font-medium transition-colors"

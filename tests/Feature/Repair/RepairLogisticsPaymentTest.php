@@ -835,7 +835,9 @@ class RepairLogisticsPaymentTest extends TestCase
         ]);
         $finalServiceDue = 700.0;
 
-        $this->actingAs(User::factory()->create(['shop_owner_id' => $repair->shop_owner_id]), 'user')
+        $cashier = User::factory()->create(['shop_owner_id' => $repair->shop_owner_id]);
+        $this->clockInEmployee($cashier);
+        $this->actingAs($cashier, 'user')
             ->postJson('/api/repair-pos/checkout', [
                 'repair_request_id' => $repair->id,
                 'due_type' => 'balance',
@@ -976,6 +978,53 @@ class RepairLogisticsPaymentTest extends TestCase
         $this->assertSame('paid', $repair->fresh()->payment_status);
     }
 
+    public function test_public_return_rejects_missing_tampered_expired_future_and_wrong_resource_signatures(): void
+    {
+        [$repair] = $this->coveredRepair('full_upfront', 1000);
+        Http::fake();
+        $now = now()->timestamp;
+        $signature = fn (int $id, int $ts) => hash_hmac('sha256', "repair:return:{$id}:{$ts}", (string) config('app.key'));
+        foreach ([
+            [],
+            ['return_ts' => $now, 'return_sig' => 'tampered'],
+            ['return_ts' => $now - 86401, 'return_sig' => $signature($repair->id, $now - 86401)],
+            ['return_ts' => $now + 301, 'return_sig' => $signature($repair->id, $now + 301)],
+            ['return_ts' => $now, 'return_sig' => $signature($repair->id + 1, $now)],
+        ] as $input) {
+            $this->postJson("/api/customer/repairs/{$repair->id}/verify-payment-return", $input)->assertUnauthorized();
+        }
+        Http::assertNothingSent();
+        $this->assertSame('pending', $repair->fresh()->payment_status);
+    }
+
+    public function test_authenticated_return_cannot_use_another_customers_valid_signature(): void
+    {
+        [$repair] = $this->coveredRepair('full_upfront', 1000);
+        Http::fake();
+        $ts = now()->timestamp;
+        $this->actingAs(User::factory()->create(), 'user')
+            ->postJson("/api/customer/repairs/{$repair->id}/verify-payment-return", [
+                'return_ts' => $ts,
+                'return_sig' => hash_hmac('sha256', "repair:return:{$repair->id}:{$ts}", (string) config('app.key')),
+            ])->assertNotFound();
+        Http::assertNothingSent();
+    }
+
+    public function test_signed_success_flag_with_pending_provider_evidence_does_not_settle(): void
+    {
+        [$repair] = $this->coveredRepair('full_upfront', 1000);
+        $repair->update(['status' => 'repairer_accepted', 'paymongo_link_id' => 'cs_pending_return']);
+        Http::fake(['api.paymongo.com/*' => Http::response(['data' => ['attributes' => ['payment_status' => 'unpaid', 'payments' => []]]])]);
+        $ts = now()->timestamp;
+        $this->postJson("/api/customer/repairs/{$repair->id}/verify-payment-return", [
+            'paymongo_success' => 1, 'return_ts' => $ts,
+            'return_sig' => hash_hmac('sha256', "repair:return:{$repair->id}:{$ts}", (string) config('app.key')),
+        ])->assertOk()->assertJsonPath('payment_verified', false);
+        Http::assertSentCount(1);
+        $this->assertSame('pending', $repair->fresh()->payment_status);
+        $this->assertEquals(0, $repair->fresh()->total_paid_amount);
+    }
+
     private function coveredRepair(string $policy, float $serviceTotal): array
     {
         $customer = User::factory()->create([
@@ -988,11 +1037,17 @@ class RepairLogisticsPaymentTest extends TestCase
             'shop_longitude' => 120.9842,
             'paymongo_secret_key' => 'sk_test_repair_logistics',
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         LogisticsSetting::create([
             'shop_owner_id' => $shop->id,
             'coverage_radius_km' => 12,
         ]);
         $actor = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($actor);
         $address = UserAddress::create([
             'user_id' => $customer->id,
             'name' => $customer->name,

@@ -136,6 +136,7 @@ class RepairReturnHandoffTest extends TestCase
             'role' => 'REPAIRER',
             'status' => 'active',
         ]);
+        $this->clockInEmployee($repairer);
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,
             'user_id' => null,
@@ -198,6 +199,7 @@ class RepairReturnHandoffTest extends TestCase
         ]);
         Permission::findOrCreate('approve-proof-of-delivery', 'user');
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo('approve-proof-of-delivery');
 
         $this->actingAs($repairer, 'user')
@@ -251,6 +253,7 @@ class RepairReturnHandoffTest extends TestCase
         ]);
         Permission::findOrCreate('approve-proof-of-delivery', 'user');
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($dispatcher);
         $dispatcher->givePermissionTo('approve-proof-of-delivery');
 
         $this->actingAs($dispatcher, 'user')
@@ -289,6 +292,7 @@ class RepairReturnHandoffTest extends TestCase
             'role' => 'REPAIRER',
             'status' => 'active',
         ]);
+        $this->clockInEmployee($otherRepairer);
         $otherShop = ShopOwner::factory()->approved()->create([
             'business_type' => 'repair',
             'registration_type' => 'individual',
@@ -661,6 +665,7 @@ class RepairReturnHandoffTest extends TestCase
             'role' => 'REPAIRER',
             'status' => 'active',
         ]);
+        $this->clockInEmployee($repairer);
         $customer = User::factory()->create();
         $repair = RepairRequest::factory()->create([
             'shop_owner_id' => $shop->id,

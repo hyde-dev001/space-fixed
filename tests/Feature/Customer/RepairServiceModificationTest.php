@@ -218,7 +218,7 @@ class RepairServiceModificationTest extends TestCase
             ])
             ->assertNotFound();
 
-        $repair->update(['status' => 'pending']);
+        $repair->update(['status' => 'confirmed']);
         $this->actingAs($this->customer, 'user')
             ->patchJson("/api/customer/repairs/{$repair->id}/services", [
                 'service_ids' => [$service->id],

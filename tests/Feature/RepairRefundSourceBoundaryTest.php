@@ -109,6 +109,7 @@ class RepairRefundSourceBoundaryTest extends TestCase
         $otherShopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($finance);
         $customer = User::factory()->create();
 
         $retailSource = PosTransaction::create([
@@ -216,6 +217,7 @@ class RepairRefundSourceBoundaryTest extends TestCase
         $this->assertSame([$assignedRefund->id], $queueIds);
         $this->assertNotContains($peerRefund->id, $queueIds);
         $this->assertNotContains($otherShopRefund->id, $queueIds);
+        $this->clockInEmployee($repairer);
 
         $this->actingAs($repairer, 'user')
             ->postJson("/api/repairer/refunds/{$peerRefund->id}/approve", [
@@ -235,6 +237,7 @@ class RepairRefundSourceBoundaryTest extends TestCase
         $shopOwner = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $finance = User::factory()->create(['shop_owner_id' => $shopOwner->id]);
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($finance);
         $customer = User::factory()->create();
         $repair = $this->createRepair($shopOwner, $customer, null, 'SERIALIZER');
         $source = $this->createSource($shopOwner, $customer, $repair, 'SERIALIZER');
@@ -353,7 +356,8 @@ class RepairRefundSourceBoundaryTest extends TestCase
             'images' => json_encode([]),
             'total' => 500,
             'final_total' => 500,
-            'status' => 'pending',
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDay(),
             'payment_policy' => 'full_upfront',
             'payment_policy_snapshot' => 'full_upfront',
             'payment_status' => 'paid',

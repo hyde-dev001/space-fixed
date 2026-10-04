@@ -40,6 +40,7 @@ class PlatformFeeAdminBoundaryTest extends TestCase
         }
 
         $admin = SuperAdmin::factory()->admin()->mfaEnrolled()->create();
+        \App\Models\AdminPagePermission::grant($admin, \App\Enums\AdminPage::PLATFORM_FEES);
         $this->actingAsCompletedPrivileged($admin)
             ->get('/admin/platform-fees')
             ->assertOk();

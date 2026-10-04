@@ -104,6 +104,11 @@ class RepairDeliveryQuoteTest extends TestCase
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         LogisticsSetting::create([
             'shop_owner_id' => $shop->id,
             'coverage_radius_km' => 10,

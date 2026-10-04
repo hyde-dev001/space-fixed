@@ -1386,6 +1386,7 @@ $ownerReadApiPairs = [
     'hr.audit.index' => 'shop-owner.erp.api.hr.audit-logs',
     'finance.audit.index' => 'shop-owner.erp.api.finance.audit-logs',
     'api.manager.reports.index' => 'shop-owner.erp.api.manager.reports',
+    'api.manager.reports.download' => 'shop-owner.erp.api.manager.reports.download',
     'api.manager.audit-logs' => 'shop-owner.erp.api.manager.audit-logs',
     'inventory.dashboard' => 'shop-owner.erp.api.inventory.dashboard',
     'inventory.products.index' => 'shop-owner.erp.api.inventory.products.index',

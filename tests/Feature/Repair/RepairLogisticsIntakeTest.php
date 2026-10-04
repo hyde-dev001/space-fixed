@@ -209,6 +209,11 @@ class RepairLogisticsIntakeTest extends TestCase
             'shop_latitude' => 14.5995,
             'shop_longitude' => 120.9842,
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]);
+        }
         $settings = LogisticsSetting::create([
             'shop_owner_id' => $shop->id,
             'coverage_radius_km' => 12,
@@ -225,6 +230,7 @@ class RepairLogisticsIntakeTest extends TestCase
             'role' => 'REPAIRER',
             'status' => 'active',
         ]);
+        $this->clockInEmployee($repairer);
         $address = UserAddress::create([
             'user_id' => $customer->id,
             'name' => $customer->name,

@@ -7,6 +7,8 @@ import React, { useState } from 'react';
 import { Bell } from 'lucide-react';
 import { useUnreadCount } from '../../hooks/useNotifications';
 import NotificationDropdown from './NotificationDropdown';
+import { usePage } from '@inertiajs/react';
+import { notificationIdentity, type NotificationAuth } from '../../hooks/useNotificationIdentity';
 
 interface NotificationBellProps {
   basePath?: string;
@@ -15,7 +17,12 @@ interface NotificationBellProps {
   badgeClassName?: string;
 }
 
-const NotificationBell: React.FC<NotificationBellProps> = ({ 
+const NotificationBell: React.FC<NotificationBellProps> = (props) => {
+  const { auth } = usePage<{ auth?: NotificationAuth }>().props;
+  return <NotificationBellContent key={notificationIdentity(auth)} {...props} />;
+};
+
+const NotificationBellContent: React.FC<NotificationBellProps> = ({
   basePath = '/api/notifications',
   className = '',
   iconSize = 24,

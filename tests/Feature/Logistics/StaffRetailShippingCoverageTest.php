@@ -236,7 +236,7 @@ class StaffRetailShippingCoverageTest extends TestCase
         $this->assertSame('shipped', $this->order->fresh()->status->value);
     }
 
-    public function test_disabled_logistics_does_not_interrupt_an_already_assigned_shop_owned_shipment(): void
+    public function test_selected_carrier_without_started_shipment_does_not_bypass_disabled_logistics(): void
     {
         Order::query()->whereKey($this->order->id)->update(['carrier_company' => 'Shop-owned logistics']);
         $this->assertSame('Shop-owned logistics', $this->order->fresh()->carrier_company);
@@ -247,10 +247,10 @@ class StaffRetailShippingCoverageTest extends TestCase
                 'status' => 'shipped',
                 'carrier_company' => 'Shop-owned logistics',
             ])
-            ->assertOk();
+            ->assertForbidden()->assertJsonPath('code', 'MODULE_DISABLED');
 
-        $this->assertSame('shipped', $this->order->fresh()->status->value);
-        $this->assertDatabaseHas('shipments', [
+        $this->assertSame('processing', $this->order->fresh()->status->value);
+        $this->assertDatabaseMissing('shipments', [
             'source_type' => 'order',
             'source_id' => $this->order->id,
             'purpose' => 'retail_delivery',
@@ -298,7 +298,7 @@ class StaffRetailShippingCoverageTest extends TestCase
             ->assertJsonPath('refund.return_status', 'in_transit');
     }
 
-    public function test_disabled_logistics_does_not_interrupt_an_already_selected_shop_owned_return(): void
+    public function test_selected_return_carrier_without_started_shipment_does_not_bypass_disabled_logistics(): void
     {
         $refund = OrderRefund::factory()->create([
             'order_id' => $this->order->id,
@@ -314,10 +314,9 @@ class StaffRetailShippingCoverageTest extends TestCase
             ->postJson("/api/staff/orders/{$this->order->id}/arrange-return-pickup", [
                 'delivery_method' => 'shop_owned',
             ])
-            ->assertOk()
-            ->assertJsonPath('refund.return_status', 'pending_staff_pickup');
+            ->assertForbidden()->assertJsonPath('code', 'MODULE_DISABLED');
 
-        $this->assertDatabaseHas('shipments', [
+        $this->assertDatabaseMissing('shipments', [
             'source_type' => 'order_refund',
             'source_id' => $refund->id,
             'purpose' => 'refund_return',

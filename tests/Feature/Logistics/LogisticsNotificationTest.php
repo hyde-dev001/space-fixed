@@ -54,7 +54,12 @@ class LogisticsNotificationTest extends TestCase
     {
         $this->seed(RolesAndPermissionsSeeder::class);
 
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
         $dispatcher->assignRole('Logistics Dispatcher');
 
@@ -206,7 +211,7 @@ class LogisticsNotificationTest extends TestCase
 
     public function test_rider_is_notified_when_a_delivery_is_assigned(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company']);
         $riderUser = User::factory()->create(['shop_owner_id' => $shop->id]);
         $rider = RiderProfile::factory()->create([
             'shop_owner_id' => $shop->id,
@@ -227,7 +232,7 @@ class LogisticsNotificationTest extends TestCase
 
     public function test_rider_is_notified_once_when_a_batch_is_offered(): void
     {
-        $shop = ShopOwner::factory()->create([
+        $shop = ShopOwner::factory()->withLogistics()->create([
             'registration_type' => 'company',
             'business_type' => 'retail',
         ]);
@@ -276,7 +281,7 @@ class LogisticsNotificationTest extends TestCase
     public function test_dispatcher_is_notified_for_each_batch_rejection_event(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);
-        $shop = ShopOwner::factory()->create([
+        $shop = ShopOwner::factory()->withLogistics()->create([
             'registration_type' => 'company',
             'business_type' => 'retail',
         ]);

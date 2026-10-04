@@ -698,6 +698,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
 
         Permission::findOrCreate('access-refund-approval', 'user');
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($finance);
 
         $source = PosTransaction::create([
             'transaction_no' => 'POS-MIX-EXEC-001',
@@ -762,6 +763,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
 
         Permission::findOrCreate('access-refund-approval', 'user');
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($finance);
 
         $source = PosTransaction::create([
             'transaction_no' => 'POS-MIX-EXEC-IMG-001',
@@ -990,6 +992,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
 
         Permission::findOrCreate('access-refund-approval', 'user');
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($finance);
 
         $source = PosTransaction::create([
             'transaction_no' => 'POS-MIX-EXEC-GW-001',
@@ -1056,6 +1059,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
 
         Permission::findOrCreate('access-refund-approval', 'user');
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($finance);
 
         $repair = $this->createRepairRequest($shopOwner, $customer, [
             'total' => 950,
@@ -1175,6 +1179,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
 
         Permission::findOrCreate('access-refund-approval', 'user');
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($finance);
 
         $source = PosTransaction::create([
             'transaction_no' => 'POS-MIX-EXEC-GW-CLAMP-001',
@@ -1301,6 +1306,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
 
         Permission::findOrCreate('access-refund-approval', 'user');
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($finance);
 
         $repair = $this->createRepairRequest($shopOwner, $finance, [
             'total' => 300,
@@ -1500,6 +1506,7 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
 
         Permission::findOrCreate('access-refund-approval', 'user');
         $finance->givePermissionTo('access-refund-approval');
+        $this->clockInEmployee($finance);
 
         $source = PosTransaction::create([
             'transaction_no' => 'POS-MIX-EXEC-GW-MULTI-001',
@@ -2115,7 +2122,8 @@ class RepairMixedRefundSplitSettlementTest extends TestCase
             'images' => json_encode([]),
             'total' => 1000,
             'final_total' => 1000,
-            'status' => 'for_release',
+            'status' => 'picked_up',
+            'picked_up_at' => now()->subDay(),
             'payment_policy' => 'full_upfront',
             'payment_policy_snapshot' => 'full_upfront',
             'payment_status_derived' => 'paid',

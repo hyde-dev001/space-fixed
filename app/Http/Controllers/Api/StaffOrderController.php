@@ -10,6 +10,7 @@ use App\Models\OrderRefund;
 use App\Models\PosTransaction;
 use App\Models\User;
 use App\Services\Logistics\DeliveryScheduleService;
+use App\Services\Logistics\LogisticsMovementEligibility;
 use App\Services\OrderRefundService;
 use App\Services\CodCollectionService;
 use App\Services\Orders\OrderFulfillmentService;
@@ -49,6 +50,7 @@ class StaffOrderController extends Controller
         private readonly DeliveryScheduleService $deliveryScheduleService,
         private readonly CodCollectionService $codCollectionService,
         private readonly ShopModuleAccessService $shopModuleAccessService,
+        private readonly LogisticsMovementEligibility $logisticsMovements,
     ) {}
 
     public function index(Request $request)
@@ -674,13 +676,12 @@ class StaffOrderController extends Controller
 
         $carrierCompany = $validated['carrier_company'] ?? $order->carrier_company;
         $isShopOwned = strtolower(trim((string) $carrierCompany)) === 'shop-owned logistics';
-        $wasShopOwned = strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics';
         if ($isShopOwned) {
             $validated['carrier_company'] = 'Shop-owned logistics';
         }
 
         if ($validated['status'] === 'shipped' && $isShopOwned) {
-            if (! $wasShopOwned) {
+            if (! $this->canContinueMovement($order, 'order', (int) $order->id, 'retail_delivery')) {
                 if ($blocked = $this->logisticsModuleBlocked($order)) {
                     return $blocked;
                 }
@@ -779,6 +780,16 @@ class StaffOrderController extends Controller
                 'coverage_radius_km' => null,
             ];
         }
+    }
+
+    private function canContinueMovement(Order $order, string $sourceType, int $sourceId, string $purpose): bool
+    {
+        $shipment = Shipment::query()->where('shop_owner_id', $order->shop_owner_id)
+            ->where('source_type', $sourceType)->where('source_id', $sourceId)
+            ->where('purpose', $purpose)->where('status', '!=', 'cancelled')->latest('id')->first();
+
+        return $shipment && $order->shopOwner
+            && $this->logisticsMovements->canContinueShipment($order->shopOwner, $shipment);
     }
 
     private function logisticsModuleBlocked(Order $order)
@@ -923,8 +934,7 @@ class StaffOrderController extends Controller
             ], 404);
         }
 
-        $existingShopOwnedReturn = $refund->isShopOwnedReturn();
-        if ($isShopOwned && ! $existingShopOwnedReturn) {
+        if ($isShopOwned && ! $this->canContinueMovement($order, 'order_refund', (int) $refund->id, 'refund_return')) {
             if ($blocked = $this->logisticsModuleBlocked($order)) {
                 return $blocked;
             }

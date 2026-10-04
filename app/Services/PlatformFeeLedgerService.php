@@ -167,14 +167,16 @@ final class PlatformFeeLedgerService
     private function isEligibleRepair(RepairRequest $repair): bool
     {
         if ($this->originForRepair($repair) !== 'marketplace'
+            || (bool) $repair->is_warranty_job
             || in_array(strtolower((string) ($repair->billing_mode ?? '')), ['warranty_no_charge', 'warranty'], true)
-            || ! in_array(strtolower((string) $repair->status), ['completed', 'ready-for-pickup'], true)
+            || data_get($repair->logistics_payment_reconciliation, 'status') === 'pending'
+            || ! in_array(strtolower((string) $repair->status), ['completed', 'ready-for-pickup', 'ready_for_pickup', 'picked_up', 'shipped'], true)
         ) {
             return false;
         }
 
         $total = $this->decimal((string) ($repair->final_total ?? $repair->total ?? '0.00'), 2);
-        $paid = $this->decimal((string) ($repair->total_paid_amount ?? '0.00'), 2);
+        $paid = $this->decimal((string) app(PaymentSettlementService::class)->repairServicePaidAmount($repair), 2);
 
         return $total->isGreaterThan(0)
             && in_array(strtolower((string) ($repair->payment_status ?? '')), ['paid', 'completed'], true)

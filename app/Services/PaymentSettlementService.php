@@ -799,7 +799,14 @@ class PaymentSettlementService
     {
         $policy = $this->normalizeRepairPaymentPolicy($repair->payment_policy_snapshot ?: $repair->payment_policy);
         $serviceTotal = $this->resolveRepairServiceTotal($repair, $policy, 'initial');
+
+        return max(0, round($serviceTotal - $this->repairServicePaidAmount($repair), 2));
+    }
+
+    public function repairServicePaidAmount(RepairRequest $repair): float
+    {
         $posServicePaid = (float) PosTransaction::query()
+            ->where('shop_owner_id', $repair->shop_owner_id)
             ->where('module_type', 'repair')
             ->where('module_reference_id', $repair->id)
             ->whereIn('status', ['paid', 'partially_refunded', 'refunded'])
@@ -827,9 +834,7 @@ class PaymentSettlementService
         $fallbackDelivery = ($repair->intake_logistics_locked_at ? (float) $repair->intake_delivery_fee : 0)
             + ($repair->return_logistics_locked_at ? (float) $repair->return_delivery_fee : 0);
         $fallbackServicePaid = max(0, (float) $repair->total_paid_amount - $fallbackDelivery);
-        $servicePaid = max($fallbackServicePaid, $posServicePaid + $sessionServicePaid + $credits);
-
-        return max(0, round($serviceTotal - $servicePaid, 2));
+        return max(0, round(max($fallbackServicePaid, $posServicePaid + $sessionServicePaid + $credits), 2));
     }
 
     private function resolveRepairTotalPaidAmount(RepairRequest $repair, float $grandTotal, string $policy): float

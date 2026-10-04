@@ -408,10 +408,15 @@ class FailedDeliveryRefundWorkflowTest extends TestCase
 
     private function paidOrderWithOutboundLeg(): array
     {
-        $shop = ShopOwner::factory()->approved()->create([
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company',
             'business_type' => 'retail',
             'paymongo_secret_key' => 'sk_test_failed_delivery',
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $customer = User::factory()->create();
         $product = Product::create([
             'shop_owner_id' => $shop->id,

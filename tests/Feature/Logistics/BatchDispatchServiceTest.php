@@ -25,7 +25,7 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_assigned_unscheduled_leg_can_be_scheduled(): void
     {
-        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['business_type' => 'retail']);
         LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], [
             'operating_days' => [1, 2, 3, 4, 5, 6, 7],
             'blackout_dates' => [],
@@ -48,7 +48,7 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_schedule_rejects_ineligible_legs(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->withLogistics()->create();
         LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], [
             'operating_days' => [1, 2, 3, 4, 5, 6, 7],
             'blackout_dates' => [],
@@ -91,7 +91,7 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_create_draft_rejects_a_shop_closed_delivery_date(): void
     {
-        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['business_type' => 'retail']);
         LogisticsSetting::create([
             'shop_owner_id' => $shop->id,
             'operating_days' => [1, 2, 3, 4, 5],
@@ -113,7 +113,7 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_draft_offer_accept_and_start_preserve_individual_leg_state(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
         $legs = ShipmentLeg::factory()->count(2)->create([
@@ -135,7 +135,7 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_batch_offer_rejects_an_unlinked_employee_rider(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $rider = RiderProfile::query()->create([
             'shop_owner_id' => $shop->id,
             'rider_type' => 'employee',
@@ -167,7 +167,7 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_rejection_returns_batch_to_draft_and_cancellation_returns_legs_to_pool(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
         $legs = ShipmentLeg::factory()->count(2)->create([
             'shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order'])->id,
@@ -183,7 +183,7 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_rejection_reason_and_cancel_are_recorded(): void
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'active' => true, 'availability_status' => 'available']);
         $shipment = Shipment::factory()->create([
             'shop_owner_id' => $shop->id, 'source_type' => 'order', 'source_id' => 72,
@@ -294,12 +294,19 @@ class BatchDispatchServiceTest extends TestCase
         [, $legs, $service] = $this->draftFixture();
         $leg = $legs->first();
         $this->assertNull($leg->urgent_at);
-        DB::statement('CREATE TRIGGER ignore_unchanged_urgency BEFORE UPDATE OF urgent_at ON shipment_legs
-            WHEN NEW.urgent_at IS OLD.urgent_at BEGIN SELECT RAISE(IGNORE); END');
+        $sqlite = DB::connection()->getDriverName() === 'sqlite';
+        if ($sqlite) {
+            DB::statement('CREATE TRIGGER ignore_unchanged_urgency BEFORE UPDATE OF urgent_at ON shipment_legs
+                WHEN NEW.urgent_at IS OLD.urgent_at BEGIN SELECT RAISE(IGNORE); END');
+        } else {
+            $this->assertSame(0, DB::table('shipment_legs')->where('id', $leg->id)->update(['urgent_at' => null]));
+        }
         try {
             $updated = $service->markUrgent($leg, false);
         } finally {
-            DB::statement('DROP TRIGGER ignore_unchanged_urgency');
+            if ($sqlite) {
+                DB::statement('DROP TRIGGER ignore_unchanged_urgency');
+            }
         }
 
         $this->assertNull($updated->delivery_batch_id);
@@ -648,7 +655,7 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_batch_creation_and_replacement_reject_single_or_mixed_module_stops_without_mutation(): void
     {
-        $shop = ShopOwner::factory()->create(['business_type' => 'both']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['business_type' => 'both']);
         $retailShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
         $repairShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'repair_request']);
         $retailLegs = ShipmentLeg::factory()->count(2)->create([
@@ -700,7 +707,7 @@ class BatchDispatchServiceTest extends TestCase
 
     public function test_shop_module_rules_reject_disallowed_batch_and_schedule_before_settings_or_leg_changes(): void
     {
-        $shop = ShopOwner::factory()->create(['business_type' => 'repair']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['business_type' => 'repair']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
         $legs = ShipmentLeg::factory()->count(2)->create([
             'shipment_id' => $shipment->id,
@@ -739,7 +746,7 @@ class BatchDispatchServiceTest extends TestCase
 
     private function draftFixture(int $count = 2): array
     {
-        $shop = ShopOwner::factory()->create(['registration_type' => 'company', 'business_type' => 'retail']);
+        $shop = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company', 'business_type' => 'retail']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order']);
         $legs = ShipmentLeg::factory()->count($count)->create([
             'shipment_id' => $shipment->id, 'scheduled_delivery_date' => '2026-07-15',

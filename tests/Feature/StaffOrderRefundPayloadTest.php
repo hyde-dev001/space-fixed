@@ -393,10 +393,15 @@ class StaffOrderRefundPayloadTest extends TestCase
 
     private function refundFixture(): array
     {
-        $shop = ShopOwner::factory()->approved()->create([
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company',
             'business_type' => 'retail',
             'paymongo_secret_key' => 'sk_test_refund_payload',
         ]);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $customer = User::factory()->create();
         $staff = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
         $finance = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'Finance']);

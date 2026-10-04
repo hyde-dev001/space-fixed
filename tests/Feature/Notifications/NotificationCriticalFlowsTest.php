@@ -144,6 +144,23 @@ class NotificationCriticalFlowsTest extends TestCase
         $response = $this->actingAs($shopOwner, 'shop_owner')
             ->patchJson("/api/shop-owner/orders/{$order->id}/status", [
                 'status' => 'shipped',
+                'delivery_method' => 'shop_owned',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('logistics');
+        $this->assertSame('processing', $order->fresh()->status->value);
+        $this->assertDatabaseMissing('notifications', [
+            'user_id' => $customer->id,
+            'type' => 'order_status_update',
+        ]);
+        $this->assertDatabaseCount('shipments', 0);
+
+        $response = $this->actingAs($shopOwner, 'shop_owner')
+            ->patchJson("/api/shop-owner/orders/{$order->id}/status", [
+                'status' => 'shipped',
+                'delivery_method' => 'third_party',
+                'carrier_company' => 'LBC',
+                'tracking_number' => 'ORD-TEST-2001-TRACKING',
             ]);
 
         $response->assertOk();

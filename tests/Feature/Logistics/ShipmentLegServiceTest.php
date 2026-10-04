@@ -42,12 +42,15 @@ class ShipmentLegServiceTest extends TestCase
         string $shopOwnerStatus,
         string $financeStatus,
     ): void {
+        $shop = ShopOwner::factory()->withLogistics()->create();
         $refund = OrderRefund::factory()->create([
+            'shop_owner_id' => $shop->id,
             'shop_owner_status' => $shopOwnerStatus,
             'finance_status' => $financeStatus,
             'return_status' => 'pending_staff_pickup',
         ]);
         $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
             'source_type' => 'order_refund',
             'source_id' => $refund->id,
             'purpose' => 'refund_return',
@@ -184,7 +187,7 @@ class ShipmentLegServiceTest extends TestCase
 
     public function test_rider_cannot_start_a_standalone_delivery_while_a_batch_has_active_work(): void
     {
-        $rider = RiderProfile::factory()->create();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => ShopOwner::factory()->withLogistics()->create()->id]);
         $batch = DeliveryBatch::factory()->create([
             'shop_owner_id' => $rider->shop_owner_id,
             'rider_profile_id' => $rider->id,
@@ -216,7 +219,7 @@ class ShipmentLegServiceTest extends TestCase
 
     public function test_rider_cannot_start_a_second_standalone_delivery(): void
     {
-        $rider = RiderProfile::factory()->create();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => ShopOwner::factory()->withLogistics()->create()->id]);
         $activeLeg = $this->standaloneLegFor($rider, 'in_transit');
         $leg = $this->standaloneLegFor($rider);
 
@@ -233,7 +236,7 @@ class ShipmentLegServiceTest extends TestCase
 
     public function test_repeating_start_for_the_same_standalone_delivery_is_idempotent(): void
     {
-        $rider = RiderProfile::factory()->create();
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => ShopOwner::factory()->withLogistics()->create()->id]);
         $leg = $this->standaloneLegFor($rider);
         $service = app(ShipmentLegService::class);
 
@@ -298,7 +301,12 @@ class ShipmentLegServiceTest extends TestCase
 
     public function test_completed_shop_owned_delivery_marks_its_order_delivered(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $order = Order::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'shipped',
@@ -358,7 +366,12 @@ class ShipmentLegServiceTest extends TestCase
 
     public function test_dispatcher_can_confirm_direct_refund_return_receipt_without_original_leg(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $refund = OrderRefund::factory()->create([
             'shop_owner_id' => $shop->id,
             'return_status' => 'pending_staff_pickup',
@@ -435,7 +448,12 @@ class ShipmentLegServiceTest extends TestCase
 
     public function test_failed_repair_pickup_detaches_only_its_batch_stop_and_replays_once(): void
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['registration_type' => 'company']);
+        if ($shop->isCompany()) {
+            \App\Models\ShopOwnerModule::updateOrCreate([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+            ], ['enabled' => true]);
+        }
         $batch = DeliveryBatch::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'in_progress',
@@ -610,7 +628,10 @@ class ShipmentLegServiceTest extends TestCase
     {
         $shop = $batch
             ? ShopOwner::query()->findOrFail($batch->shop_owner_id)
-            : ShopOwner::factory()->create();
+            : ShopOwner::factory()->create(['registration_type' => 'company']);
+        \App\Models\ShopOwnerModule::updateOrCreate([
+            'shop_owner_id' => $shop->id, 'module_key' => 'logistics',
+        ], ['enabled' => true]);
         $shipment = Shipment::factory()->create([
             'shop_owner_id' => $shop->id,
             'source_type' => 'repair_request',

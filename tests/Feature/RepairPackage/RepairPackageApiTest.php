@@ -584,6 +584,7 @@ class RepairPackageApiTest extends TestCase
         $repairer = User::factory()->create([
             'shop_owner_id' => $shopOwner->id,
         ]);
+        $this->clockInEmployee($repairer);
 
         $includedA = $this->createService($shopOwner, ['name' => 'Deep Clean', 'price' => 500]);
         $includedB = $this->createService($shopOwner, ['name' => 'Sole Reglue', 'price' => 800]);
@@ -638,7 +639,7 @@ class RepairPackageApiTest extends TestCase
 
         $repairRequest->refresh();
 
-        $this->assertSame('in-progress', $repairRequest->status);
+        $this->assertSame('in_progress', $repairRequest->status);
         $this->assertNotNull($repairRequest->started_at);
         $this->assertEquals(1100.0, (float) $repairRequest->total);
         $this->assertEquals(1100.0, (float) $repairRequest->package_price);

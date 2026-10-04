@@ -11,6 +11,7 @@ use App\Models\ShopOwner;
 use App\Services\PlatformBalanceService;
 use App\Services\PlatformFeePaymentService;
 use App\Services\PlatformFeeSettingsResolver;
+use App\Services\PlatformFeeSourceReferenceResolver;
 use App\Services\PlatformReliabilityService;
 use App\Support\Finance\FinanceShopContext;
 use Illuminate\Http\JsonResponse;
@@ -25,6 +26,7 @@ final class PlatformFeeController extends Controller
         private readonly PlatformFeePaymentService $payments,
         private readonly PlatformFeeSettingsResolver $settings,
         private readonly PlatformReliabilityService $reliability,
+        private readonly PlatformFeeSourceReferenceResolver $references,
     ) {}
 
     public function index(Request $request): JsonResponse
@@ -284,7 +286,13 @@ final class PlatformFeeController extends Controller
                 'total_charge',
                 'status',
                 'finalized_at',
+                'metadata',
             ]);
+        $references = $this->references->forCharges($charges, $shopId);
+        foreach ($charges as $charge) {
+            $charge->setAttribute('source_reference', $references[$charge->id]);
+            $charge->makeHidden('metadata');
+        }
 
         return response()->json([
             'balance' => $this->balance->summary($shopId),

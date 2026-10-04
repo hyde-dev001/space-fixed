@@ -80,6 +80,7 @@ class RepairPosRefundFlowTest extends TestCase
         $shopOwner = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = $this->createRepairRequest($shopOwner, null, [
             'shop_owner_id' => $shopOwner->id,
@@ -159,6 +160,7 @@ class RepairPosRefundFlowTest extends TestCase
         ]);
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = $this->createRepairRequest($shopOwner, null, [
             'shop_owner_id' => $shopOwner->id,
@@ -358,6 +360,7 @@ class RepairPosRefundFlowTest extends TestCase
 
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $response = $this->actingAs($actor, 'user')->postJson('/api/repair-pos/refunds', [
             'source_transaction_id' => $source->id,
@@ -416,6 +419,7 @@ class RepairPosRefundFlowTest extends TestCase
 
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $response = $this->actingAs($actor, 'user')->getJson('/api/repair-pos/refunds/queue');
 
@@ -458,6 +462,7 @@ class RepairPosRefundFlowTest extends TestCase
 
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $this->actingAs($actor, 'user')
             ->postJson('/api/repair-pos/refunds', [
@@ -558,6 +563,7 @@ class RepairPosRefundFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = $this->createRepairRequest($shopOwner, $customer, [
             'shop_owner_id' => $shopOwner->id,
@@ -622,6 +628,7 @@ class RepairPosRefundFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = $this->createRepairRequest($shopOwner, $customer, [
             'shop_owner_id' => $shopOwner->id,
@@ -686,6 +693,7 @@ class RepairPosRefundFlowTest extends TestCase
         $customer = \App\Models\User::factory()->create();
         /** @var \App\Models\User $actor */
         $actor = \App\Models\User::factory()->create(['shop_owner_id' => $shopOwner->id]);
+        $this->clockInEmployee($actor);
 
         $repair = $this->createRepairRequest($shopOwner, $customer, [
             'shop_owner_id' => $shopOwner->id,

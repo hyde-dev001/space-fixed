@@ -71,7 +71,6 @@ class LowStockNotification extends Notification implements ShouldQueue
 
         return (new MailMessage)
             ->subject('Low Stock Alert: ' . $targetName)
-            ->warning()
             ->line('The inventory item **' . $targetName . '** (SKU: ' . $this->inventoryItem->sku . ') is running low on stock.')
             ->line('Current Quantity: **' . $this->currentQuantity . '**')
             ->line('Reorder Level: **' . $this->reorderLevel . '**')

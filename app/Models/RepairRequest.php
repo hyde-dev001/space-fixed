@@ -42,6 +42,7 @@ class RepairRequest extends Model
         'final_total',
         'included_services_snapshot',
         'add_on_services_snapshot',
+        'material_plan_snapshot',
         'pricing_breakdown',
         'paymongo_link_id',
         'paymongo_payment_id',
@@ -181,6 +182,7 @@ class RepairRequest extends Model
         'reassignment_count' => 'integer',
         'warranty_sequence' => 'integer',
         'accepted_shop_policy_version_id' => 'integer',
+        'material_plan_snapshot' => 'array',
         'images' => 'array',
         'pickup_address' => 'array',
         'intake_address' => 'array',
@@ -193,6 +195,16 @@ class RepairRequest extends Model
         'pricing_breakdown' => 'array',
         'paymongo_payment_ids' => 'array',
     ];
+
+    public function setStatusAttribute($value): void
+    {
+        // Accepted legacy API aliases must use the current database enum values on writes.
+        $this->attributes['status'] = match ($value) {
+            'in-progress' => 'in_progress',
+            'ready-for-pickup' => 'ready_for_pickup',
+            default => $value,
+        };
+    }
 
     public function paidShopOwnedDeliveryFees(): array
     {

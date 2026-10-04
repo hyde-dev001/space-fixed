@@ -181,6 +181,7 @@ final class OrderFulfillmentPolicyTest extends TestCase
         ]);
         Permission::findOrCreate('access-staff-job-orders', 'user');
         $staff->givePermissionTo('access-staff-job-orders');
+        $this->clockInEmployee($staff);
         $order = Order::factory()->create([
             'shop_owner_id' => $shop->id,
             'status' => 'pending',
@@ -245,6 +246,9 @@ final class OrderFulfillmentPolicyTest extends TestCase
         $this->actingAs($shop, 'shop_owner')
             ->patchJson("/api/shop-owner/orders/{$order->id}/status", [
                 'status' => 'shipped',
+                'delivery_method' => 'third_party',
+                'carrier_company' => 'LBC',
+                'tracking_number' => 'OUTBOUND-IDEMPOTENCY-001',
             ])
             ->assertOk();
 
@@ -255,6 +259,7 @@ final class OrderFulfillmentPolicyTest extends TestCase
             ->assertStatus(422);
 
         $this->assertDatabaseCount('shipments', 1);
+        $this->assertSame('third_party', $order->fresh()->resolvedDeliveryMethod());
         $this->assertDatabaseHas('shipments', [
             'source_type' => 'order',
             'source_id' => $order->id,
@@ -263,7 +268,7 @@ final class OrderFulfillmentPolicyTest extends TestCase
     }
 
     #[Test]
-    public function customer_delivery_confirmation_still_requires_shipped_and_marks_cod_paid(): void
+    public function customer_delivery_confirmation_keeps_cod_payment_unsettled(): void
     {
         $shop = $this->shopOwner();
         $customer = User::factory()->create();
@@ -281,8 +286,8 @@ final class OrderFulfillmentPolicyTest extends TestCase
 
         $order->refresh();
         $this->assertSame('delivered', $order->status->value);
-        $this->assertSame('paid', (string) $order->payment_status);
-        $this->assertNotNull($order->paid_at);
+        $this->assertSame('pending', (string) $order->payment_status);
+        $this->assertNull($order->paid_at);
     }
 
     #[Test]

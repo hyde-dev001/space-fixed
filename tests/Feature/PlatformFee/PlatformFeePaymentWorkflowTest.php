@@ -73,7 +73,7 @@ class PlatformFeePaymentWorkflowTest extends TestCase
                         'attributes' => [
                             'payments' => [[
                                 'id' => 'pay_platform_1',
-                                'attributes' => ['amount' => 5600, 'currency' => 'PHP'],
+                                'attributes' => ['status' => 'paid', 'amount' => 5600, 'currency' => 'PHP'],
                             ]],
                         ],
                     ],
