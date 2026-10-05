@@ -35,6 +35,7 @@ type Employee = {
   linkedUser?: string | number; // username or id of linked user account
   terminatedAt?: string;
   rehirePending?: boolean;
+  terminationPending?: boolean;
   employmentHistory?: EmploymentPeriod[];
 };
 
@@ -407,6 +408,7 @@ const transformEmployeeFromApi = (apiEmployee: any): Employee => {
     linkedUser: apiEmployee.linked_user || apiEmployee.linkedUser,
     terminatedAt: apiEmployee.terminated_at || apiEmployee.terminatedAt,
     rehirePending: Boolean(apiEmployee.has_pending_rehire_request ?? apiEmployee.rehire_pending),
+    terminationPending: Boolean(apiEmployee.has_pending_termination_request ?? apiEmployee.termination_pending),
     employmentHistory: Array.isArray(employmentPeriods)
       ? employmentPeriods.map(transformEmploymentPeriodFromApi)
       : undefined,
@@ -1262,6 +1264,9 @@ export const EmployeeManagement: React.FC<{
       successTitle: 'Termination Request Submitted',
       successFallback: 'The request will be reviewed by the Manager, then the Company Shop Owner.',
       onSubmitted: () => {
+        setRows((prev) => prev.map((row) => (
+          row.id === employee.id ? { ...row, terminationPending: true } : row
+        )));
         setIsTerminationRequestModalOpen(false);
         setEmployeeToTerminate(null);
         setTerminationRequestForm({ reason: '', evidence: '' });
@@ -2661,11 +2666,13 @@ export const EmployeeManagement: React.FC<{
                             </>
                           )}
                           <IconButton
-                            variant="neutral"
+                            variant={employee.terminationPending ? "danger" : "neutral"}
                             onClick={() => openViewModal(employee)}
                             className={employeeActionButtonClass}
                             title="View Details"
-                            aria-label={`View details for ${buildName(employee)}`}
+                            aria-label={employee.terminationPending
+                              ? `View details for ${buildName(employee)} (Termination request pending)`
+                              : `View details for ${buildName(employee)}`}
                             disabled={isProcessingId === employee.id}
                           >
                             <InfoIcon className="h-5 w-5" />

@@ -11,10 +11,18 @@ abstract class TestCase extends BaseTestCase
 {
     protected function clockInEmployee(User $user): void
     {
-        $employee = Employee::factory()->active()->create([
-            'shop_owner_id' => $user->shop_owner_id,
-            'email' => $user->email,
-        ]);
+        $employee = Employee::query()
+            ->where('shop_owner_id', $user->shop_owner_id)
+            ->whereRaw('LOWER(email) = ?', [strtolower((string) $user->email)])
+            ->first();
+
+        if ($employee === null) {
+            $employee = Employee::factory()->active()->create([
+                'shop_owner_id' => $user->shop_owner_id,
+                'email' => $user->email,
+            ]);
+        }
+
         $now = now(config('app.shop_timezone', 'Asia/Manila'));
 
         DB::table('attendance_records')->insert([

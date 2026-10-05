@@ -67,6 +67,9 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
             'status' => 'active',
         ]);
         $this->manager->assignRole('Manager');
+
+        $this->clockInEmployee($this->hr);
+        $this->clockInEmployee($this->manager);
     }
 
     #[Test]
@@ -207,6 +210,8 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2027-02-01 09:00:00'));
 
         try {
+            $this->clockInEmployee($this->hr);
+            $this->clockInEmployee($this->manager);
             [$employee, $linkedUser] = $this->employeeWithLinkedUser([
                 'employee' => [
                     'status' => EmployeeStatus::TERMINATED,
@@ -324,6 +329,8 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
         Carbon::setTestNow(Carbon::parse('2027-02-01 15:00:00'));
 
         try {
+            $this->clockInEmployee($this->hr);
+            $this->clockInEmployee($this->manager);
             [$employee, $linkedUser] = $this->employeeWithLinkedUser([
                 'employee' => [
                     'status' => EmployeeStatus::TERMINATED,
@@ -525,6 +532,7 @@ final class EmployeeTerminationAndRehireWorkflowTest extends TestCase
             'request-employee-terminations',
             'request-employee-rehires',
         ]);
+        $this->clockInEmployee($individualHr);
         $employee = Employee::factory()->for($individualShop)->create([
             'status' => EmployeeStatus::ACTIVE,
         ]);

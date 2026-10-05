@@ -157,4 +157,18 @@ describe('employee termination and rehire directory workflow', () => {
     expect(rehireModal).toContain('disabled={isProcessingId === employeeToRehire.id}');
     expect(rehireModal).not.toContain('rehireRequestForm.reason.trim().length < 3 ||');
   });
+
+  it('marks employees with pending termination requests on the details action', () => {
+    const actionColumnStart = source.indexOf('<td className="px-3 py-3 align-top text-right');
+    const actionColumn = source.slice(
+      actionColumnStart,
+      source.indexOf('</td>', actionColumnStart),
+    );
+
+    expect(source).toContain('terminationPending?: boolean;');
+    expect(source).toContain('terminationPending: Boolean(apiEmployee.has_pending_termination_request ?? apiEmployee.termination_pending)');
+    expect(actionColumn).toContain('variant={employee.terminationPending ? "danger" : "neutral"}');
+    expect(actionColumn).toContain('Termination request pending');
+    expect(source).toContain('terminationPending: true');
+  });
 });

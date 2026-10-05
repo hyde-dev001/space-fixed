@@ -114,6 +114,9 @@ class EmployeeController extends Controller
             'lifecycleRequests as has_pending_rehire_request' => fn ($requestQuery) => $requestQuery
                 ->where('request_type', 'rehire')
                 ->whereIn('status', ['pending_manager', 'pending_owner']),
+            'lifecycleRequests as has_pending_termination_request' => fn ($requestQuery) => $requestQuery
+                ->where('request_type', 'termination')
+                ->whereIn('status', ['pending_manager', 'pending_owner']),
         ]);
 
         // Apply filters
