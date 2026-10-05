@@ -191,6 +191,11 @@ final class ReadPageController extends Controller
         $initialEmployees = Employee::query()
             ->where('shop_owner_id', $this->shopOwnerId())
             ->with(['employmentPeriods' => fn ($query) => $query->orderByDesc('start_date')])
+            ->withExists([
+                'lifecycleRequests as has_pending_termination_request' => fn ($requestQuery) => $requestQuery
+                    ->where('request_type', 'termination')
+                    ->whereIn('status', ['pending_manager', 'pending_owner']),
+            ])
             ->orderBy('name')
             ->get()
             ->map(static fn (Employee $employee): array => [
@@ -205,6 +210,7 @@ final class ReadPageController extends Controller
                 'status' => $employee->status,
                 'hiredAt' => optional($employee->hire_date)->toDateString(),
                 'terminatedAt' => optional($employee->terminated_at)->toISOString(),
+                'terminationPending' => (bool) $employee->has_pending_termination_request,
                 'employmentHistory' => $employee->employmentPeriods->map(static fn ($period): array => [
                     'id' => $period->id,
                     'start_date' => optional($period->start_date)->toDateString(),
