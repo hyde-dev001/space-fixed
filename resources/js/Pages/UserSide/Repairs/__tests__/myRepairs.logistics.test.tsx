@@ -1140,7 +1140,7 @@ describe("MyRepairs return logistics", () => {
     ));
   });
 
-  it("shows locked customer tracking read-only and uses an explicit receipt confirmation label", async () => {
+  it("shows locked customer tracking read-only and uses the received label", async () => {
     mocks.repair = repair({
       status: "ready_for_pickup",
       return_delivery_method: "customer_pickup",
@@ -1175,7 +1175,9 @@ describe("MyRepairs return logistics", () => {
     expect(within(tracking).getByText("Lalamove")).toBeInTheDocument();
     expect(within(tracking).getByText("RETURN-123")).toBeInTheDocument();
     expect(within(tracking).queryByRole("button", { name: "Save return tracking" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
+    const receiveButton = screen.getByTitle("Confirm only after your repaired shoes are in your hands");
+    expect(receiveButton).toHaveTextContent("Received");
+    expect(receiveButton).toBeEnabled();
   });
 
   it("locks only the return plan controls when the server provides the matching lock", async () => {
