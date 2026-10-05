@@ -171,4 +171,19 @@ describe('employee termination and rehire directory workflow', () => {
     expect(actionColumn).toContain('Termination request pending');
     expect(source).toContain('terminationPending: true');
   });
+
+  it('disables termination requests while one is pending', () => {
+    const viewModalStart = source.indexOf('{isViewModalOpen &&');
+    const viewModal = source.slice(
+      viewModalStart,
+      source.indexOf('{/* Add Employee Modal */}', viewModalStart),
+    );
+
+    expect(source).toContain(
+      "if (!canRequestEmployeeLifecycle || employee.status === 'terminated' || employee.terminationPending) return;",
+    );
+    expect(viewModal).toContain(
+      'disabled={isProcessingId === selectedEmployee.id || isSelfEmployeeAccount(selectedEmployee) || selectedEmployee.terminationPending}',
+    );
+  });
 });

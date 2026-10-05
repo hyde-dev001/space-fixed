@@ -1221,7 +1221,7 @@ export const EmployeeManagement: React.FC<{
   };
 
   const handleTerminateClick = (employee: Employee) => {
-    if (!canRequestEmployeeLifecycle || employee.status === 'terminated') return;
+    if (!canRequestEmployeeLifecycle || employee.status === 'terminated' || employee.terminationPending) return;
 
     if (isSelfEmployeeAccount(employee)) {
       void Swal.fire({
@@ -2944,7 +2944,7 @@ export const EmployeeManagement: React.FC<{
                           <Button
                             variant="danger"
                             onClick={() => handleTerminateClick(selectedEmployee)}
-                            disabled={isProcessingId === selectedEmployee.id || isSelfEmployeeAccount(selectedEmployee)}
+                            disabled={isProcessingId === selectedEmployee.id || isSelfEmployeeAccount(selectedEmployee) || selectedEmployee.terminationPending}
                           >
                             Request Termination
                           </Button>

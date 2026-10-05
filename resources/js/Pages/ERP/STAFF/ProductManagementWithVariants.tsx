@@ -314,6 +314,7 @@ export default function ProductManagement() {
   const [show3DShoeModels, setShow3DShoeModels] = useState(false);
   const [showroomEntitlement, setShowroomEntitlement] = useState<ShowroomEntitlement | null>(null);
   const [loadingShowroomEntitlement, setLoadingShowroomEntitlement] = useState(false);
+  const canAccessShowroom = staffShopOwnerId > 0 && showroomEntitlement?.is_eligible === true && showroomEntitlement?.has_active_subscription === true;
   const canUse360Uploader = !!showroomEntitlement?.can_upload_360;
   const [existingShowroomFrameCount, setExistingShowroomFrameCount] = useState(0);
   const [existingShowroomFrames, setExistingShowroomFrames] = useState<ExistingShowroomFrame[]>([]);
@@ -1607,7 +1608,7 @@ export default function ProductManagement() {
           <div className="flex w-full items-center justify-end">
             <h1 className="sr-only">Product Management</h1>
             <div className="flex items-center justify-end gap-3">
-              {staffShopOwnerId > 0 && (
+              {canAccessShowroom && (
                 <Link
                   href={`/shop-profile/${staffShopOwnerId}/virtual-showroom?from=staff-products`}
                   className="inline-flex h-10 items-center rounded-lg border border-[#16233b] px-4 text-sm font-semibold text-[#16233b] transition-colors hover:bg-[#16233b] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]"
@@ -1615,18 +1616,20 @@ export default function ProductManagement() {
                   Virtual Showroom
                 </Link>
               )}
-              <Link
-                href="/services/product-image-spin-tutorial?from=product-uploader"
-                onClick={() => { setTutorialVisited(true); sessionStorage.setItem('tutorial_visited', JSON.stringify({ v: true, c: getCsrfToken() })); }}
-                className="group relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#16233b]/30 bg-[#16233b] text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#213257] hover:shadow-lg active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b] focus-visible:ring-offset-2"
-                title="Product Image Spin Tutorial"
-                aria-label="Open Product Image Spin Tutorial"
-              >
-                <BulbIcon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110 group-active:scale-95" />
-                {!tutorialVisited && (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white ring-2 ring-white">!</span>
-                )}
-              </Link>
+              {canAccessShowroom && (
+                <Link
+                  href="/services/product-image-spin-tutorial?from=product-uploader"
+                  onClick={() => { setTutorialVisited(true); sessionStorage.setItem('tutorial_visited', JSON.stringify({ v: true, c: getCsrfToken() })); }}
+                  className="group relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-[#16233b]/30 bg-[#16233b] text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#213257] hover:shadow-lg active:translate-y-0 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b] focus-visible:ring-offset-2"
+                  title="Product Image Spin Tutorial"
+                  aria-label="Open Product Image Spin Tutorial"
+                >
+                  <BulbIcon className="h-5 w-5 transition-transform duration-200 group-hover:scale-110 group-active:scale-95" />
+                  {!tutorialVisited && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[9px] font-bold text-white ring-2 ring-white">!</span>
+                  )}
+                </Link>
+              )}
               <button
                 onClick={() => handleOpenModal()}
                 className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"

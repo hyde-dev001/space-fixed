@@ -5247,7 +5247,7 @@ const MyRepairs: React.FC = () => {
                               ? 'Confirm only after your repaired shoes are in your hands'
                               : 'Waiting for the shop to record the return handoff';
                             const receiveLabel = canConfirmReceive
-                              ? 'Confirm'
+                              ? 'Received'
                               : 'Awaiting handoff';
 
                             return (
