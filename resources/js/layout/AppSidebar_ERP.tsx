@@ -477,7 +477,7 @@ const managerItems: NavItem[] = [
         <path d="M9 11v5m6-5v5"></path>
       </svg>
     ),
-    name: "Job Orders",
+    name: "Orders",
     route: "erp.manager.job-orders",
     managerSection: "operations",
   },

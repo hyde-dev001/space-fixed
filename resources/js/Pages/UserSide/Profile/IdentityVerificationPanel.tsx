@@ -358,6 +358,7 @@ const IdentityResubmission = ({ firstName, lastName, current }: {
 								{status === 'loading' || status === 'recognizing'
 									? 'Checking image (' + status + ')...'
 									: result?.outcome === 'plausible' ? 'Image ready for review'
+										: result?.outcome === 'reject_upload' ? 'Invalid picture'
 										: result?.validationNotes?.[0] || 'Not checked'}
 							</span>
 							<input

@@ -574,7 +574,7 @@ it('renders the approved Manager workspace in the required groups and order', ()
     'Log Attendance',
     'My Payslips',
     'Manager Dashboard',
-    'Job Orders',
+    'Orders',
     'Repair Jobs',
     'Inventory Overview',
     'Staff & Workload',
@@ -588,7 +588,7 @@ it('renders the approved Manager workspace in the required groups and order', ()
   ]);
 
   expect(screen.getByRole('link', { name: 'Manager Dashboard' })).toHaveAttribute('href', '/erp/manager/dashboard');
-  expect(screen.getByRole('link', { name: 'Job Orders' })).toHaveAttribute('href', '/erp/manager/job-orders');
+  expect(screen.getByRole('link', { name: 'Orders' })).toHaveAttribute('href', '/erp/manager/job-orders');
   expect(screen.getByRole('link', { name: 'Repair Jobs' })).toHaveAttribute('href', '/erp/manager/repair-jobs');
   expect(screen.getByRole('link', { name: 'Inventory Overview' })).toHaveAttribute('href', '/erp/manager/inventory-overview');
   expect(screen.getByRole('link', { name: 'Staff & Workload' })).toHaveAttribute('href', '/erp/manager/staff-workload');
@@ -627,7 +627,7 @@ it('shows Manager operational pages when the Manager role has an incomplete perm
 
   render(<AppSidebarERP />);
 
-  expect(screen.getByRole('link', { name: 'Job Orders' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Orders' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Repair Jobs' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Staff & Workload' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Leave Approvals' })).toBeInTheDocument();
@@ -658,7 +658,7 @@ it('hides Manager HR approvals when the HR module is disabled but keeps operatio
   render(<AppSidebarERP />);
 
   expect(screen.getByRole('link', { name: 'Manager Dashboard' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Job Orders' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Orders' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Reports & Analytics' })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Leave Approvals' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Suspension Approvals' })).not.toBeInTheDocument();
@@ -684,7 +684,7 @@ it('hides only the Manager page whose read capability is missing', () => {
 
   render(<AppSidebarERP />);
 
-  expect(screen.queryByRole('link', { name: 'Job Orders' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Orders' })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Repair Jobs' })).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Staff & Workload' })).toBeInTheDocument();
 });
@@ -708,7 +708,7 @@ it('hides Job Orders for repair-only Manager shops', () => {
 
   render(<AppSidebarERP />);
 
-  expect(screen.queryByRole('link', { name: 'Job Orders' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Orders' })).not.toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'Repair Jobs' })).toBeInTheDocument();
 });
 
@@ -724,7 +724,7 @@ it.each(['retail', 'both'])('shows Job Orders for %s Manager shops', (businessTy
 
   render(<AppSidebarERP />);
 
-  expect(screen.getByRole('link', { name: 'Job Orders' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Orders' })).toBeInTheDocument();
 });
 
 it('does not retain obsolete Manager destinations in the sidebar route map', () => {
