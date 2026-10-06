@@ -277,19 +277,15 @@ export default function EmploymentLifecycleApprovals() {
                   </div>
                 </div>
                 <section className="mt-5" aria-labelledby={`request-overview-${request.id}`}>
-                  <div className="flex items-center justify-between gap-4">
-                    <h3 id={`request-overview-${request.id}`} className="text-sm font-semibold text-gray-900 dark:text-white">Request overview</h3>
-                    <button type="button" onClick={() => setSelected(request)} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">View details</button>
-                  </div>
-                  <dl className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
+                  <h3 id={`request-overview-${request.id}`} className="text-sm font-semibold text-gray-900 dark:text-white">Request overview</h3>
+                  <dl className="mt-3 grid gap-4 text-sm sm:grid-cols-3 lg:grid-cols-4 lg:items-center">
                     <div><dt className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Requested by</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{request.requested_by || "Not available"}</dd></div>
                     <div><dt className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Submitted</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{formatDate(request.requested_at)}</dd></div>
                     <div><dt className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Next action</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{request.next_action}</dd></div>
+                    <div className="flex items-center justify-start sm:col-span-3 lg:col-span-1 lg:justify-end">
+                      <button type="button" onClick={() => setSelected(request)} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">View details</button>
+                    </div>
                   </dl>
-                </section>
-                <section className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-800" aria-labelledby={`request-reason-${request.id}`}>
-                  <h3 id={`request-reason-${request.id}`} className="text-sm font-semibold text-gray-900 dark:text-white">Reason for request</h3>
-                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-700 dark:text-gray-300">{request.reason}</p>
                 </section>
                 {type === "rehire" && (
                   <section className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-800" aria-labelledby={`rehire-terms-${request.id}`}>

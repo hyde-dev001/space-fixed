@@ -13,14 +13,17 @@ describe('Manager employment lifecycle approvals page contract', () => {
     expect(queue).toContain('Employee');
     expect(queue).toContain('Workflow status');
     expect(queue).toContain('Request overview');
-    expect(queue).toContain('Reason for request');
     expect(queue).toContain('Rehire terms');
-    expect(queue).toContain('flex items-center justify-between gap-4');
+    expect(queue).toContain('lg:grid-cols-4');
+    expect(queue).toContain('lg:items-center');
+    expect(queue).toContain('lg:justify-end');
+    expect(queue).not.toContain('Reason for request');
     expect(queue).not.toContain('flex flex-wrap justify-end gap-2');
     expect(queue).not.toContain('Approve stage');
     expect(queue).not.toContain('Reject request');
     expect(details).toContain('Approve stage');
     expect(details).toContain('Reject request');
+    expect(details).toContain('HR reason');
   });
 
   it('uses SweetAlert feedback for Manager lifecycle decisions', () => {
