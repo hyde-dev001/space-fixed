@@ -276,7 +276,7 @@ export default function EmploymentLifecycleApprovals() {
                 </dl>
                 <p className="mt-4 line-clamp-3 text-sm leading-6 text-gray-700 dark:text-gray-300">{request.reason}</p>
                 {type === "rehire" && <div className="mt-4 grid gap-3 rounded-xl bg-blue-50 p-4 text-sm dark:bg-blue-950/20 sm:grid-cols-2"><p><strong>New start:</strong> {formatDate(request.rehire_start_date)}</p><p><strong>Position:</strong> {request.rehire_position || "Not specified"}</p><p><strong>Department:</strong> {request.rehire_department || "Not specified"}</p><p><strong>Access role:</strong> {request.rehire_role || "Not specified"}</p></div>}
-                <div className="mt-4 flex flex-wrap gap-2">
+                <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <button type="button" onClick={() => setSelected(request)} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">View details</button>
                 </div>
               </article>
