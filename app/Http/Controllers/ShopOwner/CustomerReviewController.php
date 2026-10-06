@@ -98,11 +98,13 @@ class CustomerReviewController extends Controller
             ]);
 
         // Merge and sort newest first
+        $reportedKeys = ReviewReport::reportedReviewKeys([$shopOwnerId]);
         $all = $productReviews
             ->concat($repairReviews)
             ->concat($shopReviews)
             ->sortByDesc('createdAt')
-            ->values();
+            ->values()
+            ->map(fn (array $item): array => [...$item, 'is_reported' => $reportedKeys->has($item['id'])]);
 
         // Aggregate stats (unfiltered totals for metric cards)
         $stats = [
@@ -207,18 +209,7 @@ class CustomerReviewController extends Controller
             ];
         }
 
-        // Prevent duplicate pending reports for the same review
-        $existing = ReviewReport::where('review_type', $type)
-            ->where('review_id', $reviewId)
-            ->where('shop_owner_id', $shopOwner->id)
-            ->whereNotIn('status', ['dismissed'])
-            ->first();
-
-        if ($existing) {
-            return response()->json(['error' => 'You have already reported this review.'], 409);
-        }
-
-        $report = ReviewReport::create([
+        $report = ReviewReport::createForReview($review, [
             'review_type'     => $type,
             'review_id'       => $reviewId,
             'shop_owner_id'   => $shopOwner->id,
@@ -244,6 +235,7 @@ class CustomerReviewController extends Controller
         return response()->json([
             'message' => 'Review reported successfully. Our team will review it shortly.',
             'report'  => $report->only(['id', 'status']),
+            'is_reported' => true,
         ]);
     }
 }

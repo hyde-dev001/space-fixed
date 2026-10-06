@@ -190,3 +190,10 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 - Failure comparisons across upstream updates must account for shifted source lines. Match an exact case first, then a uniquely identified class/case when only its location moved; retain failure-reason and response-status checks. Ambiguous matches require investigation, and baseline matching does not make a failing full suite green.
 
 - Notification links preserve historical intent and may outlive a decision. Derive refund controls from current raw workflow status and the server's owner-action projection, preserving legacy status fallbacks; a display label such as Refunded is not the stored status succeeded. Resolved notifications should open the existing read-only History view, while old links still require the same live-detail gate.
+
+## 2026-10-06 — Review moderation and business-date boundaries
+
+- Review-report identity is the reporting shop plus review type and review ID, not the customer or open moderation status. Serialize creation by locking the review row even before a report exists; historical dismissal does not erase the reporting fact.
+- A new moderation decision and a new account suspension are separate operations. Reuse a validated current suspension only for report resolution; keep ordinary account lifecycle conflict checks and per-report audit events.
+- Administrative in-app notification URLs must be relative because the inbox deliberately rejects absolute links. Keep email links absolute, and normalize historical notifications by their known event to the named authenticated route.
+- Finance date-only validation uses `app.shop_timezone`, while timestamp storage remains UTC. Share the server business calendar date with date inputs instead of deriving it through browser UTC conversions.

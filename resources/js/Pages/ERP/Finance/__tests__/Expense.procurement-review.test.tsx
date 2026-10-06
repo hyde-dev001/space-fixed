@@ -46,7 +46,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@inertiajs/react", () => ({
-	usePage: () => ({ props: { auth: { user: { id: 7 }, erpActor: { id: 7, ownerMode: mocks.ownerMode } } } }),
+	usePage: () => ({ props: { businessDate: '2026-10-06', auth: { user: { id: 7 }, erpActor: { id: 7, ownerMode: mocks.ownerMode } } } }),
 }));
 vi.mock("react-apexcharts", () => ({ default: () => null }));
 vi.mock("sweetalert2", () => ({ default: { fire: mocks.swalFire } }));
@@ -152,6 +152,21 @@ afterEach(() => {
 });
 
 describe("Finance procurement expenses", () => {
+	it("uses the server business date as the expense date limit and displays validation feedback", async () => {
+		mocks.reviewRelease.mockResolvedValue({ ok: false, status: 422, error: 'Validation failed.', data: { errors: { date: ['The date must be on or before 2026-10-06.'] } } });
+		render(<Expense />);
+		fireEvent.click(screen.getByRole('button', { name: 'Add Expense' }));
+		const date = document.querySelector('input[type="date"]') as HTMLInputElement;
+		expect(date.max).toBe('2026-10-06');
+		fireEvent.change(date, { target: { value: '2026-10-06' } });
+		fireEvent.change(screen.getByRole('combobox', { name: 'Expense category' }), { target: { value: 'Travel' } });
+		const amount = document.querySelector('input[type="number"]') as HTMLInputElement;
+		fireEvent.change(amount, { target: { value: '100' } });
+		fireEvent.click(screen.getAllByRole('button', { name: 'Add Expense' }).at(-1)!);
+		await waitFor(() => expect(mocks.swalFire).toHaveBeenCalledWith(expect.objectContaining({ text: 'The date must be on or before 2026-10-06.' })));
+		expect((mocks.reviewRelease.mock.calls[0][1] as FormData).get('date')).toBe('2026-10-06');
+	});
+
 	it("shows the receipt for review without approval actions", () => {
 		render(<Expense />);
 

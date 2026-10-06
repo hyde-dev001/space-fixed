@@ -138,10 +138,6 @@ final class FlaggedAccountModerationService
                 ];
             }
 
-            if ((string) $customer->getRawOriginal('status') !== 'active') {
-                throw new HttpException(409, 'Only active customers can receive a new suspension decision.');
-            }
-
             $report->forceFill([
                 // The deployed enum remains the compatibility value. The
                 // read model exposes this as account_suspended.
@@ -154,6 +150,7 @@ final class FlaggedAccountModerationService
                 account: $customer,
                 actor: $actor,
                 reason: (string) $notes,
+                reuseCurrent: true,
             );
 
             $suspension = $suspensionResult['suspension'];
@@ -228,7 +225,7 @@ final class FlaggedAccountModerationService
         }
 
         $suspensionResult = $sameSuspension
-            ? $this->suspensions->suspendLocked($customer, $actor, (string) $notes)
+            ? $this->suspensions->suspendLocked($customer, $actor, (string) $notes, reuseCurrent: true)
             : null;
 
         return [

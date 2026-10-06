@@ -29,6 +29,7 @@ class RepairRejectForwardToOwnerNotificationTest extends TestCase
             'name' => 'Manager Reviewer',
         ]);
         $manager->givePermissionTo('review-manager-repair-jobs');
+        $this->clockInEmployee($manager);
 
         $repairRequest = RepairRequest::factory()
             ->for($shopOwner)
@@ -72,6 +73,7 @@ class RepairRejectForwardToOwnerNotificationTest extends TestCase
             'name' => 'Manager Reviewer',
         ]);
         $manager->givePermissionTo('review-manager-repair-jobs');
+        $this->clockInEmployee($manager);
 
         $repairRequest = RepairRequest::factory()
             ->for($shopOwner)

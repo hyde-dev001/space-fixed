@@ -38,6 +38,7 @@ final class AccountSuspensionService
         SuperAdmin $actor,
         string $reason,
         string $source = AccountSuspension::SOURCE_RUNTIME,
+        bool $reuseCurrent = false,
     ): array {
         $accountType = $this->accountType($account);
         $reason = trim($reason);
@@ -65,7 +66,7 @@ final class AccountSuspensionService
                 throw $this->conflict('The account has no current suspension identity.');
             }
 
-            if ((string) $current->reason === $reason && (string) $current->source === $source) {
+            if ($reuseCurrent || ((string) $current->reason === $reason && (string) $current->source === $source)) {
                 $appeal = $this->lockedAppeal($current);
                 if (! $appeal) {
                     throw $this->conflict('The current suspension has no appeal identity.');

@@ -4,6 +4,9 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class ReviewReport extends Model
 {
@@ -32,6 +35,29 @@ class ReviewReport extends Model
         'review_snapshot' => 'array',
         'resolved_at'     => 'datetime',
     ];
+
+    public static function reportedReviewKeys(array $shopOwnerIds): Collection
+    {
+        return static::query()->whereIn('shop_owner_id', $shopOwnerIds)
+            ->get(['review_type', 'review_id'])
+            ->mapWithKeys(fn (self $report): array => [$report->review_type.'_'.$report->review_id => true]);
+    }
+
+    public static function createForReview(Model $review, array $attributes): self
+    {
+        return DB::transaction(function () use ($review, $attributes): self {
+            // Lock the existing review, including when no report exists yet.
+            // Both CRM and owner writes use this lock to serialize duplicates.
+            $review->newQuery()->whereKey($review->getKey())->lockForUpdate()->firstOrFail();
+            if (static::query()->where('review_type', $attributes['review_type'])
+                ->where('review_id', $review->getKey())
+                ->where('shop_owner_id', $attributes['shop_owner_id'])->exists()) {
+                throw new HttpException(409, 'You have already reported this review.');
+            }
+
+            return static::create($attributes);
+        });
+    }
 
     /** Human-readable reason labels */
     public static array $reasonLabels = [

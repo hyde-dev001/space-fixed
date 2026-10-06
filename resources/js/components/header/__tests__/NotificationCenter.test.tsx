@@ -3,6 +3,8 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import NotificationCenter from '../NotificationCenter';
 
+const markRead = vi.hoisted(() => vi.fn());
+
 vi.mock('@inertiajs/react', () => ({
     usePage: () => ({ props: { auth: { super_admin: { id: 1 } } } }),
     Link: ({ children, ...props }: { children: React.ReactNode; [key: string]: unknown }) => (
@@ -23,16 +25,34 @@ vi.mock('@/hooks/useNotifications', () => ({
                     is_read: false,
                     created_at: '2026-09-10T08:00:00.000Z',
                 },
+                {
+                    id: 2,
+                    type: 'suspension_appeal_submitted',
+                    title: 'Suspension appeal submitted',
+                    message: 'Customer submitted an appeal.',
+                    action_url: '/admin/appeals',
+                    is_read: false,
+                    created_at: '2026-10-06T00:00:00.000Z',
+                },
             ],
         },
         isLoading: false,
     }),
     useUnreadCount: () => ({ data: 1 }),
-    useMarkAsRead: () => ({ mutate: vi.fn() }),
+    useMarkAsRead: () => ({ mutate: markRead }),
     useDeleteNotification: () => ({ mutate: vi.fn() }),
 }));
 
 describe('NotificationCenter palette', () => {
+    it('links suspension appeals to the authenticated management page and marks them read on click', () => {
+        render(<NotificationCenter apiBasePath="/api/admin/notifications" />);
+        fireEvent.click(screen.getByRole('button', { name: 'Notifications' }));
+        const link = screen.getByText('Suspension appeal submitted').closest('a');
+        expect(link).toHaveAttribute('href', '/admin/appeals');
+        fireEvent.click(link!);
+        expect(markRead).toHaveBeenCalledWith(2);
+    });
+
     it('renders explicit readable light and dark contrast classes', () => {
         render(<NotificationCenter apiBasePath="/api/admin/notifications" />);
         fireEvent.click(screen.getByRole('button', { name: 'Notifications' }));

@@ -152,7 +152,7 @@ class SuspensionAppealFlowTest extends TestCase
         $this->assertDatabaseHas('notifications', [
             'super_admin_id' => $superAdmin->id,
             'type' => NotificationType::SUSPENSION_APPEAL_SUBMITTED->value,
-            'action_url' => route('admin.suspension-appeals'),
+            'action_url' => route('admin.suspension-appeals', [], false),
             'is_read' => false,
             'requires_action' => true,
         ]);

@@ -11,6 +11,7 @@ type OrderType = "product" | "repair";
 interface CustomerReview {
   id: number;
   reviewId?: string;
+  is_reported: boolean;
   customerName: string;
   rating: number;
   comment: string;
@@ -117,7 +118,6 @@ export default function CustomerReviews() {
   const [reportReason, setReportReason] = useState<string>("fake_review");
   const [reportNotes, setReportNotes] = useState<string>("");
   const [submittingReport, setSubmittingReport] = useState(false);
-  const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
   const itemsPerPage = 6;
 
   const filteredReviews = useMemo(() => {
@@ -145,7 +145,7 @@ export default function CustomerReviews() {
   };
 
   const handleReportReview = async () => {
-    if (!selectedReview) return;
+    if (!selectedReview || selectedReview.is_reported || submittingReport) return;
 
     const confirmation = await Swal.fire({
       title: "Submit this report?",
@@ -163,7 +163,7 @@ export default function CustomerReviews() {
     try {
       const reportId = getReportIdentifier(selectedReview);
 
-      await axios.post(
+      const response = await axios.post<{ is_reported: boolean }>(
         reportEndpoint,
         {
           review_id: reportId,
@@ -176,7 +176,10 @@ export default function CustomerReviews() {
         },
       );
 
-      setReportedIds((prev) => new Set([...prev, reportId]));
+      setReviews((prev) => prev.map((review) => getReportIdentifier(review) === reportId
+        ? { ...review, is_reported: response.data.is_reported } : review));
+      setSelectedReview((prev) => prev && getReportIdentifier(prev) === reportId
+        ? { ...prev, is_reported: response.data.is_reported } : prev);
       setShowReportModal(false);
       setReportNotes("");
       void Swal.fire({
@@ -362,10 +365,10 @@ export default function CustomerReviews() {
                     <p className="text-sm text-gray-500 dark:text-gray-400">{selectedReview.customerName} • {new Date(selectedReview.createdAt).toLocaleDateString()}</p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {reportedIds.has(getReportIdentifier(selectedReview)) ? (
-                      <span className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 dark:border-red-700 dark:bg-red-900/20 dark:text-red-400">
+                    {selectedReview.is_reported ? (
+                      <button disabled className="rounded-lg border border-red-300 bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-600 dark:border-red-700 dark:bg-red-900/20 dark:text-red-400">
                         Reported
-                      </span>
+                      </button>
                     ) : (
                       <button
                         onClick={() => setShowReportModal(true)}
