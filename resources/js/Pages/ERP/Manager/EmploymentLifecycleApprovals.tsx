@@ -265,20 +265,43 @@ export default function EmploymentLifecycleApprovals() {
           <section className="space-y-4" aria-label={label + " request queue"}>
             {requests.map((request) => (
               <article key={request.id} className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div><h2 className="text-base font-semibold text-gray-900 dark:text-white">{request.name || "Unknown employee"}</h2><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{request.position || request.email || "No employee context"}</p></div>
-                  <span className={"inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold " + statusClasses(request.workflow_status)}>{statusLabel(request.workflow_status)}</span>
+                <div className="flex flex-col gap-4 border-b border-gray-100 pb-4 sm:flex-row sm:items-start sm:justify-between dark:border-gray-800">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Employee</p>
+                    <h2 className="mt-1 text-base font-semibold text-gray-900 dark:text-white">{request.name || "Unknown employee"}</h2>
+                    <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{request.position || request.email || "No employee context"}</p>
+                  </div>
+                  <div className="sm:text-right">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Workflow status</p>
+                    <span className={"mt-1 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold " + statusClasses(request.workflow_status)}>{statusLabel(request.workflow_status)}</span>
+                  </div>
                 </div>
-                <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                  <div><dt className="text-xs uppercase tracking-wide text-gray-500">Requested by</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{request.requested_by || "Not available"}</dd></div>
-                  <div><dt className="text-xs uppercase tracking-wide text-gray-500">Submitted</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{formatDate(request.requested_at)}</dd></div>
-                  <div><dt className="text-xs uppercase tracking-wide text-gray-500">Next action</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{request.next_action}</dd></div>
-                </dl>
-                <p className="mt-4 line-clamp-3 text-sm leading-6 text-gray-700 dark:text-gray-300">{request.reason}</p>
-                {type === "rehire" && <div className="mt-4 grid gap-3 rounded-xl bg-blue-50 p-4 text-sm dark:bg-blue-950/20 sm:grid-cols-2"><p><strong>New start:</strong> {formatDate(request.rehire_start_date)}</p><p><strong>Position:</strong> {request.rehire_position || "Not specified"}</p><p><strong>Department:</strong> {request.rehire_department || "Not specified"}</p><p><strong>Access role:</strong> {request.rehire_role || "Not specified"}</p></div>}
-                <div className="mt-4 flex flex-wrap justify-end gap-2">
-                  <button type="button" onClick={() => setSelected(request)} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">View details</button>
-                </div>
+                <section className="mt-5" aria-labelledby={`request-overview-${request.id}`}>
+                  <div className="flex items-center justify-between gap-4">
+                    <h3 id={`request-overview-${request.id}`} className="text-sm font-semibold text-gray-900 dark:text-white">Request overview</h3>
+                    <button type="button" onClick={() => setSelected(request)} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">View details</button>
+                  </div>
+                  <dl className="mt-3 grid gap-4 text-sm sm:grid-cols-3">
+                    <div><dt className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Requested by</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{request.requested_by || "Not available"}</dd></div>
+                    <div><dt className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Submitted</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{formatDate(request.requested_at)}</dd></div>
+                    <div><dt className="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Next action</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{request.next_action}</dd></div>
+                  </dl>
+                </section>
+                <section className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-800" aria-labelledby={`request-reason-${request.id}`}>
+                  <h3 id={`request-reason-${request.id}`} className="text-sm font-semibold text-gray-900 dark:text-white">Reason for request</h3>
+                  <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-700 dark:text-gray-300">{request.reason}</p>
+                </section>
+                {type === "rehire" && (
+                  <section className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-800" aria-labelledby={`rehire-terms-${request.id}`}>
+                    <h3 id={`rehire-terms-${request.id}`} className="text-sm font-semibold text-gray-900 dark:text-white">Rehire terms</h3>
+                    <dl className="mt-3 grid gap-3 rounded-xl bg-blue-50 p-4 text-sm dark:bg-blue-950/20 sm:grid-cols-2">
+                      <div><dt className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">New start</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{formatDate(request.rehire_start_date)}</dd></div>
+                      <div><dt className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Position</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{request.rehire_position || "Not specified"}</dd></div>
+                      <div><dt className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Department</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{request.rehire_department || "Not specified"}</dd></div>
+                      <div><dt className="text-xs font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">Access role</dt><dd className="mt-1 text-gray-800 dark:text-gray-200">{request.rehire_role || "Not specified"}</dd></div>
+                    </dl>
+                  </section>
+                )}
               </article>
             ))}
            </section>
