@@ -10,6 +10,7 @@ describe('Manager employment lifecycle approvals page contract', () => {
     const details = source.slice(source.indexOf('{selected &&'), source.indexOf('</AppLayoutERP>'));
 
     expect(queue).toContain('View details');
+    expect(queue).toContain('flex flex-wrap justify-end gap-2');
     expect(queue).not.toContain('Approve stage');
     expect(queue).not.toContain('Reject request');
     expect(details).toContain('Approve stage');
