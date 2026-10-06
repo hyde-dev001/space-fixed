@@ -20,6 +20,31 @@ final class AdminNotificationInboxTest extends TestCase
     use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
 
+    public function test_appeal_notification_uses_canonical_relative_route_and_preserves_read_isolation(): void
+    {
+        $admin = SuperAdmin::factory()->superAdmin()->mfaEnrolled()->create();
+        $other = SuperAdmin::factory()->superAdmin()->mfaEnrolled()->create();
+        $notification = $this->notification($admin, [
+            'type' => NotificationType::SUSPENSION_APPEAL_SUBMITTED,
+            'action_url' => route('admin.suspension-appeals'),
+        ]);
+        $this->actingAsCompletedPrivileged($admin)->getJson('/api/admin/notifications')
+            ->assertOk()->assertJsonPath('notifications.0.action_url', '/admin/appeals');
+        $this->get('/admin/appeals')->assertOk();
+        $this->postJson("/api/admin/notifications/{$notification->id}/read")->assertOk();
+        $this->assertTrue($notification->fresh()->is_read);
+        $this->get('/admin/appeals')->assertOk();
+        $this->actingAsCompletedPrivileged($other)->postJson("/api/admin/notifications/{$notification->id}/read")->assertNotFound();
+    }
+
+    public function test_customer_and_staff_sessions_cannot_open_the_admin_appeals_page(): void
+    {
+        $customer = \App\Models\User::factory()->create(['role' => 'customer']);
+        $this->actingAs($customer, 'user')->get('/admin/appeals')->assertRedirect('/admin/login');
+        $staff = \App\Models\User::factory()->create(['role' => 'FINANCE']);
+        $this->actingAs($staff, 'user')->get('/admin/appeals')->assertRedirect('/admin/login');
+    }
+
     public function test_the_inbox_requires_an_active_mfa_completed_privileged_session(): void
     {
         $this->get('/admin/notifications')

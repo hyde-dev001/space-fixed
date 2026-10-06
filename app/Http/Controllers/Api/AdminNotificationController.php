@@ -140,13 +140,18 @@ class AdminNotificationController extends Controller
     private function serializeNotification(Notification $notification): array
     {
         $type = $notification->type;
+        // Older appeal notifications stored absolute URLs. Resolve this known
+        // event to its canonical authenticated route without accepting external links.
+        $actionUrl = $type === NotificationType::SUSPENSION_APPEAL_SUBMITTED
+            ? route('admin.suspension-appeals', [], false)
+            : $notification->action_url;
 
         return [
             'id' => (int) $notification->getKey(),
             'type' => $type instanceof NotificationType ? $type->value : (string) $type,
             'title' => (string) $notification->title,
             'message' => (string) $notification->message,
-            'action_url' => $this->safeActionUrl($notification->action_url),
+            'action_url' => $this->safeActionUrl($actionUrl),
             'is_read' => (bool) $notification->is_read,
             'read_at' => $notification->read_at?->toIso8601String(),
             'created_at' => $notification->created_at?->toIso8601String(),

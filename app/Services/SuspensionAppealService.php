@@ -679,7 +679,7 @@ class SuspensionAppealService
                     [
                         'title' => 'Suspension appeal submitted',
                         'message' => (string) ($appeal->account_name ?: 'A customer').' submitted a suspension appeal for review.',
-                        'action_url' => $reviewUrl,
+                        'action_url' => route('admin.suspension-appeals', [], false),
                         'data' => [
                             'appeal_id' => (int) $appeal->getKey(),
                             'account_type' => (string) $appeal->account_type,

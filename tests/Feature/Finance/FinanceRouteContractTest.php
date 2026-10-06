@@ -91,6 +91,7 @@ class FinanceRouteContractTest extends TestCase
         $shop = ShopOwner::factory()->create();
         $user = User::factory()->create(['shop_owner_id' => $shop->id]);
         $user->givePermissionTo('access-finance-invoices');
+        $this->clockInEmployee($user);
         $invoice = Invoice::create([
             'reference' => 'INV-MARK-SENT-1',
             'customer_name' => 'Contract Test',
@@ -119,6 +120,7 @@ class FinanceRouteContractTest extends TestCase
         $shop = ShopOwner::factory()->create();
         $user = User::factory()->create(['shop_owner_id' => $shop->id]);
         $user->givePermissionTo('access-finance-invoices');
+        $this->clockInEmployee($user);
 
         $this->actingAs($user, 'user')->postJson('/api/finance/invoices/1/mark-paid')
             ->assertStatus(410)

@@ -202,6 +202,7 @@ final class FlaggedAccountWorkflowTest extends TestCase
     public function test_regular_admin_can_moderate_flagged_accounts(): void
     {
         $admin = $this->phaseTwoAdmin();
+        \App\Models\AdminPagePermission::grant($admin, \App\Enums\AdminPage::SHOP_REPORTS);
         $customer = $this->activePhaseTwoUser();
         $report = $this->flaggedReport($customer);
         $this->actingAsCompletedPrivileged($admin);
@@ -214,6 +215,51 @@ final class FlaggedAccountWorkflowTest extends TestCase
 
         $this->assertSame(SuperAdmin::ROLE_ADMIN, $admin->role);
         $this->assertSame('dismissed', $report->fresh()->status);
+    }
+
+    public function test_separate_reports_resolve_against_one_suspension_without_duplicate_side_effects(): void
+    {
+        Queue::fake();
+        $admin = $this->phaseTwoSuperAdmin();
+        $customer = $this->activePhaseTwoUser();
+        $a = $this->flaggedReport($customer, ['status' => 'under_investigation']);
+        $b = $this->flaggedReport($customer, ['status' => 'under_investigation']);
+        $c = $this->flaggedReport($customer, ['status' => 'under_investigation']);
+        $this->actingAsCompletedPrivileged($admin);
+        $this->postJson("/admin/flagged-accounts/{$a->id}/ban", ['admin_notes' => 'First violation.'])->assertOk();
+        DB::commit();
+        $mailCount = Queue::pushed(SendPrivilegedWorkflowMail::class)->count();
+        $suspensionId = $customer->fresh()->current_suspension_id;
+        $this->postJson("/admin/flagged-accounts/{$b->id}/ban", ['admin_notes' => 'Separate violation.'])
+            ->assertOk()->assertJsonPath('changed', true);
+        $this->postJson("/admin/flagged-accounts/{$b->id}/ban", ['admin_notes' => 'Separate violation.'])
+            ->assertOk()->assertJsonPath('changed', false);
+        $this->postJson("/admin/flagged-accounts/{$c->id}/dismiss", ['admin_notes' => 'Unsubstantiated.'])->assertOk();
+        $this->assertSame('banned', $a->fresh()->status);
+        $this->assertSame('banned', $b->fresh()->status);
+        $this->assertSame('dismissed', $c->fresh()->status);
+        $this->assertSame('suspended', $customer->fresh()->getRawOriginal('status'));
+        $this->assertSame($suspensionId, $customer->fresh()->current_suspension_id);
+        $this->assertDatabaseCount('account_suspensions', 1);
+        $this->assertDatabaseCount('suspension_appeals', 1);
+        $this->assertSame($mailCount, Queue::pushed(SendPrivilegedWorkflowMail::class)->count());
+        $this->assertSame(3, \Spatie\Activitylog\Models\Activity::query()->where('event', 'flagged_account_moderated')->count());
+    }
+
+    public function test_another_customers_suspension_identity_cannot_satisfy_a_report_decision(): void
+    {
+        Queue::fake();
+        $admin = $this->phaseTwoSuperAdmin();
+        $first = $this->activePhaseTwoUser();
+        $firstReport = $this->flaggedReport($first, ['status' => 'under_investigation']);
+        $this->actingAsCompletedPrivileged($admin);
+        $this->postJson("/admin/flagged-accounts/{$firstReport->id}/ban", ['admin_notes' => 'First.'])->assertOk();
+        $other = $this->activePhaseTwoUser();
+        $other->forceFill(['status' => 'suspended', 'current_suspension_id' => $first->fresh()->current_suspension_id])->save();
+        $report = $this->flaggedReport($other, ['status' => 'under_investigation']);
+        $this->postJson("/admin/flagged-accounts/{$report->id}/ban", ['admin_notes' => 'Other.'])->assertConflict();
+        $this->assertSame('under_investigation', $report->fresh()->status);
+        $this->assertDatabaseCount('account_suspensions', 1);
     }
 
     private function flaggedReport(User $customer, array $attributes = []): ReviewReport

@@ -424,7 +424,7 @@ class ExpenseController extends Controller
 
         $data = $request->validate([
             'reference' => 'nullable|string|max:191',
-            'date' => ['required', 'date', 'before_or_equal:'.now()->toDateString()],
+            'date' => ['required', 'date_format:Y-m-d', 'before_or_equal:'.now(config('app.shop_timezone'))->toDateString()],
             'due_date' => 'nullable|date',
             'category' => ['required', 'string', 'max:191', Rule::in(Expense::manualCategories())],
             'custom_category' => 'nullable|string|max:191',
@@ -648,7 +648,7 @@ class ExpenseController extends Controller
         }
 
         $data = $request->validate([
-            'date' => ['sometimes', 'date', 'before_or_equal:'.now()->toDateString()],
+            'date' => ['sometimes', 'date_format:Y-m-d', 'before_or_equal:'.now(config('app.shop_timezone'))->toDateString()],
             'due_date' => 'sometimes|nullable|date',
             'category' => ['sometimes', 'string', 'max:191', Rule::in(array_values(array_unique(array_merge(
                 Expense::manualCategories(),

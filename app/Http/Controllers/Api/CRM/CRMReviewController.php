@@ -39,10 +39,6 @@ class CRMReviewController extends Controller
             $ids[] = (int) $user->shop_owner_id;
         }
 
-        if (!empty($user->id)) {
-            $ids[] = (int) $user->id;
-        }
-
         return array_values(array_unique(array_filter($ids)));
     }
 
@@ -128,13 +124,16 @@ class CRMReviewController extends Controller
                 ];
             });
 
+        $reportedKeys = ReviewReport::reportedReviewKeys($shopOwnerIds);
+
         return $productReviews
             ->concat($repairReviews)
             ->concat($shopReviews)
             ->sortByDesc('createdAtTs')
             ->values()
-            ->map(function (array $item) {
+            ->map(function (array $item) use ($reportedKeys) {
                 unset($item['createdAtTs']);
+                $item['is_reported'] = $reportedKeys->has($item['reviewId']);
                 return $item;
             });
     }
@@ -361,18 +360,7 @@ class CRMReviewController extends Controller
             ];
         }
 
-        $existing = ReviewReport::query()
-            ->where('review_type', $type)
-            ->where('review_id', $reviewId)
-            ->where('shop_owner_id', $actingShopOwnerId)
-            ->whereNotIn('status', ['dismissed'])
-            ->first();
-
-        if ($existing) {
-            return response()->json(['error' => 'You have already reported this review.'], 409);
-        }
-
-        $report = ReviewReport::create([
+        $report = ReviewReport::createForReview($review, [
             'review_type' => $type,
             'review_id' => $reviewId,
             'shop_owner_id' => $actingShopOwnerId,
@@ -400,6 +388,7 @@ class CRMReviewController extends Controller
         return response()->json([
             'message' => 'Review reported successfully. Our team will review it shortly.',
             'report' => $report->only(['id', 'status']),
+            'is_reported' => true,
         ]);
     }
 }

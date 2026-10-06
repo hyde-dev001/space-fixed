@@ -194,6 +194,7 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             // CSRF token
             'csrf_token' => csrf_token(),
+            'businessDate' => fn () => Carbon::now(config('app.shop_timezone'))->toDateString(),
             'orderStatusCount' => $orderStatusCount,
             'repairStatusCount' => $repairStatusCount,
             'userIconCount' => $orderStatusCount + $repairStatusCount,

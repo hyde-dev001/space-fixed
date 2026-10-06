@@ -379,10 +379,59 @@ class ExpenseSettlementTest extends TestCase
         $this->assertDatabaseHas('finance_expenses', ['id' => $expense->id, 'status' => 'rejected']);
     }
 
+    public function test_expense_dates_use_business_day_at_the_utc_boundary(): void
+    {
+        config(['app.shop_timezone' => 'Asia/Manila']);
+        \Illuminate\Support\Facades\Storage::fake('local');
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-05 16:30:00', 'UTC'));
+        [$shop, $oldExpense, $user] = $this->makeExpenseContext();
+        $user->givePermissionTo('access-finance-expenses');
+        $this->actingAs($user, 'user');
+        $shared = app(\App\Http\Middleware\HandleInertiaRequests::class)->share(request());
+        $this->assertSame('2026-10-06', $shared['businessDate']());
+        foreach (['2026-10-05', '2026-10-06'] as $date) {
+            $response = $this->postJson('/api/finance/expenses', [
+                'date' => $date, 'category' => 'Supplies', 'amount' => '100.00', 'tax_amount' => '12.00',
+                'payment_mode' => 'paid_now', 'payment_method' => 'cash', 'idempotency_key' => 'boundary-'.$date,
+                'receipt' => \Illuminate\Http\UploadedFile::fake()->create('receipt.pdf', 10, 'application/pdf'),
+            ])->assertCreated()->assertJsonPath('settlement_state.paid_amount', '100.00');
+            $expense = Expense::findOrFail($response->json('id'));
+            $this->assertSame($date, $expense->date->toDateString());
+            $this->assertSame($shop->id, $expense->shop_id);
+            $this->assertEquals($user->id, $expense->created_by);
+            $this->assertEquals(12, $expense->tax_amount);
+            \Illuminate\Support\Facades\Storage::disk('local')->assertExists($expense->receipt_path);
+            $this->assertDatabaseHas('audit_logs', ['action' => 'create_expense', 'actor_user_id' => $user->id, 'shop_owner_id' => $shop->id, 'target_id' => $expense->id]);
+        }
+        $this->postJson('/api/finance/expenses', [
+            'date' => '2026-10-07', 'category' => 'Supplies', 'amount' => '100.00',
+            'payment_mode' => 'paid_now', 'payment_method' => 'cash',
+        ])->assertUnprocessable()->assertJsonValidationErrors('date');
+        $this->patchJson('/api/finance/expenses/'.$oldExpense->id, ['date' => '2026-10-06'])->assertOk();
+        $this->patchJson('/api/finance/expenses/'.$oldExpense->id, ['date' => '2026-10-07'])
+            ->assertUnprocessable()->assertJsonValidationErrors('date');
+        $this->travelBack();
+    }
+
+    public function test_business_timezone_configuration_remains_authoritative(): void
+    {
+        config(['app.shop_timezone' => 'America/Los_Angeles']);
+        $this->travelTo(\Illuminate\Support\Carbon::parse('2026-10-06 01:00:00', 'UTC'));
+        [$shop, $expense, $user] = $this->makeExpenseContext();
+        $user->givePermissionTo('access-finance-expenses');
+        $this->actingAs($user, 'user');
+        $payload = ['category' => 'Supplies', 'amount' => '10.00', 'payment_mode' => 'pay_later', 'due_date' => '2026-10-10'];
+        $this->postJson('/api/finance/expenses', [...$payload, 'date' => '2026-10-05'])->assertCreated();
+        $this->postJson('/api/finance/expenses', [...$payload, 'date' => '2026-10-06'])
+            ->assertUnprocessable()->assertJsonValidationErrors('date');
+        $this->travelBack();
+    }
+
     private function makeExpenseContext(): array
     {
         $shop = ShopOwner::factory()->create();
         $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($user);
         $expense = Expense::create([
             'reference' => 'EXP-' . uniqid(),
             'date' => now()->toDateString(),

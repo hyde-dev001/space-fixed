@@ -221,6 +221,7 @@ const formatExpenseDate = (value: string, createdAt?: string | null) => {
 
 const Expense: React.FC = () => {
   const page = usePage();
+  const businessDate = typeof page.props.businessDate === 'string' ? page.props.businessDate : undefined;
   const auth = page.props.auth as any;
   const ownerMode = auth?.erpActor?.ownerMode === true;
   const currentActorId = Number(auth?.erpActor?.id ?? auth?.user?.id ?? 0);
@@ -743,10 +744,10 @@ const Expense: React.FC = () => {
         formData.append('receipt', receiptFile);
       }
 
-      const response = await api.post('/api/finance/expenses', formData);
+      const response = await api.post<{ errors?: Record<string, string[]> }>('/api/finance/expenses', formData);
 
       if (!response.ok) {
-        throw new Error(response.error || 'Failed to add expense');
+        throw new Error(response.data?.errors?.date?.[0] || response.error || 'Failed to add expense.');
       }
       // React Query will automatically refetch on next render
       refetchExpenses();
@@ -761,7 +762,7 @@ const Expense: React.FC = () => {
     } catch (err) {
       Swal.fire({
         title: "Error",
-        text: "Failed to add expense.",
+        text: err instanceof Error ? err.message : "Failed to add expense.",
         icon: "error",
       });
     }
@@ -1349,6 +1350,7 @@ const Expense: React.FC = () => {
                 <input
                   type="date"
                   value={addForm.date}
+                  max={businessDate}
                   onChange={(e) => setAddForm({ ...addForm, date: e.target.value })}
                   className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 />
