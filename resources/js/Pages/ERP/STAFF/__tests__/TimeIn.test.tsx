@@ -59,6 +59,48 @@ it('keeps the attendance page mobile-safe and the live clock accessible', async 
     expect(screen.getByText('Current Time').nextElementSibling).toHaveAttribute('aria-live', 'polite');
 });
 
+it('places clock out beside clock in and lunch below the action row', async () => {
+    const response = (body: unknown) => ({
+        ok: true,
+        json: async () => body,
+    });
+
+    fetchMock.mockImplementation(async (url: string) => {
+        if (url === '/api/staff/attendance/status') {
+            return response({
+                checked_in: true,
+                checked_out: false,
+                check_in_time: '08:00',
+                check_out_time: null,
+                lunch_break_start: null,
+                lunch_break_end: null,
+                is_on_lunch: false,
+            });
+        }
+
+        if (url === '/api/staff/shop-hours/today') {
+            return response({ open: '08:00', close: '17:00', is_open: true });
+        }
+
+        return response({ data: [] });
+    });
+
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+
+    const clockInButton = screen.getByRole('button', { name: /clock in/i });
+    const actionGrid = clockInButton.parentElement;
+    expect(actionGrid).not.toBeNull();
+
+    const actionButtons = within(actionGrid as HTMLElement).getAllByRole('button');
+    expect(actionButtons).toHaveLength(3);
+    expect(actionButtons[0]).toHaveTextContent('Clock In');
+    expect(actionButtons[1]).toHaveTextContent('Clock Out');
+    expect(actionButtons[2]).toHaveTextContent('Start Lunch');
+    expect(actionButtons[2]).toHaveClass('min-[420px]:col-span-2');
+});
+
 it('keeps attendance actions inside the history card', async () => {
     render(<TimeIn />);
 
