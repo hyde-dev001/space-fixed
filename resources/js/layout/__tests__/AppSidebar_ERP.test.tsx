@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -108,6 +108,53 @@ beforeEach(() => {
     configurable: true,
     value: { getItem: vi.fn(), removeItem: vi.fn() },
   });
+});
+
+it('groups repair links into dropdowns and reopens the current page group after navigation', () => {
+  state.role = 'REPAIRER';
+  state.roles = ['Repairer'];
+  state.shopOwner.business_type = 'repair';
+  state.url = '/erp/time-in';
+  state.permissions = ['access-repairer-dashboard', 'access-repair-job-orders', 'access-upload-service', 'access-pricing-services', 'access-repair-stocks', 'access-repairer-support'];
+
+  const { rerender } = render(<AppSidebarERP />);
+  const operations = screen.getByRole('button', { name: 'REPAIR OPERATIONS' });
+  const operationsPanel = document.getElementById(operations.getAttribute('aria-controls')!)!;
+
+  expect(operations.querySelector('svg')).not.toBeNull();
+  expect(within(operationsPanel).getByRole('link', { name: 'Warranty Queue' })).toHaveAttribute('href', '/erp/repairer/warranty-queue');
+  expect(within(operationsPanel).getByRole('link', { name: 'Upload Services' }).querySelector('svg')).not.toBeNull();
+  expect(screen.getByRole('button', { name: 'SELF-SERVICE' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'OVERVIEW' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'INVENTORY & MATERIALS' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'SUPPORT & RESOURCES' })).toBeInTheDocument();
+
+  fireEvent.click(operations);
+  expect(operations).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('link', { name: 'Warranty Queue' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Log Attendance' })).toBeInTheDocument();
+
+  state.url = '/erp/repairer/warranty-queue';
+  rerender(<AppSidebarERP />);
+  expect(operations).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Warranty Queue' })).toHaveAttribute('aria-current', 'page');
+});
+
+it('omits empty repair groups when permissions or modules hide their pages', () => {
+  state.role = 'REPAIRER';
+  state.roles = ['Repairer'];
+  state.shopOwner.business_type = 'repair';
+  state.url = '/erp/time-in';
+  state.permissions = ['access-repair-stocks'];
+  state.shopModules = moduleStates({ inventory: false });
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('button', { name: 'OVERVIEW' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'REPAIR OPERATIONS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'INVENTORY & MATERIALS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Stocks Overview' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'My Payslips' })).toBeInTheDocument();
 });
 
 function moduleStates(overrides: Record<string, boolean> = {}) {
