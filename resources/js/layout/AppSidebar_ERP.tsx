@@ -973,7 +973,38 @@ const repairNavigationGroups = [
   { key: "support", label: "SUPPORT & RESOURCES", routes: ["erp.repairer.support", "erp.repairer.articles.index"] },
 ];
 
+type NavigationDestination = string | { route: string; params?: Record<string, any>; extraPaths?: string[] };
+type NavigationGroup = { key: string; label: string; routes: NavigationDestination[] };
+
 const employeeNavigationGroups = {
+  hr: [
+    { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
+    { key: "overview", label: "OVERVIEW", routes: [{ route: "erp.hr", params: { section: "overview" } }] },
+    { key: "employees", label: "EMPLOYEE RECORDS", routes: [{ route: "erp.hr", params: { section: "employees" } }] },
+    { key: "attendance", label: "ATTENDANCE", routes: [{ route: "erp.hr", params: { section: "attendance" } }] },
+    { key: "requests", label: "LEAVE & OVERTIME", routes: ["leaves", "overtime"].map((section) => ({ route: "erp.hr", params: { section } })) },
+    { key: "payroll", label: "PAYROLL", routes: ["payroll-view", "payroll-generate", "salary-changes"].map((section) => ({ route: "erp.hr", params: { section } })) },
+    { key: "resources", label: "RESOURCES", routes: ["erp.hr.articles.index"] },
+  ],
+  inventory: [
+    { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
+    { key: "overview", label: "OVERVIEW", routes: ["erp.inventory.inventory-dashboard"] },
+    { key: "operations", label: "STOCK OPERATIONS", routes: ["erp.inventory.upload-stocks", "erp.inventory.stock-movement"] },
+    { key: "requests", label: "REQUESTS & APPROVALS", routes: ["erp.inventory.stock-request", "erp.inventory.request-material-approval"] },
+    { key: "suppliers", label: "SUPPLIER MONITORING", routes: ["erp.inventory.supplier-order-monitoring"] },
+    { key: "resources", label: "RESOURCES", routes: ["erp.inventory.articles.index"] },
+  ],
+  finance: [
+    { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
+    { key: "overview", label: "OVERVIEW", routes: ["finance.dashboard"] },
+    { key: "billing", label: "BILLING & PAYMENTS", routes: ["finance.platform-balance", { route: "finance.index", params: { section: "invoice-generation" }, extraPaths: ["/create-invoice"] }, "finance.cod-remittances"] },
+    {
+      key: "approvals", label: "APPROVALS",
+      routes: ["repair-pricing", "shoe-pricing", "purchase-request-approval", "refund-approvals", "payslip-approvals"].map((section) => ({ route: "finance.index", params: { section } })),
+    },
+    { key: "expenses", label: "EXPENSES", routes: [{ route: "finance.index", params: { section: "expense-tracking" } }] },
+    { key: "resources", label: "RESOURCES", routes: ["finance.articles.index"] },
+  ],
   manager: [
     { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
     { key: "overview", label: "OVERVIEW", routes: ["erp.manager.dashboard"] },
@@ -995,7 +1026,7 @@ const employeeNavigationGroups = {
     { key: "resources", label: "RESOURCES", routes: ["erp.articles.index"] },
   ],
   repair: repairNavigationGroups,
-};
+} satisfies Record<string, NavigationGroup[]>;
 
 const cashierItems: NavItem[] = [
   {
@@ -1413,7 +1444,9 @@ const EmployeeSidebarERP: React.FC = () => {
 
   useEffect(() => {
     const activePanels = Object.entries(employeeNavigationGroups).flatMap(([menuType, groups]) =>
-      groups.filter((group) => group.routes.some((routeName) => isActive(routeName)))
+      groups.filter((group) => group.routes.some((destination: NavigationDestination) => typeof destination === "string"
+        ? isActive(destination)
+        : isActive(destination.route, destination.params, destination.extraPaths)))
         .map((group) => `${menuType}-sidebar-${group.key}`));
     setCollapsedEmployeeGroups((previous) => previous.some((key) => activePanels.includes(key))
       ? previous.filter((key) => !activePanels.includes(key))
@@ -2253,7 +2286,7 @@ const EmployeeSidebarERP: React.FC = () => {
     });
   }
 
-  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "inventory" | "hr" | "finance" | "crm" | "main" | "others") => {
     const visibleItems = items
       .map((item) => ({
         ...item,
@@ -2409,13 +2442,18 @@ const EmployeeSidebarERP: React.FC = () => {
   };
 
   const renderEmployeeMenuGroups = (navigationItems: NavItem[], menuType: keyof typeof employeeNavigationGroups) => {
-    const items = deduplicateItems(navigationItems.filter(isModuleVisible));
+    const items = deduplicateItems(navigationItems.filter(isModuleVisible)
+      .flatMap((item) => item.subItems
+        ? item.subItems.filter(isModuleVisible).map((subItem) => ({ ...subItem, icon: subItem.icon ?? item.icon }))
+        : [item]));
     const showLabels = isExpanded || isHovered || isMobileOpen;
 
     return (
       <div className="space-y-5">
         {employeeNavigationGroups[menuType].map((group) => {
-          const groupItems = items.filter((item) => item.route && group.routes.includes(item.route));
+          const groupItems = items.filter((item) => group.routes.some((destination: NavigationDestination) => typeof destination === "string"
+            ? item.route === destination && !item.params?.section
+            : item.route === destination.route && item.params?.section === destination.params?.section));
           if (groupItems.length === 0) return null;
 
           const panelId = `${menuType}-sidebar-${group.key}`;
@@ -2636,7 +2674,7 @@ const EmployeeSidebarERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  {renderMenuItems(deduplicateItems(withAttendanceForSection("inventory", [...getFilteredInventoryItems(), myPayslipsItem, ...(hasInventoryArticlesAccess() ? [inventoryArticlesItem] : [])])), "manager")}
+                  {renderEmployeeMenuGroups(withAttendanceForSection("inventory", [...getFilteredInventoryItems(), myPayslipsItem, ...(hasInventoryArticlesAccess() ? [inventoryArticlesItem] : [])]), "inventory")}
                 </div>
               </div>
             </nav>
@@ -2680,10 +2718,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(
-                  deduplicateItems(withAttendanceForSection("hr", [...getFilteredHRItems(), myPayslipsItem, ...(hasHRArticlesAccess() ? [hrArticlesItem] : [])])),
-                  "hr"
-                )}
+                {renderEmployeeMenuGroups(withAttendanceForSection("hr", [...getFilteredHRItems(), myPayslipsItem, ...(hasHRArticlesAccess() ? [hrArticlesItem] : [])]), "hr")}
               </div>
             </div>
           </nav>
@@ -2705,7 +2740,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem, ...(hasFinanceArticlesAccess() ? [financeArticlesItem] : [])])), "finance")}
+                {renderEmployeeMenuGroups(withAttendanceForSection("finance", [...getFilteredFinanceItems(), myPayslipsItem, ...(hasFinanceArticlesAccess() ? [financeArticlesItem] : [])]), "finance")}
               </div>
             </div>
           </nav>
