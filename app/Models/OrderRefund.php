@@ -35,6 +35,7 @@ class OrderRefund extends Model
     ];
 
     protected $fillable = [
+        'request_basis',
         'order_id',
         'customer_id',
         'shop_owner_id',

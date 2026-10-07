@@ -1,4 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
+import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
+import type { RetailWarrantyProjection } from '@/types/retailWarranty';
 import { Modal } from "@/components/ui/modal";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useId, useMemo, useState } from "react";
@@ -103,6 +105,7 @@ type ReceiptLatestRefund = {
 };
 
 type ReceiptSnapshot = {
+    productWarranty?: RetailWarrantyProjection | null;
 	moduleType?: "repair" | "retail";
 	transactionId?: number;
 	repairRequestId?: number;
@@ -1460,6 +1463,7 @@ const PointOfSalePage = () => {
 
 					return {
 						moduleType,
+						productWarranty: row?.product_warranty ?? null,
 						transactionId: Number(row?.id || 0),
 						repairRequestId: moduleType === "repair" ? Number(row?.module_reference_id || 0) : undefined,
 						repairStatus: moduleType === "repair"
@@ -1926,7 +1930,7 @@ const PointOfSalePage = () => {
 		}
 	};
 
-	const handleRetailRefund = async (receipt: ReceiptSnapshot) => {
+	const handleRetailRefund = async (receipt: ReceiptSnapshot, basis: 'ordinary' | 'warranty' = 'ordinary') => {
 		if (retailRefundFrozen) {
 			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
 			return;
@@ -1960,7 +1964,8 @@ const PointOfSalePage = () => {
 				const purchasedQty = Math.max(0, Number(item.qty ?? 0));
 				const unitPrice = Math.max(0, Number(item.unitPrice ?? 0));
 				const committedQty = Math.max(0, Number(committedQtyByOrderItem.get(orderItemId) || 0));
-				const remainingQty = Math.max(0, purchasedQty - committedQty);
+				const coverage = receipt.productWarranty?.items.find(item => item.order_item_id === orderItemId && item.can_assess);
+				const remainingQty = basis === 'warranty' ? Math.min(Math.max(0, purchasedQty - committedQty), coverage?.available_quantity ?? 0) : Math.max(0, purchasedQty - committedQty);
 
 				return {
 					...item,
@@ -1991,7 +1996,7 @@ const PointOfSalePage = () => {
 			.replace(/'/g, "&#39;");
 
 		const pickerResult = await Swal.fire({
-			title: "Retail Item Refund",
+			title: basis === 'warranty' ? "Product Warranty Assessment" : "Retail Item Refund",
 			html: `
 				<div style="text-align:left; display:flex; flex-direction:column; gap:10px; max-height:320px; overflow:auto; padding-right:4px;">
 					${refundableItems.map((item, index) => `
@@ -2120,9 +2125,10 @@ const PointOfSalePage = () => {
 				"/api/retail-pos/refunds",
 				{
 					source_transaction_id: transactionId,
+					request_basis: basis,
 					request_type: requestType,
 					requested_amount: requestedAmount,
-					refund_lines: refundLines,
+					refund_lines: basis === 'warranty' ? refundLines.map((line: { order_item_id: number }) => ({ ...line, retail_warranty_id: receipt.productWarranty?.items.find(item => item.order_item_id === line.order_item_id)?.id })) : refundLines,
 					reason_code: "retail_pos_item_issue",
 					reason_notes: reasonNotes,
 				},
@@ -2136,6 +2142,11 @@ const PointOfSalePage = () => {
 				throw new Error("Refund request was created without a valid reference.");
 			}
 
+			if (basis === 'warranty') {
+				setIsHistoryModalOpen(false);
+				await Swal.fire({ icon: 'success', title: 'Warranty Assessment Submitted', text: 'The request remains subject to the existing inspection and approval process.', confirmButtonColor: '#000000' });
+				return;
+			}
 			await axios.post(
 				`/api/retail-pos/refunds/${createdRefundId}/approve`,
 				{
@@ -4486,6 +4497,7 @@ const PointOfSalePage = () => {
 																{getReceiptLatestRefundPresentation(receipt)?.label ?? receipt.latestRefund.status}
 															</span>
 														)}
+														{receipt.moduleType === 'retail' && receipt.productWarranty?.items.some(item => item.can_assess) && canRequestRetailRefund(receipt) ? <button type="button" disabled={retailRefundFrozen} onClick={() => handleRetailRefund(receipt, 'warranty')} className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-black disabled:opacity-50">Warranty Assessment</button> : null}
 														{canRequestWarrantyClaimFromReceipt(receipt) && (
 															<button
 																type="button"
@@ -4566,6 +4578,7 @@ const PointOfSalePage = () => {
 				{isReceiptModalOpen && receiptSnapshot && (
 					<div className="receipt-print-modal fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="receipt-print-card w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+								{receiptSnapshot.productWarranty ? <div className="max-h-72 overflow-y-auto print:hidden"><RetailWarrantyPanel warranty={receiptSnapshot.productWarranty} disabled={retailRefundFrozen || !canRequestRetailRefund(receiptSnapshot)} onAssess={() => { setIsReceiptModalOpen(false); void handleRetailRefund(receiptSnapshot, 'warranty'); }} /></div> : null}
 							<div className="receipt-modal-header flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>
 								<div className="flex items-center gap-2">

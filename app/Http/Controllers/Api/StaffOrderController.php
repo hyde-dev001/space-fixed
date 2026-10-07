@@ -27,6 +27,19 @@ use Illuminate\Validation\ValidationException;
 
 class StaffOrderController extends Controller
 {
+    private function warrantyProjections(Collection $orders): array
+    {
+        $staff = Auth::guard('user')->user();
+        if (! $staff || ! $staff->isEmployeeAccount() || ! $staff->shop_owner_id || ! $staff->can('access-staff-job-orders')) {
+            return [];
+        }
+        $shop = \App\Models\ShopOwner::find($staff->shop_owner_id);
+        if (! $shop || ! $this->shopModuleAccessService->canAccess($shop, 'retail_operations')) {
+            return [];
+        }
+        return app(\App\Services\RetailWarrantyService::class)->projectOrders($orders->filter(fn ($order) => (int) $order->shop_owner_id === (int) $staff->shop_owner_id), 'staff');
+    }
+
     private function canAccessStaffOrders($user): bool
     {
         if (! $user) {
@@ -74,6 +87,7 @@ class StaffOrderController extends Controller
         // Fetch orders ONLY for this shop with their items and related data
         $orders = Order::with([
             'items.product',
+            'retailWarrantyIssuance.warranties',
             'customer',
             'address',
             'shopOwner.logisticsSetting',
@@ -144,7 +158,8 @@ class StaffOrderController extends Controller
             ->groupBy('source_id')
             ->map(fn ($shipments) => $shipments->first());
 
-        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $posOrderLookup, $includeRefundItems, $deliveryCancellations, $orderShipments, $refundShipments) {
+        $warrantyProjections = $this->warrantyProjections($orders);
+        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $posOrderLookup, $includeRefundItems, $deliveryCancellations, $orderShipments, $refundShipments, $warrantyProjections) {
             $itemSubtotal = (float) ($order->total_amount ?? 0);
             $shippingFee = (float) ($order->shipping_fee ?? 0);
             $hasStoredVat = $order->vat_amount !== null;
@@ -181,6 +196,7 @@ class StaffOrderController extends Controller
             return [
                 'id' => $order->id,
                 'order_number' => $order->order_number,
+                'product_warranty' => $warrantyProjections[$order->id] ?? null,
                 'customer_name' => $order->customer_name ?? $order->customer?->name ?? 'Guest',
                 'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',
                 'customer_phone' => $order->customer_phone ?? '',
@@ -364,6 +380,7 @@ class StaffOrderController extends Controller
 
         return response()->json([
             'id' => $order->id,
+            'product_warranty' => $this->warrantyProjections(collect([$order]))[$order->id] ?? null,
             'order_number' => $order->order_number,
             'customer_name' => $order->customer_name ?? $order->customer?->name ?? 'Guest',
             'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',

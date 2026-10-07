@@ -210,10 +210,8 @@ class RetailPosController extends Controller
             ->orderByDesc('id')
             ->paginate($perPage);
 
-        return response()->json([
-            'success' => true,
-            'data' => $rows,
-        ]);
+        $this->projectWarrantyHistory($rows->getCollection());
+        return response()->json(['success' => true, 'data' => $rows]);
     }
 
     public function showReceipt(PosTransaction $transaction)
@@ -224,6 +222,9 @@ class RetailPosController extends Controller
         abort_if((string) $transaction->module_type !== 'retail', 404);
         abort_if((int) $transaction->shop_owner_id !== $shopOwnerId, 404);
 
+        $transaction->load('sourceOrder:id,shop_owner_id');
+        $this->projectWarrantyHistory(collect([$transaction]));
+
         return response()->json([
             'success' => true,
             'data' => $transaction->load(['paymentLines', 'receipt']),
@@ -233,12 +234,14 @@ class RetailPosController extends Controller
     public function requestRefund(Request $request, RetailPosRefundService $service)
     {
         $validated = $request->validate([
+            'request_basis' => ['nullable', 'string', 'in:ordinary,warranty'],
             'source_transaction_id' => ['required', 'integer', 'exists:pos_transactions,id'],
             'request_type' => ['required', 'string', 'in:full,partial'],
             'requested_amount' => ['nullable', 'numeric', 'min:0.01'],
             'refund_lines' => ['nullable', 'array', 'min:1'],
             'refund_lines.*.order_item_id' => ['required', 'integer', 'min:1'],
             'refund_lines.*.requested_qty' => ['required', 'integer', 'min:1'],
+            'refund_lines.*.retail_warranty_id' => ['nullable', 'integer', 'min:1'],
             'refund_lines.*.inspection_disposition' => ['required', 'string', 'in:resellable,damaged'],
             'reason_code' => ['required', 'string', 'max:100'],
             'reason_notes' => ['nullable', 'string', 'max:2000'],
@@ -269,6 +272,13 @@ class RetailPosController extends Controller
             ], 403);
         }
 
+        if (($validated['request_basis'] ?? 'ordinary') === 'warranty') {
+            $isWarrantyShopActor = $actor instanceof \App\Models\ShopOwner ? (int) $actor->id === (int) $source->shop_owner_id
+                : ($actor instanceof \App\Models\User && $actor->isEmployeeAccount() && (int) $actor->shop_owner_id === (int) $source->shop_owner_id
+                    && ($actor->can('access-unified-pos') || $actor->can('access-staff-job-orders')));
+            abort_unless($isWarrantyShopActor, 403, 'Warranty inspection must be performed by an authorized shop actor.');
+            $validated['_warranty_actor'] = ['type' => $actor instanceof \App\Models\ShopOwner ? 'shop_owner' : 'user', 'id' => (int) $actor->id];
+        }
         $refund = $service->requestRefund($source, $validated, $this->resolveActorAuditUserId());
 
         return response()->json([
@@ -341,6 +351,19 @@ class RetailPosController extends Controller
     private function resolveActor(): ?object
     {
         return Auth::guard('user')->user() ?? Auth::guard('shop_owner')->user();
+    }
+
+    private function projectWarrantyHistory(\Illuminate\Support\Collection $transactions): void
+    {
+        $actor = $this->resolveActor();
+        $shopId = $actor instanceof \App\Models\ShopOwner ? (int) $actor->id
+            : ($actor instanceof \App\Models\User && $actor->isEmployeeAccount() && ($actor->can('access-unified-pos') || $actor->can('access-staff-job-orders')) ? (int) $actor->shop_owner_id : 0);
+        $orders = $transactions->pluck('sourceOrder')->filter(fn ($order) => $order && $shopId > 0 && (int) $order->shop_owner_id === $shopId);
+        $projections = app(\App\Services\RetailWarrantyService::class)->projectOrders($orders, $actor instanceof \App\Models\ShopOwner ? 'owner' : 'staff');
+        foreach ($transactions as $transaction) {
+            $transaction->setAttribute('product_warranty', $projections[$transaction->module_reference_id] ?? null);
+        }
+        $orders->each(fn ($order) => $order->unsetRelation('retailWarrantyIssuance'));
     }
 
     private function resolveActorId(): int

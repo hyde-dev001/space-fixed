@@ -1,4 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
+import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
+import type { RetailWarrantyProjection } from '@/types/retailWarranty';
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
@@ -111,6 +113,7 @@ type ReceiptRefundEntry = {
 };
 
 type ReceiptSnapshot = {
+    productWarranty?: RetailWarrantyProjection | null;
 	moduleType?: "repair" | "retail";
 	transactionId?: number;
 	repairRequestId?: number;
@@ -585,6 +588,7 @@ const [retailNotes, setRetailNotes] = useState<string>("");
 const [retailProcessingPayment, setRetailProcessingPayment] = useState<boolean>(false);
 const [isRetailRefundModalOpen, setIsRetailRefundModalOpen] = useState<boolean>(false);
 const [retailRefundReceipt, setRetailRefundReceipt] = useState<ReceiptSnapshot | null>(null);
+const [retailWarrantyBasis, setRetailWarrantyBasis] = useState(false);
 const [retailRefundTransactionId, setRetailRefundTransactionId] = useState<number>(0);
 const [retailRefundableBalance, setRetailRefundableBalance] = useState<number>(0);
 const [retailRefundItems, setRetailRefundItems] = useState<RetailRefundSelectableItem[]>([]);
@@ -993,6 +997,7 @@ useEffect(() => {
 
 					return {
 						moduleType,
+						productWarranty: row?.product_warranty ?? null,
 						transactionId: Number(row?.id || 0),
 						repairRequestId: moduleType === "repair" ? Number(row?.module_reference_id || 0) : undefined,
 						repairStatus: moduleType === "repair"
@@ -2263,7 +2268,7 @@ useEffect(() => {
 		window.print();
 	};
 
-	const handleRetailRefund = async (receipt: ReceiptSnapshot) => {
+	const handleRetailRefund = async (receipt: ReceiptSnapshot, basis: 'ordinary' | 'warranty' = 'ordinary') => {
 		if (retailRefundFrozen) {
 			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
 			return;
@@ -2297,7 +2302,8 @@ useEffect(() => {
 				const purchasedQty = Math.max(0, Number(item.qty ?? 0));
 				const unitPrice = Math.max(0, Number(item.unitPrice ?? 0));
 				const committedQty = Math.max(0, Number(committedQtyByOrderItem.get(orderItemId) || 0));
-				const remainingQty = Math.max(0, purchasedQty - committedQty);
+				const coverage = receipt.productWarranty?.items.find(item => item.order_item_id === orderItemId && item.can_assess);
+				const remainingQty = basis === 'warranty' ? Math.min(Math.max(0, purchasedQty - committedQty), coverage?.available_quantity ?? 0) : Math.max(0, purchasedQty - committedQty);
 
 				return {
 					orderItemId,
@@ -2328,6 +2334,7 @@ useEffect(() => {
 			return acc;
 		}, {});
 
+		setRetailWarrantyBasis(basis === 'warranty');
 		setRetailRefundReceipt(receipt);
 		setRetailRefundTransactionId(transactionId);
 		setRetailRefundableBalance(refundableBalance);
@@ -2384,9 +2391,10 @@ useEffect(() => {
 				"/api/retail-pos/refunds",
 				{
 					source_transaction_id: retailRefundTransactionId,
+					request_basis: retailWarrantyBasis ? 'warranty' : 'ordinary',
 					request_type: requestType,
 					requested_amount: requestedAmount,
-					refund_lines: refundLines,
+					refund_lines: retailWarrantyBasis ? refundLines.map(line => ({ ...line, retail_warranty_id: retailRefundReceipt.productWarranty?.items.find(item => item.order_item_id === line.order_item_id)?.id })) : refundLines,
 					reason_code: "retail_pos_item_issue",
 					reason_notes: reasonNotes,
 				},
@@ -2400,6 +2408,11 @@ useEffect(() => {
 				throw new Error("Refund request was created without a valid reference.");
 			}
 
+			if (retailWarrantyBasis) {
+				setIsRetailRefundModalOpen(false); setIsHistoryModalOpen(false);
+				await Swal.fire({ icon: 'success', title: 'Warranty Assessment Submitted', text: 'The request remains subject to the existing inspection and approval process.', confirmButtonColor: '#000000' });
+				return;
+			}
 			await axios.post(
 				`/api/retail-pos/refunds/${createdRefundId}/approve`,
 				{
@@ -4131,6 +4144,7 @@ useEffect(() => {
 																{receipt.latestRefund.status}
 															</span>
 														)}
+														{receipt.moduleType === 'retail' && receipt.productWarranty?.items.some(item => item.can_assess) && canRequestRetailRefund(receipt) ? <button type="button" disabled={retailRefundFrozen} onClick={() => handleRetailRefund(receipt, 'warranty')} className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-black disabled:opacity-50">Warranty Assessment</button> : null}
 														{canRequestWarrantyClaimFromReceipt(receipt) && (
 															<button
 																type="button"
@@ -4200,7 +4214,7 @@ useEffect(() => {
 						<div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
 								<div>
-									<h3 className="text-xl font-semibold text-slate-900">Retail Item Refund</h3>
+									<h3 className="text-xl font-semibold text-slate-900">{retailWarrantyBasis ? 'Product Warranty Assessment' : 'Retail Item Refund'}</h3>
 									<p className="mt-1 text-xs text-slate-500">
 										Receipt: {retailRefundReceipt.receiptNo} | Customer: {retailRefundReceipt.customerName}
 									</p>
@@ -4398,6 +4412,7 @@ useEffect(() => {
 				{isReceiptModalOpen && receiptSnapshot && (
 					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+								{receiptSnapshot.productWarranty ? <div className="max-h-72 overflow-y-auto print:hidden"><RetailWarrantyPanel warranty={receiptSnapshot.productWarranty} disabled={retailRefundFrozen || !canRequestRetailRefund(receiptSnapshot)} onAssess={() => { setIsReceiptModalOpen(false); void handleRetailRefund(receiptSnapshot, 'warranty'); }} /></div> : null}
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>
 								<div className="flex items-center gap-2">

@@ -87,6 +87,12 @@ final class OrderRefundOwnerProjection
             return 'none';
         }
 
+        if ($refund instanceof OrderRefund && $refund->request_basis === 'warranty'
+            && $refund->staff_approved_at === null && $refund->staff_approved_by === null
+            && app(\App\Services\OrderRefundService::class)->requiresStaffCustomerAssessment($refund)) {
+            return 'staff';
+        }
+
         $shopOwnerStatus = $this->value($refund->getAttribute('shop_owner_status'));
 
         if ($caseState === 'requested' || in_array($shopOwnerStatus, ['', 'pending', 'requested'], true)) {

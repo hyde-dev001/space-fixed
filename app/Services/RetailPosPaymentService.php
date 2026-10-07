@@ -232,6 +232,7 @@ class RetailPosPaymentService
             $transaction->load('paymentLines');
             $receipt = app(RepairPosReceiptService::class)->issue($transaction);
             $this->ensureRetailPosInvoice($order, $transaction, (string) $receipt->receipt_no);
+            app(RetailWarrantyService::class)->captureFulfillment($order);
 
             return $transaction->fresh(['paymentLines', 'receipt']);
         });

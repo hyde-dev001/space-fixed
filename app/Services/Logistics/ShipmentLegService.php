@@ -1325,6 +1325,7 @@ class ShipmentLegService
 
         $order->status = OrderStatus::DELIVERED;
         $order->save();
+        app(\App\Services\RetailWarrantyService::class)->captureFulfillment($order);
     }
 
     private function completeShopOwnedReturn($shipment): void

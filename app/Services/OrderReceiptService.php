@@ -55,6 +55,10 @@ class OrderReceiptService
             $lockedOrder->customer_received_at = $lockedOrder->customer_received_at ?? now();
             $lockedOrder->save();
 
+            if ($deliveryCompleted) {
+                app(RetailWarrantyService::class)->captureFulfillment($lockedOrder);
+            }
+
             return $this->success(
                 $lockedOrder,
                 $deliveryCompleted,

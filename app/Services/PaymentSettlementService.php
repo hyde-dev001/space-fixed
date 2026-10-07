@@ -304,6 +304,7 @@ class PaymentSettlementService
             if ($isSupportedPaymentMethod) {
                 $order->update(['payment_method' => $normalizedPaymentMethod]);
             }
+            app(RetailWarrantyService::class)->issueCaptured($order);
 
             return [
                 'result' => 'already_settled',
@@ -332,6 +333,7 @@ class PaymentSettlementService
         }
 
         $order->update($updates);
+        app(RetailWarrantyService::class)->issueCaptured($order);
 
         if ($order->invoice_id) {
             $invoice = Invoice::find($order->invoice_id);
@@ -918,6 +920,9 @@ class PaymentSettlementService
 
     public function settleOrderRefunded(Order $order, ?string $refundId = null, ?string $reason = null, ?string $note = null): array
     {
+        if ($order->exists && ($order->retail_warranty_policy_snapshot['eligible'] ?? false)) {
+            app(RetailWarrantyService::class)->reconcileOrder($order);
+        }
         $isCodOrder = in_array(strtolower((string) ($order->payment_method ?? '')), [
             'cod',
             'cash',

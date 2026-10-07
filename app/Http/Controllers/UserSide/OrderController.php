@@ -197,11 +197,13 @@ class OrderController extends Controller
             })
             ->all();
 
+        foreach ($orderCollection as $order) {
+            $this->reconcilePendingOrderPaymentWithGateway($order);
+            $order->refresh();
+        }
+        $warrantyProjections = app(\App\Services\RetailWarrantyService::class)->projectOrders($orderCollection);
         $orders = $orderCollection
-            ->map(function (Order $order) use ($reviewedOrderLookup, $logisticsShipmentLookup, $refundShipmentLookup, $posOrderLookup) {
-                $this->reconcilePendingOrderPaymentWithGateway($order);
-                $order->refresh();
-
+            ->map(function (Order $order) use ($reviewedOrderLookup, $logisticsShipmentLookup, $refundShipmentLookup, $posOrderLookup, $warrantyProjections) {
                 $shipment = $logisticsShipmentLookup[(int) $order->id] ?? null;
                 $isShopOwnedDelivery = strtolower(trim((string) $order->carrier_company)) === 'shop-owned logistics';
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
@@ -304,6 +306,8 @@ class OrderController extends Controller
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
+                    'product_warranty' => $warrantyProjections[$order->id] ?? null,
+                    'is_pos_order' => isset($posOrderLookup[$order->id]),
                     'status' => $order->status,
                     'payment_status' => $order->payment_status ?? 'pending',
                     ...$this->codCollectionService->projection($order),
@@ -842,6 +846,7 @@ class OrderController extends Controller
         try {
             $validated = $request->validate([
                 'order_id' => 'required|integer',
+                'request_basis' => 'nullable|string|in:ordinary,warranty',
                 'reason' => 'required|string|max:255',
                 'refund_method' => 'nullable|string|max:100',
                 'refund_destination_type' => 'nullable|string|in:gcash,bank',
@@ -855,6 +860,7 @@ class OrderController extends Controller
                 'refund_lines' => 'nullable|array|min:1',
                 'refund_lines.*.order_item_id' => 'required|integer|min:1',
                 'refund_lines.*.requested_qty' => 'required|integer|min:1',
+                'refund_lines.*.retail_warranty_id' => 'nullable|integer|min:1',
                 'note' => 'nullable|string|max:1000',
                 'other_reason_note' => 'nullable|string|max:1000',
                 'media' => 'required|array|size:6',
@@ -896,14 +902,21 @@ class OrderController extends Controller
                 ], 422);
             }
 
-            if ($order->resolvedDeliveryMethod() === 'shop_owned') {
+            $isWarrantyAssessment = ($validated['request_basis'] ?? 'ordinary') === 'warranty';
+            $warrantyLinks = $isWarrantyAssessment
+                ? app(\App\Services\RetailWarrantyService::class)->validateAssessment($order, $validated['refund_lines'] ?? []) : [];
+            if ($isWarrantyAssessment && ($validated['request_type'] ?? '') !== 'partial') {
+                throw ValidationException::withMessages(['refund_lines' => ['Warranty assessment requires explicitly selected covered quantities.']]);
+            }
+
+            if ($order->resolvedDeliveryMethod() === 'shop_owned' && ! $isWarrantyAssessment) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Shop-owned logistics orders use Report Order for dispatcher investigation.',
                 ], 422);
             }
 
-            if (!$order->isCancellationRefundWindowOpen()) {
+            if (!$order->isCancellationRefundWindowOpen() && ! $isWarrantyAssessment) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Refund deadline has passed for this order.',
@@ -937,7 +950,7 @@ class OrderController extends Controller
                 }
             }
 
-            if (!$isCodPayment && !in_array((string) ($order->payment_status ?? 'pending'), ['paid', 'completed'], true)) {
+            if (!$isCodPayment && !in_array((string) ($order->payment_status ?? 'pending'), $isWarrantyAssessment ? ['paid', 'completed', 'refunded'] : ['paid', 'completed'], true)) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Order payment is not eligible for refund processing.',
@@ -1146,6 +1159,7 @@ class OrderController extends Controller
                     }
 
                     $normalizedRefundLines[] = [
+                        'retail_warranty_id' => $warrantyLinks[(int) $orderItem->id] ?? null,
                         'order_item_id' => (int) $orderItem->id,
                         'product_id' => (int) ($orderItem->product_id ?? 0),
                         'product_variant_id' => $resolvedVariantId ? (int) $resolvedVariantId : null,
@@ -1256,7 +1270,7 @@ class OrderController extends Controller
                     ], 422);
                 }
 
-                if ($amount >= round($fullRefundAmount, 2)) {
+                if ($amount >= round($fullRefundAmount, 2) && ! $isWarrantyAssessment) {
                     return response()->json([
                         'success' => false,
                         'message' => 'Requested partial amount must be less than the full order amount.',
@@ -1282,6 +1296,7 @@ class OrderController extends Controller
             $reasonNote = $baseReasonNote;
 
             $refundPayload = [
+                'request_basis' => $isWarrantyAssessment ? 'warranty' : 'ordinary',
                 'order_id' => $order->id,
                 'customer_id' => $order->customer_id,
                 'shop_owner_id' => $order->shop_owner_id,
@@ -1608,7 +1623,7 @@ class OrderController extends Controller
         }
 
         try {
-            $requiresStaffReview = $this->orderRefundService->isThirdPartyCustomerRefund($refundRequest, $order);
+            $requiresStaffReview = $this->orderRefundService->requiresStaffCustomerAssessment($refundRequest, $order);
             $customerName = trim((string) ($user->name ?? ''));
             if ($customerName === '') {
                 $customerName = trim((string) (($user->first_name ?? '') . ' ' . ($user->last_name ?? '')));

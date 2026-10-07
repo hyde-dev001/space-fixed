@@ -194,6 +194,10 @@ Route::get('/payment-failed', function () {
     return Inertia::render('UserSide/Orders/PaymentFailed');
 })->middleware('auth:user')->name('payment-failed');
 Route::get('/my-orders', [OrderController::class, 'index'])->middleware('auth:user')->name('my-orders');
+Route::middleware(['auth:user', 'throttle:60,1'])->prefix('orders/warranties')->name('customer.retail-warranties.')->group(function () {
+    Route::get('/{reference}', [\App\Http\Controllers\UserSide\RetailWarrantyController::class, 'show'])->name('show');
+    Route::get('/{reference}/certificate', [\App\Http\Controllers\UserSide\RetailWarrantyController::class, 'certificate'])->name('certificate');
+});
 Route::post('/orders/confirm-delivery', [OrderController::class, 'confirmDelivery'])->middleware('auth:user')->name('orders.confirm-delivery');
 Route::post('/orders/{order}/delivery-disputes', [OrderController::class, 'reportDeliveryIssue'])
     ->middleware('auth:user')
@@ -1073,6 +1077,8 @@ Route::middleware('auth:shop_owner')->prefix('shop-owner')->name('shop-owner.')-
         Route::post('/disable', [ShopOwnerMfaController::class, 'disable'])->name('disable');
     });
     Route::put('/settings', [ShopSettingsController::class, 'update'])->name('settings.update');
+    Route::put('/settings/retail-warranty', [ShopSettingsController::class, 'updateRetailWarranty'])
+        ->middleware('check.business.type:retail,both')->name('settings.retail-warranty.update');
     Route::post('/settings/business-upgrade', [ShopOwnerUpgradeRequestController::class, 'store'])
         ->middleware('throttle:5,1')
         ->name('upgrade-requests.store');
@@ -1246,6 +1252,8 @@ Route::get('/api/csrf-token', function () {
 
 // Staff API Routes (session-based authentication)
 Route::middleware('auth:user')->prefix('api/staff')->group(function () {
+    Route::get('retail-warranties/{reference}/certificate', [\App\Http\Controllers\ShopOwner\RetailWarrantyController::class, 'staffCertificate'])
+        ->middleware(['permission:access-staff-job-orders|access-unified-pos', 'check.user.business.type:retail,both', 'throttle:60,1'])->name('api.staff.retail-warranties.certificate');
     Route::get('inventory-overview', [\App\Http\Controllers\Api\StaffInventoryController::class, 'index'])
         ->middleware(['permission:access-staff-dashboard|access-product-management|access-product-upload-staff', 'check.user.business.type:retail,both']);
     Route::get('orders', [\App\Http\Controllers\Api\StaffOrderController::class, 'index'])

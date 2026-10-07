@@ -62,6 +62,7 @@ class OrderController extends Controller
             })
             ->with([
                 'items.product',
+                'retailWarrantyIssuance.warranties',
                 'customer',
                 'logisticsShipments.legs',
                 'codCollection.riderUser:id,name',
@@ -113,9 +114,10 @@ class OrderController extends Controller
         );
         $canFulfillOrders = $this->canFulfillOrders($shopOwner);
         $isIndividualRegistration = strtolower(trim((string) ($shopOwner->registration_type ?? ''))) === 'individual';
+        $warrantyProjections = app(\App\Services\RetailWarrantyService::class)->projectOrders($orders->getCollection(), 'owner');
 
         return response()->json([
-            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $returnLegStatuses, $includeRefundItems, $canFulfillOrders, $isIndividualRegistration) {
+            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $returnLegStatuses, $includeRefundItems, $canFulfillOrders, $isIndividualRegistration, $warrantyProjections) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $hasStoredVat = $order->vat_amount !== null;
@@ -149,6 +151,7 @@ class OrderController extends Controller
                 return [
                     'id' => $order->id,
                     'order_number' => $order->order_number,
+                    'product_warranty' => $warrantyProjections[$order->id] ?? null,
                     'customer_name' => $order->customer_name ?? $order->customer?->name ?? 'Guest',
                     'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',
                     'customer_phone' => $order->customer_phone ?? '',
@@ -328,6 +331,7 @@ class OrderController extends Controller
 
         return response()->json([
             'id' => $order->id,
+            'product_warranty' => app(\App\Services\RetailWarrantyService::class)->projectOrders(new \Illuminate\Database\Eloquent\Collection([$order]), 'owner')[$order->id] ?? null,
             'order_number' => $order->order_number,
             'customer_name' => $order->customer_name ?? $order->customer?->name ?? 'Guest',
             'customer_email' => $order->customer_email ?? $order->customer?->email ?? '',
