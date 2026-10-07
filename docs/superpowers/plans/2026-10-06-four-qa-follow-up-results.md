@@ -127,3 +127,11 @@ Registered company retail-and-repair shops store the legacy business type `both 
 - `php artisan test tests/Feature/RetailWarranty` — 44 tests, 310 assertions, no failures; Laravel emits the existing warning because this worktree has no `.env`.
 - `npm.cmd run test:frontend -- resources/js/Pages/ShopOwner/Settings/__tests__/shopSetting.retail-warranty.test.tsx` — 6 tests passed. Existing localStorage/CARTO test-environment warnings remain non-failing.
 - `npm.cmd run build` — PASS; Vite transformed 3,845 modules. Existing unresolved `/images/auth-geometric-pattern.svg` warning remains. Fresh `public/build` is included.
+
+## Staff refund evidence in job orders — 2026-10-08
+
+The staff API already returned refund-request `evidence_media`, but the job-order details modal only showed separate delivery-dispute proof. The initial page props also omitted refund evidence. The page now includes that field from initial load and renders customer images in the existing evidence viewer and videos with playback controls. Staff permissions and tenant-scoped API access remain unchanged.
+
+- `php artisan test tests/Feature/StaffOrderRefundPayloadTest.php` — 12 tests, 92 assertions, no failures; Laravel emits the existing warning because this worktree has no `.env`.
+- `npm.cmd run test:frontend -- resources/js/Pages/ERP/STAFF/__tests__/JobOrders.shippingCoverage.test.ts -t "shows customer evidence and return logistics proof in order details|keeps the delivery proof viewer above the order details modal"` — 2 tests passed, 35 skipped.
+- A fresh Vite build and `public/build` output are included with the change.
