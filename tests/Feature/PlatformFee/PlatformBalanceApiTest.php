@@ -3,6 +3,7 @@
 namespace Tests\Feature\PlatformFee;
 
 use App\Models\Order;
+use App\Models\OrderRefund;
 use App\Models\PlatformFeePayment;
 use App\Models\PlatformFeePaymentAllocation;
 use App\Models\ShopOwner;
@@ -59,6 +60,57 @@ class PlatformBalanceApiTest extends TestCase
             ->assertJsonCount(1, 'charges');
         $this->assertSame($shop->id, $response->json('charges.0.shop_id'));
         $this->assertNotSame($otherShop->id, $response->json('charges.0.shop_id'));
+    }
+
+    #[Test]
+    public function successful_refunds_hide_the_order_fee_from_the_ledger_without_deleting_audit_records(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual']);
+        $finance = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $finance->givePermissionTo('access-finance-dashboard');
+
+        $refundedOrder = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'origin_channel' => 'marketplace',
+            'total_amount' => 1000,
+            'payment_status' => 'paid',
+            'status' => 'pending',
+        ]);
+        $refundedOrder->update(['status' => 'delivered']);
+        $refundedCharge = $refundedOrder->platformFeeCharge;
+
+        OrderRefund::create([
+            'order_id' => $refundedOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'succeeded',
+            'amount' => 250,
+            'idempotency_key' => 'ledger-hidden-successful-refund',
+        ]);
+
+        $pendingOrder = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'origin_channel' => 'marketplace',
+            'total_amount' => 1000,
+            'payment_status' => 'paid',
+            'status' => 'pending',
+        ]);
+        $pendingOrder->update(['status' => 'delivered']);
+        OrderRefund::create([
+            'order_id' => $pendingOrder->id,
+            'shop_owner_id' => $shop->id,
+            'status' => 'processing',
+            'amount' => 1000,
+            'idempotency_key' => 'ledger-pending-refund',
+        ]);
+
+        $response = $this->actingAs($finance, 'user')->getJson('/api/finance/platform-balance');
+        $response->assertOk()->assertJsonCount(1, 'charges');
+        $this->assertSame((int) $pendingOrder->platformFeeCharge->id, (int) $response->json('charges.0.id'));
+        $this->assertDatabaseHas('platform_fee_charges', ['id' => $refundedCharge->id]);
+        $this->assertDatabaseHas('order_refunds', [
+            'order_id' => $refundedOrder->id,
+            'status' => 'succeeded',
+        ]);
     }
 
     #[Test]
