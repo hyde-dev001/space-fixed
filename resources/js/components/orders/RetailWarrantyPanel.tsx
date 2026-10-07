@@ -13,7 +13,7 @@ export default function RetailWarrantyPanel({ warranty, onAssess, shopAssisted =
     <section aria-label="Product Warranty" className="rounded-xl border border-gray-200 bg-white p-4 text-gray-900 sm:p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h3 className="text-base font-semibold">Product Warranty</h3><p className="mt-1 break-all text-sm font-medium">{warranty.reference}</p><p className="mt-1 text-xs text-gray-600">Issued {date(warranty.issued_at)} · {statusLabels[warranty.status] ?? 'Status unavailable'}</p></div>
-        <a href={warranty.download_url} className="inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-black">Download Warranty PDF</a>
+        {warranty.download_url ? <a href={warranty.download_url} className="inline-flex min-h-11 items-center rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-black">Download Warranty PDF</a> : null}
       </div>
       <div className="mt-4 space-y-4">
         {warranty.items.map(item => <div key={item.id} className="border-t border-gray-100 pt-3">

@@ -8,7 +8,7 @@ The approved parent/child revisions were incorporated into the existing plan bef
 
 One `RetailWarrantyIssuance` belongs to an eligible order and owns its opaque reference, immutable buyer/shop/order snapshots, ONE canonical private PDF and durable email-delivery state. Its `RetailWarranty` children track each original order-item line, variant, covered quantity, original policy, fulfillment start, calendar expiry and current coverage independently. There is no replacement workflow or separate warranty approval state machine.
 
-The PDF and email list all covered items. The certificate preserves original coverage; current item status, remaining quantity and reservations are projected separately. Settings changes, partial refunds, expiry and administrative voiding do not rewrite the published document.
+The PDF and email list all covered items. The certificate preserves original coverage; current item status, remaining quantity and reservations are projected separately. Settings changes, partial refunds, expiry and retained historical void status do not rewrite the published document.
 
 ## 2. Database changes
 
@@ -25,12 +25,12 @@ Indexes and foreign keys protect identity and historical records. The new indexe
 
 ## 3. Backend changes
 
-- `RetailWarrantyService`: settings/cutover, authoritative capture, payment-eligible issuance, calendar calculations, batched safe projections, effective SQL filters, locked assessment validation, successful quantity reconciliation and audited voiding.
+- `RetailWarrantyService`: settings/cutover, authoritative capture, payment-eligible issuance, calendar calculations, batched safe projections, locked assessment validation and successful quantity reconciliation/audits. Owner-only status filtering and manual void helpers are removed; historical void metadata and system reconciliation remain.
 - `RetailWarrantyCertificateService`: local escaped Dompdf rendering, private storage, canonical path/hash verification and scoped PDF response. Remote assets, PDF JavaScript and embedded PHP are disabled.
 - `DeliverRetailWarranty` and `RetailWarrantyMail`: ID-only encrypted queued delivery, one combined attachment, pre-send retry, durable transport claim and no blind resend after uncertain acceptance.
 - `ReconcileRetailWarranties`: bounded recovery of captured paid purchases, coverage reconciliation, stale sending-to-unknown transition and safe pending/failed delivery enqueue. Scheduled every five minutes without overlap.
 - Three models/factories and relationships on orders, items, shops and existing refund items.
-- Dedicated owner settings validation and customer/owner/staff read/download/void endpoints. Existing controllers project a limited DTO instead of exposing storage, provider or mail metadata.
+- Dedicated owner settings validation and customer/staff read/download endpoints. Owner issued-warranty index/detail/certificate/manual-void endpoints and catalog entries are removed. The surviving staff certificate method is in `Api/StaffRetailWarrantyController`. Existing controllers project a limited DTO instead of exposing storage, provider or mail metadata.
 - Small hooks in supported fulfillment, POS checkout, paid settlement, collected COD and successful refund paths. Existing refund calculation, return inspection, approval, payout and recovery services remain authoritative.
 
 Added `barryvdh/laravel-dompdf` v3.1.2 / Dompdf v3.1.6 and four transitive packages. Six packages were installed; no existing package was upgraded or removed. No frontend dependency was added.
@@ -39,7 +39,7 @@ Added `barryvdh/laravel-dompdf` v3.1.2 / Dompdf v3.1.6 and four transitive packa
 
 - My Orders: one Product Warranty summary/reference/download; per-item original terms, dates and live quantities; validated warranty context in the existing assessment modal. Registered POS purchases display shop-assisted assessment instructions.
 - Shop Settings → Operations: independent Retail Product Warranty form and server-paginated Issued Warranties search/status/details/download with reason-confirmed administrative voiding. Repair settings remain separate.
-- Existing owner/staff order details: read-only coverage and certificate context.
+- Existing owner/staff order details and POS refund assessment retain coverage context. Owner projections have a nullable `download_url` set to null; the shared panel renders no owner PDF link. Staff/customer certificate access remains authorized.
 - Existing retail POS receipt/history: original combined certificate and shop-performed warranty assessment through the existing inspected-item picker. Submitting assessment creates a pending request and does not call approval or execution.
 - Shared typed projection and small reusable `RetailWarrantyPanel`; existing Tailwind/native form controls. No new heavy client renderer, modal framework or PDF dependency.
 
@@ -76,7 +76,7 @@ Replaying a warranty reservation preserves its original basis and selected lines
 
 ## 8. Security
 
-Customer download uses the native authenticated customer principal and its stored purchase identity, never email matching. Owner management/download/void scopes to the native owner and enabled retail module. Staff download requires an employee account, positive explicit shop relationship, appropriate job-order or unified-POS permission and live retail module/account middleware. Other tenants receive no record.
+Customer download uses the native authenticated customer principal and its stored purchase identity, never email matching. Owner policy configuration retains native owner/retail-module authorization. Removed owner issued-warranty management endpoints expose neither reads nor mutations. Staff download requires an employee account, positive explicit shop relationship, appropriate job-order or unified-POS permission and live retail module/account middleware. Other tenants receive no record.
 
 Walk-in sales never attach an account by email. Legitimately collected email is a delivery channel; no-email buyers retain their issuance and shop-accessible PDF. Private downloads accept only an opaque database reference, use a server-derived stored path, verify integrity and return PDF attachment/private no-store/nosniff headers. JSON contains no storage path, mail token/state/provider reference or private audit payload. User text is escaped in React, email and PDF. Client input is bounded; raw infrastructure exceptions are not returned to customers.
 
@@ -111,12 +111,12 @@ Completing full command: `php artisan test --log-junit=storage/logs/warranty-ful
 | PHP style | Targeted `php vendor/bin/pint --test` on all 31 new non-Blade PHP files: **passed**. Existing large controllers/services were not reformatted. |
 | Diff hygiene | `git diff --check`: **passed**; tracked and untracked text whitespace checked; final inventory generated. |
 | Backend configured command | `composer test` was run: first attempt hit default 300-second Composer timeout; timeout-lifted attempt reached the 512 MB PHP memory limit. Temporary process-only GD/2 GB settings supported the completed full-suite run; no global PHP configuration or `.env` changes. |
-| Browser/PDF | Actual customer/owner pages loaded without JavaScript errors. Actual three-page combined PDF extracted A/B/C and was visually inspected without clipping. Customer/owner search/detail/download verified at desktop and 390px viewport; both downloads exactly match the original bytes; zero page JavaScript errors. Warranty panels fit the viewport. Existing unrelated owner settings controls cause a 17px whole-page overflow. |
+| Browser/PDF | Historical pre-removal evidence: customer/owner pages loaded without JavaScript errors; three-page combined PDF visually checked; former owner history/download tested at desktop/390px. Owner history/download evidence is superseded by the removal revision below. Existing unrelated owner controls had 17px whole-page overflow; no claim of fixing those controls. |
 | TypeScript/lint | No committed compiler configuration or frontend lint script exists; not claimed as run. Typed-boundary/manual review and frontend tests/build provide the recorded frontend evidence. |
 
 ## 12. Files changed
 
-The revised plan's expected-file section and [final generated file inventory](2026-10-07-retail-warranty-file-inventory.md) list created/modified source, tests, documentation and deployment assets. Additional narrow integration files are the actual canonical owner monitoring controller/shared manager order type, the reusable issued-history view, and transaction/acceptance/consumption regression tests. Existing Finance COD callbacks are covered through the shared payment-settlement hook rather than duplicated payout logic.
+The revised plan's expected-file section and [final generated file inventory](2026-10-07-retail-warranty-file-inventory.md) list created/modified source, tests, documentation and deployment assets. Additional narrow integration files are the actual canonical owner monitoring controller/shared manager order type, the configuration-only settings-page regression, relocated staff certificate controller, and transaction/acceptance/consumption regression tests. The issued-history view/test and owner management controller are deleted. Existing Finance COD callbacks are covered through the shared payment-settlement hook rather than duplicated payout logic.
 
 Runtime QA databases, fixtures, logs, helper servers, screenshots and synthetic certificates remain ignored. The main worktree's unrelated changes were preserved. Warranty publication is authorized on `fix/qa-four-follow-up`; final commit and push are verified separately.
 
@@ -137,7 +137,7 @@ Publication verification: the user authorized commit/push with fresh `public/bui
 | --- | --- |
 | Simplify / ponytail | Pass: one shop policy, one parent with item children, one service for coverage, native row locks/constraints, existing refund state machine, no adapter hierarchy or new frontend package. |
 | Standards → Spec → risk review | Sequential review performed. Found/resolved indexed-column rollback, stored-expiry reactivation, commit dispatch timing, late-payment projection ordering, owner waiting-on-staff context and replay-basis guard/import. Full comparison resolved every unmatched finding: 346 baseline matches and one passing isolated SQLite concurrency rerun. Warranty relation reads were also reduced from six to two for three orders, with a failing-then-passing query-count regression. |
-| Clean TypeScript | Manual pass: typed DTOs, focused reused panel/form/history, safe Axios narrowing and abort handling, no new `any`/assertion-based trust boundary. Compiler/lint not run. |
+| Clean TypeScript | Manual pass: typed DTOs, focused reused panel/form, safe Axios narrowing and abort handling, no new `any`/assertion-based trust boundary. Compiler/lint not run. |
 | Karpathy | Pass: approved assumptions retained, no unrelated application refactor, no separate claim/exchange workflow, concrete acceptance scenario verified. |
 | Code splitting | Pass: reuse existing Inertia lazy page loading and Vite shared chunks. PDF library stays server-side; no measured reason to split the small warranty controls manually. |
 | Gauge improvements | Required observable outcomes measured by 41 tests and actual MariaDB/PDF/mail evidence. Warranty parent/item reads: six to two for a three-order page. Main JS: 584,943 to 585,417 bytes (+474). All 399 manifest file references exist. Latency/render-count baseline not measured. |
@@ -145,3 +145,23 @@ Publication verification: the user authorized commit/push with fresh `public/bui
 | Verification-before-completion | Focused/backend-regression/frontend/build/migration evidence recorded; full/baseline/browser/syntax/manifest/diff evidence recorded. |
 | Reuse / dead code | Existing helpers/components/services/framework facilities reused. New PHP unused imports removed by Pint; changed-area stale references/dead branches reviewed. No unfamiliar unrelated code deleted. |
 | Writing / vault | Revised plan, progress, results and exact file inventory maintained; durable lessons recorded separately without credentials or personal data. |
+
+## Owner issued-warranty management removal: final revision evidence
+
+The user removed the owner Issued Warranties management requirement. Operations retains **Retail Product Warranty configuration for future eligible purchases only**. No replacement management page was created. Removed owner search/status/pagination/detail/PDF/manual-void component, controller, four routes, catalog entries and the uncalled filtering/manual-void helpers. Staff certificate access moved to `Api/StaffRetailWarrantyController` with the same employee/permission/tenant/module guards. Existing order/POS refund assessment context remains, but owner `download_url` is null and no PDF control renders. This scope assumption was surfaced during execution; customer My Orders and staff access remain authorized.
+
+Database migrations/models/relationships, immutable snapshots, private certificate generation/email, audit history, successful partial/full quantity consumption, reconciliation and idempotency are preserved. Regression verifies calls to all removed owner endpoints return 404 without changing persisted coverage; staff cross-tenant downloads remain denied.
+
+| Check | Fresh revision evidence |
+| --- | --- |
+| Red regressions | Owner index returned 200 instead of 404 and owner projection returned a removed certificate URL. Frontend: four settings classifications still rendered Issued Warranties; null-URL panel still rendered PDF text. These failures were observed before code removal. |
+| Narrow backend | `php -d extension=gd artisan test tests/Feature/RetailWarranty/AccessTest.php tests/Feature/RetailWarranty/SettingsTest.php`: **10 tests / 72 assertions, no failures**, absent-`.env` warnings. Preservation assertion uses a freshly hydrated original row to include database defaults. |
+| Backend regressions | `php -d extension=gd artisan test tests/Feature/RetailWarranty tests/Feature/RetailPosPaymentFlowTest.php tests/Feature/RetailPosItemBasedRefundFlowTest.php tests/Feature/ShopOwner/ShopOwnerOperationsMonitoringTest.php tests/Unit/Services/Orders/OrderRefundOwnerProjectionTest.php`: **68 tests / 527 assertions, no failures**, existing absent-`.env` warnings; exit 0. An earlier invocation used an incorrect Feature path for the Unit projection test and did not run; the corrected complete command above passed. |
+| Frontend regressions | `pnpm exec vitest run resources/js/Pages/ShopOwner/Settings resources/js/components/orders resources/js/Pages/UserSide/Orders "resources/js/Pages/ShopOwner/Orders/order management/__tests__" "resources/js/Pages/ShopOwner/Repairs/service management/__tests__/POS.warranty-ui.test.tsx" resources/js/Pages/ERP/cashier/__tests__/POS.warranty-ui.test.tsx --maxWorkers=2`: **27 files / 126 tests passed**, exit 0. New actual settings-page tests cover all four owner classifications and repair-only exclusion; asynchronous effects are flushed with `act`, and unrelated Leaflet rendering is stubbed only in tests. |
+| Browser | Real pages against retained isolated MariaDB QA data: owner Operations saved the policy; no issued history/search/PDF/void UI or owner-issued API request; config fits 1440px and 390px widths. Customer My Orders displays all three original items and downloads identical canonical PDF bytes. **Zero page JavaScript errors**. Synthetic fixture/log/screenshots remain ignored. |
+| Build | `pnpm run build`: **passed, 1m11s**, fresh `public/build` regenerated. Existing image-reference warnings remain. |
+| Full repository suites | Not rerun for this bounded removal. Earlier full-backend baseline failures in section 10 remain historical evidence, not a passing full-suite claim. No TypeScript compiler/linter claim. |
+
+Sequential revision review: simplify **pass** (removed obsolete UI/API/helpers; no new dependency/page); Standards then Spec then risk **pass** (configuration-only management, existing assessment context, snapshots/quantity/refund/audit preserved); TypeScript **manual pass** (nullable URL safely narrowed, no new any/assertions); Karpathy **pass** (surgical removal); code splitting **pass** (removed direct history import, existing lazy Inertia page loading retained); security **pass** (removed owner read/mutation surface, staff guards retained, customer isolation and staff cross-tenant/module tests passed). Reuse/dead-code **pass** (existing config/panel/download service reused; management-only code removed). Vault learning **N/A** (no new durable project-wide rule). Syntax, style, manifest/inventory and diff-hygiene evidence is recorded after the final check below.
+
+Final revision quality gates: `php vendor/bin/pint --test app/Http/Controllers/Api/StaffRetailWarrantyController.php app/Services/RetailWarrantyService.php tests/Feature/RetailWarranty/AccessTest.php` passed (3 files). The local inventory/verification helper verified **58 feature PHP files**, **398 manifest asset references**, tracked/untracked whitespace and `git diff --check`, then regenerated the final expected-file inventory. Relative to the previous published feature commit, main app JS is **585,417 to 585,214 bytes** and settings JS is **76,974 to 76,835 bytes**; latency/render time was not measured. The broader inventory retains the original merge-target baseline measurement. No schema/migration or production database changes were made for this removal. Temporary browser servers were stopped after verification. Final publication uses a new follow-up commit on the same branch; previous commit history is preserved.

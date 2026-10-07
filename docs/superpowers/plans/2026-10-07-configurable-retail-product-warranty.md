@@ -1,6 +1,6 @@
 # Configurable Retail Product Warranty — Audit and Implementation Plan
 
-**Status: Approved revisions implemented; final verification evidence recorded in the implementation results.**
+**Status: Approved owner-management removal implemented; fresh revision evidence recorded in the implementation results.**
 
 **Goal:** Issue immutable, downloadable, emailed retail shoe warranties at authoritative fulfillment, and carry warranty context into SoleSpace's existing return/refund assessment without automatic refunds or an exchange workflow.
 
@@ -9,6 +9,20 @@
 **Source:** The user's October 7 warranty specification. CodeGraph was consulted first, but reported that its index belongs to the main worktree; findings below were verified against this worktree's actual files. No indexing, dependency installation, migrations, code changes, commits, pushes, or application tests were performed for this planning task.
 
 **Execution:** One main agent, sequential work. The user approved this plan with parent/child revisions; proceed without another approval gate. Generic skill suggestions to commit planning documents, dispatch reviewers, or begin implementation do not override this gate or the repository's Git/delegation rules.
+
+## Owner issued-warranty UI removal revision (October 7)
+
+The user approved removal of the Issued Warranties section. Owner retail configuration remains under **Shop Settings / Operations / Retail Product Warranty**, for future eligible purchases. No replacement page or manual void action is permitted. Existing issuance/item rows, relationships, snapshots, certificates, audit history, refund links/quantity consumption, and customer My Orders remain intact. Staff private certificate access retains its existing gates. Owner download URLs must not point to removed endpoints.
+
+Sequential file-level plan:
+
+- [x] Replace owner-history access tests with regressions proving index/detail/certificate/void routes and catalog entries are absent, failed legacy calls cannot mutate coverage, and owner configuration still works.
+- [x] Add settings-page regression coverage for configuration without history/search/filter/pagination/detail/PDF/void management, retaining configuration save/error tests and customer panel tests.
+- [x] Remove `RetailWarrantyHistory.tsx` and its tests; unmount/import cleanup in `shopSetting.tsx`.
+- [x] Remove owner management routes in `routes/shop-owner-api.php` and entries/method overrides in `config/shop_modules.php`. Move the sole surviving staff certificate action from `ShopOwner/RetailWarrantyController.php` into `Api/StaffRetailWarrantyController.php`, update `routes/web.php`, then delete the obsolete owner controller.
+- [x] Remove the uncalled `RetailWarrantyService::filterIssuances` and manual `voidWarranty`; keep successful-quantity SQL/reconciliation, historical void fields and audits. Owner projections carry no certificate URL; customer/staff downloads stay authorized.
+- [x] Update this plan's current behavior, expected-file list, implementation results/progress and final inventory; mark previous owner-history evidence historical.
+- [x] Run focused failing-to-passing backend/frontend checks, warranty/refund regressions, settings/customer/staff browser checks when runnable, fresh `pnpm run build`, syntax/Pint, manifest validation and `git diff --check`; record sequential review and exact results.
 
 ## Approved decisions
 
@@ -136,7 +150,7 @@ Use explicit dates/status/quantity and JSON immutable facts, following local cas
 | --- | --- | --- |
 | Active | Issued coverage has not expired or been voided; some purchased quantity remains usable | Expired, voided |
 | Expired | Current time is later than the snapshotted expiry | Voided if later audit/refund reconciliation requires it; never renew automatically |
-| Voided | Owner recorded a legitimate reason, or all covered product quantity was successfully refunded | Terminal; preserve snapshots and reference |
+| Voided | All covered product quantity was successfully refunded, or a retained historical record was already voided | Terminal; preserve snapshots and reference |
 
 Show remaining covered quantity and separately reserved-for-assessment quantity. A partial successful refund reduces usable quantity without rewriting the original certificate or voiding another item. A rejected/cancelled/failed refund releases reservations and does not consume coverage.
 
@@ -188,18 +202,18 @@ Configuration: enabled toggle, bounded positive integer duration, native/existin
 
 Use a dedicated `ShopSettingsController::updateRetailWarranty()` action and `PUT /shop-owner/settings/retail-warranty` endpoint with the retail-only FormRequest. Preserve the existing general/repair settings update validator and save behavior. The existing settings index supplies the new configuration projection; the retail card saves independently with existing validation feedback.
 
-In the same feature area, provide a server-paginated Issued Warranties table with reference/order/customer search, effective status filter, item/variant/quantity, snapshot detail and PDF download. Preserve the existing pagination pattern. Optional owner void action requires a reason and confirmation, is logged, and never deletes or edits original terms. No ordinary edit endpoint for issued snapshots, no renew/reissue/resend shortcut.
+Owner warranty management contains only this configuration. No Issued Warranties section, search/status filter/pagination/detail cards, owner certificate download, manual Void Coverage control or replacement page is exposed. Existing order/POS refund assessment context is retained without an owner certificate link; historical rows and system refund reconciliation remain intact.
 
 Staff see read-only warranty context in their already authorized order detail; a download endpoint uses the same `access-staff-job-orders` or `access-unified-pos` permission, tenant, module and attendance/account rules. Employees cannot edit policy or void coverage merely because they can read orders.
 
 ## 16. Authorization/security changes
 
 - Customer reads/downloads require `auth:user`, customer audience/account-state checks and `warranty.customer_id === actor.id`; scope lookup before returning existence or a file. Registered POS buyer access uses the linked purchase ID, never an email match.
-- Owner management/download/void requires `auth:shop_owner`, `shop.isolation`, retail/both eligibility and server tenant scope. Only the owner setting endpoint can change configuration.
+- Owner configuration requires `auth:shop_owner`, retail/both eligibility, the enabled retail module and server tenant scope. Dedicated owner issued-warranty read/download/void endpoints are removed; only the owner setting endpoint changes future policy.
 - Staff reads use ERP actor context, `access-staff-job-orders`, live tenant scope and the catalogued retail module. No inferred shop from a colliding user ID.
 - Classify/name every new internal route in `config/shop_modules.php`, preserving existing gates and owner/employee audience rules. Customer historical downloads do not require an employee module permission; suspension/login enforcement remains intact.
 - Downloads resolve only the stored server-generated PDF path, check the expected private namespace, and stream as PDF attachment; no arbitrary path, remote URL or unscoped fallback.
-- Void mutations use CSRF, validated reason and the existing audit actor conventions. No new Super Admin powers or weakened Finance authorization.
+- No owner manual void mutation is exposed. Retain historical void metadata and automatic successful-refund reconciliation/auditing. No new Super Admin powers or weakened Finance authorization.
 - Confirm that hard archive, missing buyer, suspended accounts and disabled modules do not trigger unauthorized delivery/read/claim paths. Keep the historical record even when account access is unavailable.
 
 ## 17. Refund integration
@@ -234,7 +248,7 @@ Use existing Laravel transaction, queue, cache-lock and unique-index features. R
 
 ## 19. Audit logging strategy
 
-Use tenant `AuditLog` for warranty settings changed, policy captured/issued, certificate generated, email accepted/definitely failed/unknown, administrative voiding, and linked refund assessment/consumption. Record actor type and ID separately, shop, target warranty/order, event timestamp, reason and relevant before/after values. Background actors are explicitly system/queue, not forged user IDs.
+Use tenant `AuditLog` for warranty settings changed, policy captured/issued, certificate generated, email accepted/definitely failed/unknown, automatic quantity-exhaustion voiding, and linked refund assessment/consumption. Historical administrative void audits remain preserved. Record actor type and ID separately, shop, target warranty/order, event timestamp, reason and relevant before/after values. Background actors are explicitly system/queue, not forged user IDs.
 
 Do not log raw contact data, full private PDF contents or transport secrets. Settings before/after content is permission-restricted existing audit metadata. Identical retries do not produce duplicate issued/generated/sent/voided events. A successful refund's ordinary accounting/platform-fee audit remains unchanged; warranty audit is additional context, not a duplicate financial action.
 
@@ -257,7 +271,7 @@ Production rollout requires a real mail transport, running queue/scheduler, priv
 | Two same-variant rows or quantity > 1 | Distinct item IDs; one item coverage record per row under the shared order certificate, with quantity and independent consumption. |
 | Product deletion/name/size/price or shop contact edit | Original item/shop snapshots remain usable offline. |
 | Registered POS order has walk-in defaults | Resolve the linked buyer at capture; don't mail an arbitrary walk-in address instead. |
-| Walk-in with no email/account | Owner lookup/private PDF and physical-store assessment; no public unprotected certificate link. |
+| Walk-in with no email/account | Authorized staff private PDF and existing physical-store assessment; no owner issuance browser or public unprotected certificate link. |
 | Month end, leap year, shop timezone change | No-overflow calendar math and captured timezone; no recalculation from current settings. |
 | Current refund window shorter than warranty | Verified warranty-specific assessment exception; ordinary deadline unchanged. |
 | Shop-owned/company assessment | Preserve required staff inspection without reusing the third-party classification incorrectly. |
@@ -278,9 +292,9 @@ Use the repo's existing PHPUnit/Vitest framework, factories, clock controls, Mai
 | A — schema/settings | Four migrations; three models; settings request/controller/UI | Defaults disabled, enable/disable, days/weeks/months/years including 5 days/1 year, free terms, bounds, first-enable cutover, owner-only and all four shop classifications; repair settings unchanged. |
 | B — capture/issue | RetailWarrantyService, parent/children and four fulfillment boundaries; settlement hook | Pending/processing/shipped/cancelled/failed no issue; official delivery/direct/POS issue per row; early receipt no issue; config race/late payment uses original capture; rollback emits no mail; settings edits preserve snapshots. |
 | C — PDF/delivery | Issuance PDF service, combined Blade template, order Mailable/job and reconciliation | Actual PDF bytes/metadata, long terms/Unicode/pages, private path, offline required facts, ONE combined stored certificate and ONE normal email per order, duplicate/retried jobs, definite failure recovery, crash/unknown state, no-email walk-in and no active delivery before fulfillment. |
-| D — scoped reads/UI | Customer/owner controllers/routes, projections, two UI panels | Customer A/B isolation; shop A/B and colliding IDs; staff permission/tenant/module/account gates; immutable terms; no clutter when absent; download/loading/expired/voided states; search/filter/pagination and all owner shells. |
+| D — scoped reads/UI | Customer/staff controllers/routes, projections, configuration and customer/staff panels | Customer A/B isolation; shop A/B and colliding IDs; staff permission/tenant/module/account gates; immutable terms; no clutter when absent; customer/staff download/loading/expired/voided states; owner configuration in all supported classifications; removed owner management endpoints stay absent. |
 | E — refund context | Existing online/POS services/controller/line models; assessment predicates/projections | Warranty never auto-approves; outside ordinary window with valid covered lines; forged/expired/cross-order/uncovered quantities rejected; shop-owned active-dispute exclusion; existing owner/staff/Finance stages; POS inspection kept. |
-| F — final consumption/void | Existing success callbacks, reconciliation and owner void | Full/partial product refunds, multi-item and qty 2→1, no consume on failure/reservation, shipping-only compensation unchanged, webhook replay idempotency, reason/audit required; no replacement endpoints. |
+| F — final consumption/void | Existing success callbacks and reconciliation | Full/partial product refunds, multi-item and qty 2→1, no consume on failure/reservation, shipping-only compensation unchanged, webhook replay idempotency and automatic consumption/audits; no manual void or replacement endpoints. |
 | G — complete review | Relevant regression suites, browser and PDF rendering, build/diff | Sequential Standards/Spec/security/simplification/TS/reuse/dead-code checks; measured red-to-green evidence; no unrun check labelled PASS. |
 
 Planned new feature suites: `tests/Feature/RetailWarranty/{Settings,Issuance,Snapshot,CertificateDelivery,Access,RefundIntegration}Test.php`, plus frontend component/settings/order integration tests listed in section 24. Include factory support rather than a new test framework.
@@ -306,10 +320,10 @@ Final commands: `composer test`, `pnpm run test:frontend`, `pnpm run build`, `gi
 - [ ] Confirm early shop-owned receipt does not issue. Failed delivery and cancellation do not issue. Duplicate confirmation/webhook/job creates no second record/mail.
 - [ ] Change the policy to one year/new text after one purchase fulfills; original reference/dates/terms remain unchanged; future fulfilled purchases use the new policy. Test a policy edit between fulfillment and delayed payment/job processing.
 - [ ] Open the email and save the PDF, disconnect from SoleSpace, and check complete readable shop/customer/item/reference/terms information on phone and printed pages. Verify long clauses, Unicode names and multi-page layout.
-- [ ] Exercise customer/owner/staff downloads, cross-customer/shop forged URLs, arbitrary file paths, suspended accounts, module gates and pagination/search. Historical snapshots cannot be edited.
+- [ ] Exercise customer/staff downloads, cross-customer/shop forged URLs, arbitrary file paths, suspended accounts and module gates. Verify owner management URLs are absent, Operations contains only retail configuration, and no replacement page exists. Historical snapshots cannot be edited.
 - [ ] Claim valid covered quantity beyond the ordinary refund deadline; follow the existing inspection/return/owner/Finance flow. Active warranty alone does not approve or execute payment.
 - [ ] Refund one of two units, then another product: remaining quantities remain distinct. Failed/rejected refund releases reservation; full successful product refund prevents reuse; shipping-only compensation does not void shoe coverage.
-- [ ] Verify a timely claim remains reviewable after expiry while a newly submitted expired claim is rejected. Verify administrative void reason/audit/history.
+- [ ] Verify a timely claim remains reviewable after expiry while a newly submitted expired claim is rejected. Verify preserved historical void records and system successful-refund audit history without manual void controls.
 - [ ] Break PDF/storage/queue/mail deliberately in QA, recover definite failures, and simulate provider acceptance followed by worker crash. Unknown delivery must not auto-resend; original warranty/account access remains.
 - [ ] Verify old orders remain uncovered after enablement/reconciliation. Inspect audit events for actor/tenant correctness and absence of duplicate side effects or sensitive transport details.
 
@@ -326,28 +340,29 @@ Final commands: `composer test`, `pnpm run test:frontend`, `pnpm run build`, `gi
 | `app/Models/ShopRetailWarrantySetting.php` | Typed settings and shop relationship. |
 | `app/Models/RetailWarrantyIssuance.php` | Order reference, private PDF/mail state and item relationships. |
 | `app/Models/RetailWarranty.php` | Warranty casts/relationships and immutable fields. |
-| `app/Services/RetailWarrantyService.php` | Capture, issuance, projection, validation, reconciliation/void audit. |
+| `app/Services/RetailWarrantyService.php` | Capture, issuance, projection, validation and automatic reconciliation/audit; no owner search/status-filter/manual-void helpers. |
 | `app/Services/RetailWarrantyCertificateService.php` | Safe stable private PDF rendering. |
 | `app/Jobs/DeliverRetailWarranty.php` | After-commit, durable claim/retry/sent/unknown semantics. |
 | `app/Mail/RetailWarrantyMail.php` | Transactional certificate email/attachment. |
 | `app/Http/Controllers/UserSide/RetailWarrantyController.php` | Customer-scoped detail/download. |
-| `app/Http/Controllers/ShopOwner/RetailWarrantyController.php` | Owner search/detail/download/void, plus scoped staff download method if reused safely. |
+| `app/Http/Controllers/Api/StaffRetailWarrantyController.php` | Staff private download with existing employee/permission/tenant/module gates. Obsolete owner management controller removed. |
 | `app/Http/Requests/ShopOwner/UpdateRetailWarrantySettingsRequest.php` | Owner/business-type validation for the dedicated retail action in the existing settings controller. |
 | `app/Console/Commands/ReconcileRetailWarranties.php` | Bounded expiry/refund/issuance/delivery reconciliation; no historical backfill. |
 | `resources/views/warranties/retail-certificate.blade.php` | Offline PDF layout with escaped snapshots/local branding. |
 | `resources/views/emails/retail-warranty.blade.php` | Email explanation and original reference/coverage. |
 | `resources/js/types/retailWarranty.ts` | Shared limited client projection. |
 | `resources/js/components/orders/RetailWarrantyPanel.tsx` | Customer/staff read-only item coverage and downloads. |
-| `resources/js/Pages/ShopOwner/Settings/components/RetailWarrantySettings.tsx` | Owner configuration plus paginated issued-warranty management. |
+| `resources/js/Pages/ShopOwner/Settings/components/RetailWarrantySettings.tsx` | Owner future-purchase configuration only; no issued-warranty management. |
 | `database/factories/ShopRetailWarrantySettingFactory.php`, `database/factories/RetailWarrantyIssuanceFactory.php`, `database/factories/RetailWarrantyFactory.php` | Feature fixtures following current conventions. |
 | `tests/Feature/RetailWarranty/SettingsTest.php` | Settings/owner/type/cutover checks. |
 | `tests/Feature/RetailWarranty/IssuanceTest.php` | Supported fulfillment paths and replay. |
 | `tests/Feature/RetailWarranty/SnapshotTest.php` | Immutable policy/quantity/temporal boundary checks. |
 | `tests/Feature/RetailWarranty/CertificateDeliveryTest.php` | Actual PDF/private file/mail/retry/unknown tests. |
-| `tests/Feature/RetailWarranty/AccessTest.php` | Customer/owner/staff/security boundaries. |
+| `tests/Feature/RetailWarranty/AccessTest.php` | Customer/staff/security boundaries and regression proving owner issued-management endpoints are absent. |
 | `tests/Feature/RetailWarranty/RefundIntegrationTest.php` | Existing assessment and final successful consumption. |
 | `resources/js/components/orders/__tests__/RetailWarrantyPanel.test.tsx` | Projection/download/claim/absent-state UI checks. |
-| `resources/js/Pages/ShopOwner/Settings/components/__tests__/RetailWarrantySettings.test.tsx` | Configuration, history, search/pagination and void feedback. |
+| `resources/js/Pages/ShopOwner/Settings/components/__tests__/RetailWarrantySettings.test.tsx` | Configuration save/error feedback only. |
+| `resources/js/Pages/ShopOwner/Settings/__tests__/shopSetting.retail-warranty.test.tsx` | Actual settings-page configuration-only regressions for individual/company retail/both and repair-only exclusion. |
 
 ### Modify
 
@@ -369,7 +384,7 @@ Final commands: `composer test`, `pnpm run test:frontend`, `pnpm run build`, `gi
 | `app/Http/Controllers/ShopOwner/OrderController.php`, `app/Http/Controllers/Api/StaffOrderController.php` | Authorized item coverage/assessment projections. |
 | `app/Http/Controllers/Api/RetailPosController.php` | Validate optional warranty context through existing POS assessment routes. |
 | `routes/web.php` | Dedicated owner retail-settings update, named customer downloads and existing staff-scoped download route. |
-| `routes/shop-owner-api.php` | Owner issued-warranty management endpoints. |
+| `routes/shop-owner-api.php` | Remove owner issued-warranty index/detail/certificate/manual-void endpoints. |
 | `config/shop_modules.php` | Name/classify new internal routes and preserve `retail_operations`/actor contracts. |
 | `routes/console.php` | Scheduled bounded reconciliation. |
 | `resources/js/Pages/UserSide/Orders/MyOrders.tsx` | Item warranty panel and existing refund modal context. |
@@ -400,8 +415,10 @@ Conditional only: a dedicated provider-idempotent mail adapter/config would requ
 
 ## Implemented file-level adjustments and evidence
 
-The approved aggregate architecture is implemented. The actual additive migration timestamps are listed above. A shared successful-settlement hook covers existing COD payout callbacks; no duplicate COD payout implementation was added. The real canonical company-owner monitoring controller (`ShopOwnerOperationsMonitoringController`) and the optional shared manager-order TypeScript field provide owner coverage without changing manager payload permissions. A reusable `RetailWarrantyHistory` supplies paginated search/details/voiding.
+The approved aggregate architecture is implemented. The actual additive migration timestamps are listed above. A shared successful-settlement hook covers existing COD payout callbacks; no duplicate COD payout implementation was added. The real canonical company-owner monitoring controller (`ShopOwnerOperationsMonitoringController`) and the optional shared manager-order TypeScript field provide owner coverage without changing manager payload permissions. The owner configuration remains under Operations. The former `RetailWarrantyHistory` component/test and owner issued-management controller/routes/catalog entries are removed; no replacement page is introduced. Existing refund context remains without owner PDF links.
 
 Additional bounded tests cover the required acceptance scenario, real outer commit/rollback, successful quantity consumption, official proof/pickup/COD, late-payment scheduler recovery, immutable replay and batched My Orders queries. Warranty relation queries were reduced from six to two for three orders. No separate claim state machine, new frontend dependency, exchange, renewal or historical policy editing was introduced.
 
 The [implementation results](2026-10-07-retail-product-warranty-results.md) contain the requested 13-part report, sequential review record, exact commands and full-suite limitations. The [file inventory](2026-10-07-retail-warranty-file-inventory.md) lists all created/modified source and fresh build output. The review record above is the historical planning gate; implementation evidence supersedes its not-yet-run statements. Warranty publication is authorized on `fix/qa-four-follow-up`, rebased onto the current merge target before the final build.
+
+The owner-management removal revision passed 68 backend tests (527 assertions) and 126 frontend tests (27 files); browser config save/removal and unchanged customer PDF verified at desktop/mobile with zero JavaScript errors; fresh production build passed. Detailed exact commands and historical full-suite limitations are retained in the results document.

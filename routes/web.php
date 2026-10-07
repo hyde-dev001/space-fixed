@@ -1252,7 +1252,7 @@ Route::get('/api/csrf-token', function () {
 
 // Staff API Routes (session-based authentication)
 Route::middleware('auth:user')->prefix('api/staff')->group(function () {
-    Route::get('retail-warranties/{reference}/certificate', [\App\Http\Controllers\ShopOwner\RetailWarrantyController::class, 'staffCertificate'])
+    Route::get('retail-warranties/{reference}/certificate', [\App\Http\Controllers\Api\StaffRetailWarrantyController::class, 'certificate'])
         ->middleware(['permission:access-staff-job-orders|access-unified-pos', 'check.user.business.type:retail,both', 'throttle:60,1'])->name('api.staff.retail-warranties.certificate');
     Route::get('inventory-overview', [\App\Http\Controllers\Api\StaffInventoryController::class, 'index'])
         ->middleware(['permission:access-staff-dashboard|access-product-management|access-product-upload-staff', 'check.user.business.type:retail,both']);
