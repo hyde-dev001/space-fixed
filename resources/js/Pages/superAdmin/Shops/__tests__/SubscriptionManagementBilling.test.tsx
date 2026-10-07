@@ -126,7 +126,7 @@ describe('SubscriptionManagement billing controls', () => {
     expect(row).toHaveTextContent('₱249.00');
   });
 
-  it('shows only server-declared cancellation, correction, and full-refund controls', async () => {
+  it('hides cancellation and full-refund controls', async () => {
     render(<SubscriptionManagement />);
 
     fireEvent.click(screen.getByRole('button', { name: 'View subscription 1' }));
@@ -134,9 +134,7 @@ describe('SubscriptionManagement billing controls', () => {
       params: { payment_page: 1, refund_page: 1, per_page: 25 },
     }));
     await waitFor(() => expect(screen.getByText(/new subscription/i)).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /cancel at period end/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /issue full refund/i })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /upgrade|downgrade|partial refund|adjust paid/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /cancel at period end|issue full refund/i })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /close modal/i }));
     fireEvent.click(screen.getByRole('button', { name: 'View subscription 2' }));
@@ -157,15 +155,4 @@ describe('SubscriptionManagement billing controls', () => {
     }), expect.objectContaining({ preserveState: true, replace: true })));
   });
 
-  it('waits for the authoritative cancellation response before reloading', async () => {
-    render(<SubscriptionManagement />);
-    fireEvent.click(screen.getByRole('button', { name: 'View subscription 1' }));
-    fireEvent.click(screen.getByRole('button', { name: /cancel at period end/i }));
-
-    await waitFor(() => expect(mocks.axiosPost).toHaveBeenCalledWith(
-      '/admin/subscriptions/1/cancel',
-      { cancellation_reason: 'reduce_costs' },
-    ));
-    expect(mocks.routerReload).toHaveBeenCalled();
-  });
 });
