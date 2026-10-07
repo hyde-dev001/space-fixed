@@ -6,7 +6,9 @@ use App\Enums\Logistics\RiderProgressState;
 use App\Models\Logistics\HandoffProof;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\Order;
 use App\Models\ShopOwner;
+use App\Services\CodCollectionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
@@ -26,6 +28,7 @@ class ProofService
         private DeliveryEventService $events,
         private RiderActiveWorkGuard $activeWork,
         private ArrivalService $arrivals,
+        private CodCollectionService $codCollections,
     ) {}
 
     public function recordProof(ShipmentLeg $leg, array $payload, ?RiderProfile $rider = null): HandoffProof
@@ -82,6 +85,18 @@ class ProofService
                     $this->assertCompatibleReplay($existing, $data);
 
                     return $existing;
+                }
+            }
+
+            if ($data['handoff_type'] === 'delivery'
+                && $leg->shipment->source_type === 'order'
+                && $leg->shipment->purpose === 'retail_delivery') {
+                $order = Order::query()
+                    ->whereKey($leg->shipment->source_id)
+                    ->where('shop_owner_id', $leg->shipment->shop_owner_id)
+                    ->first();
+                if ($order) {
+                    $this->codCollections->assertCollectedBeforeDelivery($order);
                 }
             }
 
@@ -171,7 +186,7 @@ class ProofService
 
     public function hasRequiredPickupProof(ShipmentLeg $leg): bool
     {
-        if (!$leg->requires_pickup_proof) {
+        if (! $leg->requires_pickup_proof) {
             return true;
         }
 
@@ -204,11 +219,11 @@ class ProofService
             throw ValidationException::withMessages(['handoff_type' => 'Return-to-shop legs require return handoff proof.']);
         }
 
-        if ($handoffType === 'pickup' && !in_array($status, ['pending', 'assigned', 'pickup_scheduled'], true)) {
+        if ($handoffType === 'pickup' && ! in_array($status, ['pending', 'assigned', 'pickup_scheduled'], true)) {
             throw ValidationException::withMessages(['status' => 'Pickup proof can only be recorded before pickup.']);
         }
 
-        if (in_array($handoffType, ['delivery', 'receive'], true) && !in_array($status, ['picked_up', 'in_transit', 'delivery_attempted'], true)) {
+        if (in_array($handoffType, ['delivery', 'receive'], true) && ! in_array($status, ['picked_up', 'in_transit', 'delivery_attempted'], true)) {
             throw ValidationException::withMessages(['status' => 'Delivery proof can only be recorded after pickup and before delivery.']);
         }
     }

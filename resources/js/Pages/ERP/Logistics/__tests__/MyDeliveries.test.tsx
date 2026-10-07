@@ -1013,6 +1013,36 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Submit issue' })).toBeEnabled());
   });
 
+  it('requires COD cash collection before showing delivery proof controls', () => {
+    const delivery = {
+      ...leg(35, null, 'in_transit'),
+      arrivals: arrived('dropoff'),
+      shipment: {
+        ...leg(35, null, 'in_transit').shipment,
+        order_summary: {
+          order_id: 235,
+          payment_method: 'cod',
+          cod_expected_amount: '1170.00',
+          cod_collection_status: null,
+        },
+      },
+    };
+    mocks.props.deliveryData.current = workItem('single', 'in_transit', [delivery]);
+
+    const view = render(<MyDeliveries />);
+
+    expect(screen.getByRole('button', { name: 'Cash collected' })).toBeVisible();
+    expect(screen.queryByLabelText('Delivery proof')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Submit delivery proof' })).not.toBeInTheDocument();
+    expect(screen.getByText('Record the COD cash collection before submitting delivery proof.')).toBeVisible();
+
+    delivery.shipment.order_summary.cod_collection_status = 'cash_collected';
+    view.rerender(<MyDeliveries />);
+
+    expect(screen.getByLabelText('Delivery proof')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Submit delivery proof' })).toBeVisible();
+  });
+
   it('uses reason-specific issue evidence and allows unsafe reporting without a photo', async () => {
     mocks.props.deliveryData.current = workItem('single', 'in_transit', [{
       ...leg(15, null, 'in_transit'),

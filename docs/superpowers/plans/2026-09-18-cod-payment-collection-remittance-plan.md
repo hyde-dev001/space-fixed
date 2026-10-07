@@ -286,7 +286,7 @@ The repository default is one main agent working sequentially. No parallel editi
 - [ ] Customer: create PayMongo order and confirm existing redirect/verification; create COD order and confirm no PayMongo call; request COD refund with GCash and bank destinations; verify masking and status messages.
 - [ ] Staff/Job Order: inspect COD pending collection, cash collected, pending remittance, and settled labels; verify no generic Paid label before Finance settlement.
 - [ ] Dispatcher: inspect shipment/batch/stop COD amount; verify amount is read-only and stop order/GPS behavior is unchanged.
-- [ ] Rider: collect only assigned COD, retry action, inspect held cash, submit own remittance, verify no settle control and no cross-shop data.
+- [ ] Rider: collect only assigned COD, verify delivery proof stays blocked until cash is recorded, inspect held cash, submit own remittance, verify no settle control and no cross-shop data.
 - [ ] Finance: inspect submitted remittance, exact-confirm settlement, variance dispute, ledger entry, notifications, refund approval, execution disabled before settlement, and Xendit webhook completion.
 - [ ] Verify supplier Xendit payout tests and manual supplier path remain green after client extraction.
 - [ ] Record exact migration, PHPUnit, frontend, build, browser/manual, and diff-check commands/results in the final response.

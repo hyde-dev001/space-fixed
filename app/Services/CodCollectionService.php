@@ -175,6 +175,7 @@ final class CodCollectionService
                 ->log('COD cash collected');
 
             app(RetailWarrantyService::class)->issueCaptured($lockedOrder);
+
             return $collection->fresh();
         }, 3);
     }
@@ -195,8 +196,7 @@ final class CodCollectionService
             ->latest('id')
             ->get();
 
-        $pending = $collections->filter(fn (CodCollection $collection): bool =>
-            $collection->status === CodCollection::STATUS_CASH_COLLECTED
+        $pending = $collections->filter(fn (CodCollection $collection): bool => $collection->status === CodCollection::STATUS_CASH_COLLECTED
             && ! $collection->remittanceItem
         );
         $held = $collections->filter(function (CodCollection $collection): bool {
@@ -260,7 +260,7 @@ final class CodCollectionService
 
         if (! $collected) {
             throw ValidationException::withMessages([
-                'payment' => ['COD payment must be collected before delivery can be completed.'],
+                'payment' => ['COD payment must be collected before delivery proof can be submitted or delivery can be completed.'],
             ]);
         }
     }

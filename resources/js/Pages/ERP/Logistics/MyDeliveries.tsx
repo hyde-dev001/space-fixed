@@ -833,13 +833,13 @@ function DeliveryActions({
   const codOrderId = codSummary?.order_id ?? null;
   const codAmount = codSummary?.cod_expected_amount ?? null;
   const codCollectionStatus = codSummary?.cod_collection_status ?? null;
+  const codCashCollected = ['cash_collected', 'settled'].includes(codCollectionStatus ?? '');
+  const codCollectionRequired = Boolean(codSummary && !codCashCollected);
   const cashCollectionKey = codOrderId ? `cash-collected:${codOrderId}` : null;
   const cashCollectionIdempotencyKey = codOrderId
     ? (cashCollectionKeys.current[codOrderId] ??= crypto.randomUUID())
     : null;
-  const codIsPending = Boolean(codSummary && codAmount && codOrderId
-    && canUpdateStatus
-    && !['cash_collected', 'settled'].includes(codCollectionStatus ?? ''));
+  const codIsPending = Boolean(codCollectionRequired && codAmount && codOrderId && canUpdateStatus);
   const codCollectionEligible = ['in_transit', 'delivery_attempted', 'awaiting_proof_approval', 'proof_correction_required']
     .includes(delivery.status);
  const recordCashCollected = () => {
@@ -1445,7 +1445,12 @@ function DeliveryActions({
    <div className="space-y-3">
      {arrivalSummary}
       {cashCollectionPanel}
-     {canRecordProof && (
+     {codCollectionRequired && (
+       <p role='status' className='rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:bg-amber-950/30 dark:text-amber-100'>
+         Record the COD cash collection before submitting delivery proof.
+       </p>
+     )}
+     {canRecordProof && !codCollectionRequired && (
         <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
           <DeliveryPhotoUpload
             inputId={`delivery-proof-photo-${delivery.id}`}
