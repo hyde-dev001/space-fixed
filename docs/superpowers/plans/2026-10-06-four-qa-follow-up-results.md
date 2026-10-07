@@ -100,3 +100,12 @@ Before publication, source status contained 20 modified tracked files and 4 new 
 - Re-ran frontend tests for the CRM report state and endpoint contract, expense modal, notification click, and previously timed-out global modal scan: **40 tests, 5 files, PASS** (`qa-publish-frontend.log`). Command: `npx.cmd --offline pnpm@11.14.0 exec vitest run --maxWorkers=2 resources/js/Pages/ERP/CRM/__tests__/CustomerReviews.state.test.tsx resources/js/Pages/ERP/CRM/__tests__/CustomerReviews.report.test.ts resources/js/Pages/ERP/Finance/__tests__/Expense.procurement-review.test.tsx resources/js/components/header/__tests__/NotificationCenter.test.tsx resources/js/__tests__/globalModalBackdrop.contract.test.ts`.
 - Built the final source into `public/build` with `npx.cmd --offline pnpm@11.14.0 run build`; the generated manifest and assets are included in the publication commit.
 - Commit/push verification and the final commit ID are reported in the delivery message. The earlier full-suite timing limitation and remaining manual acceptance checks above remain applicable.
+
+## Dispatcher third-party visibility follow-up — 2026-10-08
+
+The dispatcher Shipments query included third-party retail deliveries and rendered them read-only, which still exposed Lalamove jobs in its list. The query now excludes explicit and carrier-inferred third-party orders before pagination; shipment records and customer/staff tracking remain intact.
+
+- `php artisan test tests/Feature/Logistics/DispatcherSessionAuthorizationTest.php` — 7 tests, 92 assertions, no failures (Laravel warned that this isolated worktree has no `.env`).
+- `php artisan test tests/Feature/Logistics/LogisticsModuleMovementBoundaryTest.php` — 59 tests, 204 assertions, no failures (same environment warning).
+- `npm run build` — PASS; fresh `public/build` generated with 3,845 modules. No asset diff was needed because the generated output matched the already committed build.
+- PHP syntax checks, dispatcher-test Pint check, manifest asset check (398 referenced files), and `git diff --check` — PASS. Controller Pint check still reports one pre-existing formatting issue outside this diff; unrelated lines were left untouched.

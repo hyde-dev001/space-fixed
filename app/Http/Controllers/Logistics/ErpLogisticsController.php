@@ -158,6 +158,22 @@ class ErpLogisticsController extends Controller
                     }
                 }])
                 ->where('shop_owner_id', $shopOwnerId)
+                ->when($isDispatcher, function ($query) use ($shopOwnerId) {
+                    $query->whereNot(function ($thirdParty) use ($shopOwnerId) {
+                        $thirdParty->where('source_type', 'order')
+                            ->where('purpose', 'retail_delivery')
+                            ->whereIn('source_id', Order::query()
+                                ->select('id')
+                                ->where('shop_owner_id', $shopOwnerId)
+                                ->where(function ($orders) {
+                                    $orders->whereRaw("LOWER(TRIM(COALESCE(delivery_method, ''))) = 'third_party'")
+                                        ->orWhere(function ($orders) {
+                                            $orders->whereRaw("LOWER(TRIM(COALESCE(delivery_method, ''))) NOT IN ('shop_owned', 'third_party')")
+                                                ->whereRaw("LOWER(TRIM(COALESCE(carrier_company, ''))) NOT IN ('', 'shop-owned logistics')");
+                                        });
+                                }));
+                    });
+                })
                 ->when($search !== '', fn ($query) => $this->filterShipmentsBySearch($query, $search, $shopOwnerId))
                 ->when($module !== 'all', fn ($query) => $query
                     ->whereIn('source_type', Shipment::sourceTypesForModule($module)))
