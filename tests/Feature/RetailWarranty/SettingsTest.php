@@ -14,7 +14,7 @@ class SettingsTest extends TestCase
 
     public static function shops(): array
     {
-        return [['individual', 'retail', 5, 'days'], ['individual', 'both', 1, 'years'], ['company', 'retail', 2, 'weeks'], ['company', 'both', 3, 'months']];
+        return [['individual', 'retail', 5, 'days'], ['individual', 'both', 1, 'years'], ['company', 'retail', 2, 'weeks'], ['company', 'both', 3, 'months'], ['company', 'both (retail & repair)', 1, 'years']];
     }
 
     #[DataProvider('shops')]

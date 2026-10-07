@@ -213,3 +213,7 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 - Internal dispatcher pools, suggestions and controls must follow the same delivery classification as mutation policy. Third-party tracking is readable but cannot become an internal rider assignment through a permission grant. Use batched tenant-scoped classification for collection reads.
 - An empty 403 does not identify a missing role permission. Check policy reason and deployed backend; warning logs will be absent when the configured log level is error. Return safe nonblank denial feedback without logging sensitive fields or weakening authorization.
 - COD collection must gate delivery proof submission as well as the final delivered transition. Reuse the shared collection check in the proof service and mirror that prerequisite in the rider page.
+
+## 2026-10-08 - Registered warranty configuration access
+
+- Registration may persist legacy display values such as `both (retail & repair)` while seeded records use canonical `both`. Normalize persisted business types through `BusinessAccessControlService` before capability checks; preserve the stored value unless a deliberate data migration is needed.
