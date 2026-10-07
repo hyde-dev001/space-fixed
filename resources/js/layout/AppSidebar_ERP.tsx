@@ -973,6 +973,18 @@ const repairItems: NavItem[] = [
   },
 ];
 
+const repairNavigationGroups = [
+  { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
+  { key: "overview", label: "OVERVIEW", routes: ["erp.staff.repair-dashboard"] },
+  {
+    key: "operations",
+    label: "REPAIR OPERATIONS",
+    routes: ["erp.staff.job-orders-repair", "erp.staff.warranty-queue", "erp.staff.upload-services", "erp.repairer.pricing-services"],
+  },
+  { key: "inventory", label: "INVENTORY & MATERIALS", routes: ["erp.staff.stocks-overview", "erp.staff.request-material"] },
+  { key: "support", label: "SUPPORT & RESOURCES", routes: ["erp.repairer.support", "erp.repairer.articles.index"] },
+];
+
 const cashierItems: NavItem[] = [
   {
     icon: (
@@ -1058,6 +1070,7 @@ const EmployeeSidebarERP: React.FC = () => {
   ];
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
+  const [collapsedRepairGroups, setCollapsedRepairGroups] = useState<string[]>([]);
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
   const renderedItemKeys = new Set<string>();
@@ -1385,6 +1398,15 @@ const EmployeeSidebarERP: React.FC = () => {
     },
     [isActive]
   );
+
+  useEffect(() => {
+    const activeGroup = repairNavigationGroups.find((group) => group.routes.some((routeName) => isActive(routeName)));
+    if (activeGroup) {
+      setCollapsedRepairGroups((previous) => previous.includes(activeGroup.key)
+        ? previous.filter((key) => key !== activeGroup.key)
+        : previous);
+    }
+  }, [isActive]);
 
   type AttendanceSectionKey = "staff" | "logistics" | "repair" | "cashier" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | null;
 
@@ -2374,6 +2396,58 @@ const EmployeeSidebarERP: React.FC = () => {
     );
   };
 
+  const renderRepairMenuGroups = () => {
+    const items = deduplicateItems(withAttendanceForSection("repair", [
+      ...getFilteredRepairItems(),
+      myPayslipsItem,
+      ...(hasRepairerArticlesAccess() ? [repairerArticlesItem] : []),
+    ]).filter(isModuleVisible));
+    const showLabels = isExpanded || isHovered || isMobileOpen;
+
+    return (
+      <div className="space-y-5">
+        {repairNavigationGroups.map((group) => {
+          const groupItems = items.filter((item) => item.route && group.routes.includes(item.route));
+          if (groupItems.length === 0) return null;
+
+          const expanded = !collapsedRepairGroups.includes(group.key);
+          const panelId = `repair-sidebar-${group.key}`;
+
+          return (
+            <div key={group.key} className="space-y-2">
+              {showLabels && (
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={panelId}
+                  onClick={() => setCollapsedRepairGroups((previous) => previous.includes(group.key)
+                    ? previous.filter((key) => key !== group.key)
+                    : [...previous, group.key])}
+                  className="flex min-h-9 w-full items-center justify-between gap-2 rounded-lg px-3 text-left text-xs font-semibold uppercase text-gray-400 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:hover:bg-gray-800 dark:focus-visible:ring-gray-100"
+                >
+                  <span>{group.label}</span>
+                  <svg
+                    className={`size-4 shrink-0 transition-transform motion-reduce:transition-none ${expanded ? "rotate-180" : ""}`}
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    aria-hidden="true"
+                  >
+                    <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </button>
+              )}
+              <div id={panelId} hidden={showLabels && !expanded}>
+                {renderMenuItems(groupItems, "repair")}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const filteredManagerItems = getFilteredManagerItems();
   const renderManagerSection = (
     label: string,
@@ -2498,7 +2572,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem, ...(hasRepairerArticlesAccess() ? [repairerArticlesItem] : [])])), "repair")}
+                {renderRepairMenuGroups()}
               </div>
             </div>
           </nav>
