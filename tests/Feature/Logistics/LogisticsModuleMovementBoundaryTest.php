@@ -337,7 +337,7 @@ class LogisticsModuleMovementBoundaryTest extends TestCase
 
         $decision = $policy->decide($dispatcher, LogisticsAction::ASSIGN_RIDER, $shop, $external);
         $this->assertFalse($decision['allowed']);
-        $this->assertSame('action_not_allowed', $decision['reason_category']);
+        $this->assertSame('third_party_tracking', $decision['reason_category']);
     }
 
     #[DataProvider('historicalExternalBatchActions')]

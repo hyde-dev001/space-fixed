@@ -208,6 +208,8 @@ describe('staff order shipping coverage integration', () => {
 
     render(React.createElement(JobOrdersPage));
     fireEvent.click(await screen.findByRole('button', { name: 'Shipped (2)' }));
+    expect(screen.getByText('Shop-owned logistics')).toBeInTheDocument();
+    expect(screen.getByText('Third-party courier · J&T')).toBeInTheDocument();
     const viewButtons = await screen.findAllByTitle('View order details');
 
     fireEvent.click(viewButtons[0]);

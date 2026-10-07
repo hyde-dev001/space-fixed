@@ -763,7 +763,11 @@ class ShipmentController extends Controller
         );
         if (! $decision['allowed']) {
             $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
-            abort(403);
+            abort(response()->json([
+                'code' => 'LOGISTICS_ACTION_DENIED',
+                'reason' => $decision['reason_category'],
+                'message' => $this->policy->denialMessage($decision['reason_category']),
+            ], 403));
         }
 
         return $shop;
@@ -778,7 +782,11 @@ class ShipmentController extends Controller
         $decision = $this->policy->decideCustody($actor, $shop, $leg, $requiredCapability);
         if (! $decision['allowed']) {
             $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
-            abort(403);
+            abort(response()->json([
+                'code' => 'LOGISTICS_ACTION_DENIED',
+                'reason' => $decision['reason_category'],
+                'message' => $this->policy->denialMessage($decision['reason_category']),
+            ], 403));
         }
 
         $rider = $this->policy->resolveAssignedRider($actor, $shop, $leg);
@@ -796,7 +804,11 @@ class ShipmentController extends Controller
         $decision = $this->policy->decideReturnHandoff($actor, $shop, $leg, $proof);
         if (! $decision['allowed']) {
             $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
-            abort(403);
+            abort(response()->json([
+                'code' => 'LOGISTICS_ACTION_DENIED',
+                'reason' => $decision['reason_category'],
+                'message' => $this->policy->denialMessage($decision['reason_category']),
+            ], 403));
         }
 
         $rider = $this->policy->resolveAssignedRider($actor, $shop, $leg);

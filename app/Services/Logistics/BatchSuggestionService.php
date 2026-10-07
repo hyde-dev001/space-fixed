@@ -12,6 +12,8 @@ use Carbon\CarbonInterface;
 
 class BatchSuggestionService
 {
+    public function __construct(private LogisticsMovementEligibility $movements) {}
+
     public function suggest(ShopOwner $shop, CarbonInterface $date, string $window, string $module = 'all'): array
     {
         $settings = $shop->logisticsSetting()->firstOrCreate([]);
@@ -30,6 +32,7 @@ class BatchSuggestionService
                     && ($module === 'all' || $module === $legModule);
             })
             ->values();
+        $legs = $this->movements->internalLegs($shop, $legs);
         $riders = RiderProfile::query()
             ->where('shop_owner_id', $shop->id)->where('active', true)
             ->where('availability_status', 'available')

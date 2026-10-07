@@ -23,9 +23,13 @@ class StaffRetailShippingCoverageTest extends TestCase
     use RefreshDatabase;
 
     private ShopOwner $shop;
+
     private User $staff;
+
     private UserAddress $address;
+
     private Order $order;
+
     private LogisticsSetting $settings;
 
     protected function setUp(): void
@@ -178,6 +182,32 @@ class StaffRetailShippingCoverageTest extends TestCase
         app(ShipmentLegService::class)->markDelivered($leg->fresh());
 
         $this->assertSame('delivered', $this->order->fresh()->status->value);
+    }
+
+    public function test_staff_shipping_replaces_stale_third_party_method_when_shop_owned_is_selected(): void
+    {
+        $this->order->update(['delivery_method' => 'third_party', 'carrier_company' => 'Lalamove']);
+        $this->actingAs($this->staff, 'user')->patchJson("/api/staff/orders/{$this->order->id}/status", [
+            'status' => 'shipped', 'carrier_company' => 'Shop-owned logistics',
+        ])->assertOk();
+        $order = $this->order->fresh();
+        $this->assertSame('shop_owned', $order->delivery_method);
+        $this->assertSame('shop_owned', $order->resolvedDeliveryMethod());
+        $this->assertSame('Shop-owned logistics', $order->carrier_company);
+        $leg = Shipment::where('source_type', 'order')->where('source_id', $order->id)->firstOrFail()->legs()->firstOrFail();
+        Permission::findOrCreate('assign-logistics-deliveries', 'user');
+        $this->staff->givePermissionTo('assign-logistics-deliveries');
+        $this->postJson('/api/logistics/legs/schedule', ['leg_ids' => [$leg->id], 'delivery_date' => today()->addDay()->toDateString(), 'delivery_window' => 'morning'])->assertOk();
+    }
+
+    public function test_staff_shipping_replaces_stale_shop_owned_method_when_a_third_party_carrier_is_selected(): void
+    {
+        $this->order->update(['delivery_method' => 'shop_owned', 'carrier_company' => 'Shop-owned logistics']);
+        $this->actingAs($this->staff, 'user')->patchJson("/api/staff/orders/{$this->order->id}/status", [
+            'status' => 'shipped', 'carrier_company' => 'Lalamove', 'tracking_number' => 'LL-QA',
+        ])->assertOk();
+        $this->assertSame('third_party', $this->order->fresh()->delivery_method);
+        $this->assertSame('Lalamove', $this->order->fresh()->carrier_company);
     }
 
     public function test_outside_coverage_does_not_block_complete_third_party_shipping(): void

@@ -2362,6 +2362,7 @@ export default function JobOrdersPage() {
                           <span className="inline-flex items-center text-xs font-semibold whitespace-nowrap text-gray-900 dark:text-gray-100">
                             {getOrderStatusPresentation(order.status).label}
                           </span>
+                          {order.status === 'shipped' && order.carrierCompany && <span className="block text-xs text-gray-600 dark:text-gray-400">{order.carrierCompany === SHOP_OWNED_LOGISTICS ? SHOP_OWNED_LOGISTICS : `Third-party courier · ${order.carrierCompany}`}</span>}
                           {!isPosOrder(order) && (order.customerReceiptStatus === 'disputed' ? (
                             <span className="inline-flex w-fit items-center whitespace-nowrap text-xs font-semibold text-gray-900 dark:text-gray-100">
                               Customer Dispute

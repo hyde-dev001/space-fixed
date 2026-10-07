@@ -333,6 +333,11 @@ final class OrderFulfillmentService
             }
         }
 
+        if (array_key_exists('carrier_company', $shippingData) && ! array_key_exists('delivery_method', $shippingData)) {
+            // Legacy Staff/Owner shipping forms choose a carrier; do not retain an earlier method.
+            $order->delivery_method = null;
+        }
+
         if (! in_array($order->delivery_method, ['shop_owned', 'third_party'], true)) {
             $order->delivery_method = $order->resolvedDeliveryMethod();
         }

@@ -22,6 +22,7 @@ use App\Models\User;
 use App\Services\Logistics\ArrivalService;
 use App\Services\Logistics\DeliveryTypeResolver;
 use App\Services\Logistics\LogisticsActorPolicy;
+use App\Services\Logistics\LogisticsMovementEligibility;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\RiderProfileSyncService;
 use App\Services\CodCollectionService;
@@ -47,6 +48,7 @@ class ErpLogisticsController extends Controller
         private LogisticsActorPolicy $logisticsPolicy,
         private ProofService $proofs,
         private CodCollectionService $codCollections,
+        private LogisticsMovementEligibility $movements,
     ) {}
 
     public function dashboard(): Response|RedirectResponse
@@ -1078,6 +1080,9 @@ class ErpLogisticsController extends Controller
             ->whereNull('delivery_batch_id')->where('status', 'pending')
             ->where(fn ($query) => $query->whereNull('schedule_status')->orWhere('schedule_status', '!=', 'scheduled'))
             ->get();
+        $internalIds = $this->movements->internalLegs($shop, $pool->merge($unscheduled))->modelKeys();
+        $pool = $pool->whereIn('id', $internalIds)->values();
+        $unscheduled = $unscheduled->whereIn('id', $internalIds)->values();
         $this->attachShipmentSummaries(
             $batches->whereNotIn('status', ['completed', 'cancelled'])->flatMap->legs->pluck('shipment')
                 ->merge($pool->pluck('shipment'))
@@ -1362,6 +1367,8 @@ class ErpLogisticsController extends Controller
                 'order_id' => (int) $shipment->source_id,
                 'order_number' => $order?->order_number,
                 'payment_method' => $order?->payment_method,
+                'delivery_method' => $order?->resolvedDeliveryMethod(),
+                'carrier_company' => $order?->carrier_company,
                 'cod_expected_amount' => $isCod ? $this->codCollections->expectedAmount($order) : null,
                 'cod_collection_status' => $isCod ? $order->codCollection?->status : null,
                 'cod_collected_amount' => $isCod ? $order->codCollection?->collected_amount : null,

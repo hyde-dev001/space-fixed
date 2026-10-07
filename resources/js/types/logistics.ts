@@ -58,6 +58,8 @@ export type LogisticsOrderSummary = {
   order_id: number;
   order_number?: string | null;
   payment_method?: string | null;
+  delivery_method?: 'shop_owned' | 'third_party' | null;
+  carrier_company?: string | null;
   cod_expected_amount?: string | null;
   cod_collection_status?: 'pending' | 'cash_collected' | 'settled' | string | null;
   cod_collected_amount?: string | null;
