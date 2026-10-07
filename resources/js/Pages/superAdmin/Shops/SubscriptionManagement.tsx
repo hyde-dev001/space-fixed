@@ -1037,12 +1037,12 @@ export default function SubscriptionManagement() {
 
               <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
                 {selected.can_cancel && (
-                  <button type="button" onClick={cancelSubscription} disabled={mutationPending} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:text-amber-300">
+                  <button hidden type="button" onClick={cancelSubscription} disabled={mutationPending} className="rounded-lg border border-amber-300 px-3 py-2 text-sm font-semibold text-amber-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-700 dark:text-amber-300">
                     {mutationPending ? 'Working…' : 'Cancel at period end'}
                   </button>
                 )}
                 {selected.eligible_for_refund && selected.refund_payment_id && (
-                  <button type="button" onClick={refundSubscription} disabled={mutationPending} className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-700 dark:text-rose-300">
+                  <button hidden type="button" onClick={refundSubscription} disabled={mutationPending} className="rounded-lg border border-rose-300 px-3 py-2 text-sm font-semibold text-rose-700 disabled:cursor-not-allowed disabled:opacity-50 dark:border-rose-700 dark:text-rose-300">
                     {mutationPending ? 'Working…' : 'Issue full refund'}
                   </button>
                 )}

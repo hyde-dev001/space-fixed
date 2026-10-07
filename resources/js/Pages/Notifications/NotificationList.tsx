@@ -271,8 +271,17 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
     }
   };
 
-  const handleMarkAllAsRead = () => {
-    if (confirm('Mark all notifications as read?')) {
+  const handleMarkAllAsRead = async () => {
+    const confirmation = await Swal.fire({
+      title: 'Mark all notifications as read?',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Mark All Read',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#111111',
+    });
+
+    if (confirmation.isConfirmed) {
       markAllAsRead.mutate();
     }
   };
