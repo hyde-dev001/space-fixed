@@ -270,6 +270,17 @@ final class PlatformFeeController extends Controller
         $charges = PlatformFeeCharge::query()
             ->where('shop_id', $shopId)
             ->where('source_origin', 'marketplace')
+            ->where(function ($query) use ($shopId): void {
+                $query->where('source_type', '!=', 'order')
+                    ->orWhereNotExists(function ($refunds) use ($shopId): void {
+                        $refunds->selectRaw('1')
+                            ->from('order_refunds')
+                            ->join('orders', 'orders.id', '=', 'order_refunds.order_id')
+                            ->whereColumn('order_refunds.order_id', 'platform_fee_charges.source_id')
+                            ->where('orders.shop_owner_id', $shopId)
+                            ->where('order_refunds.status', 'succeeded');
+                    });
+            })
             ->latest('id')
             ->limit(100)
             ->get([

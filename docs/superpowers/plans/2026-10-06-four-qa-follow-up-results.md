@@ -109,3 +109,12 @@ The dispatcher Shipments query included third-party retail deliveries and render
 - `php artisan test tests/Feature/Logistics/LogisticsModuleMovementBoundaryTest.php` — 59 tests, 204 assertions, no failures (same environment warning).
 - `npm run build` — PASS; fresh `public/build` generated with 3,845 modules. No asset diff was needed because the generated output matched the already committed build.
 - PHP syntax checks, dispatcher-test Pint check, manifest asset check (398 referenced files), and `git diff --check` — PASS. Controller Pint check still reports one pre-existing formatting issue outside this diff; unrelated lines were left untouched.
+
+## Refunded order Fee Ledger visibility — 2026-10-08
+
+The Platform Balance Fee Ledger now omits marketplace order charges once an associated refund succeeds, including successful partial refunds. Pending and failed refunds remain visible. The original fee charge, refund record, refund adjustments/credits, and aggregate balance accounting are preserved.
+
+- Added an API regression test proving successful-refund rows are hidden, pending-refund rows remain, and the underlying charge/refund records remain stored.
+- `php artisan test tests/Feature/PlatformFee/PlatformBalanceApiTest.php tests/Feature/PlatformFee/PlatformFeeRefundTest.php tests/Feature/PlatformFee/PlatformFeeLedgerTest.php` — **30 tests, 126 assertions, no failures**. Laravel emitted the existing missing-worktree-`.env` warning for each test.
+- `npm.cmd run build` — **PASS**, Vite transformed 3,845 modules. Existing unresolved `/images/auth-geometric-pattern.svg` warning remains; generated files matched the committed `public/build`, so there is no asset diff.
+- `app/Http/Controllers/Api/Finance/PlatformFeeController.php` and `tests/Feature/PlatformFee/PlatformBalanceApiTest.php` changed; no frontend bundle behavior changed.
