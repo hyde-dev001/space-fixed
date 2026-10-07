@@ -1354,3 +1354,18 @@ it('explains a scheduling denial when the 403 response contains an empty message
   expect(await screen.findByText('Unable to schedule this delivery. Check your dispatcher access and try again.')).toBeInTheDocument();
   expect(mocks.post).toHaveBeenCalledTimes(1);
 });
+
+it.each([null, '2026-07-22'])('keeps third-party courier tracking read-only for internal dispatch (schedule %s)', (date) => {
+  setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'pending', scheduled_delivery_date: date, assignments: [], proofs: [], attempts: [] });
+  mocks.props.shipments.data[0].order_summary.delivery_method = 'third_party';
+  mocks.props.shipments.data[0].order_summary.carrier_company = 'Lalamove';
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  expect(screen.getByText(/Lalamove.*handles this delivery/)).toBeInTheDocument();
+  expect(screen.getByText('Waiting for courier update')).toBeInTheDocument();
+  expect(screen.queryByText('Waiting for rider')).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Schedule & assign rider' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Assign', exact: true })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText('Choose rider for outbound leg')).not.toBeInTheDocument();
+  expect(mocks.post).not.toHaveBeenCalled();
+});

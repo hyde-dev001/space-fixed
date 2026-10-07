@@ -162,7 +162,11 @@ class DeliveryBatchController extends Controller
         $decision = $this->policy->decideBatchManagement($actor, $shop);
         if (! $decision['allowed']) {
             $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
-            abort(403);
+            abort(response()->json([
+                'code' => 'LOGISTICS_ACTION_DENIED',
+                'reason' => $decision['reason_category'],
+                'message' => $this->policy->denialMessage($decision['reason_category']),
+            ], 403));
         }
 
         if ($batch && (int) $batch->shop_owner_id !== (int) $shop->id) {
@@ -226,7 +230,11 @@ class DeliveryBatchController extends Controller
         $decision = $this->policy->decide($actor, $action, $shop, $leg);
         if (! $decision['allowed']) {
             $this->logDenial($actor, $shop, $decision['action'], $decision['reason_category']);
-            abort(403);
+            abort(response()->json([
+                'code' => 'LOGISTICS_ACTION_DENIED',
+                'reason' => $decision['reason_category'],
+                'message' => $this->policy->denialMessage($decision['reason_category']),
+            ], 403));
         }
     }
 

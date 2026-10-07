@@ -2,11 +2,12 @@
 
 namespace Tests\Feature\Logistics;
 
-use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\DeliveryBatch;
+use App\Models\Logistics\LogisticsSetting;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
+use App\Models\Order;
 use App\Models\ShopOwner;
 use App\Services\Logistics\BatchSuggestionService;
 use Carbon\CarbonImmutable;
@@ -52,6 +53,12 @@ class BatchSuggestionServiceTest extends TestCase
             'delivery_window' => 'morning', 'schedule_status' => 'scheduled',
             'destination_snapshot' => ['address' => 'No coordinates'],
         ]);
+
+        foreach (['third_party', null] as $method) {
+            $externalOrder = Order::factory()->create(['shop_owner_id' => $shop->id, 'delivery_method' => $method, 'carrier_company' => 'Lalamove']);
+            $externalShipment = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order', 'source_id' => $externalOrder->id, 'purpose' => 'retail_delivery']);
+            ShipmentLeg::factory()->create(['shipment_id' => $externalShipment->id, 'scheduled_delivery_date' => '2026-07-15', 'delivery_window' => 'morning', 'schedule_status' => 'scheduled', 'destination_snapshot' => ['latitude' => 14.5995, 'longitude' => 120.9842]]);
+        }
 
         $result = app(BatchSuggestionService::class)->suggest($shop, CarbonImmutable::parse('2026-07-15'), 'morning');
 

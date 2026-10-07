@@ -886,7 +886,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const latestProof = [...(leg.proofs ?? [])].reverse().find((proof) => ['delivery', 'receive'].includes(proof.handoff_type) && proof.proof_url);
                             const canReportIssueForLeg = canReportIssue && riderMode && !isReturnToShop
                               && ['in_transit', 'delivery_attempted'].includes(leg.status);
-                            const canScheduleLeg = canAssign && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
+                            const thirdPartyTracking = shipment.source_type === 'order' && shipment.purpose === 'retail_delivery'
+                              && shipment.order_summary?.delivery_method === 'third_party';
+                            const canScheduleLeg = canAssign && !thirdPartyTracking && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
                             const schedule = deliverySchedules[leg.id] ?? { date: '', window: 'morning' };
                             const issueForm = issueForms[leg.id] ?? { reason_code: '', notes: '' };
                             const requiresIssuePhoto = photoIssueReasons.has(issueForm.reason_code);
@@ -1003,7 +1005,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                 </div>
                                 <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-900/40 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
                                   {!riderMode && <div data-testid="shipment-proof-preview" className="relative flex h-48 w-full items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900">
-                                    {latestProof?.proof_url ? <><img src={latestProof.proof_url} alt="Uploaded delivery proof" loading="lazy" className="h-full w-full object-cover" /><div className="absolute inset-0 flex items-center justify-center bg-black/15 transition-colors hover:bg-black/25"><button type="button" aria-label="View delivery proof" onClick={(event) => openProof(latestProof.proof_url!, event.currentTarget)} className="min-h-11 cursor-pointer rounded-lg bg-black/65 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">View</button></div></> : <p className="text-sm font-semibold text-gray-500 dark:text-gray-300">Waiting for rider</p>}
+                                    {latestProof?.proof_url ? <><img src={latestProof.proof_url} alt="Uploaded delivery proof" loading="lazy" className="h-full w-full object-cover" /><div className="absolute inset-0 flex items-center justify-center bg-black/15 transition-colors hover:bg-black/25"><button type="button" aria-label="View delivery proof" onClick={(event) => openProof(latestProof.proof_url!, event.currentTarget)} className="min-h-11 cursor-pointer rounded-lg bg-black/65 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">View</button></div></> : <p className="text-sm font-semibold text-gray-500 dark:text-gray-300">{thirdPartyTracking ? 'Waiting for courier update' : 'Waiting for rider'}</p>}
                                   </div>}
                                   {canAssign && !riderMode && isFailedPickup && (
                                     <div className="grid gap-2 sm:grid-cols-2">
@@ -1119,6 +1121,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   )}
                                   {canResolveDisputes && !riderMode && leg.status === 'delivery_attempted' && <button type="button" onClick={() => void confirmAct(`/api/logistics/legs/${leg.id}/cancel`, 'Cancel delivery?', 'This is the final cancellation action.')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel delivery</button>}
                                 </div>
+                                {thirdPartyTracking && <p role="status" className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-900/50 dark:text-gray-200">{shipment.order_summary?.carrier_company || 'The third-party courier'} handles this delivery. Shop riders cannot schedule or accept it.</p>}
                                 {canScheduleLeg && (
                                   <div className="flex flex-col gap-3 border-t border-gray-200 pt-3 dark:border-gray-700">
                                     {scheduleFrozen && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-800">{scheduleFreezeMessage}</p>}
@@ -1157,7 +1160,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                     )}
                                   </div>
                                 )}
-                                {!canScheduleLeg && (activeAssignment ? null : canAssignLeg ? (
+                                {!canScheduleLeg && !thirdPartyTracking && (activeAssignment ? null : canAssignLeg ? (
                                   <div className="flex flex-col gap-2 sm:flex-row">
                                     <MonochromeSelect
                                       value={selectedRiders[leg.id] ?? ''}

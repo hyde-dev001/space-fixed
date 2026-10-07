@@ -148,7 +148,7 @@ final class LogisticsActorPolicy
         }
 
         if ($this->movements->isThirdPartyTracking($leg)) {
-            return $this->deny($action, 'action_not_allowed');
+            return $this->deny($action, 'third_party_tracking');
         }
 
         if (! $this->hasValidSourceState($action, $leg)
@@ -516,8 +516,7 @@ final class LogisticsActorPolicy
         Authenticatable $actor,
         LogisticsAction $action,
         ?ShipmentLeg $leg = null,
-    ): bool
-    {
+    ): bool {
         if (! $actor instanceof User) {
             return false;
         }
@@ -554,6 +553,17 @@ final class LogisticsActorPolicy
 
         return $status === ShipmentLegStatus::CANCELLED
             && $this->isRepairPickupFailure($leg);
+    }
+
+    public function denialMessage(?string $reasonCategory): string
+    {
+        return match ($reasonCategory) {
+            'third_party_tracking' => 'This delivery uses a third-party courier. Shop riders cannot schedule or accept it.',
+            'module_unavailable' => 'Logistics is unavailable for this shop. Ask the Shop Owner to check the Logistics module.',
+            'source_state_invalid' => 'This delivery is not eligible for this action in its current state. Refresh and try again.',
+            'action_not_allowed' => 'Your account does not have permission for this logistics action.',
+            default => 'This logistics action is not available for your account.',
+        };
     }
 
     /**

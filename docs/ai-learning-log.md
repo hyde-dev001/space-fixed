@@ -207,3 +207,8 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 - Idempotent recovery must preserve both saved context and selected lines. Checking only the incoming request basis leaves an existing warranty reservation rewritable through an ordinary replay.
 - Read projections must follow existing payment reconciliation when that reconciliation can create the entity being displayed. Effective expiry reads should remain separate from scheduled expiry writes.
 - Reversible additive migrations must remove indexes before dropping indexed columns. Verify only the new migrations' down/up boundary when older unrelated migration downs are incompatible with the test database.
+## 2026-10-08 - Shipping classification and dispatcher projections
+
+- Carrier-only shipping forms must update the canonical delivery method when the carrier changes; preserving a previous non-null method can misclassify a newly selected shipping business. Derive through the existing resolver inside the locked shipping transition and test both directions.
+- Internal dispatcher pools, suggestions and controls must follow the same delivery classification as mutation policy. Third-party tracking is readable but cannot become an internal rider assignment through a permission grant. Use batched tenant-scoped classification for collection reads.
+- An empty 403 does not identify a missing role permission. Check policy reason and deployed backend; warning logs will be absent when the configured log level is error. Return safe nonblank denial feedback without logging sensitive fields or weakening authorization.

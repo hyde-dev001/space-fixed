@@ -2,11 +2,12 @@
 
 namespace App\Services\Logistics;
 
-use App\Models\Logistics\ShipmentLeg;
 use App\Models\Logistics\Shipment;
-use App\Models\ShopOwner;
+use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
+use App\Models\ShopOwner;
 use App\Services\ShopModuleAccessService;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 final class LogisticsMovementEligibility
@@ -63,6 +64,25 @@ final class LogisticsMovementEligibility
                 'shipment_leg_id' => ['Third-party tracking cannot authorize shop-owned dispatch.'],
             ]);
         }
+    }
+
+    /** @param Collection<int, ShipmentLeg> $legs */
+    public function internalLegs(ShopOwner $shop, Collection $legs): Collection
+    {
+        $retailLegs = $legs->filter(fn (ShipmentLeg $leg) => $leg->shipment?->source_type === 'order'
+            && $leg->shipment->purpose === 'retail_delivery');
+        if ($retailLegs->isEmpty()) {
+            return $legs->values();
+        }
+        $externalIds = Order::query()->where('shop_owner_id', $shop->id)
+            ->whereIn('id', $retailLegs->pluck('shipment.source_id')->unique())
+            ->get(['id', 'delivery_method', 'carrier_company'])
+            ->filter(fn (Order $order) => $order->resolvedDeliveryMethod() === 'third_party')
+            ->pluck('id')->map(fn ($id) => (int) $id)->all();
+
+        return $legs->reject(fn (ShipmentLeg $leg) => $leg->shipment?->source_type === 'order'
+            && $leg->shipment->purpose === 'retail_delivery'
+            && in_array((int) $leg->shipment->source_id, $externalIds, true))->values();
     }
 
     public function canContinue(ShopOwner $shop, ShipmentLeg $leg): bool
