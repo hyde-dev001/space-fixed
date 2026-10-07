@@ -1403,30 +1403,6 @@ export default function TimeIn() {
                                         </div>
                                     </button>
 
-                                    {isClockedIn && !isOnLunch && !lunchEndTime && (
-                                        <button
-                                            onClick={handleStartLunch}
-                                            className="min-h-12 w-full rounded-full bg-[#111111] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
-                                        >
-                                            <div className="flex items-center justify-center gap-2">
-                                                <CoffeeIcon />
-                                                Start Lunch
-                                            </div>
-                                        </button>
-                                    )}
-
-                                    {isOnLunch && (
-                                        <button
-                                            onClick={handleEndLunch}
-                                            className="min-h-12 w-full rounded-full bg-[#111111] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2"
-                                        >
-                                            <div className="flex items-center justify-center gap-2">
-                                                <CheckIcon />
-                                                End Lunch
-                                            </div>
-                                        </button>
-                                    )}
-
                                     <button
                                         onClick={handleClockOut}
                                         disabled={!isClockedIn || isOnLunch || isLoading}
@@ -1448,6 +1424,30 @@ export default function TimeIn() {
                                             'Clock Out'
                                         )}
                                     </button>
+
+                                    {isClockedIn && !isOnLunch && !lunchEndTime && (
+                                        <button
+                                            onClick={handleStartLunch}
+                                            className="min-h-12 w-full rounded-full bg-[#111111] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 min-[420px]:col-span-2"
+                                        >
+                                            <div className="flex items-center justify-center gap-2">
+                                                <CoffeeIcon />
+                                                Start Lunch
+                                            </div>
+                                        </button>
+                                    )}
+
+                                    {isOnLunch && (
+                                        <button
+                                            onClick={handleEndLunch}
+                                            className="min-h-12 w-full rounded-full bg-[#111111] px-6 py-3 text-sm font-semibold text-white transition-colors hover:bg-black focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-900 focus-visible:ring-offset-2 min-[420px]:col-span-2"
+                                        >
+                                            <div className="flex items-center justify-center gap-2">
+                                                <CheckIcon />
+                                                End Lunch
+                                            </div>
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
