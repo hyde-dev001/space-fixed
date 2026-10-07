@@ -1,4 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
+import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
+import type { RetailWarrantyProjection } from '@/types/retailWarranty';
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { X } from "lucide-react";
@@ -56,6 +58,7 @@ type LogisticsSummary = {
 };
 
 type Order = {
+  product_warranty?: RetailWarrantyProjection | null;
   id: number;
   order_number: string;
   customer: string;
@@ -684,6 +687,7 @@ export default function JobOrdersPage() {
       product: order.items && order.items.length > 0 ? order.items[0].product_name : '',
       pickup_enabled: order.pickup_enabled || false,
       pickup_enabled_at: order.pickup_enabled_at || null,
+      product_warranty: order.product_warranty ?? null,
       retail_pos_refund: order.retail_pos_refund || null,
       latest_refund: order.latest_refund || null,
     };
@@ -2752,6 +2756,7 @@ export default function JobOrdersPage() {
               </div>
 
               <div className="px-6 py-5 overflow-y-auto space-y-5">
+                <RetailWarrantyPanel warranty={viewOrder.product_warranty} />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Full Name</p>

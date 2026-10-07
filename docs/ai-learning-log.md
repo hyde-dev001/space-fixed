@@ -197,3 +197,12 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 - A new moderation decision and a new account suspension are separate operations. Reuse a validated current suspension only for report resolution; keep ordinary account lifecycle conflict checks and per-report audit events.
 - Administrative in-app notification URLs must be relative because the inbox deliberately rejects absolute links. Keep email links absolute, and normalize historical notifications by their known event to the named authenticated route.
 - Finance date-only validation uses `app.shop_timezone`, while timestamp storage remains UTC. Share the server business calendar date with date inputs instead of deriving it through browser UTC conversions.
+
+## 2026-10-07 — Immutable retail coverage and delivery
+
+- A multi-item purchase can have one historical certificate/email while each original order item tracks independent quantities. Keep published document facts separate from live reservations, successful consumption and effective expiry.
+- Snapshot promises at authoritative fulfillment, including delayed-payment context. A permanent first-enable purchase cutover and a captured ineligible marker prevent status/event replay from creating retroactive promises.
+- Queue uniqueness does not establish delivery correctness. Persist a transport attempt before sending, distinguish definite pre-send failure from uncertain acceptance, and prevent normal retries of uncertainty. Catch enqueue failure after the outer commit so durable business records remain successful and recoverable.
+- Idempotent recovery must preserve both saved context and selected lines. Checking only the incoming request basis leaves an existing warranty reservation rewritable through an ordinary replay.
+- Read projections must follow existing payment reconciliation when that reconciliation can create the entity being displayed. Effective expiry reads should remain separate from scheduled expiry writes.
+- Reversible additive migrations must remove indexes before dropping indexed columns. Verify only the new migrations' down/up boundary when older unrelated migration downs are incompatible with the test database.

@@ -21,6 +21,21 @@ class RetailPosRefundService
 
     public function requestRefund(PosTransaction $source, array $payload, int $actorId): PosRefund
     {
+        return DB::transaction(function () use ($source, $payload, $actorId) {
+            if ($source->module_type !== 'retail') {
+                throw ValidationException::withMessages(['source_transaction_id' => ['Only retail POS purchases can use this assessment.']]);
+            }
+            $order = Order::where('shop_owner_id', $source->shop_owner_id)->whereKey($source->module_reference_id)->lockForUpdate()->firstOrFail();
+            $source = PosTransaction::whereKey($source->id)->lockForUpdate()->firstOrFail();
+            if (($payload['request_basis'] ?? 'ordinary') === 'warranty') {
+                app(RetailWarrantyService::class)->validateAssessment($order, $payload['refund_lines'] ?? [], 'retail');
+            }
+            return $this->requestLockedRefund($source, $payload, $actorId);
+        }, 3);
+    }
+
+    private function requestLockedRefund(PosTransaction $source, array $payload, int $actorId): PosRefund
+    {
         if ((string) $source->module_type !== 'retail') {
             throw ValidationException::withMessages([
                 'source_transaction_id' => ['Only retail POS transactions can be refunded from this endpoint.'],
@@ -48,6 +63,7 @@ class RetailPosRefundService
                 return [
                     'order_item_id' => (int) ($line['order_item_id'] ?? 0),
                     'requested_qty' => (int) ($line['requested_qty'] ?? 0),
+                    'retail_warranty_id' => (int) ($line['retail_warranty_id'] ?? 0),
                     'inspection_disposition' => strtolower(trim((string) ($line['inspection_disposition'] ?? ''))),
                 ];
             })
@@ -129,6 +145,7 @@ class RetailPosRefundService
                 $variantId = $this->resolveOrderItemVariantId($orderItem);
 
                 $mappedLines[] = [
+                    'retail_warranty_id' => ($payload['request_basis'] ?? 'ordinary') === 'warranty' ? $line['retail_warranty_id'] : null,
                     'order_item_id' => (int) $orderItem->id,
                     'product_id' => (int) ($orderItem->product_id ?? 0),
                     'product_variant_id' => $variantId,
@@ -164,6 +181,7 @@ class RetailPosRefundService
 
         return DB::transaction(function () use ($source, $payload, $actorId, $requestedAmount, $mappedLines) {
             $refund = PosRefund::create([
+                'request_basis' => ($payload['request_basis'] ?? 'ordinary') === 'warranty' ? 'warranty' : 'ordinary',
                 'refund_no' => 'RFD-' . now()->format('YmdHis') . '-' . str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT),
                 'shop_owner_id' => (int) $source->shop_owner_id,
                 'source_transaction_id' => (int) $source->id,
@@ -183,6 +201,11 @@ class RetailPosRefundService
 
             if (!empty($mappedLines) && Schema::hasTable('pos_refund_items')) {
                 $refund->items()->createMany($mappedLines);
+            }
+            if ($refund->request_basis === 'warranty') {
+                app(RetailWarrantyService::class)->audit($source->shop_owner_id, 'retail_warranty.assessment_requested', 'pos_refund', $refund->id,
+                    ['order_id' => $source->module_reference_id, 'warranty_ids' => $refund->items()->pluck('retail_warranty_id')->all(),
+                        'actor_type' => $payload['_warranty_actor']['type'] ?? ($actorId > 0 ? 'user' : 'system'), 'actor_id' => $payload['_warranty_actor']['id'] ?? ($actorId ?: null)]);
             }
 
             return $refund;
@@ -242,6 +265,9 @@ class RetailPosRefundService
     public function execute(PosRefund $refund, int $actorId, string $executionMode = 'manual', ?string $executionNote = null): PosRefund
     {
         return DB::transaction(function () use ($refund, $actorId, $executionMode, $executionNote): PosRefund {
+            if ($refund->module_type === 'retail') {
+                Order::where('shop_owner_id', $refund->shop_owner_id)->whereKey($refund->module_reference_id)->lockForUpdate()->firstOrFail();
+            }
             $lockedRefund = PosRefund::query()->lockForUpdate()->findOrFail((int) $refund->id);
 
             return $this->executeWithinTransaction($lockedRefund, $actorId, $executionMode, $executionNote);
@@ -332,6 +358,9 @@ class RetailPosRefundService
             }
         }
 
+        if ($sourceOrder = Order::find((int) $source->module_reference_id)) {
+            app(RetailWarrantyService::class)->reconcileOrder($sourceOrder);
+        }
         return $refund->fresh();
     }
 

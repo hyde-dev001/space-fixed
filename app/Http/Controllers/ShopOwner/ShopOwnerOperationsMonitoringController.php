@@ -22,7 +22,8 @@ final class ShopOwnerOperationsMonitoringController extends Controller
 
     public function orders(Request $request): JsonResponse
     {
-        $orders = $this->orders->listForShopOwner($this->owner(), $request->only([
+        $owner = $this->owner();
+        $orders = $this->orders->listForShopOwner($owner, $request->only([
             'status',
             'assignment_state',
             'handler_id',
@@ -34,6 +35,11 @@ final class ShopOwnerOperationsMonitoringController extends Controller
             'per_page',
         ]));
 
+        $sourceOrders = \App\Models\Order::where('shop_owner_id', $owner->id)->whereIn('id', $orders->getCollection()->pluck('id'))
+            ->with('retailWarrantyIssuance.warranties')->get();
+        $coverage = app(\App\Services\RetailWarrantyService::class)->projectOrders($sourceOrders, 'owner');
+        $orders->setCollection($orders->getCollection()->map(fn (array $row) => $row + ['product_warranty' => $coverage[$row['id']] ?? null]));
+
         return response()->json([
             'data' => $orders,
             'last_updated_at' => now()->toISOString(),
@@ -42,8 +48,12 @@ final class ShopOwnerOperationsMonitoringController extends Controller
 
     public function showOrder(int $id): JsonResponse
     {
+        $owner = $this->owner();
+        $data = $this->orders->showForShopOwner($owner, $id);
+        $order = \App\Models\Order::where('shop_owner_id', $owner->id)->findOrFail($id);
+        $coverage = app(\App\Services\RetailWarrantyService::class)->projectOrders(new \Illuminate\Database\Eloquent\Collection([$order]), 'owner');
         return response()->json([
-            'data' => $this->orders->showForShopOwner($this->owner(), $id),
+            'data' => $data + ['product_warranty' => $coverage[$id] ?? null],
         ]);
     }
 

@@ -42,6 +42,12 @@ use App\Http\Controllers\Erp\HR\PayrollController as HrPayrollController;
  * All routes require authentication and shop_owner role
  */
 Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.isolation'])->group(function () {
+    Route::prefix('retail-warranties')->name('shop_owner.retail-warranties.')->middleware('throttle:60,1')->group(function () {
+        Route::get('/', [\App\Http\Controllers\ShopOwner\RetailWarrantyController::class, 'index'])->name('index');
+        Route::get('/{reference}', [\App\Http\Controllers\ShopOwner\RetailWarrantyController::class, 'show'])->name('show');
+        Route::get('/{reference}/certificate', [\App\Http\Controllers\ShopOwner\RetailWarrantyController::class, 'certificate'])->name('certificate');
+        Route::patch('/items/{warrantyId}/void', [\App\Http\Controllers\ShopOwner\RetailWarrantyController::class, 'voidItem'])->name('void');
+    });
     // ============================================
     // CUSTOMERS (Shop Owner)
     // ============================================

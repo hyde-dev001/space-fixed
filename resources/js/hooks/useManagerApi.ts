@@ -232,6 +232,7 @@ interface ManagerInventoryOverviewFilters {
 }
 
 interface ManagerOrder {
+  product_warranty?: import('@/types/retailWarranty').RetailWarrantyProjection | null;
   id: number;
   order_number: string;
   customer_name: string;

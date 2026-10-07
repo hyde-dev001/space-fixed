@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
+Schedule::command('retail-warranties:reconcile')->everyFiveMinutes()->withoutOverlapping();
 
 Schedule::command('maintenance:reconcile')
     ->everyMinute()

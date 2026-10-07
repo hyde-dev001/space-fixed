@@ -1,4 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
+import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
+import type { RetailWarrantyProjection } from '@/types/retailWarranty';
 import React, { useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
 import { Head, usePage } from "@inertiajs/react";
@@ -30,6 +32,7 @@ type OrderItem = {
 };
 
 type Order = {
+  product_warranty?: RetailWarrantyProjection | null;
   id: number;
   order_number: string;
   customer: string;
@@ -457,6 +460,7 @@ export default function JobOrdersPage() {
             product: order.items && order.items.length > 0 ? order.items[0].product_name : '',
             pickup_enabled: order.pickup_enabled || false,
             pickup_enabled_at: order.pickup_enabled_at || null,
+            product_warranty: order.product_warranty ?? null,
             retail_pos_refund: order.retail_pos_refund || null,
             latest_refund: order.latest_refund || null,
           };
@@ -1076,6 +1080,7 @@ export default function JobOrdersPage() {
             eta: item.eta || undefined,
             pickup_enabled: item.pickup_enabled || false,
             pickup_enabled_at: item.pickup_enabled_at || null,
+            product_warranty: item.product_warranty ?? null,
             retail_pos_refund: item.retail_pos_refund || null,
             latest_refund: item.latest_refund || null,
           };
@@ -1301,6 +1306,7 @@ export default function JobOrdersPage() {
               eta: item.eta || undefined,
             pickup_enabled: item.pickup_enabled || false,
             pickup_enabled_at: item.pickup_enabled_at || null,
+            product_warranty: item.product_warranty ?? null,
             retail_pos_refund: item.retail_pos_refund || null,
             latest_refund: item.latest_refund || null,
           };
@@ -1644,6 +1650,7 @@ export default function JobOrdersPage() {
               eta: order.eta || undefined,
               pickup_enabled: order.pickup_enabled || false,
               pickup_enabled_at: order.pickup_enabled_at || null,
+              product_warranty: order.product_warranty ?? null,
               retail_pos_refund: order.retail_pos_refund || null,
               latest_refund: order.latest_refund || null,
             };
@@ -2304,6 +2311,7 @@ export default function JobOrdersPage() {
               </div>
 
               <div className="px-6 py-4 overflow-y-auto flex-1 space-y-4">
+                <RetailWarrantyPanel warranty={viewOrder.product_warranty} />
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">Order Context</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">

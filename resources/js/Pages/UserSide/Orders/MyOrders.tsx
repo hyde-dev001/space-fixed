@@ -4,6 +4,8 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import RefundEligibilityTooltip from '@/components/common/RefundEligibilityTooltip';
+import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
+import type { RetailWarrantyProjection } from '@/types/retailWarranty';
   import ShipmentTrackingModal from '@/components/logistics/ShipmentTrackingModal';
   import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
   import { useScrollReveal } from '../Shared/useScrollReveal';
@@ -86,6 +88,8 @@ type OrderItem = {
 };
 
 type Order = {
+  product_warranty?: RetailWarrantyProjection | null;
+  is_pos_order?: boolean;
   id: number;
   order_number: string;
   status: string;
@@ -242,6 +246,7 @@ const MyOrders: React.FC = () => {
   const [refundReason, setRefundReason] = useState<string>('');
   const [refundMedia, setRefundMedia] = useState<File[]>([]);
   const [refundRequestType, setRefundRequestType] = useState<'full' | 'partial'>('full');
+  const [refundBasis, setRefundBasis] = useState<'ordinary' | 'warranty'>('ordinary');
   const [refundLineQtyByItemId, setRefundLineQtyByItemId] = useState<Record<number, number>>({});
   const [refundMethod, setRefundMethod] = useState<string>('original_payment_method');
   const [refundDestinationType, setRefundDestinationType] = useState<'gcash' | 'bank'>('gcash');
@@ -1720,7 +1725,7 @@ const MyOrders: React.FC = () => {
     }
 
     const currentPaymentStatus = String(currentRefundOrder.payment_status || '').toLowerCase();
-    if (!codRefund && !['paid', 'completed'].includes(currentPaymentStatus)) {
+    if (!codRefund && !['paid', 'completed', ...(refundBasis === 'warranty' ? ['refunded'] : [])].includes(currentPaymentStatus)) {
       Swal.fire({
         icon: 'warning',
         title: 'Refund Not Eligible',
@@ -1751,7 +1756,7 @@ const MyOrders: React.FC = () => {
       }
     }
 
-    const effectiveRequestType = canChooseRefundScope ? refundRequestType : 'full';
+    const effectiveRequestType = refundBasis === 'warranty' ? 'partial' : canChooseRefundScope ? refundRequestType : 'full';
     
     if (!refundReason) {
       Swal.fire({ icon: 'warning', title: 'Please select a reason', confirmButtonColor: '#000000' });
@@ -1798,6 +1803,7 @@ const MyOrders: React.FC = () => {
     try {
       const formData = new FormData();
       formData.append('order_id', refundOrderId.toString());
+      formData.append('request_basis', refundBasis);
       formData.append('reason', refundReason);
       formData.append('refund_method', refundMethod || 'original_payment_method');
       if (codRefund) {
@@ -1814,6 +1820,10 @@ const MyOrders: React.FC = () => {
         refundSelectedLines.forEach((line, index) => {
           formData.append(`refund_lines[${index}][order_item_id]`, String(line.order_item_id));
           formData.append(`refund_lines[${index}][requested_qty]`, String(line.requested_qty));
+          if (refundBasis === 'warranty') {
+            const coverage = currentRefundOrder.product_warranty?.items.find(item => item.order_item_id === line.order_item_id);
+            if (coverage) formData.append(`refund_lines[${index}][retail_warranty_id]`, String(coverage.id));
+          }
         });
       }
       formData.append('note', refundNote);
@@ -2058,6 +2068,9 @@ const MyOrders: React.FC = () => {
     'border-red-600 bg-red-600 text-white hover:-translate-y-0.5 hover:bg-red-700 focus-visible:ring-red-300';
   const actionButtonDisabledClass = 'border-gray-300 bg-gray-200 text-gray-500 cursor-not-allowed';
   const refundTargetOrder = refundOrderId ? orders.find((order) => order.id === refundOrderId) : null;
+  const warrantyQuantityLimit = (item: OrderItem) => refundBasis === 'warranty'
+    ? refundTargetOrder?.product_warranty?.items.find(coverage => coverage.order_item_id === item.id && coverage.can_assess)?.available_quantity ?? 0
+    : Math.max(0, Number(item.quantity || 0));
   const refundIsCod = Boolean(refundTargetOrder && isCodOrder(refundTargetOrder));
   const refundDestinationReady = refundDestinationType === 'gcash'
     ? refundAccountName.trim().length > 0 && /^09\d{9}$/.test(refundAccountNumber.trim())
@@ -2084,7 +2097,7 @@ const MyOrders: React.FC = () => {
     ? (refundTargetOrder.items || [])
       .map((item) => {
         const requestedQty = Math.max(0, Math.min(
-          Math.max(0, Number(item.quantity || 0)),
+          warrantyQuantityLimit(item),
           Math.floor(Number(refundLineQtyByItemId[item.id] || 0)),
         ));
 
@@ -2103,7 +2116,7 @@ const MyOrders: React.FC = () => {
       .filter((line): line is { order_item_id: number; requested_qty: number; line_amount: number } => line !== null)
     : [];
   const refundSelectedItemsTotal = refundSelectedLines.reduce((sum, line) => sum + line.line_amount, 0);
-  const effectiveRefundRequestType = canChooseRefundScope ? refundRequestType : 'full';
+  const effectiveRefundRequestType = refundBasis === 'warranty' ? 'partial' : canChooseRefundScope ? refundRequestType : 'full';
   const refundAmountToRequest = effectiveRefundRequestType === 'full'
     ? refundTargetOrderTotal
     : Math.min(refundSelectedItemsTotal, refundTargetOrderTotal);
@@ -2113,7 +2126,7 @@ const MyOrders: React.FC = () => {
       refundSelectedLines.length > 0
       && refundSelectedItemsTotal > 0
       && refundAmountToRequest > 0
-      && refundAmountToRequest < refundTargetOrderTotal
+      && (refundBasis === 'warranty' ? refundAmountToRequest <= refundTargetOrderTotal : refundAmountToRequest < refundTargetOrderTotal)
     );
   const isRefundSubmissionReady =
     !!refundReason
@@ -2326,6 +2339,7 @@ const MyOrders: React.FC = () => {
                           return;
                         }
                         setRefundOrderId(order.id);
+                        setRefundBasis('ordinary');
                         setRefundStep(1);
                         setRefundReason('');
                         setRefundMedia([]);
@@ -2751,6 +2765,13 @@ const MyOrders: React.FC = () => {
                         );
                       })()}
 
+                      {order.product_warranty ? <div className="px-4 pb-4 sm:px-6"><RetailWarrantyPanel warranty={order.product_warranty}
+                        shopAssisted={order.is_pos_order} disabled={refundFrozen || Boolean(order.active_delivery_dispute) || ['requested', 'pending_approval', 'approved', 'processing'].includes(String(order.refund_stage?.status))}
+                        onAssess={() => {
+                          setRefundOrderId(order.id); setRefundBasis('warranty'); setRefundStep(1); setRefundReason(''); setRefundMedia([]);
+                          setRefundRequestType('partial'); initializeRefundLineQty(order.items || []); setRefundNote(''); setRefundOtherReasonNote('');
+                          setRefundDestinationType('gcash'); setRefundAccountName(''); setRefundAccountNumber(''); setRefundBankChannel(''); setShowRefundModal(true);
+                        }} /></div> : null}
                       {/* Order Actions */}
                       <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:pt-6 sm:gap-3">
                         {order.refund_stage?.awaiting_refund_destination === true && (
@@ -3308,7 +3329,7 @@ const MyOrders: React.FC = () => {
             ></div>
             <div className="bg-white rounded-lg shadow-xl z-50 max-w-5xl w-full max-h-[90vh] flex flex-col">
               <div className="px-8 py-4 border-b shrink-0">
-                <h3 className="text-xl font-semibold">Request Refund {refundStep === 2 && '- Payment Details'}</h3>
+                <h3 className="text-xl font-semibold">{refundBasis === 'warranty' ? 'Warranty Assessment' : 'Request Refund'} {refundStep === 2 && '- Payment Details'}</h3>
                 <p className="text-sm text-gray-500 mt-1">
                   {refundStep === 1 ? 'Please provide details for your refund request.' : 'Select your refund method and review details.'}
                 </p>
@@ -3366,7 +3387,7 @@ const MyOrders: React.FC = () => {
                       <label className="block text-sm font-medium text-gray-700 mb-3">
                         Refund Scope <span className="text-red-500">*</span>
                       </label>
-                      {canChooseRefundScope ? (
+                      {refundBasis === 'warranty' ? <p className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm">Select covered quantities for assessment under the original terms. Inspection and approvals remain required.</p> : canChooseRefundScope ? (
                         <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                           <label className="flex items-center gap-3 rounded-lg border border-gray-200 p-3">
                             <input
@@ -3410,13 +3431,13 @@ const MyOrders: React.FC = () => {
                         </div>
                       )}
 
-                      {canChooseRefundScope && refundRequestType === 'partial' && (
+                      {(refundBasis === 'warranty' || canChooseRefundScope && refundRequestType === 'partial') && (
                         <div className="mt-4 space-y-4">
                           <div>
                             <p className="mb-2 text-sm font-medium text-gray-700">Affected Item Qty</p>
                             <div className="max-h-48 space-y-2 overflow-y-auto rounded-lg border border-gray-200 p-3">
                               {(refundTargetOrder?.items || []).map((item) => {
-                                const maxQty = Math.max(0, Number(item.quantity || 0));
+                                const maxQty = warrantyQuantityLimit(item);
                                 const selectedQty = Math.max(0, Math.min(maxQty, Math.floor(Number(refundLineQtyByItemId[item.id] || 0))));
                                 const unitPrice = roundCurrency(resolveRefundItemUnitPrice(item) * refundVoucherAllocationRatio);
 

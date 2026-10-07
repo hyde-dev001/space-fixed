@@ -69,6 +69,27 @@ const buildRepairHistoryRow = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("Cashier POS warranty UI", () => {
+  it('submits a retail Product Warranty assessment with item context without approving or executing it', async () => {
+    usePageMock.mockReturnValue({ props: { auth: { user: { shop_owner: { business_type: 'retail' } } } } });
+    const coverage = { id: 1, reference: 'WRNTY-2026-TEST', order_number: 'RPOS-1', customer_name: 'Buyer', shop_name: 'Shop',
+      issued_at: '2026-10-07T00:00:00Z', fulfilled_at: '2026-10-07T00:00:00Z', timezone: 'Asia/Manila', status: 'active', download_url: '/private-certificate',
+      items: [{ id: 123, order_item_id: 77, product_name: 'Shoe', covered_quantity: 2, remaining_quantity: 2, available_quantity: 2, reserved_quantity: 0,
+        status: 'active', can_assess: true, start_date: '2026-10-07T00:00:00Z', expiration_date: '2027-10-07T00:00:00Z', policy: { title: 'Product Warranty', duration_value: 1, duration_unit: 'years', terms: 'Original terms' } }] };
+    const row = buildRepairHistoryRow({ module_type: 'retail', product_warranty: coverage,
+      source_order: { items: [{ id: 77, product_name: 'Shoe', quantity: 2, price: 250, subtotal: 500 }] } });
+    axiosGetMock.mockImplementation((url: string) => Promise.resolve(url === '/api/retail-pos/transactions' ? { data: { data: { data: [row] } } } : { data: { data: [] } }));
+    axiosPostMock.mockResolvedValue({ data: { refund_id: 991, data: { status: 'requested' } } });
+    swalFireMock.mockImplementation((options: { title?: string }) => Promise.resolve(options.title === 'Product Warranty Assessment'
+      ? { isConfirmed: true, value: { refund_lines: [{ order_item_id: 77, requested_qty: 1, inspection_disposition: 'damaged' }], requested_amount: 250, request_type: 'partial' } }
+      : { isConfirmed: false }));
+    render(<CashierPOS />);
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Warranty Assessment' }));
+    await waitFor(() => expect(axiosPostMock).toHaveBeenCalledWith('/api/retail-pos/refunds', expect.objectContaining({ request_basis: 'warranty',
+      refund_lines: [expect.objectContaining({ order_item_id: 77, retail_warranty_id: 123, requested_qty: 1, inspection_disposition: 'damaged' })] }), expect.anything()));
+    expect(axiosPostMock.mock.calls.some(([url]) => String(url).endsWith('/approve') || String(url).endsWith('/execute'))).toBe(false);
+  });
+
   beforeEach(() => {
     usePageMock.mockReset();
     axiosGetMock.mockReset();

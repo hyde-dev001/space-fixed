@@ -286,6 +286,10 @@ final class OrderFulfillmentService
         $oldStatus = $this->statusValue($order);
         $order->status = $target;
         $order->save();
+        if (in_array($target, [OrderStatus::DELIVERED, OrderStatus::COMPLETED], true)
+            && ! in_array($oldStatus, ['cancelled', 'refund'], true)) {
+            app(\App\Services\RetailWarrantyService::class)->captureFulfillment($order);
+        }
 
         activity()
             ->causedBy($actor)

@@ -1,4 +1,5 @@
 import MonochromeSelect from "@/components/form/Select";
+import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
 import { Head, usePage } from "@inertiajs/react";
 import { useState } from "react";
 import type { FormEvent } from "react";
@@ -136,6 +137,7 @@ const OrderDetailDialog = ({ order, onClose }: { order: ManagerOrder; onClose: (
         {order.reassignment_reason_label && <p className="mt-2 text-sm font-medium text-red-700 dark:text-red-300">{order.reassignment_reason_label}</p>}
       </div>
 
+      {order.product_warranty ? <div className="mt-6"><RetailWarrantyPanel warranty={order.product_warranty} /></div> : null}
       <div className="mt-6 flex justify-end">
         <button
           type="button"

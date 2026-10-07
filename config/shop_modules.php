@@ -299,6 +299,12 @@ $routeBuckets = [
         'erp.staff.job-orders',
         'erp.staff.products',
         'shop-owner.job-orders-retail',
+        'shop-owner.settings.retail-warranty.update',
+        'shop_owner.retail-warranties.index',
+        'shop_owner.retail-warranties.show',
+        'shop_owner.retail-warranties.certificate',
+        'shop_owner.retail-warranties.void',
+        'api.staff.retail-warranties.certificate',
         'shop-owner.point-of-sale',
         'shop-owner.point-of-sale.legacy',
         'shop-owner.position-templates.index',
@@ -952,6 +958,7 @@ $routeBuckets = [
 
 $routeMethods = static function (string $routeName): array {
     $overrides = [
+        'shop_owner.retail-warranties.void' => ['PATCH'],
         'inventory.suppliers.update' => ['PATCH', 'PUT'],
         'finance.expenses.update' => ['PATCH'],
         'finance.expenses.review_release' => ['POST'],

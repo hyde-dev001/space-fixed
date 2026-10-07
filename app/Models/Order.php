@@ -46,6 +46,7 @@ class Order extends Model
     ];
 
     protected $table = 'orders';
+    protected $hidden = ['retail_warranty_policy_snapshot'];
 
     protected $fillable = [
         'shop_owner_id',
@@ -110,6 +111,8 @@ class Order extends Model
     ];
 
     protected $casts = [
+        'retail_warranty_fulfilled_at' => 'immutable_datetime',
+        'retail_warranty_policy_snapshot' => 'array',
         'status' => OrderStatus::class,
         'total' => 'decimal:2',
         'total_amount' => 'decimal:2',
@@ -137,6 +140,11 @@ class Order extends Model
     public static function defaultCancellationRefundWindowMinutes(): int
     {
         return max(1, (int) config('orders.cancellation_refund_window_minutes', 10080));
+    }
+
+    public function retailWarrantyIssuance(): HasOne
+    {
+        return $this->hasOne(RetailWarrantyIssuance::class);
     }
 
     public function resolveCancellationRefundWindowStartedAt(): ?Carbon

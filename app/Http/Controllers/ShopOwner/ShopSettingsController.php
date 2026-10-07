@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\ShopOwner;
 
 use App\Http\Controllers\Controller;
+use App\Http\Requests\ShopOwner\UpdateRetailWarrantySettingsRequest;
+use App\Services\RetailWarrantyService;
 use App\Models\HR\BranchPayrollSetting;
 use App\Models\ProcurementSettings;
 use App\Models\ShopDocument;
@@ -71,6 +73,12 @@ class ShopSettingsController extends Controller
     /**
      * Display the shop settings page for the authenticated shop owner.
      */
+    public function updateRetailWarranty(UpdateRetailWarrantySettingsRequest $request, RetailWarrantyService $warranties): JsonResponse
+    {
+        $setting = $warranties->saveSettings($request->user('shop_owner'), $request->validated());
+        return response()->json(['message' => 'Retail Product Warranty settings saved.', 'data' => $setting->only($setting->getFillable())]);
+    }
+
     public function index(Request $request): Response
     {
         $shopOwner = Auth::guard('shop_owner')->user();
@@ -112,6 +120,7 @@ class ShopSettingsController extends Controller
 
         return Inertia::render('ShopOwner/Settings/shopSetting', [
             'shop_settings' => [
+                'retail_warranty' => app(RetailWarrantyService::class)->settingsFor($shopOwner),
                 'registration_type'      => $shopOwner->registration_type,
                 'business_type'          => $shopOwner->business_type,
                 'can_manage_staff'       => $shopOwner->canManageStaff(),

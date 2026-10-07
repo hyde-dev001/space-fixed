@@ -174,6 +174,7 @@ final class CodCollectionService
                 ])
                 ->log('COD cash collected');
 
+            app(RetailWarrantyService::class)->issueCaptured($lockedOrder);
             return $collection->fresh();
         }, 3);
     }

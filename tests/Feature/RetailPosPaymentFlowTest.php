@@ -46,6 +46,7 @@ class RetailPosPaymentFlowTest extends TestCase
             'is_active' => true,
         ]);
 
+        $this->clockInEmployee($cashier);
         $response = $this->actingAs($cashier, 'user')
             ->postJson('/api/retail-pos/checkout', [
                 'idempotency_key' => 'retail-anonymous-12345',
@@ -105,6 +106,7 @@ class RetailPosPaymentFlowTest extends TestCase
             'is_active' => true,
         ]);
 
+        $this->clockInEmployee($cashier);
         $response = $this->actingAs($cashier, 'user')
             ->postJson('/api/retail-pos/checkout', [
                 'idempotency_key' => 'retail-test-12345',
@@ -176,6 +178,7 @@ class RetailPosPaymentFlowTest extends TestCase
             'payment_lines' => [['tender_type' => 'cash', 'amount' => 100]],
         ];
 
+        $this->clockInEmployee($cashier);
         $response = $this->actingAs($cashier, 'user')
             ->postJson('/api/retail-pos/checkout', $payload);
 
@@ -265,6 +268,7 @@ class RetailPosPaymentFlowTest extends TestCase
             'quantity' => 10,
         ]);
 
+        $this->clockInEmployee($cashier);
         $response = $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
             'idempotency_key' => 'retail-linked-inventory-001',
             'customer_type' => 'walk_in',
@@ -346,6 +350,7 @@ class RetailPosPaymentFlowTest extends TestCase
             'quantity' => 1,
         ]);
 
+        $this->clockInEmployee($cashier);
         $response = $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
             'idempotency_key' => 'retail-insufficient-inventory-001',
             'customer_type' => 'walk_in',
@@ -387,6 +392,7 @@ class RetailPosPaymentFlowTest extends TestCase
             'is_active' => true,
         ]);
 
+        $this->clockInEmployee($cashier);
         $response = $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
             'idempotency_key' => 'retail-finance-summary-001',
             'customer_type' => 'walk_in',
@@ -435,6 +441,7 @@ class RetailPosPaymentFlowTest extends TestCase
     {
         ['cashier' => $cashier, 'product' => $product, 'blackEight' => $blackEight, 'blackEightSize' => $blackEightSize] = $this->createLinkedRetailCatalog();
 
+        $this->clockInEmployee($cashier);
         $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
             'idempotency_key' => 'retail-live-linked-stock-001',
             'customer_type' => 'walk_in',
@@ -465,6 +472,7 @@ class RetailPosPaymentFlowTest extends TestCase
     {
         ['cashier' => $cashier, 'product' => $product, 'blackEight' => $blackEight, 'blackEightSize' => $blackEightSize, 'blackNineSize' => $blackNineSize] = $this->createLinkedRetailCatalog();
 
+        $this->clockInEmployee($cashier);
         $response = $this->actingAs($cashier, 'user')->postJson('/api/retail-pos/checkout', [
             'idempotency_key' => 'retail-wrong-linked-target-001',
             'customer_type' => 'walk_in',
