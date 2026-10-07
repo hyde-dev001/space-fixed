@@ -977,6 +977,23 @@ type NavigationDestination = string | { route: string; params?: Record<string, a
 type NavigationGroup = { key: string; label: string; routes: NavigationDestination[] };
 
 const employeeNavigationGroups = {
+  procurement: [
+    { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
+    { key: "overview", label: "OVERVIEW", routes: ["erp.procurement.dashboard"] },
+    { key: "purchasing", label: "PURCHASING", routes: ["erp.procurement.purchase-request", "erp.procurement.purchase-orders"] },
+    { key: "approvals", label: "STOCK APPROVALS", routes: ["erp.procurement.stock-request-approval"] },
+    { key: "suppliers", label: "SUPPLIERS", routes: ["erp.procurement.suppliers-management"] },
+    { key: "resources", label: "RESOURCES", routes: ["erp.procurement.articles.index"] },
+  ],
+  logistics: [
+    { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
+    { key: "overview", label: "OVERVIEW", routes: ["erp.logistics.dashboard"] },
+    { key: "dispatch", label: "DISPATCH OPERATIONS", routes: ["erp.logistics.shipments", "erp.logistics.batches"] },
+    { key: "riders", label: "RIDER MANAGEMENT", routes: ["erp.logistics.riders"] },
+    { key: "deliveries", label: "DELIVERIES & COLLECTIONS", routes: ["erp.logistics.deliveries", "erp.logistics.cod-collections"] },
+    { key: "administration", label: "ADMINISTRATION", routes: ["erp.logistics.settings"] },
+    { key: "resources", label: "RESOURCES", routes: ["erp.logistics.articles.index"] },
+  ],
   hr: [
     { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
     { key: "overview", label: "OVERVIEW", routes: [{ route: "erp.hr", params: { section: "overview" } }] },
@@ -1589,7 +1606,7 @@ const EmployeeSidebarERP: React.FC = () => {
     }
   }, [openSubmenu]);
 
-  const handleSubmenuToggle = (index: number, menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "hr" | "finance" | "crm" | "main" | "others") => {
+  const handleSubmenuToggle = (index: number, menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | "main" | "others") => {
     const key = `${menuType}-${index}`;
     toggleSubmenu(key);
   };
@@ -2286,7 +2303,7 @@ const EmployeeSidebarERP: React.FC = () => {
     });
   }
 
-  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "inventory" | "hr" | "finance" | "crm" | "main" | "others") => {
+  const renderMenuItems = (items: NavItem[], menuType: "attendance" | "staff" | "logistics" | "repair" | "cashier" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | "main" | "others") => {
     const visibleItems = items
       .map((item) => ({
         ...item,
@@ -2553,7 +2570,9 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("logistics", [...getFilteredLogisticsItems(), myPayslipsItem, ...(hasLogisticsDispatcherArticlesAccess() ? [logisticsArticlesItem] : [])])), "logistics")}
+                {hasLogisticsRiderRole
+                  ? renderMenuItems(deduplicateItems(withAttendanceForSection("logistics", [...getFilteredLogisticsItems(), myPayslipsItem, ...(hasLogisticsDispatcherArticlesAccess() ? [logisticsArticlesItem] : [])])), "logistics")
+                  : renderEmployeeMenuGroups(withAttendanceForSection("logistics", [...getFilteredLogisticsItems(), myPayslipsItem, ...(hasLogisticsDispatcherArticlesAccess() ? [logisticsArticlesItem] : [])]), "logistics")}
               </div>
             </div>
           </nav>
@@ -2696,7 +2715,7 @@ const EmployeeSidebarERP: React.FC = () => {
                       <HorizontaLDots />
                     )}
                   </h2>
-                  {renderMenuItems(deduplicateItems(withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem, ...(hasProcurementArticlesAccess() ? [procurementArticlesItem] : [])])), "manager")}
+                  {renderEmployeeMenuGroups(withAttendanceForSection("procurement", [...procurementItems, myPayslipsItem, ...(hasProcurementArticlesAccess() ? [procurementArticlesItem] : [])]), "procurement")}
                 </div>
               </div>
             </nav>

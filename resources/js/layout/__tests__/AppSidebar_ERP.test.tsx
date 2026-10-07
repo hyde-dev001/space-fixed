@@ -414,6 +414,131 @@ it('keeps supplier orders under Inventory without showing Procurement pages', ()
   expect(screen.queryByRole('link', { name: /suppliers management/i })).not.toBeInTheDocument();
 });
 
+it.each(['retail', 'repair', 'both'])('groups Procurement pages into direct dropdowns for %s shops', (businessType) => {
+  state.role = 'Procurement Manager';
+  state.roles = ['Procurement Manager'];
+  state.shopOwner.business_type = businessType;
+  state.url = '/erp/time-in';
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'PURCHASING', 'STOCK APPROVALS', 'SUPPLIERS', 'RESOURCES',
+  ]);
+  const purchasing = screen.getByRole('button', { name: 'PURCHASING' });
+  const panel = document.getElementById(purchasing.getAttribute('aria-controls')!)!;
+  expect(within(panel).getAllByRole('link').map((link) => link.textContent)).toEqual([
+    'Purchase Requests', 'Purchase Orders',
+  ]);
+  expect(within(panel).queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('link').slice(1).map((link) => link.textContent)).toEqual([
+    'Log Attendance', 'My Payslips', 'Dashboard', 'Purchase Requests', 'Purchase Orders',
+    'Stock Request Approval', 'Suppliers Management', 'Articles',
+  ]);
+  screen.getAllByRole('link').slice(1).forEach((link) => expect(link.querySelector('svg')).not.toBeNull());
+  expect(purchasing.querySelector('svg')).not.toBeNull();
+  expect(screen.getByRole('link', { name: 'Articles' })).toHaveAttribute('href', '/erp/procurement/articles');
+  const suppliers = screen.getByRole('button', { name: 'SUPPLIERS' });
+  fireEvent.click(suppliers);
+  fireEvent.click(purchasing);
+  expect(screen.queryByRole('link', { name: 'Purchase Orders' })).not.toBeInTheDocument();
+  state.url = '/erp/procurement/purchase-orders/42';
+  rerender(<AppSidebarERP />);
+  expect(purchasing).toHaveAttribute('aria-expanded', 'true');
+  expect(suppliers).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('link', { name: 'Purchase Orders' })).toHaveAttribute('aria-current', 'page');
+});
+
+it('keeps Procurement stock approvals separate from disabled purchasing modules', () => {
+  state.role = 'Procurement Manager';
+  state.roles = ['Procurement Manager'];
+  state.shopModules = moduleStates({ procurement: false, finance: false });
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'STOCK APPROVALS', 'RESOURCES',
+  ]);
+  expect(screen.getByRole('link', { name: 'Stock Request Approval' })).toHaveAttribute('href', '/erp/procurement/stock-request-approval');
+  expect(screen.queryByRole('link', { name: 'Purchase Requests' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'My Payslips' })).not.toBeInTheDocument();
+  state.shopModules = moduleStates({ inventory: false });
+  rerender(<AppSidebarERP />);
+  expect(screen.queryByRole('button', { name: 'STOCK APPROVALS' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Purchase Orders' })).toBeInTheDocument();
+});
+
+it('groups Logistics Dispatcher workflow with chevrons and icons and reopens the active dispatch group', () => {
+  state.url = '/erp/time-in';
+  state.permissions = ['access-logistics-dashboard', 'assign-logistics-deliveries', 'manage-logistics-batches', 'manage-logistics-riders', 'operate-logistics-deliveries', 'configure-logistics-settings'];
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'DISPATCH OPERATIONS', 'RIDER MANAGEMENT',
+    'DELIVERIES & COLLECTIONS', 'ADMINISTRATION', 'RESOURCES',
+  ]);
+  const dispatch = screen.getByRole('button', { name: 'DISPATCH OPERATIONS' });
+  const panel = document.getElementById(dispatch.getAttribute('aria-controls')!)!;
+  expect(within(panel).getAllByRole('link').map((link) => link.textContent)).toEqual(['Logistics', 'Batches']);
+  expect(within(panel).queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('link').slice(1).map((link) => link.textContent)).toEqual([
+    'Log Attendance', 'My Payslips', 'Logistics Dashboard', 'Logistics', 'Batches',
+    'Riders', 'My Deliveries', 'My COD Collections', 'Settings', 'Articles',
+  ]);
+  screen.getAllByRole('link').slice(1).forEach((link) => expect(link.querySelector('svg')).not.toBeNull());
+  expect(dispatch.querySelector('svg')).toHaveClass('rotate-180');
+  expect(screen.getByRole('link', { name: 'Articles' })).toHaveAttribute('href', '/erp/logistics/articles');
+  const riders = screen.getByRole('button', { name: 'RIDER MANAGEMENT' });
+  fireEvent.click(riders);
+  fireEvent.click(dispatch);
+  expect(dispatch.querySelector('svg')).not.toHaveClass('rotate-180');
+  expect(screen.queryByRole('link', { name: 'Batches' })).not.toBeInTheDocument();
+  state.url = '/erp/logistics/batches/42';
+  rerender(<AppSidebarERP />);
+  expect(dispatch).toHaveAttribute('aria-expanded', 'true');
+  expect(riders).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('link', { name: 'Batches' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('link', { name: 'Logistics Dashboard' })).not.toHaveAttribute('aria-current');
+});
+
+it('hides empty Dispatcher groups without exposing unauthorized pages', () => {
+  state.permissions = ['access-logistics-dashboard', 'configure-logistics-settings'];
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'ADMINISTRATION', 'RESOURCES',
+  ]);
+  expect(screen.queryByRole('link', { name: 'Batches' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Riders' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'My Deliveries' })).not.toBeInTheDocument();
+  state.shopModules = moduleStates({ logistics: false, finance: false });
+  rerender(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'ADMINISTRATION', 'RESOURCES',
+  ]);
+  expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/erp/logistics/settings');
+  expect(screen.queryByRole('link', { name: 'My Payslips' })).not.toBeInTheDocument();
+});
+
+it('keeps Procurement and Dispatcher dropdown states independent without duplicate self-service links', () => {
+  state.roles = ['Logistics Dispatcher', 'Procurement Manager'];
+  state.permissions = ['access-logistics-dashboard'];
+  render(<AppSidebarERP />);
+  const overviews = screen.getAllByRole('button', { name: 'OVERVIEW' });
+  expect(overviews).toHaveLength(2);
+  expect(overviews[0].getAttribute('aria-controls')).not.toBe(overviews[1].getAttribute('aria-controls'));
+  fireEvent.click(overviews[0]);
+  expect(screen.queryByRole('link', { name: 'Logistics Dashboard' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
+  expect(screen.getAllByRole('link', { name: 'Log Attendance' })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: 'My Payslips' })).toHaveLength(1);
+});
+
+it('keeps Logistics Rider navigation flat instead of applying Dispatcher groups', () => {
+  state.role = 'Logistics Rider';
+  state.roles = ['Logistics Rider'];
+  state.url = '/erp/logistics/deliveries';
+  render(<AppSidebarERP />);
+  expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'My Deliveries' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('link', { name: 'My COD Collections' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Articles' })).not.toBeInTheDocument();
+});
+
 it('shows the procurement dashboard as the first procurement link', () => {
   state.url = '/erp/procurement/dashboard';
   state.role = 'Procurement Manager';
