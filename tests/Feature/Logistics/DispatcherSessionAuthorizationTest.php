@@ -127,7 +127,7 @@ class DispatcherSessionAuthorizationTest extends TestCase
         $this->assertSame(0, $leg->assignments()->count());
     }
 
-    public function test_third_party_tracking_is_readable_but_excluded_from_internal_dispatch_pools_and_mutations(): void
+    public function test_third_party_delivery_is_hidden_from_dispatcher_shipments_and_internal_dispatch_pools(): void
     {
         $shop = $this->shop();
         $dispatcher = $this->dispatcher($shop);
@@ -135,21 +135,33 @@ class DispatcherSessionAuthorizationTest extends TestCase
         $external = $this->leg($shop);
         $externalOrder = Order::findOrFail($external->shipment->source_id);
         $externalOrder->forceFill(['delivery_method' => 'third_party', 'carrier_company' => 'Lalamove'])->save();
+        $legacyExternal = $this->leg($shop);
+        $legacyExternalOrder = Order::findOrFail($legacyExternal->shipment->source_id);
+        $legacyExternalOrder->forceFill(['delivery_method' => null, 'carrier_company' => 'Lalamove'])->save();
+        $this->assertSame('third_party', $legacyExternalOrder->resolvedDeliveryMethod());
         $this->actingAs($dispatcher, 'user')->get('/erp/logistics/batches')->assertOk()
             ->assertInertia(fn (Assert $page) => $page->has('unscheduled', 1)->where('unscheduled.0.id', $internal->id));
-        $external->update(['scheduled_delivery_date' => today()->addDay(), 'delivery_window' => 'morning', 'schedule_status' => 'scheduled']);
+        foreach ([$external, $legacyExternal] as $externalLeg) {
+            $externalLeg->update(['scheduled_delivery_date' => today()->addDay(), 'delivery_window' => 'morning', 'schedule_status' => 'scheduled']);
+        }
         $this->get('/erp/logistics/batches')->assertOk()->assertInertia(fn (Assert $page) => $page->has('pool', 0));
         $this->get('/erp/logistics/shipments')->assertOk()->assertInertia(fn (Assert $page) => $page
-            ->has('shipments.data', 2)->where('shipments.data', fn ($shipments) => collect($shipments)
-            ->contains(fn ($shipment) => (int) $shipment['id'] === (int) $external->shipment_id
-                && $shipment['order_summary']['delivery_method'] === 'third_party'
-                && $shipment['order_summary']['carrier_company'] === 'Lalamove')));
-        $payload = ['delivery_date' => today()->addDay()->toDateString(), 'delivery_window' => 'morning', 'leg_ids' => [$external->id]];
-        $this->postJson('/api/logistics/legs/schedule', $payload)->assertForbidden()
-            ->assertJsonPath('reason', 'third_party_tracking')
-            ->assertJsonPath('message', 'This delivery uses a third-party courier. Shop riders cannot schedule or accept it.');
+            ->has('shipments.data', 1)
+            ->where('shipments.total', 1)
+            ->where('shipments.data.0.id', $internal->shipment_id));
+        $this->assertDatabaseHas('shipments', ['id' => $external->shipment_id]);
+        $this->assertDatabaseHas('shipments', ['id' => $legacyExternal->shipment_id]);
+        foreach ([$external, $legacyExternal] as $externalLeg) {
+            $this->postJson('/api/logistics/legs/schedule', [
+                'delivery_date' => today()->addDay()->toDateString(),
+                'delivery_window' => 'morning',
+                'leg_ids' => [$externalLeg->id],
+            ])->assertForbidden()
+                ->assertJsonPath('reason', 'third_party_tracking')
+                ->assertJsonPath('message', 'This delivery uses a third-party courier. Shop riders cannot schedule or accept it.');
+            $this->assertSame(0, $externalLeg->assignments()->count());
+        }
         $this->assertSame('third_party', $externalOrder->fresh()->delivery_method);
-        $this->assertSame(0, $external->assignments()->count());
     }
 
     private function shop(): ShopOwner
