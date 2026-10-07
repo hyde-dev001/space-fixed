@@ -3,20 +3,21 @@
 namespace Tests\Feature\Cod;
 
 use App\Models\CodCollection;
+use App\Models\Logistics\DeliveryAssignment;
 use App\Models\Logistics\HandoffProof;
+use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShipmentLeg;
 use App\Models\Order;
 use App\Models\ShopOwner;
 use App\Models\ShopOwnerModule;
 use App\Models\User;
-use App\Models\Logistics\DeliveryAssignment;
-use App\Models\Logistics\RiderProfile;
-use App\Models\Logistics\Shipment;
-use App\Models\Logistics\ShipmentLeg;
 use App\Services\CodCollectionService;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use PHPUnit\Framework\Attributes\Test;
+use Spatie\Permission\Models\Permission;
 use Tests\TestCase;
 
 class CodCollectionTest extends TestCase
@@ -69,6 +70,51 @@ class CodCollectionTest extends TestCase
     }
 
     #[Test]
+    public function cod_rider_must_record_cash_before_submitting_delivery_proof(): void
+    {
+        [$order, $rider] = $this->fixture();
+        Permission::findOrCreate('record-logistics-proof', 'user');
+        $rider->givePermissionTo('record-logistics-proof');
+        $leg = ShipmentLeg::query()
+            ->whereHas('shipment', fn ($query) => $query->where('source_id', $order->id))
+            ->firstOrFail();
+        $assignment = $leg->assignments()->firstOrFail();
+        $leg->events()->create([
+            'shipment_id' => $leg->shipment_id,
+            'event_type' => 'dropoff_arrived',
+            'visibility' => 'internal',
+            'message' => 'Rider arrived at the customer location.',
+            'metadata' => ['delivery_assignment_id' => $assignment->id],
+        ]);
+        $this->actingAs($rider, 'user')
+            ->post("/api/logistics/legs/{$leg->id}/proof", [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'tracking_confirmation',
+            ], ['Accept' => 'application/json'])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('payment');
+
+        $this->assertSame(0, $leg->proofs()->count());
+
+        $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/cod/orders/{$order->id}/cash-collected", [
+                'amount' => '1170.00',
+                'idempotency_key' => 'cod-proof-order-collection-1',
+            ])
+            ->assertOk();
+
+        $this->actingAs($rider, 'user')
+            ->post("/api/logistics/legs/{$leg->id}/proof", [
+                'handoff_type' => 'delivery',
+                'proof_type' => 'tracking_confirmation',
+                'idempotency_key' => '99999999-9999-4999-8999-999999999992',
+            ], ['Accept' => 'application/json'])
+            ->assertCreated();
+
+        $this->assertSame(1, $leg->proofs()->count());
+    }
+
+    #[Test]
     public function cod_delivery_cannot_be_marked_delivered_before_cash_is_collected(): void
     {
         [$order] = $this->fixture();
@@ -84,7 +130,7 @@ class CodCollectionTest extends TestCase
         ]);
 
         $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('COD payment must be collected before delivery can be completed.');
+        $this->expectExceptionMessage('COD payment must be collected before delivery proof can be submitted or delivery can be completed.');
 
         app(ShipmentLegService::class)->markDelivered($leg->fresh());
     }
