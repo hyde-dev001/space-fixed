@@ -41,6 +41,6 @@ export interface RetailWarrantyProjection {
   fulfilled_at: string;
   timezone: string;
   status: string;
-  download_url: string;
+  download_url: string | null;
   items: RetailWarrantyItemCoverage[];
 }

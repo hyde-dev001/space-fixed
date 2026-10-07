@@ -275,6 +275,54 @@ class OrderRefundApprovalWorkflowTest extends TestCase
         }
     }
 
+    public function test_finance_projection_exposes_staff_approval_for_company_refunds_without_third_party_delivery(): void
+    {
+        foreach (['shop_owned', null] as $deliveryMethod) {
+            foreach ([false, true] as $ownerApprovalEnabled) {
+                [$shop, $staff, $refund] = $this->fixture();
+                $refund->order->update(['delivery_method' => $deliveryMethod, 'carrier_company' => $deliveryMethod ? 'Shop-owned logistics' : null]);
+                $refund->update(['requires_owner_approval' => $ownerApprovalEnabled]);
+                $finance = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'Finance']);
+                $finance->givePermissionTo(Permission::findOrCreate('access-refund-approval', 'user'));
+                $this->clockInEmployee($finance);
+                $this->actingAs($finance, 'user')->postJson("/api/finance/refunds/{$refund->id}/approve")->assertUnprocessable();
+                $result = app(\App\Services\OrderRefundService::class)->approveRequestedRefund($refund->fresh(), 'staff', $staff->id);
+                $this->assertSame('approved', $result['result']);
+                $row = collect($this->getJson('/api/finance/refunds?status=Pending')->assertOk()->json('data'))->firstWhere('id', $refund->id);
+                $this->assertNotNull($row);
+                $this->assertTrue($row['requiresStaffApproval']);
+                $this->assertSame('approved', $row['staffApprovalStatus']);
+                $this->assertSame('finance_initial', $row['approvalStage']);
+                $this->assertSame('pending', $row['shopOwnerStatus']);
+                $this->assertFalse($row['canExecutePayout']);
+                $this->postJson("/api/finance/refunds/{$refund->id}/approve")->assertOk()
+                    ->assertJsonPath('refund.financeStatus', $ownerApprovalEnabled ? 'approved_initial' : 'approved')
+                    ->assertJsonPath('refund.canExecutePayout', false);
+                $this->assertDatabaseMissing('order_refunds', ['id' => $refund->id, 'status' => 'succeeded']);
+            }
+        }
+    }
+
+    public function test_finance_projection_preserves_existing_company_staff_acceptance_audit_fields(): void
+    {
+        foreach (['staff_approved_at', 'shop_owner_approved_by'] as $auditField) {
+            [$shop, $staff, $refund] = $this->fixture();
+            $audit = $auditField === 'staff_approved_at'
+                ? ['staff_approved_at' => now()]
+                : ['shop_owner_approved_by' => $staff->id, 'shop_owner_approved_at' => now()];
+            $refund->order->update(['delivery_method' => 'shop_owned', 'carrier_company' => 'Shop-owned logistics']);
+            $refund->forceFill($audit + ['status' => 'pending_approval', 'requires_owner_approval' => true])->save();
+            $finance = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'Finance']);
+            $finance->givePermissionTo(Permission::findOrCreate('access-refund-approval', 'user'));
+            $this->clockInEmployee($finance);
+            $row = collect($this->actingAs($finance, 'user')->getJson('/api/finance/refunds?status=Pending')->assertOk()->json('data'))->firstWhere('id', $refund->id);
+            $this->assertTrue($row['requiresStaffApproval']);
+            $this->assertSame('approved', $row['staffApprovalStatus']);
+            $this->postJson("/api/finance/refunds/{$refund->id}/reject", ['rejection_reason' => 'Finance declined after Staff assessment.'])->assertOk()
+                ->assertJsonPath('refund.rawStatus', 'rejected')->assertJsonPath('refund.financeStatus', 'rejected');
+        }
+    }
+
     private function fixture(): array
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);

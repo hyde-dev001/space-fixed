@@ -26,6 +26,13 @@ describe('Product Warranty panel', () => {
     expect(screen.getByText('Original shop terms')).toBeInTheDocument();
   });
 
+  it('keeps refund-assessment context without a removed owner certificate link', () => {
+    render(<RetailWarrantyPanel warranty={{ ...warranty, download_url: null }} onAssess={vi.fn()} />);
+    expect(screen.getByText(/Qty Remaining: 1/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Request Warranty Assessment' })).toBeInTheDocument();
+    expect(screen.queryByText('Download Warranty PDF')).not.toBeInTheDocument();
+  });
+
   it('does not clutter orders without coverage or offer an expired assessment', () => {
     const { rerender, container } = render(<RetailWarrantyPanel warranty={null} />);
     expect(container).toBeEmptyDOMElement();

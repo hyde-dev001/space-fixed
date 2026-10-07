@@ -33,23 +33,38 @@ class AccessTest extends TestCase
         $this->assertDatabaseCount('retail_warranty_issuances', 1);
     }
 
-    public function test_owner_history_is_paginated_tenant_scoped_searchable_and_void_requires_reason(): void
+    public function test_owner_issued_warranty_management_routes_are_removed_without_changing_coverage(): void
     {
-        Storage::fake('local');
         $issuance = RetailWarrantyIssuance::factory()->create();
         $warranty = RetailWarranty::factory()->create(['retail_warranty_issuance_id' => $issuance->id]);
-        RetailWarranty::factory()->create();
+        $original = $warranty->fresh()->getAttributes();
         $owner = ShopOwner::findOrFail($issuance->shop_owner_id);
         ShopOwnerModule::updateOrCreate(['shop_owner_id' => $owner->id, 'module_key' => 'retail_operations'], ['enabled' => true]);
-        $this->actingAs($owner, 'shop_owner')->getJson('/api/shop-owner/retail-warranties?search='.$issuance->warranty_number)->assertOk()
-            ->assertJsonPath('total', 1)->assertJsonPath('data.0.reference', $issuance->warranty_number);
-        $this->patchJson('/api/shop-owner/retail-warranties/items/'.$warranty->id.'/void', ['reason' => ''])->assertUnprocessable();
-        $this->patchJson('/api/shop-owner/retail-warranties/items/'.$warranty->id.'/void', ['reason' => 'Inspection confirmed excluded deliberate damage.'])->assertOk();
-        $this->assertSame('voided', $warranty->fresh()->status);
-        $this->assertDatabaseHas('audit_logs', ['action' => 'retail_warranty.voided', 'target_id' => $warranty->id]);
-        $other = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
-        ShopOwnerModule::updateOrCreate(['shop_owner_id' => $other->id, 'module_key' => 'retail_operations'], ['enabled' => true]);
-        $this->actingAs($other, 'shop_owner')->getJson('/api/shop-owner/retail-warranties/'.$issuance->warranty_number.'/certificate')->assertNotFound();
+        $this->actingAs($owner, 'shop_owner');
+        $prefix = '/api/shop-owner/retail-warranties';
+        $this->getJson($prefix.'?search='.$issuance->warranty_number.'&status=active&page=1')->assertNotFound();
+        $this->getJson($prefix.'/'.$issuance->warranty_number)->assertNotFound();
+        $this->getJson($prefix.'/'.$issuance->warranty_number.'/certificate')->assertNotFound();
+        $this->patchJson($prefix.'/items/'.$warranty->id.'/void', ['reason' => 'Legacy manual void attempt'])->assertNotFound();
+        foreach (['index', 'show', 'certificate', 'void'] as $action) {
+            $name = 'shop_owner.retail-warranties.'.$action;
+            $this->assertFalse(\Illuminate\Support\Facades\Route::has($name));
+            $this->assertArrayNotHasKey($name, config('shop_modules.routes'));
+        }
+        $this->assertSame($original, $warranty->fresh()->getAttributes());
+        $this->assertModelExists($issuance);
+        $this->assertDatabaseMissing('audit_logs', ['action' => 'retail_warranty.voided', 'target_id' => $warranty->id]);
+    }
+
+    public function test_owner_refund_context_has_no_removed_certificate_url(): void
+    {
+        $issuance = RetailWarrantyIssuance::factory()->create();
+        $warranty = RetailWarranty::factory()->create(['retail_warranty_issuance_id' => $issuance->id]);
+        $projection = app(\App\Services\RetailWarrantyService::class)->projectIssuances(collect([$issuance]), 'owner')[$issuance->order_id];
+        $this->assertNull($projection['download_url']);
+        $this->assertSame($issuance->warranty_number, $projection['reference']);
+        $this->assertSame($warranty->id, $projection['items'][0]['id']);
+        $this->assertSame($warranty->original_covered_quantity, $projection['items'][0]['available_quantity']);
     }
 
     public function test_staff_download_requires_explicit_permission_live_tenant_and_enabled_module(): void
@@ -64,6 +79,12 @@ class AccessTest extends TestCase
         $this->actingAs($staff, 'user')->getJson($url)->assertForbidden();
         $staff->givePermissionTo('access-staff-job-orders');
         $this->get($url)->assertOk();
+        $otherShop = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
+        ShopOwnerModule::updateOrCreate(['shop_owner_id' => $otherShop->id, 'module_key' => 'retail_operations'], ['enabled' => true]);
+        $otherStaff = User::factory()->create(['shop_owner_id' => $otherShop->id, 'role' => 'STAFF']);
+        $otherStaff->givePermissionTo('access-staff-job-orders');
+        $this->actingAs($otherStaff, 'user')->getJson($url)->assertNotFound();
+        $this->actingAs($staff, 'user');
         ShopOwnerModule::where('shop_owner_id', $issuance->shop_owner_id)->where('module_key', 'retail_operations')->update(['enabled' => false]);
         $this->getJson($url)->assertForbidden();
     }

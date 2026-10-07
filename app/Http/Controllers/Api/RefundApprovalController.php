@@ -518,11 +518,18 @@ class RefundApprovalController extends Controller
             $isExhaustedDeliveryRefund,
         );
         $requiresStaffAssessment = $this->orderRefundService->requiresStaffCustomerAssessment($refund, $order);
-        $staffApprovalStatus = $requiresStaffAssessment
+        $isCompanyCustomerRefund = !$isExhaustedDeliveryRefund
+            && strtolower(trim((string) ($order?->shopOwner?->registration_type ?? ''))) === 'company';
+        $requiresStaffApproval = $requiresStaffAssessment || $isCompanyCustomerRefund;
+        // Match the existing service gates without reclassifying return logistics.
+        $hasStaffApproval = $requiresStaffAssessment
             ? ($refund->staff_approved_by !== null
-                || ((string) ($refund->shop_owner_status ?? 'pending') === 'pending' && $refund->shop_owner_approved_by !== null)
-                ? 'approved'
-                : 'pending')
+                || ($shopOwnerStatus === 'pending' && $refund->shop_owner_approved_by !== null))
+            : ($refund->staff_approved_at !== null
+                || $refund->staff_approved_by !== null
+                || $refund->shop_owner_approved_by !== null);
+        $staffApprovalStatus = $requiresStaffApproval
+            ? ($hasStaffApproval ? 'approved' : 'pending')
             : null;
         $codCollection = $order?->codCollection;
         $codRemittance = $codCollection?->remittanceItem?->remittance;
@@ -536,7 +543,7 @@ class RefundApprovalController extends Controller
             && $refund->refund_destination !== [];
 
         $approvalStage = 'none';
-        if (($isCod || $requiresStaffAssessment) && $status === 'requested' && $shopOwnerStatus === 'pending') {
+        if (($isCod || $requiresStaffApproval) && $status === 'requested' && $shopOwnerStatus === 'pending') {
             $approvalStage = 'staff';
         } elseif ($isIndividualRegistration && !$isCod && $requiresOwnerApproval
             && $financeStatus === 'pending' && $shopOwnerStatus === 'pending') {
@@ -603,7 +610,7 @@ class RefundApprovalController extends Controller
             'shopOwnerStatus' => (string) ($refund->shop_owner_status ?? 'pending'),
             'financeStatus' => (string) ($refund->finance_status ?? 'pending'),
             'requiresOwnerApproval' => $requiresOwnerApproval,
-            'requiresStaffApproval' => $requiresStaffAssessment,
+            'requiresStaffApproval' => $requiresStaffApproval,
             'staffApprovalStatus' => $staffApprovalStatus,
             'approvalStage' => $approvalStage,
             'returnStatus' => (string) ($refund->return_status ?? 'awaiting_approval'),

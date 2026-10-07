@@ -15,7 +15,6 @@ use App\Models\RetailWarrantyIssuance;
 use App\Models\ShopOwner;
 use App\Models\ShopRetailWarrantySetting;
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -194,7 +193,7 @@ class RetailWarrantyService
                 $status = 'partially_used';
             }
             $routeName = match ($audience) {
-                'owner' => 'shop_owner.retail-warranties.certificate', 'staff' => 'api.staff.retail-warranties.certificate',
+                'owner' => null, 'staff' => 'api.staff.retail-warranties.certificate',
                 default => 'customer.retail-warranties.certificate',
             };
 
@@ -203,7 +202,7 @@ class RetailWarrantyService
                 'customer_name' => $issuance->customer_snapshot['name'], 'shop_name' => $issuance->shop_snapshot['name'],
                 'issued_at' => $issuance->issued_at->toIso8601String(), 'fulfilled_at' => $issuance->fulfilled_at->toIso8601String(),
                 'timezone' => $issuance->business_timezone, 'status' => $status,
-                'download_url' => route($routeName, ['reference' => $issuance->warranty_number], false), 'items' => $items->all()]];
+                'download_url' => $routeName ? route($routeName, ['reference' => $issuance->warranty_number], false) : null, 'items' => $items->all()]];
         })->all();
     }
 
@@ -213,28 +212,6 @@ class RetailWarrantyService
         $orders->loadMissing('retailWarrantyIssuance.warranties');
 
         return $this->projectIssuances($orders->pluck('retailWarrantyIssuance')->filter(), $audience);
-    }
-
-    public function filterIssuances(Builder $query, string $status): void
-    {
-        $table = (new RetailWarranty)->getTable();
-        $consumed = $this->successfulQuantitySql();
-        $remaining = fn (Builder $q) => $q->where('status', '!=', 'voided')->whereColumn('original_covered_quantity', '>', 'refunded_quantity')
-            ->whereRaw("{$table}.original_covered_quantity > ({$consumed})");
-        $active = function (Builder $q) use ($remaining) {
-            $remaining($q);
-            $q->where('status', 'active')->where('warranty_expiration_date', '>', now()->utc());
-        };
-        $refunded = fn (Builder $q) => $q->where(fn ($q) => $q->where('refunded_quantity', '>', 0)->orWhereRaw("({$consumed}) > 0"));
-        $used = fn (Builder $q) => $q->where(fn ($q) => $q->where('status', 'voided')->orWhere('refunded_quantity', '>', 0)->orWhereRaw("({$consumed}) > 0"));
-        match ($status) {
-            'active' => $query->whereHas('warranties', $active)->whereDoesntHave('warranties', $used),
-            'partially_used' => $query->whereHas('warranties', $active)->whereHas('warranties', $used),
-            'no_remaining_coverage' => $query->whereDoesntHave('warranties', $remaining)->whereHas('warranties', $refunded),
-            'voided' => $query->whereDoesntHave('warranties', $remaining)->whereDoesntHave('warranties', $refunded),
-            'expired' => $query->whereDoesntHave('warranties', $active)->whereHas('warranties', $remaining),
-            default => null,
-        };
     }
 
     private function successfulQuantitySql(): string
@@ -290,21 +267,6 @@ class RetailWarrantyService
                 }
             }
         }, 3);
-    }
-
-    public function voidWarranty(RetailWarranty $warranty, ShopOwner $actor, string $reason): void
-    {
-        DB::transaction(function () use ($warranty, $actor, $reason) {
-            Order::whereKey($warranty->order_id)->lockForUpdate()->firstOrFail();
-            $warranty = RetailWarranty::whereKey($warranty->id)->where('shop_owner_id', $actor->id)->lockForUpdate()->firstOrFail();
-            if ($warranty->status === 'voided') {
-                return;
-            }
-            $warranty->forceFill(['status' => 'voided', 'void_reason' => trim($reason), 'voided_at' => now()->utc(),
-                'void_actor_type' => 'shop_owner', 'void_actor_id' => $actor->id])->save();
-            $this->audit($actor->id, 'retail_warranty.voided', 'retail_warranty', $warranty->id,
-                ['actor_type' => 'shop_owner', 'actor_id' => $actor->id, 'reason' => trim($reason)]);
-        });
     }
 
     /** Recheck inside the refund's order lock before reserving any quantities/funds. */

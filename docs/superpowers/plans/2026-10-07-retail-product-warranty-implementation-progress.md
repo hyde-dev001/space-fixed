@@ -2,7 +2,7 @@
 
 Branch/worktree: `fix/qa-four-follow-up`, `.worktrees/qa-four-follow-up`; baseline `21cbd443629c31f4c3dee156ee105a2865866216`.
 
-User approved implementation with ONE order issuance/reference/PDF/email and independent item coverage. The existing plan was revised before application changes. Execution is sequential; no subagents, `.env` changes, destructive database commands, commits or pushes.
+User approved implementation with ONE order issuance/reference/PDF/email and independent item coverage. The existing plan was revised before application changes. Execution is sequential; no subagents, `.env` changes or destructive database commands. The initial implementation was committed/pushed as `18b719253e`; the following owner-management removal supersedes its UI scope.
 
 ## Phase evidence so far
 
@@ -12,7 +12,7 @@ User approved implementation with ONE order issuance/reference/PDF/email and ind
 - D: Combined PDF test reproduced missing certificate service. Actual server PDF/private storage, all three line templates/Unicode, stable hash/bytes after retry/partial refund: 1 test, 10 assertions, no failures, existing `.env` warning.
 - E: Delivery tests reproduced missing job. ONE real array-transport email/attachment for four items, replay suppression, no-recipient skip, unknown acceptance/no resend, pre-send recovery: 4 tests, 18 assertions, no failures, existing `.env` warnings.
 - F: Customer access test reproduced missing route. Customer/private PDF isolation, safe projection and non-mutating expiry: 1 test, 11 assertions, no failures, same warning. Panel integration still in progress.
-- G–I: Owner/staff management, existing refund integration and reconciliation implemented and reviewed. See the final [results](2026-10-07-retail-product-warranty-results.md) and [file inventory](2026-10-07-retail-warranty-file-inventory.md) for the completed acceptance scenario, exact gates and remaining baseline limitations.
+- G–I: Original owner history/staff access, existing refund integration and reconciliation implemented and reviewed. Owner issued-history management was subsequently removed by the approved revision; current configuration-only behavior is documented in the plan/results. See the final [results](2026-10-07-retail-product-warranty-results.md) and [file inventory](2026-10-07-retail-warranty-file-inventory.md) for the completed acceptance scenario, exact gates and remaining baseline limitations.
 
 ## Dependencies and environment
 
@@ -23,4 +23,10 @@ User approved implementation with ONE order issuance/reference/PDF/email and ind
 
 ## Remaining delivery gates
 
-Final evidence: required three-item/refund scenario passed; full frontend 1,834/1,834 passed; fresh build passed; isolated MariaDB 325 migrations and new migration roundtrip passed; actual root-lock contention preserved one active reservation; actual delayed-payment JSON recovery preserved original policy; desktop/mobile customer/owner downloads matched canonical bytes; three-page PDF inspected; syntax/manifest/diff checks passed. Full backend completed 3,892 tests with 347 failures: 346 matched the baseline and the remaining SQLite concurrency case passed its isolated rerun. This full-suite failure remains disclosed. Latest focused warranty results and sequential review stack are recorded in the results document. Publication authorized by the user with fresh `public/build`.
+Final evidence: required three-item/refund scenario passed; full frontend 1,834/1,834 passed; fresh build passed; isolated MariaDB 325 migrations and new migration roundtrip passed; actual root-lock contention preserved one active reservation; actual delayed-payment JSON recovery preserved original policy; historical pre-removal desktop/mobile customer/owner downloads matched canonical bytes; three-page PDF inspected; syntax/manifest/diff checks passed. Full backend completed 3,892 tests with 347 failures: 346 matched the baseline and the remaining SQLite concurrency case passed its isolated rerun. This full-suite failure remains disclosed. Latest focused warranty results and sequential review stack are recorded in the results document. Publication authorized by the user with fresh `public/build`.
+
+## Owner issued-warranty management removal revision
+
+User-directed scope: configuration stays in Shop Settings / Operations / Retail Product Warranty. Remove issued history/search/status/pagination/details/PDF/manual-void UI and dedicated owner endpoints/catalog/helpers; no replacement page. Preserve database history, immutable snapshots, customer My Orders, staff scoped access and existing refund quantity/idempotency/certificate behavior. Existing refund assessment context has no owner PDF URL. The staff certificate action is moved to `Api/StaffRetailWarrantyController`.
+
+Fresh revision evidence: 68 backend tests / 527 assertions with no failures (existing `.env` warnings); 27 frontend files / 126 tests passed; browser owner configuration save and absent management UI/API verified at desktop/mobile; customer canonical PDF unchanged, zero page JS errors; production build passed in 1m11s. Exact commands/review and historical full-suite limitations are recorded in the results document.
