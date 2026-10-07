@@ -73,6 +73,37 @@ afterEach(() => {
 });
 
 describe("Finance canonical retail refund payout", () => {
+  it.each([
+    { name: 'Staff accepted, owner approval enabled', staff: 'approved', ownerRequired: true, finance: 'pending', raw: 'pending_approval', actionable: true },
+    { name: 'Staff accepted, owner approval disabled', staff: 'approved', ownerRequired: false, finance: 'pending', raw: 'pending_approval', actionable: true },
+    { name: 'Staff assessment pending despite disabled owner stage', staff: 'pending', ownerRequired: false, finance: 'pending', raw: 'pending_approval', actionable: false },
+    { name: 'Finance waiting for owner approval', staff: 'approved', ownerRequired: true, finance: 'approved_initial', raw: 'pending_approval', actionable: false },
+    { name: 'refund already rejected', staff: 'approved', ownerRequired: true, finance: 'rejected', raw: 'rejected', actionable: false },
+  ])('keeps Finance modal decisions aligned with $name', async ({ staff, ownerRequired, finance, raw, actionable }) => {
+    mocks.fetch.mockImplementation((url: string) => {
+      if (url.startsWith('/api/finance/refunds?')) return response({ data: [{
+        id: 30, orderNumber: 'ORD-STAFF-ACCEPTED', customerName: 'QA Customer', refundAmount: 'PHP 6000.00',
+        refundAmountValue: 6000, refundMethod: 'Original Payment Method', requestedBy: 'QA Customer',
+        requestDate: '2026-10-08', reason: 'Product defective or damaged', status: 'Pending', rawStatus: raw,
+        requiresOwnerApproval: ownerRequired, requiresStaffApproval: true, staffApprovalStatus: staff,
+        shopOwnerStatus: 'pending', financeStatus: finance, returnStatus: 'awaiting_approval', isCod: false,
+        canExecutePayout: false, media: [],
+      }] });
+      if (url.startsWith('/api/finance/repair-refunds?') || url.startsWith('/api/finance/repair-delivery-reconciliations?')) return response({ data: [] });
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+    render(<RefundApproval />);
+    fireEvent.click(await screen.findByTitle('View Details'));
+    await screen.findByRole('heading', { name: 'Refund Request Details' });
+    if (actionable) {
+      expect(screen.getByRole('button', { name: 'Approve' })).toBeEnabled();
+      expect(screen.getByRole('button', { name: 'Reject' })).toBeEnabled();
+    } else {
+      expect(screen.queryByRole('button', { name: /^(Approve|Finalize Approval|Reject)$/ })).not.toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: /Execute.*(Payout|Refund)/ })).not.toBeInTheDocument();
+  });
+
   it("does not accept a manually typed repair payout amount", () => {
     expect(pageSource).toContain("Amount is fixed based on the approved refund amount.");
     expect(pageSource).not.toContain('formData.append("execution_amount"');
