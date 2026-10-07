@@ -1342,3 +1342,15 @@ it('keeps customer confirmation available for an item-not-received dispute', asy
     },
   })));
 });
+
+it('explains a scheduling denial when the 403 response contains an empty message', async () => {
+  setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'pending', delivery_batch_id: null, assignments: [], proofs: [], attempts: [] });
+  mocks.post.mockRejectedValueOnce({ response: { status: 403, data: { message: '' } } });
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.change(screen.getByLabelText('Delivery date'), { target: { value: '2026-07-20' } });
+  fireEvent.change(screen.getByLabelText('Choose rider for outbound leg'), { target: { value: '9' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Schedule & assign rider' }));
+  expect(await screen.findByText('Unable to schedule this delivery. Check your dispatcher access and try again.')).toBeInTheDocument();
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+});

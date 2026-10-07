@@ -5,6 +5,7 @@ import Batches from '../Batches';
 
 const mocks = vi.hoisted(() => ({
   props: {} as Record<string, unknown>,
+  isRouteFrozen: vi.fn(),
   scheduleLegs: vi.fn(),
   createBatch: vi.fn(),
   offerBatch: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock('@inertiajs/react', () => ({
   router: { get: mocks.get, reload: mocks.reload },
   usePage: () => ({ props: mocks.props }),
 }));
+vi.mock('@/providers/MaintenanceProvider', () => ({ useMaintenance: () => ({ isRouteFrozen: mocks.isRouteFrozen }) }));
 vi.mock('@/layout/AppLayout_ERP', () => ({ default: ({ children }: React.PropsWithChildren) => <>{children}</> }));
 vi.mock('@/services/logisticsApi', () => ({ logisticsApi: {
   scheduleLegs: mocks.scheduleLegs,
@@ -86,6 +88,7 @@ const repairLeg = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.isRouteFrozen.mockReturnValue(false);
   mocks.props = {
     batches: [],
     pool: [scheduledLeg],
@@ -1028,4 +1031,34 @@ it('shows delivery-pool skeletons while refreshed props are pending', async () =
   fireEvent.click(screen.getByRole('button', { name: 'Move stop 2 up' }));
 
   expect(await screen.findAllByTestId('delivery-skeleton')).toHaveLength(3);
+});
+
+it('does not claim maintenance pauses an operational batch builder', () => {
+  render(<Batches />);
+  openBuilder();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select all matching deliveries' }));
+  expect(screen.getByRole('button', { name: 'Save Draft' })).toBeEnabled();
+  expect(screen.queryByText('Critical logistics actions are paused during maintenance.')).not.toBeInTheDocument();
+});
+
+it('keeps batch scheduling blocked during a real maintenance freeze', () => {
+  mocks.isRouteFrozen.mockImplementation((name: string) => name === 'logistics.api.legs.schedule');
+  render(<Batches />);
+  openBuilder();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select all matching deliveries' }));
+  expect(screen.getByRole('button', { name: 'Save Draft' })).toBeDisabled();
+  expect(screen.getByText('Critical logistics actions are paused during maintenance.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
+  expect(mocks.scheduleLegs).not.toHaveBeenCalled();
+  expect(mocks.createBatch).not.toHaveBeenCalled();
+});
+
+it('explains a scheduling denial even when the 403 response has an empty message', async () => {
+  mocks.scheduleLegs.mockRejectedValueOnce({ response: { status: 403, data: { message: '' } } });
+  render(<Batches />);
+  openBuilder();
+  fireEvent.click(screen.getByRole('checkbox', { name: 'Select all matching deliveries' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Save Draft' }));
+  await waitFor(() => expect(mocks.error).toHaveBeenCalledWith(expect.stringMatching(/dispatcher access/i), 'Draft not saved'));
+  expect(mocks.createBatch).not.toHaveBeenCalled();
 });

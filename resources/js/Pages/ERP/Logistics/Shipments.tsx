@@ -462,7 +462,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       router.reload({ only: ['shipments', 'assignableRiders'] });
     } catch (error: any) {
       const errors = error.response?.data?.errors;
-      const message = error.response?.data?.message ?? (errors ? Object.values(errors).flat().join(' ') : 'Unable to assign this rider. Refresh the page and try again.');
+      const message = error.response?.data?.message?.trim() || (errors ? Object.values(errors).flat().join(' ') : '') || 'Unable to assign this rider. Check your dispatcher access and try again.';
       setAssignmentError(message);
       toast('error', message);
     } finally {
@@ -502,7 +502,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       router.reload({ only: assignAfter ? ['shipments', 'assignableRiders'] : ['shipments'], onFinish: () => setAssigningLegId(null) });
     } catch (error: any) {
       const errors = error.response?.data?.errors;
-      const message = error.response?.data?.message ?? (errors ? Object.values(errors).flat().join(' ') : 'Unable to schedule this delivery.');
+      const message = error.response?.data?.message?.trim() || (errors ? Object.values(errors).flat().join(' ') : '') || 'Unable to schedule this delivery. Check your dispatcher access and try again.';
       setAssignmentError(message);
       toast('error', message);
       if (scheduled && assignAfter) {

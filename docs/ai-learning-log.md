@@ -17,6 +17,7 @@
 ## 2026-08-14 - Shared session guard isolation
 
 - Multiple Laravel session guards can coexist in one browser session. Involuntary lifecycle enforcement must remove only the invalid guard, preserve unrelated authenticated guards and session data, rotate the session identifier, and leave route-specific middleware responsible for selecting the required actor.
+- After auth middleware selects a native guard, shared controller actor helpers must honor that selection before guard fallbacks. Owner-first lookup can silently replace an authenticated employee when both sessions exist; cover same-shop and foreign-shop secondary sessions with positive and denial regressions.
 
 ## 2026-08-14 - Middleware priority preserves framework prerequisites
 

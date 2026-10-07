@@ -196,7 +196,7 @@ export default function BatchWorkspace({
       {batch?.status === 'draft' && <button type="button" onClick={onReview} className="min-h-11 w-full rounded-xl border border-blue-600 px-4 text-sm font-semibold text-blue-700 sm:w-auto">Review &amp; Offer</button>}
       {batch && batch.status !== 'draft' && <span className="mr-auto text-sm font-medium text-gray-500">This route is read-only at the {batch.status.replaceAll('_', ' ')} stage.</span>}
       {!batch && legs.length < 2 && <span className="mr-auto text-sm font-semibold text-amber-700">Select at least 2 deliveries</span>}
-      {!batch && saveDisabledReason && <p role="status" className="mr-auto text-sm font-semibold text-amber-700">{saveDisabledReason}</p>}
+      {!batch && saveDisabled && saveDisabledReason && <p role="status" className="mr-auto text-sm font-semibold text-amber-700">{saveDisabledReason}</p>}
       {!batch && <button type="button" disabled={!canSave} onClick={onSave} className="min-h-11 w-full rounded-xl bg-gray-950 px-5 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:opacity-40 sm:w-auto">{submitting ? 'Saving Draft...' : 'Save Draft'}</button>}
     </div>
   </section>;
