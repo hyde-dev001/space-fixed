@@ -808,6 +808,8 @@ class ShipmentController extends Controller
     private function authenticatedActor(bool $preferShopOwner = true): Authenticatable
     {
         $guards = $preferShopOwner ? ['shop_owner', 'user'] : ['user', 'shop_owner'];
+        // Shared API authentication selects the native guard before controller authorization.
+        $guards = array_unique([Auth::getDefaultDriver(), ...$guards]);
         $actor = collect($guards)
             ->map(fn (string $guard) => Auth::guard($guard)->user())
             ->first(fn ($candidate) => $candidate instanceof Authenticatable);

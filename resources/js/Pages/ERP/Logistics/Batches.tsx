@@ -22,8 +22,12 @@ import OfferBatchModal from './components/OfferBatchModal';
 import { useMaintenance } from '@/providers/MaintenanceProvider';
 
 const errorMessage = (error: unknown) => {
-  const data = (error as { response?: { data?: { errors?: Record<string, string[]>; message?: string } } })?.response?.data;
-  return Object.values(data?.errors ?? {})[0]?.[0] ?? data?.message ?? 'This batch changed. Refresh and try again.';
+  const response = (error as { response?: { status?: number; data?: { errors?: Record<string, string[]>; message?: string } } })?.response;
+  const data = response?.data;
+  return Object.values(data?.errors ?? {})[0]?.[0]?.trim() || data?.message?.trim()
+    || (response?.status === 403
+      ? 'You are not authorized to update these deliveries. Check your dispatcher access and try again.'
+      : 'This batch changed. Refresh and try again.');
 };
 
 const sourceLabel = (leg: TrackingShipmentLeg) => logisticsSourceLabel(leg.shipment);
