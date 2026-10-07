@@ -15,10 +15,10 @@ abstract class WarrantyTestCase extends TestCase
 {
     use RefreshDatabase;
 
-    protected function purchase(string $status = 'shipped'): Order
+    protected function purchase(string $status = 'shipped', string $businessType = 'retail'): Order
     {
         Queue::fake();
-        $owner = ShopOwner::factory()->approved()->create(['business_type' => 'retail']);
+        $owner = ShopOwner::factory()->approved()->create(['business_type' => $businessType]);
         app(RetailWarrantyService::class)->saveSettings($owner, ['enabled' => true, 'title' => 'Product Warranty',
             'duration_value' => 1, 'duration_unit' => 'years', 'terms' => 'Custom manufacturing evaluation']);
         $order = Order::factory()->create(['shop_owner_id' => $owner->id, 'status' => $status, 'pickup_enabled' => true]);

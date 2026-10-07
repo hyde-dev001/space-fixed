@@ -39,7 +39,7 @@ describe('Shop Settings retail warranty configuration only', () => {
     Element.prototype.scrollIntoView = vi.fn();
   });
 
-  it.each([['individual', 'retail'], ['individual', 'both'], ['company', 'retail'], ['company', 'both']])('keeps configuration without issued management for %s/%s', async (registration, business) => {
+  it.each([['individual', 'retail'], ['individual', 'both'], ['company', 'retail'], ['company', 'both'], ['company', 'both (retail & repair)']])('keeps configuration without issued management for %s/%s', async (registration, business) => {
     usePageMock.mockReturnValue(settings(registration, business));
     await act(async () => { render(<ShopSettings />); });
     expect(screen.getByRole('heading', { name: 'Retail Product Warranty' })).toBeVisible();

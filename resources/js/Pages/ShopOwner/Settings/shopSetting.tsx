@@ -2674,7 +2674,7 @@ const ShopSetting: React.FC = () => {
 						tabIndex={-1}
 						className="scroll-mt-6 rounded-2xl border border-gray-200 bg-white shadow-sm outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-4 lg:col-span-12 lg:order-6 xl:order-8 xl:shadow-none"
 					>
-                        {shop_settings.retail_warranty && ['retail', 'both'].includes(shop_settings.business_type.toLowerCase()) ? <RetailWarrantySettings initial={shop_settings.retail_warranty} /> : null}
+                        {shop_settings.retail_warranty && (normalizedBusinessType === 'retail' || isBothSignal) ? <RetailWarrantySettings initial={shop_settings.retail_warranty} /> : null}
 						<div className="border-b border-gray-200 p-6">
 							<div className="flex items-start justify-between gap-4">
 								<div>

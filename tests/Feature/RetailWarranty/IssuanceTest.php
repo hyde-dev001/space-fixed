@@ -54,6 +54,15 @@ class IssuanceTest extends WarrantyTestCase
         $this->assertSame(1, $issuance->warranties->first()->policy_snapshot['duration_value']);
     }
 
+    public function test_registered_both_business_type_can_issue_eligible_retail_warranties(): void
+    {
+        $order = $this->purchase('delivered', 'both (retail & repair)');
+        $issuance = app(RetailWarrantyService::class)->captureFulfillment($order);
+
+        $this->assertNotNull($issuance);
+        $this->assertCount(3, $issuance->warranties);
+    }
+
     public function test_pre_cutover_order_and_disabled_fulfillment_are_never_retroactively_covered(): void
     {
         $service = app(RetailWarrantyService::class);

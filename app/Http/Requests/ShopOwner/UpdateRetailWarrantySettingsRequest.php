@@ -3,6 +3,7 @@
 namespace App\Http\Requests\ShopOwner;
 
 use App\Models\ShopOwner;
+use App\Services\BusinessAccessControlService;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -11,8 +12,11 @@ class UpdateRetailWarrantySettingsRequest extends FormRequest
     public function authorize(): bool
     {
         $owner = $this->user('shop_owner');
+        $businessType = $owner instanceof ShopOwner
+            ? app(BusinessAccessControlService::class)->normalizeBusinessType((string) $owner->business_type)
+            : '';
 
-        return $owner instanceof ShopOwner && in_array(strtolower(trim($owner->business_type)), ['retail', 'both'], true);
+        return $owner instanceof ShopOwner && in_array($businessType, ['retail', 'both'], true);
     }
 
     public function rules(): array

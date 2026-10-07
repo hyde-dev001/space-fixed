@@ -34,7 +34,8 @@ class RetailWarrantyService
                 $shop = ShopOwner::whereKey($order->shop_owner_id)->lockForUpdate()->firstOrFail();
                 $setting = $shop->retailWarrantySetting;
                 $fulfilledAt = now()->utc();
-                $eligible = in_array(strtolower(trim($shop->business_type)), ['retail', 'both'], true)
+                $businessType = app(BusinessAccessControlService::class)->normalizeBusinessType((string) $shop->business_type);
+                $eligible = in_array($businessType, ['retail', 'both'], true)
                     && $setting?->enabled && $setting->eligible_orders_from
                     && $order->created_at->gte($setting->eligible_orders_from)
                     && $fulfilledAt->gte($setting->eligible_orders_from);

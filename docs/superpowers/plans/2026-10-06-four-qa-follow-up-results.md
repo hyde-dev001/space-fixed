@@ -118,3 +118,12 @@ The Platform Balance Fee Ledger now omits marketplace order charges once an asso
 - `php artisan test tests/Feature/PlatformFee/PlatformBalanceApiTest.php tests/Feature/PlatformFee/PlatformFeeRefundTest.php tests/Feature/PlatformFee/PlatformFeeLedgerTest.php` — **30 tests, 126 assertions, no failures**. Laravel emitted the existing missing-worktree-`.env` warning for each test.
 - `npm.cmd run build` — **PASS**, Vite transformed 3,845 modules. Existing unresolved `/images/auth-geometric-pattern.svg` warning remains; generated files matched the committed `public/build`, so there is no asset diff.
 - `app/Http/Controllers/Api/Finance/PlatformFeeController.php` and `tests/Feature/PlatformFee/PlatformBalanceApiTest.php` changed; no frontend bundle behavior changed.
+
+## Registered retail warranty visibility — 2026-10-08
+
+Registered company retail-and-repair shops store the legacy business type `both (retail & repair)`. The settings page previously hid the warranty configuration, the update request rejected saves, and fulfillment skipped warranty issuance because each path accepted only canonical `both`. All three paths now use the existing `BusinessAccessControlService` normalizer. Repair-only shops remain excluded, and customer access and warranty records are unchanged.
+
+- Added regression coverage for visibility/save and future eligible issuance using the registered business-type value.
+- `php artisan test tests/Feature/RetailWarranty` — 44 tests, 310 assertions, no failures; Laravel emits the existing warning because this worktree has no `.env`.
+- `npm.cmd run test:frontend -- resources/js/Pages/ShopOwner/Settings/__tests__/shopSetting.retail-warranty.test.tsx` — 6 tests passed. Existing localStorage/CARTO test-environment warnings remain non-failing.
+- `npm.cmd run build` — PASS; Vite transformed 3,845 modules. Existing unresolved `/images/auth-geometric-pattern.svg` warning remains. Fresh `public/build` is included.
