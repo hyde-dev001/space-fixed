@@ -110,6 +110,76 @@ beforeEach(() => {
   });
 });
 
+it('groups Staff pages into independent dropdowns and reopens the active page group', () => {
+  state.role = 'STAFF';
+  state.roles = ['Staff'];
+  state.shopOwner.business_type = 'retail';
+  state.url = '/erp/time-in';
+  state.permissions = ['access-staff-dashboard', 'access-staff-job-orders', 'access-product-management', 'access-shoe-pricing'];
+
+  const { rerender } = render(<AppSidebarERP />);
+  const selfService = screen.getByRole('button', { name: 'SELF-SERVICE' });
+  const selfServicePanel = document.getElementById(selfService.getAttribute('aria-controls')!)!;
+  const retail = screen.getByRole('button', { name: 'RETAIL OPERATIONS' });
+  const retailPanel = document.getElementById(retail.getAttribute('aria-controls')!)!;
+
+  expect(within(selfServicePanel).getByRole('link', { name: 'Log Attendance' })).toHaveAttribute('href', '/erp/time-in');
+  expect(within(selfServicePanel).getByRole('link', { name: 'My Payslips' })).toHaveAttribute('href', '/erp/my-payslips');
+  expect(within(retailPanel).getAllByRole('link').map((link) => link.textContent)).toEqual(['Retail Job Orders', 'Product Management', 'Shoe Pricing Requests']);
+  expect(within(retailPanel).getByRole('link', { name: 'Product Management' }).querySelector('svg')).not.toBeNull();
+  expect(retail.querySelector('svg')).not.toBeNull();
+  expect(screen.getByRole('button', { name: 'OVERVIEW' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'INVENTORY' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'RESOURCES' })).toBeInTheDocument();
+
+  fireEvent.click(retail);
+  expect(retail).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('link', { name: 'Product Management' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Inventory Overview' })).toBeInTheDocument();
+
+  state.url = '/erp/staff/products';
+  rerender(<AppSidebarERP />);
+  expect(retail).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Product Management' })).toHaveAttribute('aria-current', 'page');
+});
+
+it.each([
+  { reason: 'missing permissions', permissions: [] as string[], disabledModules: {} },
+  { reason: 'disabled modules', permissions: ['access-staff-dashboard', 'access-staff-job-orders', 'access-product-management'], disabledModules: { retail_operations: false, inventory: false } },
+])('hides empty Staff groups for $reason without removing self-service links', ({ permissions, disabledModules }) => {
+  state.role = 'STAFF';
+  state.roles = ['Staff'];
+  state.shopOwner.business_type = 'retail';
+  state.url = '/erp/time-in';
+  state.permissions = permissions;
+  state.shopModules = moduleStates(disabledModules);
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('button', { name: 'SELF-SERVICE' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'RETAIL OPERATIONS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'INVENTORY' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Product Management' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Inventory Overview' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'My Payslips' })).toBeInTheDocument();
+});
+
+it('keeps Staff and Repair dropdown states separate for a mixed-role employee', () => {
+  state.role = 'STAFF';
+  state.roles = ['Staff', 'Repairer'];
+  state.url = '/erp/time-in';
+  state.permissions = ['access-staff-dashboard', 'access-repair-stocks'];
+
+  render(<AppSidebarERP />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'INVENTORY' }));
+  expect(screen.queryByRole('link', { name: 'Inventory Overview' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'INVENTORY & MATERIALS' })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Stocks Overview' })).toBeInTheDocument();
+  expect(screen.getAllByRole('link', { name: 'My Payslips' })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: 'Log Attendance' })).toHaveLength(1);
+});
+
 it('groups repair links into dropdowns and reopens the current page group after navigation', () => {
   state.role = 'REPAIRER';
   state.roles = ['Repairer'];
@@ -611,9 +681,14 @@ it('renders the approved Manager workspace in the required groups and order', ()
 
   render(<AppSidebarERP />);
 
-  expect(screen.getByRole('heading', { name: 'OPERATIONS' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'PEOPLE & APPROVALS' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'REVIEW' })).toBeInTheDocument();
+  const managerGroups = screen.getAllByRole('button');
+  expect(managerGroups.map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'OPERATIONS', 'PEOPLE', 'STAFF APPROVALS', 'REPORTS & AUDIT', 'RESOURCES',
+  ]);
+  managerGroups.forEach((button) => {
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(button.querySelector('svg')).not.toBeNull();
+  });
 
   const managerLinks = screen.getAllByRole('link').map((link) => link.textContent?.trim());
   expect(managerLinks).toEqual([
@@ -649,6 +724,52 @@ it('renders the approved Manager workspace in the required groups and order', ()
   expect(screen.getByRole('link', { name: 'My Payslips' })).toHaveAttribute('href', '/erp/my-payslips');
 
   expect(screen.queryByRole('link', { name: /notifications|profile|action center|customer complaints|assist center|dss|assign staff|takeover|permission administration|product upload/i })).not.toBeInTheDocument();
+});
+
+it('opens the active Manager approval group without reopening a separately collapsed People group', () => {
+  state.url = '/erp/time-in';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+
+  const { rerender } = render(<AppSidebarERP />);
+  const approvals = screen.getByRole('button', { name: 'STAFF APPROVALS' });
+  const approvalsPanel = document.getElementById(approvals.getAttribute('aria-controls')!)!;
+  const people = screen.getByRole('button', { name: 'PEOPLE' });
+  const peoplePanel = document.getElementById(people.getAttribute('aria-controls')!)!;
+
+  expect(within(approvalsPanel).getAllByRole('link').map((link) => link.textContent)).toEqual([
+    'Leave Approvals', 'Suspension Approvals', 'Termination Approvals', 'Rehire Approvals',
+  ]);
+  expect(within(peoplePanel).getAllByRole('link').map((link) => link.textContent)).toEqual(['Staff & Workload']);
+  expect(within(approvalsPanel).getByRole('link', { name: 'Leave Approvals' }).querySelector('svg')).not.toBeNull();
+
+  fireEvent.click(approvals);
+  expect(screen.queryByRole('link', { name: 'Leave Approvals' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Staff & Workload' })).toBeInTheDocument();
+  fireEvent.click(people);
+
+  state.url = '/erp/manager/leave-approvals?status=pending';
+  rerender(<AppSidebarERP />);
+  expect(approvals).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Leave Approvals' })).toHaveAttribute('aria-current', 'page');
+  expect(people).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('link', { name: 'Staff & Workload' })).not.toBeInTheDocument();
+});
+
+it('omits Manager groups whose pages are not authorized for a delegated viewer', () => {
+  state.url = '/erp/manager/dashboard';
+  state.role = 'OPERATIONS COORDINATOR';
+  state.roles = ['OPERATIONS COORDINATOR'];
+  state.permissions = ['access-manager-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('button', { name: 'OVERVIEW' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Manager Dashboard' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'OPERATIONS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'PEOPLE' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'STAFF APPROVALS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'REPORTS & AUDIT' })).not.toBeInTheDocument();
 });
 
 it('keeps Manager self-service payslips visible when Finance is disabled', () => {
@@ -711,6 +832,7 @@ it('hides Manager HR approvals when the HR module is disabled but keeps operatio
   expect(screen.queryByRole('link', { name: 'Suspension Approvals' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Termination Approvals' })).not.toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Rehire Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'STAFF APPROVALS' })).not.toBeInTheDocument();
 });
 
 it('hides only the Manager page whose read capability is missing', () => {

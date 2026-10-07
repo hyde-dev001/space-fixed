@@ -21,7 +21,6 @@ type NavItem = {
   params?: Record<string, any>;
   extraPaths?: string[];
   moduleKey?: ShopModuleKey;
-  managerSection?: "operations" | "people" | "review";
   subItems?: { name: string; route: string; params?: Record<string, any>; icon?: React.ReactNode; moduleKey?: ShopModuleKey; pro?: boolean; new?: boolean }[];
 };
 
@@ -466,7 +465,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Manager Dashboard",
     route: "erp.manager.dashboard",
-    managerSection: "operations",
   },
   {
     icon: (
@@ -479,7 +477,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Orders",
     route: "erp.manager.job-orders",
-    managerSection: "operations",
   },
   {
     icon: (
@@ -490,7 +487,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Repair Jobs",
     route: "erp.manager.repair-jobs",
-    managerSection: "operations",
   },
   {
     icon: (
@@ -501,7 +497,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Inventory Overview",
     route: "erp.manager.inventory-overview",
-    managerSection: "operations",
   },
   {
     icon: (
@@ -514,7 +509,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Staff & Workload",
     route: "erp.manager.staff-workload",
-    managerSection: "people",
   },
   {
     icon: (
@@ -526,7 +520,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Leave Approvals",
     route: "erp.manager.leave-approvals",
-    managerSection: "people",
     moduleKey: "hr_employees",
   },
   {
@@ -539,7 +532,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Suspension Approvals",
     route: "erp.manager.suspension-approvals",
-    managerSection: "people",
     moduleKey: "hr_employees",
   },
   {
@@ -550,7 +542,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Termination Approvals",
     route: "erp.manager.termination-approvals",
-    managerSection: "people",
     moduleKey: "hr_employees",
   },
   {
@@ -561,7 +552,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Rehire Approvals",
     route: "erp.manager.rehire-approvals",
-    managerSection: "people",
     moduleKey: "hr_employees",
   },
   {
@@ -573,7 +563,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Reports & Analytics",
     route: "erp.manager.reports",
-    managerSection: "review",
   },
   {
     icon: (
@@ -583,7 +572,6 @@ const managerItems: NavItem[] = [
     ),
     name: "Audit Logs",
     route: "erp.manager.audit-logs",
-    managerSection: "review",
   },
 ];
 
@@ -985,6 +973,30 @@ const repairNavigationGroups = [
   { key: "support", label: "SUPPORT & RESOURCES", routes: ["erp.repairer.support", "erp.repairer.articles.index"] },
 ];
 
+const employeeNavigationGroups = {
+  manager: [
+    { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
+    { key: "overview", label: "OVERVIEW", routes: ["erp.manager.dashboard"] },
+    { key: "operations", label: "OPERATIONS", routes: ["erp.manager.job-orders", "erp.manager.repair-jobs", "erp.manager.inventory-overview"] },
+    { key: "people", label: "PEOPLE", routes: ["erp.manager.staff-workload"] },
+    {
+      key: "approvals",
+      label: "STAFF APPROVALS",
+      routes: ["erp.manager.leave-approvals", "erp.manager.suspension-approvals", "erp.manager.termination-approvals", "erp.manager.rehire-approvals"],
+    },
+    { key: "review", label: "REPORTS & AUDIT", routes: ["erp.manager.reports", "erp.manager.audit-logs"] },
+    { key: "resources", label: "RESOURCES", routes: ["erp.manager.articles.index"] },
+  ],
+  staff: [
+    { key: "self-service", label: "SELF-SERVICE", routes: ["erp.time-in", "erp.my-payslips"] },
+    { key: "overview", label: "OVERVIEW", routes: ["erp.staff.dashboard"] },
+    { key: "operations", label: "RETAIL OPERATIONS", routes: ["erp.staff.job-orders", "erp.staff.products", "erp.staff.shoe-pricing"] },
+    { key: "inventory", label: "INVENTORY", routes: ["erp.staff.inventory-overview"] },
+    { key: "resources", label: "RESOURCES", routes: ["erp.articles.index"] },
+  ],
+  repair: repairNavigationGroups,
+};
+
 const cashierItems: NavItem[] = [
   {
     icon: (
@@ -1070,7 +1082,7 @@ const EmployeeSidebarERP: React.FC = () => {
   ];
 
   const [subMenuHeight, setSubMenuHeight] = useState<Record<string, number>>({});
-  const [collapsedRepairGroups, setCollapsedRepairGroups] = useState<string[]>([]);
+  const [collapsedEmployeeGroups, setCollapsedEmployeeGroups] = useState<string[]>([]);
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const sidebarScrollRef = useRef<HTMLDivElement | null>(null);
   const renderedItemKeys = new Set<string>();
@@ -1400,12 +1412,12 @@ const EmployeeSidebarERP: React.FC = () => {
   );
 
   useEffect(() => {
-    const activeGroup = repairNavigationGroups.find((group) => group.routes.some((routeName) => isActive(routeName)));
-    if (activeGroup) {
-      setCollapsedRepairGroups((previous) => previous.includes(activeGroup.key)
-        ? previous.filter((key) => key !== activeGroup.key)
-        : previous);
-    }
+    const activePanels = Object.entries(employeeNavigationGroups).flatMap(([menuType, groups]) =>
+      groups.filter((group) => group.routes.some((routeName) => isActive(routeName)))
+        .map((group) => `${menuType}-sidebar-${group.key}`));
+    setCollapsedEmployeeGroups((previous) => previous.some((key) => activePanels.includes(key))
+      ? previous.filter((key) => !activePanels.includes(key))
+      : previous);
   }, [isActive]);
 
   type AttendanceSectionKey = "staff" | "logistics" | "repair" | "cashier" | "manager" | "inventory" | "procurement" | "hr" | "finance" | "crm" | null;
@@ -2396,22 +2408,18 @@ const EmployeeSidebarERP: React.FC = () => {
     );
   };
 
-  const renderRepairMenuGroups = () => {
-    const items = deduplicateItems(withAttendanceForSection("repair", [
-      ...getFilteredRepairItems(),
-      myPayslipsItem,
-      ...(hasRepairerArticlesAccess() ? [repairerArticlesItem] : []),
-    ]).filter(isModuleVisible));
+  const renderEmployeeMenuGroups = (navigationItems: NavItem[], menuType: keyof typeof employeeNavigationGroups) => {
+    const items = deduplicateItems(navigationItems.filter(isModuleVisible));
     const showLabels = isExpanded || isHovered || isMobileOpen;
 
     return (
       <div className="space-y-5">
-        {repairNavigationGroups.map((group) => {
+        {employeeNavigationGroups[menuType].map((group) => {
           const groupItems = items.filter((item) => item.route && group.routes.includes(item.route));
           if (groupItems.length === 0) return null;
 
-          const expanded = !collapsedRepairGroups.includes(group.key);
-          const panelId = `repair-sidebar-${group.key}`;
+          const panelId = `${menuType}-sidebar-${group.key}`;
+          const expanded = !collapsedEmployeeGroups.includes(panelId);
 
           return (
             <div key={group.key} className="space-y-2">
@@ -2420,9 +2428,9 @@ const EmployeeSidebarERP: React.FC = () => {
                   type="button"
                   aria-expanded={expanded}
                   aria-controls={panelId}
-                  onClick={() => setCollapsedRepairGroups((previous) => previous.includes(group.key)
-                    ? previous.filter((key) => key !== group.key)
-                    : [...previous, group.key])}
+                  onClick={() => setCollapsedEmployeeGroups((previous) => previous.includes(panelId)
+                    ? previous.filter((key) => key !== panelId)
+                    : [...previous, panelId])}
                   className="flex min-h-9 w-full items-center justify-between gap-2 rounded-lg px-3 text-left text-xs font-semibold uppercase text-gray-400 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:hover:bg-gray-800 dark:focus-visible:ring-gray-100"
                 >
                   <span>{group.label}</span>
@@ -2439,7 +2447,7 @@ const EmployeeSidebarERP: React.FC = () => {
                 </button>
               )}
               <div id={panelId} hidden={showLabels && !expanded}>
-                {renderMenuItems(groupItems, "repair")}
+                {renderMenuItems(groupItems, menuType)}
               </div>
             </div>
           );
@@ -2449,25 +2457,6 @@ const EmployeeSidebarERP: React.FC = () => {
   };
 
   const filteredManagerItems = getFilteredManagerItems();
-  const renderManagerSection = (
-    label: string,
-    section: NonNullable<NavItem["managerSection"]>,
-  ) => {
-    const items = filteredManagerItems.filter((item) => item.managerSection === section);
-
-    if (items.length === 0) {
-      return null;
-    }
-
-    return (
-      <div className="space-y-3">
-        <h3 className="px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400 dark:text-gray-500">
-          {label}
-        </h3>
-        {renderMenuItems(deduplicateItems(items), "manager")}
-      </div>
-    );
-  };
 
   const logoHref = hasRepairerAccess() && !hasStaffAccess() && !hasLogisticsAccess()
     ? getHrefByRoute("erp.repairer.articles.index")
@@ -2549,7 +2538,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderMenuItems(deduplicateItems(withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem, ...(hasStaffArticlesAccess() ? [staffArticlesItem] : [])])), "staff")}
+                {renderEmployeeMenuGroups(withAttendanceForSection("staff", [...getFilteredStaffItems(), myPayslipsItem, ...(hasStaffArticlesAccess() ? [staffArticlesItem] : [])]), "staff")}
               </div>
             </div>
           </nav>
@@ -2572,7 +2561,7 @@ const EmployeeSidebarERP: React.FC = () => {
                     <HorizontaLDots className="size-6" />
                   )}
                 </h2>
-                {renderRepairMenuGroups()}
+                {renderEmployeeMenuGroups(withAttendanceForSection("repair", [...getFilteredRepairItems(), myPayslipsItem, ...(hasRepairerArticlesAccess() ? [repairerArticlesItem] : [])]), "repair")}
               </div>
             </div>
           </nav>
@@ -2620,13 +2609,11 @@ const EmployeeSidebarERP: React.FC = () => {
                       <HorizontaLDots className="size-6" />
                     )}
                   </h2>
-                  <div className="space-y-6">
-                    {renderMenuItems(deduplicateItems(managerSelfServiceItems), "manager")}
-                    {renderManagerSection("OPERATIONS", "operations")}
-                    {renderManagerSection("PEOPLE & APPROVALS", "people")}
-                    {renderManagerSection("REVIEW", "review")}
-                    {hasManagerArticlesAccess() && renderMenuItems([managerArticlesItem], "manager")}
-                  </div>
+                  {renderEmployeeMenuGroups([
+                    ...managerSelfServiceItems,
+                    ...filteredManagerItems,
+                    ...(hasManagerArticlesAccess() ? [managerArticlesItem] : []),
+                  ], "manager")}
                 </div>
               </div>
             </nav>
