@@ -699,6 +699,25 @@ describe("MyRepairs repair cancellation", () => {
 });
 
 describe("MyRepairs return logistics", () => {
+  it.each([
+    [null, null, true],
+    ["2026-07-26T09:00:00.000Z", "old-version", true],
+    ["2026-07-26T09:00:00.000Z", "return-v1", false],
+  ])("shows the address reminder only when confirmation is missing or outdated (%s, %s)", async (confirmedAt, confirmedVersion, needsConfirmation) => {
+    mocks.repair = repair({
+      return_address_confirmed_at: confirmedAt,
+      return_address_confirmed_version: confirmedVersion,
+    });
+    await renderReadyRepair();
+    const button = screen.getByRole("button", { name: "Return Method" });
+    if (needsConfirmation) {
+      expect(within(button).getByText("!")).toHaveClass("bg-red-600");
+      expect(button).toHaveAttribute("title", "Confirm return address and delivery");
+    } else {
+      expect(within(button).queryByText("!")).not.toBeInTheDocument();
+    }
+  });
+
   it("keeps the selected tab after a reload while preserving unrelated URL parameters", async () => {
     window.history.replaceState({}, "", "/my-repairs?campaign=test#repairs");
     const view = render(<MyRepairs />);
