@@ -14,7 +14,7 @@ import type { PreferredReturnChannel } from './refundPayloadBuilder';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 import { useScrollReveal } from '../Shared/useScrollReveal';
 import { useMaintenance } from '../../../providers/MaintenanceProvider';
-import { Route, X } from 'lucide-react';
+import { Motorbike, X } from 'lucide-react';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -4284,7 +4284,7 @@ const MyRepairs: React.FC = () => {
   const tabBadgeClass =
     'pointer-events-none absolute -right-1 top-1 z-10 min-w-[20px] h-[20px] rounded-full bg-red-600 flex items-center justify-center text-[8px] font-bold leading-none text-white';
   const actionButtonBaseClass =
-    'inline-flex items-center justify-center gap-2 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-6 sm:py-2.5 sm:text-xs sm:tracking-[0.16em]';
+    'inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 sm:px-4 sm:text-xs sm:tracking-[0.16em]';
   const actionButtonPrimaryClass =
     'border-[#16233b] bg-[#16233b] text-white hover:-translate-y-0.5 hover:bg-black focus-visible:ring-[#16233b]/45';
   const actionButtonSecondaryClass =
@@ -4592,11 +4592,11 @@ const MyRepairs: React.FC = () => {
                           <button
                             type="button"
                             onClick={() => setOpenReturnPlanOrderId(order.id)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-300 bg-white text-[#16233b] transition-all duration-300 hover:-translate-y-0.5 hover:border-gray-400 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-[#16233b]/20"
+                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#16233b] bg-[#16233b] text-white shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]/45 focus-visible:ring-offset-2"
                             title="Return delivery plan"
                             aria-label="Open return delivery plan"
                           >
-                            <Route aria-hidden="true" size={18} />
+                            <Motorbike aria-hidden="true" size={24} />
                           </button>
                         )}
 
@@ -5121,7 +5121,7 @@ const MyRepairs: React.FC = () => {
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="mt-4 ml-auto flex w-full flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:gap-3 sm:pt-6 xl:gap-4">
+                    <div className="mt-4 ml-auto flex w-full flex-wrap items-center justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:gap-3 sm:pt-6 xl:gap-4">
                       {latestWarrantyClaimByRepairId[order.id] && (
                         <div className="mr-auto w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 sm:w-auto">
                           <p className="font-semibold">{getWarrantyClaimStatusLabel(latestWarrantyClaimByRepairId[order.id].status)}</p>
