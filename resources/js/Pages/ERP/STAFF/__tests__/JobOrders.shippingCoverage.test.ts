@@ -719,7 +719,10 @@ describe('staff refund visibility', () => {
       return_status: 'received',
       flow_type: 'request_approval',
       payout_amount_value: 2499,
-      evidence_media: ['/storage/refunds/customer-evidence.jpg'],
+      evidence_media: [
+        '/storage/refund-evidence/order-41/customer-evidence.jpg',
+        '/storage/refund-evidence/order-41/opening.mp4',
+      ],
       customer_dispute_evidence: [
         {
           id: 'customer-report-image-1',
@@ -827,8 +830,19 @@ describe('staff refund visibility', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Refund (1)' }));
     fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
 
-    expect(screen.queryByText('Refund Evidence')).not.toBeInTheDocument();
-    expect(screen.queryByAltText('Refund evidence 1')).not.toBeInTheDocument();
+    expect(screen.getByText('Refund Evidence')).toBeInTheDocument();
+    expect(screen.getByAltText('Refund evidence 1')).toHaveAttribute(
+      'src',
+      '/storage/refund-evidence/order-41/customer-evidence.jpg',
+    );
+    expect(screen.getByLabelText('Refund evidence video 2')).toHaveAttribute(
+      'src',
+      '/storage/refund-evidence/order-41/opening.mp4',
+    );
+    expect(screen.getByLabelText('Refund evidence video 2')).toHaveAttribute('controls');
+    fireEvent.click(screen.getByRole('button', { name: 'View refund evidence 1' }));
+    expect(screen.getByRole('dialog', { name: 'Evidence image' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Close evidence image' }));
     expect(screen.getByText('Customer Report Proof')).toBeInTheDocument();
     expect(screen.getByLabelText('opening.mp4')).toHaveAttribute(
       'src',
@@ -836,12 +850,12 @@ describe('staff refund visibility', () => {
     );
     const customerProofTrigger = screen.getByRole('button', { name: 'View customer report proof opening-1.jpg' });
     fireEvent.click(customerProofTrigger);
-    expect(screen.getByRole('dialog', { name: 'Delivery proof image' })).toBeInTheDocument();
-    expect(screen.getByAltText('Enlarged delivery proof')).toHaveAttribute(
+    expect(screen.getByRole('dialog', { name: 'Evidence image' })).toBeInTheDocument();
+    expect(screen.getByAltText('Enlarged evidence image')).toHaveAttribute(
       'src',
       '/api/logistics/delivery-disputes/12/evidence/customer-report-image-1',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Close delivery proof image' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Close evidence image' }));
     expect(screen.getByText('Logistics')).toBeInTheDocument();
     const customerDelivery = screen.getByRole('region', { name: 'Customer delivery' });
     const returnToShop = screen.getByRole('region', { name: 'Return to shop' });
@@ -859,10 +873,10 @@ describe('staff refund visibility', () => {
     const proofTrigger = screen.getByRole('button', { name: 'Return delivery proof 1' });
     expect(proofTrigger).toBeInTheDocument();
     fireEvent.click(proofTrigger);
-    expect(screen.getByRole('dialog', { name: 'Delivery proof image' })).toBeInTheDocument();
-    expect(screen.getByAltText('Enlarged delivery proof')).toHaveAttribute('src', '/api/logistics/proofs/93/file');
-    fireEvent.click(screen.getByRole('button', { name: 'Close delivery proof image' }));
-    expect(screen.queryByRole('dialog', { name: 'Delivery proof image' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Evidence image' })).toBeInTheDocument();
+    expect(screen.getByAltText('Enlarged evidence image')).toHaveAttribute('src', '/api/logistics/proofs/93/file');
+    fireEvent.click(screen.getByRole('button', { name: 'Close evidence image' }));
+    expect(screen.queryByRole('dialog', { name: 'Evidence image' })).not.toBeInTheDocument();
     expect(screen.getByText('No proof submitted yet.')).toBeInTheDocument();
   });
 
@@ -876,7 +890,7 @@ describe('staff refund visibility', () => {
     fireEvent.click((await screen.findAllByTitle('View order details'))[0]);
     fireEvent.click(screen.getByRole('button', { name: 'Return delivery proof 1' }));
 
-    const proofDialog = screen.getByRole('dialog', { name: 'Delivery proof image' });
+    const proofDialog = screen.getByRole('dialog', { name: 'Evidence image' });
     expect(proofDialog.closest('.modal')).toHaveStyle({ zIndex: '1000000' });
   });
 

@@ -215,6 +215,16 @@ class StaffOrderRefundPayloadTest extends TestCase
         }
     }
 
+    public function test_staff_job_orders_initial_props_include_customer_refund_evidence(): void
+    {
+        [, $staff] = $this->refundFixture();
+
+        $this->actingAs($staff, 'user')
+            ->get('/erp/staff/job-orders')
+            ->assertOk()
+            ->assertSee('customer-evidence.jpg');
+    }
+
     public function test_shipment_without_leg_keeps_summary_fields_nullable(): void
     {
         [$shop, $staff, , $order] = $this->refundFixture();

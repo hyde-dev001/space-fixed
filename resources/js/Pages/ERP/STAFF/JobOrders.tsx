@@ -22,6 +22,7 @@ import { canRenderShopModule } from "../../../utils/shopModuleAccess";
 import axios from "axios";
 
 const SHOP_OWNED_LOGISTICS = "Shop-owned logistics";
+const VIDEO_EVIDENCE_PATTERN = /[?&]media_kind=video(?:&|$)|\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i;
 
 type OrderItem = {
   id: number;
@@ -2979,6 +2980,34 @@ export default function JobOrdersPage() {
                     </div>
                   </div>
                 )}
+                {Array.isArray(viewOrder.latest_refund?.evidence_media) && viewOrder.latest_refund.evidence_media.length > 0 && (
+                  <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Refund Evidence</p>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      {viewOrder.latest_refund.evidence_media.map((mediaUrl, index) => VIDEO_EVIDENCE_PATTERN.test(mediaUrl) ? (
+                        <video
+                          key={`${mediaUrl}-${index}`}
+                          controls
+                          preload="metadata"
+                          src={mediaUrl}
+                          aria-label={`Refund evidence video ${index + 1}`}
+                          className="h-28 w-full rounded-lg border border-gray-200 bg-black object-contain dark:border-gray-700"
+                        />
+                      ) : (
+                        <button
+                          key={`${mediaUrl}-${index}`}
+                          type="button"
+                          aria-label={`View refund evidence ${index + 1}`}
+                          aria-haspopup="dialog"
+                          onClick={(event) => openProof(mediaUrl, event.currentTarget)}
+                          className="block w-full overflow-hidden rounded-lg border border-gray-200 text-left dark:border-gray-700"
+                        >
+                          <img src={mediaUrl} alt={`Refund evidence ${index + 1}`} loading="lazy" className="h-28 w-full object-cover" />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="pt-4 border-t border-gray-200 dark:border-gray-700">
                   <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Logistics</p>
                   {!viewOrder.logistics && !legacyCustomerDeliverySummary && !viewOrder.latest_refund?.return_logistics ? (
@@ -3150,19 +3179,19 @@ export default function JobOrdersPage() {
             <div
               role="dialog"
               aria-modal="true"
-              aria-label="Delivery proof image"
+              aria-label="Evidence image"
               className="relative flex h-[min(88dvh,56rem)] items-center justify-center overflow-hidden"
             >
               <button
                 ref={proofCloseButtonRef}
                 type="button"
-                aria-label="Close delivery proof image"
+                aria-label="Close evidence image"
                 onClick={closeProof}
                 className="absolute right-0 top-0 z-10 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-600 bg-gray-800 text-gray-200 transition-colors hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
               >
                 <X aria-hidden="true" size={20} />
               </button>
-              <img src={selectedProofUrl} alt="Enlarged delivery proof" className="max-h-full max-w-full object-contain" />
+              <img src={selectedProofUrl} alt="Enlarged evidence image" className="max-h-full max-w-full object-contain" />
             </div>
           )}
         </Modal>

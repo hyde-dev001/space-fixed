@@ -2714,6 +2714,7 @@ Route::prefix('erp/staff')->name('erp.staff.')->middleware(['auth:user', 'manage
                         'rejected_at' => optional($latestRefund->rejected_at)->toDateTimeString(),
                         'rejection_reason' => $latestRefund->rejection_reason,
                         'flow_type' => (string) ($latestRefund->flow_type ?? ''),
+                        'evidence_media' => is_array($latestRefund->evidence_media) ? $latestRefund->evidence_media : [],
                     ] : null,
                     'items' => $order->items->map(function ($item) {
                         return [

@@ -217,3 +217,7 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 ## 2026-10-08 - Registered warranty configuration access
 
 - Registration may persist legacy display values such as `both (retail & repair)` while seeded records use canonical `both`. Normalize persisted business types through `BusinessAccessControlService` before capability checks; preserve the stored value unless a deliberate data migration is needed.
+
+## 2026-10-08 - Staff refund evidence projection
+
+- Keep `OrderRefund.evidence_media` distinct from `DeliveryDispute.evidence_media`: staff refund assessment needs both the customer's refund-request attachments and any separate delivery-report proof.
