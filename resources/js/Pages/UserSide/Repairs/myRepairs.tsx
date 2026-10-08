@@ -1081,6 +1081,13 @@ const isReturnAddressConfirmationCurrent = (order: RepairOrder): boolean => Bool
   && order.return_address_confirmed_version === order.return_address?.version,
 );
 
+const canConfirmRepairReceive = (order: RepairOrder): boolean => Boolean(
+  (order.status === 'ready_for_pickup' || order.status === 'shipped')
+  && (!order.return_recovery || order.return_recovery.state === 'shop_pickup')
+  && order.pickup_enabled
+  && order.return_logistics_locked_at,
+);
+
 const ReturnDeliveryPlanCard: React.FC<{
   order: RepairOrder;
   onRefresh: () => Promise<unknown>;
@@ -5208,6 +5215,7 @@ const MyRepairs: React.FC = () => {
                         </>
                       )}
                       {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status)
+                        && !canConfirmRepairReceive(order)
                         && (!order.return_recovery || order.return_recovery.state === 'awaiting_payment') && (
                         <button
                           type="button"
@@ -5258,9 +5266,7 @@ const MyRepairs: React.FC = () => {
                             </button>
                           )}
                           {(!order.return_recovery || order.return_recovery.state === 'shop_pickup') && (() => {
-                            const canConfirmReceive = Boolean(
-                              order.pickup_enabled && order.return_logistics_locked_at,
-                            );
+                            const canConfirmReceive = canConfirmRepairReceive(order);
                             const receiveTitle = canConfirmReceive
                               ? 'Confirm only after your repaired shoes are in your hands'
                               : 'Waiting for the shop to record the return handoff';
