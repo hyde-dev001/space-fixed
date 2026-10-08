@@ -14,7 +14,7 @@ import type { PreferredReturnChannel } from './refundPayloadBuilder';
 import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
 import { useScrollReveal } from '../Shared/useScrollReveal';
 import { useMaintenance } from '../../../providers/MaintenanceProvider';
-import { Motorbike, X } from 'lucide-react';
+import { X } from 'lucide-react';
 
 const MAX_REFUND_IMAGE_SIZE_BYTES = 20 * 1024 * 1024;
 const MAX_REFUND_VIDEO_SIZE_BYTES = 256 * 1024 * 1024;
@@ -2493,6 +2493,16 @@ const MyRepairs: React.FC = () => {
     return null;
   };
 
+  const selectTab = (tab: RepairTab) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', tab);
+    params.delete('highlightRepair');
+    params.delete('highlight');
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+    setHighlightRepairId(null);
+    setSelectedTab(tab);
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requestedTab = params.get('tab') || params.get('status');
@@ -4366,7 +4376,7 @@ const MyRepairs: React.FC = () => {
             {REPAIR_TABS.map((tab) => (
               <button
                 key={tab}
-                onClick={() => setSelectedTab(tab)}
+                onClick={() => selectTab(tab)}
                 className={`${mobileHeroFilterButtonBaseClass} ${
                   selectedTab === tab
                     ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4383,7 +4393,7 @@ const MyRepairs: React.FC = () => {
           {/* Desktop Tabs */}
           <div data-scroll-reveal className="scroll-reveal mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:mb-12 xl:flex xl:gap-3 xl:pt-2">
             <button
-              onClick={() => setSelectedTab('new_request')}
+              onClick={() => selectTab('new_request')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'new_request'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4398,7 +4408,7 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('pending')}
+              onClick={() => selectTab('pending')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'pending'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4413,7 +4423,7 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('received')}
+              onClick={() => selectTab('received')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'received'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4428,7 +4438,7 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('in_progress')}
+              onClick={() => selectTab('in_progress')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'in_progress'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4443,7 +4453,7 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('ready_for_pickup')}
+              onClick={() => selectTab('ready_for_pickup')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'ready_for_pickup'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4458,7 +4468,7 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('picked_up')}
+              onClick={() => selectTab('picked_up')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'picked_up'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4473,7 +4483,7 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('return_refund')}
+              onClick={() => selectTab('return_refund')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'return_refund'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4488,7 +4498,7 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('cancelled')}
+              onClick={() => selectTab('cancelled')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'cancelled'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4503,7 +4513,7 @@ const MyRepairs: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('rejected')}
+              onClick={() => selectTab('rejected')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'rejected'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -4586,19 +4596,6 @@ const MyRepairs: React.FC = () => {
                         </span>
 
                         <div className="flex items-center justify-end gap-2">
-
-                        {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status)
-                          && (!order.return_recovery || order.return_recovery.state === 'awaiting_payment') && (
-                          <button
-                            type="button"
-                            onClick={() => setOpenReturnPlanOrderId(order.id)}
-                            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#16233b] bg-[#16233b] text-white shadow-sm transition-all duration-300 hover:-translate-y-0.5 hover:bg-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16233b]/45 focus-visible:ring-offset-2"
-                            title="Return delivery plan"
-                            aria-label="Open return delivery plan"
-                          >
-                            <Motorbike aria-hidden="true" size={24} />
-                          </button>
-                        )}
 
                         {(['repairer_accepted', 'pending'].includes(order.status)) &&
                           (getIntakeMethod(order) === 'walk_in' || order.conversation_id) &&
@@ -5207,6 +5204,16 @@ const MyRepairs: React.FC = () => {
                             </button>
                           )}
                         </>
+                      )}
+                      {(['completed', 'ready_for_pickup', 'shipped'] as RepairStatus[]).includes(order.status)
+                        && (!order.return_recovery || order.return_recovery.state === 'awaiting_payment') && (
+                        <button
+                          type="button"
+                          onClick={() => setOpenReturnPlanOrderId(order.id)}
+                          className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
+                        >
+                          Return Method
+                        </button>
                       )}
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
                         <>

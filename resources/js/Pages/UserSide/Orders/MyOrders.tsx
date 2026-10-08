@@ -381,6 +381,16 @@ const MyOrders: React.FC = () => {
     return null;
   };
 
+  const selectTab = (tab: OrderTab) => {
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', tab);
+    params.delete('highlightOrder');
+    params.delete('highlight');
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}?${params.toString()}${window.location.hash}`);
+    setHighlightOrderId(null);
+    setSelectedTab(tab);
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requestedTab = params.get('tab') || params.get('status');
@@ -2149,7 +2159,7 @@ const MyOrders: React.FC = () => {
               {ORDER_TABS.map((tab) => (
                 <button
                   key={tab}
-                  onClick={() => setSelectedTab(tab)}
+                  onClick={() => selectTab(tab)}
                   className={`${mobileHeroFilterButtonBaseClass} ${
                     selectedTab === tab
                       ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -2167,7 +2177,7 @@ const MyOrders: React.FC = () => {
           {/* Tabs */}
           <div data-scroll-reveal className="scroll-reveal mb-6 hidden w-full gap-2 overflow-x-auto pb-2 pt-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden xl:mb-12 xl:flex xl:gap-3 xl:pt-2">
             <button
-              onClick={() => setSelectedTab('all')}
+              onClick={() => selectTab('all')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'all'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -2182,7 +2192,7 @@ const MyOrders: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('pending')}
+              onClick={() => selectTab('pending')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'pending'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -2197,7 +2207,7 @@ const MyOrders: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('processing')}
+              onClick={() => selectTab('processing')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'processing'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -2212,7 +2222,7 @@ const MyOrders: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('shipped')}
+              onClick={() => selectTab('shipped')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'shipped'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -2227,7 +2237,7 @@ const MyOrders: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('completed')}
+              onClick={() => selectTab('completed')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'completed'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
@@ -2242,7 +2252,7 @@ const MyOrders: React.FC = () => {
               )}
             </button>
             <button
-              onClick={() => setSelectedTab('return_refund')}
+              onClick={() => selectTab('return_refund')}
               className={`${tabButtonBaseClass} ${
                 selectedTab === 'return_refund'
                   ? 'border-[#16233b] bg-[#16233b] text-white shadow-[0_12px_28px_-18px_rgba(22,35,59,0.65)]'
