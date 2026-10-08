@@ -1075,6 +1075,12 @@ const CustomerReturnRecoveryActions: React.FC<{
   );
 };
 
+const isReturnAddressConfirmationCurrent = (order: RepairOrder): boolean => Boolean(
+  order.return_address_confirmed_at
+  && order.return_address_confirmed_version
+  && order.return_address_confirmed_version === order.return_address?.version,
+);
+
 const ReturnDeliveryPlanCard: React.FC<{
   order: RepairOrder;
   onRefresh: () => Promise<unknown>;
@@ -1140,11 +1146,7 @@ const ReturnDeliveryPlanCard: React.FC<{
   const currentCoverageKey = method === 'shop_delivery' && shopId && effectiveAddressId
     ? ['shop_delivery', getCoverageAddressKey(effectiveAddress, effectiveAddressId)].join(':')
     : null;
-  const serverConfirmationIsCurrent = Boolean(
-    order.return_address_confirmed_at
-    && order.return_address_confirmed_version
-    && order.return_address_confirmed_version === order.return_address?.version,
-  );
+  const serverConfirmationIsCurrent = isReturnAddressConfirmationCurrent(order);
   const isConfirmed = confirmedLocally || (!dirty && !planSavedLocally && serverConfirmationIsCurrent);
   const serverOutstandingBalance = getOrderOutstandingBalance(order);
   const serverDeliveryAmount = Number(order.collection_summary?.delivery_amount ?? 0);
@@ -5210,9 +5212,18 @@ const MyRepairs: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => setOpenReturnPlanOrderId(order.id)}
-                          className={`${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
+                          className={`relative ${actionButtonBaseClass} ${actionButtonPrimaryClass}`}
+                          title={isReturnAddressConfirmationCurrent(order) ? undefined : 'Confirm return address and delivery'}
                         >
                           Return Method
+                          {!isReturnAddressConfirmationCurrent(order) && (
+                            <span
+                              aria-hidden="true"
+                              className="absolute -right-2 -top-2 inline-flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-xs font-bold leading-none tracking-normal text-white ring-2 ring-white"
+                            >
+                              !
+                            </span>
+                          )}
                         </button>
                       )}
                       {(order.status === 'ready_for_pickup' || order.status === 'shipped') && (
