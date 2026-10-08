@@ -690,7 +690,7 @@ function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
     <ol data-testid="delivery-sequence" className="mt-4 space-y-2 border-t border-slate-200 pt-4 dark:border-slate-700">
       {orderedDeliveries(item.deliveries).map((delivery, index) => {
         const contact = deliveryContact(delivery);
-        const sequence = delivery.stop_sequence ?? index + 1;
+        const sequence = index + 1;
         const symbol = delivery.status === 'delivered'
           ? '✓'
           : ['delivery_attempted', 'proof_correction_required'].includes(delivery.status)
@@ -1625,7 +1625,11 @@ function CurrentDeliveryCard({
   }
 
   const progress = completedProgress(item.deliveries);
-  const actionable = nextActionableDelivery(item.deliveries);
+  const ordered = orderedDeliveries(item.deliveries);
+  const actionable = nextActionableDelivery(ordered);
+  const actionableSequence = actionable
+    ? ordered.findIndex(({ id }) => id === actionable.id) + 1
+    : null;
   const isReturnToShop = actionable?.leg_type === 'return_to_shop';
   const deliveryLabel = logisticsDeliveryLabel(actionable ?? item);
 
@@ -1672,7 +1676,7 @@ function CurrentDeliveryCard({
           {actionable ? (
             <>
               <p className="mb-3 text-sm font-bold text-blue-700 dark:text-blue-300">
-                Current delivery · {actionable.stop_sequence ?? 1} of {item.deliveries.length}
+                Current delivery · {actionableSequence} of {item.deliveries.length}
               </p>
               <ResolutionNotice delivery={actionable} />
               <DeliveryContact delivery={actionable} />

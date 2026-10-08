@@ -6,6 +6,7 @@ import {
   arrivalStatusText,
   matchesBusiness,
   nextActionableDelivery,
+  orderedDeliveries,
 } from '../riderDeliveryPresentation';
 
 describe('rider delivery presentation rules', () => {
@@ -32,6 +33,27 @@ describe('rider delivery presentation rules', () => {
     expect(nextActionableDelivery([
       { id: 1, status: 'proof_correction_required', rider_progress_state: 'proof_action_required' },
     ] as any)).toBeUndefined();
+  });
+
+  it('continues batch deliveries before a return awaiting dispatcher confirmation', () => {
+    const stops = [
+      { id: 1, leg_type: 'return_to_shop', status: 'in_transit', rider_progress_state: 'active', stop_sequence: 1 },
+      { id: 2, leg_type: 'outbound', status: 'in_transit', rider_progress_state: 'active', stop_sequence: 2 },
+      { id: 3, leg_type: 'outbound', status: 'in_transit', rider_progress_state: 'active', stop_sequence: 3 },
+    ] as any;
+
+    expect(orderedDeliveries(stops).map(({ id }) => id)).toEqual([2, 3, 1]);
+    expect(nextActionableDelivery(stops)?.id).toBe(2);
+    expect(nextActionableDelivery([
+      stops[0],
+      { ...stops[1], status: 'delivered', rider_progress_state: 'rider_released' },
+      stops[2],
+    ])?.id).toBe(3);
+    expect(nextActionableDelivery([
+      stops[0],
+      { ...stops[1], status: 'delivered', rider_progress_state: 'rider_released' },
+      { ...stops[2], status: 'delivered', rider_progress_state: 'rider_released' },
+    ])?.id).toBe(1);
   });
 
   it('treats a scheduled pickup as the next rider action', () => {

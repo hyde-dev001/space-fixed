@@ -626,6 +626,7 @@ class RiderLocationService
                 ->where('assignment_type', 'internal_rider')
                 ->where('rider_profile_id', $assignment->rider_profile_id)
                 ->whereIn('status', ['assigned', 'accepted']))
+            ->orderByRaw("CASE WHEN leg_type = 'return_to_shop' THEN 1 ELSE 0 END")
             ->orderByRaw('stop_sequence IS NULL')
             ->orderBy('stop_sequence')
             ->orderBy('id')
