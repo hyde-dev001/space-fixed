@@ -700,6 +700,23 @@ describe("MyRepairs repair cancellation", () => {
 
 describe("MyRepairs return logistics", () => {
   it.each([
+    ["ready_for_pickup", true, "2026-07-26T10:00:00.000Z", true],
+    ["shipped", true, "2026-07-26T10:00:00.000Z", true],
+    ["ready_for_pickup", false, "2026-07-26T10:00:00.000Z", false],
+    ["shipped", true, null, false],
+  ] as const)("hides Return Method only when Received is enabled (%s, %s, %s)", async (status, pickupEnabled, lockedAt, receivedEnabled) => {
+    mocks.repair = repair({ status, pickup_enabled: pickupEnabled, return_logistics_locked_at: lockedAt });
+    await renderReadyRepair();
+    if (receivedEnabled) {
+      expect(screen.getByTitle("Confirm only after your repaired shoes are in your hands")).toBeEnabled();
+      expect(screen.queryByRole("button", { name: "Return Method" })).not.toBeInTheDocument();
+    } else {
+      expect(screen.getByRole("button", { name: "Awaiting handoff" })).toBeDisabled();
+      expect(screen.getByRole("button", { name: "Return Method" })).toBeInTheDocument();
+    }
+  });
+
+  it.each([
     [null, null, true],
     ["2026-07-26T09:00:00.000Z", "old-version", true],
     ["2026-07-26T09:00:00.000Z", "return-v1", false],
