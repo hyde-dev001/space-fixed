@@ -212,6 +212,7 @@ const trackingShipment = (id: number, purpose: string, message: string) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
   window.history.replaceState({}, "", "/my-repairs?tab=ready_for_pickup");
   const storage = {
     getItem: vi.fn(() => null),
@@ -295,7 +296,7 @@ const renderReadyRepair = async () => {
 };
 
 const openReturnDeliveryPlan = () => {
-  fireEvent.click(screen.getByRole("button", { name: "Open return delivery plan" }));
+  fireEvent.click(screen.getByRole("button", { name: "Return Method" }));
   return screen.getByRole("dialog", { name: "Return delivery plan" });
 };
 
@@ -698,12 +699,51 @@ describe("MyRepairs repair cancellation", () => {
 });
 
 describe("MyRepairs return logistics", () => {
+  it("keeps the selected tab after a reload while preserving unrelated URL parameters", async () => {
+    window.history.replaceState({}, "", "/my-repairs?campaign=test#repairs");
+    const view = render(<MyRepairs />);
+    const readyTabs = await screen.findAllByRole("button", { name: /Ready for Pickup/i });
+    fireEvent.click(readyTabs[0]);
+    expect(new URLSearchParams(window.location.search).get("tab")).toBe("ready_for_pickup");
+    expect(new URLSearchParams(window.location.search).get("campaign")).toBe("test");
+    expect(window.location.hash).toBe("#repairs");
+    view.unmount();
+
+    render(<MyRepairs />);
+    expect(await screen.findByRole("button", { name: "Return Method" })).toBeInTheDocument();
+    const pendingTabs = screen.getAllByRole("button", { name: /^Pending/i });
+    fireEvent.click(pendingTabs[pendingTabs.length - 1]);
+    expect(new URLSearchParams(window.location.search).get("tab")).toBe("pending");
+  });
+
+  it.each([
+    ["invalid", /^New Request/i],
+    ["pickup", /Ready for Pickup/i],
+  ])("handles the existing tab URL %s", async (tab, label) => {
+    window.history.replaceState({}, "", `/my-repairs?tab=${tab}`);
+    render(<MyRepairs />);
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith("/api/customer/repairs", expect.anything()));
+    expect(screen.getAllByRole("button", { name: label })[0]).toHaveClass("bg-[#16233b]");
+  });
+
+  it("clears a notification highlight when the customer selects another tab", async () => {
+    window.history.replaceState({}, "", "/my-repairs?highlightRepair=77&tab=pending");
+    render(<MyRepairs />);
+    await screen.findByRole("button", { name: "Return Method" });
+    fireEvent.click(screen.getAllByRole("button", { name: /^Pending/i })[0]);
+    expect(new URLSearchParams(window.location.search).get("highlightRepair")).toBeNull();
+    expect(new URLSearchParams(window.location.search).get("tab")).toBe("pending");
+  });
+
   it("shows the server return plan, exact amount, and purpose-specific tracking events", async () => {
     await renderReadyRepair();
     expect(screen.queryByRole("dialog", { name: "Return delivery plan" })).not.toBeInTheDocument();
     const readyStatus = screen.getByTitle(/Ready for Pickup/i);
-    const returnPlanButton = screen.getByRole("button", { name: "Open return delivery plan" });
-    expect(readyStatus.parentElement).toContainElement(returnPlanButton);
+    const returnPlanButton = screen.getByRole("button", { name: "Return Method" });
+    expect(readyStatus.parentElement).not.toContainElement(returnPlanButton);
+    expect(returnPlanButton).toHaveTextContent("Return Method");
+    expect(returnPlanButton.querySelector("svg")).toBeNull();
+    expect(returnPlanButton.parentElement).toContainElement(screen.getByRole("button", { name: /Awaiting handoff/i }));
 
     const returnPlanDialog = openReturnDeliveryPlan();
     expect(returnPlanDialog.parentElement).toHaveClass("fixed", "inset-0", "z-[100]");

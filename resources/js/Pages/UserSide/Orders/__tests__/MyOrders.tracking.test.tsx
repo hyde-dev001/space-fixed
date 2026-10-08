@@ -71,6 +71,8 @@ vi.mock('../../Shared/UserModal', () => ({ default: { fire: swalFireMock } }));
 
 describe('MyOrders delivery tracking', () => {
   beforeEach(() => {
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: vi.fn() });
+    window.history.replaceState({}, '', '/my-orders');
     swalFireMock.mockReset();
     Object.assign(order, {
       status: 'processing',
@@ -118,6 +120,42 @@ describe('MyOrders delivery tracking', () => {
       }),
     );
     expect(screen.getByText(/July 18, 2026.*Morning/)).toBeInTheDocument();
+  });
+
+  it('keeps the selected tab after a reload while preserving unrelated URL parameters', async () => {
+    window.history.replaceState({}, '', '/my-orders?campaign=test#orders');
+    const view = render(<MyOrders />);
+    const processingTabs = screen.getAllByRole('button', { name: /Processing/i });
+    fireEvent.click(processingTabs[0]);
+    expect(new URLSearchParams(window.location.search).get('tab')).toBe('processing');
+    expect(new URLSearchParams(window.location.search).get('campaign')).toBe('test');
+    expect(window.location.hash).toBe('#orders');
+    view.unmount();
+
+    render(<MyOrders />);
+    expect(screen.getAllByRole('button', { name: /Processing/i })[0]).toHaveClass('bg-[#16233b]');
+    expect(screen.getAllByText('Urban Kicks Test Runner')[0]).toBeInTheDocument();
+    const allTabs = screen.getAllByRole('button', { name: /^All/i });
+    fireEvent.click(allTabs[allTabs.length - 1]);
+    expect(new URLSearchParams(window.location.search).get('tab')).toBe('all');
+  });
+
+  it.each([
+    ['invalid', /^All Orders/i],
+    ['to_ship', /^Shipped/i],
+  ])('handles the existing tab URL %s', (tab, label) => {
+    window.history.replaceState({}, '', `/my-orders?tab=${tab}`);
+    render(<MyOrders />);
+    expect(screen.getAllByRole('button', { name: label })[0]).toHaveClass('bg-[#16233b]');
+  });
+
+  it('clears a notification highlight when the customer selects another tab', () => {
+    window.history.replaceState({}, '', '/my-orders?highlightOrder=7&tab=pending');
+    render(<MyOrders />);
+    expect(screen.getAllByRole('button', { name: /Processing/i })[0]).toHaveClass('bg-[#16233b]');
+    fireEvent.click(screen.getAllByRole('button', { name: /^Pending/i })[0]);
+    expect(new URLSearchParams(window.location.search).get('highlightOrder')).toBeNull();
+    expect(new URLSearchParams(window.location.search).get('tab')).toBe('pending');
   });
 
   it('opens return tracking in the same modal with the return shipment id', async () => {
