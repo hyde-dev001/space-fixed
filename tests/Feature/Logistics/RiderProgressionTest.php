@@ -68,6 +68,30 @@ class RiderProgressionTest extends TestCase
         $this->assertSame('in_progress', $batch->fresh()->status);
     }
 
+    public function test_return_waiting_for_dispatcher_confirmation_does_not_block_batch_deliveries(): void
+    {
+        [, $rider, $batch] = $this->batchFixture();
+        $return = $this->batchLeg($batch, $rider, 1, 'in_transit', RiderProgressState::ACTIVE);
+        $return->update(['leg_type' => 'return_to_shop']);
+        $firstDelivery = $this->batchLeg($batch, $rider, 2, 'in_transit', RiderProgressState::ACTIVE);
+        $secondDelivery = $this->batchLeg($batch, $rider, 3, 'in_transit', RiderProgressState::ACTIVE);
+        $guard = app(RiderActiveWorkGuard::class);
+
+        $guard->assertCanAdvanceLeg($rider, $firstDelivery);
+        $firstDelivery->update([
+            'status' => 'delivered',
+            'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
+        ]);
+        $guard->assertCanAdvanceLeg($rider, $secondDelivery);
+        $secondDelivery->update([
+            'status' => 'delivered',
+            'rider_progress_state' => RiderProgressState::RIDER_RELEASED,
+        ]);
+        $guard->assertCanAdvanceLeg($rider, $return);
+
+        $this->assertSame('in_progress', $batch->fresh()->status);
+    }
+
     private function batchFixture(): array
     {
         $shop = ShopOwner::factory()->create();

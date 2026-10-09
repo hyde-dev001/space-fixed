@@ -133,6 +133,69 @@ class BatchDispatchServiceTest extends TestCase
         $this->assertSame(['assigned'], $started->legs->pluck('status.value')->unique()->values()->all());
     }
 
+    public function test_mixed_batches_keep_returns_after_delivery_stops_when_created_or_reordered(): void
+    {
+        $shop = ShopOwner::factory()->withLogistics()->create(['business_type' => 'retail']);
+        LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], [
+            'operating_days' => [1, 2, 3, 4, 5, 6, 7],
+            'blackout_dates' => [],
+        ]);
+        $date = now()->addDay()->toDateString();
+        $deliveryLegs = collect([1, 2])->map(fn () => ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'source_type' => 'order',
+                'purpose' => 'retail_delivery',
+            ])->id,
+            'scheduled_delivery_date' => $date,
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]));
+        $returnLeg = ShipmentLeg::factory()->create([
+            'shipment_id' => Shipment::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'source_type' => 'order_refund',
+                'purpose' => 'refund_return',
+            ])->id,
+            'leg_type' => 'return_to_shop',
+            'scheduled_delivery_date' => $date,
+            'delivery_window' => 'morning',
+            'schedule_status' => 'scheduled',
+            'status' => 'pending',
+        ]);
+        $service = app(BatchDispatchService::class);
+
+        $batch = $service->createDraft($shop, $date, 'morning', [
+            $returnLeg->id,
+            $deliveryLegs[1]->id,
+            $deliveryLegs[0]->id,
+        ]);
+
+        $this->assertSame(
+            [$deliveryLegs[1]->id, $deliveryLegs[0]->id, $returnLeg->id],
+            $batch->legs->pluck('id')->all(),
+        );
+
+        $reordered = $service->replaceStops($batch, [
+            $returnLeg->id,
+            $deliveryLegs[0]->id,
+            $deliveryLegs[1]->id,
+        ]);
+
+        $this->assertSame(
+            [$deliveryLegs[0]->id, $deliveryLegs[1]->id, $returnLeg->id],
+            $reordered->legs->pluck('id')->all(),
+        );
+
+        $restored = $service->restore($service->cancel($reordered, 'Rebuild the rider route.'));
+
+        $this->assertSame(
+            [$deliveryLegs[0]->id, $deliveryLegs[1]->id, $returnLeg->id],
+            $restored->legs->pluck('id')->all(),
+        );
+    }
+
     public function test_batch_offer_rejects_an_unlinked_employee_rider(): void
     {
         $shop = ShopOwner::factory()->withLogistics()->create(['registration_type' => 'company', 'business_type' => 'retail']);

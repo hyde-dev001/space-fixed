@@ -3,6 +3,7 @@
 namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryBatch;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -61,6 +62,43 @@ class RiderLocationApiTest extends TestCase
             'rider_profile_id' => $leg->latestAssignment->rider_profile_id,
             'delivery_assignment_id' => $leg->latestAssignment->id,
         ]);
+    }
+
+    public function test_delivery_location_remains_available_before_a_pending_return_stop(): void
+    {
+        [$leg, $rider, $shop] = $this->fixture();
+        $profile = $leg->latestAssignment->riderProfile;
+        $batch = DeliveryBatch::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'rider_profile_id' => $profile->id,
+            'status' => 'in_progress',
+        ]);
+        $leg->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => 2]);
+        $returnShipment = Shipment::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'source_type' => 'order_refund',
+            'purpose' => 'refund_return',
+            'status' => 'active',
+        ]);
+        $return = ShipmentLeg::factory()->create([
+            'shipment_id' => $returnShipment->id,
+            'leg_type' => 'return_to_shop',
+            'status' => 'in_transit',
+            'rider_progress_state' => 'active',
+            'delivery_batch_id' => $batch->id,
+            'stop_sequence' => 1,
+            'picked_up_at' => now()->subMinutes(5),
+            'origin_snapshot' => ['type' => 'customer', 'name' => 'Customer'],
+            'destination_snapshot' => ['type' => 'shop', 'name' => 'Shop'],
+        ]);
+        DeliveryAssignment::factory()->create([
+            'shipment_leg_id' => $return->id,
+            'rider_profile_id' => $profile->id,
+            'assignment_type' => 'internal_rider',
+            'status' => 'accepted',
+        ]);
+
+        $this->postLocation($leg, $rider)->assertJsonPath('accepted', true);
     }
 
     public function test_accepts_a_valid_coordinate_when_desktop_gps_reports_accuracy_above_the_default_threshold(): void

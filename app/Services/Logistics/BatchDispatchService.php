@@ -11,6 +11,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use App\Support\Logistics\BatchStopSnapshot;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -70,8 +71,8 @@ class BatchDispatchService
                 'capacity' => $capacity, 'assigned_stop_count' => $legs->count(),
                 'dispatcher_override_reason' => $overrideReason,
             ]);
-            foreach ($legIds as $index => $id) {
-                $legs->firstWhere('id', $id)->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1]);
+            foreach ($this->stopsWithReturnsLast($legIds, $legs) as $index => $leg) {
+                $leg->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1]);
             }
             $this->syncStopSnapshot($batch);
 
@@ -151,8 +152,8 @@ class BatchDispatchService
             }
             $shop = ShopOwner::query()->whereKey($batch->shop_owner_id)->lockForUpdate()->firstOrFail();
             $this->validateBatchComposition($legs, $shop);
-            foreach ($legIds as $index => $id) {
-                $legs->firstWhere('id', $id)->update(['stop_sequence' => $index + 1]);
+            foreach ($this->stopsWithReturnsLast($legIds, $legs) as $index => $leg) {
+                $leg->update(['stop_sequence' => $index + 1]);
             }
             $this->syncStopSnapshot($batch);
 
@@ -345,8 +346,8 @@ class BatchDispatchService
                 throw ValidationException::withMessages(['batch' => 'One or more stops are no longer available for restoration.']);
             }
             $this->validateBatchComposition($legs, $shop);
-            foreach ($legIds as $index => $id) {
-                $legs->firstWhere('id', $id)->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1]);
+            foreach ($this->stopsWithReturnsLast($legIds->all(), $legs) as $index => $leg) {
+                $leg->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1]);
             }
             $batch->update([
                 'status' => 'draft', 'rider_profile_id' => null, 'assigned_stop_count' => $legIds->count(),
@@ -400,6 +401,18 @@ class BatchDispatchService
         $batch->update(['stop_snapshot' => BatchStopSnapshot::fromLegs(
             $batch->legs()->with('shipment')->orderBy('stop_sequence')->get()
         )]);
+    }
+
+    /**
+     * @param  Collection<int, ShipmentLeg>  $legs
+     * @return Collection<int, ShipmentLeg>
+     */
+    private function stopsWithReturnsLast(array $legIds, Collection $legs): Collection
+    {
+        return collect($legIds)
+            ->map(fn ($id) => $legs->firstWhere('id', $id))
+            ->sortBy(fn (ShipmentLeg $leg) => $leg->leg_type === 'return_to_shop')
+            ->values();
     }
 
     private function riderTransition(DeliveryBatch $batch, RiderProfile $rider, string $from, callable $change): DeliveryBatch

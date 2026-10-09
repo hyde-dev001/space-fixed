@@ -40,6 +40,7 @@ const riderCanProgress = (delivery: TrackingShipmentLeg) =>
 export const orderedDeliveries = (deliveries: TrackingShipmentLeg[]) =>
   [...deliveries].sort(
     (a, b) =>
+      Number(a.leg_type === 'return_to_shop') - Number(b.leg_type === 'return_to_shop') ||
       (a.stop_sequence ?? Number.MAX_SAFE_INTEGER) -
         (b.stop_sequence ?? Number.MAX_SAFE_INTEGER) ||
       a.id - b.id,
