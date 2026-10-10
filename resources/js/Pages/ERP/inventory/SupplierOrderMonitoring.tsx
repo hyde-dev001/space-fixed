@@ -98,10 +98,12 @@ export default function SupplierOrderMonitoring() {
 			</div>
 
 			{viewingOrder && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 erp-modal-backdrop">
-				<div className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-5 shadow-xl dark:bg-gray-900">
-					<div className="mb-4 flex items-center justify-between"><div><h2 className="text-xl font-semibold">{viewingOrder.po_number}</h2><p className="text-sm text-gray-500">{viewingOrder.supplier?.name} · {label(viewingOrder.status)}</p></div><button type="button" onClick={() => setViewingOrder(null)} aria-label="Close" className="text-2xl text-gray-500">×</button></div>
+				<div role="dialog" aria-modal="true" aria-labelledby="supplier-order-title" className="max-h-[92dvh] w-full max-w-[1440px] overflow-y-auto rounded-2xl bg-white p-4 shadow-xl dark:bg-gray-900 sm:p-6 lg:p-8">
+					<div className="mb-6 flex items-center justify-between gap-4"><div><h2 id="supplier-order-title" className="text-xl font-semibold">{viewingOrder.po_number}</h2><p className="mt-1 text-sm text-gray-500">{viewingOrder.supplier?.name} · {label(viewingOrder.status)}</p></div><button type="button" onClick={() => setViewingOrder(null)} aria-label="Close" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-2xl text-gray-500 hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:hover:bg-gray-800">×</button></div>
+					<div className="space-y-6">
 					<PurchaseOrderReceiptPanel order={viewingOrder} canReceive={canReceivePurchaseOrders} canVoid={false} onChanged={refreshViewingOrder} />
 					<SupplierAdjustmentsPanel order={viewingOrder} canReport={canReportSupplierIssues} canManage={canManageSupplierAdjustments} onChanged={refreshViewingOrder} />
+					</div>
 				</div>
 			</div>}
 		</AppLayoutERP>

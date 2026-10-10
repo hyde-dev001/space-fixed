@@ -232,14 +232,14 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 	};
 
 	return (
-		<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 space-y-4">
+		<div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-4 sm:p-6 space-y-6">
 			<div>
 				<h3 className="text-sm font-semibold text-gray-900 dark:text-white">Receiving</h3>
 				<p className="text-xs text-gray-500">Record actual arrivals. Defective units do not enter usable stock.</p>
 			</div>
 
 			<div className="overflow-x-auto">
-				<table className="min-w-full text-sm">
+				<table className="w-full min-w-[1100px] text-sm [&_th]:whitespace-nowrap [&_th]:px-3 [&_th]:py-3 [&_td]:px-3 [&_td]:py-4">
 					<thead><tr className="text-left text-xs text-gray-500"><th className="py-2 pr-3">Item</th><th className="px-2">Ordered</th><th className="px-2">Accounted</th><th className="px-2">Accepted</th><th className="px-2">Defective</th><th className="px-2">Unresolved</th>{canReceive && <><th className="px-2">Received now</th><th className="px-2">Defective now</th></>}</tr></thead>
 					<tbody className="divide-y divide-gray-200 dark:divide-gray-700">
 						{(order.items ?? []).map((item) => {
@@ -250,31 +250,31 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 			return (
 			<Fragment key={item.id}>
 			<tr>
-								<td className="py-2 pr-3 text-gray-900 dark:text-white">{item.product_name}{perSize && <div className="text-xs text-gray-500">{eligible.map((size) => `${size.size_system ?? "US"} ${size.size}`).join(", ")} · {perSizeLimit} each</div>}</td>
+								<td className="min-w-56 max-w-72 py-4 pr-4 text-gray-900 dark:text-white">{item.product_name}{perSize && <div className="text-xs text-gray-500">{eligible.map((size) => `${size.size_system ?? "US"} ${size.size}`).join(", ")} · {perSizeLimit} each</div>}</td>
 								<td className="px-2">{item.ordered_quantity}</td><td className="px-2">{summary?.accounted_quantity ?? 0}</td><td className="px-2">{summary?.final_payable_quantity ?? 0}</td><td className="px-2">{summary?.defective_quantity ?? 0}</td><td className="px-2">{summary?.still_unresolved_quantity ?? item.ordered_quantity}</td>
 										{canReceive && <>
-										<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Received ${name}`} type="number" min="0" max={perSizeLimit} step="1" value={sizeQuantities[key]?.received ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "received", event.target.value, perSizeLimit)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Received ${item.product_name}`} type="number" min="0" max={item.ordered_quantity} step="1" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value, item.ordered_quantity)} className="w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
-										<td className="px-2">{perSize ? <div className="space-y-1">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Defective ${name}`} type="number" min="0" max={perSizeLimit} step="1" value={sizeQuantities[key]?.defective ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "defective", event.target.value, perSizeLimit)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Defective ${item.product_name}`} type="number" min="0" max={item.ordered_quantity} step="1" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value, item.ordered_quantity)} className="block w-20 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
+										<td className="px-2">{perSize ? <div className="space-y-2">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="w-12 shrink-0 whitespace-nowrap text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Received ${name}`} type="number" min="0" max={perSizeLimit} step="1" value={sizeQuantities[key]?.received ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "received", event.target.value, perSizeLimit)} className="block min-h-11 w-24 shrink-0 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Received ${item.product_name}`} type="number" min="0" max={item.ordered_quantity} step="1" value={quantities[item.id]?.received ?? ""} onChange={(event) => setQuantity(item.id, "received", event.target.value, item.ordered_quantity)} className="min-h-11 w-24 shrink-0 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
+										<td className="px-2">{perSize ? <div className="space-y-2">{eligible.map((size) => { const key = `${item.id}:${size.id}`; const sizeLabel = `${size.size_system ?? "US"} ${size.size}`; const name = `${item.product_name} ${sizeLabel}`; return <label key={size.id} className="flex items-center gap-2"><span className="w-12 shrink-0 whitespace-nowrap text-xs text-gray-500">{sizeLabel}</span><input aria-label={`Defective ${name}`} type="number" min="0" max={perSizeLimit} step="1" value={sizeQuantities[key]?.defective ?? ""} onChange={(event) => setSizeQuantity(item.id, size.id, "defective", event.target.value, perSizeLimit)} className="block min-h-11 w-24 shrink-0 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" /></label>; })}</div> : <input aria-label={`Defective ${item.product_name}`} type="number" min="0" max={item.ordered_quantity} step="1" value={quantities[item.id]?.defective ?? ""} onChange={(event) => setQuantity(item.id, "defective", event.target.value, item.ordered_quantity)} className="block min-h-11 w-24 shrink-0 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-2 py-1" />}</td>
 									</>}
 									</tr>
 									{canReceive && ((perSize
 										? eligible.reduce((sum, size) => sum + Number(sizeQuantities[`${item.id}:${size.id}`]?.defective || 0), 0)
 										: Number(quantities[item.id]?.defective || 0)) > 0) && <tr key={`${item.id}-defect-details`}>
-										<td colSpan={8} className="bg-amber-50/70 px-3 py-3 dark:bg-amber-950/20">
-											<fieldset className="grid grid-cols-1 gap-3 md:grid-cols-3">
-												<legend className="sr-only">Defect details for {item.product_name}</legend>
-												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect category {item.product_name}
-													<select aria-label={`Defect category ${item.product_name}`} value={defectDetails[item.id]?.reason_category ?? ""} onChange={(event) => setDefectDetail(item.id, "reason_category", event.target.value)} className="mt-1 block w-full rounded border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-800">
+										<td colSpan={8} className="bg-amber-50/70 px-4 py-5 dark:bg-amber-950/20">
+											<fieldset className="grid min-w-0 max-w-[calc(100vw-8rem)] grid-cols-1 gap-6 sm:max-w-[calc(100vw-10rem)] lg:max-w-none lg:grid-cols-[1fr_1.2fr_1.2fr]">
+												<legend className="mb-4 text-sm font-semibold text-gray-900 dark:text-white">Defect details for {item.product_name}</legend>
+												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect category
+													<select aria-label={`Defect category ${item.product_name}`} value={defectDetails[item.id]?.reason_category ?? ""} onChange={(event) => setDefectDetail(item.id, "reason_category", event.target.value)} className="mt-2 block min-h-11 w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-800">
 														<option value="">Choose category</option>
 														{defectCategories.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}
 													</select>
 												</label>
-												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect notes {item.product_name}
-													<textarea aria-label={`Defect notes ${item.product_name}`} value={defectDetails[item.id]?.inventory_notes ?? ""} onChange={(event) => setDefectDetail(item.id, "inventory_notes", event.target.value)} rows={2} className="mt-1 block w-full rounded border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
+												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect notes
+													<textarea aria-label={`Defect notes ${item.product_name}`} value={defectDetails[item.id]?.inventory_notes ?? ""} onChange={(event) => setDefectDetail(item.id, "inventory_notes", event.target.value)} rows={3} className="mt-2 block min-h-11 w-full rounded-lg border border-gray-300 bg-white px-2 py-2 text-sm dark:border-gray-600 dark:bg-gray-800" />
 												</label>
-												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect evidence {item.product_name}
-													<input aria-label={`Defect evidence ${item.product_name}`} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setDefectDetail(item.id, "defect_evidence", Array.from(event.target.files ?? []))} className="mt-1 block w-full text-xs" />
-													<span className="mt-1 block text-[11px] text-gray-500">JPG, PNG, or WEBP; maximum 10 MB each.</span>
+												<label className="text-xs font-medium text-gray-700 dark:text-gray-300">Defect evidence
+													<input aria-label={`Defect evidence ${item.product_name}`} type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(event) => setDefectDetail(item.id, "defect_evidence", Array.from(event.target.files ?? []))} className="mt-2 block min-h-11 w-full cursor-pointer rounded-lg border border-gray-300 bg-white text-sm text-gray-600 file:mr-3 file:cursor-pointer file:border-0 file:border-r file:border-solid file:border-gray-300 file:bg-gray-100 file:px-4 file:py-3 file:text-sm file:font-medium file:text-gray-900 hover:file:bg-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300 dark:file:border-gray-600 dark:file:bg-gray-700 dark:file:text-white dark:hover:file:bg-gray-600" />
+													<span className="mt-2 block text-xs text-gray-500">JPG, PNG, or WEBP; maximum 10 MB each.</span>
 												</label>
 											</fieldset>
 										</td>
@@ -292,9 +292,9 @@ export default function PurchaseOrderReceiptPanel({ order, onChanged, canReceive
 				{canFinalize && <button type="button" disabled={saving} onClick={() => void finalizeReceipt()} className="mt-3 rounded-lg bg-green-700 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">Post Final Receipt</button>}
 			</div>}
 
-			{canReceive && <div className="flex flex-col sm:flex-row gap-2">
-				<input value={notes} onChange={(event) => { setNotes(event.target.value); setIdempotencyKey(null); }} placeholder="Optional receipt notes" className="flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm" />
-				<button type="button" disabled={saving} onClick={receive} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? "Submitting..." : receivingReplacement ? "Receive replacement" : "Submit receiving result"}</button>
+			{canReceive && <div className="flex flex-col sm:flex-row sm:items-start gap-3">
+				<input value={notes} onChange={(event) => { setNotes(event.target.value); setIdempotencyKey(null); }} aria-label="Optional receipt notes" placeholder="Optional receipt notes" className="min-h-11 min-w-0 flex-1 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-sm" />
+				<button type="button" disabled={saving} onClick={receive} className="min-h-11 shrink-0 rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60">{saving ? "Submitting..." : receivingReplacement ? "Receive replacement" : "Submit receiving result"}</button>
 			</div>}
 
 			<div className="space-y-2">
