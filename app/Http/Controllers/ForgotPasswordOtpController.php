@@ -121,7 +121,7 @@ class ForgotPasswordOtpController extends Controller
     {
         $validated = $request->validate([
             'email' => ['required', 'email'],
-            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
+            'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->numbers()],
         ]);
 
         $email = strtolower(trim($validated['email']));

@@ -4,6 +4,8 @@ import { fireEvent, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useMarkAllAsRead } from '../useNotifications';
 
+vi.mock('@inertiajs/react', () => ({ usePage: () => ({ props: { auth: { user: { id: 1, shop_owner_id: 10 } } } }) }));
+
 const MarkAllProbe = ({ basePath }: { basePath: string }) => {
   const markAllAsRead = useMarkAllAsRead(basePath);
 

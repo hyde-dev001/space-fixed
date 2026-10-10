@@ -1,0 +1,1282 @@
+import React from 'react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
+import { beforeEach, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import AppSidebarERP from '../AppSidebar_ERP';
+
+const sidebarSource = readFileSync(resolve('resources/js/layout/AppSidebar_ERP.tsx'), 'utf8');
+
+const state = vi.hoisted(() => ({
+  url: '/erp/logistics',
+  role: 'Logistics Dispatcher',
+  roles: ['Logistics Dispatcher'] as string[],
+  shopOwnerId: null as number | null,
+  permissions: [] as string[],
+  shopModules: {} as Record<string, unknown> | undefined,
+  moduleStates: {} as Record<string, unknown>,
+  moduleEnforcementEnabled: undefined as boolean | undefined,
+  erpActor: null as null | { type: string; ownerMode: boolean },
+  erpCapabilities: {} as Record<string, unknown>,
+  erpUrls: { portal: null as string | null | undefined, workspace: null as string | null },
+  ownerShell: null as Record<string, unknown> | null,
+  activeModule: null as null | {
+    key: string;
+    slug: string;
+    label: string;
+    pages: Array<{ label: string; routeName: string; url: string }>;
+  },
+  shopOwner: {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  },
+}));
+
+vi.mock('@inertiajs/react', () => ({
+  usePage: () => ({
+    url: state.url,
+    props: {
+      auth: {
+        user: { role: state.role, roles: state.roles, shop_owner_id: state.shopOwnerId },
+        permissions: state.permissions,
+        shopModules: state.shopModules,
+        shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
+        erpActor: state.erpActor,
+        erpCapabilities: state.erpCapabilities,
+        shop_owner: state.shopOwner,
+      },
+      moduleStates: state.moduleStates,
+      shopModuleEnforcementEnabled: state.moduleEnforcementEnabled,
+      ownerShell: state.ownerShell,
+      activeModule: state.activeModule,
+    },
+  }),
+  Link: ({ href, children, viewTransition: _viewTransition, cacheFor: _cacheFor, ...props }: React.PropsWithChildren<{ href: string; viewTransition?: boolean; cacheFor?: unknown }>) => <a href={href} {...props}>{children}</a>,
+}));
+
+vi.mock('ziggy-js', () => ({
+  route: (name: string, params?: Record<string, unknown>) => {
+    if (name === 'landing') return '/';
+    if (name === 'erp.time-in') return '/erp/time-in';
+    if (name === 'shop-profile.virtual-showroom') return `/shop-profile/${params?.id}/virtual-showroom`;
+    if (name === 'shop-owner.dashboard') return '/shop-owner.dashboard';
+    const ownerSubmenuPaths: Record<string, string> = {
+      'shop-owner.logistics.dashboard': '/shop-owner/logistics',
+      'shop-owner.logistics.shipments': '/shop-owner/logistics/shipments',
+      'shop-owner.logistics.riders': '/shop-owner/logistics/riders',
+    };
+    if (ownerSubmenuPaths[name]) return ownerSubmenuPaths[name];
+    throw new Error('use sidebar fallback map');
+  },
+}));
+
+vi.mock('../../context/SidebarContext', () => ({
+  useSidebar: () => ({
+    isExpanded: true,
+    isMobileOpen: false,
+    isHovered: false,
+    setIsHovered: vi.fn(),
+    openSubmenu: null,
+    toggleSubmenu: vi.fn(),
+    setOpenSubmenu: vi.fn(),
+  }),
+}));
+
+beforeEach(() => {
+  state.url = '/erp/logistics';
+  state.role = 'Logistics Dispatcher';
+  state.roles = ['Logistics Dispatcher'];
+  state.shopOwnerId = null;
+  state.permissions = [];
+  state.shopModules = moduleStates();
+  state.moduleStates = state.shopModules;
+  state.moduleEnforcementEnabled = undefined;
+  state.erpActor = null;
+  state.erpCapabilities = {};
+  state.erpUrls = { portal: null, workspace: null };
+  state.ownerShell = null;
+  state.activeModule = null;
+  state.shopOwner = {
+    registration_type: 'company',
+    business_type: 'both',
+    is_company: true,
+    can_manage_staff: true,
+  };
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: { getItem: vi.fn(), removeItem: vi.fn() },
+  });
+});
+
+it('groups Finance pages into direct dropdown destinations and reopens only the active section', () => {
+  state.role = 'FINANCE';
+  state.roles = ['FINANCE'];
+  state.url = '/erp/time-in';
+  state.permissions = ['access-finance-dashboard', 'access-finance-invoices', 'access-finance-expenses', 'access-cod-remittances', 'access-repair-price-approval', 'access-shoe-price-approval', 'access-refund-approval', 'access-purchase-request-approval', 'access-payslip-approval'];
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'BILLING & PAYMENTS', 'APPROVALS', 'EXPENSES', 'RESOURCES',
+  ]);
+  const approvals = screen.getByRole('button', { name: 'APPROVALS' });
+  const panel = document.getElementById(approvals.getAttribute('aria-controls')!)!;
+  expect(within(panel).getAllByRole('link').map((link) => link.textContent)).toEqual([
+    'Repair Pricing Approval', 'Shoe Pricing Approval', 'Purchase Request Review', 'Refund Approval', 'Payslip Approvals',
+  ]);
+  expect(within(panel).queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Invoices' })).toHaveAttribute('href', '/finance?section=invoice-generation');
+  expect(screen.getByRole('link', { name: 'Refund Approval' }).querySelector('svg')).not.toBeNull();
+  const billing = screen.getByRole('button', { name: 'BILLING & PAYMENTS' });
+  fireEvent.click(billing);
+  fireEvent.click(approvals);
+  state.url = '/finance?section=refund-approvals';
+  rerender(<AppSidebarERP />);
+  expect(approvals).toHaveAttribute('aria-expanded', 'true');
+  expect(billing).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('link', { name: 'Refund Approval' })).toHaveAttribute('aria-current', 'page');
+});
+
+it.each(['retail', 'repair'])('preserves Finance pricing approval business filtering for %s shops', (businessType) => {
+  state.role = 'FINANCE';
+  state.roles = ['FINANCE'];
+  state.shopOwner.business_type = businessType;
+  state.permissions = ['access-repair-price-approval', 'access-shoe-price-approval'];
+  render(<AppSidebarERP />);
+  const panel = document.getElementById(screen.getByRole('button', { name: 'APPROVALS' }).getAttribute('aria-controls')!)!;
+  expect(within(panel).getAllByRole('link').map((link) => link.textContent)).toEqual([
+    businessType === 'repair' ? 'Repair Pricing Approval' : 'Shoe Pricing Approval',
+  ]);
+});
+
+it('hides empty Finance groups when permissions or modules are unavailable', () => {
+  state.role = 'FINANCE';
+  state.roles = ['FINANCE'];
+  state.permissions = ['access-finance-dashboard'];
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.queryByRole('button', { name: 'APPROVALS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'EXPENSES' })).not.toBeInTheDocument();
+  state.shopModules = moduleStates({ finance: false });
+  rerender(<AppSidebarERP />);
+  expect(screen.queryByRole('button', { name: 'OVERVIEW' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'BILLING & PAYMENTS' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Log Attendance' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Articles' })).toHaveAttribute('href', '/finance/articles');
+});
+
+it('groups Staff pages into independent dropdowns and reopens the active page group', () => {
+  state.role = 'STAFF';
+  state.roles = ['Staff'];
+  state.shopOwner.business_type = 'retail';
+  state.url = '/erp/time-in';
+  state.permissions = ['access-staff-dashboard', 'access-staff-job-orders', 'access-product-management', 'access-shoe-pricing'];
+
+  const { rerender } = render(<AppSidebarERP />);
+  const selfService = screen.getByRole('button', { name: 'SELF-SERVICE' });
+  const selfServicePanel = document.getElementById(selfService.getAttribute('aria-controls')!)!;
+  const retail = screen.getByRole('button', { name: 'RETAIL OPERATIONS' });
+  const retailPanel = document.getElementById(retail.getAttribute('aria-controls')!)!;
+
+  expect(within(selfServicePanel).getByRole('link', { name: 'Log Attendance' })).toHaveAttribute('href', '/erp/time-in');
+  expect(within(selfServicePanel).getByRole('link', { name: 'My Payslips' })).toHaveAttribute('href', '/erp/my-payslips');
+  expect(within(retailPanel).getAllByRole('link').map((link) => link.textContent)).toEqual(['Retail Job Orders', 'Product Management', 'Shoe Pricing Requests']);
+  expect(within(retailPanel).getByRole('link', { name: 'Product Management' }).querySelector('svg')).not.toBeNull();
+  expect(retail.querySelector('svg')).not.toBeNull();
+  expect(screen.getByRole('button', { name: 'OVERVIEW' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'INVENTORY' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'RESOURCES' })).toBeInTheDocument();
+
+  fireEvent.click(retail);
+  expect(retail).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('link', { name: 'Product Management' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Inventory Overview' })).toBeInTheDocument();
+
+  state.url = '/erp/staff/products';
+  rerender(<AppSidebarERP />);
+  expect(retail).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Product Management' })).toHaveAttribute('aria-current', 'page');
+});
+
+it.each([
+  { reason: 'missing permissions', permissions: [] as string[], disabledModules: {} },
+  { reason: 'disabled modules', permissions: ['access-staff-dashboard', 'access-staff-job-orders', 'access-product-management'], disabledModules: { retail_operations: false, inventory: false } },
+])('hides empty Staff groups for $reason without removing self-service links', ({ permissions, disabledModules }) => {
+  state.role = 'STAFF';
+  state.roles = ['Staff'];
+  state.shopOwner.business_type = 'retail';
+  state.url = '/erp/time-in';
+  state.permissions = permissions;
+  state.shopModules = moduleStates(disabledModules);
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('button', { name: 'SELF-SERVICE' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'RETAIL OPERATIONS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'INVENTORY' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Product Management' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Inventory Overview' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'My Payslips' })).toBeInTheDocument();
+});
+
+it('keeps Staff and Repair dropdown states separate for a mixed-role employee', () => {
+  state.role = 'STAFF';
+  state.roles = ['Staff', 'Repairer'];
+  state.url = '/erp/time-in';
+  state.permissions = ['access-staff-dashboard', 'access-repair-stocks'];
+
+  render(<AppSidebarERP />);
+
+  fireEvent.click(screen.getByRole('button', { name: 'INVENTORY' }));
+  expect(screen.queryByRole('link', { name: 'Inventory Overview' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'INVENTORY & MATERIALS' })).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Stocks Overview' })).toBeInTheDocument();
+  expect(screen.getAllByRole('link', { name: 'My Payslips' })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: 'Log Attendance' })).toHaveLength(1);
+});
+
+it('groups repair links into dropdowns and reopens the current page group after navigation', () => {
+  state.role = 'REPAIRER';
+  state.roles = ['Repairer'];
+  state.shopOwner.business_type = 'repair';
+  state.url = '/erp/time-in';
+  state.permissions = ['access-repairer-dashboard', 'access-repair-job-orders', 'access-upload-service', 'access-pricing-services', 'access-repair-stocks', 'access-repairer-support'];
+
+  const { rerender } = render(<AppSidebarERP />);
+  const operations = screen.getByRole('button', { name: 'REPAIR OPERATIONS' });
+  const operationsPanel = document.getElementById(operations.getAttribute('aria-controls')!)!;
+
+  expect(operations.querySelector('svg')).not.toBeNull();
+  expect(within(operationsPanel).getByRole('link', { name: 'Warranty Queue' })).toHaveAttribute('href', '/erp/repairer/warranty-queue');
+  expect(within(operationsPanel).getByRole('link', { name: 'Upload Services' }).querySelector('svg')).not.toBeNull();
+  expect(screen.getByRole('button', { name: 'SELF-SERVICE' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'OVERVIEW' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'INVENTORY & MATERIALS' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'SUPPORT & RESOURCES' })).toBeInTheDocument();
+
+  fireEvent.click(operations);
+  expect(operations).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('link', { name: 'Warranty Queue' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Log Attendance' })).toBeInTheDocument();
+
+  state.url = '/erp/repairer/warranty-queue';
+  rerender(<AppSidebarERP />);
+  expect(operations).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Warranty Queue' })).toHaveAttribute('aria-current', 'page');
+});
+
+it('omits empty repair groups when permissions or modules hide their pages', () => {
+  state.role = 'REPAIRER';
+  state.roles = ['Repairer'];
+  state.shopOwner.business_type = 'repair';
+  state.url = '/erp/time-in';
+  state.permissions = ['access-repair-stocks'];
+  state.shopModules = moduleStates({ inventory: false });
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('button', { name: 'OVERVIEW' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'REPAIR OPERATIONS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'INVENTORY & MATERIALS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Stocks Overview' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'My Payslips' })).toBeInTheDocument();
+});
+
+function moduleStates(overrides: Record<string, boolean> = {}) {
+  return Object.fromEntries(
+    ['retail_operations', 'repair_operations', 'hr_employees', 'finance', 'crm', 'inventory', 'procurement', 'logistics']
+      .map((key) => [key, {
+        eligible: true,
+        enabled: overrides[key] !== false,
+        accessible: overrides[key] !== false,
+        code: overrides[key] === false ? 'MODULE_DISABLED' : null,
+        reason: overrides[key] === false ? 'Disabled' : null,
+      }]),
+  );
+}
+
+it('shows Staff Articles for an eligible retail Staff viewer and keeps it active on detail routes', () => {
+  state.url = '/erp/articles';
+  state.role = 'STAFF';
+  state.roles = ['Staff'];
+  state.permissions = ['access-staff-dashboard'];
+  state.shopOwner.business_type = 'retail';
+
+  const { unmount } = render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveAttribute('href', '/erp/articles');
+  expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveClass('menu-item-active');
+  unmount();
+
+  state.url = '/erp/articles/daily-attendance-workflow';
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveClass('menu-item-active');
+});
+
+it('does not add a duplicate showroom link to the Staff sidebar', () => {
+  state.url = '/erp/staff/dashboard';
+  state.role = 'STAFF';
+  state.roles = ['Staff'];
+  state.shopOwnerId = 17;
+  state.permissions = ['access-staff-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('link', { name: /virtual showroom/i })).not.toBeInTheDocument();
+});
+
+it.each([
+  { role: 'Cashier', roles: ['Cashier'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Repairer'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Logistics Dispatcher'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Inventory'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Procurement'], businessType: 'retail' },
+  { role: 'STAFF', roles: ['Staff'], businessType: 'repair' },
+])('hides Staff Articles for $role in a $businessType context', ({ role, roles, businessType }) => {
+  state.url = '/erp/articles';
+  state.role = role;
+  state.roles = roles;
+  state.permissions = ['access-staff-dashboard'];
+  state.shopOwner.business_type = businessType;
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryAllByRole('link', { name: /^Articles$/i }).some((link) => link.getAttribute('href') === '/erp/articles')).toBe(false);
+});
+
+it.each([
+  { role: 'MANAGER', roles: ['MANAGER'], businessType: 'both', href: '/erp/manager/articles' },
+  { role: 'FINANCE', roles: ['FINANCE'], businessType: 'retail', href: '/finance/articles' },
+  { role: 'HR', roles: ['HR'], businessType: 'retail', href: '/erp/hr/articles' },
+  { role: 'CRM', roles: ['CRM'], businessType: 'retail', href: '/crm/articles' },
+  { role: 'CASHIER', roles: ['CASHIER'], businessType: 'retail', href: '/erp/cashier/articles' },
+  { role: 'REPAIRER', roles: ['REPAIRER'], businessType: 'repair', href: '/erp/repairer/articles' },
+  { role: 'INVENTORY', roles: ['INVENTORY'], businessType: 'retail', href: '/erp/inventory/articles' },
+  { role: 'PROCUREMENT', roles: ['PROCUREMENT'], businessType: 'retail', href: '/erp/procurement/articles' },
+  { role: 'LOGISTICS DISPATCHER', roles: ['LOGISTICS DISPATCHER'], businessType: 'retail', href: '/erp/logistics/articles' },
+])('shows only the $role article catalog at the end of its sidebar section', ({ role, roles, businessType, href }) => {
+  state.url = href;
+  state.role = role;
+  state.roles = roles;
+  state.permissions = [];
+  state.shopOwner.business_type = businessType;
+
+  render(<AppSidebarERP />);
+
+  const articleLinks = screen.getAllByRole('link', { name: /^Articles$/i });
+  expect(articleLinks).toHaveLength(1);
+  expect(articleLinks[0]).toHaveAttribute('href', href);
+
+  const sidebarLinks = screen.getAllByRole('link');
+  expect(sidebarLinks[sidebarLinks.length - 1]).toBe(articleLinks[0]);
+});
+
+it('shows attendance for Repairer accounts and opens Articles from the logo', () => {
+  state.url = '/erp/repairer/articles';
+  state.role = 'REPAIRER';
+  state.roles = ['REPAIRER'];
+  state.permissions = [];
+  state.shopOwner.business_type = 'repair';
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveAttribute(
+    'href',
+    '/erp/repairer/articles',
+  );
+  expect(screen.getByRole('link', { name: /log attendance/i })).toHaveAttribute(
+    'href',
+    '/erp/time-in',
+  );
+  expect(screen.getByRole('link', { name: /^Articles$/i })).toHaveAttribute(
+    'href',
+    '/erp/repairer/articles',
+  );
+});
+
+it('keeps supplier orders under Inventory without showing Procurement pages', () => {
+  state.role = 'Inventory Manager';
+  state.roles = ['Inventory Manager'];
+  state.permissions = [
+    'view-inventory',
+    'access-supplier-order-monitoring',
+    'procurement.view',
+    'procurement.receive_purchase_orders',
+  ];
+
+  const { container } = render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: 'SoleSpace' })).toHaveAttribute('href', '/erp/time-in');
+  expect(container.querySelector('aside')).toHaveClass('xl:mt-0', 'xl:translate-x-0');
+  expect(screen.getByRole('link', { name: /supplier orders/i })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /purchase requests/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /purchase orders/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /suppliers management/i })).not.toBeInTheDocument();
+});
+
+it.each(['retail', 'repair', 'both'])('groups Procurement pages into direct dropdowns for %s shops', (businessType) => {
+  state.role = 'Procurement Manager';
+  state.roles = ['Procurement Manager'];
+  state.shopOwner.business_type = businessType;
+  state.url = '/erp/time-in';
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'PURCHASING', 'STOCK APPROVALS', 'SUPPLIERS', 'RESOURCES',
+  ]);
+  const purchasing = screen.getByRole('button', { name: 'PURCHASING' });
+  const panel = document.getElementById(purchasing.getAttribute('aria-controls')!)!;
+  expect(within(panel).getAllByRole('link').map((link) => link.textContent)).toEqual([
+    'Purchase Requests', 'Purchase Orders',
+  ]);
+  expect(within(panel).queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('link').slice(1).map((link) => link.textContent)).toEqual([
+    'Log Attendance', 'My Payslips', 'Dashboard', 'Purchase Requests', 'Purchase Orders',
+    'Stock Request Approval', 'Suppliers Management', 'Articles',
+  ]);
+  screen.getAllByRole('link').slice(1).forEach((link) => expect(link.querySelector('svg')).not.toBeNull());
+  expect(purchasing.querySelector('svg')).not.toBeNull();
+  expect(screen.getByRole('link', { name: 'Articles' })).toHaveAttribute('href', '/erp/procurement/articles');
+  const suppliers = screen.getByRole('button', { name: 'SUPPLIERS' });
+  fireEvent.click(suppliers);
+  fireEvent.click(purchasing);
+  expect(screen.queryByRole('link', { name: 'Purchase Orders' })).not.toBeInTheDocument();
+  state.url = '/erp/procurement/purchase-orders/42';
+  rerender(<AppSidebarERP />);
+  expect(purchasing).toHaveAttribute('aria-expanded', 'true');
+  expect(suppliers).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('link', { name: 'Purchase Orders' })).toHaveAttribute('aria-current', 'page');
+});
+
+it('keeps Procurement stock approvals separate from disabled purchasing modules', () => {
+  state.role = 'Procurement Manager';
+  state.roles = ['Procurement Manager'];
+  state.shopModules = moduleStates({ procurement: false, finance: false });
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'STOCK APPROVALS', 'RESOURCES',
+  ]);
+  expect(screen.getByRole('link', { name: 'Stock Request Approval' })).toHaveAttribute('href', '/erp/procurement/stock-request-approval');
+  expect(screen.queryByRole('link', { name: 'Purchase Requests' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'My Payslips' })).not.toBeInTheDocument();
+  state.shopModules = moduleStates({ inventory: false });
+  rerender(<AppSidebarERP />);
+  expect(screen.queryByRole('button', { name: 'STOCK APPROVALS' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Purchase Orders' })).toBeInTheDocument();
+});
+
+it('groups Logistics Dispatcher workflow with chevrons and icons and reopens the active dispatch group', () => {
+  state.url = '/erp/time-in';
+  state.permissions = ['access-logistics-dashboard', 'assign-logistics-deliveries', 'manage-logistics-batches', 'manage-logistics-riders', 'operate-logistics-deliveries', 'configure-logistics-settings'];
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'DISPATCH OPERATIONS', 'RIDER MANAGEMENT',
+    'DELIVERIES & COLLECTIONS', 'ADMINISTRATION', 'RESOURCES',
+  ]);
+  const dispatch = screen.getByRole('button', { name: 'DISPATCH OPERATIONS' });
+  const panel = document.getElementById(dispatch.getAttribute('aria-controls')!)!;
+  expect(within(panel).getAllByRole('link').map((link) => link.textContent)).toEqual(['Logistics', 'Batches']);
+  expect(within(panel).queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getAllByRole('link').slice(1).map((link) => link.textContent)).toEqual([
+    'Log Attendance', 'My Payslips', 'Logistics Dashboard', 'Logistics', 'Batches',
+    'Riders', 'My Deliveries', 'My COD Collections', 'Settings', 'Articles',
+  ]);
+  screen.getAllByRole('link').slice(1).forEach((link) => expect(link.querySelector('svg')).not.toBeNull());
+  expect(dispatch.querySelector('svg')).toHaveClass('rotate-180');
+  expect(screen.getByRole('link', { name: 'Articles' })).toHaveAttribute('href', '/erp/logistics/articles');
+  const riders = screen.getByRole('button', { name: 'RIDER MANAGEMENT' });
+  fireEvent.click(riders);
+  fireEvent.click(dispatch);
+  expect(dispatch.querySelector('svg')).not.toHaveClass('rotate-180');
+  expect(screen.queryByRole('link', { name: 'Batches' })).not.toBeInTheDocument();
+  state.url = '/erp/logistics/batches/42';
+  rerender(<AppSidebarERP />);
+  expect(dispatch).toHaveAttribute('aria-expanded', 'true');
+  expect(riders).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('link', { name: 'Batches' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('link', { name: 'Logistics Dashboard' })).not.toHaveAttribute('aria-current');
+});
+
+it('hides empty Dispatcher groups without exposing unauthorized pages', () => {
+  state.permissions = ['access-logistics-dashboard', 'configure-logistics-settings'];
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'ADMINISTRATION', 'RESOURCES',
+  ]);
+  expect(screen.queryByRole('link', { name: 'Batches' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Riders' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'My Deliveries' })).not.toBeInTheDocument();
+  state.shopModules = moduleStates({ logistics: false, finance: false });
+  rerender(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'ADMINISTRATION', 'RESOURCES',
+  ]);
+  expect(screen.getByRole('link', { name: 'Settings' })).toHaveAttribute('href', '/erp/logistics/settings');
+  expect(screen.queryByRole('link', { name: 'My Payslips' })).not.toBeInTheDocument();
+});
+
+it('keeps Procurement and Dispatcher dropdown states independent without duplicate self-service links', () => {
+  state.roles = ['Logistics Dispatcher', 'Procurement Manager'];
+  state.permissions = ['access-logistics-dashboard'];
+  render(<AppSidebarERP />);
+  const overviews = screen.getAllByRole('button', { name: 'OVERVIEW' });
+  expect(overviews).toHaveLength(2);
+  expect(overviews[0].getAttribute('aria-controls')).not.toBe(overviews[1].getAttribute('aria-controls'));
+  fireEvent.click(overviews[0]);
+  expect(screen.queryByRole('link', { name: 'Logistics Dashboard' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
+  expect(screen.getAllByRole('link', { name: 'Log Attendance' })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: 'My Payslips' })).toHaveLength(1);
+});
+
+it('keeps Logistics Rider navigation flat instead of applying Dispatcher groups', () => {
+  state.role = 'Logistics Rider';
+  state.roles = ['Logistics Rider'];
+  state.url = '/erp/logistics/deliveries';
+  render(<AppSidebarERP />);
+  expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'My Deliveries' })).toHaveAttribute('aria-current', 'page');
+  expect(screen.getByRole('link', { name: 'My COD Collections' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Articles' })).not.toBeInTheDocument();
+});
+
+it('shows the procurement dashboard as the first procurement link', () => {
+  state.url = '/erp/procurement/dashboard';
+  state.role = 'Procurement Manager';
+  state.roles = ['Procurement Manager'];
+  state.permissions = ['access-procurement-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^Dashboard$/i })).toHaveAttribute(
+    'href',
+    '/erp/procurement/dashboard',
+  );
+  expect(screen.getByRole('link', { name: /purchase requests/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /purchase orders/i })).toBeInTheDocument();
+});
+
+it('shows logistics settings only with its permission', () => {
+  state.permissions = ['access-logistics-dashboard', 'configure-logistics-settings'];
+  const { unmount } = render(<AppSidebarERP />);
+  expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute('href', '/erp/logistics/settings');
+  unmount();
+
+  state.permissions = ['access-logistics-dashboard', 'assign-logistics-deliveries'];
+  render(<AppSidebarERP />);
+  expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
+});
+
+it('shows the logistics dashboard entry for dispatchers with dashboard access', () => {
+  state.permissions = ['access-logistics-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('heading', { name: 'LOGISTICS' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'STAFF' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^logistics dashboard$/i })).toHaveAttribute(
+    'href',
+    '/erp/logistics',
+  );
+});
+
+it('marks only the current logistics page active on the shipments route', () => {
+  state.url = '/erp/logistics/shipments';
+  state.permissions = ['access-logistics-dashboard', 'assign-logistics-deliveries'];
+
+  render(<AppSidebarERP />);
+
+  const dashboardLink = screen.getByRole('link', { name: /^logistics dashboard$/i });
+  const shipmentsLink = screen.getByRole('link', { name: /^logistics$/i });
+
+  expect(dashboardLink).toHaveClass('menu-item-inactive');
+  expect(shipmentsLink).toHaveClass('menu-item-active');
+  expect(dashboardLink).not.toHaveAttribute('aria-current');
+  expect(shipmentsLink).toHaveAttribute('aria-current', 'page');
+});
+
+it('keeps logistics riders out of the dashboard while showing My Deliveries', () => {
+  state.url = '/erp/logistics/deliveries';
+  state.role = 'STAFF';
+  state.roles = ['Logistics Rider'];
+  state.permissions = [
+    'access-logistics-dashboard',
+    'view-logistics-shipments',
+    'update-logistics-status',
+    'record-logistics-proof',
+    'operate-logistics-deliveries',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('heading', { name: 'LOGISTICS' })).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'STAFF' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /^logistics dashboard$/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^my deliveries$/i })).toHaveAttribute(
+    'href',
+    '/erp/logistics/deliveries',
+  );
+});
+
+it('shows batches only with its permission', () => {
+  state.permissions = ['manage-logistics-batches'];
+  const { unmount } = render(<AppSidebarERP />);
+  expect(screen.getByRole('link', { name: /batches/i })).toHaveAttribute('href', '/erp/logistics/batches');
+  unmount();
+
+  state.permissions = ['assign-logistics-deliveries'];
+  render(<AppSidebarERP />);
+  expect(screen.queryByRole('link', { name: /batches/i })).not.toBeInTheDocument();
+});
+
+it('hides disabled employee modules but keeps core logistics settings visible', () => {
+  state.permissions = ['access-logistics-dashboard', 'configure-logistics-settings'];
+  state.shopModules = moduleStates({ logistics: false });
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('link', { name: /^logistics$/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^settings$/i })).toHaveAttribute('href', '/erp/logistics/settings');
+});
+
+it('keeps employee permission filtering when an eligible module is enabled', () => {
+  state.permissions = ['access-logistics-dashboard', 'assign-logistics-deliveries'];
+  state.shopModules = moduleStates({ logistics: true });
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^logistics$/i })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /settings/i })).not.toBeInTheDocument();
+});
+
+it('uses the top-level module state when the nested auth state is unavailable', () => {
+  state.shopModules = undefined;
+  state.moduleStates = moduleStates();
+  state.moduleEnforcementEnabled = true;
+  state.permissions = ['access-logistics-dashboard', 'assign-logistics-deliveries'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^logistics$/i })).toBeInTheDocument();
+});
+
+it('shows core navigation with one Approval Center entry without the retired ERP picker', () => {
+  state.url = '/shop-owner/erp/workspace/?tab=modules';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+  state.permissions = ['access-manager-dashboard', 'access-attendance-records', 'access-view-payslip'];
+  state.erpActor = { type: 'shop_owner', ownerMode: true };
+  state.erpCapabilities = {
+    'GET:shop-owner.erp.workspace': {
+      allowed: true,
+      method: 'GET',
+      routeName: 'shop-owner.erp.workspace',
+      url: '/shop-owner/erp/workspace',
+      reason: null,
+    },
+  };
+  state.ownerShell = {
+    presentation: 'canonical',
+    selection_reason: 'always_on',
+    context: 'company',
+    groups: [{
+      key: 'home',
+      label: 'Home',
+      order: 0,
+      default_expanded: true,
+      items: [{
+        key: 'action-center',
+        label: 'Action Center',
+        canonical_url: '/shop-owner/action-center',
+        available: true,
+        unavailable_reason: null,
+        management_url: null,
+        active_matching: ['/shop-owner/action-center'],
+      }],
+    }],
+  };
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('link', { name: /ERP Workspace/i })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Dashboard$/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Audit Logs/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /User Access Control/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Suspend Accounts/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Assist Center/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Vouchers & Discount/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /Approval Center/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/action-center',
+  );
+  expect(screen.queryByRole('link', { name: /HR & Employees/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /^Logistics$/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /^Customers$/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /log attendance/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /my payslips/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /employee profile/i })).not.toBeInTheDocument();
+});
+
+it('keeps the employee ERP primary entries when no ownerShell metadata is provided', () => {
+  state.erpActor = null;
+  state.role = 'Logistics Dispatcher';
+  state.roles = ['Logistics Dispatcher'];
+  state.permissions = ['access-logistics-dashboard', 'configure-logistics-settings'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /Log Attendance/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+});
+
+it('keeps employee ERP navigation when canonical owner metadata is shared', () => {
+  state.erpActor = null;
+  state.ownerShell = {
+    presentation: 'canonical',
+    context: 'company',
+    groups: [],
+  };
+  state.role = 'Logistics Dispatcher';
+  state.roles = ['Logistics Dispatcher'];
+  state.permissions = ['access-logistics-dashboard', 'configure-logistics-settings'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /Log Attendance/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /settings/i })).toBeInTheDocument();
+  expect(screen.queryByTestId('canonical-owner-sidebar')).not.toBeInTheDocument();
+});
+
+it('organizes HR records, attendance, requests and payroll into direct dropdown groups', () => {
+  state.url = '/erp/hr?section=attendance';
+  state.role = 'HR';
+  state.roles = ['HR'];
+  state.permissions = [
+    'access-hr-dashboard',
+    'access-employee-directory',
+    'access-attendance-records',
+    'access-leave-approvals',
+    'access-overtime-approvals',
+    'access-payslip-generation',
+    'access-view-payslip',
+    'manage-salary-changes',
+  ];
+
+  const { rerender } = render(<AppSidebarERP />);
+
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'EMPLOYEE RECORDS', 'ATTENDANCE', 'LEAVE & OVERTIME', 'PAYROLL', 'RESOURCES',
+  ]);
+  expect(screen.getByRole('link', { name: 'View Attendance' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Leave Requests' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Overtime Requests' })).toBeInTheDocument();
+  const payroll = screen.getByRole('button', { name: 'PAYROLL' });
+  const payrollPanel = document.getElementById(payroll.getAttribute('aria-controls')!)!;
+  expect(within(payrollPanel).queryByRole('button')).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'View Slip' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Generate Slip' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Salary Changes' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Generate Slip' })).toHaveAttribute('href', '/erp/hr?section=payroll-generate');
+  expect(screen.getByRole('link', { name: 'Generate Slip' }).querySelector('svg')).not.toBeNull();
+  const records = screen.getByRole('button', { name: 'EMPLOYEE RECORDS' });
+  fireEvent.click(records);
+  fireEvent.click(payroll);
+  state.url = '/erp/hr?section=payroll-view';
+  rerender(<AppSidebarERP />);
+  expect(payroll).toHaveAttribute('aria-expanded', 'true');
+  expect(records).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.getByRole('link', { name: 'View Slip' })).toHaveAttribute('aria-current', 'page');
+});
+
+it('hides unauthorized HR groups and payroll when Finance is disabled', () => {
+  state.role = 'HR';
+  state.roles = ['HR'];
+  state.permissions = ['access-hr-dashboard', 'access-view-payslip'];
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.queryByRole('button', { name: 'EMPLOYEE RECORDS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'LEAVE & OVERTIME' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'PAYROLL' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Generate Slip' })).not.toBeInTheDocument();
+  state.shopModules = moduleStates({ finance: false });
+  rerender(<AppSidebarERP />);
+  expect(screen.queryByRole('button', { name: 'PAYROLL' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'View Slip' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Log Attendance' })).toBeInTheDocument();
+});
+
+it.each(['retail', 'repair', 'both'])('organizes Inventory operations and requests for %s shops', (businessType) => {
+  state.role = 'INVENTORY';
+  state.roles = ['INVENTORY'];
+  state.shopOwner.business_type = businessType;
+  state.url = '/erp/time-in';
+  const { rerender } = render(<AppSidebarERP />);
+  expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'STOCK OPERATIONS', 'REQUESTS & APPROVALS', 'SUPPLIER MONITORING', 'RESOURCES',
+  ]);
+  const requests = screen.getByRole('button', { name: 'REQUESTS & APPROVALS' });
+  const panel = document.getElementById(requests.getAttribute('aria-controls')!)!;
+  expect(within(panel).getAllByRole('link').map((link) => link.textContent)).toEqual([
+    'Stock Requests', ...(businessType === 'retail' ? [] : ['Material Request Queue']),
+  ]);
+  expect(screen.getByRole('link', { name: 'Supplier Orders' })).toHaveAttribute('href', '/erp/inventory/supplier-order-monitoring');
+  expect(screen.getByRole('link', { name: 'Manage Stock Items' }).querySelector('svg')).not.toBeNull();
+  fireEvent.click(requests);
+  expect(screen.queryByRole('link', { name: 'Stock Requests' })).not.toBeInTheDocument();
+  state.url = '/erp/inventory/stock-request';
+  rerender(<AppSidebarERP />);
+  expect(requests).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Stock Requests' })).toHaveAttribute('aria-current', 'page');
+});
+
+it('hides disabled Inventory groups while retaining attendance and resources', () => {
+  state.role = 'INVENTORY';
+  state.roles = ['INVENTORY'];
+  state.shopModules = moduleStates({ inventory: false });
+  render(<AppSidebarERP />);
+  expect(screen.queryByRole('button', { name: 'STOCK OPERATIONS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'REQUESTS & APPROVALS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'SUPPLIER MONITORING' })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'SELF-SERVICE' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Log Attendance' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Articles' })).toHaveAttribute('href', '/erp/inventory/articles');
+});
+
+it('keeps HR and Inventory dropdown states independent for a mixed-role employee', () => {
+  state.role = 'HR';
+  state.roles = ['HR', 'INVENTORY'];
+  state.permissions = ['access-hr-dashboard', 'access-employee-directory'];
+  render(<AppSidebarERP />);
+  const overviewButtons = screen.getAllByRole('button', { name: 'OVERVIEW' });
+  expect(overviewButtons).toHaveLength(2);
+  fireEvent.click(overviewButtons[0]);
+  expect(screen.queryByRole('link', { name: 'Inventory Dashboard' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
+  expect(screen.getAllByRole('link', { name: 'Log Attendance' })).toHaveLength(1);
+  expect(screen.getAllByRole('link', { name: 'My Payslips' })).toHaveLength(1);
+});
+
+it('hides HR navigation when the HR module is disabled', () => {
+  state.url = '/erp/hr?section=overview';
+  state.role = 'HR';
+  state.roles = ['HR'];
+  state.shopModules = moduleStates({ hr_employees: false });
+  state.moduleStates = state.shopModules;
+  state.moduleEnforcementEnabled = true;
+  state.permissions = [
+    'access-hr-dashboard',
+    'access-employee-directory',
+    'access-attendance-records',
+    'access-leave-approvals',
+    'access-overtime-approvals',
+    'access-payslip-generation',
+    'access-view-payslip',
+    'manage-salary-changes',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('link', { name: 'Dashboard' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Employees' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'ATTENDANCE' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'PAYROLL' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Articles' })).toBeInTheDocument();
+});
+
+it.each([
+  { url: '/erp/hr?section=overview', activeLink: 'Dashboard' },
+  { url: '/erp/hr?section=employees', activeLink: 'Employees' },
+  { url: '/erp/hr?section=attendance', activeLink: 'View Attendance' },
+  { url: '/erp/hr?section=leaves', activeLink: 'Leave Requests' },
+  { url: '/erp/hr?section=overtime', activeLink: 'Overtime Requests' },
+  { url: '/erp/hr?section=payroll-view', activeLink: 'View Slip' },
+  { url: '/erp/hr?section=payroll-generate', activeLink: 'Generate Slip' },
+  { url: '/erp/hr?section=salary-changes', activeLink: 'Salary Changes' },
+  { url: '/erp/my-payslips', activeLink: 'My Payslips' },
+  { url: '/erp/hr/articles', activeLink: 'Articles' },
+])('activates only the intended HR destination for $url', ({ url, activeLink }) => {
+  state.url = url;
+  state.role = 'HR';
+  state.roles = ['HR'];
+  state.permissions = [
+    'access-hr-dashboard',
+    'access-employee-directory',
+    'access-attendance-records',
+    'access-leave-approvals',
+    'access-overtime-approvals',
+    'access-payslip-generation',
+    'access-view-payslip',
+    'manage-salary-changes',
+  ];
+
+  render(<AppSidebarERP />);
+
+  const activeLinks = screen.getAllByRole('link').filter((link) => (
+    link.className.includes('menu-item-active') || link.className.includes('menu-dropdown-item-active')
+  ));
+  expect(activeLinks.map((link) => link.textContent?.trim())).toEqual([activeLink]);
+
+  if (activeLink === 'Articles') {
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toHaveClass('menu-item-inactive');
+    expect(screen.getByRole('link', { name: 'Employees' })).toHaveClass('menu-item-inactive');
+    expect(screen.getByRole('link', { name: 'View Attendance' })).toHaveClass('menu-item-inactive');
+    expect(screen.getByRole('link', { name: 'View Slip' })).toHaveClass('menu-item-inactive');
+    expect(screen.getByRole('link', { name: 'My Payslips' })).toHaveClass('menu-item-inactive');
+  }
+});
+
+it('renders the approved Manager workspace in the required groups and order', () => {
+  state.url = '/erp/manager/dashboard';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+  state.permissions = [
+    'access-manager-dashboard',
+    'access-manager-job-orders',
+    'access-manager-repair-jobs',
+    'access-inventory-overview',
+    'access-manager-staff-workload',
+    'access-manager-leave-approvals',
+    'access-manager-suspension-approvals',
+    'access-manager-reports',
+    'access-audit-logs',
+  ];
+
+  render(<AppSidebarERP />);
+
+  const managerGroups = screen.getAllByRole('button');
+  expect(managerGroups.map((button) => button.textContent)).toEqual([
+    'SELF-SERVICE', 'OVERVIEW', 'OPERATIONS', 'PEOPLE', 'STAFF APPROVALS', 'REPORTS & AUDIT', 'RESOURCES',
+  ]);
+  managerGroups.forEach((button) => {
+    expect(button).toHaveAttribute('aria-expanded', 'true');
+    expect(button.querySelector('svg')).not.toBeNull();
+  });
+
+  const managerLinks = screen.getAllByRole('link').map((link) => link.textContent?.trim());
+  expect(managerLinks).toEqual([
+    'SoleSpace',
+    'Log Attendance',
+    'My Payslips',
+    'Manager Dashboard',
+    'Orders',
+    'Repair Jobs',
+    'Inventory Overview',
+    'Staff & Workload',
+    'Leave Approvals',
+    'Suspension Approvals',
+    'Termination Approvals',
+    'Rehire Approvals',
+    'Reports & Analytics',
+    'Audit Logs',
+    'Articles',
+  ]);
+
+  expect(screen.getByRole('link', { name: 'Manager Dashboard' })).toHaveAttribute('href', '/erp/manager/dashboard');
+  expect(screen.getByRole('link', { name: 'Orders' })).toHaveAttribute('href', '/erp/manager/job-orders');
+  expect(screen.getByRole('link', { name: 'Repair Jobs' })).toHaveAttribute('href', '/erp/manager/repair-jobs');
+  expect(screen.getByRole('link', { name: 'Inventory Overview' })).toHaveAttribute('href', '/erp/manager/inventory-overview');
+  expect(screen.getByRole('link', { name: 'Staff & Workload' })).toHaveAttribute('href', '/erp/manager/staff-workload');
+  expect(screen.getByRole('link', { name: 'Leave Approvals' })).toHaveAttribute('href', '/erp/manager/leave-approvals');
+  expect(screen.getByRole('link', { name: 'Suspension Approvals' })).toHaveAttribute('href', '/erp/manager/suspension-approvals');
+  expect(screen.getByRole('link', { name: 'Termination Approvals' })).toHaveAttribute('href', '/erp/manager/termination-approvals');
+  expect(screen.getByRole('link', { name: 'Rehire Approvals' })).toHaveAttribute('href', '/erp/manager/rehire-approvals');
+  expect(screen.getByRole('link', { name: 'Reports & Analytics' })).toHaveAttribute('href', '/erp/manager/reports');
+  expect(screen.getByRole('link', { name: 'Audit Logs' })).toHaveAttribute('href', '/erp/manager/audit-logs');
+  expect(screen.getByRole('link', { name: 'Log Attendance' })).toHaveAttribute('href', '/erp/time-in');
+  expect(screen.getByRole('link', { name: 'My Payslips' })).toHaveAttribute('href', '/erp/my-payslips');
+
+  expect(screen.queryByRole('link', { name: /notifications|profile|action center|customer complaints|assist center|dss|assign staff|takeover|permission administration|product upload/i })).not.toBeInTheDocument();
+});
+
+it('opens the active Manager approval group without reopening a separately collapsed People group', () => {
+  state.url = '/erp/time-in';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+
+  const { rerender } = render(<AppSidebarERP />);
+  const approvals = screen.getByRole('button', { name: 'STAFF APPROVALS' });
+  const approvalsPanel = document.getElementById(approvals.getAttribute('aria-controls')!)!;
+  const people = screen.getByRole('button', { name: 'PEOPLE' });
+  const peoplePanel = document.getElementById(people.getAttribute('aria-controls')!)!;
+
+  expect(within(approvalsPanel).getAllByRole('link').map((link) => link.textContent)).toEqual([
+    'Leave Approvals', 'Suspension Approvals', 'Termination Approvals', 'Rehire Approvals',
+  ]);
+  expect(within(peoplePanel).getAllByRole('link').map((link) => link.textContent)).toEqual(['Staff & Workload']);
+  expect(within(approvalsPanel).getByRole('link', { name: 'Leave Approvals' }).querySelector('svg')).not.toBeNull();
+
+  fireEvent.click(approvals);
+  expect(screen.queryByRole('link', { name: 'Leave Approvals' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Staff & Workload' })).toBeInTheDocument();
+  fireEvent.click(people);
+
+  state.url = '/erp/manager/leave-approvals?status=pending';
+  rerender(<AppSidebarERP />);
+  expect(approvals).toHaveAttribute('aria-expanded', 'true');
+  expect(screen.getByRole('link', { name: 'Leave Approvals' })).toHaveAttribute('aria-current', 'page');
+  expect(people).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByRole('link', { name: 'Staff & Workload' })).not.toBeInTheDocument();
+});
+
+it('omits Manager groups whose pages are not authorized for a delegated viewer', () => {
+  state.url = '/erp/manager/dashboard';
+  state.role = 'OPERATIONS COORDINATOR';
+  state.roles = ['OPERATIONS COORDINATOR'];
+  state.permissions = ['access-manager-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('button', { name: 'OVERVIEW' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Manager Dashboard' })).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'OPERATIONS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'PEOPLE' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'STAFF APPROVALS' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'REPORTS & AUDIT' })).not.toBeInTheDocument();
+});
+
+it('keeps Manager self-service payslips visible when Finance is disabled', () => {
+  state.url = '/erp/manager/dashboard';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+  state.shopModules = moduleStates({ finance: false });
+  state.moduleStates = state.shopModules;
+  state.permissions = ['access-manager-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: 'Log Attendance' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'My Payslips' })).toBeInTheDocument();
+});
+
+it('shows Manager operational pages when the Manager role has an incomplete permission payload', () => {
+  state.url = '/erp/manager/dashboard';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+  state.shopOwner.business_type = 'both';
+  state.permissions = ['access-manager-dashboard'];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: 'Orders' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Repair Jobs' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Staff & Workload' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Leave Approvals' })).toBeInTheDocument();
+});
+
+it('hides Manager HR approvals when the HR module is disabled but keeps operations available', () => {
+  state.url = '/erp/manager/dashboard';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+  state.shopOwner.business_type = 'both';
+  state.shopModules = moduleStates({ hr_employees: false });
+  state.moduleStates = state.shopModules;
+  state.moduleEnforcementEnabled = true;
+  state.permissions = [
+    'access-manager-dashboard',
+    'access-manager-job-orders',
+    'access-manager-repair-jobs',
+    'access-inventory-overview',
+    'access-manager-staff-workload',
+    'access-manager-leave-approvals',
+    'access-manager-suspension-approvals',
+    'access-manager-termination-approvals',
+    'access-manager-rehire-approvals',
+    'access-manager-reports',
+    'access-audit-logs',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: 'Manager Dashboard' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Orders' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Reports & Analytics' })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Leave Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Suspension Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Termination Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: 'Rehire Approvals' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'STAFF APPROVALS' })).not.toBeInTheDocument();
+});
+
+it('hides only the Manager page whose read capability is missing', () => {
+  state.url = '/erp/manager/dashboard';
+  state.role = 'OPERATIONS COORDINATOR';
+  state.roles = ['OPERATIONS COORDINATOR'];
+  state.shopOwner.business_type = 'both';
+  state.permissions = [
+    'access-manager-dashboard',
+    'access-manager-repair-jobs',
+    'access-inventory-overview',
+    'access-manager-staff-workload',
+    'access-manager-leave-approvals',
+    'access-manager-suspension-approvals',
+    'access-manager-reports',
+    'access-audit-logs',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('link', { name: 'Orders' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Repair Jobs' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Staff & Workload' })).toBeInTheDocument();
+});
+
+it('hides Job Orders for repair-only Manager shops', () => {
+  state.url = '/erp/manager/repair-jobs';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+  state.shopOwner.business_type = 'repair';
+  state.permissions = [
+    'access-manager-dashboard',
+    'access-manager-job-orders',
+    'access-manager-repair-jobs',
+    'access-inventory-overview',
+    'access-manager-staff-workload',
+    'access-manager-leave-approvals',
+    'access-manager-suspension-approvals',
+    'access-manager-reports',
+    'access-audit-logs',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('link', { name: 'Orders' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Repair Jobs' })).toBeInTheDocument();
+});
+
+it.each(['retail', 'both'])('shows Job Orders for %s Manager shops', (businessType) => {
+  state.url = '/erp/manager/job-orders';
+  state.role = 'MANAGER';
+  state.roles = ['MANAGER'];
+  state.shopOwner.business_type = businessType;
+  state.permissions = [
+    'access-manager-dashboard',
+    'access-manager-job-orders',
+  ];
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: 'Orders' })).toBeInTheDocument();
+});
+
+it('does not retain obsolete Manager destinations in the sidebar route map', () => {
+  expect(sidebarSource).not.toContain('erp.manager.user-management');
+  expect(sidebarSource).not.toContain('erp.manager.dss-insights');
+  expect(sidebarSource).not.toContain('erp.manager.products');
+  expect(sidebarSource).not.toContain('erp.manager.repair-rejection-review');
+  expect(sidebarSource).not.toContain('erp.manager.suspend-approval');
+});
+
+it('shows only the active owner module pages inside the ERP shell', () => {
+  state.url = '/shop-owner/erp/logistics/shipments';
+  state.erpActor = { type: 'shop_owner', ownerMode: true };
+  state.activeModule = {
+    key: 'logistics',
+    slug: 'logistics',
+    label: 'Logistics',
+    pages: [
+      { label: 'Dashboard', routeName: 'shop-owner.erp.logistics.dashboard', url: '/shop-owner/erp/logistics/dashboard' },
+      { label: 'Shipments', routeName: 'shop-owner.erp.logistics.shipments', url: '/shop-owner/erp/logistics/shipments' },
+      { label: 'Riders', routeName: 'shop-owner.erp.logistics.riders', url: '/shop-owner/erp/logistics/riders' },
+    ],
+  };
+
+  render(<AppSidebarERP />);
+
+  expect(screen.getByRole('link', { name: /^Dashboard$/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/logistics/dashboard',
+  );
+  expect(screen.getByRole('link', { name: /Shipments/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/logistics/shipments',
+  );
+  expect(screen.getByRole('link', { name: /Riders/i })).toHaveAttribute(
+    'href',
+    '/shop-owner/erp/logistics/riders',
+  );
+  expect(screen.queryByRole('link', { name: /Audit Logs/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /User Access Control/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /HR & Employees/i })).not.toBeInTheDocument();
+});
+
+it.each([
+  {
+    key: 'retail_operations',
+    slug: 'retail',
+    label: 'Retail Operations',
+    pages: [{ label: 'Products', routeName: 'shop-owner.erp.retail.products', url: '/shop-owner/erp/retail/products' }],
+  },
+  {
+    key: 'repair_operations',
+    slug: 'repair',
+    label: 'Repair Operations',
+    pages: [{ label: 'Repair Dashboard', routeName: 'shop-owner.erp.staff.repair-dashboard', url: '/shop-owner/erp/staff/repair-dashboard' }],
+  },
+  {
+    key: 'hr_employees',
+    slug: 'hr',
+    label: 'HR and Employees',
+    pages: [{ label: 'Audit Logs', routeName: 'shop-owner.erp.hr.audit-logs', url: '/shop-owner/erp/hr/audit-logs' }],
+  },
+  {
+    key: 'finance',
+    slug: 'finance',
+    label: 'Finance',
+    pages: [{ label: 'Audit Logs', routeName: 'shop-owner.erp.finance.audit-logs', url: '/shop-owner/erp/finance/audit-logs' }],
+  },
+  {
+    key: 'crm',
+    slug: 'crm',
+    label: 'CRM',
+    pages: [
+      { label: 'Dashboard', routeName: 'shop-owner.erp.crm.dashboard', url: '/shop-owner/erp/crm/dashboard' },
+      { label: 'Customers', routeName: 'shop-owner.erp.crm.customers', url: '/shop-owner/erp/crm/customers' },
+      { label: 'Customer Reviews', routeName: 'shop-owner.erp.crm.customer-reviews', url: '/shop-owner/erp/crm/customer-reviews' },
+    ],
+  },
+  {
+    key: 'inventory',
+    slug: 'inventory',
+    label: 'Inventory',
+    pages: [
+      { label: 'Dashboard', routeName: 'shop-owner.erp.inventory.inventory-dashboard', url: '/shop-owner/erp/inventory/inventory-dashboard' },
+      { label: 'Product Inventory', routeName: 'shop-owner.erp.inventory.product-inventory', url: '/shop-owner/erp/inventory/product-inventory' },
+      { label: 'Stock Movement', routeName: 'shop-owner.erp.inventory.stock-movement', url: '/shop-owner/erp/inventory/stock-movement' },
+    ],
+  },
+  {
+    key: 'procurement',
+    slug: 'procurement',
+    label: 'Procurement',
+    pages: [{ label: 'Suppliers Management', routeName: 'shop-owner.erp.procurement.suppliers-management', url: '/shop-owner/erp/procurement/suppliers-management' }],
+  },
+  {
+    key: 'logistics',
+    slug: 'logistics',
+    label: 'Logistics',
+    pages: [
+      { label: 'Dashboard', routeName: 'shop-owner.erp.logistics.dashboard', url: '/shop-owner/erp/logistics/dashboard' },
+      { label: 'Shipments', routeName: 'shop-owner.erp.logistics.shipments', url: '/shop-owner/erp/logistics/shipments' },
+      { label: 'Riders', routeName: 'shop-owner.erp.logistics.riders', url: '/shop-owner/erp/logistics/riders' },
+    ],
+  },
+] as const)('scopes the sidebar to the $key module', ({ key, slug, label, pages }) => {
+  state.url = pages[0].url;
+  state.erpActor = { type: 'shop_owner', ownerMode: true };
+  state.activeModule = {
+    key,
+    slug,
+    label,
+    pages: [...pages],
+  };
+
+  render(<AppSidebarERP />);
+
+  expect(screen.queryByRole('link', { name: /ERP Workspace/i })).not.toBeInTheDocument();
+  pages.forEach((page) => {
+    expect(document.querySelector(`a[href="${page.url}"]`)).toBeInTheDocument();
+  });
+  expect(document.querySelector('a[href="/shop-owner/dashboard"]')).not.toBeInTheDocument();
+  expect(document.querySelector('a[href="/shop-owner/audit-logs"]')).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /User Access Control/i })).not.toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: /Approval Pages/i })).not.toBeInTheDocument();
+});

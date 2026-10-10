@@ -189,7 +189,7 @@ class ShopProfileController extends Controller
 
         $request->validate([
             'current_password' => ['required'],
-            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()->symbols()],
+            'password' => ['required', 'confirmed', Password::min(12)->mixedCase()->numbers()->symbols()],
         ]);
 
         if (!Hash::check((string) $request->input('current_password'), (string) $shopOwner->password)) {

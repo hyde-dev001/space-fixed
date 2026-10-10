@@ -6,6 +6,9 @@
 *.md diff=markdown
 *.php diff=php
 
+# Three.js embeds upstream GLSL text with whitespace that must stay byte-for-byte intact.
+public/build/assets/vendor-three-core-*.js whitespace=-blank-at-eol,-space-before-tab
+
 /.github export-ignore
 CHANGELOG.md export-ignore
 .styleci.yml export-ignore

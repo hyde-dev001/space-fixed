@@ -7,6 +7,7 @@ use App\Models\Notification;
 use App\Models\PosRefund;
 use App\Models\ShopOwner;
 use Illuminate\Support\Str;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class RepairOnlineRefundWorkflowService
@@ -16,6 +17,22 @@ class RepairOnlineRefundWorkflowService
     ) {}
 
     public function repairerApprove(PosRefund $refund, int $actorId, string $assessmentNote, float $approvedAmount): PosRefund
+    {
+        return DB::transaction(function () use ($refund, $actorId, $assessmentNote, $approvedAmount): PosRefund {
+            $eligibility = app(RepairResolutionEligibilityService::class);
+            $repair = $eligibility->lockRepair((int) $refund->module_reference_id, (int) $refund->shop_owner_id);
+            $lockedRefund = PosRefund::query()->whereKey($refund->id)
+                ->where('shop_owner_id', $refund->shop_owner_id)
+                ->where('module_reference_id', $refund->module_reference_id)->lockForUpdate()->firstOrFail();
+            if ($repair) {
+                $eligibility->assertRefundAllowed($repair, (string) ($lockedRefund->workflow_source ?? 'online_myrepair'), (int) $lockedRefund->id);
+            }
+
+            return $this->repairerApproveLocked($lockedRefund, $actorId, $assessmentNote, $approvedAmount);
+        });
+    }
+
+    private function repairerApproveLocked(PosRefund $refund, int $actorId, string $assessmentNote, float $approvedAmount): PosRefund
     {
         if ((string) $refund->repairer_status !== 'pending') {
             throw ValidationException::withMessages([
@@ -30,41 +47,44 @@ class RepairOnlineRefundWorkflowService
             'repairer_reviewed_at' => now(),
             'approved_amount' => round($approvedAmount, 2),
             'status' => 'requested',
-            'failure_reason' => null,
-            'failed_at' => null,
         ]);
 
-        if ($this->isIndividualShopOwner((int) $refund->shop_owner_id)) {
-            $this->notificationService->sendToShopOwner(
-                shopOwnerId: (int) $refund->shop_owner_id,
-                type: NotificationType::REFUND_REQUEST,
-                title: 'Repair Refund Approval Required',
-                message: "Repair refund {$refund->refund_no} is ready for your approval.",
-                data: [
-                    'refund_id' => (int) $refund->id,
-                    'refund_no' => (string) $refund->refund_no,
-                    'repairer_status' => 'approved',
-                ],
-                actionUrl: '/shop-owner/refund-approvals',
-                priority: 'high',
-                requiresAction: true,
-            );
-        } else {
-            $this->notificationService->sendToErpRole(
-                roleName: 'Finance',
-                shopId: (int) $refund->shop_owner_id,
-                type: NotificationType::REFUND_REQUEST,
-                title: 'Repair Refund Ready For Finance Review',
-                message: "Repair refund {$refund->refund_no} was approved by repairer and is ready for finance review.",
-                data: [
-                    'refund_id' => (int) $refund->id,
-                    'refund_no' => (string) $refund->refund_no,
-                    'repairer_status' => 'approved',
-                ],
-                actionUrl: '/finance?section=refund-approvals',
-                priority: 'high',
-            );
-        }
+        DB::afterCommit(function () use ($refund): void {
+            $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
+
+            if ($requiresOwnerApproval && $this->isIndividualShopOwner((int) $refund->shop_owner_id)) {
+                $this->notificationService->sendToShopOwner(
+                    shopOwnerId: (int) $refund->shop_owner_id,
+                    type: NotificationType::REFUND_REQUEST,
+                    title: 'Repair Refund Approval Required',
+                    message: "Repair refund {$refund->refund_no} is ready for your approval.",
+                    data: [
+                        'refund_id' => (int) $refund->id,
+                        'refund_no' => (string) $refund->refund_no,
+                        'repairer_status' => 'approved',
+                    ],
+                    actionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
+                    priority: 'high',
+                    requiresAction: true,
+                );
+            } else {
+                $this->notificationService->sendToErpRole(
+                    roleName: 'Finance',
+                    shopId: (int) $refund->shop_owner_id,
+                    type: NotificationType::REFUND_REQUEST,
+                    title: 'Repair Refund Ready For Finance Review',
+                    message: "Repair refund {$refund->refund_no} was approved by repairer and is ready for finance review.",
+                    data: [
+                        'refund_id' => (int) $refund->id,
+                        'refund_no' => (string) $refund->refund_no,
+                        'repairer_status' => 'approved',
+                    ],
+                    actionUrl: '/finance?section=refund-approvals',
+                    priority: 'high',
+                    requiresAction: true,
+                );
+            }
+        });
 
         return $refund->fresh();
     }
@@ -83,8 +103,10 @@ class RepairOnlineRefundWorkflowService
             'repairer_reviewed_by' => $actorId,
             'repairer_reviewed_at' => now(),
             'status' => 'rejected',
-            'failure_reason' => Str::limit(trim($reason), 255, ''),
-            'failed_at' => now(),
+            'failure_reason' => trim((string) ($refund->failure_reason ?? '')) !== ''
+                ? $refund->failure_reason
+                : Str::limit(trim($reason), 255, ''),
+            'failed_at' => $refund->failed_at ?? now(),
         ]);
 
         $customerId = $this->resolveCustomerUserId($refund);
@@ -119,7 +141,7 @@ class RepairOnlineRefundWorkflowService
                     'repairer_status' => 'rejected',
                     'reason' => trim($reason),
                 ],
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );
@@ -135,7 +157,7 @@ class RepairOnlineRefundWorkflowService
                     'repairer_status' => 'rejected',
                     'reason' => trim($reason),
                 ],
-                actionUrl: '/shop-owner/refund-approvals',
+                actionUrl: $this->notificationService->ownerApprovalActionUrl('repair_refund', $refund->id),
                 priority: 'high',
                 requiresAction: true,
             );

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
 import { useState, useEffect } from "react";
@@ -96,19 +97,16 @@ interface PriceRequest {
 type StatusCategory = 'all' | 'pending_review' | 'forwarded' | 'approved' | 'rejected';
 
 type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
 
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change: number;
-  changeType: ChangeType;
   icon: ComponentType<{ className?: string }>;
   color: MetricColor;
   description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
   const getColorClasses = () => {
     switch (color) {
       case "success":
@@ -126,19 +124,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900 dark:bg-opacity-30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900 dark:bg-opacity-30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
         <div className="space-y-2">
@@ -504,14 +492,11 @@ export default function ShoePriceApproval() {
     <>
       <Head title="Shoe Price Approvals - Solespace ERP" />
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Price Approval Requests</h1>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">Review and approve price changes from STAFF</p>
-          </div>
+          {/* Header */}
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+          <h1 className="sr-only">Price Approval Requests</h1>
           {/* View Toggle */}
-          <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
+          <div className="flex gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg lg:ml-auto">
             <button
               onClick={() => setViewMode('pending')}
               className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
@@ -540,8 +525,6 @@ export default function ShoePriceApproval() {
           <MetricCard
             title="Pending Finance Review"
             value={pendingCount}
-            change={12}
-            changeType="increase"
             icon={ClockIcon}
             color="warning"
             description="Awaiting your review"
@@ -549,8 +532,6 @@ export default function ShoePriceApproval() {
           <MetricCard
             title="Forwarded to Owner"
             value={financeApprovedCount}
-            change={5}
-            changeType="increase"
             icon={TrendingUpIcon}
             color="info"
             description="Awaiting owner approval"
@@ -558,8 +539,6 @@ export default function ShoePriceApproval() {
           <MetricCard
             title="Fully Approved"
             value={approvedCount}
-            change={8}
-            changeType="increase"
             icon={CheckIcon}
             color="success"
             description="Owner approved & applied"
@@ -567,8 +546,6 @@ export default function ShoePriceApproval() {
           <MetricCard
             title="Rejected"
             value={rejectedCount}
-            change={3}
-            changeType="decrease"
             icon={XIcon}
             color="warning"
             description="Finance or owner rejected"
@@ -597,7 +574,7 @@ export default function ShoePriceApproval() {
               />
             </div>
             <div>
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value as StatusCategory);
@@ -612,7 +589,7 @@ export default function ShoePriceApproval() {
                 <option value="forwarded">Forwarded to Owner</option>
                 <option value="approved">Approved</option>
                 <option value="rejected">Rejected</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -774,7 +751,7 @@ export default function ShoePriceApproval() {
 
         {/* View Modal */}
         {viewModalOpen && selectedRequest && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center gap-3">

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
 import { route } from 'ziggy-js';
-import Navigation from '../Shared/Navigation';
+import AuthBrand from '../Shared/AuthBrand';
 import Form from '../../../components/form/Form';
 import Label from '../../../components/form/Label';
 import Input from '../../../components/form/input/InputField';
@@ -28,7 +28,7 @@ export default function NewPassword() {
 	});
 	const [errors, setErrors] = useState<FormErrors>({});
 	const [isLoading, setIsLoading] = useState(false);
-	const authInputClasses = 'h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70 dark:!border-gray-200 dark:!bg-[#f8fafc] dark:!text-gray-800 dark:placeholder:!text-gray-400 dark:focus:!border-gray-300 dark:focus:!ring-gray-200/70';
+	const authInputClasses = 'userside-auth-input h-12 rounded-xl !border-gray-200 !bg-[#f8fafc] !text-[13px] !text-gray-800 placeholder:!text-gray-400 shadow-none focus:!border-gray-300 focus:!ring-gray-200/70';
 
 	useEffect(() => {
 		if (!email) {
@@ -41,8 +41,8 @@ export default function NewPassword() {
 
 		if (!formData.password) {
 			newErrors.password = 'Enter a new password.';
-		} else if (formData.password.length < 8) {
-			newErrors.password = 'Password must be at least 8 characters';
+		} else if (formData.password.length < 12) {
+			newErrors.password = 'Password must be at least 12 characters';
 		}
 
 		if (!formData.confirmPassword) {
@@ -116,21 +116,12 @@ export default function NewPassword() {
 		<>
 			<Head title="Create New Password" />
 
-			<div className="min-h-screen bg-white font-outfit antialiased">
-				<Navigation />
+			<div className="userside-auth-page userside-auth-pattern relative min-h-screen font-outfit antialiased">
+				<AuthBrand />
 
-				<div className="max-w-480 mx-auto px-6 lg:px-12 py-24">
-					<div className="text-center mb-12">
-						<h1 className="text-4xl lg:text-6xl font-bold text-gray-900 mb-6 tracking-tight">
-							SET NEW PASSWORD
-						</h1>
-						<p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed font-light">
-							Set a new password for {email || 'your account'}.
-						</p>
-					</div>
-
-					<div className="max-w-lg mx-auto">
-						<div className="bg-white rounded-2xl shadow-xl p-8">
+				<div className="flex min-h-screen w-full max-w-480 items-center justify-center mx-auto px-6 lg:px-12 py-24">
+					<div className="w-full max-w-lg mx-auto">
+						<div className="userside-auth-card bg-white rounded-2xl shadow-xl p-8">
 							<Form onSubmit={handleSubmit} className="space-y-6">
 								<div className="relative">
 									<Label htmlFor="password">New Password</Label>
@@ -142,6 +133,7 @@ export default function NewPassword() {
 											type="password"
 											id="password"
 											name="password"
+											minLength={12}
 											placeholder="Enter your new password"
 											value={formData.password}
 											onChange={handleInputChange}
@@ -161,6 +153,7 @@ export default function NewPassword() {
 											type="password"
 											id="confirmPassword"
 											name="confirmPassword"
+											minLength={12}
 											placeholder="Confirm your new password"
 											value={formData.confirmPassword}
 											onChange={handleInputChange}
@@ -173,7 +166,7 @@ export default function NewPassword() {
 								<button
 									type="submit"
 									disabled={isLoading}
-									className="w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+									className="userside-auth-primary w-full px-10 py-4 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 								>
 									{isLoading ? 'Resetting password...' : 'Reset password'}
 								</button>
@@ -184,7 +177,7 @@ export default function NewPassword() {
 									Need to verify your code again?{' '}
 									<Link
 										href={route('password.otp', { email })}
-										className="text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
+										className="userside-auth-link text-black hover:text-black/80 font-semibold uppercase tracking-wider text-sm transition-colors"
 									>
 										Back to verify code
 									</Link>

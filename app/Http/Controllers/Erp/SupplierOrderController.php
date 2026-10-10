@@ -13,6 +13,14 @@ use Illuminate\Support\Str;
 
 class SupplierOrderController extends Controller
 {
+    public function legacyGone()
+    {
+        return response()->json([
+            'message' => 'Legacy Supplier Orders are read-only. Use canonical Purchase Orders.',
+            'data' => ['canonical_url' => '/api/erp/procurement/purchase-orders'],
+        ], 410);
+    }
+
     /**
      * Display a listing of supplier orders
      */

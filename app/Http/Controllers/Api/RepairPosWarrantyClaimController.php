@@ -32,8 +32,6 @@ class RepairPosWarrantyClaimController extends Controller
             'same_issue_confirmation' => ['required', 'accepted'],
             'preferred_return_method' => ['required', 'string', 'in:walk_in,customer_delivery'],
             'preferred_receive_method' => ['nullable', 'string', 'in:walk_in,shop_delivery'],
-            'images' => ['required', 'array', 'min:1', 'max:10'],
-            'images.*' => ['file', 'image', 'mimes:jpeg,jpg,png,webp', 'max:20480'],
         ]);
 
         $actorShopOwnerId = $this->resolveActorShopOwnerId($actor);
@@ -89,7 +87,6 @@ class RepairPosWarrantyClaimController extends Controller
         $claim = $service->createPosWalkInClaim(
             repair: $repair,
             validated: $validated,
-            images: (array) $request->file('images', []),
             actorId: $this->resolveActorAuditUserId(),
         );
 

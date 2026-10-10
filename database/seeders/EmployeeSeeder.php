@@ -122,6 +122,33 @@ class EmployeeSeeder extends Seeder
                 'salary' => 1076.92,
                 'phone' => '+639176660001',
             ],
+            [
+                'first_name' => 'Daniel',
+                'last_name' => 'Cruz',
+                'email' => "logistics.dispatcher.{$shopOwner->id}@solespace.com",
+                'position' => 'Logistics Dispatcher',
+                'department' => 'Logistics Dispatcher',
+                'salary' => 1076.92,
+                'phone' => '+639180000001',
+            ],
+            [
+                'first_name' => 'Marco',
+                'last_name' => 'Santos',
+                'email' => "logistics.rider.{$shopOwner->id}@solespace.com",
+                'position' => 'Logistics Rider',
+                'department' => 'Logistics Rider',
+                'salary' => 1076.92,
+                'phone' => '+639180000002',
+            ],
+            [
+                'first_name' => 'Paolo',
+                'last_name' => 'Mendoza',
+                'email' => "logistics.rider2.{$shopOwner->id}@solespace.com",
+                'position' => 'Logistics Rider',
+                'department' => 'Logistics Rider',
+                'salary' => 1076.92,
+                'phone' => '+639180000003',
+            ],
         ];
 
         // Add Repairer only if not retail-only business
@@ -137,7 +164,10 @@ class EmployeeSeeder extends Seeder
             ];
         }
 
-        foreach ($commonEmployees as &$employeeData) {
+        foreach ($commonEmployees as $index => &$employeeData) {
+            $seedPhoneSuffix = str_pad((string) (($shopOwner->id * 100) + $index + 1), 4, '0', STR_PAD_LEFT);
+            $employeeData['phone'] = substr($employeeData['phone'], 0, -4) . $seedPhoneSuffix;
+
             $position = $employeeData['position'] ?? '';
             if ($position !== '' && array_key_exists($position, $basePayTable)) {
                 $employeeData['salary'] = round((float) $basePayTable[$position], 2);
@@ -186,6 +216,8 @@ class EmployeeSeeder extends Seeder
                 'Inventory Manager' => ['role' => 'INVENTORY_MANAGER', 'spatie' => 'Inventory Manager'],
                 'Procurement Manager' => ['role' => 'PROCUREMENT_MANAGER', 'spatie' => 'Procurement Manager'],
                 'Staff' => ['role' => 'STAFF', 'spatie' => 'Staff'],
+                'Logistics Dispatcher' => ['role' => 'LOGISTICS_DISPATCHER', 'spatie' => 'Logistics Dispatcher'],
+                'Logistics Rider' => ['role' => 'LOGISTICS_RIDER', 'spatie' => 'Logistics Rider'],
             ];
             
             $department = $employeeData['department'];

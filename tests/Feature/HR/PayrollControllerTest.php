@@ -6,14 +6,21 @@ use PHPUnit\Framework\Attributes\Test;
 use Tests\TestCase;
 use App\Models\User;
 use App\Models\ShopOwner;
+use App\Models\Approval;
 use App\Models\Employee;
 use App\Models\HR\Payroll;
 use App\Models\HR\AttendanceRecord;
 use App\Models\HR\LeaveRequest;
+use App\Models\HR\PayrollComponent;
+use App\Models\HR\ThirteenthMonthAccrual;
+use App\Services\HR\PayrollService;
+use App\Services\OwnerActionCenter\Adapters\PayslipAttentionAdapter;
+use App\Support\OwnerActionCenter\OwnerAttentionQuery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Carbon\Carbon;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class PayrollControllerTest extends TestCase
 {
@@ -94,7 +101,9 @@ class PayrollControllerTest extends TestCase
 
         $this->withoutMiddleware();
 
-        $this->shopOwner = ShopOwner::factory()->create();
+        $this->shopOwner = ShopOwner::factory()->create([
+            'registration_type' => 'company',
+        ]);
 
         $this->hrUser = User::factory()->create([
             'shop_owner_id' => $this->shopOwner->id,
@@ -107,6 +116,7 @@ class PayrollControllerTest extends TestCase
         ]);
 
         Permission::findOrCreate('access-payslip-generation', 'user');
+        Permission::findOrCreate('access-payslip-approval', 'user');
         $this->hrUser->givePermissionTo('access-payslip-generation');
 
         $this->employee = Employee::factory()->create([
@@ -141,6 +151,77 @@ class PayrollControllerTest extends TestCase
     }
 
     #[Test]
+    public function test_generated_payroll_enters_owner_approval_workflow_and_notifies_owner(): void
+    {
+        Role::findOrCreate('shop-owner', 'user');
+        Role::findOrCreate('finance', 'user');
+        $ownerUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'role' => 'Shop Owner',
+        ]);
+        $ownerUser->assignRole('shop-owner');
+        $financeUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'role' => 'Finance',
+        ]);
+        $financeUser->assignRole('finance');
+        $financeUser->givePermissionTo('access-payslip-approval');
+
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll', $this->payrollPayload([
+                'payrollPeriod' => now()->addMonth()->format('Y-m'),
+            ]));
+
+        $response->assertCreated();
+
+        $payroll = Payroll::query()->latest('id')->firstOrFail();
+
+        $this->assertNotNull($payroll->approval_id);
+        $this->assertSame('v4_multi_level', $payroll->approval_workflow_version);
+        $this->assertSame('pending', $payroll->approval_status);
+        $this->assertDatabaseHas('approvals', [
+            'id' => $payroll->approval_id,
+            'approvable_type' => Payroll::class,
+            'approvable_id' => $payroll->id,
+            'shop_owner_id' => $ownerUser->id,
+            'current_approver_role' => 'finance',
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($financeUser, 'user')
+            ->postJson("/api/finance/payslip-approvals/{$payroll->id}/approve", [
+                'notes' => 'Finance review complete',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $this->shopOwner->id,
+            'title' => 'Payslip Awaiting Shop Owner Approval',
+            'action_url' => "/shop-owner/action-center?bucket=needs_my_decision&approval=payslip:{$payroll->id}",
+        ]);
+
+        $ownerQueue = app(PayslipAttentionAdapter::class)->read(
+            $this->shopOwner,
+            new OwnerAttentionQuery(perPage: 20),
+        );
+
+        $this->assertCount(1, $ownerQueue->items);
+        $this->assertSame($payroll->id, $ownerQueue->items[0]->sourceId);
+    }
+
+    #[Test]
+    public function test_routine_payroll_rejects_inactive_employee_with_policy_error(): void
+    {
+        $this->employee->update(['status' => 'inactive']);
+
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll', $this->payrollPayload());
+
+        $response->assertStatus(422)
+            ->assertJsonPath('code', 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL');
+    }
+
+    #[Test]
     public function test_tax_calculated_correctly()
     {
         $response = $this->actingAs($this->hrUser, 'user')
@@ -154,7 +235,11 @@ class PayrollControllerTest extends TestCase
         $this->assertNotNull($payroll);
         $this->assertGreaterThan(0, (float) $payroll->gross_salary);
         $this->assertGreaterThan(0, (float) $payroll->net_salary);
-        $this->assertLessThanOrEqual((float) $payroll->gross_salary, (float) $payroll->net_salary + (float) $payroll->tax_amount + (float) $payroll->total_deductions);
+        $this->assertEqualsWithDelta(
+            (float) $payroll->gross_salary,
+            (float) $payroll->net_salary + (float) $payroll->total_deductions,
+            0.01,
+        );
     }
 
     #[Test]
@@ -185,6 +270,39 @@ class PayrollControllerTest extends TestCase
         $payroll = Payroll::latest()->first();
         $this->assertEquals($daysPresent, (int) $payroll->attendance_days);
         $this->assertEquals($daysAbsent, (int) $payroll->absent_days);
+    }
+
+    #[Test]
+    public function test_batch_attendance_counts_late_and_half_day_records_as_worked(): void
+    {
+        $month = Carbon::parse('2026-03-01');
+        $this->seedFinalizedAttendanceForMonth($this->employee, $month);
+
+        $records = AttendanceRecord::query()
+            ->where('employee_id', $this->employee->id)
+            ->whereDate('date', '>=', $month->toDateString())
+            ->whereDate('date', '<=', $month->copy()->endOfMonth()->toDateString())
+            ->orderBy('date')
+            ->get();
+
+        $records[0]->forceFill(['status' => 'late', 'is_late' => true, 'minutes_late' => 30])->saveQuietly();
+        $records[1]->update(['status' => 'half_day', 'working_hours' => 4]);
+        $this->assertSame(22, $records->count());
+        $this->assertSame([], $records->pluck('status')->diff(['present', 'late', 'half_day'])->all());
+
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll/batch/preview', [
+                'payrollPeriod' => '2026-03',
+                'employeeIds' => [$this->employee->id],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('summary.preview_count', 1)
+            ->assertJsonPath('previews.0.attendance.total_present_days', 22)
+            ->assertJsonPath('previews.0.attendance.total_late_days', 1)
+            ->assertJsonPath('previews.0.attendance.total_late_hours', 0.5)
+            ->assertJsonPath('previews.0.attendance.total_half_day_days', 1)
+            ->assertJsonPath('previews.0.calculation.late_deductions', 3125);
     }
 
     #[Test]
@@ -356,6 +474,13 @@ class PayrollControllerTest extends TestCase
         $this->assertEquals(780.0, (float) $previewCalculation['performance_bonus']);
         $this->assertEquals(750.0, (float) $previewCalculation['other_allowances']);
 
+        Role::findOrCreate('shop-owner', 'user');
+        $ownerUser = User::factory()->create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'role' => 'Shop Owner',
+        ]);
+        $ownerUser->assignRole('shop-owner');
+
         $generateResponse = $this->actingAs($this->hrUser, 'user')
             ->postJson('/api/hr/payroll/batch/generate', [
                 'payrollPeriod' => $period,
@@ -376,6 +501,8 @@ class PayrollControllerTest extends TestCase
         $this->assertTrue($payroll->components->contains('component_name', 'Sales Commission'));
         $this->assertTrue($payroll->components->contains('component_name', 'Performance Bonus'));
         $this->assertTrue($payroll->components->contains('component_name', 'Other Allowances'));
+        $this->assertNotNull($payroll->approval_id);
+        $this->assertSame('v4_multi_level', $payroll->approval_workflow_version);
     }
 
     #[Test]
@@ -489,6 +616,20 @@ class PayrollControllerTest extends TestCase
     }
 
     #[Test]
+    public function test_hr_with_payslip_generation_permission_can_trigger_thirteenth_month_release(): void
+    {
+        $response = $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll/13th-month/release', [
+                'year' => 2025,
+                'release_date' => '2025-12-31',
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('message', '13th-month release process completed')
+            ->assertJsonPath('result.year', 2025);
+    }
+
+    #[Test]
     public function test_thirteenth_month_release_accepts_explicit_december_release_date_in_non_december_runtime()
     {
         Carbon::setTestNow(Carbon::parse('2026-03-17'));
@@ -511,6 +652,50 @@ class PayrollControllerTest extends TestCase
         } finally {
             Carbon::setTestNow();
         }
+    }
+
+    #[Test]
+    public function test_explicit_thirteenth_month_release_can_include_inactive_employee_with_owed_balance(): void
+    {
+        $year = 2025;
+        $this->employee->update(['status' => 'inactive']);
+        $otherApprover = User::factory()->create(['shop_owner_id' => $this->shopOwner->id]);
+
+        $payroll = $this->createPayroll([
+            'payroll_period' => "{$year}-12",
+            'pay_period_start' => "{$year}-12-01",
+            'pay_period_end' => "{$year}-12-31",
+            'status' => 'approved',
+            'approval_status' => 'approved',
+            'approved_by' => $this->hrUser->id,
+            'final_approved_by' => $otherApprover->id,
+        ]);
+
+        ThirteenthMonthAccrual::create([
+            'shop_owner_id' => $this->shopOwner->id,
+            'employee_id' => $this->employee->id,
+            'payroll_id' => $payroll->id,
+            'accrual_year' => $year,
+            'accrual_month' => 11,
+            'accrual_amount' => 1000,
+            'release_amount' => 0,
+            'status' => 'accrued',
+        ]);
+
+        $result = app(PayrollService::class)->releaseThirteenthMonth(
+            $this->shopOwner->id,
+            $year,
+            $this->hrUser->id,
+            [$this->employee->id],
+            ['release_date' => "{$year}-12-31"],
+        );
+
+        $this->assertSame(1, $result['processed_count']);
+        $this->assertSame('released', $result['items'][0]['status']);
+        $this->assertDatabaseHas('hr_payroll_components', [
+            'payroll_id' => $payroll->id,
+            'component_code' => PayrollComponent::CODE_13TH_RELEASE,
+        ]);
     }
 
     #[Test]
@@ -718,11 +903,11 @@ class PayrollControllerTest extends TestCase
             "Payroll should record 1 leave day (Mar 20) from approved sick leave. Got: {$payroll->leave_days}"
         );
         
-        // Absent days should be 6 (Mar 23, 24, 25, 26, 27, 30 or 31) - March 20 moved to leave_days
+        // Absent days should be 7 (Mar 23-27 and Mar 30-31) - March 20 moved to leave_days
         $this->assertEquals(
-            6,
+            7,
             $payroll->absent_days,
-            "Absent days should exclude March 20. Got: {$payroll->absent_days}"
+            "Absent days should exclude March 20 while keeping March 31 in the period. Got: {$payroll->absent_days}"
         );
     }
 }

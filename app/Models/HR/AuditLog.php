@@ -49,6 +49,7 @@ class AuditLog extends Model
     public const MODULE_PERFORMANCE = 'performance';
     public const MODULE_DEPARTMENT = 'department';
     public const MODULE_DOCUMENT = 'document';
+    public const MODULE_SUSPENSION = 'suspension';
 
     /**
      * Action constants

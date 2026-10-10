@@ -24,6 +24,7 @@ import {
     CreateSupplierOrderData,
     ReceiveOrderData,
     InventoryAlert,
+    UpdateInventoryReplenishmentSettingsData,
 } from '@/types/inventory';
 
 const API_BASE = '/api/erp/inventory';
@@ -46,13 +47,13 @@ export const dashboardAPI = {
     /**
      * Get dashboard overview
      */
-    async getOverview(): Promise<{
+    async getOverview(url = `${API_BASE}/dashboard`): Promise<{
         metrics: InventoryMetrics;
         chartData: ChartData;
         recentItems: InventoryItem[];
     }> {
         try {
-            const response = await axios.get(`${API_BASE}/dashboard`);
+            const response = await axios.get(url);
             return response.data;
         } catch (error) {
             return handleApiError(error);
@@ -62,9 +63,9 @@ export const dashboardAPI = {
     /**
      * Get dashboard metrics only
      */
-    async getMetrics(): Promise<InventoryMetrics> {
+    async getMetrics(url = `${API_BASE}/dashboard/metrics`): Promise<InventoryMetrics> {
         try {
-            const response = await axios.get(`${API_BASE}/dashboard/metrics`);
+            const response = await axios.get(url);
             return response.data;
         } catch (error) {
             return handleApiError(error);
@@ -89,9 +90,9 @@ export const productInventoryAPI = {
     /**
      * Get paginated list of inventory items
      */
-    async getAll(filters?: InventoryFilters): Promise<PaginatedResponse<InventoryItem>> {
+    async getAll(filters?: InventoryFilters, url = `${API_BASE}/products`): Promise<PaginatedResponse<InventoryItem>> {
         try {
-            const response = await axios.get(`${API_BASE}/products`, { params: filters });
+            const response = await axios.get(url, { params: filters });
             return response.data;
         } catch (error) {
             return handleApiError(error);
@@ -140,9 +141,9 @@ export const stockMovementAPI = {
     /**
      * Get paginated list of stock movements
      */
-    async getAll(filters?: StockMovementFilters): Promise<PaginatedResponse<StockMovement>> {
+    async getAll(filters?: StockMovementFilters, url = `${API_BASE}/movements`): Promise<PaginatedResponse<StockMovement>> {
         try {
-            const response = await axios.get(`${API_BASE}/movements`, { params: filters });
+            const response = await axios.get(url, { params: filters });
             return response.data;
         } catch (error) {
             return handleApiError(error);
@@ -226,7 +227,7 @@ export const inventoryItemAPI = {
             Object.entries(data).forEach(([key, value]) => {
                 if (['images', 'sizes', 'color_variants'].includes(key)) return;
                 if (value !== null && value !== undefined) {
-                    formData.append(key, String(value));
+                    formData.append(key, key === 'auto_stock_request_enabled' ? (value ? '1' : '0') : String(value));
                 }
             });
 
@@ -299,6 +300,21 @@ export const inventoryItemAPI = {
     },
 
     /**
+     * Update explicit per-variant automatic replenishment settings.
+     */
+    async updateReplenishmentSettings(
+        id: number,
+        data: UpdateInventoryReplenishmentSettingsData,
+    ): Promise<{ message: string; item: InventoryItem }> {
+        try {
+            const response = await axios.put(`${API_BASE}/items/${id}/replenishment-settings`, data);
+            return response.data;
+        } catch (error) {
+            return handleApiError(error);
+        }
+    },
+
+    /**
      * Add a new colour variant to an existing inventory item.
      * The backend will auto-sync it to the linked product.
      */
@@ -354,12 +370,15 @@ export const inventoryItemAPI = {
     /**
      * Upload images
      */
-    async uploadImages(itemId: number, images: File[], colorVariantId?: number): Promise<ApiResponse<{ images: any[] }>> {
+    async uploadImages(itemId: number, images: File[], colorVariantId?: number, replaceMainImage = false): Promise<ApiResponse<{ images: any[] }>> {
         try {
             const formData = new FormData();
             formData.append('inventory_item_id', String(itemId));
             if (colorVariantId !== undefined) {
                 formData.append('color_variant_id', String(colorVariantId));
+            }
+            if (replaceMainImage) {
+                formData.append('replace_main_image', '1');
             }
             images.forEach((image, index) => {
                 formData.append(`images[${index}]`, image);

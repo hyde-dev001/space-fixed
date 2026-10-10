@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
@@ -429,15 +430,10 @@ export default function RequestMaterials() {
     <AppLayoutERP hideHeader={isCreateModalOpen || isCartOpen}>
       <Head title="Request Material - Repair - Solespace" />
 
-      {isCreateModalOpen && <div className="fixed inset-0 z-40" />}
-
       <div className="p-6 space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Request Material</h1>
-            <p className="text-gray-600 dark:text-gray-400">Request repair materials from Inventory and monitor their approval status</p>
-          </div>
-          <div className="flex gap-2">
+          <h1 className="sr-only">Request Material</h1>
+          <div className="ml-auto flex gap-2">
             {cart.length > 0 && (
               <button
                 onClick={() => setIsCartOpen(true)}
@@ -449,7 +445,7 @@ export default function RequestMaterials() {
             )}
             <button
               onClick={() => setIsCreateModalOpen(true)}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors w-fit"
+              className="px-4 py-2 bg-gray-950 hover:bg-black dark:bg-gray-950 dark:hover:bg-black text-white rounded-lg font-medium transition-colors w-fit"
             >
               + New Material Request
             </button>
@@ -478,11 +474,11 @@ export default function RequestMaterials() {
                   setSearchQuery(event.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:border-gray-950 dark:focus:border-gray-300"
               />
             </div>
             <div className="sm:w-56">
-              <select
+              <MonochromeSelect
                 title="Filter by request status"
                 aria-label="Filter by request status"
                 value={statusFilter}
@@ -490,14 +486,14 @@ export default function RequestMaterials() {
                   setStatusFilter(event.target.value as "All" | RequestStatus);
                   setCurrentPage(1);
                 }}
-                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
+                className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-gray-950 dark:focus:border-gray-300"
               >
                 <option value="All">All Status</option>
                 <option value="pending">Pending</option>
                 <option value="accepted">Approved</option>
                 <option value="rejected">Rejected</option>
                 <option value="needs_details">Needs Details</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -586,7 +582,7 @@ export default function RequestMaterials() {
 
       {isCreateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setIsCreateModalOpen(false)} />
+          <div className="absolute inset-0 bg-black/40 erp-modal-backdrop" onClick={() => setIsCreateModalOpen(false)} />
           <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-6 shadow-2xl">
             <div className="mb-4">
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Create Material Request</h3>
@@ -596,7 +592,7 @@ export default function RequestMaterials() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Material</label>
-                <select
+                <MonochromeSelect
                   value={formData.materialId}
                   onChange={(event) => setFormData((prev) => ({ ...prev, materialId: event.target.value }))}
                   title="Select material"
@@ -609,7 +605,7 @@ export default function RequestMaterials() {
                       {material.name} ({material.sku || "N/A"})
                     </option>
                   ))}
-                </select>
+                </MonochromeSelect>
                 {selectedMaterial && (
                   <p className="mt-1 text-xs text-gray-500">Available stock: {selectedMaterial.available_quantity} {selectedMaterial.unit || "unit"}(s)</p>
                 )}
@@ -629,7 +625,7 @@ export default function RequestMaterials() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Priority</label>
-                <select
+                <MonochromeSelect
                   value={formData.priority}
                   onChange={(event) => setFormData((prev) => ({ ...prev, priority: event.target.value as Priority }))}
                   title="Select priority"
@@ -639,7 +635,7 @@ export default function RequestMaterials() {
                   <option value="High">High</option>
                   <option value="Medium">Medium</option>
                   <option value="Low">Low</option>
-                </select>
+                </MonochromeSelect>
               </div>
 
               <div className="md:col-span-2">
@@ -670,7 +666,7 @@ export default function RequestMaterials() {
               </button>
               <button
                 onClick={handleAddToCart}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium"
+                className="px-4 py-2 rounded-lg bg-gray-950 hover:bg-black dark:bg-gray-950 dark:hover:bg-black text-white font-medium"
                 title="Add to cart for bulk submission"
               >
                 + Add to Cart
@@ -680,11 +676,9 @@ export default function RequestMaterials() {
         </div>
       )}
 
-      {isCartOpen && <div className="fixed inset-0 z-40" />}
-
       {isCartOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40" onClick={() => !isSubmittingCart && setIsCartOpen(false)} />
+          <div className="absolute inset-0 bg-black/40 erp-modal-backdrop" onClick={() => !isSubmittingCart && setIsCartOpen(false)} />
           <div className="relative w-full max-w-2xl rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 p-6 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="mb-4">
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white">Bulk Material Request Cart</h3>
@@ -738,7 +732,7 @@ export default function RequestMaterials() {
 
                       <div>
                         <label className="text-xs font-medium text-gray-600 dark:text-gray-400">Priority</label>
-                        <select
+                        <MonochromeSelect
                           value={item.priority}
                           onChange={(e) =>
                             handleUpdateCartItem(item.id, {
@@ -753,7 +747,7 @@ export default function RequestMaterials() {
                           <option value="High">High</option>
                           <option value="Medium">Medium</option>
                           <option value="Low">Low</option>
-                        </select>
+                        </MonochromeSelect>
                       </div>
                     </div>
 
@@ -793,7 +787,7 @@ export default function RequestMaterials() {
                 <button
                   onClick={handleSubmitCart}
                   disabled={isSubmittingCart || cart.length === 0}
-                  className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-4 py-2 rounded-lg bg-gray-950 hover:bg-black dark:bg-gray-950 dark:hover:bg-black text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSubmittingCart ? "Submitting..." : "Submit All Requests"}
                 </button>

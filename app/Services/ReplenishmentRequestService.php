@@ -283,7 +283,7 @@ class ReplenishmentRequestService
             title: 'New Replenishment Request',
             message: "Replenishment request {$payload['request_number']} for {$payload['product_name']} (Qty: {$payload['quantity_needed']}) needs review.",
             data: $payload,
-            actionUrl: '/erp/procurement/replenishment-request-approval',
+            actionUrl: '/erp/inventory/request-material-approval',
             priority: $request->priority === 'high' ? 'high' : 'medium'
         );
     }
@@ -303,7 +303,7 @@ class ReplenishmentRequestService
             title: 'Replenishment Request Accepted',
             message: "Your replenishment request {$payload['request_number']} has been accepted.",
             data: $payload,
-            actionUrl: '/erp/procurement/replenishment-request-approval',
+            actionUrl: '/erp/inventory/stock-request',
             shopId: (int) $request->shop_owner_id,
             priority: 'medium'
         );
@@ -329,7 +329,7 @@ class ReplenishmentRequestService
             title: 'Replenishment Request Rejected',
             message: $message,
             data: $payload,
-            actionUrl: '/erp/procurement/replenishment-request-approval',
+            actionUrl: '/erp/inventory/stock-request',
             shopId: (int) $request->shop_owner_id,
             priority: 'medium'
         );
@@ -350,7 +350,7 @@ class ReplenishmentRequestService
             title: 'Replenishment Request Needs Details',
             message: "More details were requested for replenishment request {$payload['request_number']}.",
             data: $payload,
-            actionUrl: '/erp/procurement/replenishment-request-approval',
+            actionUrl: '/erp/inventory/stock-request',
             shopId: (int) $request->shop_owner_id,
             priority: 'medium'
         );
@@ -363,17 +363,18 @@ class ReplenishmentRequestService
         string $message,
         array $data,
         string $actionUrl,
-        string $priority
+        string $priority,
+        bool $requiresAction = true
     ): void {
         $recipients = User::query()
             ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', fn ($q) => $q->where('name', 'Procurement Manager'))
+            ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['procurement manager']))
             ->get();
 
         if ($recipients->isEmpty()) {
             $recipients = User::query()
                 ->where('shop_owner_id', $shopOwnerId)
-                ->whereHas('roles', fn ($q) => $q->where('name', 'Finance'))
+                ->whereHas('roles', fn ($q) => $q->whereRaw('LOWER(name) = ?', ['finance']))
                 ->get();
         }
 
@@ -386,7 +387,8 @@ class ReplenishmentRequestService
                 data: $data,
                 actionUrl: $actionUrl,
                 shopId: $shopOwnerId,
-                priority: $priority
+                priority: $priority,
+                requiresAction: $requiresAction,
             );
         }
     }

@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useState } from "react";
 import type { ComponentType } from "react";
@@ -6,22 +7,10 @@ import type { ApexOptions } from "apexcharts";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { dashboardAPI, productInventoryAPI } from "@/services/inventoryAPI";
 import type { InventoryItem, InventoryMetrics } from "@/types/inventory";
+import { erpUrl } from "@/utils/erpCapabilities";
+import { DashboardMetricCard, DashboardPanel, DashboardShell } from "@/components/dashboard";
 
 type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
-
-// Icons
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
 
 const BoxIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -59,58 +48,18 @@ const CloseIcon = ({ className }: { className?: string }) => (
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change: number;
-  changeType: ChangeType;
   icon: ComponentType<{ className?: string }>;
   color: MetricColor;
   description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
-  const getColorClasses = () => {
-    switch (color) {
-      case "success":
-        return "from-green-500 to-emerald-600";
-      case "warning":
-        return "from-yellow-500 to-orange-600";
-      case "info":
-        return "from-blue-500 to-indigo-600";
-      default:
-        return "from-gray-500 to-gray-600";
-    }
-  };
-
-  return (
-    <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
-      <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
-      <div className="relative">
-        <div className="flex items-center justify-between mb-4">
-          <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
-            <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
-          </div>
-        </div>
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
-          <h3 className="text-3xl font-bold text-gray-900 dark:text-white transition-colors duration-300">{value}</h3>
-          <p className="text-xs text-gray-500 dark:text-gray-400">{description}</p>
-        </div>
-      </div>
-    </div>
-  );
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
+  return <DashboardMetricCard label={title} value={value} description={description} context="Current" icon={Icon} tone={color === "warning" ? "warning" : color === "success" ? "success" : "neutral"} />;
 };
 
 export default function ERPInventoryOverview() {
-  const { initialData, initialMetrics } = usePage().props as any;
+  const { initialData, initialMetrics, auth, erpCapabilities } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
   const [items, setItems] = useState<InventoryItem[]>(initialData?.data ?? []);
   const [metrics, setMetrics] = useState<InventoryMetrics | null>(initialMetrics ?? null);
   const [loading, setLoading] = useState(false);
@@ -126,9 +75,16 @@ export default function ERPInventoryOverview() {
     setLoading(true);
     setLoadError(null);
     try {
+      const productsUrl = erpUrl(erpCapabilities, "GET:inventory.products.index");
+      const dashboardUrl = erpUrl(erpCapabilities, "GET:inventory.dashboard");
+
+      if (ownerMode && (!productsUrl || !dashboardUrl)) return;
+
       const [itemsResponse, latestMetrics] = await Promise.all([
-        productInventoryAPI.getAll({ per_page: 200 }),
-        dashboardAPI.getMetrics(),
+        productInventoryAPI.getAll({ per_page: 200 }, productsUrl ?? undefined),
+        ownerMode
+          ? dashboardAPI.getOverview(dashboardUrl as string).then((response) => response.metrics)
+          : dashboardAPI.getMetrics(),
       ]);
       setItems(itemsResponse.data ?? []);
       setMetrics(latestMetrics ?? null);
@@ -170,9 +126,9 @@ export default function ERPInventoryOverview() {
     legend: {
       show: false,
     },
-    colors: ["#465FFF"],
+    colors: ["#111111"],
     chart: {
-      fontFamily: "Outfit, sans-serif",
+      fontFamily: "inherit",
       height: 310,
       type: "bar",
       toolbar: {
@@ -302,36 +258,21 @@ export default function ERPInventoryOverview() {
   return (
     <AppLayoutERP>
       <Head title="Inventory Dashboard - Solespace" />
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Inventory Dashboard</h1>
-            <p className="text-gray-600 dark:text-gray-400">View all available stock and inventory levels (Read-only)</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                void loadOverview();
-              }}
-              className="px-3 py-1 text-xs font-semibold rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-            >
-              Refresh
-            </button>
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-              Read-Only Access
-            </span>
-          </div>
-        </div>
+      <DashboardShell
+        testId="inventory-dashboard"
+        title="Inventory Dashboard"
+        description="View available stock, identify replenishment needs, and inspect inventory levels from the database snapshot."
+        icon={BoxIcon}
+        onRefresh={() => void loadOverview()}
+        isRefreshing={loading}
+        actions={<span className="inline-flex min-h-11 items-center rounded-full border border-gray-300 px-4 text-xs font-semibold uppercase tracking-[0.12em] text-gray-600 dark:border-gray-700 dark:text-gray-300">Read-only access</span>}
+      >
 
         {/* Metrics */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           <MetricCard
             title="Total Items in Stock"
             value={totalItems}
-            change={12}
-            changeType="increase"
             icon={BoxIcon}
             color="info"
             description="Across all categories"
@@ -339,8 +280,6 @@ export default function ERPInventoryOverview() {
           <MetricCard
             title="Low Stock Items"
             value={lowStockCount}
-            change={5}
-            changeType="decrease"
             icon={AlertIcon}
             color="warning"
             description="Need attention"
@@ -348,26 +287,19 @@ export default function ERPInventoryOverview() {
           <MetricCard
             title="Out of Stock"
             value={outOfStockCount}
-            change={2}
-            changeType="decrease"
             icon={TrendUpIcon}
             color="success"
             description="Awaiting restock"
           />
         </div>
 
-        <div className="rounded-2xl border border-gray-200 bg-white px-5 pb-5 pt-5 dark:border-gray-800 dark:bg-white/[0.03] sm:px-6 sm:pt-6">
-          <div className="mb-6">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-white/90">Products & Materials Stock</h3>
-            <p className="mt-1 text-gray-500 text-theme-sm dark:text-gray-400">Current stock count for all products and cleaning materials</p>
-          </div>
-
+        <DashboardPanel eyebrow="Stock trend" title="Products & Materials Stock" description="Current stock count for all products and cleaning materials.">
           <div className="max-w-full overflow-x-auto custom-scrollbar">
             <div className="min-w-[900px] xl:min-w-full">
               <Chart options={stockChartOptions} series={stockChartSeries} type="bar" height={310} />
             </div>
           </div>
-        </div>
+        </DashboardPanel>
 
         {/* Inventory Table */}
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
@@ -391,7 +323,7 @@ export default function ERPInventoryOverview() {
               />
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 title="Filter by category"
                 aria-label="Filter inventory by category"
                 value={categoryFilter}
@@ -402,12 +334,12 @@ export default function ERPInventoryOverview() {
                 className="w-full px-4 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 dark:focus:border-blue-400"
               >
                 {categories.map((cat) => (
-                  <option key={cat} value={cat}>{cat === "All" ? "All Categories" : cat}</option>
+                  <option key={cat} value={cat}>{cat === "All" ? "All Categories" : formatCategoryLabel(cat)}</option>
                 ))}
-              </select>
+              </MonochromeSelect>
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 title="Filter by stock status"
                 aria-label="Filter inventory by stock status"
                 value={statusFilter}
@@ -421,7 +353,7 @@ export default function ERPInventoryOverview() {
                 <option value="In Stock">In Stock</option>
                 <option value="Low Stock">Low Stock</option>
                 <option value="Out of Stock">Out of Stock</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -458,7 +390,7 @@ export default function ERPInventoryOverview() {
                 ) : paginatedItems.length === 0 ? (
                   <tr><td colSpan={5} className="py-10 text-center text-sm text-gray-500">No inventory items found.</td></tr>
                 ) : paginatedItems.map((item) => (
-                  <tr key={item.id}>
+                  <tr key={`${item.source_type ?? "inventory"}-${item.source_id ?? item.id}`}>
                     <td className="py-3">
                       <div className="flex items-center gap-3">
                         <div className="h-12 w-12 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
@@ -545,7 +477,7 @@ export default function ERPInventoryOverview() {
 
         {/* View Details Modal */}
         {viewModalOpen && selectedItem && (
-          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full">
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Inventory Item Details</h2>
@@ -617,7 +549,7 @@ export default function ERPInventoryOverview() {
             </div>
           </div>
         )}
-      </div>
+      </DashboardShell>
     </AppLayoutERP>
   );
 }

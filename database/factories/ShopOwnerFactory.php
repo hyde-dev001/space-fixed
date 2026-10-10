@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 
@@ -44,7 +45,7 @@ class ShopOwnerFactory extends Factory
                 'saturday' => ['open' => '09:00', 'close' => '17:00'],
                 'sunday' => ['open' => '10:00', 'close' => '16:00'],
             ]),
-            'status' => $this->faker->randomElement(['pending', 'approved', 'rejected']),
+            'status' => 'approved',
             'rejection_reason' => $this->faker->optional()->sentence,
         ];
     }
@@ -67,6 +68,14 @@ class ShopOwnerFactory extends Factory
         return $this->state(fn(array $attributes) => [
             'status' => 'approved',
         ]);
+    }
+
+    public function withLogistics(): static
+    {
+        return $this->state(['registration_type' => 'company'])
+            ->afterCreating(fn (ShopOwner $shop) => ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id, 'module_key' => 'logistics', 'enabled' => true,
+            ]));
     }
 
     /**

@@ -75,7 +75,8 @@ class EmployeeFactory extends Factory
     public function onLeave(): static
     {
         return $this->state(fn (array $attributes) => [
-            'status' => 'inactive',
+            // Leave is an approved-request overlay; it does not disable the account.
+            'status' => 'active',
         ]);
     }
 

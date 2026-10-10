@@ -20,7 +20,7 @@ import {
 const BASE_URL = '/api/erp/procurement/purchase-requests';
 
 const unwrapPurchaseRequest = (payload: any): PurchaseRequest => {
-    if (payload?.purchase_request) return payload.purchase_request as PurchaseRequest;
+    if (payload?.data) return payload.data as PurchaseRequest;
     return payload as PurchaseRequest;
 };
 

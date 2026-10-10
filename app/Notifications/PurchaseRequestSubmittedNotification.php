@@ -45,7 +45,7 @@ class PurchaseRequestSubmittedNotification extends Notification implements Shoul
                     ->line('**Quantity:** ' . $this->purchaseRequest->quantity)
                     ->line('**Total Cost:** ₱' . number_format($this->purchaseRequest->total_cost, 2))
                     ->line('**Priority:** ' . ucfirst($this->purchaseRequest->priority))
-                    ->action('Review Purchase Request', url('/erp/procurement/purchase-requests/' . $this->purchaseRequest->id))
+                    ->action('Review Purchase Request', url('/erp/procurement/purchase-request?purchase_request=' . $this->purchaseRequest->id))
                     ->line('Please review and approve or reject this request.');
     }
 
