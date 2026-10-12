@@ -40,6 +40,17 @@ return [
         'webhook_secret' => env('PAYMONGO_WEBHOOK_SECRET'),
     ],
 
+    'xendit' => [
+        'base_url' => env('XENDIT_API_BASE_URL', 'https://api.xendit.co'),
+        'api_version' => '2025-09-01',
+    ],
+
+    'nominatim' => [
+        'url' => env('NOMINATIM_URL', 'https://nominatim.openstreetmap.org'),
+        'user_agent' => env('NOMINATIM_USER_AGENT', 'SoleSpace/1.0 (customer-address-geocoder)'),
+        'cache_max_entries' => env('NOMINATIM_CACHE_MAX_ENTRIES', 500),
+    ],
+
     'mailtrap-sdk' => [
         'host' => env('MAILTRAP_HOST', 'send.api.mailtrap.io'),
         'apiKey' => env('MAILTRAP_API_KEY'),

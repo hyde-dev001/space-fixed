@@ -1,6 +1,9 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
+import IconButton from "@/components/ui/icon-button/IconButton";
 
 // Icon Components
 const UsersIcon = ({ className }: { className?: string }) => (
@@ -39,18 +42,6 @@ const DownloadIcon = ({ className }: { className?: string }) => (
   </svg>
 );
 
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 const EyeIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -68,16 +59,12 @@ const PencilIcon = ({ className }: { className?: string }) => (
 const MetricCard = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
 }: {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   icon: React.FC<{ className?: string }>;
   color: "success" | "error" | "warning" | "info";
   description: string;
@@ -102,25 +89,10 @@ const MetricCard = ({
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-
-          {change !== undefined && changeType && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? (
-                <ArrowUpIcon className="size-3" />
-              ) : (
-                <ArrowDownIcon className="size-3" />
-              )}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
 
         <div className="space-y-2">
@@ -255,6 +227,11 @@ const transformAttendanceFromApi = (apiRecord: any) => {
 };
 
 const ViewAttendance: React.FC = () => {
+  const { auth, initialAttendance } = usePage().props as any;
+  const ownerMode = auth?.erpActor?.ownerMode === true;
+  const seededAttendance = Array.isArray(initialAttendance?.data)
+    ? initialAttendance.data.map(transformAttendanceFromApi)
+    : [];
   const [filterMonth, setFilterMonth] = useState(
     new Date().toISOString().slice(0, 7)
   );
@@ -269,15 +246,25 @@ const ViewAttendance: React.FC = () => {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(7);
-  const [attendanceData, setAttendanceData] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [paginationMeta, setPaginationMeta] = useState<any>(null);
+  const [attendanceData, setAttendanceData] = useState<any[]>(seededAttendance);
+  const [isLoading, setIsLoading] = useState(!ownerMode && !initialAttendance);
+  const [paginationMeta, setPaginationMeta] = useState<any>(initialAttendance && !ownerMode ? {
+    current_page: initialAttendance.current_page,
+    last_page: initialAttendance.last_page,
+    per_page: initialAttendance.per_page,
+    total: initialAttendance.total,
+  } : null);
   const [geofenceEnabled, setGeofenceEnabled] = useState(false);
   const [geofenceRadius, setGeofenceRadius] = useState(100);
   const [violationsOnly, setViolationsOnly] = useState(false);
 
   // Fetch attendance records from API
   useEffect(() => {
+    if (ownerMode || initialAttendance) {
+      setIsLoading(false);
+      return;
+    }
+
     const fetchAttendance = async () => {
       setIsLoading(true);
       try {
@@ -343,7 +330,7 @@ const ViewAttendance: React.FC = () => {
     };
 
     fetchAttendance();
-  }, [filterMonth, selectedStatus, currentPage, itemsPerPage, violationsOnly]);
+  }, [filterMonth, initialAttendance, ownerMode, selectedStatus, currentPage, itemsPerPage, violationsOnly]);
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -533,9 +520,12 @@ const ViewAttendance: React.FC = () => {
       case "present":
         return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
       case "late":
-        return "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300";
+        return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
+      case "half_day":
+        return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
       case "absent":
         return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
+      case "on_leave":
       case "leave":
         return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
       default:
@@ -543,14 +533,37 @@ const ViewAttendance: React.FC = () => {
     }
   };
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "half_day":
+        return "Half Day";
+      case "on_leave":
+      case "leave":
+        return "On Leave";
+      case "present":
+        return "Present";
+      case "late":
+        return "Late";
+      case "absent":
+        return "Absent";
+      default:
+        return status
+          .replace(/[_-]+/g, " ")
+          .replace(/\b\w/g, (character) => character.toUpperCase());
+    }
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case "present":
+        return <CheckCircleIcon className="size-4" />;
+      case "half_day":
         return <CheckCircleIcon className="size-4" />;
       case "late":
         return <ClockIcon className="size-4" />;
       case "absent":
         return <svg className="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>;
+      case "on_leave":
       case "leave":
         return <CalendarIcon className="size-4" />;
       default:
@@ -563,27 +576,7 @@ const ViewAttendance: React.FC = () => {
   return (
     <div className="w-full space-y-6">
       {/* Header */}
-      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Attendance Records
-          </h1>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-            Track and manage employee attendance with detailed records
-          </p>
-        </div>
-
-        <div className="mt-4 flex justify-end">
-          <button
-            onClick={handleDownloadCSV}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
-            title="Download attendance (CSV)"
-          >
-            <DownloadIcon className="size-4 text-gray-600 dark:text-gray-300" />
-            <span>Download</span>
-          </button>
-        </div>
-      </div>
+      <h1 className="sr-only">Attendance Records</h1>
 
       {/* Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
@@ -593,8 +586,6 @@ const ViewAttendance: React.FC = () => {
           icon={UsersIcon}
           color="info"
           description="Total workforce"
-          change={5}
-          changeType="increase"
         />
         <MetricCard
           title="Present Today"
@@ -602,8 +593,6 @@ const ViewAttendance: React.FC = () => {
           icon={CheckCircleIcon}
           color="success"
           description={`${stats.presentPercentage}% attendance rate`}
-          change={12}
-          changeType="increase"
         />
         <MetricCard
           title="Late"
@@ -618,8 +607,6 @@ const ViewAttendance: React.FC = () => {
           icon={UsersIcon}
           color="error"
           description="Not marked present"
-          change={3}
-          changeType="decrease"
         />
         <MetricCard
           title="On Leave"
@@ -627,8 +614,6 @@ const ViewAttendance: React.FC = () => {
           icon={CalendarIcon}
           color="warning"
           description="Approved leave"
-          change={0}
-          changeType="increase"
         />
       </div>
 
@@ -668,7 +653,7 @@ const ViewAttendance: React.FC = () => {
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Status
             </label>
-            <select
+            <MonochromeSelect
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
               className="w-full px-4 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all duration-300"
@@ -678,7 +663,7 @@ const ViewAttendance: React.FC = () => {
               <option value="late">Late</option>
               <option value="absent">Absent</option>
               <option value="on_leave">On Leave</option>
-            </select>
+            </MonochromeSelect>
           </div>
         </div>
         {geofenceEnabled && (
@@ -706,6 +691,16 @@ const ViewAttendance: React.FC = () => {
 
       {/* Attendance Table */}
       <div className="bg-white dark:bg-white/[0.03] border border-gray-200 dark:border-gray-800 rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex justify-end border-b border-gray-200 dark:border-gray-800 px-6 py-4">
+          <button
+            onClick={handleDownloadCSV}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-gray-300 dark:bg-gray-900 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            title="Download attendance (CSV)"
+          >
+            <DownloadIcon className="size-4 text-gray-600 dark:text-gray-300" />
+            <span>Download</span>
+          </button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800">
@@ -755,8 +750,8 @@ const ViewAttendance: React.FC = () => {
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
                         <div className="flex-shrink-0 h-10 w-10">
-                          <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                            <span className="text-blue-600 dark:text-blue-300 font-medium text-sm">
+                          <div className="h-10 w-10 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+                            <span className="text-white dark:text-blue-300 font-medium text-sm">
                               {getInitials(record.name)}
                             </span>
                           </div>
@@ -776,7 +771,7 @@ const ViewAttendance: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium capitalize w-fit ${getStatusColor(record.status)}`}>
-                        {record.status}
+                        {getStatusLabel(record.status)}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -790,7 +785,7 @@ const ViewAttendance: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className="inline-flex items-center px-3 py-1.5 rounded-lg bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-sm font-medium">
+                      <span className="text-sm font-medium text-gray-900 dark:text-white">
                         {record.totalHours}h
                       </span>
                     </td>
@@ -815,32 +810,36 @@ const ViewAttendance: React.FC = () => {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-1">
-                        <button
+                        <IconButton
+                          variant="neutral"
                           onClick={() => {
                             setSelectedRecord(record);
                             setIsViewModalOpen(true);
                           }}
-                          className="inline-flex items-center justify-center p-2 rounded-lg text-blue-600 hover:bg-blue-100 dark:text-blue-400 dark:hover:bg-blue-900/30 transition-colors duration-200"
                           title="View attendance details"
+                          label={`View attendance details for ${record.name}`}
                         >
                           <EyeIcon className="size-5" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setEditRecord(record);
-                            setEditForm({
-                              checkIn:  record.checkInRaw || '',
-                              checkOut: record.checkOutRaw || '',
-                              status:   record.status,
-                              notes:    record.notes || '',
-                            });
-                            setIsEditModalOpen(true);
-                          }}
-                          className="inline-flex items-center justify-center p-2 rounded-lg text-amber-600 hover:bg-amber-100 dark:text-amber-400 dark:hover:bg-amber-900/30 transition-colors duration-200"
-                          title="Correct attendance record"
-                        >
-                          <PencilIcon className="size-5" />
-                        </button>
+                        </IconButton>
+                        {!ownerMode && (
+                          <IconButton
+                            variant="warning"
+                            onClick={() => {
+                              setEditRecord(record);
+                              setEditForm({
+                                checkIn:  record.checkInRaw || '',
+                                checkOut: record.checkOutRaw || '',
+                                status:   record.status,
+                                notes:    record.notes || '',
+                              });
+                              setIsEditModalOpen(true);
+                            }}
+                            title="Correct attendance record"
+                            label={`Correct attendance record for ${record.name}`}
+                          >
+                            <PencilIcon className="size-5" />
+                          </IconButton>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -927,7 +926,7 @@ const ViewAttendance: React.FC = () => {
 
       {/* View Modal - Attendance Receipt */}
       {isViewModalOpen && selectedRecord && createPortal(
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-3xl w-full max-h-[95vh] p-8 space-y-6 overflow-y-auto">
             <h2 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Attendance Receipt</h2>
 
@@ -1031,7 +1030,7 @@ const ViewAttendance: React.FC = () => {
 
       {/* Edit Modal — Attendance Correction */}
       {isEditModalOpen && editRecord && createPortal(
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-2xl max-w-lg w-full p-8 space-y-5">
             <div className="flex items-center justify-between">
               <div>
@@ -1054,7 +1053,7 @@ const ViewAttendance: React.FC = () => {
               {/* Status */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Status</label>
-                <select
+                <MonochromeSelect
                   value={editForm.status}
                   onChange={(e) => setEditForm(f => ({ ...f, status: e.target.value }))}
                   className="w-full px-3 py-2.5 border border-gray-300 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -1063,7 +1062,7 @@ const ViewAttendance: React.FC = () => {
                   <option value="late">Late</option>
                   <option value="absent">Absent</option>
                   <option value="leave">Leave</option>
-                </select>
+                </MonochromeSelect>
               </div>
 
               {/* Check-in / Check-out */}
@@ -1111,7 +1110,7 @@ const ViewAttendance: React.FC = () => {
               <button
                 onClick={handleSaveEdit}
                 disabled={isSavingEdit}
-                className="flex-1 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white transition-colors font-medium"
+                className="flex-1 px-4 py-2.5 rounded-xl bg-gray-950 hover:bg-gray-800 disabled:bg-gray-400 text-white transition-colors font-medium"
               >
                 {isSavingEdit ? 'Saving…' : 'Save Correction'}
               </button>

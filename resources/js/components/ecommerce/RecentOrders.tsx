@@ -6,6 +6,9 @@ import {
   TableRow,
 } from "../ui/table";
 import Badge from "../ui/badge/Badge";
+import { useState } from "react";
+
+const ORDERS_PER_PAGE = 5;
 
 // Define the TypeScript interface for order items
 interface OrderItem {
@@ -13,10 +16,13 @@ interface OrderItem {
   product_id: number;
   quantity: number;
   price: number;
+  product_image?: string | null;
+  product_name?: string | null;
   product?: {
     id: number;
     name: string;
-    images: string | null;
+    main_image_url?: string | null;
+    image_urls?: Array<{ url?: string | null }>;
   };
 }
 
@@ -39,6 +45,11 @@ interface RecentOrdersProps {
 
 export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
   const FALLBACK_PRODUCT_IMAGE = '/images/product/product-01.jpg';
+  const [selectedPage, setSelectedPage] = useState(1);
+  const totalPages = Math.max(1, Math.ceil(orders.length / ORDERS_PER_PAGE));
+  const currentPage = Math.min(selectedPage, totalPages);
+  const startIndex = (currentPage - 1) * ORDERS_PER_PAGE;
+  const visibleOrders = orders.slice(startIndex, startIndex + ORDERS_PER_PAGE);
 
   // Format currency
   const formatCurrency = (amount: number) => {
@@ -115,28 +126,26 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
 
   const getFirstProductImage = (order: Order) => {
     const firstItem = order.order_items?.[0];
-    if (firstItem?.product?.images) {
-      try {
-        const parsed = JSON.parse(firstItem.product.images);
-
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return normalizeImageUrl(parsed[0]);
-        }
-
-        if (typeof parsed === 'string') {
-          return normalizeImageUrl(parsed);
-        }
-
-        return FALLBACK_PRODUCT_IMAGE;
-      } catch {
-        return normalizeImageUrl(firstItem.product.images);
-      }
+    if (firstItem?.product_image) {
+      return normalizeImageUrl(firstItem.product_image);
     }
+
+    if (firstItem?.product?.main_image_url) {
+      return normalizeImageUrl(firstItem.product.main_image_url);
+    }
+
+    const productImage = firstItem?.product?.image_urls?.find((image) => image.url)?.url;
+    if (productImage) {
+      return normalizeImageUrl(productImage);
+    }
+
     return FALLBACK_PRODUCT_IMAGE;
   };
 
   const getPrimaryOrderLabel = (order: Order) => {
-    return order.order_items?.[0]?.product?.name || 'Order item';
+    return order.order_items?.[0]?.product_name
+      || order.order_items?.[0]?.product?.name
+      || 'Order item';
   };
 
   const getItemsCount = (order: Order) => {
@@ -201,7 +210,7 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
 
             {/* Table Body */}
             <TableBody className="divide-y divide-gray-100 dark:divide-gray-800">
-              {orders.map((order) => (
+              {visibleOrders.map((order) => (
                 <TableRow key={order.id} className="">
                   <TableCell className="py-3">
                     <div className="flex items-center gap-3">
@@ -255,7 +264,36 @@ export default function RecentOrders({ orders = [] }: RecentOrdersProps) {
           </Table>
         )}
       </div>
+      {orders.length > ORDERS_PER_PAGE && (
+        <div className="mt-4 flex flex-col gap-3 border-t border-gray-100 pt-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Showing {startIndex + 1} to {Math.min(startIndex + ORDERS_PER_PAGE, orders.length)} of {orders.length} orders
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedPage((page) => Math.max(1, page - 1))}
+              disabled={currentPage === 1}
+              aria-label="Previous page"
+              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              Previous
+            </button>
+            <span className="min-w-20 text-center text-sm text-gray-600 dark:text-gray-300">
+              Page {currentPage} of {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedPage((page) => Math.min(totalPages, page + 1))}
+              disabled={currentPage === totalPages}
+              aria-label="Next page"
+              className="inline-flex min-h-11 items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-

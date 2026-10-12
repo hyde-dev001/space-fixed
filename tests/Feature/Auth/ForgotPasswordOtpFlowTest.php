@@ -71,16 +71,51 @@ class ForgotPasswordOtpFlowTest extends TestCase
 
         $resetResponse = $this->post(route('password.otp.reset'), [
             'email' => $email,
-            'password' => 'NewPass123',
-            'password_confirmation' => 'NewPass123',
+            'password' => 'NewPass123!!',
+            'password_confirmation' => 'NewPass123!!',
         ]);
 
         $resetResponse->assertRedirect(route('user.login.form'));
         $resetResponse->assertSessionHas('success');
 
         $user = User::where('email', $email)->firstOrFail();
-        $this->assertTrue(Hash::check('NewPass123', $user->password));
+        $this->assertTrue(Hash::check('NewPass123!!', $user->password));
         $this->assertNull(Cache::get('password_reset_otp:' . sha1($email)));
+    }
+
+    public function test_password_reset_requires_at_least_twelve_characters(): void
+    {
+        Mail::fake();
+
+        $email = 'short-reset-password@example.com';
+        User::factory()->create([
+            'email' => $email,
+            'password' => Hash::make('OldPass123'),
+        ]);
+
+        $this->post(route('password.otp.send'), ['email' => $email]);
+
+        $sentOtp = null;
+        Mail::assertSent(PasswordResetOtpMail::class, function (PasswordResetOtpMail $mail) use (&$sentOtp, $email) {
+            if ($mail->hasTo($email)) {
+                $sentOtp = $mail->otp;
+
+                return true;
+            }
+
+            return false;
+        });
+
+        $this->post(route('password.otp.verify'), [
+            'email' => $email,
+            'otp' => $sentOtp,
+        ]);
+
+        $this->post(route('password.otp.reset'), [
+            'email' => $email,
+            'password' => 'NewPass1!',
+            'password_confirmation' => 'NewPass1!',
+        ])->assertSessionHasErrors('password');
     }
 
     public function test_non_existing_email_does_not_send_mail_but_returns_generic_flow(): void

@@ -48,6 +48,7 @@ class EmployeeCashierCreationTest extends TestCase
         $payload = [
             'firstName' => 'Casey',
             'lastName' => 'Cashier',
+            'age' => 30,
             'email' => 'casey.cashier@example.com',
             'phone' => '09171234567',
             'position' => 'Cashier',
@@ -85,6 +86,7 @@ class EmployeeCashierCreationTest extends TestCase
         $payload = [
             'firstName' => 'Ivy',
             'lastName' => 'Inventory',
+            'age' => 31,
             'email' => 'ivy.inventory@example.com',
             'phone' => '09179990001',
             'position' => 'Inventory Controller',
@@ -118,6 +120,7 @@ class EmployeeCashierCreationTest extends TestCase
         $payload = [
             'firstName' => 'Paolo',
             'lastName' => 'Procurement',
+            'age' => 32,
             'email' => 'paolo.procurement@example.com',
             'phone' => '09179990002',
             'position' => 'Procurement Officer',

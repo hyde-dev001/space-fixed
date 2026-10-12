@@ -3,12 +3,13 @@
 namespace App\Listeners;
 
 use App\Events\SupplierOrderOverdue;
+use App\Enums\NotificationType;
 use App\Models\User;
 use App\Notifications\SupplierOrderOverdueNotification;
+use App\Services\NotificationService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Notification;
 
 class NotifySupplierOrderOverdue implements ShouldQueue
 {
@@ -43,7 +44,16 @@ class NotifySupplierOrderOverdue implements ShouldQueue
         }
 
         // Send notification to all relevant users
-        Notification::send($users, new SupplierOrderOverdueNotification($supplierOrder, $daysOverdue));
+        $notification = new SupplierOrderOverdueNotification($supplierOrder, $daysOverdue);
+        $data = $notification->toArray($users->first());
+        $mail = $notification->toMail($users->first());
+        foreach ($users as $user) {
+            app(NotificationService::class)->sendToUser(
+                userId: $user->id, type: NotificationType::SUPPLIER_ORDER_OVERDUE,
+                title: $mail->subject, message: $data['message'], data: $data,
+                actionUrl: $mail->actionUrl, shopId: $supplierOrder->shop_owner_id,
+            );
+        }
 
         Log::info("Overdue supplier order notification sent to " . $users->count() . " users for PO: {$supplierOrder->po_number}");
     }

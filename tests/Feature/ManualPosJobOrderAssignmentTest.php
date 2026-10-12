@@ -81,7 +81,7 @@ class ManualPosJobOrderAssignmentTest extends TestCase
         $repair = RepairRequest::findOrFail((int) $tx->module_reference_id);
 
         $this->assertSame($repairer->id, (int) $repair->assigned_repairer_id);
-        $this->assertSame('assigned_to_repairer', (string) $repair->status);
+        $this->assertSame('new_request', (string) $repair->status);
     }
 
     #[Test]
@@ -133,7 +133,7 @@ class ManualPosJobOrderAssignmentTest extends TestCase
         $repair = RepairRequest::findOrFail((int) $tx->module_reference_id);
 
         $this->assertSame((int) $repairerB->id, (int) $repair->assigned_repairer_id);
-        $this->assertSame('assigned_to_repairer', (string) $repair->status);
+        $this->assertSame('new_request', (string) $repair->status);
     }
 
     #[Test]
@@ -187,7 +187,7 @@ class ManualPosJobOrderAssignmentTest extends TestCase
         $repair = RepairRequest::findOrFail((int) $tx->module_reference_id);
 
         $this->assertContains((int) $repair->assigned_repairer_id, [(int) $repairerA->id, (int) $repairerB->id]);
-        $this->assertSame('assigned_to_repairer', (string) $repair->status);
+        $this->assertSame('new_request', (string) $repair->status);
     }
 
     #[Test]
@@ -271,7 +271,7 @@ class ManualPosJobOrderAssignmentTest extends TestCase
         $repair = RepairRequest::findOrFail((int) $tx->module_reference_id);
 
         $this->assertSame((int) $repairer->id, (int) $repair->assigned_repairer_id);
-        $this->assertSame('assigned_to_repairer', (string) $repair->status);
+        $this->assertSame('new_request', (string) $repair->status);
     }
 
     #[Test]

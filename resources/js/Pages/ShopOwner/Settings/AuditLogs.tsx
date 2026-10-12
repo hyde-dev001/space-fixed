@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState } from "react";
 import { Head, usePage } from "@inertiajs/react";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
@@ -12,9 +13,12 @@ interface ActivityLog {
   subject_type: string | null;
   subject_id: number | null;
   subject_label?: string;
+  subject_type_label?: string;
   causer_type: string | null;
   causer_id: number | null;
   event: string;
+  event_label?: string;
+  display_description?: string;
   properties: Record<string, any>;
   changes: Record<string, { old: any; new: any; label?: string }>;
   created_at: string;
@@ -96,23 +100,9 @@ const BuildingStorefrontIcon: React.FC<{ className?: string }> = ({ className })
   </svg>
 );
 
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 interface MetricData {
   title: string;
   value: number;
-  change: number;
-  changeType: 'increase' | 'decrease';
   icon: React.ComponentType<{ className?: string }>;
   color: 'success' | 'error' | 'warning' | 'info';
   description: string;
@@ -122,8 +112,6 @@ interface MetricData {
 const MetricCard: React.FC<MetricData> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description
@@ -144,17 +132,9 @@ const MetricCard: React.FC<MetricData> = ({
       <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
 
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-linear-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-
-          <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${changeType === 'increase'
-              ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'
-              : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
-            }`}>
-            {changeType === 'increase' ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
 
@@ -177,7 +157,7 @@ const MetricCard: React.FC<MetricData> = ({
 export default function ShopOwnerAuditLogs() {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const { escapeHtml, formatSubjectType, formatValue, parseUserAgent, formatDetailedDescription } = useActivityLogFormatters();
+  const { escapeHtml, formatSubjectType, formatValue, parseUserAgent, formatDetailedDescription, formatActivityLabel, humanizeFieldName } = useActivityLogFormatters();
   const { props } = usePage<any>();
   const shopOwner = props.auth?.shop_owner;
   const canManageStaff: boolean = shopOwner?.can_manage_staff ?? false;
@@ -238,7 +218,7 @@ export default function ShopOwnerAuditLogs() {
       log.changes && typeof log.changes === 'object' ? log.changes : {};
     
     // Build formatted description
-    const formattedDescription = formatDetailedDescription(log);
+    const formattedDescription = log.display_description || formatDetailedDescription(log);
     
     // Build diff view HTML
     let diffHtml = '';
@@ -275,7 +255,12 @@ export default function ShopOwnerAuditLogs() {
       if (Object.keys(attributes).length > 0) {
         diffHtml = '<div class="mt-4"><h3 class="font-semibold text-lg mb-3">Created With:</h3><div class="bg-green-50 p-3 rounded-lg"><div class="space-y-1">';
         for (const [key, value] of Object.entries(attributes)) {
-          diffHtml += `<div class="text-sm"><span class="text-green-700 font-semibold">${escapeHtml(key.replace(/_/g, ' '))}:</span> ${escapeHtml(formatValue(value, key))}</div>`;
+          const normalizedKey = key.trim().toLowerCase();
+          if (normalizedKey === 'id' || normalizedKey.endsWith('_id') || normalizedKey.endsWith('_uuid')) {
+            continue;
+          }
+
+          diffHtml += `<div class="text-sm"><span class="text-green-700 font-semibold">${escapeHtml(humanizeFieldName(key))}:</span> ${escapeHtml(formatValue(value, key))}</div>`;
         }
         diffHtml += '</div></div></div>';
       }
@@ -306,7 +291,7 @@ export default function ShopOwnerAuditLogs() {
         <div class="text-left">
           ${causerHtml}
           <p class="mb-2 text-sm"><strong>Date:</strong> ${escapeHtml(new Date(log.created_at).toLocaleString())}</p>
-          <p class="mb-4 text-sm"><strong>Subject Type:</strong> ${escapeHtml(formatSubjectType(log.subject_type))}</p>
+          <p class="mb-4 text-sm"><strong>Record:</strong> ${escapeHtml(log.subject_type_label || formatSubjectType(log.subject_type, log.subject_type_label))}</p>
           ${diffHtml}
           ${metadataHtml}
         </div>
@@ -335,18 +320,7 @@ export default function ShopOwnerAuditLogs() {
       <Head title="Activity Audit Logs" />
 
       <div className="p-6">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center gap-3 mb-2">
-            <h1 className="text-3xl font-bold text-gray-800">Activity Audit Logs</h1>
-          </div>
-          <p className="text-gray-600 mt-2">
-            Complete audit trail of all activities in your business
-          </p>
-          <p className="text-sm text-gray-500 mt-1">
-            Track products, expenses, employees, orders, and all business operations
-          </p>
-        </div>
+        <h1 className="sr-only">Activity Audit Logs</h1>
 
         {/* Stats Cards */}
         {stats && (
@@ -354,8 +328,6 @@ export default function ShopOwnerAuditLogs() {
             <MetricCard
               title="Total Logs"
               value={stats.total_logs}
-              change={12}
-              changeType="increase"
               icon={DocumentTextIcon}
               color="info"
               description="All recorded activities"
@@ -364,8 +336,6 @@ export default function ShopOwnerAuditLogs() {
             <MetricCard
               title="Last 24 Hours"
               value={stats.logs_last_24h}
-              change={8}
-              changeType="increase"
               icon={ClockIcon}
               color="success"
               description="Recent activity count"
@@ -374,8 +344,6 @@ export default function ShopOwnerAuditLogs() {
             <MetricCard
               title="Created"
               value={stats.event_counts.created || 0}
-              change={15}
-              changeType="increase"
               icon={ShieldCheckIcon}
               color="success"
               description="New items created"
@@ -384,8 +352,6 @@ export default function ShopOwnerAuditLogs() {
             <MetricCard
               title="Updated"
               value={stats.event_counts.updated || 0}
-              change={5}
-              changeType="increase"
               icon={BuildingStorefrontIcon}
               color="warning"
               description="Items modified"
@@ -433,8 +399,8 @@ export default function ShopOwnerAuditLogs() {
               </div>
 
               <div>
-                <label htmlFor="shop-audit-event-filter" className="block text-sm font-medium text-gray-700 mb-1">Event</label>
-                <select
+                <label htmlFor="shop-audit-event-filter" className="block text-sm font-medium text-gray-700 mb-1">Activity</label>
+                <MonochromeSelect
                   id="shop-audit-event-filter"
                   value={String(filters.event || "")}
                   onChange={(e) => setFilter("event", e.target.value || null)}
@@ -442,16 +408,16 @@ export default function ShopOwnerAuditLogs() {
                   title="Filter by event type"
                   aria-label="Filter by event type"
                 >
-                  <option value="">All Events</option>
+                  <option value="">All activities</option>
                   <option value="created">Created</option>
                   <option value="updated">Updated</option>
                   <option value="deleted">Deleted</option>
-                </select>
+                </MonochromeSelect>
               </div>
 
               <div>
-                <label htmlFor="shop-audit-subject-filter" className="block text-sm font-medium text-gray-700 mb-1">Activity Type</label>
-                <select
+                <label htmlFor="shop-audit-subject-filter" className="block text-sm font-medium text-gray-700 mb-1">Record type</label>
+                <MonochromeSelect
                   id="shop-audit-subject-filter"
                   value={String(filters.subject_type || "")}
                   onChange={(e) => setFilter("subject_type", e.target.value || null)}
@@ -459,7 +425,7 @@ export default function ShopOwnerAuditLogs() {
                   title="Filter by activity type"
                   aria-label="Filter by activity type"
                 >
-                  <option value="">All Types</option>
+                  <option value="">All record types</option>
                   <option value="Product">Products</option>
                   <option value="Expense">Expenses</option>
                   <option value="Order">Orders</option>
@@ -472,7 +438,7 @@ export default function ShopOwnerAuditLogs() {
                   {canManageStaff && <option value="Payroll">Payroll</option>}
                   {canManageStaff && <option value="LeaveRequest">Leave Requests</option>}
                   {canManageStaff && <option value="AttendanceRecord">Attendance</option>}
-                </select>
+                </MonochromeSelect>
               </div>
 
               <div className="md:col-span-4">
@@ -527,11 +493,11 @@ export default function ShopOwnerAuditLogs() {
                         <tr key={log.id} className="hover:bg-gray-50 transition">
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className={`px-3 py-1 rounded-full text-xs font-semibold ${getEventBadgeColor(eventLabel)}`}>
-                              {eventLabel}
+                               {log.event_label || formatActivityLabel(eventLabel)}
                             </span>
                           </td>
                           <td className="px-6 py-4">
-                            <p className="text-sm text-gray-900 font-medium">{formattedDesc}</p>
+                             <p className="text-sm text-gray-900 font-medium">{log.display_description || formattedDesc}</p>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             {log.causer ? (
@@ -544,7 +510,7 @@ export default function ShopOwnerAuditLogs() {
                             )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
-                            <p className="text-sm text-gray-900">{formatSubjectType(log.subject_type)}</p>
+                             <p className="text-sm text-gray-900">{log.subject_type_label || formatSubjectType(log.subject_type)}</p>
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <p className="text-sm text-gray-900">{new Date(log.created_at).toLocaleDateString()}</p>

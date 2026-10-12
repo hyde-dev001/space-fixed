@@ -44,7 +44,7 @@ class LeaveRequestApproved extends Notification implements ShouldQueue
             ->line('Duration: ' . $this->leaveRequest->start_date->format('M d, Y') . ' to ' . $this->leaveRequest->end_date->format('M d, Y'))
             ->line('Days: ' . $this->leaveRequest->days)
             ->line('Approved by: ' . $this->approver->name)
-            ->action('View Leave Details', url('/erp/hr/self-service/leaves'))
+            ->action('View Leave Details', url('/erp/time-in?request=' . $this->leaveRequest->id))
             ->line('Enjoy your time off!');
     }
 
@@ -63,7 +63,7 @@ class LeaveRequestApproved extends Notification implements ShouldQueue
             'end_date' => $this->leaveRequest->end_date->format('Y-m-d'),
             'days' => $this->leaveRequest->days,
             'approved_by' => $this->approver->name,
-            'action_url' => '/erp/hr/self-service/leaves',
+            'action_url' => '/erp/time-in?request=' . $this->leaveRequest->id,
             'priority' => 'medium',
         ];
     }

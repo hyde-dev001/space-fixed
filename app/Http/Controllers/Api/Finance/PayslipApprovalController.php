@@ -3,22 +3,22 @@
 namespace App\Http\Controllers\Api\Finance;
 
 use App\Http\Controllers\Controller;
-use App\Models\ShopOwner;
 use App\Models\User;
 use App\Models\HR\Payroll;
 use App\Models\HR\PayrollComponent;
+use App\Support\PayrollMoney;
 use App\Notifications\HR\PayslipGenerated;
 use App\Services\NotificationService;
 use App\Services\PayslipApprovalService;
+use App\Services\ShopOwnerActorUserResolver;
 use App\Traits\HR\LogsHRActivity;
+use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Str;
 
 /**
  * PayslipApprovalController (Finance module)
@@ -40,7 +40,8 @@ class PayslipApprovalController extends Controller
 
     public function __construct(
         private NotificationService $notificationService,
-        private PayslipApprovalService $payslipApprovalService
+        private PayslipApprovalService $payslipApprovalService,
+        private ShopOwnerActorUserResolver $shopOwnerActorUserResolver,
     )
     {
     }
@@ -48,105 +49,6 @@ class PayslipApprovalController extends Controller
     // ============================================================
     // AUTH HELPER
     // ============================================================
-
-    private function resolveShopOwnerActorUserId(int $shopOwnerId): ?int
-    {
-        $shopOwner = ShopOwner::query()->select('id', 'email')->find($shopOwnerId);
-
-        $mappedByPermissionRole = User::query()
-            ->where('shop_owner_id', $shopOwnerId)
-            ->whereHas('roles', fn ($query) => $query->whereIn('name', ['Shop Owner', 'SHOP_OWNER', 'shop_owner']))
-            ->orderByDesc('id')
-            ->value('id');
-
-        if ($mappedByPermissionRole) {
-            return (int) $mappedByPermissionRole;
-        }
-
-        if ($shopOwner && ! empty($shopOwner->email)) {
-            $mappedByEmail = User::query()
-                ->where('shop_owner_id', $shopOwnerId)
-                ->whereRaw('LOWER(email) = ?', [strtolower((string) $shopOwner->email)])
-                ->orderByDesc('id')
-                ->value('id');
-
-            if ($mappedByEmail) {
-                return (int) $mappedByEmail;
-            }
-        }
-
-        return null;
-    }
-
-    private function ensureShopOwnerActorUserId($shopOwner): ?int
-    {
-        if (! isset($shopOwner->id)) {
-            return null;
-        }
-
-        $resolvedId = $this->resolveShopOwnerActorUserId((int) $shopOwner->id);
-        if ($resolvedId) {
-            return $resolvedId;
-        }
-
-        $primaryEmail = strtolower(trim((string) ($shopOwner->email ?? '')));
-        $fallbackEmail = 'shopowner+' . $shopOwner->id . '@solespace.local';
-        $candidateEmails = array_values(array_unique(array_filter([$primaryEmail, $fallbackEmail])));
-
-        foreach ($candidateEmails as $candidateEmail) {
-            $existingUser = User::query()->whereRaw('LOWER(email) = ?', [strtolower($candidateEmail)])->first();
-            if (! $existingUser) {
-                continue;
-            }
-
-            if (! empty($existingUser->shop_owner_id) && (int) $existingUser->shop_owner_id !== (int) $shopOwner->id) {
-                continue;
-            }
-
-            $existingUser->shop_owner_id = (int) $shopOwner->id;
-            if (empty($existingUser->name)) {
-                $existingUser->name = trim((string) ($shopOwner->first_name ?? '') . ' ' . (string) ($shopOwner->last_name ?? ''));
-            }
-            if (empty($existingUser->email_verified_at)) {
-                $existingUser->email_verified_at = now();
-            }
-            $existingUser->save();
-
-            try {
-                if (! $existingUser->hasRole('Shop Owner')) {
-                    $existingUser->assignRole('Shop Owner');
-                }
-            } catch (\Throwable $e) {
-            }
-
-            return (int) $existingUser->id;
-        }
-
-        $firstName = (string) ($shopOwner->first_name ?? 'Shop');
-        $lastName = (string) ($shopOwner->last_name ?? 'Owner');
-        $name = trim($firstName . ' ' . $lastName);
-
-        try {
-            $newUser = User::query()->create([
-                'first_name' => $firstName,
-                'last_name' => $lastName,
-                'name' => $name !== '' ? $name : ('Shop Owner #' . $shopOwner->id),
-                'email' => $fallbackEmail,
-                'password' => Hash::make(Str::random(40)),
-                'shop_owner_id' => (int) $shopOwner->id,
-                'email_verified_at' => now(),
-            ]);
-
-            try {
-                $newUser->assignRole('Shop Owner');
-            } catch (\Throwable $e) {
-            }
-
-            return (int) $newUser->id;
-        } catch (\Throwable $e) {
-            return null;
-        }
-    }
 
     private function authorizeWorkflowViewer(): ?array
     {
@@ -168,7 +70,7 @@ class PayslipApprovalController extends Controller
 
         $shopOwner = Auth::guard('shop_owner')->user();
         if ($shopOwner) {
-            $actorUserId = $this->ensureShopOwnerActorUserId($shopOwner);
+            $actorUserId = $this->shopOwnerActorUserResolver->ensure($shopOwner);
             return [
                 'shop_owner_id' => (int) $shopOwner->id,
                 'actor_user_id' => $actorUserId,
@@ -215,7 +117,7 @@ class PayslipApprovalController extends Controller
 
         $shopOwner = Auth::guard('shop_owner')->user();
         if ($shopOwner) {
-            $actorUserId = $this->ensureShopOwnerActorUserId($shopOwner);
+            $actorUserId = $this->shopOwnerActorUserResolver->ensure($shopOwner);
             return [
                 'shop_owner_id' => (int) $shopOwner->id,
                 'actor_user_id' => $actorUserId,
@@ -246,6 +148,7 @@ class PayslipApprovalController extends Controller
         $query = (clone $baseQuery)
             ->with([
                 'employee:id,first_name,last_name,department,position',
+                'approval',
                 'checker:id,name',
                 'finalApprover:id,name',
                 'disburser:id,name',
@@ -303,6 +206,7 @@ class PayslipApprovalController extends Controller
             ->with([
                 'employee:id,first_name,last_name,department,position',
                 'components',
+                'approval',
                 'checker:id,name',
                 'finalApprover:id,name',
                 'disburser:id,name',
@@ -333,7 +237,7 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
-        // If payslip has new 4-step approval workflow, use it
+        // If payslip has the multi-level approval workflow, use it.
         if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
             $result = $this->payslipApprovalService->approvePayslip(
                 $payslip,
@@ -376,6 +280,14 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip already checker-approved'], 400);
         }
 
+        $reconciliationIssues = $payslip->reconciliationIssues();
+        if ($reconciliationIssues !== []) {
+            return response()->json([
+                'error' => 'Payslip reconciliation failed. Resolve the payroll mismatch before approving it.',
+                'reconciliation_issues' => $reconciliationIssues,
+            ], 422);
+        }
+
         try {
             $payslip->update([
                 'status' => 'pending',
@@ -412,7 +324,7 @@ class PayslipApprovalController extends Controller
                 ])),
             ]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to approve payslip: ' . $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'payslip.approve', 500, ['record_id' => $id, 'shop_id' => $actor['shop_owner_id']]);
         }
     }
 
@@ -445,7 +357,7 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
-        // If payslip has new 4-step approval workflow, use it
+        // If payslip has the multi-level approval workflow, use it.
         if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
             $result = $this->payslipApprovalService->rejectPayslip(
                 $payslip,
@@ -527,14 +439,14 @@ class PayslipApprovalController extends Controller
                 ])),
             ]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to reject payslip: ' . $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'payslip.reject', 500, ['record_id' => $id, 'shop_id' => $actor['shop_owner_id']]);
         }
     }
 
     /**
-     * Final approval before payroll can be disbursed.
-     * For 4-step workflows: can be called by Shop Owner (level 2) or Finance Manager (level 4)
-     * For legacy workflows: called by Shop Owner only
+     * Shop Owner approval before the final Finance approval.
+     * For multi-level workflows, the Finance final stage uses approvePayslip().
+     * For legacy workflows, this endpoint remains the final approval action.
      */
     public function finalApprovePayslip(Request $request, $id): JsonResponse
     {
@@ -570,7 +482,7 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payslip not found'], 404);
         }
 
-        // If payslip has new 4-step approval workflow, use it
+        // If payslip has the multi-level approval workflow, use it.
         if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
             $result = $this->payslipApprovalService->approvePayslip(
                 $payslip,
@@ -621,6 +533,14 @@ class PayslipApprovalController extends Controller
             return response()->json(['error' => 'Payroll already has final approval'], 400);
         }
 
+        $reconciliationIssues = $payslip->reconciliationIssues();
+        if ($reconciliationIssues !== []) {
+            return response()->json([
+                'error' => 'Payslip reconciliation failed. Resolve the payroll mismatch before final approval.',
+                'reconciliation_issues' => $reconciliationIssues,
+            ], 422);
+        }
+
         try {
             $payslip->markAsFinalApproved((int) $actor['actor_user_id'], $request->input('notes'));
 
@@ -633,6 +553,13 @@ class PayslipApprovalController extends Controller
             );
 
             try {
+                $this->notificationService->notifyPayslipReadyForDisbursement($actor['shop_owner_id'], [
+                    'payroll_id' => $payslip->id,
+                    'period' => $payslip->payroll_period,
+                    'employee_name' => trim(($payslip->employee?->first_name ?? '') . ' ' . ($payslip->employee?->last_name ?? '')),
+                    'net_salary' => number_format((float) $payslip->net_salary, 2),
+                ]);
+
                 if ($payslip->employee && $payslip->employee->user) {
                     $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
                     if ($employeeUserId > 0) {
@@ -662,7 +589,7 @@ class PayslipApprovalController extends Controller
                 ])),
             ]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to final-approve payslip: ' . $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'payslip.final_approve', 500, ['record_id' => $id, 'shop_id' => $actor['shop_owner_id']]);
         }
     }
 
@@ -702,7 +629,7 @@ class PayslipApprovalController extends Controller
                 ],
             ]);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to load preview: ' . $e->getMessage()], 500);
+            return FinanceErrorResponse::json($e, 'payslip.batch_preview', 500, ['shop_id' => $actor['shop_owner_id']]);
         }
     }
 
@@ -740,8 +667,41 @@ class PayslipApprovalController extends Controller
                     continue;
                 }
 
+                if ($payslip->approval_id && $payslip->approval_workflow_version === 'v4_multi_level') {
+                    $result = $this->payslipApprovalService->approvePayslip(
+                        $payslip,
+                        User::find($actor['actor_user_id']),
+                        $request->input('notes')
+                    );
+
+                    if (! ($result['success'] ?? false)) {
+                        $errors[] = "Payslip #{$payslipId}: " . ($result['message'] ?? 'Approval failed');
+                        $failedCount++;
+                        continue;
+                    }
+
+                    $payslip->refresh();
+
+                    $this->logHRActivity(
+                        $actor['shop_owner_id'],
+                        'payslip_approved_level_' . $payslip->current_approval_level,
+                        'Payslip Batch Approved',
+                        "Payslip #{$payslip->id} approved at level {$payslip->current_approval_level} by {$actor['name']} (Finance, batch)",
+                        $payslip
+                    );
+
+                    $approvedCount++;
+                    continue;
+                }
+
                 if ($payslip->approval_status !== 'pending') {
                     $errors[] = "Payslip #{$payslipId} is not pending";
+                    $failedCount++;
+                    continue;
+                }
+
+                if (($reconciliationIssues = $payslip->reconciliationIssues()) !== []) {
+                    $errors[] = "Payslip #{$payslipId}: reconciliation failed";
                     $failedCount++;
                     continue;
                 }
@@ -773,7 +733,12 @@ class PayslipApprovalController extends Controller
 
                 $approvedCount++;
             } catch (\Exception $e) {
-                $errors[]    = "Failed to approve payslip #{$payslipId}: " . $e->getMessage();
+                Log::error('Failed to approve payslip in batch', [
+                    'payslip_id' => $payslipId,
+                    'shop_id' => $actor['shop_owner_id'],
+                    'exception' => $e,
+                ]);
+                $errors[]    = "Failed to approve payslip #{$payslipId}.";
                 $failedCount++;
             }
         }
@@ -803,7 +768,7 @@ class PayslipApprovalController extends Controller
         }
 
         $validator = Validator::make($request->all(), [
-            'payslip_ids' => 'required|array',
+            'payslip_ids' => 'sometimes|array|min:1|max:500',
             'payslip_ids.*' => 'required|integer|exists:payrolls,id',
             'notes' => 'nullable|string|max:1000',
         ]);
@@ -817,7 +782,42 @@ class PayslipApprovalController extends Controller
         $errors = [];
         $notes = $request->input('notes');
 
-        foreach ((array) $request->input('payslip_ids', []) as $payslipId) {
+        $payslipIds = $request->has('payslip_ids')
+            ? (array) $request->input('payslip_ids', [])
+            : Payroll::forShopOwner($actor['shop_owner_id'])
+                ->where('status', 'pending')
+                ->where(function (Builder $workflowQuery) use ($actor): void {
+                    $workflowQuery
+                        ->where(function (Builder $v4Query) use ($actor): void {
+                            $v4Query
+                                ->where('approval_status', 'pending')
+                                ->where('approval_workflow_version', 'v4_multi_level')
+                                ->whereNotNull('approval_id')
+                                ->whereHas('approval', static function (Builder $approvalQuery) use ($actor): void {
+                                    $approvalQuery
+                                        ->where('approvals.status', 'pending')
+                                        ->where('approvals.current_approver_role', 'shop_owner')
+                                        ->where(function (Builder $tenantQuery) use ($actor): void {
+                                            $tenantQuery
+                                                ->where('approvals.shop_owner_id', (int) $actor['shop_owner_id'])
+                                                ->orWhereHas('shopOwner', static function (Builder $ownerQuery) use ($actor): void {
+                                                    $ownerQuery->where('users.shop_owner_id', (int) $actor['shop_owner_id']);
+                                                });
+                                        });
+                                });
+                        })
+                        ->orWhere(function (Builder $legacyQuery): void {
+                            $legacyQuery
+                                ->where('approval_status', 'approved')
+                                ->whereNotNull('approved_by')
+                                ->whereNull('final_approved_by')
+                                ->where('approval_workflow_version', '!=', 'v4_multi_level');
+                        });
+                })
+                ->pluck('id')
+                ->all();
+
+        foreach ($payslipIds as $payslipId) {
             try {
                 $payslip = Payroll::forShopOwner($actor['shop_owner_id'])
                     ->with([
@@ -877,6 +877,12 @@ class PayslipApprovalController extends Controller
                     continue;
                 }
 
+                if (($reconciliationIssues = $payslip->reconciliationIssues()) !== []) {
+                    $errors[] = "Payslip #{$payslipId}: reconciliation failed";
+                    $failedCount++;
+                    continue;
+                }
+
                 $payslip->markAsFinalApproved((int) $actor['actor_user_id'], $notes);
 
                 $this->logHRActivity(
@@ -888,6 +894,13 @@ class PayslipApprovalController extends Controller
                 );
 
                 try {
+                    $this->notificationService->notifyPayslipReadyForDisbursement($actor['shop_owner_id'], [
+                        'payroll_id' => $payslip->id,
+                        'period' => $payslip->payroll_period,
+                        'employee_name' => trim(($payslip->employee?->first_name ?? '') . ' ' . ($payslip->employee?->last_name ?? '')),
+                        'net_salary' => number_format((float) $payslip->net_salary, 2),
+                    ]);
+
                     if ($payslip->employee && $payslip->employee->user) {
                         $employeeUserId = (int) ($payslip->employee->user?->id ?? 0);
                         if ($employeeUserId > 0) {
@@ -909,7 +922,12 @@ class PayslipApprovalController extends Controller
 
                 $approvedCount++;
             } catch (\Exception $e) {
-                $errors[] = "Failed to final-approve payslip #{$payslipId}: " . $e->getMessage();
+                Log::error('Failed to final-approve payslip in batch', [
+                    'payslip_id' => $payslipId,
+                    'shop_id' => $actor['shop_owner_id'],
+                    'exception' => $e,
+                ]);
+                $errors[] = "Failed to final-approve payslip #{$payslipId}.";
                 $failedCount++;
             }
         }
@@ -926,11 +944,51 @@ class PayslipApprovalController extends Controller
     {
         switch ($workflowStatus) {
             case 'awaiting_checker':
-                $query->where('approval_status', 'pending');
+                $query->where(function (Builder $workflowQuery): void {
+                    $workflowQuery
+                        ->where(function (Builder $v4Query): void {
+                            $v4Query
+                                ->where('approval_workflow_version', 'v4_multi_level')
+                                ->whereHas('approval', function (Builder $approvalQuery): void {
+                                    $approvalQuery
+                                        ->where('status', 'pending')
+                                        ->whereIn('current_approver_role', ['finance', 'finance_final']);
+                                });
+                        })
+                        ->orWhere(function (Builder $legacyQuery): void {
+                            $legacyQuery
+                                ->where(function (Builder $versionQuery): void {
+                                    $versionQuery
+                                        ->whereNull('approval_workflow_version')
+                                        ->orWhere('approval_workflow_version', '!=', 'v4_multi_level');
+                                })
+                                ->where('approval_status', 'pending');
+                        });
+                });
                 break;
             case 'awaiting_final_approval':
-                $query->where('approval_status', 'approved')
-                    ->where('status', 'pending');
+                $query->where(function (Builder $workflowQuery): void {
+                    $workflowQuery
+                        ->where(function (Builder $v4Query): void {
+                            $v4Query
+                                ->where('approval_workflow_version', 'v4_multi_level')
+                                ->whereHas('approval', function (Builder $approvalQuery): void {
+                                    $approvalQuery
+                                        ->where('status', 'pending')
+                                        ->where('current_approver_role', 'shop_owner');
+                                });
+                        })
+                        ->orWhere(function (Builder $legacyQuery): void {
+                            $legacyQuery
+                                ->where(function (Builder $versionQuery): void {
+                                    $versionQuery
+                                        ->whereNull('approval_workflow_version')
+                                        ->orWhere('approval_workflow_version', '!=', 'v4_multi_level');
+                                })
+                                ->where('approval_status', 'approved')
+                                ->where('status', 'pending');
+                        });
+                });
                 break;
             case 'ready_for_disbursement':
                 $query->where('status', 'approved');
@@ -951,11 +1009,19 @@ class PayslipApprovalController extends Controller
             'pending' => (clone $baseQuery)->where('approval_status', 'pending')->count(),
             'approved' => (clone $baseQuery)->where('approval_status', 'approved')->count(),
             'rejected' => (clone $baseQuery)->where('approval_status', 'rejected')->count(),
-            'awaiting_finance' => (clone $baseQuery)->where('approval_status', 'pending')->count(),
-            'awaiting_final_approval' => (clone $baseQuery)->where('approval_status', 'approved')->where('status', 'pending')->count(),
-            'ready_for_disbursement' => (clone $baseQuery)->where('status', 'approved')->count(),
-            'paid' => (clone $baseQuery)->where('status', 'paid')->count(),
+            'awaiting_finance' => $this->countWorkflowStatus($baseQuery, 'awaiting_checker'),
+            'awaiting_final_approval' => $this->countWorkflowStatus($baseQuery, 'awaiting_final_approval'),
+            'ready_for_disbursement' => $this->countWorkflowStatus($baseQuery, 'ready_for_disbursement'),
+            'paid' => $this->countWorkflowStatus($baseQuery, 'paid'),
         ];
+    }
+
+    private function countWorkflowStatus(Builder $baseQuery, string $workflowStatus): int
+    {
+        $query = clone $baseQuery;
+        $this->applyWorkflowStatusFilter($query, $workflowStatus);
+
+        return $query->count();
     }
 
     private function transformPayslip(Payroll $payslip, bool $includeLineItems = false): array
@@ -968,16 +1034,13 @@ class PayslipApprovalController extends Controller
         $sssContribution = (float) ($payslip->sss_contributions ?? 0);
         $philhealthContribution = (float) ($payslip->philhealth ?? 0);
         $pagibigContribution = (float) ($payslip->pag_ibig ?? 0);
-        $componentOrStoredDeductions = (float) ($payslip->total_deductions ?? 0);
-        $legacyDeductions = (float) ($payslip->deductions ?? 0);
-        $computedFromParts = $componentOrStoredDeductions + $taxAmount + $sssContribution + $philhealthContribution + $pagibigContribution;
-        $derivedFromGrossNet = round(max(0, $grossPay - $netPay), 2);
-
-        $effectiveDeductions = $legacyDeductions > 0
-            ? $legacyDeductions
-            : ($derivedFromGrossNet > 0
-                ? $derivedFromGrossNet
-                : $computedFromParts);
+        $approval = $payslip->relationLoaded('approval')
+            ? $payslip->getRelation('approval')
+            : ($payslip->approval_id ? $payslip->approval()->first() : null);
+        $storedDeductions = $payslip->total_deductions ?? $payslip->deductions;
+        $effectiveDeductions = $storedDeductions !== null
+            ? (float) $storedDeductions
+            : (float) PayrollMoney::maxZero(PayrollMoney::subtract($grossPay, $netPay));
 
         $lineItems = $components->map(fn ($component) => [
             'label' => $component->component_name,
@@ -1043,6 +1106,15 @@ class PayslipApprovalController extends Controller
             'tax_amount' => $taxAmount,
             'status' => $payslip->approval_status ?? 'pending',
             'workflow_status' => $payslip->workflow_status,
+            'approval' => $approval ? [
+                'id' => $approval->id,
+                'current_level' => $approval->current_level,
+                'total_levels' => $approval->total_levels,
+                'current_approver_role' => $approval->current_approver_role,
+                'status' => $approval->status,
+            ] : null,
+            'current_approval_level' => $payslip->current_approval_level,
+            'approval_workflow_version' => $payslip->approval_workflow_version,
             'final_approval_status' => $payslip->final_approved_by ? 'approved' : 'pending',
             'disbursement_status' => $payslip->disbursement_status,
             'notes' => $payslip->notes ?? '',
@@ -1061,6 +1133,7 @@ class PayslipApprovalController extends Controller
             'disbursed_by_name' => $payslip->disburser?->name,
             'disbursed_at' => $payslip->disbursed_at?->format('Y-m-d H:i:s'),
             'line_items' => $lineItems->values()->toArray(),
+            'reconciliation_issues' => $includeLineItems ? $payslip->reconciliationIssues() : [],
         ];
     }
 }

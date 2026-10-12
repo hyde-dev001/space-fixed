@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class PosRefundItem extends Model
 {
     protected $fillable = [
+        'retail_warranty_id',
         'pos_refund_id',
         'order_item_id',
         'product_id',
@@ -30,6 +31,11 @@ class PosRefundItem extends Model
     public function refund(): BelongsTo
     {
         return $this->belongsTo(PosRefund::class, 'pos_refund_id');
+    }
+
+    public function retailWarranty(): BelongsTo
+    {
+        return $this->belongsTo(RetailWarranty::class);
     }
 
     public function orderItem(): BelongsTo

@@ -23,6 +23,8 @@ class AttendanceRecord extends Model
         'date',
         'check_in_time',
         'check_out_time',
+        'auto_clocked_out',
+        'auto_clockout_reason',
         'expected_check_in',
         'expected_check_out',
         'minutes_late',
@@ -48,6 +50,7 @@ class AttendanceRecord extends Model
         'date' => 'date',
         'check_in_time' => 'datetime:H:i',
         'check_out_time' => 'datetime:H:i',
+        'auto_clocked_out' => 'boolean',
         'lunch_break_start' => 'datetime:H:i',
         'lunch_break_end' => 'datetime:H:i',
         'expected_check_in' => 'datetime:H:i',
@@ -131,11 +134,11 @@ class AttendanceRecord extends Model
             return;
         }
 
-        $checkIn = \Carbon\Carbon::parse($this->check_in_time);
-        $expectedCheckIn = \Carbon\Carbon::parse($this->expected_check_in);
+        $checkIn = \Carbon\Carbon::parse($this->check_in_time)->startOfMinute();
+        $expectedCheckIn = \Carbon\Carbon::parse($this->expected_check_in)->startOfMinute();
         
         if ($checkIn->gt($expectedCheckIn)) {
-            $this->minutes_late = $checkIn->diffInMinutes($expectedCheckIn);
+            $this->minutes_late = $expectedCheckIn->diffInMinutes($checkIn);
             $this->is_late = true;
             // Auto-update status to 'late' if more than 15 minutes
             if ($this->minutes_late > 15 && $this->status !== 'absent') {

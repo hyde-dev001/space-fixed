@@ -13,11 +13,17 @@ class InventoryColorVariant extends Model
         'color_name',
         'color_code',
         'quantity',
+        'auto_stock_request_enabled',
+        'reorder_level',
+        'reorder_quantity',
         'sku_suffix',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
+        'auto_stock_request_enabled' => 'boolean',
+        'reorder_level' => 'integer',
+        'reorder_quantity' => 'integer',
     ];
 
     /**

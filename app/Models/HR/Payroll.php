@@ -5,6 +5,7 @@ namespace App\Models\HR;
 use App\Models\Employee;
 use App\Models\ShopOwner;
 use App\Models\User;
+use App\Support\PayrollMoney;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -65,6 +66,7 @@ class Payroll extends Model
         'approval_id',
         'current_approval_level',
         'approval_workflow_version',
+        'calculation_snapshot',
     ];
 
     protected $casts = [
@@ -91,6 +93,7 @@ class Payroll extends Model
         'leave_days' => 'integer',
         'absent_days' => 'integer',
         'overtime_hours' => 'decimal:2',
+        'calculation_snapshot' => 'array',
     ];
 
     /**
@@ -270,18 +273,165 @@ class Payroll extends Model
      * Prefers the new canonical columns (basic_salary, total_deductions, tax_amount)
      * and falls back to the original columns for rows created before the migration.
      */
-    public function calculateNetSalary(): float
+    public function calculateNetSalary(): string
     {
-        $base  = $this->basic_salary ?? $this->base_salary ?? 0;
-        $gross = $base + ($this->allowances ?? 0) + ($this->overtime_pay ?? 0) + ($this->bonus ?? 0);
+        $gross = $this->gross_salary !== null
+            ? PayrollMoney::round($this->gross_salary)
+            : PayrollMoney::add(
+                $this->basic_salary ?? $this->base_salary ?? 0,
+                $this->allowances ?? 0,
+                $this->overtime_pay ?? 0,
+                $this->bonus ?? 0,
+            );
 
-        $deductions = ($this->total_deductions ?? $this->deductions ?? 0)
-                    + ($this->tax_amount ?? $this->tax_deductions ?? 0)
-                    + ($this->sss_contributions ?? 0)
-                    + ($this->philhealth ?? 0)
-                    + ($this->pag_ibig ?? 0);
+        $deductions = $this->total_deductions !== null
+            ? PayrollMoney::round($this->total_deductions)
+            : ($this->deductions !== null
+                ? PayrollMoney::round($this->deductions)
+                : PayrollMoney::add(
+                    $this->tax_amount ?? $this->tax_deductions ?? 0,
+                    $this->sss_contributions ?? 0,
+                    $this->philhealth ?? 0,
+                    $this->pag_ibig ?? 0,
+                ));
 
-        return round($gross - $deductions, 2);
+        return PayrollMoney::maxZero(PayrollMoney::subtract($gross, $deductions));
+    }
+
+    /**
+     * Return every persisted financial mismatch that would make approval or
+     * disbursement unsafe.
+     */
+    public function reconciliationIssues(): array
+    {
+        $issues = [];
+        $gross = PayrollMoney::round($this->gross_salary ?? 0);
+        $totalDeductions = $this->total_deductions !== null
+            ? PayrollMoney::round($this->total_deductions)
+            : PayrollMoney::round($this->deductions ?? 0);
+        $expectedNet = PayrollMoney::subtract($gross, $totalDeductions);
+
+        if (PayrollMoney::compare($expectedNet, $this->net_salary ?? 0) !== 0) {
+            $issues[] = 'Gross salary minus total deductions does not equal net salary.';
+        }
+
+        if (PayrollMoney::compare($this->net_salary ?? 0, 0) < 0) {
+            $issues[] = 'Net salary cannot be negative.';
+        }
+
+        if ($this->total_deductions !== null && $this->deductions !== null
+            && PayrollMoney::compare($this->total_deductions, $this->deductions) !== 0) {
+            $issues[] = 'Stored deduction totals disagree.';
+        }
+
+        $components = $this->relationLoaded('components')
+            ? $this->components
+            : ($this->exists ? $this->components()->get() : collect());
+
+        if ($components->isEmpty()) {
+            return $issues;
+        }
+
+        $componentGross = PayrollMoney::add(...$components
+            ->filter(fn (PayrollComponent $component): bool => in_array(
+                $component->component_type,
+                [PayrollComponent::TYPE_EARNING, PayrollComponent::TYPE_BENEFIT],
+                true
+            ) && (bool) ($component->affects_gross ?? true))
+            ->map(fn (PayrollComponent $component): mixed => $component->calculated_amount ?? $component->amount ?? 0)
+            ->all());
+
+        if (PayrollMoney::compare($componentGross, $gross) !== 0) {
+            $issues[] = 'Payroll components do not equal gross salary.';
+        }
+
+        $componentDeductions = PayrollMoney::add(...$components
+            ->where('component_type', PayrollComponent::TYPE_DEDUCTION)
+            ->map(fn (PayrollComponent $component): mixed => $component->calculated_amount ?? $component->amount ?? 0)
+            ->all());
+        $statutoryColumns = [
+            ['labels' => ['Income Tax', 'Withholding Tax'], 'amount' => $this->tax_amount ?? $this->tax_deductions ?? 0, 'name' => 'Income Tax'],
+            ['labels' => ['SSS Contribution'], 'amount' => $this->sss_contributions ?? 0, 'name' => 'SSS Contribution'],
+            ['labels' => ['PhilHealth Contribution'], 'amount' => $this->philhealth ?? 0, 'name' => 'PhilHealth Contribution'],
+            ['labels' => ['Pag-IBIG Contribution', 'Pagibig Contribution'], 'amount' => $this->pag_ibig ?? 0, 'name' => 'Pag-IBIG Contribution'],
+        ];
+
+        foreach ($statutoryColumns as $statutory) {
+            $component = $components->first(fn (PayrollComponent $candidate): bool => in_array(
+                (string) $candidate->component_name,
+                $statutory['labels'],
+                true
+            ));
+            $name = $statutory['name'];
+            $amount = $statutory['amount'];
+            if ($component) {
+                if (PayrollMoney::compare($component->calculated_amount ?? $component->amount ?? 0, $amount) !== 0) {
+                    $issues[] = $name . ' component does not match the stored statutory deduction.';
+                }
+
+                continue;
+            }
+
+            $componentDeductions = PayrollMoney::add($componentDeductions, $amount);
+        }
+
+        if (PayrollMoney::compare($componentDeductions, $totalDeductions) !== 0) {
+            $issues[] = 'Payroll components and statutory deductions do not equal total deductions.';
+        }
+
+        return $issues;
+    }
+
+    public function financialSnapshot(): array
+    {
+        $components = $this->relationLoaded('components')
+            ? $this->components
+            : ($this->exists ? $this->components()->get() : collect());
+
+        return [
+            'pay_period_start' => (string) ($this->pay_period_start ?? ''),
+            'pay_period_end' => (string) ($this->pay_period_end ?? ''),
+            'basic_salary' => PayrollMoney::round($this->basic_salary ?? $this->base_salary ?? 0),
+            'base_salary' => PayrollMoney::round($this->base_salary ?? $this->basic_salary ?? 0),
+            'gross_salary' => PayrollMoney::round($this->gross_salary ?? 0),
+            'total_deductions' => PayrollMoney::round($this->total_deductions ?? $this->deductions ?? 0),
+            'tax_amount' => PayrollMoney::round($this->tax_amount ?? $this->tax_deductions ?? 0),
+            'sss_contributions' => PayrollMoney::round($this->sss_contributions ?? 0),
+            'philhealth' => PayrollMoney::round($this->philhealth ?? 0),
+            'pag_ibig' => PayrollMoney::round($this->pag_ibig ?? 0),
+            'net_salary' => PayrollMoney::round($this->net_salary ?? 0),
+            'calculation_snapshot' => $this->calculation_snapshot,
+            'components' => $components
+                ->sortBy('id')
+                ->map(fn (PayrollComponent $component): array => [
+                    'id' => (int) $component->id,
+                    'type' => (string) $component->component_type,
+                    'name' => (string) $component->component_name,
+                    'amount' => PayrollMoney::round($component->calculated_amount ?? $component->amount ?? 0),
+                    'affects_gross' => (bool) ($component->affects_gross ?? true),
+                    'taxable' => (bool) ($component->is_taxable ?? false),
+                ])
+                ->values()
+                ->all(),
+        ];
+    }
+
+    public function financialFingerprint(): string
+    {
+        return hash('sha256', json_encode($this->financialSnapshot(), JSON_THROW_ON_ERROR));
+    }
+
+    public function financialMutationLocked(): bool
+    {
+        if ((string) $this->approval_status === 'rejected') {
+            return false;
+        }
+
+        return ! empty($this->approval_id)
+            || in_array((string) $this->status, ['approved', 'paid'], true)
+            || (string) $this->approval_status === 'approved'
+            || $this->final_approved_by !== null
+            || $this->disbursed_at !== null;
     }
 
     /**
@@ -419,6 +569,21 @@ class Payroll extends Model
 
         if ($this->status === 'approved' && ! empty($this->final_approved_by)) {
             return 'ready_for_disbursement';
+        }
+
+        if ($this->approval_workflow_version === 'v4_multi_level') {
+            $approval = $this->relationLoaded('approval')
+                ? $this->getRelation('approval')
+                : $this->approval()->first();
+            $currentRole = strtolower(trim((string) ($approval?->current_approver_role ?? '')));
+
+            if ($currentRole === 'shop_owner') {
+                return 'awaiting_final_approval';
+            }
+
+            if (in_array($currentRole, ['finance', 'finance_final'], true)) {
+                return 'awaiting_checker';
+            }
         }
 
         if ($this->approval_status === 'approved') {

@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { router } from '@inertiajs/react';
 
 interface BadgeCounts {
   orderStatusCount: number;
@@ -25,7 +24,11 @@ export function useBadgeCounts(enabled: boolean = true, initialCounts: InitialBa
   useEffect(() => {
     if (!enabled) return;
 
+    let stopped = false;
+
     const fetchCounts = async () => {
+      if (stopped) return;
+
       try {
         const response = await fetch('/api/customer/badge-counts', {
           credentials: 'include',
@@ -35,7 +38,17 @@ export function useBadgeCounts(enabled: boolean = true, initialCounts: InitialBa
           },
         });
 
-        if (response.ok) {
+        if (stopped) return;
+
+        if (response.status === 401) {
+          stopped = true;
+          setCounts({
+            orderStatusCount: 0,
+            repairStatusCount: 0,
+            chatIconCount: 0,
+            userIconCount: 0,
+          });
+        } else if (response.ok) {
           const data = await response.json();
           setCounts({
             orderStatusCount: data.orderStatusCount || 0,
@@ -43,9 +56,6 @@ export function useBadgeCounts(enabled: boolean = true, initialCounts: InitialBa
             chatIconCount: data.chatIconCount || 0,
             userIconCount: data.userIconCount || 0,
           });
-        } else if (response.status === 401) {
-          // User is not authenticated, redirect to login
-          router.visit('/user/login');
         }
       } catch (error) {
         console.error('Failed to fetch badge counts:', error);
@@ -53,12 +63,15 @@ export function useBadgeCounts(enabled: boolean = true, initialCounts: InitialBa
     };
 
     // Initial fetch
-    fetchCounts();
+    void fetchCounts();
 
     // Poll every 2 seconds
-    const interval = setInterval(fetchCounts, 2000);
+    const interval = window.setInterval(() => void fetchCounts(), 2000);
 
-    return () => clearInterval(interval);
+    return () => {
+      stopped = true;
+      window.clearInterval(interval);
+    };
   }, [enabled]);
 
   return counts;

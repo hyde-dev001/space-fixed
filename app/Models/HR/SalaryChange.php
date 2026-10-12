@@ -22,7 +22,9 @@ class SalaryChange extends Model
         'shop_owner_id',
         'proposed_by',
         'approved_by',
+        'approved_by_shop_owner_id',
         'rejected_by',
+        'rejected_by_shop_owner_id',
         'previous_salary',
         'new_salary',
         'change_percent',
@@ -30,6 +32,7 @@ class SalaryChange extends Model
         'effective_date',
         'reason',
         'status',
+        'requires_owner_approval',
         'notes',
         'approved_at',
         'rejected_at',
@@ -44,6 +47,7 @@ class SalaryChange extends Model
         'new_salary'       => 'decimal:2',
         'change_percent'   => 'decimal:2',
         'effective_date'   => 'date',
+        'requires_owner_approval' => 'boolean',
         'approved_at'      => 'datetime',
         'rejected_at'      => 'datetime',
         'applied_at'       => 'datetime',
@@ -100,9 +104,19 @@ class SalaryChange extends Model
         return $this->belongsTo(User::class, 'approved_by');
     }
 
+    public function shopOwnerApprover(): BelongsTo
+    {
+        return $this->belongsTo(ShopOwner::class, 'approved_by_shop_owner_id');
+    }
+
     public function rejector(): BelongsTo
     {
         return $this->belongsTo(User::class, 'rejected_by');
+    }
+
+    public function shopOwnerRejector(): BelongsTo
+    {
+        return $this->belongsTo(ShopOwner::class, 'rejected_by_shop_owner_id');
     }
 
     public function retroactiveOverrideGrantor(): BelongsTo
@@ -211,7 +225,9 @@ class SalaryChange extends Model
             ->logOnly([
                 'status',
                 'approved_by',
+                'approved_by_shop_owner_id',
                 'rejected_by',
+                'rejected_by_shop_owner_id',
                 'new_salary',
                 'effective_date',
                 'applied_at',

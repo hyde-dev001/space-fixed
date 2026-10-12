@@ -12,6 +12,7 @@ class PromoCampaign extends Model
     protected $fillable = [
         'shop_owner_id',
         'kind',
+        'discount_target',
         'scope',
         'name',
         'code',
@@ -24,6 +25,10 @@ class PromoCampaign extends Model
         'end_at',
         'status',
         'stacking_mode',
+    ];
+
+    protected $attributes = [
+        'discount_target' => 'items',
     ];
 
     protected $casts = [

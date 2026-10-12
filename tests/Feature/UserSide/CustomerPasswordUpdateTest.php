@@ -35,6 +35,23 @@ class CustomerPasswordUpdateTest extends TestCase
     }
 
     #[Test]
+    public function customer_password_requires_at_least_twelve_characters(): void
+    {
+        $customer = User::factory()->create([
+            'password' => Hash::make('CurrentPass1!'),
+            'shop_owner_id' => null,
+        ]);
+
+        $response = $this->actingAs($customer, 'user')->post('/customer-profile/password', [
+            'current_password' => 'CurrentPass1!',
+            'password' => 'NewStrong1!',
+            'password_confirmation' => 'NewStrong1!',
+        ]);
+
+        $response->assertSessionHasErrors('password');
+    }
+
+    #[Test]
     public function customer_password_requires_symbol_in_new_password(): void
     {
         $customer = User::factory()->create([

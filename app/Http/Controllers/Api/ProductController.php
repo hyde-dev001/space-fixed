@@ -103,6 +103,95 @@ class ProductController extends Controller
         });
     }
 
+    private function applyPublicProductVisibility($query): void
+    {
+        $query->where('is_active', true)
+            ->whereHas('shopOwner', function ($shopQuery) {
+                $shopQuery->where('status', 'approved');
+                $this->applyRetailCapableBusinessTypeFilter($shopQuery);
+            });
+    }
+
+    private function normalizeColorFilterValues(mixed $value): array
+    {
+        return collect(is_array($value) ? $value : explode(',', (string) $value))
+            ->map(fn ($color) => trim((string) preg_replace('/\s+/', ' ', (string) $color)))
+            ->filter()
+            ->map(fn ($color) => strtolower($color))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function applyColorNameFilter($query, string $column, string $color): void
+    {
+        $query->where(function ($colorQuery) use ($column, $color) {
+            $colorQuery->whereRaw("LOWER(TRIM({$column})) = ?", [$color])
+                ->orWhereRaw("LOWER(TRIM({$column})) LIKE ?", [$color . ' +%'])
+                ->orWhereRaw("LOWER(TRIM({$column})) LIKE ?", ['%+ ' . $color . ' +%'])
+                ->orWhereRaw("LOWER(TRIM({$column})) LIKE ?", ['%+ ' . $color]);
+        });
+    }
+
+    private function availablePublicColors(): array
+    {
+        $colors = [];
+
+        $addColor = static function (?string $name, ?string $code = null) use (&$colors): void {
+            $displayName = trim((string) preg_replace('/\s+/', ' ', (string) $name));
+            if ($displayName === '') {
+                return;
+            }
+
+            $key = strtolower($displayName);
+            $normalizedCode = trim((string) $code) ?: null;
+
+            if (!isset($colors[$key])) {
+                $colors[$key] = [
+                    'name' => $displayName,
+                    'code' => $normalizedCode,
+                ];
+                return;
+            }
+
+            if ($colors[$key]['code'] === null && $normalizedCode !== null) {
+                $colors[$key]['code'] = $normalizedCode;
+            }
+        };
+
+        ProductColorVariant::query()
+            ->select(['color_name', 'color_code'])
+            ->where('is_active', true)
+            ->whereHas('product', function ($query) {
+                $this->applyPublicProductVisibility($query);
+            })
+            ->get()
+            ->each(fn (ProductColorVariant $variant) => $addColor($variant->color_name, $variant->color_code));
+
+        ProductVariant::query()
+            ->select('color')
+            ->where('is_active', true)
+            ->whereNotNull('color')
+            ->whereHas('product', function ($query) {
+                $this->applyPublicProductVisibility($query);
+            })
+            ->get()
+            ->each(fn (ProductVariant $variant) => $addColor($variant->color));
+
+        $legacyProducts = Product::query()->select('colors_available');
+        $this->applyPublicProductVisibility($legacyProducts);
+        $legacyProducts->get()->each(function (Product $product) use ($addColor): void {
+            foreach ($product->colors_available ?? [] as $color) {
+                $addColor((string) $color);
+            }
+        });
+
+        return collect($colors)
+            ->sortBy(fn (array $color) => strtolower($color['name']))
+            ->values()
+            ->all();
+    }
+
     private function canonicalizeColorName(string $colorName): string
     {
         $parts = preg_split('/\+/', $colorName) ?: [];
@@ -231,6 +320,26 @@ class ProductController extends Controller
      */
     public function index(Request $request)
     {
+        $request->validate([
+            'filter.price_min' => ['nullable', 'numeric', 'min:0'],
+            'filter.price_max' => ['nullable', 'numeric', 'min:0'],
+        ]);
+
+        $priceMin = $request->input('filter.price_min');
+        $priceMax = $request->input('filter.price_max');
+
+        if ($priceMin !== null && $priceMax !== null && (float) $priceMin > (float) $priceMax) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The minimum price must be less than or equal to the maximum price.',
+                'errors' => [
+                    'filter.price_min' => [
+                        'The minimum price must be less than or equal to the maximum price.',
+                    ],
+                ],
+            ], 422);
+        }
+
         try {
             $query = QueryBuilder::for(Product::class)
                 ->allowedFilters([
@@ -248,10 +357,41 @@ class ProductController extends Controller
                     AllowedFilter::exact('shop_id', 'shop_owner_id'),
                     AllowedFilter::partial('search', 'name'),
                     AllowedFilter::scope('search_all'),
+                    AllowedFilter::callback('color', function ($query, $value) {
+                        $colors = $this->normalizeColorFilterValues($value);
+
+                        if ($colors === []) {
+                            return;
+                        }
+
+                        $query->where(function ($colorQuery) use ($colors) {
+                            foreach ($colors as $index => $color) {
+                                $method = $index === 0 ? 'where' : 'orWhere';
+                                $colorQuery->{$method}(function ($sourceQuery) use ($color) {
+                                    $sourceQuery->whereHas('colorVariants', function ($variantQuery) use ($color) {
+                                        $variantQuery->active();
+                                        $this->applyColorNameFilter($variantQuery, 'color_name', $color);
+                                    })->orWhereHas('variants', function ($variantQuery) use ($color) {
+                                        $variantQuery->where('is_active', true);
+                                        $this->applyColorNameFilter($variantQuery, 'color', $color);
+                                    });
+
+                                    foreach (array_unique([$color, ucwords($color), strtoupper($color)]) as $jsonColor) {
+                                        $sourceQuery->orWhereJsonContains('colors_available', $jsonColor);
+                                    }
+                                });
+                            }
+                        });
+                    }),
+                    AllowedFilter::callback('price_min', function ($query, $value) {
+                        $query->where('price', '>=', (float) $value);
+                    }),
+                    AllowedFilter::callback('price_max', function ($query, $value) {
+                        $query->where('price', '<=', (float) $value);
+                    }),
                 ])
                 ->allowedSorts(['price', 'name', 'created_at', 'sales_count'])
                 ->defaultSort('-created_at')
-                ->where('is_active', true)
                 ->withSum('variants as variants_stock_quantity', 'quantity')
                 ->with([
                     'shopOwner:id,first_name,last_name,business_name,business_type,shop_latitude,shop_longitude',
@@ -264,11 +404,7 @@ class ProductController extends Controller
                     }
                 ]);
 
-            // Filter by business type - only show products from retail or both shops
-            $query->whereHas('shopOwner', function ($q) {
-                $q->where('status', 'approved');
-                $this->applyRetailCapableBusinessTypeFilter($q);
-            });
+            $this->applyPublicProductVisibility($query);
 
             $products = $query->paginate($request->get('per_page', 12));
 
@@ -333,12 +469,13 @@ class ProductController extends Controller
                 return $product;
             });
 
-                        return response()->json([
+            return response()->json([
                 'success' => true,
                 'products' => $products,
-                        ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
-                            ->header('Pragma', 'no-cache')
-                            ->header('Expires', '0');
+                'available_colors' => $this->availablePublicColors(),
+            ])->header('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0')
+                ->header('Pragma', 'no-cache')
+                ->header('Expires', '0');
         } catch (\Exception $e) {
             Log::error('Error fetching products', [
                 'error' => $e->getMessage(),
@@ -394,7 +531,8 @@ class ProductController extends Controller
     {
         try {
             // Try shop_owner guard first, then fall back to user guard
-            $user = Auth::guard('shop_owner')->user() ?? Auth::guard('user')->user();
+            $shopOwner = Auth::guard('shop_owner')->user();
+            $user = $shopOwner ?? Auth::guard('user')->user();
 
             if (!$user) {
                 return response()->json(['error' => 'Unauthorized'], 401);
@@ -1165,6 +1303,91 @@ class ProductController extends Controller
                 'message' => 'Failed to update product',
             ], 500);
         }
+    }
+
+    /**
+     * Apply or restore a product sale from the shop-owner promo flow.
+     *
+     * This endpoint is intentionally narrower than the general product update
+     * route so company owners can manage customer-facing sale prices without
+     * gaining unrestricted product-edit access.
+     */
+    public function updateSale(Request $request, $id): JsonResponse
+    {
+        try {
+            $shopOwnerId = $this->getAuthenticatedShopOwnerId();
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 403);
+        }
+
+        $product = Product::where('id', $id)
+            ->where('shop_owner_id', $shopOwnerId)
+            ->firstOrFail();
+
+        $validated = $request->validate([
+            'mode' => 'required|in:apply,restore',
+            'price' => 'required_if:mode,apply|nullable|numeric|min:0.01|max:999999.99',
+            'scheduled_sale_price' => 'nullable|numeric|min:0.01|max:999999.99',
+            'sale_starts_at' => 'nullable|date',
+            'sale_ends_at' => 'nullable|date|after_or_equal:sale_starts_at',
+        ]);
+
+        if ($validated['mode'] === 'restore') {
+            $request->replace([
+                'price' => (float) ($product->compare_at_price ?? $product->price),
+                'compare_at_price' => null,
+                'scheduled_sale_price' => null,
+                'sale_starts_at' => null,
+                'sale_ends_at' => null,
+            ]);
+
+            return $this->update($request, $id);
+        }
+
+        $baselineOriginalPrice = $product->compare_at_price !== null
+            && (float) $product->compare_at_price > (float) $product->price
+            ? (float) $product->compare_at_price
+            : (float) $product->price;
+        $scheduledSalePrice = $validated['scheduled_sale_price'] ?? null;
+        $salePrice = $scheduledSalePrice !== null
+            ? (float) $scheduledSalePrice
+            : (float) $validated['price'];
+
+        if ($salePrice >= $baselineOriginalPrice) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Sale price must be lower than the original price.',
+            ], 422);
+        }
+
+        if ($scheduledSalePrice !== null) {
+            if (empty($validated['sale_starts_at']) || empty($validated['sale_ends_at'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Start and end date are required when scheduling a product discount.',
+                ], 422);
+            }
+
+            if (Carbon::parse((string) $validated['sale_ends_at'])->endOfDay()->lessThanOrEqualTo(now())) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'End date must be in the future for scheduled discounts.',
+                ], 422);
+            }
+        }
+
+        $request->replace([
+            'price' => $scheduledSalePrice !== null ? (float) $product->price : $salePrice,
+            'compare_at_price' => $baselineOriginalPrice,
+            'scheduled_sale_price' => $scheduledSalePrice !== null ? $salePrice : null,
+            'sale_starts_at' => $scheduledSalePrice !== null ? $validated['sale_starts_at'] : null,
+            'sale_ends_at' => $scheduledSalePrice !== null ? $validated['sale_ends_at'] : null,
+        ]);
+
+        return $this->update($request, $id);
     }
 
     /**

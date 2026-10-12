@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" fill="none">
+  <rect width="320" height="320" fill="#F7F6F6"/>
+  <g stroke="#A9A9A9" stroke-width="1">
+    <g opacity=".16">
+      <path d="M0 0H320M0 80H320M0 160H320M0 240H320M0 320H320"/>
+      <path d="M0 0V320M80 0V320M160 0V320M240 0V320M320 0V320"/>
+    </g>
+    <g opacity=".15">
+      <path d="M0 0L320 320M320 0L0 320"/>
+    </g>
+    <g opacity=".14">
+      <circle cx="160" cy="160" r="160"/>
+      <circle cx="40" cy="40" r="39"/>
+      <circle cx="120" cy="40" r="39"/>
+      <circle cx="200" cy="40" r="39"/>
+      <circle cx="280" cy="40" r="39"/>
+      <circle cx="40" cy="120" r="39"/>
+      <circle cx="120" cy="120" r="39"/>
+      <circle cx="200" cy="120" r="39"/>
+      <circle cx="280" cy="120" r="39"/>
+      <circle cx="40" cy="200" r="39"/>
+      <circle cx="120" cy="200" r="39"/>
+      <circle cx="200" cy="200" r="39"/>
+      <circle cx="280" cy="200" r="39"/>
+      <circle cx="40" cy="280" r="39"/>
+      <circle cx="120" cy="280" r="39"/>
+      <circle cx="200" cy="280" r="39"/>
+      <circle cx="280" cy="280" r="39"/>
+    </g>
+  </g>
+</svg>
