@@ -2012,6 +2012,10 @@ html.userside-dark #app .userside-auth-ghost:hover {
   border-color: color-mix(in srgb, var(--swal2-cancel-button-background-color, #dde1e6), #000000 6%) !important;
 }
 
+.swal2-popup:not(.swal2-toast) .swal2-cancel.module-disable-cancel {
+  color: #ffffff !important;
+}
+
 .swal2-popup:not(.swal2-toast) .swal2-confirm:focus-visible,
 .swal2-popup:not(.swal2-toast) .swal2-cancel:focus-visible {
   outline: none !important;
