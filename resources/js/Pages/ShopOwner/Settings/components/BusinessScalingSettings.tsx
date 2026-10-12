@@ -306,6 +306,7 @@ const BusinessScalingSettings: React.FC<BusinessScalingSettingsProps> = ({ busin
         showCancelButton: true,
         confirmButtonText: 'Disable module',
         cancelButtonText: 'Cancel',
+        customClass: { cancelButton: 'module-disable-cancel' },
         confirmButtonColor: '#111827',
         cancelButtonColor: '#6b7280',
       });
