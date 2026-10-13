@@ -68,6 +68,7 @@ interface OrderProductPreview {
   name: string;
   quantity: string;
   unitPrice?: string;
+  image?: string;
 }
 
 const Message: React.FC<Props> = ({ conversation: initialConversation = null, shopOwnerId }) => {
@@ -97,6 +98,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
   const [isMessagesLoading, setIsMessagesLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [orderStatusByNumber, setOrderStatusByNumber] = useState<Record<string, string>>({});
+  const [orderProductsByNumber, setOrderProductsByNumber] = useState<Record<string, OrderProductPreview[]>>({});
   const [lastMessageByConversationId, setLastMessageByConversationId] = useState<Record<number, string>>({});
   const [hoveredMessageId, setHoveredMessageId] = useState<number | null>(null);
   const [replyingToMessage, setReplyingToMessage] = useState<ConversationMessage | null>(null);
@@ -369,10 +371,19 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       const data = await response.json();
       const orders = Array.isArray(data?.orders) ? data.orders : [];
       const nextMap: Record<string, string> = {};
+      const nextProductsMap: Record<string, OrderProductPreview[]> = {};
 
       orders.forEach((order: any) => {
         const orderNumber = String(order?.order_number || '').trim().toUpperCase();
         if (!orderNumber) return;
+
+        nextProductsMap[orderNumber] = Array.isArray(order.items)
+          ? order.items.map((item: { product_name: string; quantity: number; product_image?: string | null }) => ({
+              name: item.product_name,
+              quantity: String(item.quantity),
+              image: item.product_image || undefined,
+            }))
+          : [];
 
         const rawStatus = order?.status;
         const normalizedStatus = typeof rawStatus === 'object' && rawStatus !== null
@@ -385,6 +396,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
       });
 
       setOrderStatusByNumber(nextMap);
+      setOrderProductsByNumber(nextProductsMap);
     } catch (error) {
       if (!silent) {
         console.error('Failed to fetch order statuses:', error);
@@ -1054,11 +1066,13 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                     const mappedOrderStatus = normalizedMessageOrderNumber
                       ? (orderStatusByNumber[normalizedMessageOrderNumber] || '')
                       : '';
-                    const effectiveOrderStatus = isOrderReport ? orderStatus :
+                    const effectiveOrderStatus = isOrderReport ? orderStatus.replace(/^Pending dispatcher investigation$/i, 'Pending') :
                       (mappedOrderStatus ? mappedOrderStatus.replace(/_/g, ' ') : '') ||
                       liveOrderStatus ||
                       orderStatus;
-                    const orderProducts = parseOrderProducts(content, items);
+                    const orderProducts = isOrderReport
+                      ? (orderProductsByNumber[normalizedMessageOrderNumber] || [])
+                      : parseOrderProducts(content, items);
                     const orderProductImages = (message.attachments || []).filter((attachment): attachment is string => typeof attachment === 'string' && attachment.length > 0);
                     
                     // Determine status badge color
@@ -1122,7 +1136,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                                   <span className="text-gray-500 text-xs font-medium">Products:</span>
                                   <div className="space-y-2">
                                     {orderProducts.map((product, productIndex) => {
-                                      const productImage = orderProductImages[productIndex];
+                                      const productImage = isOrderReport ? product.image : orderProductImages[productIndex];
 
                                       return (
                                         <div key={`${product.name}-${productIndex}`} className="flex items-center gap-3 bg-white rounded-lg p-2 border border-gray-100">
