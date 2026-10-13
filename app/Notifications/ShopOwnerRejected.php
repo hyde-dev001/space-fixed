@@ -60,9 +60,7 @@ class ShopOwnerRejected extends Notification implements ShouldQueue
             $message->line('**Reason for rejection:** ' . $this->rejectionReason);
         }
 
-        $message->line('**Resubmission policy:** You can resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times after rejection.')
-            ->line('**Attempts used:** ' . $usedAttempts . ' / ' . self::MAX_RESUBMISSION_ATTEMPTS)
-            ->line('**Attempts remaining:** ' . $remainingAttempts);
+        $message->line('**Resubmission policy:** You can resubmit up to ' . self::MAX_RESUBMISSION_ATTEMPTS . ' times after rejection.');
 
         if ($remainingAttempts > 0) {
             $message->line('You can review your previous submission and resubmit your application after updating your details or replacing/additional documents.')
