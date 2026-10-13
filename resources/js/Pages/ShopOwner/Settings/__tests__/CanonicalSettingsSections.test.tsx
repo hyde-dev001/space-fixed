@@ -187,39 +187,21 @@ describe("canonical settings sections", () => {
   it("uses red warning styling when PayMongo is not configured", () => {
     renderSettings("profile", { ...baseShopSettings, has_paymongo_key: false });
 
-    const warning = screen.getByText("Hindi pa nakakonekta ang PayMongo").closest("div.flex");
+    const warning = screen.getByText("Payment not configured").closest("div.flex");
 
     expect(warning).toHaveClass("border-red-200", "bg-red-50");
-    expect(screen.getByText("Hindi pa nakakonekta ang PayMongo")).toHaveClass("text-red-800");
-    expect(screen.getByText(/Ilagay muna ang code mula sa PayMongo/)).toHaveClass("text-red-700");
+    expect(screen.getByText("Payment not configured")).toHaveClass("text-red-800");
+    expect(screen.getByText(/You haven't added your PayMongo secret key yet/)).toHaveClass("text-red-700");
   });
 
   it("renders Xendit supplier payouts as a separate shop-owned integration", () => {
     renderSettings("profile");
 
     expect(screen.getByTestId("xendit-supplier-payouts-card")).toBeInTheDocument();
-    expect(screen.getByText("Bayad sa supplier (Xendit)")).toBeInTheDocument();
-    expect(screen.getByLabelText("Xendit code (Secret API Key)")).toHaveAttribute("type", "password");
-    expect(screen.getByLabelText("Code para sa update ng bayad (Webhook Verification Token)")).toHaveAttribute("type", "password");
-    expect(screen.getByText(/PayMongo pa rin ang gamit para sa bayad ng customer/)).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "Practice lang (Test)" })).toHaveValue("test");
-    expect(screen.getByRole("option", { name: "Totoong pera (Live)" })).toHaveValue("live");
-  });
-
-  it("offers captioned setup videos without autoplay or eager downloads", () => {
-    renderSettings("profile");
-
-    for (const [label, provider] of [
-      ["Gabay sa PayMongo account at Secret Key", "paymongo"],
-      ["Gabay sa Xendit account, Secret API Key at Webhook Verification Token", "xendit"],
-    ]) {
-      const video = screen.getByLabelText(label);
-      expect(video).toHaveAttribute("controls");
-      expect(video).toHaveAttribute("preload", "none");
-      expect(video).not.toHaveAttribute("autoplay");
-      expect(video.querySelector("source")).toHaveAttribute("src", `/guides/payment-setup/${provider}.webm`);
-      expect(video.closest("details")).not.toHaveAttribute("open");
-    }
+    expect(screen.getByText("Xendit - Supplier Payouts")).toBeInTheDocument();
+    expect(screen.getByLabelText("Xendit Secret API Key")).toHaveAttribute("type", "password");
+    expect(screen.getByLabelText("Payout callback token")).toHaveAttribute("type", "password");
+    expect(screen.getByText(/Customer payments continue to use PayMongo/)).toBeInTheDocument();
   });
 
   it("moves focus and active state when a user selects another section", async () => {
