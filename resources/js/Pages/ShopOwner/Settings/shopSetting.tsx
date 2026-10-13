@@ -510,7 +510,7 @@ const ShopSetting: React.FC = () => {
 			setKeySuccess(true);
 			window.setTimeout(() => setKeySuccess(false), 3000);
 		} catch (err: any) {
-			setKeyError(err?.response?.data?.message || 'Failed to save key. Please try again.');
+			setKeyError(err?.response?.data?.message || 'Hindi na-save ang PayMongo code. Subukan ulit.');
 		} finally {
 			setSavingKey(false);
 		}
@@ -528,7 +528,7 @@ const ShopSetting: React.FC = () => {
 			setShowRevokeConfirm(false);
 			setKeyInput('');
 		} catch {
-			setKeyError('Failed to remove key. Please try again.');
+			setKeyError('Hindi naalis ang PayMongo code. Subukan ulit.');
 			setShowRevokeConfirm(false);
 		} finally {
 			setRemovingKey(false);
@@ -559,13 +559,13 @@ const ShopSetting: React.FC = () => {
 			window.setTimeout(() => setXenditSuccess(false), 3000);
 			await UserSwal.fire({
 				icon: 'success',
-				title: xenditSettings.connected ? 'Xendit credentials rotated' : 'Xendit connected',
-				text: 'Supplier payouts will use this shop\'s Xendit account.',
+				title: xenditSettings.connected ? 'Na-save na ang bagong Xendit codes' : 'Nakakonekta na ang Xendit',
+				text: 'Xendit account ng shop ang gagamitin sa bayad sa supplier.',
 				timer: 1800,
 				showConfirmButton: false,
 			});
 		} catch (err: any) {
-			setXenditError(err?.response?.data?.message || 'Xendit could not be connected. Please check the key permissions and try again.');
+			setXenditError(err?.response?.data?.message || 'Hindi naikonekta ang Xendit. Tingnan kung tama ang code at pinayagan ang Money-Out Read at Write, tapos subukan ulit.');
 		} finally {
 			setSavingXendit(false);
 		}
@@ -583,12 +583,12 @@ const ShopSetting: React.FC = () => {
 			if (persisted) setXenditSettings(persisted);
 			await UserSwal.fire({
 				icon: 'success',
-				title: 'Xendit connection verified',
+				title: 'Maayos ang koneksyon sa Xendit',
 				timer: 1600,
 				showConfirmButton: false,
 			});
 		} catch (err: any) {
-			setXenditError(err?.response?.data?.message || 'Xendit connection could not be verified.');
+			setXenditError(err?.response?.data?.message || 'Hindi masuri ang koneksyon sa Xendit. Subukan ulit.');
 		} finally {
 			setTestingXendit(false);
 		}
@@ -609,13 +609,13 @@ const ShopSetting: React.FC = () => {
 			setXenditCallbackToken('');
 			await UserSwal.fire({
 				icon: 'success',
-				title: 'Xendit disconnected',
-				text: 'Existing supplier payout history was preserved.',
+				title: 'Naalis na ang koneksyon sa Xendit',
+				text: 'Makikita pa rin ang mga nakaraang bayad sa supplier.',
 				timer: 1800,
 				showConfirmButton: false,
 			});
 		} catch (err: any) {
-			setXenditError(err?.response?.data?.message || 'Xendit could not be disconnected.');
+			setXenditError(err?.response?.data?.message || 'Hindi naalis ang koneksyon sa Xendit. Subukan ulit.');
 			setShowXenditDisconnectConfirm(false);
 		} finally {
 			setRemovingXendit(false);
@@ -2439,31 +2439,41 @@ const ShopSetting: React.FC = () => {
 					{/* PayMongo Payment Gateway Key */}
 					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-5 xl:order-6 xl:shadow-none">
 						<div className="border-b border-gray-200 p-6">
-							<h2 className="text-xl font-semibold text-gray-900">Payment Gateway (PayMongo)</h2>
+							<h2 className="text-xl font-semibold text-gray-900">Bayad ng customer (PayMongo)</h2>
 							<p className="mt-1 text-sm text-gray-600">
-								Enter your PayMongo secret key so customer payments go directly into your account.
+								Ikonekta ang PayMongo account ng shop para makatanggap ng online na bayad mula sa mga customer.
 							</p>
 						</div>
 						<div className="p-6 space-y-4">
+							<details className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+								<summary className="cursor-pointer text-sm font-semibold text-gray-900">Panoorin: paggawa ng PayMongo account at pagkuha ng code</summary>
+								<p className="mt-2 text-xs text-gray-600">Demo screens na may cursor at Tagalog na instructions. Walang audio; puwedeng i-pause o i-fullscreen. Sample lang ang mga detalye at code.</p>
+								<video controls playsInline preload="none" poster="/guides/payment-setup/paymongo-preview.png" aria-label="Gabay sa PayMongo account at Secret Key" className="mt-3 aspect-video w-full rounded-lg bg-gray-900">
+									<source src="/guides/payment-setup/paymongo.webm" type="video/webm" />
+									<a href="/guides/payment-setup/paymongo.webm">I-download ang PayMongo video</a>
+								</video>
+								<a href="/guides/payment-setup/paymongo.txt" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2">Basahin ang buong gabay sa video</a>
+							</details>
 							<div className="rounded-lg border border-gray-200 bg-white p-4">
-								<p className="text-sm font-semibold text-gray-900">What is PayMongo?</p>
+								<p className="text-sm font-semibold text-gray-900">Para saan ang PayMongo?</p>
 								<p className="mt-1 text-sm text-gray-700">
-									PayMongo is an online payment platform that lets your shop accept digital payments securely.
+									Dito papasok ang online na bayad ng customer. Kailangan ng Secret Key — isang pribadong code mula sa PayMongo para maikonekta ang account mo sa SoleSpace.
 								</p>
-								<p className="mt-3 text-xs font-semibold uppercase tracking-wide text-gray-900">How to get your key</p>
+								<p className="mt-3 text-xs font-semibold uppercase tracking-wide text-gray-900">Paano ikonekta ang account</p>
 								<ol className="mt-1 list-decimal space-y-1 pl-5 text-sm text-gray-700">
-									<li>Create or log in to your PayMongo account.</li>
-									<li>Open Dashboard - Developers - API Keys.</li>
-									<li>Copy your Secret Key (starts with <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">sk_</code>).</li>
-									<li>Paste it below, then click Save Key.</li>
+									<li>Buksan ang PayMongo sa link sa ibaba. Gumawa ng account gamit ang email at password, o mag-log in kung mayroon na.</li>
+									<li>Ilagay ang code na ipinadala sa email mo. Sundin ang mga hinihinging detalye at pag-verify ng PayMongo.</li>
+									<li>Sa PayMongo, buksan ang <strong>Settings → Product Settings → Developers</strong> at hanapin ang API Keys.</li>
+									<li>Kopyahin ang <strong>Secret Key</strong>: <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">sk_test_</code> para sa practice, o <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">sk_live_</code> para sa totoong bayad. Huwag piliin ang Public Key.</li>
+									<li>I-paste ang code sa field sa ibaba, tapos pindutin ang <strong>I-save ang code</strong>. Para sa totoong bayad, kumpletuhin muna ang pag-verify at mga requirement ng PayMongo.</li>
 								</ol>
 								<a
-									href="https://www.paymongo.com/"
+									href="https://dashboard.paymongo.com/signup"
 									target="_blank"
 									rel="noopener noreferrer"
 								className="mt-3 inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black"
 								>
-									Visit PayMongo
+									Buksan ang PayMongo
 								</a>
 							</div>
 
@@ -2472,10 +2482,9 @@ const ShopSetting: React.FC = () => {
 								<div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
 									<AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
 									<div>
-										<p className="text-sm font-semibold text-red-800">Payment not configured</p>
+										<p className="text-sm font-semibold text-red-800">Hindi pa nakakonekta ang PayMongo</p>
 										<p className="mt-0.5 text-sm text-red-700">
-											You haven&apos;t added your PayMongo secret key yet. Customers will not be able to pay online
-											until you set this up. Add your key below to start accepting payments directly into your account.
+											Ilagay muna ang code mula sa PayMongo sa ibaba para makapagbayad online ang mga customer.
 										</p>
 									</div>
 								</div>
@@ -2487,15 +2496,15 @@ const ShopSetting: React.FC = () => {
 								<div className="flex items-center justify-between gap-3">
 									<div className="flex items-center gap-2">
 										<CheckCircle2 size={16} className="shrink-0 text-green-600" />
-										<span className="text-sm font-medium text-green-800">PayMongo key is configured — payments go directly to your account.</span>
+										<span className="text-sm font-medium text-green-800">Naka-save na ang PayMongo code. Ang totoong bayad ay depende sa pag-verify at mga payment method na pinayagan sa account mo.</span>
 									</div>
 									{!showRevokeConfirm && (
 										<button
 											type="button"
 											onClick={() => setShowRevokeConfirm(true)}
 											className="inline-flex shrink-0 items-center justify-center text-red-600 hover:text-red-700"
-											aria-label="Remove key"
-											title="Remove key"
+											aria-label="Alisin ang PayMongo code"
+											title="Alisin ang PayMongo code"
 										>
 											<Trash2 size={14} />
 										</button>
@@ -2504,21 +2513,21 @@ const ShopSetting: React.FC = () => {
 								{showRevokeConfirm && (
 									<div className="mt-3 flex items-center gap-3 border-t border-green-200 pt-3">
 										<AlertTriangle size={15} className="shrink-0 text-red-500" />
-										<p className="flex-1 text-xs text-red-700">Removing this key will <strong>disable all online payments</strong> for your shop immediately. Are you sure?</p>
+										<p className="flex-1 text-xs text-red-700">Kapag inalis ang code, <strong>hindi muna makakapagbayad online ang mga customer</strong>. Itutuloy mo ba?</p>
 										<button
 											type="button"
 											onClick={removePaymongoKey}
 											disabled={removingKey}
 											className="shrink-0 rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
 										>
-											{removingKey ? 'Removing…' : 'Yes, remove'}
+											{removingKey ? 'Inaalis...' : 'Oo, alisin'}
 										</button>
 										<button
 											type="button"
 											onClick={() => setShowRevokeConfirm(false)}
 											className="shrink-0 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50"
 										>
-											Cancel
+											Bumalik
 										</button>
 									</div>
 								)}
@@ -2528,10 +2537,10 @@ const ShopSetting: React.FC = () => {
 						{/* Key input */}
 							<div>
 								<label className="mb-1.5 block text-sm font-medium text-gray-700">
-									{hasPaymongoKey ? 'Update Secret Key' : 'Enter Secret Key'}
+									{hasPaymongoKey ? 'Palitan ang PayMongo code (Secret Key)' : 'PayMongo code (Secret Key)'}
 								</label>
 								<p className="mb-2 text-xs text-gray-500">
-									Found in your PayMongo Dashboard → Developers → API Keys. Use the <strong>Secret key</strong> (starts with <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">sk_</code>).
+									I-paste ang <strong>Secret Key</strong> mula sa PayMongo. Pribado ang code na ito - huwag ibahagi sa iba.
 								</p>
 								<div className="flex items-center gap-2">
 									<div className="relative flex-1">
@@ -2547,7 +2556,7 @@ const ShopSetting: React.FC = () => {
 											type="button"
 											onClick={() => setShowKey((v) => !v)}
 											className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-											aria-label={showKey ? 'Hide key' : 'Show key'}
+											aria-label={showKey ? 'Itago ang code' : 'Ipakita ang code'}
 										>
 											{showKey ? <EyeOff size={16} /> : <Eye size={16} />}
 										</button>
@@ -2558,13 +2567,13 @@ const ShopSetting: React.FC = () => {
 										disabled={savingKey || !keyInput.trim()}
 										className="shrink-0 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
 									>
-										{savingKey ? 'Saving…' : 'Save Key'}
+										{savingKey ? 'Sine-save...' : 'I-save ang code'}
 									</button>
 								</div>
 								{keyError && <p className="mt-2 text-xs text-red-600">{keyError}</p>}
 								{keySuccess && (
 									<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
-										<Check size={13} /> Key saved successfully.
+										<Check size={13} /> Na-save na ang PayMongo code.
 									</p>
 								)}
 							</div>
@@ -2575,24 +2584,38 @@ const ShopSetting: React.FC = () => {
 					{!isIndividual && (
 						<div data-testid="xendit-supplier-payouts-card" className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-6 xl:order-7 xl:shadow-none">
 							<div className="border-b border-gray-200 p-6">
-								<h2 className="text-xl font-semibold text-gray-900">Xendit - Supplier Payouts</h2>
+								<h2 className="text-xl font-semibold text-gray-900">Bayad sa supplier (Xendit)</h2>
 								<p className="mt-1 text-sm text-gray-600">
-									Connect your shop&apos;s Xendit account for supplier payouts. Customer payments continue to use PayMongo.
+									Ikonekta ang Xendit para makapagpadala ng bayad sa mga supplier ng shop. PayMongo pa rin ang gamit para sa bayad ng customer.
 								</p>
 							</div>
 							<div className="space-y-4 p-6">
+								<details className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+									<summary className="cursor-pointer text-sm font-semibold text-gray-900">Panoorin: paggawa ng Xendit account at pagkuha ng mga code</summary>
+									<p className="mt-2 text-xs text-gray-600">Demo screens na may cursor at Tagalog na instructions. Walang audio; puwedeng i-pause o i-fullscreen. Sample lang ang mga detalye at code.</p>
+									<video controls playsInline preload="none" poster="/guides/payment-setup/xendit-preview.png" aria-label="Gabay sa Xendit account, Secret API Key at Webhook Verification Token" className="mt-3 aspect-video w-full rounded-lg bg-gray-900">
+										<source src="/guides/payment-setup/xendit.webm" type="video/webm" />
+										<a href="/guides/payment-setup/xendit.webm">I-download ang Xendit video</a>
+									</video>
+									<a href="/guides/payment-setup/xendit.txt" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2">Basahin ang buong gabay sa video</a>
+								</details>
 								<div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
-									<p className="font-semibold text-gray-900">Phase 1 setup</p>
-									<ul className="mt-2 list-disc space-y-1 pl-5">
-										<li>Use a standalone Xendit Secret API Key with Money-Out Read for balance verification and Money-Out Write for payouts.</li>
-										<li>Set the same callback token in Xendit&apos;s PAYOUT webhook configuration and below.</li>
-									</ul>
+									<p className="font-semibold text-gray-900">Paano ikonekta ang account</p>
+									<ol className="mt-2 list-decimal space-y-1 pl-5">
+										<li>Gumawa ng account sa Xendit o mag-log in. I-verify ang email at sagutan ang mga tanong tungkol sa negosyo mo.</li>
+										<li>Sa Xendit, piliin ang <strong>Test Mode</strong> para sa practice, o <strong>Live Mode</strong> para sa totoong pera. Kailangan munang ma-verify ang negosyo para sa Live Mode.</li>
+										<li>Buksan ang <strong>Settings - Developers - API Keys</strong>. Gumawa ng <strong>Secret API Key</strong> at payagan ang <strong>Money-Out Read</strong> (pagtingin ng balanse) at <strong>Money-Out Write</strong> (pagpadala ng bayad). Kopyahin ang code habang nakikita pa ito.</li>
+										<li>Sa <strong>Settings - Developers - Webhooks</strong>, ilagay ang link sa ibaba sa <strong>PAYOUT</strong> at i-save. Ito ang paraan para ma-update ang SoleSpace kapag may resulta na ang bayad.</li>
+										<li>Sa parehong page, hanapin ang <strong>Webhook Verification Token</strong>. Kopyahin ang code at i-paste sa <strong>Code para sa update ng bayad</strong> sa ibaba.</li>
+										<li>Piliin ang parehong Test o Live dito sa SoleSpace, i-paste ang Secret API Key, tapos pindutin ang <strong>Ikonekta ang Xendit</strong>.</li>
+									</ol>
 									<p className="mt-3 text-xs text-gray-500">
-										Webhook URL: <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px]">{typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/xendit/payout` : '/api/webhooks/xendit/payout'}</code>
+										Link na ilalagay sa PAYOUT ng Xendit: <code className="break-all rounded bg-white px-1 py-0.5 font-mono text-[11px]">{typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/xendit/payout` : '/api/webhooks/xendit/payout'}</code>
 									</p>
 									<a href="https://docs.xendit.co/docs/payouts-creating-an-api-key" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black">
-										Open Xendit API key guide
+										Buksan ang gabay ng Xendit
 									</a>
+									<a href="https://dashboard.xendit.co/register" target="_blank" rel="noopener noreferrer" className="mt-2 block text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black">Gumawa ng Xendit account</a>
 								</div>
 
 								{xenditSettings.connected ? (
@@ -2600,21 +2623,21 @@ const ShopSetting: React.FC = () => {
 										<div className="flex flex-wrap items-center justify-between gap-3">
 											<div className="flex items-center gap-2 text-sm font-medium text-green-800">
 												<CheckCircle2 size={16} className="shrink-0 text-green-600" />
-												<span>Xendit is connected ({xenditSettings.environment.toUpperCase()}) - {xenditSettings.secret_key_masked}</span>
+												<span>Nakakonekta ang Xendit ({xenditSettings.environment === 'live' ? 'Totoong pera' : 'Practice lang'}) - {xenditSettings.secret_key_masked}</span>
 											</div>
 											<div className="flex flex-wrap gap-2">
 												<button type="button" onClick={() => void testXenditConnection()} disabled={testingXendit || removingXendit} className="rounded-md border border-green-700 px-3 py-1.5 text-xs font-semibold text-green-800 hover:bg-green-100 disabled:cursor-not-allowed disabled:opacity-50">
-													{testingXendit ? 'Testing...' : 'Test connection'}
+													{testingXendit ? 'Tinitingnan...' : 'Tingnan kung nakakonekta'}
 												</button>
-												{!showXenditDisconnectConfirm && <button type="button" onClick={() => setShowXenditDisconnectConfirm(true)} disabled={testingXendit || removingXendit} className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Disconnect</button>}
+												{!showXenditDisconnectConfirm && <button type="button" onClick={() => setShowXenditDisconnectConfirm(true)} disabled={testingXendit || removingXendit} className="rounded-md border border-red-300 px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50">Alisin ang koneksyon</button>}
 											</div>
 										</div>
 										{showXenditDisconnectConfirm && (
 											<div className="mt-3 flex flex-wrap items-center gap-3 border-t border-green-200 pt-3">
 												<AlertTriangle size={15} className="shrink-0 text-red-500" />
-												<p className="flex-1 text-xs text-red-700">Disconnecting blocks new supplier payouts. Existing payout history stays available.</p>
-												<button type="button" onClick={() => void removeXenditIntegration()} disabled={removingXendit} className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">{removingXendit ? 'Disconnecting...' : 'Yes, disconnect'}</button>
-												<button type="button" onClick={() => setShowXenditDisconnectConfirm(false)} disabled={removingXendit} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+												<p className="flex-1 text-xs text-red-700">Kapag inalis ang koneksyon, hindi muna makakapagpadala ng bagong bayad sa supplier. Makikita pa rin ang mga nakaraang bayad.</p>
+												<button type="button" onClick={() => void removeXenditIntegration()} disabled={removingXendit} className="rounded-md bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">{removingXendit ? 'Inaalis...' : 'Oo, alisin'}</button>
+												<button type="button" onClick={() => setShowXenditDisconnectConfirm(false)} disabled={removingXendit} className="rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50">Bumalik</button>
 											</div>
 										)}
 									</div>
@@ -2622,47 +2645,47 @@ const ShopSetting: React.FC = () => {
 									<div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-4">
 										<AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
 										<div>
-											<p className="text-sm font-semibold text-red-800">Supplier payouts not configured</p>
-											<p className="mt-0.5 text-sm text-red-700">Finance cannot send money to suppliers until this shop connection is verified.</p>
+											<p className="text-sm font-semibold text-red-800">Hindi pa nakakonekta ang Xendit</p>
+											<p className="mt-0.5 text-sm text-red-700">Hindi pa makakapagpadala ng bayad sa supplier ang Finance team. Kumpletuhin muna ang mga hakbang sa itaas.</p>
 										</div>
 									</div>
 								)}
 
 								<div className="grid gap-4 md:grid-cols-3">
 									<div>
-										<label htmlFor="xendit-environment" className="mb-1.5 block text-sm font-medium text-gray-700">Environment</label>
+										<label htmlFor="xendit-environment" className="mb-1.5 block text-sm font-medium text-gray-700">Paggagamitan</label>
 										<select id="xendit-environment" value={xenditEnvironment} onChange={(event) => setXenditEnvironment(event.target.value as 'test' | 'live')} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500">
-											<option value="test">Test</option>
-											<option value="live">Live</option>
+											<option value="test">Practice lang (Test)</option>
+											<option value="live">Totoong pera (Live)</option>
 										</select>
 									</div>
 									<div className="md:col-span-2">
-										<label htmlFor="xendit-secret-key" className="mb-1.5 block text-sm font-medium text-gray-700">Xendit Secret API Key</label>
+										<label htmlFor="xendit-secret-key" className="mb-1.5 block text-sm font-medium text-gray-700">Xendit code (Secret API Key)</label>
 										<div className="relative">
-											<input id="xendit-secret-key" data-tour="xendit-payouts" type={showXenditKey ? 'text' : 'password'} value={xenditSecretKey} onChange={(event) => setXenditSecretKey(event.target.value)} placeholder="Paste the server-side secret key" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
-											<button type="button" onClick={() => setShowXenditKey((value) => !value)} aria-label={showXenditKey ? 'Hide Xendit secret key' : 'Show Xendit secret key'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">{showXenditKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+											<input id="xendit-secret-key" data-tour="xendit-payouts" type={showXenditKey ? 'text' : 'password'} value={xenditSecretKey} onChange={(event) => setXenditSecretKey(event.target.value)} placeholder="I-paste ang Secret API Key mula sa Xendit" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
+											<button type="button" onClick={() => setShowXenditKey((value) => !value)} aria-label={showXenditKey ? 'Itago ang Xendit code' : 'Ipakita ang Xendit code'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">{showXenditKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
 										</div>
-										<p className="mt-1 text-xs text-gray-500">The key is encrypted and never shown again. Balance verification may require Money-Out Read; payouts require Money-Out Write.</p>
+										<p className="mt-1 text-xs text-gray-500">Pribado ang code na ito at hindi na ipapakita pagkatapos i-save. Kailangan ang Money-Out Read at Write na pinili mo sa Xendit.</p>
 									</div>
 								</div>
 
 								<div>
-									<label htmlFor="xendit-callback-token" className="mb-1.5 block text-sm font-medium text-gray-700">Payout callback token</label>
+									<label htmlFor="xendit-callback-token" className="mb-1.5 block text-sm font-medium text-gray-700">Code para sa update ng bayad (Webhook Verification Token)</label>
 									<div className="relative">
-										<input id="xendit-callback-token" type={showXenditToken ? 'text' : 'password'} value={xenditCallbackToken} onChange={(event) => setXenditCallbackToken(event.target.value)} placeholder="Create or paste a private token" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
-										<button type="button" onClick={() => setShowXenditToken((value) => !value)} aria-label={showXenditToken ? 'Hide Xendit callback token' : 'Show Xendit callback token'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">{showXenditToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+										<input id="xendit-callback-token" type={showXenditToken ? 'text' : 'password'} value={xenditCallbackToken} onChange={(event) => setXenditCallbackToken(event.target.value)} placeholder="I-paste ang Webhook Verification Token mula sa Xendit" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
+										<button type="button" onClick={() => setShowXenditToken((value) => !value)} aria-label={showXenditToken ? 'Itago ang code para sa update' : 'Ipakita ang code para sa update'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">{showXenditToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
 									</div>
-									<p className="mt-1 text-xs text-gray-500">Required to authenticate payout webhooks. Keep it private.</p>
+									<p className="mt-1 text-xs text-gray-500">Gamit ito para masigurong galing sa Xendit ang update ng bayad. Kopyahin mula sa Xendit; huwag gumawa ng sariling code o ibahagi ito sa iba.</p>
 								</div>
 
 								<div className="flex flex-wrap items-center gap-3">
 									<button type="button" onClick={() => void saveXenditIntegration()} disabled={savingXendit || !xenditSecretKey.trim() || !xenditCallbackToken.trim()} className="min-h-11 rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-50">
-										{savingXendit ? 'Verifying and saving...' : xenditSettings.connected ? 'Rotate credentials' : 'Connect Xendit'}
+										{savingXendit ? 'Tinitingnan at sine-save...' : xenditSettings.connected ? 'I-save ang bagong mga code' : 'Ikonekta ang Xendit'}
 									</button>
-									{!xenditSettings.connected && <span className="text-xs text-gray-500">Connection verification reads the account balance only; it does not send money.</span>}
+									{!xenditSettings.connected && <span className="text-xs text-gray-500">Balanse lang ang titingnan para masuri ang koneksyon. Walang perang ipapadala sa hakbang na ito.</span>}
 								</div>
 								{xenditError && <p role="alert" className="text-sm text-red-700">{xenditError}</p>}
-								{xenditSuccess && <p className="flex items-center gap-1 text-sm font-medium text-green-700"><Check size={14} /> Xendit supplier payout settings saved.</p>}
+								{xenditSuccess && <p className="flex items-center gap-1 text-sm font-medium text-green-700"><Check size={14} /> Na-save na ang Xendit para sa bayad sa supplier.</p>}
 							</div>
 						</div>
 					)}

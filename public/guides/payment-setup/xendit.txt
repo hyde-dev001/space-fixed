@@ -1,0 +1,31 @@
+DEMO SCREENS - Sample details lang. Walang audio o totoong transaksyon.
+
+1. Gumawa ng Xendit account
+Buksan ang dashboard.xendit.co/register. Piliin ang Philippines kung hinihingi. Ilagay ang email, password at mga basic detail na hinihingi ng form. Sundin ang kasalukuyang website.
+
+2. Email at business details
+I-verify ang email gamit ang ipinadalang instructions. Sagutan ang mga tanong tungkol sa negosyo, gamit ang totoong pangalan at contact details ng shop.
+
+3. Practice o totoong pera?
+Test Mode ay practice lang. Para makapagpadala ng totoong pera, piliin ang Verify Business at isumite ang mga hinihinging business documents, ID at proof of business. Hintayin ang approval ng Xendit.
+
+4. Gumawa ng Secret API Key
+Buksan ang Settings, Developers, tapos API Keys. Gumawa ng Secret API Key. Ito ang pribadong code na ikokonekta sa SoleSpace. Gamitin ang parehong Test o Live mode sa dalawang website.
+
+5. Piliin ang pahintulot
+Payagan ang Money-Out Read para matingnan ang balanse, at Money-Out Write para makapagpadala ng bayad sa supplier. Piliin lang ang kailangan ng koneksyon na ito.
+
+6. Kopyahin ang Secret API Key
+Kopyahin at itago nang ligtas ang code habang ipinapakita ito. Hindi na ito makikita ulit kapag isinara ang window. Demo code lang ang nasa video.
+
+7. Ilagay ang link ng SoleSpace
+Sa SoleSpace settings, kopyahin ang link na nasa Xendit section. Sa Xendit, buksan ang Settings, Developers, Webhooks. I-paste ang link sa PAYOUT at i-save. Gamitin ang link ng sarili mong SoleSpace site.
+
+8. Kunin ang pangalawang code
+Sa Webhooks page, buksan ang Webhook Verification Token. Maaaring hingin ang password mo. Kopyahin ang token mula sa Xendit. Huwag gumawa ng sariling code: dapat tugma ito sa ipinapadala ng Xendit.
+
+9. Ikonekta sa SoleSpace
+Sa Bayad sa supplier (Xendit), piliin ang Practice lang kung Test ang ginamit sa Xendit. I-paste ang Secret API Key at Webhook Verification Token. Pindutin ang Ikonekta ang Xendit.
+
+10. Tingnan ang koneksyon
+Kapag nakakonekta na, pindutin ang Tingnan kung nakakonekta. Balanse lang ang titingnan; walang perang ipapadala sa check na ito. PayMongo ang para sa customer; Xendit ang para sa supplier.
