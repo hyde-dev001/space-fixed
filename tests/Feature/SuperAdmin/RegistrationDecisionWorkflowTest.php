@@ -6,16 +6,20 @@ namespace Tests\Feature\SuperAdmin;
 
 use App\Enums\PrivilegedDeliveryType;
 use App\Jobs\SendPrivilegedWorkflowMail;
+use App\Models\AdminPagePermission;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Services\BusinessAccessControlService;
 use App\Services\PrivilegedAudit;
+use App\Services\ShopDocumentLifecycleService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia as Assert;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
@@ -361,6 +365,103 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $this->assertStringNotContainsString('reviewed_by_super_admin_id', $response->getContent());
     }
 
+    public function test_resubmitted_registration_displays_only_the_latest_four_documents(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
+        $owner = $this->resubmittedRegistrationWithDocuments();
+        $pendingIds = $owner->documents()->pending()->orderBy('id')->pluck('id')->all();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->get(route('admin.registrations.index'))
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->where('registrations', function ($registrations) use ($owner, $pendingIds): bool {
+                    $registration = collect($registrations['data'] ?? [])->firstWhere('id', $owner->id);
+                    $ids = collect($registration['documents'] ?? [])->pluck('id')->sort()->values()->all();
+
+                    return count($ids) === 4 && $ids === $pendingIds;
+                }));
+
+        $this->assertSame(8, $owner->documents()->count());
+    }
+
+    public function test_resubmitted_registration_approval_preserves_rejected_history(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
+        $owner = $this->resubmittedRegistrationWithDocuments();
+        $payload = $this->approvalPayload($owner);
+        $pendingIds = $owner->documents()->pending()->pluck('id')->all();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.registrations.approve', $owner), $payload)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('documents');
+
+        $payload['documents'] = array_values(array_filter(
+            $payload['documents'],
+            static fn (array $document): bool => in_array($document['id'], $pendingIds, true),
+        ));
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.registrations.approve', $owner), $payload)
+            ->assertOk()
+            ->assertJsonPath('applied', true);
+
+        $this->assertSame('approved', $owner->fresh()->status->value);
+        $this->assertSame(8, $owner->documents()->count());
+        $this->assertSame(4, $owner->documents()->currentApproved()->count());
+        $this->assertSame(4, $owner->documents()->where('status', 'rejected')->count());
+        foreach ($owner->documents()->get() as $document) {
+            Storage::disk('local')->assertExists($document->file_path);
+        }
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.registrations.approve', $owner), $payload)
+            ->assertOk()
+            ->assertJsonPath('applied', false);
+    }
+
+    public function test_resubmitted_registration_cannot_be_approved_by_an_unassigned_admin(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->resubmittedRegistrationWithDocuments();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.registrations.approve', $owner), $this->approvalPayload($owner))
+            ->assertForbidden();
+
+        $this->assertSame('pending', $owner->fresh()->status->value);
+    }
+
+    public function test_resubmitted_registration_rejects_another_shops_document_metadata(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
+        $owner = $this->resubmittedRegistrationWithDocuments();
+        $otherOwner = $this->pendingRegistrationWithDocuments();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->postJson(route('admin.registrations.approve', $owner), $this->approvalPayload($otherOwner))
+            ->assertStatus(422);
+
+        $this->assertSame('pending', $owner->fresh()->status->value);
+        $this->assertSame('pending', $otherOwner->fresh()->status->value);
+        $this->assertSame(0, $owner->documents()->currentApproved()->count());
+        $this->assertSame(0, $otherOwner->documents()->currentApproved()->count());
+    }
+
+    public function test_rejected_predecessors_are_not_accepted_by_default_document_approval(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        $owner = $this->resubmittedRegistrationWithDocuments();
+        $candidate = $owner->documents()->pending()->firstOrFail();
+
+        $this->expectException(ConflictHttpException::class);
+        app(ShopDocumentLifecycleService::class)->approvePendingVersion($candidate, $admin->id);
+    }
+
     public function test_registration_index_excludes_withdrawn_optional_documents(): void
     {
         $admin = SuperAdmin::factory()->superAdmin()->create();
@@ -435,6 +536,29 @@ final class RegistrationDecisionWorkflowTest extends TestCase
             'business_type' => 'retail',
         ]);
         $this->createDocuments($owner);
+
+        return $owner->fresh();
+    }
+
+    private function resubmittedRegistrationWithDocuments(): ShopOwner
+    {
+        $owner = $this->pendingRegistrationWithDocuments();
+        $owner->documents()->update(['status' => 'rejected']);
+        $owner->forceFill(['resubmission_count' => 1])->save();
+        $entries = $owner->documents()->orderBy('id')->get()
+            ->map(static fn (ShopDocument $document): array => [
+                'metadata' => [
+                    'document_type' => $document->document_type,
+                    'logical_slot' => $document->logical_slot,
+                    'issued_on' => $document->issued_on?->toDateString(),
+                    'expiration_mode' => $document->expiration_mode,
+                    'expires_on' => $document->expires_on?->toDateString(),
+                ],
+                'file' => UploadedFile::fake()->create('resubmitted.png', 10, 'image/png'),
+                'predecessor' => $document,
+            ])->all();
+
+        app(ShopDocumentLifecycleService::class)->createPendingVersions($owner, $entries, true);
 
         return $owner->fresh();
     }

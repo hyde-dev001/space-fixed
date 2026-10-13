@@ -155,6 +155,7 @@ final class ShopOwnerRegistrationDecisionService
                     $document,
                     (int) $actor->getKey(),
                     $reviewMetadata[(int) $document->getKey()],
+                    allowRejectedPredecessor: true,
                 );
             }
 

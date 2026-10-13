@@ -78,7 +78,7 @@ class ShopOwnerRegistrationViewController extends Controller
             ])
             ->with([
                 'documents' => static function ($documents): void {
-                    $documents->where('status', '!=', 'withdrawn')->select([
+                    $documents->where('status', '!=', 'withdrawn')->whereDoesntHave('successors')->select([
                         'id',
                         'shop_owner_id',
                         'document_type',
