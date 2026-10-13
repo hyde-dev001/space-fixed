@@ -2263,7 +2263,7 @@ export default function JobOrdersPage() {
                     Quantity
                   </th>
                   <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
-                    Amount Breakdown
+                    Grand Total
                   </th>
                   <th className="box-border whitespace-normal px-3 py-4 text-left text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-300">
                     Status
@@ -2321,40 +2321,25 @@ export default function JobOrdersPage() {
                       </td>
                       <td className="box-border px-3 py-5 text-left align-top">
                         <div className="rounded-xl bg-gray-50/80 p-3 dark:bg-gray-900/50">
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
-                              <span>Item Subtotal</span>
-                              <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.total_amount)}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
-                              <span>Shipping Fee</span>
-                              <span className="font-medium text-gray-800 dark:text-gray-200">{formatOrderTotal(order.shipping_fee)}</span>
-                            </div>
-                            <div className="flex items-center justify-between gap-4 text-xs text-gray-500 dark:text-gray-400">
-                              <span>{order.vat_rate != null ? `VAT (${order.vat_rate}%)` : 'VAT'}</span>
-                              <span className="font-medium text-gray-800 dark:text-gray-200">{order.vat_amount != null ? formatOrderTotal(order.vat_amount) : 'N/A'}</span>
-                            </div>
-                            <div className={`flex items-center justify-between gap-4 border-t border-gray-200 pt-2 text-sm font-semibold dark:border-gray-700 ${
-                              order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
-                                ? 'text-red-600 dark:text-red-400'
-                                : 'text-emerald-600 dark:text-emerald-400'
-                            }`}>
-                              <span>Grand Total</span>
-                              <span className="inline-flex items-center gap-1">
-                                <span className={`inline-flex items-center justify-center rounded-full ${
-                                  order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
-                                    ? 'bg-red-100 p-0.5 dark:bg-red-900/30'
-                                    : 'bg-emerald-100 p-0.5 dark:bg-emerald-900/30'
-                                }`}>
-                                  {order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded' ? (
-                                    <MinusIcon className="size-3" />
-                                  ) : (
-                                    <PlusIcon className="size-3" />
-                                  )}
-                                </span>
-                                {formatOrderTotal(order.grand_total)}
+                          <div className={`text-sm font-semibold ${
+                            order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                          }`}>
+                            <span className="inline-flex items-center gap-1">
+                              <span className={`inline-flex items-center justify-center rounded-full ${
+                                order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded'
+                                  ? 'bg-red-100 p-0.5 dark:bg-red-900/30'
+                                  : 'bg-emerald-100 p-0.5 dark:bg-emerald-900/30'
+                              }`}>
+                                {order.status === 'cancelled' || String(order.paymentStatus || '').toLowerCase() === 'refunded' ? (
+                                  <MinusIcon className="size-3" />
+                                ) : (
+                                  <PlusIcon className="size-3" />
+                                )}
                               </span>
-                            </div>
+                              {formatOrderTotal(order.grand_total)}
+                            </span>
                           </div>
                         </div>
                       </td>
