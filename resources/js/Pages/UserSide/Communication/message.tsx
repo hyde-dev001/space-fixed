@@ -1016,6 +1016,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                   if (message.sender_type === 'system') {
                     // Parse message content to extract details
                     const content = message.content || '';
+                    const isOrderReport = content.includes('**Order Report Submitted**');
                     const isRepairMessage = content.includes('Repair') || content.includes('Type:**');
                     const isOrderMessage = content.includes('Order') && (content.includes('Order Number:') || content.includes('New Order Placed'));
                     
@@ -1038,6 +1039,8 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                     const items = itemsMatch ? itemsMatch[1].trim() : '';
                     const total = totalMatch ? totalMatch[1].trim() : '';
                     const orderStatus = orderStatusMatch ? orderStatusMatch[1].trim() : '';
+                    const reportReasonMatch = content.match(/\*\*Reason:\*\*\s*(.+?)(?=\n|$)/);
+                    const reportReason = reportReasonMatch ? reportReasonMatch[1].trim() : '';
                     const normalizedMessageOrderNumber = (orderNumber || '').trim().toUpperCase();
                     const normalizedConversationOrderNumber = (selectedConversation?.order?.order_number || '').trim().toUpperCase();
                     const isSameOrderAsConversation =
@@ -1051,7 +1054,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                     const mappedOrderStatus = normalizedMessageOrderNumber
                       ? (orderStatusByNumber[normalizedMessageOrderNumber] || '')
                       : '';
-                    const effectiveOrderStatus =
+                    const effectiveOrderStatus = isOrderReport ? orderStatus :
                       (mappedOrderStatus ? mappedOrderStatus.replace(/_/g, ' ') : '') ||
                       liveOrderStatus ||
                       orderStatus;
@@ -1081,7 +1084,7 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                             <div className="flex items-start justify-between mb-4">
                               <div className="flex-1">
                                 <h3 className="text-base font-semibold text-gray-900 mb-1 flex items-center gap-2">
-                                  <span>New Order Placed</span>
+                                  <span>{isOrderReport ? 'Order Report Submitted' : 'New Order Placed'}</span>
                                 </h3>
                                 <p className="text-xs text-gray-500">
                                   {new Date(message.created_at).toLocaleString('en-US', {
@@ -1102,6 +1105,18 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                             
                             {/* Order Details Section */}
                             <div className="bg-gray-50 rounded-lg p-4 mb-4 space-y-3">
+                              {isOrderReport && (
+                                <>
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Order Number:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{orderNumber}</span>
+                                  </div>
+                                  <div className="flex items-start gap-3">
+                                    <span className="text-gray-500 text-xs font-medium w-24 shrink-0">Reason:</span>
+                                    <span className="text-sm text-gray-900 font-medium">{reportReason}</span>
+                                  </div>
+                                </>
+                              )}
                               {orderProducts.length > 0 && (
                                 <div className="space-y-2">
                                   <span className="text-gray-500 text-xs font-medium">Products:</span>
@@ -1184,7 +1199,9 @@ const Message: React.FC<Props> = ({ conversation: initialConversation = null, sh
                             {/* Footer message */}
                             <div className="bg-blue-50 rounded-lg px-3 py-2.5 mb-4">
                               <p className="text-xs text-blue-900 leading-relaxed">
-                                💡 Thank you for your order! We'll notify you once your items are ready for shipment.
+                                {isOrderReport
+                                  ? 'Your order report has been received. The dispatcher will investigate the issue.'
+                                  : "💡 Thank you for your order! We'll notify you once your items are ready for shipment."}
                               </p>
                             </div>
                             

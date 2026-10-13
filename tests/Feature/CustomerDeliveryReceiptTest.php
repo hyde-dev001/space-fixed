@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Enums\OrderStatus;
+use App\Models\Conversation;
 use App\Models\DeliveryDispute;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -144,6 +145,19 @@ class CustomerDeliveryReceiptTest extends TestCase
             'status' => 'open',
             'reason' => 'damaged',
         ]);
+
+        $conversation = Conversation::query()->where('customer_id', $customer->id)->firstOrFail();
+        $this->assertSame($shop->id, $conversation->shop_owner_id);
+        $message = $conversation->messages()->sole();
+        $this->assertSame('system', $message->sender_type);
+        $this->assertSame($shop->id, $message->sender_id);
+        $this->assertStringContainsString('**Order Report Submitted**', $message->content);
+        $this->assertStringContainsString("**Order Number:** {$order->order_number}", $message->content);
+        $this->assertStringContainsString('**Reason:** Damaged item', $message->content);
+        $this->assertStringContainsString('**Status:** Pending dispatcher investigation', $message->content);
+        $this->assertNull($message->attachments);
+        $this->assertNull($message->read_at);
+        $this->assertTrue($conversation->last_message_at->equalTo($message->created_at));
     }
 
     public function test_duplicate_customer_report_returns_the_existing_active_dispute(): void
@@ -157,6 +171,17 @@ class CustomerDeliveryReceiptTest extends TestCase
             'carrier_company' => 'Shop-owned logistics',
             'customer_receipt_status' => 'pending',
         ]);
+        $earlierOrder = Order::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+        ]);
+        $conversation = Conversation::create([
+            'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
+            'order_id' => $earlierOrder->id,
+            'status' => 'open',
+            'assigned_to_type' => 'crm',
+        ]);
 
         $first = $this->actingAs($customer, 'user')->post("/orders/{$order->id}/delivery-disputes", [
             'reason' => 'item_not_received',
@@ -169,6 +194,29 @@ class CustomerDeliveryReceiptTest extends TestCase
 
         $this->assertSame($first, $second);
         $this->assertDatabaseCount('delivery_disputes', 1);
+        $this->assertDatabaseCount('conversation_messages', 1);
+        $this->assertDatabaseCount('conversations', 1);
+        $this->assertSame($earlierOrder->id, $conversation->fresh()->order_id);
+        $this->assertStringContainsString(
+            "**Order Number:** {$order->order_number}",
+            $conversation->messages()->sole()->content,
+        );
+    }
+
+    public function test_customer_cannot_create_a_report_message_for_another_customers_order(): void
+    {
+        $order = Order::factory()->create([
+            'status' => OrderStatus::DELIVERED,
+            'carrier_company' => 'Shop-owned logistics',
+        ]);
+        $otherCustomer = User::factory()->create();
+
+        $this->actingAs($otherCustomer, 'user')
+            ->postJson("/orders/{$order->id}/delivery-disputes", ['reason' => 'item_not_received'])
+            ->assertNotFound();
+
+        $this->assertDatabaseCount('delivery_disputes', 0);
+        $this->assertDatabaseCount('conversation_messages', 0);
     }
 
     public function test_shop_owned_order_uses_report_instead_of_direct_refund(): void
@@ -229,6 +277,7 @@ class CustomerDeliveryReceiptTest extends TestCase
         $this->assertDatabaseMissing('delivery_disputes', [
             'order_id' => $order->id,
         ]);
+        $this->assertDatabaseCount('conversation_messages', 0);
     }
 
     public function test_dispatcher_can_resolve_a_dispute_to_refund_without_changing_delivered_status(): void

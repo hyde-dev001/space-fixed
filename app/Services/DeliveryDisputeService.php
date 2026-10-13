@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Enums\NotificationType;
+use App\Models\Conversation;
 use App\Models\DeliveryDispute;
 use App\Models\Logistics\Shipment;
 use App\Models\Order;
@@ -114,6 +115,36 @@ class DeliveryDisputeService
                 'customer_receipt_status' => 'disputed',
                 'customer_receipt_disputed_at' => now(),
             ]);
+
+            $conversation = Conversation::firstOrCreate(
+                [
+                    'shop_owner_id' => $lockedOrder->shop_owner_id,
+                    'customer_id' => $customerId,
+                ],
+                [
+                    'order_id' => $lockedOrder->id,
+                    'status' => 'open',
+                    'priority' => 'medium',
+                    'assigned_to_type' => 'crm',
+                ],
+            );
+            $reasonLabel = match ($reason) {
+                'item_not_received' => 'Item not received',
+                'damaged' => 'Damaged item',
+                'incomplete' => 'Incomplete order',
+                'wrong_item' => 'Wrong item',
+                'other' => 'Other issue',
+            };
+            $message = $conversation->messages()->create([
+                'sender_type' => 'system',
+                'sender_id' => $lockedOrder->shop_owner_id,
+                'content' => "**Order Report Submitted**\n\n"
+                    . "**Order Number:** {$lockedOrder->order_number}\n"
+                    . "**Reason:** {$reasonLabel}\n"
+                    . "**Status:** Pending dispatcher investigation\n\n"
+                    . 'Your order report has been received. The dispatcher will investigate the issue.',
+            ]);
+            $conversation->update(['last_message_at' => $message->created_at]);
 
             $this->notifyAfterCommit(function () use ($dispute, $lockedOrder): void {
                 $this->notificationService->sendToErpRole(
