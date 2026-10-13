@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { route as ziggyRoute } from 'ziggy-js';
 import { Ziggy } from './ziggy';
+import { installEmployeeClockInFeedback, showEmployeeClockInFeedback } from './utils/employeeClockInFeedback';
 window.axios = axios;
 
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
@@ -20,6 +21,7 @@ window.axios.interceptors.response.use(
     response => response,
     error => {
         const response = error.response;
+        showEmployeeClockInFeedback(response);
         const code = response?.data?.code;
         if (response?.status === 503 && code === 'MAINTENANCE_ACTIVE') {
             window.dispatchEvent(new CustomEvent('solespace:maintenance-active'));
@@ -32,6 +34,8 @@ window.axios.interceptors.response.use(
         return Promise.reject(error);
     }
 );
+
+installEmployeeClockInFeedback();
 
 // Backward-compatible route() wrapper:
 // some legacy pages pass URL paths into route(), which Ziggy rejects.

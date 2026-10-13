@@ -26,7 +26,7 @@ class EmployeeClockInAccessTest extends TestCase
     {
         Carbon::setTestNow(Carbon::create(2026, 9, 3, 12, 0, 0, 'Asia/Manila'));
 
-        foreach (['STAFF', 'MANAGER', 'CASHIER', 'REPAIRER', 'FINANCE', 'LOGISTICS'] as $role) {
+        foreach (['STAFF', 'MANAGER', 'CASHIER', 'REPAIRER', 'FINANCE', 'LOGISTICS', 'HR', 'CRM', 'PROCUREMENT', 'INVENTORY', 'DISPATCHER', 'NEW_EMPLOYEE_ROLE'] as $role) {
             $shop = ShopOwner::factory()->create([
                 'thursday_open' => '08:00:00',
                 'thursday_close' => '20:00:00',
@@ -45,6 +45,61 @@ class EmployeeClockInAccessTest extends TestCase
                     'message' => 'Please clock in on the Time In page before processing business actions.',
                 ]);
         }
+    }
+
+    public function test_new_unseeded_account_gets_clock_in_feedback_and_can_proceed_after_clocking_in(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 9, 3, 12, 0, 0, 'Asia/Manila'));
+        $shop = ShopOwner::factory()->create([
+            'thursday_open' => '08:00:00',
+            'thursday_close' => '20:00:00',
+        ]);
+        $user = User::query()->create([
+            'name' => 'New Procurement Account',
+            'email' => 'new-procurement@example.test',
+            'password' => 'TestPassword1!',
+            'role' => 'PROCUREMENT',
+            'status' => 'active',
+            'shop_owner_id' => $shop->id,
+        ]);
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/staff/attendance/lunch-start')
+            ->assertStatus(423)
+            ->assertJsonPath('code', 'EMPLOYEE_NOT_CLOCKED_IN')
+            ->assertJsonPath('message', 'Please clock in on the Time In page before processing business actions.');
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/staff/attendance/check-in')
+            ->assertOk();
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/staff/attendance/lunch-start')
+            ->assertOk();
+    }
+
+    public function test_another_shops_attendance_does_not_unlock_employee_actions(): void
+    {
+        Carbon::setTestNow(Carbon::create(2026, 9, 3, 12, 0, 0, 'Asia/Manila'));
+        $shop = ShopOwner::factory()->create();
+        $otherShop = ShopOwner::factory()->create();
+        $user = User::factory()->for($shop)->create(['role' => 'FINANCE', 'status' => 'active']);
+        $employee = Employee::factory()->active()->create([
+            'shop_owner_id' => $shop->id,
+            'email' => $user->email,
+        ]);
+        AttendanceRecord::create([
+            'employee_id' => $employee->id,
+            'shop_owner_id' => $otherShop->id,
+            'date' => '2026-09-03',
+            'check_in_time' => '08:00',
+            'status' => 'present',
+        ]);
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/staff/attendance/lunch-start')
+            ->assertStatus(423)
+            ->assertJsonPath('code', 'EMPLOYEE_NOT_CLOCKED_IN');
     }
 
     public function test_employee_mutation_is_allowed_with_an_active_attendance_record(): void
