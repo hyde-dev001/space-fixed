@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Tests\Feature\SuperAdmin;
 
 use App\Http\Middleware\AttachPrivilegedCorrelationId;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Route;
 use Tests\TestCase;
 
 final class PhaseSixDocumentRouteBoundaryTest extends TestCase
 {
+    use RefreshDatabase;
+
     public function test_phase_six_registers_only_the_canonical_owner_and_privileged_renewal_routes(): void
     {
         $routes = [

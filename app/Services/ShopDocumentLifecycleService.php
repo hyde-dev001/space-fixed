@@ -334,8 +334,9 @@ final class ShopDocumentLifecycleService
         ShopDocument $candidate,
         int $reviewerId,
         array $metadata = [],
+        bool $allowRejectedPredecessor = false,
     ): ShopDocument {
-        return DB::transaction(function () use ($candidate, $reviewerId, $metadata): ShopDocument {
+        return DB::transaction(function () use ($candidate, $reviewerId, $metadata, $allowRejectedPredecessor): ShopDocument {
             $owner = ShopOwner::query()->lockForUpdate()->findOrFail($candidate->shop_owner_id);
             $rows = ShopDocument::query()
                 ->whereBelongsTo($owner)
@@ -357,7 +358,11 @@ final class ShopDocumentLifecycleService
             $predecessor = $lockedCandidate->predecessor_document_id
                 ? $rows->firstWhere('id', $lockedCandidate->predecessor_document_id)
                 : null;
-            if ($predecessor && (! $predecessor->is_current || $predecessor->status !== 'approved')) {
+            $rejectedPredecessorAllowed = $allowRejectedPredecessor
+                && $predecessor?->status === 'rejected'
+                && ! (bool) $predecessor?->is_current;
+            if ($predecessor && ! $rejectedPredecessorAllowed
+                && (! $predecessor->is_current || $predecessor->status !== 'approved')) {
                 throw new ConflictHttpException('The predecessor is no longer current and approved.');
             }
 
