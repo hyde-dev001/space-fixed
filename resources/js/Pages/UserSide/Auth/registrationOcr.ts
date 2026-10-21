@@ -1,4 +1,5 @@
 import { createWorker, PSM } from 'tesseract.js';
+import type { Worker } from 'tesseract.js';
 
 export type RegistrationDocumentSide = 'front' | 'back' | 'biodata';
 
@@ -15,6 +16,52 @@ export type RegistrationOcrOptions = {
   includeNationalIdBackCrops?: boolean;
 };
 
+export type ShopOwnerOcrReaderOptions = {
+  workerPath: string;
+  corePath: string;
+  langPath: string;
+  signal?: AbortSignal;
+  onStage?: (stage: RegistrationOcrStage) => void;
+};
+
+export type ShopOwnerOcrWord = {
+  text: string;
+  confidence: number | null;
+  bbox: { x0: number; y0: number; x1: number; y1: number } | null;
+  pass_id: 'full_image';
+};
+
+export type ShopOwnerOcrLine = {
+  text: string;
+  confidence: number | null;
+  bbox: { x0: number; y0: number; x1: number; y1: number } | null;
+  words: ShopOwnerOcrWord[];
+};
+
+export type ShopOwnerOcrPass = {
+  id: 'full_image';
+  text: string;
+  confidence: number;
+  image_width: number;
+  image_height: number;
+  lines: ShopOwnerOcrLine[];
+};
+
+export type ShopOwnerOcrResult = { passes: ShopOwnerOcrPass[] };
+export type ShopOwnerOcrFailure = 'ocr_unavailable' | 'ocr_failed' | 'ocr_timeout' | 'scan_unfinished';
+
+export class RegistrationOcrError extends Error {
+  readonly reasonCode: ShopOwnerOcrFailure;
+  readonly cleanup: Promise<void>;
+
+  constructor(reasonCode: ShopOwnerOcrFailure, cleanup: Promise<void>) {
+    super(reasonCode);
+    this.name = 'RegistrationOcrError';
+    this.reasonCode = reasonCode;
+    this.cleanup = cleanup;
+  }
+}
+
 export type RegistrationImageFingerprint = {
   exact: string;
   perceptual: string | null;
@@ -25,6 +72,9 @@ export type RegistrationDuplicateKind = 'none' | 'exact' | 'near';
 const OCR_TIMEOUT_MS = 60_000;
 const OCR_TARGET_MAX_DIMENSION = 1_800;
 const OCR_MAX_UPSCALE = 3;
+const OWNER_OPERATION_TIMEOUT_MS = 60_000;
+const OWNER_DOCUMENT_TIMEOUT_MS = 60_000;
+const OWNER_IMAGE_MAX_EDGE = 1_800;
 const FINGERPRINT_SIZE = 32;
 const PERCEPTUAL_GRID_SIZE = 8;
 const NEAR_DUPLICATE_AVERAGE_DELTA = 1.5;
@@ -479,6 +529,279 @@ export async function fingerprintRegistrationImage(file: File): Promise<Registra
     exact,
     perceptual: rasterized?.perceptual ?? null,
   };
+}
+
+const confidenceValue = (value: unknown): number | null => (
+  typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 100
+    ? value / 100
+    : null
+);
+
+const documentConfidence = (text: string, value: unknown): number => (
+  text ? confidenceValue(value) ?? 0 : 0
+);
+
+const asRecord = (value: unknown): Record<string, unknown> | null => (
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
+);
+
+const isFiniteNumber = (value: unknown): value is number => (
+  typeof value === 'number' && Number.isFinite(value)
+);
+
+const boundingBox = (value: unknown): ShopOwnerOcrLine['bbox'] => {
+  const candidate = asRecord(value);
+  if (!candidate) return null;
+  const { x0, y0, x1, y1 } = candidate;
+  if (![x0, y0, x1, y1].every(isFiniteNumber)) return null;
+  return { x0, y0, x1, y1 };
+};
+
+const structuredLines = (rawBlocks: unknown): ShopOwnerOcrLine[] => {
+  if (!Array.isArray(rawBlocks)) return [];
+  const lines: ShopOwnerOcrLine[] = [];
+
+  rawBlocks.forEach((rawBlock) => {
+    const paragraphs = asRecord(rawBlock)?.paragraphs;
+    if (!Array.isArray(paragraphs)) return;
+    paragraphs.forEach((rawParagraph) => {
+      const paragraphLines = asRecord(rawParagraph)?.lines;
+      if (!Array.isArray(paragraphLines)) return;
+      paragraphLines.forEach((rawLine) => {
+        const line = asRecord(rawLine);
+        if (!line) return;
+        const words = Array.isArray(line.words)
+          ? line.words.flatMap((rawWord): ShopOwnerOcrWord[] => {
+            const word = asRecord(rawWord);
+            const text = typeof word?.text === 'string' ? normalizeOcrText(word.text) : '';
+            return text ? [{
+              text,
+              confidence: confidenceValue(word?.confidence),
+              bbox: boundingBox(word?.bbox),
+              pass_id: 'full_image',
+            }] : [];
+          })
+          : [];
+        const text = typeof line.text === 'string'
+          ? normalizeOcrText(line.text)
+          : words.map((word) => word.text).join(' ');
+        if (text || words.length > 0) {
+          lines.push({
+            text,
+            confidence: confidenceValue(line.confidence),
+            bbox: boundingBox(line.bbox),
+            words,
+          });
+        }
+      });
+    });
+  });
+
+  return lines;
+};
+
+type OwnerImage = { blob: Blob; width: number; height: number; release: () => void };
+
+class ImagePreparationError extends Error {}
+
+async function prepareOwnerImage(file: File, signal: AbortSignal): Promise<OwnerImage> {
+  if (typeof document === 'undefined' || typeof globalThis.createImageBitmap !== 'function') {
+    throw new ImagePreparationError('Image preparation is unavailable.');
+  }
+  if (signal.aborted) throw new DOMException('OCR cancelled', 'AbortError');
+
+  let bitmap: ImageBitmap | null = null;
+  let canvas: HTMLCanvasElement | null = null;
+  const releaseCanvas = () => {
+    if (canvas) {
+      canvas.width = 0;
+      canvas.height = 0;
+    }
+  };
+  signal.addEventListener('abort', releaseCanvas, { once: true });
+  try {
+    bitmap = await globalThis.createImageBitmap(file, { imageOrientation: 'from-image' });
+    if (signal.aborted) throw new DOMException('OCR cancelled', 'AbortError');
+    if (!bitmap.width || !bitmap.height) throw new ImagePreparationError('Image dimensions are unavailable.');
+
+    const scale = Math.min(3, OWNER_IMAGE_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const width = Math.max(1, Math.round(bitmap.width * scale));
+    const height = Math.max(1, Math.round(bitmap.height * scale));
+    canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    if (!context) throw new ImagePreparationError('Image canvas is unavailable.');
+    context.drawImage(bitmap, 0, 0, width, height);
+    bitmap.close();
+    bitmap = null;
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas?.toBlob(resolve, 'image/jpeg', 0.92));
+    if (signal.aborted) throw new DOMException('OCR cancelled', 'AbortError');
+    if (!blob) throw new ImagePreparationError('Bounded image conversion failed.');
+
+    return { blob, width, height, release: releaseCanvas };
+  } catch (error) {
+    releaseCanvas();
+    if (error instanceof ImagePreparationError || (error instanceof DOMException && error.name === 'AbortError')) {
+      throw error;
+    }
+    throw new ImagePreparationError('Bounded image preparation failed.');
+  } finally {
+    signal.removeEventListener('abort', releaseCanvas);
+    bitmap?.close();
+  }
+}
+
+function cleanupGate() {
+  let resolve!: () => void;
+  let reject!: (reason: unknown) => void;
+  let settled = false;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  void promise.catch(() => undefined);
+  return {
+    promise,
+    finish: () => { if (!settled) { settled = true; resolve(); } },
+    fail: (error: unknown) => { if (!settled) { settled = true; reject(error); } },
+  };
+}
+
+function waitWithSignal<T>(promise: Promise<T>, signal: AbortSignal, remaining: number): Promise<T> {
+  if (signal.aborted) return Promise.reject(new DOMException('OCR cancelled', 'AbortError'));
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error('OCR operation timed out.')),
+      Math.min(OWNER_OPERATION_TIMEOUT_MS, remaining),
+    );
+    const clear = () => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+    };
+    const onAbort = () => {
+      clear();
+      reject(new DOMException('OCR cancelled', 'AbortError'));
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    promise.then((value) => {
+      clear();
+      resolve(value);
+    }, (error: unknown) => {
+      clear();
+      reject(error);
+    });
+  });
+}
+
+export async function readShopOwnerDocument(
+  file: File,
+  options: ShopOwnerOcrReaderOptions,
+): Promise<ShopOwnerOcrResult> {
+  const deadline = Date.now() + OWNER_DOCUMENT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const cleanup = cleanupGate();
+  let reasonCode: ShopOwnerOcrFailure = 'ocr_failed';
+  let abandoned = false;
+  let worker: Worker | null = null;
+  let termination: Promise<void> | null = null;
+  let workerPromise: Promise<Worker> | null = null;
+  let preparedImage: OwnerImage | null = null;
+
+  const terminate = (candidate: Worker): Promise<void> => {
+    if (!termination) {
+      termination = candidate.terminate().then(() => cleanup.finish()).catch((error: unknown) => {
+        cleanup.fail(error);
+        throw error;
+      });
+    }
+    return termination;
+  };
+  const stop = () => {
+    abandoned = true;
+    if (worker) void terminate(worker).catch(() => undefined);
+  };
+  const cancelFromCaller = () => {
+    if (!controller.signal.aborted) {
+      reasonCode = 'scan_unfinished';
+      controller.abort();
+    }
+  };
+  const externalSignal = options.signal;
+  externalSignal?.addEventListener('abort', cancelFromCaller, { once: true });
+  if (externalSignal?.aborted) cancelFromCaller();
+  const deadlineTimer = setTimeout(() => {
+    if (!controller.signal.aborted) {
+      reasonCode = 'ocr_timeout';
+      controller.abort();
+    }
+  }, OWNER_DOCUMENT_TIMEOUT_MS);
+
+  try {
+    if (!options.workerPath || !options.corePath || !options.langPath) {
+      throw new ImagePreparationError('Local OCR assets are unavailable.');
+    }
+    options.onStage?.('loading');
+    preparedImage = await waitWithSignal(
+      prepareOwnerImage(file, controller.signal),
+      controller.signal,
+      deadline - Date.now(),
+    );
+    workerPromise = createWorker('eng', undefined, {
+      workerPath: options.workerPath,
+      corePath: options.corePath,
+      langPath: options.langPath,
+      workerBlobURL: false,
+      gzip: true,
+    });
+    void workerPromise.then(
+      (createdWorker) => {
+        worker = createdWorker;
+        if (abandoned) void terminate(createdWorker).catch(() => undefined);
+      },
+      () => cleanup.finish(),
+    );
+    worker = await waitWithSignal(workerPromise, controller.signal, deadline - Date.now());
+    options.onStage?.('recognizing');
+    const recognized = await waitWithSignal(
+      worker.recognize(preparedImage.blob, undefined, { text: true, blocks: true }),
+      controller.signal,
+      deadline - Date.now(),
+    );
+    const data = asRecord(recognized.data) ?? {};
+    const text = typeof data.text === 'string' ? normalizeOcrText(data.text) : '';
+    const lines = structuredLines(data.blocks);
+    const result: ShopOwnerOcrResult = {
+      passes: [{
+        id: 'full_image',
+        text,
+        confidence: documentConfidence(text, data.confidence),
+        image_width: preparedImage.width,
+        image_height: preparedImage.height,
+        lines,
+      }],
+    };
+    await terminate(worker);
+    return result;
+  } catch (error) {
+    if (error instanceof ImagePreparationError) reasonCode = 'ocr_unavailable';
+    else if (error instanceof DOMException && error.name === 'AbortError' && reasonCode === 'ocr_failed') {
+      reasonCode = 'scan_unfinished';
+    } else if (error instanceof Error && error.message.includes('timed out')) {
+      reasonCode = 'ocr_timeout';
+    }
+    if (!controller.signal.aborted) controller.abort();
+    stop();
+    if (!workerPromise) cleanup.finish();
+    throw new RegistrationOcrError(reasonCode, cleanup.promise);
+  } finally {
+    clearTimeout(deadlineTimer);
+    externalSignal?.removeEventListener('abort', cancelFromCaller);
+    preparedImage?.release();
+  }
 }
 
 export async function readRegistrationId(
