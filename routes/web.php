@@ -610,6 +610,9 @@ Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(func
         ->name('logistics.api.cod.collections.index');
     Route::post('/cod/remittances', [\App\Http\Controllers\Api\Logistics\CodRemittanceController::class, 'store'])
         ->name('logistics.api.cod.remittances.store');
+    Route::post('/cod/remittances/{remittance}/supplements', [\App\Http\Controllers\Api\Logistics\CodRemittanceController::class, 'supplement'])
+        ->whereNumber('remittance')
+        ->name('logistics.api.cod.remittances.supplements.store');
     Route::get('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'index'])
         ->name('logistics.api.riders.index');
     Route::post('/riders', [\App\Http\Controllers\Api\Logistics\RiderProfileController::class, 'store']);

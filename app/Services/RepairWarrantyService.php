@@ -864,10 +864,10 @@ class RepairWarrantyService
         $methods = $this->allowedDeliveryMethods($repair);
         $errors = [];
         if (! in_array($intakeMethod, $methods['intake'], true)) {
-            $errors['preferred_return_method'][] = 'This intake method is unavailable for the original repair and current Logistics setting.';
+            $errors['preferred_return_method'][] = 'This intake method is unavailable with the current address and Logistics setting.';
         }
         if (! in_array($returnMethod, $methods['return'], true)) {
-            $errors['preferred_receive_method'][] = 'This return method is unavailable for the original repair and current Logistics setting.';
+            $errors['preferred_receive_method'][] = 'This return method is unavailable with the current address and Logistics setting.';
         }
         if ($errors !== []) {
             throw ValidationException::withMessages($errors);

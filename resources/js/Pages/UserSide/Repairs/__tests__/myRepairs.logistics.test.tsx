@@ -587,18 +587,21 @@ it("preserves the locked paid rider plan while Logistics is off", async () => {
   expect(mocks.post).not.toHaveBeenCalled();
 });
 
-it("preserves a walk-in-only original in the warranty child's return form", async () => {
+it("uses current eligible methods in a warranty child's return form", async () => {
   mocks.repair = repair({
     is_warranty_job: true,
     billing_mode: "warranty_no_charge",
     return_delivery_method: "walk_in",
     return_logistics_locked_at: null,
-    warranty_delivery_methods: { intake: ["walk_in"], return: ["walk_in"] },
+    warranty_delivery_methods: {
+      intake: ["walk_in", "customer_delivery", "shop_pickup"],
+      return: ["walk_in", "customer_pickup", "shop_delivery"],
+    },
   });
   await renderReadyRepair();
   const modal = within(openReturnDeliveryPlan());
-  expect(modal.queryByRole("radio", { name: /Shop rider delivery/i })).not.toBeInTheDocument();
-  expect(modal.queryByRole("radio", { name: /Customer-arranged courier/i })).not.toBeInTheDocument();
+  expect(modal.getByRole("radio", { name: /Shop rider delivery/i })).toBeEnabled();
+  expect(modal.getByRole("radio", { name: /Customer-arranged courier/i })).toBeEnabled();
   expect(modal.getByRole("radio", { name: /Customer pickup at shop/i })).toBeEnabled();
 });
 
@@ -1864,13 +1867,10 @@ describe("MyRepairs warranty logistics", () => {
     expect(warrantyModal.queryByPlaceholderText("House no., street, building")).not.toBeInTheDocument();
   });
 
-  it.each([
-    { name: "Logistics OFF", intake: ["walk_in", "customer_delivery"], receive: ["walk_in", "customer_pickup"], courierCount: 2 },
-    { name: "walk-in-only original", intake: ["walk_in"], receive: ["walk_in"], courierCount: 0 },
-  ])("uses authoritative warranty methods for $name even with saved addresses", async ({ intake, receive, courierCount }) => {
+  it("keeps shop-owned warranty delivery unavailable when Logistics is off", async () => {
     mocks.repair = repair({
       status: "picked_up",
-      warranty: { ...activeWarranty, delivery_methods: { intake, return: receive } },
+      warranty: { ...activeWarranty, delivery_methods: { intake: ["walk_in", "customer_delivery"], return: ["walk_in", "customer_pickup"] } },
       picked_up_at: "2026-07-26T10:00:00.000Z",
     });
     render(<MyRepairs />);
@@ -1879,9 +1879,30 @@ describe("MyRepairs warranty logistics", () => {
     const modal = within(screen.getByText("File Warranty Claim").closest("div.fixed") as HTMLElement);
     expect(modal.queryByRole("radio", { name: /Shop rider pickup/i })).not.toBeInTheDocument();
     expect(modal.queryByRole("radio", { name: /Shop rider delivery/i })).not.toBeInTheDocument();
-    expect(modal.queryAllByRole("radio", { name: /Third-party courier/i })).toHaveLength(courierCount);
+    expect(modal.queryAllByRole("radio", { name: /Third-party courier/i })).toHaveLength(2);
     expect(modal.getByRole("radio", { name: /Walk-in/i })).toBeEnabled();
     expect(modal.getByRole("radio", { name: /Pick Up At Shop/i })).toBeEnabled();
+  });
+
+  it("offers currently eligible warranty delivery for a walk-in-only original", async () => {
+    mocks.repair = repair({
+      status: "picked_up",
+      warranty: { ...activeWarranty, delivery_methods: {
+        intake: ["walk_in", "customer_delivery", "shop_pickup"],
+        return: ["walk_in", "customer_pickup", "shop_delivery"],
+      } },
+      picked_up_at: "2026-07-26T10:00:00.000Z",
+    });
+
+    render(<MyRepairs />);
+    fireEvent.click((await screen.findAllByRole("button", { name: /Completed/i }))[0]);
+    fireEvent.click(await screen.findByRole("button", { name: "WARRANTY CLAIM" }));
+    const modal = within(screen.getByText("File Warranty Claim").closest("div.fixed") as HTMLElement);
+
+    expect(modal.getByRole("radio", { name: /Shop rider pickup/i })).toBeEnabled();
+    expect(modal.getByRole("radio", { name: /Shop rider delivery/i })).toBeEnabled();
+    expect(modal.getAllByRole("radio", { name: /Third-party courier/i })).toHaveLength(2);
+    expect(modal.getByRole("radio", { name: /Walk-in/i })).toBeEnabled();
   });
 
   it("hides shop-owned warranty logistics for an individual repair shop", async () => {

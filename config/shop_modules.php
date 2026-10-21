@@ -605,6 +605,10 @@ $routeBuckets = [
         'finance.audit.show',
         'finance.audit.statistics',
         'finance.create-invoice',
+        'finance.cod-remittances',
+        'finance.cod-remittances.confirm',
+        'finance.cod-remittances.index',
+        'finance.cod-remittances.supplements.confirm',
         'finance.dashboard.summary',
         'finance.expenses.approve',
         'finance.expenses.destroy',
@@ -914,6 +918,8 @@ $routeBuckets = [
         'api.logistics.delivery-disputes.evidence',
         'api.logistics.incidents.evidence',
         'logistics.api.dashboard-stats',
+        'logistics.api.cod.remittances.store',
+        'logistics.api.cod.remittances.supplements.store',
         'logistics.api.riders.index',
         'logistics.api.shipments.index',
         'logistics.api.shipments.show',
@@ -975,6 +981,8 @@ $routeMethods = static function (string $routeName): array {
         'finance.invoices.send_compatibility' => ['POST'],
         'finance.invoices.post_compatibility' => ['POST'],
         'finance.invoices.payments.reverse' => ['POST'],
+        'finance.cod-remittances.confirm' => ['POST'],
+        'finance.cod-remittances.supplements.confirm' => ['POST'],
         'shop_owner.finance.invoices.update' => ['PATCH'],
         'shop_owner.finance.expenses.update' => ['PATCH'],
         'erp.password.update' => ['POST'],
@@ -1232,6 +1240,19 @@ foreach ($routeBuckets as $bucket => $routeNames) {
             navigationGroup: $classification === 'module' ? $bucket : null,
             selfService: $isSelfServiceRoute($routeName),
         );
+    }
+}
+
+foreach ([
+    'finance.cod-remittances' => ['risk_tier' => 'financial'],
+    'finance.cod-remittances.index' => ['risk_tier' => 'financial'],
+    'finance.cod-remittances.confirm' => ['action' => 'approve', 'risk_tier' => 'financial'],
+    'finance.cod-remittances.supplements.confirm' => ['action' => 'approve', 'risk_tier' => 'financial'],
+    'logistics.api.cod.remittances.store' => ['action' => 'create', 'risk_tier' => 'financial'],
+    'logistics.api.cod.remittances.supplements.store' => ['action' => 'create', 'risk_tier' => 'financial'],
+] as $routeName => $overrides) {
+    foreach ($overrides as $key => $value) {
+        $routes[$routeName][$key] = $value;
     }
 }
 

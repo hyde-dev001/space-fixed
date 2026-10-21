@@ -1772,7 +1772,7 @@ class RepairRequestController extends Controller
                     $methods = app(RepairWarrantyService::class)->allowedDeliveryMethods($repair);
                     if (! in_array($method, $methods[$leg], true)) {
                         throw \Illuminate\Validation\ValidationException::withMessages([
-                            "{$leg}_delivery_method" => ['Choose a delivery method allowed by the original repair and current Logistics setting.'],
+                            "{$leg}_delivery_method" => ['Choose a delivery method allowed by the current address and Logistics setting.'],
                         ]);
                     }
                 }

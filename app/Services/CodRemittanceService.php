@@ -6,6 +6,7 @@ use App\Enums\NotificationType;
 use App\Models\CodCollection;
 use App\Models\CodRemittance;
 use App\Models\CodRemittanceItem;
+use App\Models\CodRemittanceSupplement;
 use App\Models\Finance\Invoice;
 use App\Models\Notification;
 use App\Models\Order;
@@ -150,6 +151,8 @@ final class CodRemittanceService
                 'riderUser:id,name',
                 'items.collection:id,order_id,expected_amount,collected_amount,status',
                 'items.collection.order:id,order_number,invoice_id',
+                'supplements.submittedBy:id,name',
+                'supplements.confirmedBy:id,name',
             ])
             ->latest('id')
             ->get();
@@ -160,6 +163,104 @@ final class CodRemittanceService
             ->all();
 
         return ['data' => $data, 'total' => count($data)];
+    }
+
+    /** @return array{remittance: array<string, mixed>, supplement: array<string, mixed>, replayed: bool} */
+    public function submitSupplement(CodRemittance $remittance, User $actor, array $data): array
+    {
+        $shopId = (int) ($actor->shop_owner_id ?? 0);
+        $amount = $this->normalizeAmount($data['amount'] ?? null);
+        $amountCents = $this->toCents($amount);
+        $idempotencyKey = $this->resolveRequestKey($data['idempotency_key'] ?? null);
+        $shop = $shopId > 0 ? ShopOwner::query()->find($shopId) : null;
+        $profile = $shop ? $this->logisticsActorPolicy->resolveRiderProfile($actor, $shop) : null;
+
+        if ($shopId <= 0 || ! $profile || $amountCents <= 0) {
+            throw new FinanceDomainException('An active rider and a positive cash amount are required.', 'INVALID_STATE', 422);
+        }
+
+        return DB::transaction(function () use ($remittance, $actor, $shopId, $profile, $amount, $amountCents, $idempotencyKey): array {
+            $lockedRemittance = CodRemittance::query()
+                ->whereKey($remittance->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            if (
+                (int) $lockedRemittance->shop_owner_id !== $shopId
+                || (int) $lockedRemittance->rider_user_id !== (int) $actor->id
+                || (int) $lockedRemittance->rider_profile_id !== (int) $profile->id
+            ) {
+                throw new FinanceDomainException('The disputed COD remittance is not available to this rider.', 'FORBIDDEN', 403);
+            }
+
+            $existing = CodRemittanceSupplement::query()
+                ->where('cod_remittance_id', $lockedRemittance->id)
+                ->where('idempotency_key', $idempotencyKey)
+                ->lockForUpdate()
+                ->first();
+            if ($existing) {
+                if (
+                    (int) $existing->submitted_by_user_id !== (int) $actor->id
+                    || $this->toCents($existing->submitted_amount) !== $amountCents
+                ) {
+                    throw new FinanceDomainException('The supplement idempotency key was already used with a different amount.', 'DUPLICATE_SUBMISSION', 409);
+                }
+
+                return [
+                    'remittance' => $this->remittancePayload($lockedRemittance),
+                    'supplement' => $this->supplementPayload($existing),
+                    'replayed' => true,
+                ];
+            }
+
+            if ((string) $lockedRemittance->status !== CodRemittance::STATUS_DISPUTED) {
+                throw new FinanceDomainException('Only a disputed COD remittance can receive shortage cash.', 'INVALID_STATE', 409);
+            }
+
+            $supplements = CodRemittanceSupplement::query()
+                ->where('cod_remittance_id', $lockedRemittance->id)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+            $confirmedCents = $this->toCents($lockedRemittance->received_amount);
+            $pendingCents = 0;
+            foreach ($supplements as $entry) {
+                if ($entry->confirmed_at) {
+                    $confirmedCents += $this->toCents($entry->received_amount);
+                } else {
+                    $pendingCents += $this->toCents($entry->submitted_amount);
+                }
+            }
+
+            $availableCents = $this->toCents($lockedRemittance->expected_amount) - $confirmedCents - $pendingCents;
+            if ($availableCents <= 0 || $amountCents > $availableCents) {
+                throw new FinanceDomainException('The amount cannot exceed the unsubmitted COD shortage.', 'INVALID_STATE', 422);
+            }
+
+            $supplement = CodRemittanceSupplement::query()->create([
+                'cod_remittance_id' => $lockedRemittance->id,
+                'submitted_by_user_id' => $actor->id,
+                'idempotency_key' => $idempotencyKey,
+                'submitted_amount' => $amount,
+                'submitted_at' => now(),
+            ]);
+
+            activity()
+                ->withProperties([
+                    'shop_owner_id' => $shopId,
+                    'remittance_id' => $lockedRemittance->id,
+                    'supplement_id' => $supplement->id,
+                    'rider_user_id' => $actor->id,
+                    'submitted_amount' => $amount,
+                ])
+                ->log('COD remittance shortage cash submitted');
+            $this->notifyRemittance($lockedRemittance, 'supplement_submitted', (string) $supplement->id);
+
+            return [
+                'remittance' => $this->remittancePayload($lockedRemittance->fresh()),
+                'supplement' => $this->supplementPayload($supplement->fresh()),
+                'replayed' => false,
+            ];
+        }, 3);
     }
 
     /** @return array{remittance: array<string, mixed>, replayed: bool} */
@@ -251,77 +352,229 @@ final class CodRemittanceService
                 ];
             }
 
-            $orders = Order::query()
-                ->whereIn('id', $collections->pluck('order_id')->unique()->sort()->values())
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
-            $invoiceIds = $orders->pluck('invoice_id')->filter()->unique()->sort()->values();
-            $invoices = Invoice::query()
-                ->whereIn('id', $invoiceIds)
-                ->orderBy('id')
-                ->lockForUpdate()
-                ->get()
-                ->keyBy('id');
-
-            foreach ($collections->sortBy('id') as $collection) {
-                $order = $orders->get($collection->order_id);
-                $invoice = $order ? $invoices->get($order->invoice_id) : null;
-                if (! $order || ! $invoice || ! $this->codCollections->isCodOrder($order)) {
-                    throw new FinanceDomainException('The COD order is not ready for Finance settlement.', 'INVALID_STATE', 422);
-                }
-
-                $this->invoicePayments->recordCodOrderPayment($order, $lockedRemittance, $collection, $actor);
-            }
-
-            $now = now();
-            foreach ($collections as $collection) {
-                $collection->update([
-                    'status' => CodCollection::STATUS_SETTLED,
-                    'settled_at' => $now,
-                    'settled_by_user_id' => $actor->id,
-                ]);
-            }
-            $lockedRemittance->update([
+            $this->settleRemittance($lockedRemittance, $actor, $collections, $receivedAmount, [
                 'received_amount' => $receivedAmount,
-                'variance_amount' => '0.00',
-                'status' => CodRemittance::STATUS_SETTLED,
-                'confirmed_at' => $now,
+                'confirmed_at' => now(),
                 'confirmed_by_user_id' => $actor->id,
                 'dispute_reason' => null,
             ]);
-
-            $refundIds = OrderRefund::query()
-                ->whereIn('order_id', $collections->pluck('order_id')->unique()->values())
-                ->where('flow_type', 'request_approval')
-                ->pluck('id')
-                ->map(fn ($id): int => (int) $id)
-                ->all();
-            DB::afterCommit(function () use ($refundIds): void {
-                foreach ($refundIds as $refundId) {
-                    $refund = OrderRefund::query()->find($refundId);
-                    if ($refund) {
-                        $this->orderRefunds->notifyPayoutReadyIfEligible($refund);
-                    }
-                }
-            });
-
-            activity()
-                ->withProperties([
-                    'shop_owner_id' => $shopId,
-                    'remittance_id' => $lockedRemittance->id,
-                    'received_amount' => $receivedAmount,
-                    'collection_count' => $collections->count(),
-                ])
-                ->log('COD remittance settled');
-            $this->notifyRemittance($lockedRemittance, 'settled');
 
             return [
                 'remittance' => $this->remittancePayload($lockedRemittance->fresh()),
                 'replayed' => false,
             ];
         }, 3);
+    }
+
+    /** @return array{remittance: array<string, mixed>, replayed: bool} */
+    public function confirmSupplement(CodRemittance $remittance, CodRemittanceSupplement $supplement, User $actor, array $data): array
+    {
+        $shopId = (int) ($actor->shop_owner_id ?? 0);
+        $receivedAmount = $this->normalizeAmount($data['received_amount'] ?? null);
+        $receivedCents = $this->toCents($receivedAmount);
+        $disputeReason = trim((string) ($data['dispute_reason'] ?? ''));
+
+        return DB::transaction(function () use ($remittance, $supplement, $actor, $shopId, $receivedAmount, $receivedCents, $disputeReason): array {
+            if ($shopId <= 0) {
+                throw new FinanceDomainException('A Finance shop context is required.', 'TENANT_CONTEXT_REQUIRED', 403);
+            }
+
+            $lockedRemittance = CodRemittance::query()
+                ->whereKey($remittance->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            if ((int) $lockedRemittance->shop_owner_id !== $shopId) {
+                throw new FinanceDomainException('The COD remittance is not available in this shop.', 'FORBIDDEN', 403);
+            }
+
+            $supplements = CodRemittanceSupplement::query()
+                ->where('cod_remittance_id', $lockedRemittance->id)
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+            $lockedSupplement = $supplements->firstWhere('id', $supplement->getKey());
+            if (! $lockedSupplement) {
+                throw new FinanceDomainException('The COD cash supplement is not available in this shop.', 'FORBIDDEN', 403);
+            }
+
+            if ($lockedSupplement->confirmed_at) {
+                if ($this->toCents($lockedSupplement->received_amount) === $receivedCents) {
+                    return [
+                        'remittance' => $this->remittancePayload($lockedRemittance),
+                        'replayed' => true,
+                    ];
+                }
+
+                throw new FinanceDomainException('This COD cash supplement has already been confirmed.', 'INVALID_STATE', 409);
+            }
+            if ((string) $lockedRemittance->status !== CodRemittance::STATUS_DISPUTED) {
+                throw new FinanceDomainException('Only a disputed COD remittance can receive shortage cash.', 'INVALID_STATE', 409);
+            }
+
+            $submittedCents = $this->toCents($lockedSupplement->submitted_amount);
+            if ($receivedCents > $submittedCents) {
+                throw new FinanceDomainException('Received cash cannot exceed the supplemental amount submitted by the rider.', 'INVALID_STATE', 422);
+            }
+
+            $cumulativeCents = $this->toCents($lockedRemittance->received_amount);
+            foreach ($supplements as $entry) {
+                if ($entry->confirmed_at) {
+                    $cumulativeCents += $this->toCents($entry->received_amount);
+                }
+            }
+            $cumulativeCents += $receivedCents;
+            $varianceCents = $cumulativeCents - $this->toCents($lockedRemittance->expected_amount);
+            if ($varianceCents > 0) {
+                throw new FinanceDomainException('Confirmed cash cannot exceed the expected remittance amount.', 'INVALID_STATE', 422);
+            }
+
+            $lockedSupplement->update([
+                'received_amount' => $receivedAmount,
+                'confirmed_by_user_id' => $actor->id,
+                'confirmed_at' => now(),
+                'dispute_reason' => $disputeReason !== ''
+                    ? $disputeReason
+                    : ($receivedCents < $submittedCents ? 'Received amount did not match the supplemental cash submission.' : null),
+            ]);
+
+            activity()
+                ->withProperties([
+                    'shop_owner_id' => $shopId,
+                    'remittance_id' => $lockedRemittance->id,
+                    'supplement_id' => $lockedSupplement->id,
+                    'submitted_amount' => $lockedSupplement->submitted_amount,
+                    'received_amount' => $receivedAmount,
+                    'cumulative_received_amount' => $this->fromCents($cumulativeCents),
+                ])
+                ->log('COD remittance shortage cash confirmed');
+
+            if ($varianceCents === 0) {
+                $collections = $this->collectionsForSettlement($lockedRemittance, $shopId);
+                $this->settleRemittance(
+                    $lockedRemittance,
+                    $actor,
+                    $collections,
+                    $this->fromCents($cumulativeCents),
+                );
+            } else {
+                $lockedRemittance->update([
+                    'variance_amount' => $this->fromCents($varianceCents),
+                    'status' => CodRemittance::STATUS_DISPUTED,
+                ]);
+                $this->notifyRemittance($lockedRemittance, 'supplement_confirmed', (string) $lockedSupplement->id);
+            }
+
+            return [
+                'remittance' => $this->remittancePayload($lockedRemittance->fresh()),
+                'replayed' => false,
+            ];
+        }, 3);
+    }
+
+    private function collectionsForSettlement(CodRemittance $remittance, int $shopId): \Illuminate\Database\Eloquent\Collection
+    {
+        $items = CodRemittanceItem::query()
+            ->where('cod_remittance_id', $remittance->id)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+        if ($items->isEmpty()) {
+            throw new FinanceDomainException('The COD remittance has no collections to settle.', 'INVALID_STATE', 422);
+        }
+
+        $collectionIds = $items->pluck('cod_collection_id')->map(fn ($id): int => (int) $id)->sort()->values();
+        $collections = CodCollection::query()
+            ->where('shop_owner_id', $shopId)
+            ->whereIn('id', $collectionIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+        if ($collections->count() !== $collectionIds->count()) {
+            throw new FinanceDomainException('The COD remittance contains an unavailable collection.', 'INVALID_STATE', 422);
+        }
+        foreach ($collections as $collection) {
+            if ((string) $collection->status !== CodCollection::STATUS_CASH_COLLECTED) {
+                throw new FinanceDomainException('Only cash-collected records can be settled.', 'INVALID_STATE', 422);
+            }
+        }
+
+        return $collections;
+    }
+
+    private function settleRemittance(
+        CodRemittance $remittance,
+        User $actor,
+        \Illuminate\Database\Eloquent\Collection $collections,
+        string $cumulativeReceivedAmount,
+        array $remittanceAttributes = [],
+    ): void {
+        $orders = Order::query()
+            ->whereIn('id', $collections->pluck('order_id')->unique()->sort()->values())
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+        $invoiceIds = $orders->pluck('invoice_id')->filter()->unique()->sort()->values();
+        $invoices = Invoice::query()
+            ->whereIn('id', $invoiceIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get()
+            ->keyBy('id');
+
+        foreach ($collections->sortBy('id') as $collection) {
+            $order = $orders->get($collection->order_id);
+            $invoice = $order ? $invoices->get($order->invoice_id) : null;
+            if (! $order || ! $invoice || ! $this->codCollections->isCodOrder($order)) {
+                throw new FinanceDomainException('The COD order is not ready for Finance settlement.', 'INVALID_STATE', 422);
+            }
+
+            $this->invoicePayments->recordCodOrderPayment($order, $remittance, $collection, $actor);
+        }
+
+        $now = now();
+        foreach ($collections as $collection) {
+            $collection->update([
+                'status' => CodCollection::STATUS_SETTLED,
+                'settled_at' => $now,
+                'settled_by_user_id' => $actor->id,
+            ]);
+        }
+        $remittance->update($remittanceAttributes + [
+            'variance_amount' => '0.00',
+            'status' => CodRemittance::STATUS_SETTLED,
+        ]);
+
+        $refundIds = OrderRefund::query()
+            ->whereIn('order_id', $collections->pluck('order_id')->unique()->values())
+            ->where('flow_type', 'request_approval')
+            ->pluck('id')
+            ->map(fn ($id): int => (int) $id)
+            ->all();
+        DB::afterCommit(function () use ($refundIds): void {
+            foreach ($refundIds as $refundId) {
+                $refund = OrderRefund::query()->find($refundId);
+                if ($refund) {
+                    $this->orderRefunds->notifyPayoutReadyIfEligible($refund);
+                }
+            }
+        });
+
+        Notification::query()
+            ->where('group_key', 'like', "cod-remittance:{$remittance->id}:%")
+            ->where('requires_action', true)
+            ->update(['requires_action' => false]);
+
+        activity()
+            ->withProperties([
+                'shop_owner_id' => $remittance->shop_owner_id,
+                'remittance_id' => $remittance->id,
+                'cumulative_received_amount' => $cumulativeReceivedAmount,
+                'collection_count' => $collections->count(),
+            ])
+            ->log('COD remittance settled');
+        $this->notifyRemittance($remittance, 'settled');
     }
 
     /** @return array<string, mixed> */
@@ -331,7 +584,10 @@ final class CodRemittanceService
             'riderUser:id,name',
             'items.collection:id,order_id,expected_amount,collected_amount,status',
             'items.collection.order:id,order_number,invoice_id',
+            'supplements.submittedBy:id,name',
+            'supplements.confirmedBy:id,name',
         ]);
+        $custody = $remittance->custodySummary();
 
         return [
             'id' => $remittance->id,
@@ -346,6 +602,8 @@ final class CodRemittanceService
             'submitted_at' => optional($remittance->submitted_at)->toISOString(),
             'confirmed_at' => optional($remittance->confirmed_at)->toISOString(),
             'dispute_reason' => $remittance->dispute_reason,
+            ...$custody,
+            'supplements' => $remittance->supplements->map(fn (CodRemittanceSupplement $supplement): array => $this->supplementPayload($supplement))->values()->all(),
             'items' => $remittance->items->map(fn (CodRemittanceItem $item): array => [
                 'id' => $item->id,
                 'cod_collection_id' => $item->cod_collection_id,
@@ -358,21 +616,43 @@ final class CodRemittanceService
         ];
     }
 
-    private function notifyRemittance(CodRemittance $remittance, string $event): void
+    /** @return array<string, mixed> */
+    private function supplementPayload(CodRemittanceSupplement $supplement): array
+    {
+        $supplement->loadMissing(['submittedBy:id,name', 'confirmedBy:id,name']);
+
+        return [
+            'id' => $supplement->id,
+            'submitted_amount' => (string) $supplement->submitted_amount,
+            'received_amount' => $supplement->received_amount !== null ? (string) $supplement->received_amount : null,
+            'submitted_at' => optional($supplement->submitted_at)->toISOString(),
+            'submitted_by_name' => $supplement->submittedBy?->name,
+            'confirmed_at' => optional($supplement->confirmed_at)->toISOString(),
+            'confirmed_by_name' => $supplement->confirmedBy?->name,
+            'dispute_reason' => $supplement->dispute_reason,
+            'pending' => $supplement->confirmed_at === null,
+        ];
+    }
+
+    private function notifyRemittance(CodRemittance $remittance, string $event, ?string $eventKey = null): void
     {
         try {
             $type = match ($event) {
-                'submitted' => NotificationType::COD_REMITTANCE_SUBMITTED,
-                'disputed' => NotificationType::COD_REMITTANCE_DISPUTED,
+                'submitted', 'supplement_submitted' => NotificationType::COD_REMITTANCE_SUBMITTED,
+                'disputed', 'supplement_confirmed' => NotificationType::COD_REMITTANCE_DISPUTED,
                 default => NotificationType::COD_REMITTANCE_SETTLED,
             };
-            $groupKey = "cod-remittance:{$remittance->id}:{$event}";
+            $groupKey = "cod-remittance:{$remittance->id}:{$event}".($eventKey ? ":{$eventKey}" : '');
             $title = $type->label();
             $message = match ($event) {
                 'submitted' => 'A rider submitted a COD remittance for Finance confirmation.',
                 'disputed' => 'A COD remittance has a physical cash variance and needs review.',
+                'supplement_submitted' => 'A rider submitted additional COD cash for Finance confirmation.',
+                'supplement_confirmed' => 'Finance confirmed additional COD cash; a shortage remains open.',
                 default => 'A COD remittance was confirmed and settled.',
             };
+            $financeAction = in_array($event, ['submitted', 'disputed', 'supplement_submitted'], true);
+            $riderAction = in_array($event, ['disputed', 'supplement_confirmed'], true);
             $data = [
                 'remittance_id' => $remittance->id,
                 'reference' => $remittance->reference,
@@ -388,7 +668,7 @@ final class CodRemittanceService
                     'message' => $message,
                     'data' => $data,
                     'action_url' => '/finance/cod-remittances',
-                    'requires_action' => $event !== 'settled',
+                    'requires_action' => $financeAction,
                     'shop_id' => $remittance->shop_owner_id,
                 ],
             );
@@ -408,7 +688,7 @@ final class CodRemittanceService
                             'message' => $message,
                             'data' => $data,
                             'action_url' => '/finance/cod-remittances',
-                            'requires_action' => $event !== 'settled',
+                            'requires_action' => $financeAction,
                             'shop_id' => $remittance->shop_owner_id,
                         ],
                     );
@@ -424,7 +704,7 @@ final class CodRemittanceService
                         'message' => $message,
                         'data' => $data,
                         'action_url' => '/erp/logistics/cod-collections',
-                        'requires_action' => $event === 'disputed',
+                        'requires_action' => $riderAction,
                         'shop_id' => $remittance->shop_owner_id,
                     ],
                 );

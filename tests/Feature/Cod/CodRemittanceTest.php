@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Services\CodCollectionService;
 use App\Services\Logistics\ShipmentLegService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Permission;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
@@ -126,6 +127,218 @@ class CodRemittanceTest extends TestCase
         $this->assertDatabaseHas('cod_collections', [
             'id' => $collection->id,
             'status' => CodCollection::STATUS_CASH_COLLECTED,
+        ]);
+    }
+
+    public function test_rider_can_submit_and_finance_can_confirm_a_disputed_shortage_once(): void
+    {
+        [$shop, $rider, $finance, $collection] = $this->makeContext();
+        $order = Order::query()->findOrFail($collection->order_id);
+        $order->update(['status' => 'delivered']);
+        $collection = $this->submit($rider, $collection);
+        $remittance = $collection->getRelation('remittance');
+
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/cod-remittances/{$remittance->id}/confirm", [
+                'received_amount' => '96.00',
+                'dispute_reason' => 'Short by PHP 4',
+            ])
+            ->assertOk()
+            ->assertJsonPath('remittance.status', 'disputed')
+            ->assertJsonPath('remittance.remaining_shortage_amount', '4.00');
+
+        $supplementPath = "/api/logistics/cod/remittances/{$remittance->id}/supplements";
+        $payload = ['amount' => '4.00', 'idempotency_key' => 'cod-shortage-4'];
+        $this->actingAs($rider, 'user')
+            ->postJson($supplementPath, ['amount' => '5.00', 'idempotency_key' => 'cod-shortage-over'])
+            ->assertUnprocessable();
+
+        $submitted = $this->actingAs($rider, 'user')->postJson($supplementPath, $payload);
+        $submitted->assertCreated()
+            ->assertJsonPath('replayed', false)
+            ->assertJsonPath('supplement.submitted_amount', '4.00')
+            ->assertJsonPath('supplement.pending', true)
+            ->assertJsonPath('remittance.status', 'disputed')
+            ->assertJsonPath('remittance.pending_supplement_amount', '4.00')
+            ->assertJsonPath('remittance.available_supplement_amount', '0.00');
+        $this->assertDatabaseCount('finance_invoice_payments', 0);
+
+        $this->actingAs($rider, 'user')
+            ->postJson($supplementPath, ['amount' => '3.00', 'idempotency_key' => 'cod-shortage-4'])
+            ->assertStatus(409);
+
+        $this->actingAs($rider, 'user')
+            ->postJson($supplementPath, ['amount' => '1.00', 'idempotency_key' => 'cod-shortage-extra'])
+            ->assertUnprocessable();
+        $this->actingAs($rider, 'user')
+            ->postJson($supplementPath, $payload)
+            ->assertOk()
+            ->assertJsonPath('replayed', true)
+            ->assertJsonPath('supplement.id', $submitted->json('supplement.id'));
+
+        $supplementId = $submitted->json('supplement.id');
+        $confirmPath = "/api/finance/cod-remittances/{$remittance->id}/supplements/{$supplementId}/confirm";
+        $this->actingAs($rider, 'user')
+            ->postJson($confirmPath, ['received_amount' => '4.00'])
+            ->assertForbidden();
+        $this->actingAs($finance, 'user')
+            ->postJson($confirmPath, ['received_amount' => '4.01'])
+            ->assertUnprocessable();
+
+        $confirmed = $this->actingAs($finance, 'user')
+            ->postJson($confirmPath, ['received_amount' => '4.00']);
+        $confirmed->assertOk()
+            ->assertJsonPath('replayed', false)
+            ->assertJsonPath('remittance.status', 'settled')
+            ->assertJsonPath('remittance.cumulative_received_amount', '100.00')
+            ->assertJsonPath('remittance.remaining_shortage_amount', '0.00');
+
+        $this->assertDatabaseHas('cod_remittances', [
+            'id' => $remittance->id,
+            'received_amount' => '96.00',
+            'variance_amount' => '0.00',
+            'status' => 'settled',
+            'dispute_reason' => 'Short by PHP 4',
+        ]);
+        $this->assertDatabaseHas('cod_remittance_supplements', [
+            'id' => $supplementId,
+            'submitted_amount' => '4.00',
+            'received_amount' => '4.00',
+        ]);
+        $this->assertNotNull(DB::table('cod_remittance_supplements')->where('id', $supplementId)->value('confirmed_at'));
+        $this->assertDatabaseHas('cod_collections', [
+            'id' => $collection->id,
+            'status' => CodCollection::STATUS_SETTLED,
+        ]);
+        $this->assertDatabaseHas('orders', ['id' => $order->id, 'payment_status' => 'paid']);
+        $this->assertDatabaseHas('platform_fee_charges', [
+            'shop_id' => $shop->id,
+            'source_type' => 'order',
+            'source_id' => $order->id,
+            'total_charge' => '5.60',
+        ]);
+
+        $this->actingAs($finance, 'user')
+            ->postJson($confirmPath, ['received_amount' => '4.00'])
+            ->assertOk()
+            ->assertJsonPath('replayed', true);
+        $this->assertDatabaseCount('cod_remittance_supplements', 1);
+        $this->assertDatabaseCount('finance_invoice_payments', 1);
+    }
+
+    public function test_partial_supplement_confirmation_leaves_only_the_unconfirmed_shortage_open(): void
+    {
+        [, $rider, $finance, $collection] = $this->makeContext();
+        $collection = $this->submit($rider, $collection);
+        $remittance = $collection->getRelation('remittance');
+        $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/cod-remittances/{$remittance->id}/confirm",
+            ['received_amount' => '97.00', 'dispute_reason' => 'Short by PHP 3'],
+        )->assertOk();
+
+        $submitted = $this->actingAs($rider, 'user')->postJson(
+            "/api/logistics/cod/remittances/{$remittance->id}/supplements",
+            ['amount' => '3.00', 'idempotency_key' => 'cod-shortage-first-part'],
+        )->assertCreated();
+        $supplementId = $submitted->json('supplement.id');
+        $confirmPath = "/api/finance/cod-remittances/{$remittance->id}/supplements/{$supplementId}/confirm";
+
+        $partial = $this->actingAs($finance, 'user')
+            ->postJson($confirmPath, ['received_amount' => '2.00', 'dispute_reason' => 'One peso remains']);
+        $partial->assertOk()
+            ->assertJsonPath('remittance.status', 'disputed')
+            ->assertJsonPath('remittance.cumulative_received_amount', '99.00')
+            ->assertJsonPath('remittance.remaining_shortage_amount', '1.00')
+            ->assertJsonPath('remittance.dispute_reason', 'Short by PHP 3');
+        $this->assertDatabaseCount('finance_invoice_payments', 0);
+        $this->assertDatabaseHas('cod_remittances', [
+            'id' => $remittance->id,
+            'received_amount' => '97.00',
+            'variance_amount' => '-1.00',
+            'dispute_reason' => 'Short by PHP 3',
+        ]);
+        $this->assertNotNull(DB::table('cod_remittances')->where('id', $remittance->id)->value('confirmed_at'));
+
+        $last = $this->actingAs($rider, 'user')->postJson(
+            "/api/logistics/cod/remittances/{$remittance->id}/supplements",
+            ['amount' => '1.00', 'idempotency_key' => 'cod-shortage-last-peso'],
+        )->assertCreated();
+        $lastId = $last->json('supplement.id');
+        $this->actingAs($finance, 'user')
+            ->postJson("/api/finance/cod-remittances/{$remittance->id}/supplements/{$lastId}/confirm", [
+                'received_amount' => '1.00',
+            ])
+            ->assertOk()
+            ->assertJsonPath('remittance.status', 'settled')
+            ->assertJsonPath('remittance.cumulative_received_amount', '100.00');
+
+        $this->assertDatabaseCount('finance_invoice_payments', 1);
+        $this->assertDatabaseCount('cod_remittance_supplements', 2);
+        $this->assertDatabaseHas('cod_remittance_supplements', [
+            'id' => $supplementId,
+            'submitted_amount' => '3.00',
+            'received_amount' => '2.00',
+        ]);
+    }
+
+    public function test_supplement_submission_and_confirmation_keep_rider_and_shop_scope(): void
+    {
+        [$shop, $rider, $finance, $collection] = $this->makeContext();
+        $collection = $this->submit($rider, $collection);
+        $remittance = $collection->getRelation('remittance');
+        $this->actingAs($finance, 'user')->postJson(
+            "/api/finance/cod-remittances/{$remittance->id}/confirm",
+            ['received_amount' => '96.00'],
+        )->assertOk();
+        $supplementPath = "/api/logistics/cod/remittances/{$remittance->id}/supplements";
+        $supplement = $this->actingAs($rider, 'user')->postJson($supplementPath, [
+            'amount' => '4.00', 'idempotency_key' => 'cod-shortage-owned',
+        ])->assertCreated();
+        $supplementId = $supplement->json('supplement.id');
+
+        $otherRider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $otherRider->givePermissionTo('operate-logistics-deliveries');
+        $this->clockInEmployee($otherRider);
+        RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $otherRider->id,
+        ]);
+        $this->actingAs($otherRider, 'user')->postJson($supplementPath, [
+            'amount' => '4.00', 'idempotency_key' => 'other-rider-shortage',
+        ])->assertForbidden();
+
+        $otherShop = ShopOwner::factory()->create();
+        $otherShopRider = User::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherShopRider->givePermissionTo('operate-logistics-deliveries');
+        $this->clockInEmployee($otherShopRider);
+        RiderProfile::factory()->create([
+            'shop_owner_id' => $otherShop->id,
+            'linked_type' => User::class,
+            'linked_id' => $otherShopRider->id,
+        ]);
+        $this->actingAs($otherShopRider, 'user')->postJson($supplementPath, [
+            'amount' => '4.00', 'idempotency_key' => 'other-shop-shortage',
+        ])->assertForbidden();
+
+        $otherFinance = User::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherFinance->givePermissionTo('access-cod-remittances');
+        $this->clockInEmployee($otherFinance);
+        $this->actingAs($rider, 'user')
+            ->postJson("/api/finance/cod-remittances/{$remittance->id}/supplements/{$supplementId}/confirm", [
+                'received_amount' => '4.00',
+            ])
+            ->assertForbidden();
+        $this->actingAs($otherFinance, 'user')
+            ->postJson("/api/finance/cod-remittances/{$remittance->id}/supplements/{$supplementId}/confirm", [
+                'received_amount' => '4.00',
+            ])
+            ->assertForbidden();
+        $this->assertDatabaseCount('cod_remittance_supplements', 1);
+        $this->assertDatabaseHas('cod_remittance_supplements', [
+            'id' => $supplementId,
+            'received_amount' => null,
+            'confirmed_at' => null,
         ]);
     }
 

@@ -2,7 +2,7 @@ import { Head } from '@inertiajs/react';
 import { useCallback, useEffect, useState, type PropsWithChildren } from 'react';
 import axios from 'axios';
 import AppLayoutERP from '@/layout/AppLayout_ERP';
-import type { CodRemittanceView } from '@/types/logistics';
+import type { CodRemittanceSupplementView, CodRemittanceView } from '@/types/logistics';
 import { workflowFeedback } from '@/utils/workflowFeedback';
 
 const money = (value: string | number | null | undefined) => Number(value ?? 0).toLocaleString('en-PH', {
@@ -24,8 +24,11 @@ export default function CodRemittances({ children }: PropsWithChildren) {
   const [remittances, setRemittances] = useState<CodRemittanceView[]>([]);
   const [received, setReceived] = useState<Record<number, string>>({});
   const [reasons, setReasons] = useState<Record<number, string>>({});
+  const [supplementReceived, setSupplementReceived] = useState<Record<number, string>>({});
+  const [supplementReasons, setSupplementReasons] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [busySupplementId, setBusySupplementId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -35,6 +38,9 @@ export default function CodRemittances({ children }: PropsWithChildren) {
       const data = response.data.data ?? [];
       setRemittances(data);
       setReceived((current) => Object.fromEntries(data.map((item) => [item.id, current[item.id] ?? item.expected_amount])));
+      setSupplementReceived((current) => Object.fromEntries(data.flatMap((item) => (item.supplements ?? [])
+        .filter((supplement) => supplement.pending)
+        .map((supplement) => [supplement.id, current[supplement.id] ?? supplement.submitted_amount]))));
       setError(null);
     } catch {
       setError('COD remittances could not be loaded. Refresh and try again.');
@@ -67,6 +73,35 @@ export default function CodRemittances({ children }: PropsWithChildren) {
       await workflowFeedback.error(message || 'The remittance could not be confirmed.');
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const confirmSupplement = async (remittance: CodRemittanceView, supplement: CodRemittanceSupplementView) => {
+    const receivedAmount = supplementReceived[supplement.id] ?? supplement.submitted_amount;
+    const confirmation = await workflowFeedback.confirm({
+      title: 'Confirm supplemental COD cash?',
+      text: `${money(receivedAmount)} was physically received for ${remittance.reference}. Only confirmed cash reduces its outstanding shortage.`,
+      confirmButtonText: 'Confirm cash',
+    });
+    if (!confirmation.isConfirmed) return;
+
+    setBusySupplementId(supplement.id);
+    try {
+      const response = await axios.post(`/api/finance/cod-remittances/${remittance.id}/supplements/${supplement.id}/confirm`, {
+        received_amount: receivedAmount,
+        dispute_reason: supplementReasons[supplement.id] || undefined,
+      });
+      const settled = response.data.remittance?.status === 'settled';
+      await workflowFeedback.success({
+        title: settled ? 'Remittance settled' : 'Supplement confirmed',
+        text: settled ? 'The cumulative Finance-confirmed cash now matches the remittance.' : response.data.message,
+      });
+      await load();
+    } catch (requestError) {
+      const message = axios.isAxiosError(requestError) ? requestError.response?.data?.message : null;
+      await workflowFeedback.error(message || 'The supplemental cash could not be confirmed.');
+    } finally {
+      setBusySupplementId(null);
     }
   };
 
@@ -106,9 +141,11 @@ export default function CodRemittances({ children }: PropsWithChildren) {
                   </div>
                 </div>
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                   <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800"><p className="text-xs uppercase text-gray-500">Submitted</p><p className="mt-1 font-semibold">{money(remittance.submitted_amount)}</p></div>
-                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800"><p className="text-xs uppercase text-gray-500">Received</p><p className="mt-1 font-semibold">{money(remittance.received_amount)}</p></div>
+                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800"><p className="text-xs uppercase text-gray-500">Original received</p><p className="mt-1 font-semibold">{money(remittance.received_amount)}</p></div>
+                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800"><p className="text-xs uppercase text-gray-500">Cumulative confirmed</p><p className="mt-1 font-semibold">{money(remittance.cumulative_received_amount)}</p></div>
+                  <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800"><p className="text-xs uppercase text-gray-500">Remaining shortage</p><p className="mt-1 font-semibold">{money(remittance.remaining_shortage_amount)}</p></div>
                   <div className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800"><p className="text-xs uppercase text-gray-500">Variance</p><p className="mt-1 font-semibold">{money(remittance.variance_amount)}</p></div>
                 </div>
 
@@ -128,6 +165,62 @@ export default function CodRemittances({ children }: PropsWithChildren) {
 
                 {remittance.status === 'disputed' && remittance.dispute_reason && (
                   <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{remittance.dispute_reason}</p>
+                )}
+
+                {remittance.supplements && remittance.supplements.length > 0 && (
+                  <section className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700" aria-label={`Additional cash for ${remittance.reference}`}>
+                    <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Additional cash submissions</h3>
+                    <div className="mt-2 space-y-3">
+                      {remittance.supplements.map((supplement) => (
+                        <div key={supplement.id} className="rounded-lg bg-gray-50 p-3 dark:bg-gray-800">
+                          <div className="flex flex-wrap items-start justify-between gap-3 text-sm">
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white">Submitted {money(supplement.submitted_amount)}</p>
+                              <p className="text-gray-500">{supplement.submitted_by_name ?? remittance.rider_name ?? 'Rider'} · {dateTime(supplement.submitted_at)}</p>
+                            </div>
+                            <p className="text-right text-gray-700 dark:text-gray-200">
+                              {supplement.pending ? 'Awaiting Finance confirmation' : `Received ${money(supplement.received_amount)}`}
+                              {supplement.confirmed_by_name && <span className="block text-xs text-gray-500">Confirmed by {supplement.confirmed_by_name}</span>}
+                            </p>
+                          </div>
+                          {supplement.dispute_reason && <p className="mt-2 text-sm text-red-700 dark:text-red-200">{supplement.dispute_reason}</p>}
+                          {supplement.pending && (
+                            <div className="mt-3 grid gap-3 border-t border-gray-200 pt-3 dark:border-gray-700 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] sm:items-end">
+                              <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                                Physical cash received
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max={supplement.submitted_amount}
+                                  step="0.01"
+                                  value={supplementReceived[supplement.id] ?? supplement.submitted_amount}
+                                  onChange={(event) => setSupplementReceived((current) => ({ ...current, [supplement.id]: event.target.value }))}
+                                  className="mt-1 block min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-gray-900 focus:ring-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                                />
+                              </label>
+                              <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                                Dispute note (optional for a match)
+                                <input
+                                  type="text"
+                                  value={supplementReasons[supplement.id] ?? ''}
+                                  onChange={(event) => setSupplementReasons((current) => ({ ...current, [supplement.id]: event.target.value }))}
+                                  className="mt-1 block min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-gray-900 focus:ring-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => void confirmSupplement(remittance, supplement)}
+                                disabled={busySupplementId === supplement.id || Number(supplementReceived[supplement.id] ?? supplement.submitted_amount) < 0 || Number(supplementReceived[supplement.id] ?? supplement.submitted_amount) > Number(supplement.submitted_amount)}
+                                className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {busySupplementId === supplement.id ? 'Confirming…' : 'Confirm supplemental cash'}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </section>
                 )}
 
                 {isOpen && (
