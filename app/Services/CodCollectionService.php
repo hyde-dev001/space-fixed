@@ -192,7 +192,7 @@ final class CodCollectionService
         $collections = CodCollection::query()
             ->where('shop_owner_id', $shopOwner->id)
             ->where('rider_user_id', $actor->id)
-            ->with(['order:id,order_number', 'remittanceItem.remittance'])
+            ->with(['order:id,order_number', 'remittanceItem.remittance.supplements'])
             ->latest('id')
             ->get();
 
@@ -235,6 +235,7 @@ final class CodCollectionService
                 'status' => $remittance->status,
                 'submitted_at' => optional($remittance->submitted_at)->toISOString(),
                 'dispute_reason' => $remittance->dispute_reason,
+                ...$remittance->custodySummary(),
             ])->all(),
             'settled_history' => $collections
                 ->filter(fn (CodCollection $collection): bool => $collection->status === CodCollection::STATUS_SETTLED)

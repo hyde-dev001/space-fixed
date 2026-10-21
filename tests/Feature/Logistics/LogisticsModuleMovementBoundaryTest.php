@@ -441,13 +441,15 @@ class LogisticsModuleMovementBoundaryTest extends TestCase
     }
 
     #[DataProvider('walkInWarrantyMethods')]
-    public function test_walk_in_only_original_cannot_create_a_warranty_delivery_even_with_a_saved_address(string $intake, string $return): void
+    public function test_walk_in_only_original_can_create_a_warranty_claim_with_currently_eligible_delivery(string $intake, string $return): void
     {
         [$shop, $customer, $address] = $this->fixture(enabled: true);
         $repair = $this->repair($shop, $customer, $address);
         $repair->update(['intake_delivery_method' => 'walk_in', 'return_delivery_method' => 'walk_in']);
-        $this->assertBlocked(fn () => $this->claim($repair, $customer, $intake, $return), 'preferred_');
-        $this->assertDatabaseCount('repair_warranty_claims', 0);
+        $claim = $this->claim($repair, $customer, $intake, $return);
+        $this->assertSame($intake, $claim->preferred_return_method);
+        $this->assertSame($return, $claim->preferred_receive_method);
+        $this->assertDatabaseCount('repair_warranty_claims', 1);
     }
 
     public static function walkInWarrantyMethods(): array
@@ -491,7 +493,7 @@ class LogisticsModuleMovementBoundaryTest extends TestCase
         $this->assertSame('customer_pickup', $repair->fresh()->return_delivery_method);
     }
 
-    public function test_warranty_child_cannot_change_walk_in_only_original_transport_to_a_courier(): void
+    public function test_warranty_child_can_change_walk_in_only_original_transport_to_current_customer_delivery(): void
     {
         [$shop, $customer, $address] = $this->fixture(enabled: true);
         $original = $this->repair($shop, $customer, $address);
@@ -506,8 +508,8 @@ class LogisticsModuleMovementBoundaryTest extends TestCase
         $this->actingAs($customer, 'user')->patchJson("/api/customer/repairs/{$child->id}/delivery-method", [
             'return_delivery_method' => 'customer_pickup', 'return_address_id' => $address->id,
             'same_as_intake_address' => false,
-        ])->assertUnprocessable()->assertJsonValidationErrors('return_delivery_method');
-        $this->assertSame('walk_in', $child->fresh()->return_delivery_method);
+        ])->assertOk();
+        $this->assertSame('customer_pickup', $child->fresh()->return_delivery_method);
     }
 
     public function test_payment_after_module_toggle_preserves_service_settlement_and_reconciles_delivery_once(): void
@@ -644,7 +646,7 @@ class LogisticsModuleMovementBoundaryTest extends TestCase
         return [['missing'], ['unowned'], ['unpinned'], ['uncovered']];
     }
 
-    public function test_warranty_pickup_recovery_cannot_override_walk_in_only_original(): void
+    public function test_warranty_pickup_recovery_uses_current_methods_for_walk_in_only_original(): void
     {
         [$shop, $customer, $address] = $this->fixture(enabled: true);
         $original = $this->repair($shop, $customer, $address);
@@ -657,10 +659,12 @@ class LogisticsModuleMovementBoundaryTest extends TestCase
                 'type' => 'pickup_recovery', 'status' => 'awaiting_arrangement', 'failed_leg_id' => 123,
             ]]],
         ]);
-        $this->assertBlocked(fn () => app(RepairDeliveryService::class)->resolvePickupRecovery(
+        $result = app(RepairDeliveryService::class)->resolvePickupRecovery(
             $child, 'customer_delivery', User::class, $customer->id, $address->id,
-        ), 'method');
-        $this->assertSame('cancelled', $child->fresh()->status);
+        );
+        $this->assertSame('customer_delivery', $result['recovery']['action']);
+        $this->assertSame('resolved', $result['recovery']['status']);
+        $this->assertSame('repairer_accepted', $child->fresh()->status);
         $this->assertDatabaseCount('shipments', 0);
     }
 

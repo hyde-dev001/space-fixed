@@ -59,6 +59,11 @@ export const logisticsApi = {
       collection_ids: collectionIds,
       idempotency_key: idempotencyKey,
     }),
+  submitCodRemittanceSupplement: (remittanceId: number, amount: string, idempotencyKey: string) =>
+    axios.post(`/api/logistics/cod/remittances/${remittanceId}/supplements`, {
+      amount,
+      idempotency_key: idempotencyKey,
+    }),
   offerBatch: (id: number, riderProfileId: number, capacityOverrideReason?: string) => axios.post(`/api/logistics/batches/${id}/offer`, { rider_profile_id: riderProfileId, capacity_override_reason: capacityOverrideReason }),
   acceptBatch: (id: number) => axios.post(`/api/logistics/batches/${id}/accept`),
   rejectBatch: (id: number, rejectionReason: string) => axios.post(`/api/logistics/batches/${id}/reject`, { rejection_reason: rejectionReason }),

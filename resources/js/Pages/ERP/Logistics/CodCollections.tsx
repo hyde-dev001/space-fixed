@@ -57,8 +57,10 @@ function CollectionRow({
 export default function CodCollections({ children }: React.PropsWithChildren) {
   const [page, setPage] = useState<CodCollectionPageData>(emptyPage);
   const [selected, setSelected] = useState<number[]>([]);
+  const [supplementAmounts, setSupplementAmounts] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [supplementingId, setSupplementingId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -67,6 +69,15 @@ export default function CodCollections({ children }: React.PropsWithChildren) {
       const response = await logisticsApi.codCollections();
       setPage(response.data);
       setSelected((current) => current.filter((id) => response.data.pending_remittance.some((item) => item.id === id)));
+      setSupplementAmounts((current) => Object.fromEntries(response.data.submitted_remittances.map((remittance) => {
+        const previousAmount = current[remittance.id];
+        return [
+          remittance.id,
+          previousAmount && Number(previousAmount) > 0 && Number(previousAmount) <= Number(remittance.available_supplement_amount)
+            ? previousAmount
+            : remittance.available_supplement_amount,
+        ];
+      })));
       setError(null);
     } catch {
       setError('COD collections could not be loaded. Refresh and try again.');
@@ -100,6 +111,33 @@ export default function CodCollections({ children }: React.PropsWithChildren) {
       await workflowFeedback.error('The COD remittance was not submitted. Refresh and try again.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const submitShortage = async (remittance: CodCollectionPageData['submitted_remittances'][number]) => {
+    const amount = supplementAmounts[remittance.id] ?? remittance.available_supplement_amount;
+    if (Number(amount) <= 0 || Number(amount) > Number(remittance.available_supplement_amount)) return;
+
+    const confirmation = await workflowFeedback.confirm({
+      title: 'Submit remaining COD cash?',
+      text: `${money(amount)} will be added to ${remittance.reference} for Finance confirmation.`,
+      confirmButtonText: 'Submit cash',
+    });
+    if (!confirmation.isConfirmed) return;
+
+    setSupplementingId(remittance.id);
+    try {
+      await logisticsApi.submitCodRemittanceSupplement(
+        remittance.id,
+        amount,
+        `cod-remittance-supplement:${remittance.id}:${crypto.randomUUID()}`,
+      );
+      await workflowFeedback.success({ title: 'Cash submitted', text: 'Finance must confirm the physical cash before the shortage can settle.' });
+      await load();
+    } catch {
+      await workflowFeedback.error('The COD shortage cash was not submitted. Refresh and try again.');
+    } finally {
+      setSupplementingId(null);
     }
   };
 
@@ -162,17 +200,50 @@ export default function CodCollections({ children }: React.PropsWithChildren) {
           <div className="mt-4 space-y-3">
             {page.submitted_remittances.length === 0 && <p className="text-sm text-gray-500">No submitted remittances yet.</p>}
             {page.submitted_remittances.map((remittance) => (
-              <div key={remittance.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-gray-50 p-4 dark:bg-gray-800">
-                <div>
-                  <p className="font-semibold text-gray-900 dark:text-white">{remittance.reference}</p>
-                  <p className="text-sm text-gray-500">Submitted {dateTime(remittance.submitted_at)}</p>
+              <div key={remittance.id} className="rounded-lg bg-gray-50 p-4 dark:bg-gray-800">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-gray-900 dark:text-white">{remittance.reference}</p>
+                    <p className="text-sm text-gray-500">Submitted {dateTime(remittance.submitted_at)}</p>
+                    <p className="mt-1 text-sm capitalize text-gray-500">{remittance.status.replace('_', ' ')}</p>
+                  </div>
+                  <div className="grid gap-x-6 gap-y-1 text-right text-sm sm:grid-cols-3">
+                    <p><span className="text-gray-500">Expected</span><br /><span className="font-semibold text-gray-900 dark:text-white">{money(remittance.expected_amount)}</span></p>
+                    <p><span className="text-gray-500">Finance confirmed</span><br /><span className="font-semibold text-gray-900 dark:text-white">{money(remittance.cumulative_received_amount)}</span></p>
+                    <p><span className="text-gray-500">Remaining shortage</span><br /><span className="font-semibold text-gray-900 dark:text-white">{money(remittance.remaining_shortage_amount)}</span></p>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <p className="font-semibold text-gray-900 dark:text-white">{money(remittance.submitted_amount)}</p>
-                  <p className="text-sm capitalize text-gray-500">{remittance.status.replace('_', ' ')}</p>
-                  {remittance.variance_amount && <p className="text-xs text-red-700">Variance {money(remittance.variance_amount)}</p>}
-                </div>
-                {remittance.dispute_reason && <p className="basis-full text-sm text-red-700">{remittance.dispute_reason}</p>}
+                {remittance.pending_supplement_amount !== '0.00' && (
+                  <p className="mt-3 text-sm text-amber-800 dark:text-amber-200">
+                    Additional cash awaiting Finance confirmation: {money(remittance.pending_supplement_amount)}
+                  </p>
+                )}
+                {remittance.dispute_reason && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-950 dark:text-red-200">{remittance.dispute_reason}</p>}
+                {remittance.status === 'disputed' && Number(remittance.available_supplement_amount) > 0 && (
+                  <div className="mt-4 grid gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:grid-cols-[minmax(0,220px)_auto] sm:items-end">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Additional cash for {remittance.reference}
+                      <input
+                        type="number"
+                        min="0.01"
+                        max={remittance.available_supplement_amount}
+                        step="0.01"
+                        value={supplementAmounts[remittance.id] ?? remittance.available_supplement_amount}
+                        onChange={(event) => setSupplementAmounts((current) => ({ ...current, [remittance.id]: event.target.value }))}
+                        className="mt-1 block min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 focus:border-gray-900 focus:ring-gray-900 dark:border-gray-600 dark:bg-gray-900 dark:text-white"
+                      />
+                      <span className="mt-1 block text-xs font-normal text-gray-500">Available to submit now: {money(remittance.available_supplement_amount)}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void submitShortage(remittance)}
+                      disabled={supplementingId === remittance.id || Number(supplementAmounts[remittance.id] ?? remittance.available_supplement_amount) <= 0 || Number(supplementAmounts[remittance.id] ?? remittance.available_supplement_amount) > Number(remittance.available_supplement_amount)}
+                      className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {supplementingId === remittance.id ? 'Submitting…' : 'Submit remaining cash'}
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
           </div>

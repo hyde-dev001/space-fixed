@@ -98,6 +98,11 @@ export type CodRemittanceView = {
   submitted_at?: string | null;
   confirmed_at?: string | null;
   dispute_reason?: string | null;
+  cumulative_received_amount: string;
+  remaining_shortage_amount: string;
+  pending_supplement_amount: string;
+  available_supplement_amount: string;
+  supplements?: CodRemittanceSupplementView[];
   items?: Array<{
     id: number;
     cod_collection_id: number;
@@ -109,13 +114,25 @@ export type CodRemittanceView = {
   }>;
 };
 
+export type CodRemittanceSupplementView = {
+  id: number;
+  submitted_amount: string;
+  received_amount?: string | null;
+  submitted_at?: string | null;
+  submitted_by_name?: string | null;
+  confirmed_at?: string | null;
+  confirmed_by_name?: string | null;
+  dispute_reason?: string | null;
+  pending: boolean;
+};
+
 export type CodCollectionPageData = {
   summary: {
     cash_currently_held: string;
     pending_remittance_count: number;
   };
   pending_remittance: CodCollectionView[];
-  submitted_remittances: Array<Pick<CodRemittanceView, 'id' | 'reference' | 'expected_amount' | 'submitted_amount' | 'received_amount' | 'variance_amount' | 'status' | 'submitted_at' | 'dispute_reason'>>;
+  submitted_remittances: Array<Pick<CodRemittanceView, 'id' | 'reference' | 'expected_amount' | 'submitted_amount' | 'received_amount' | 'variance_amount' | 'status' | 'submitted_at' | 'dispute_reason' | 'cumulative_received_amount' | 'remaining_shortage_amount' | 'pending_supplement_amount' | 'available_supplement_amount'>>;
   settled_history: CodCollectionView[];
 };
 

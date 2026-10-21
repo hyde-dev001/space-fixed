@@ -37,14 +37,6 @@ final class RepairDeliveryService
             $repair = RepairRequest::query()->whereKey($repair->parent_repair_request_id)
                 ->where('shop_owner_id', $repair->shop_owner_id)->firstOrFail();
         }
-        $intake = $repair->intake_delivery_method
-            ?: ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_delivery');
-        $return = $repair->return_delivery_method
-            ?: ($repair->delivery_method === 'walk_in' ? 'walk_in' : 'customer_pickup');
-        if ($intake === 'walk_in' && $return === 'walk_in') {
-            return ['intake' => ['walk_in'], 'return' => ['walk_in']];
-        }
-
         $methods = ['intake' => ['walk_in', 'customer_delivery'], 'return' => ['walk_in', 'customer_pickup']];
         $shop = $repair->shopOwner ?: ShopOwner::query()->find($repair->shop_owner_id);
         if ($shop && $this->movements->canStart($shop)) {
@@ -379,7 +371,7 @@ final class RepairDeliveryService
                 abort(409, 'This pickup recovery plan is already final.');
             }
             if (! in_array($method, $this->allowedWarrantyDeliveryMethods($locked)['intake'], true)) {
-                throw ValidationException::withMessages(['method' => ['This delivery method is unavailable for the original repair and current Logistics setting.']]);
+                throw ValidationException::withMessages(['method' => ['This delivery method is unavailable with the current address and Logistics setting.']]);
             }
 
             RepairPaymentSession::query()
@@ -1231,7 +1223,7 @@ final class RepairDeliveryService
             if ($action === 'schedule_redelivery') {
                 if ($this->isSponsoredWarranty($locked)
                     && ! in_array('shop_delivery', $this->allowedWarrantyDeliveryMethods($locked)['return'], true)) {
-                    throw ValidationException::withMessages(['action' => ['Re-delivery is unavailable for the original repair and current Logistics setting.']]);
+                    throw ValidationException::withMessages(['action' => ['Re-delivery is unavailable with the current Logistics setting.']]);
                 }
                 $this->movements->assertCanStart($locked->shopOwner);
                 if ((string) ($entry['status'] ?? '') === 'shop_pickup_selected') {
