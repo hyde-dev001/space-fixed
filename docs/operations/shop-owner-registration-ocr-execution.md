@@ -31,3 +31,68 @@ Phase-by-phase changes, focused checks, acceptance coverage, browser asset reque
 - PHP focused: `php artisan test tests/Unit/Services/ShopOwnerDocumentScreeningServiceTest.php --stop-on-failure` - exit 0, 14 tests/56 assertions; runner output marks each test `WARN` and includes per-test fixture `file_get_contents` path notes. Direct `vendor/bin/phpunit --display-warnings tests/Unit/Services/ShopOwnerDocumentScreeningServiceTest.php` - pass, 14 tests/56 assertions, no warnings. The CLI-runner warning behavior matches the earlier baseline pattern and remains unsuppressed.
 - TDD evidence: the initial PHP suite failed on the explicit missing-service assertion before implementation. The initial TypeScript attempt failed during module loading, so it is not counted as an assertion-level red test.
 - Not yet verified in Phase 1: live OCR, non-expiring/date-rollover context, admin reason labels, persistence, registration admission, and decision isolation. These remain in their owning later phases.
+
+## Phase 2 - Reader reuse and local runtime package
+
+- Reused the pinned customer reader and personal-name matcher while retaining customer defaults. Owner screening uses its separate full-image path, localized pass evidence, cancellation/deadline handling, explicit same-origin asset paths, and a 1,800-pixel working-image edge limit. The uploaded original remains unchanged.
+- Pinned Tesseract.js/core 7.0.0 and English data package 1.0.0. `dev` and `build` explicitly prepare the ignored `public/ocr/` runtime directory; the versioned manifest records local paths and checksums. The package includes the worker, all compatible core JS/WASM variants, English trained data, and notices (24 files, 48,335,784 bytes in this build).
+- `pnpm run test:frontend resources/js/Pages/UserSide/Auth/registrationOcr.test.ts resources/js/Pages/UserSide/Auth/registrationNameMatch.test.ts` passed (2 files, 19 tests). `node --test scripts/prepare-owner-ocr-assets.test.mjs` passed (4 tests). `pnpm run prepare:owner-ocr` and `node scripts/prepare-owner-ocr-assets.mjs --check` passed.
+- Worker cleanup after unresolved startup is bounded by an explicit confirmation wait; if termination cannot be confirmed, queued work is made unavailable and no new worker starts. Customer-specific duplicate-side/admission behavior was not ported.
+
+## Phase 3 - Recognition and transient lifecycle
+
+- Implemented conservative field-local recognition for DTI, SEC, Mayor's Permit, BIR Form 2303, and supported government ID families, with localized evidence, role-aware matching, conservative date/address handling, and uncertainty for ambiguous layouts.
+- Added hand-authored, watermarked SVG fixtures with invented values and no official artwork: DTI, SEC, two permit layouts, BIR Form 2303, National ID, driver's license, and unsupported government ID. The fixtures are synthetic evidence only.
+- Frontend recognition/reader/hook check passed: 4 files, 55 tests. Tests cover field reliability, the five score/aggregate outcomes, timeout and cleanup behavior, single-worker sequencing, replacement/removal, form-context changes without rereading, and submit snapshots.
+- No OCR text or extracted personal values were recorded in this execution log. The test suite does not claim OCR accuracy.
+
+## Phase 4 - Private immutable report persistence
+
+- Added one nullable `shop_documents.ocr_screening` JSON column with no backfill, index, or owner-level aggregate. Reports are sanitized and attached inside the existing locked version-batch transaction with server file checksum and comparison-context binding; existing replay, rollback, cleanup, and retained-file inheritance behavior is preserved.
+- Laravel validation enforces the fixed envelope and score rules. OCR data is excluded from flashed old input and default model serialization. Pending documents still report `metadata_unverified`; report evidence cannot fill reviewer metadata or affect status.
+- Focused PHP verification passed: 55 tests, 282 assertions, with 8 PHPUnit deprecations. PHP syntax checks and `git diff --check` passed. Registration tests cover 100%, 50%, 0%, unavailable and omitted OCR, malformed envelopes, and signed resubmission while preserving existing requirements.
+- No production/shared database migration was run.
+
+## Phase 5 - Registration and signed resubmission integration
+
+- Both fresh registration and signed rejected-application resubmission receive the same optional, validated local-asset bootstrap. Missing/corrupt runtime assets produce an unavailable state. The form uses the existing file controls and upload request, reports accessible preliminary progress, and never waits for OCR before submission.
+- Completed reports are snapshotted only when current; unfinished/stale/invalid reports are omitted. Relevant field edits recalculate retained evidence. Replacement/removal clears old evidence and preview references.
+- Focused frontend tests passed: 93 tests across 7 files. Registration/bootstrap/email feature tests passed: 23 tests, 180 assertions, with 8 PHPUnit deprecations. The original file payload, signed route, missing-asset behavior, and submit-during-scan behavior have focused test coverage.
+
+## Phase 6 - Super Admin preliminary review
+
+- Added an allowlisted preliminary OCR projection and score/reason display alongside the existing document viewer and server validity information. Historical reports remain dated snapshots, and only the current application candidates contribute to the aggregate.
+- The review view says authenticity is not independently verified. It does not mark documents viewed, confirm metadata, alter access, or change approval/rejection controls. The existing decision service and protected viewer were not modified.
+- Focused frontend review tests passed: 2 files, 11 tests. Review, decision-isolation, existing approval, workflow, and private-access tests passed: 46 tests, 389 assertions. PHP syntax and diff hygiene passed.
+
+## Phase 7 - Build, browser, and acceptance evidence
+
+- Production build passed with Vite 7.3.1: 3,770 modules transformed in 33.44 seconds. Cold-cache browser inspection found no worker/core/language or lazy reader request before invoking OCR. Owner OCR then loaded only the local worker, selected core, and language asset; no OCR CDN fallback was observed.
+- Real browser-engine checks used Chromium 151.0.7922.34 on all eight synthetic SVG fixtures rasterized to browser PNGs, and WebKit 26.5 on a synthetic DTI. Chromium read the eight fixtures, including the two distinct permit layouts and multiple ID layouts; WebKit completed its DTI read. Results were reduced to type-signal booleans, confidence bands, and counts; extracted text was not retained. These checks establish functional engine operation on synthetic layouts only, not accuracy or authenticity.
+- Local responses were HTTP 200: worker JavaScript (111,307 bytes, `application/javascript`), selected relaxed-SIMD core JavaScript (~3.9 MB, `application/javascript`), and English model gzip (2,952,873 bytes, `application/gzip`). A forced local worker 404 returned an OCR failure and cleaned up without an external request. A separate language-path 404 browser attempt did not complete its harness cleanup timeout and is inconclusive; unit tests cover unavailable assets.
+- `ShopOwnerOcrBootstrapTest` covers a `/portal` base path and passed in the backend regression suite. The actual browser was served at root, so deployed subpath routing is not verified end-to-end. The local response had no CSP header; Hostinger CSP/worker/WASM compatibility is unverified.
+- A temporary Hostinger-package smoke ZIP included both `public/build/` and ignored `public/ocr/` with all 24 OCR files present (21,983,884 bytes). This checks archive structure only; no Hostinger deployment or target-server static-file check occurred. The generated `public/ocr/` is retained locally and Git-ignored. Vite-generated `public/build/` outputs were restored to the worktree's HEAD after build verification so they do not pollute the feature diff.
+- A disposable local Laravel registration UI run could not complete the normal OTP flow because test email delivery was unavailable to the browser harness. No bypass was added, no registration was created, and no protected Super Admin browser session was available. Full fresh-registration, signed-resubmission, and authenticated admin browser journeys remain unverified; focused React/Laravel tests cover their code paths.
+- Broad existing backend regression command passed (108 tests/warnings, 634 assertions, exit 0). The full frontend suite reported 989 passed and one failure in unrelated contradictory Repairs navigation tests: one test requires the `Repairs` heading while another requires it absent. `composer test` did not finish: attempts hit the 300-second Composer timeout and PHPUnit's 512 MB child memory limit, with failures reported in unrelated ERP, logistics, suspension, maintenance, manager, notification, and repair suites. These failures were not changed and cannot be declared pre-existing without a complete baseline run.
+- OCR score/fraud accuracy, production latency, device peak memory, supported CSP policy, deployed Hostinger behavior, and real-user document performance are not measured. The repository has no configured TypeScript compiler or lint script; neither was claimed.
+
+### Acceptance status
+
+| Group | Result | Evidence and remaining limit |
+| --- | --- | --- |
+| A1 Recognition | Functional synthetic coverage | Recognition tests plus actual Chromium reads of the eight synthetic layouts and WebKit DTI. No real or statistically representative documents. |
+| A2 Roles and matching | Covered in focused tests | Role/name/address rules are in recognizer tests. Integrated registration matching was not exercised through an authenticated browser journey. |
+| A3 Recognition errors | Covered in focused tests | Localized-confidence, ambiguity, weak/missing evidence, and reader behavior tests pass; no measured real-world error rate. |
+| A4 Dates | Covered in focused tests | Expiry, future/reversed dates, metadata conflicts, ambiguity, non-expiry, rollover and pending validity are covered in frontend/backend suites. |
+| A5 Scoring | Covered | Shared TS/PHP fixtures and admin tests cover 0/50/100, nonnumeric states, conflict precedence, and aggregate examples. |
+| A6 Nonblocking admission | Backend/frontend tests pass; browser partial | Submission/error/failure cases are automated. Full wizard submit during OCR and OTP-authenticated flow remain unverified in browser. |
+| A7 Browser lifecycle | Unit and hook tests pass; browser partial | Queue, cleanup, cancellation, replacement/removal, stale contexts and snapshots are tested. Full integrated page lifecycle was not browser-driven. |
+| A8 Deployment | Build/package checks pass; production partial | Local assets, checksums, MIME, cold cache and archive inclusion are checked. Hostinger, production CSP, and browser subpath delivery remain unverified. |
+| A9 Persistence | Covered | Envelope, privacy, binding, replay, rollback, legacy null rows and hidden serialization are tested. No production migration run. |
+| A10 Version isolation | Covered in backend tests | Replacements/retained reports, context, replay and historical isolation are exercised; authenticated admin browser presentation is unverified. |
+| A11 Authority and privacy | Backend covered; browser partial | Decisions at each score, viewer authorization, viewed/reviewer requirements and protected serialization pass focused tests. No authenticated review browser session. |
+| A12 Regressions | Partial | Focused and broad affected backend suites pass; full frontend has one unrelated contradiction and `composer test` is incomplete/fails as described above. |
+
+### Phase 7 gate result
+
+Phases 0-6 are implemented and their focused checks passed. Phase 7 collected build, package, direct OCR-engine, and affected regression evidence, but the authenticated end-to-end browser journeys and complete repository-wide test gates remain unresolved. Do not describe this branch as fully verified or deployment-ready until the A6-A8/A11 browser limitations and failed/incomplete full-suite gates are resolved or explicitly accepted by a later release decision.
