@@ -2446,25 +2446,26 @@ const ShopSetting: React.FC = () => {
 						</div>
 						<div className="p-6 space-y-4">
 							<div className="rounded-lg border border-gray-200 bg-white p-4">
-								<p className="text-sm font-semibold text-gray-900">What is PayMongo?</p>
+								<p className="text-sm font-semibold text-gray-900">Connect your PayMongo account</p>
 								<p className="mt-1 text-sm text-gray-700">
-									PayMongo is an online payment platform that lets your shop accept digital payments securely.
+									PayMongo receives online payments from your customers and sends them to your PayMongo account.
 								</p>
-								<p className="mt-3 text-xs font-semibold uppercase tracking-wide text-gray-900">How to get your key</p>
+								<p className="mt-3 text-xs font-semibold uppercase tracking-wide text-gray-900">Create your account and connect it</p>
 								<ol className="mt-1 list-decimal space-y-1 pl-5 text-sm text-gray-700">
-									<li>Create or log in to your PayMongo account.</li>
-									<li>Open Dashboard - Developers - API Keys.</li>
-									<li>Copy your Secret Key (starts with <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">sk_</code>).</li>
-									<li>Paste it below, then click Save Key.</li>
+									<li>Sign up with your email, then confirm your email address.</li>
+									<li>Follow PayMongo&apos;s steps to verify your identity. You may be asked for a government ID, a selfie, and business details or documents.</li>
+									<li>In your PayMongo Dashboard, open <strong>Developers → API Keys</strong>. Copy the full Secret key beginning with <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">sk_test_</code> for testing without real money, or <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">sk_live_</code> for real customer payments. PayMongo may need to verify your account before enabling live payments.</li>
+									<li>Paste the key below and click <strong>Save Key</strong>.</li>
 								</ol>
-								<a
-									href="https://www.paymongo.com/"
-									target="_blank"
-									rel="noopener noreferrer"
-								className="mt-3 inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black"
-								>
-									Visit PayMongo
-								</a>
+								<p className="mt-3 text-xs text-gray-600">The Secret key is a private connection code, not your PayMongo login password. SoleSpace uses it to connect to your account. Keep it private, and do not use a Public key that starts with <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-[11px]">pk_</code>.</p>
+								<div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+									<a href="https://dashboard.paymongo.com/signup" target="_blank" rel="noopener noreferrer" className="inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black">
+										Create a PayMongo account
+									</a>
+									<a href="https://docs.paymongo.com/docs/get-started-create-your-account" target="_blank" rel="noopener noreferrer" className="inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black">
+										PayMongo account setup guide
+									</a>
+								</div>
 							</div>
 
 							{/* Warning banner if no key configured */}
@@ -2531,7 +2532,7 @@ const ShopSetting: React.FC = () => {
 									{hasPaymongoKey ? 'Update Secret Key' : 'Enter Secret Key'}
 								</label>
 								<p className="mb-2 text-xs text-gray-500">
-									Found in your PayMongo Dashboard → Developers → API Keys. Use the <strong>Secret key</strong> (starts with <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">sk_</code>).
+									Paste the private PayMongo connection code from <strong>Dashboard → Developers → API Keys</strong>. It starts with <code className="rounded bg-gray-100 px-1 py-0.5 font-mono text-xs">sk_</code>.
 								</p>
 								<div className="flex items-center gap-2">
 									<div className="relative flex-1">
@@ -2582,17 +2583,28 @@ const ShopSetting: React.FC = () => {
 							</div>
 							<div className="space-y-4 p-6">
 								<div className="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
-									<p className="font-semibold text-gray-900">Phase 1 setup</p>
-									<ul className="mt-2 list-disc space-y-1 pl-5">
-										<li>Use a standalone Xendit Secret API Key with Money-Out Read for balance verification and Money-Out Write for payouts.</li>
-										<li>Set the same callback token in Xendit&apos;s PAYOUT webhook configuration and below.</li>
-									</ul>
+									<p className="font-semibold text-gray-900">Create your account and set up supplier payouts</p>
+									<ol className="mt-2 list-decimal space-y-2 pl-5">
+										<li>Sign up for a Xendit business account, choose the Philippines, and confirm your email. You can explore <strong>Test</strong> mode first; it does not move real money.</li>
+										<li>For real payouts, choose <strong>Verify Business</strong> in Xendit, submit the business and identity documents requested for your business type, and wait for approval to use <strong>Live</strong> mode.</li>
+										<li>In Xendit, open <strong>Settings → Developers → API Keys</strong> and click <strong>Generate secret key</strong>. Name it <strong>SoleSpace</strong> and choose the same mode selected below. Set <strong>Money-Out</strong> to Read so SoleSpace can check the balance and Write so it can send supplier payouts. Leave other permissions off.</li>
+										<li>Copy the key when Xendit shows it, then paste it below. This private connection code lets SoleSpace use your Xendit account; keep it secret like a password.</li>
+										<li>In Xendit&apos;s <strong>Payout webhooks</strong> settings, add the URL shown here. Copy Xendit&apos;s Callback Token into the field below too. This lets Xendit send payout updates to SoleSpace and helps us confirm they are genuine.</li>
+									</ol>
 									<p className="mt-3 text-xs text-gray-500">
-										Webhook URL: <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px]">{typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/xendit/payout` : '/api/webhooks/xendit/payout'}</code>
+										Webhook URL to add in Xendit: <code className="rounded bg-white px-1 py-0.5 font-mono text-[11px]">{typeof window !== 'undefined' ? `${window.location.origin}/api/webhooks/xendit/payout` : '/api/webhooks/xendit/payout'}</code>
 									</p>
-									<a href="https://docs.xendit.co/docs/payouts-creating-an-api-key" target="_blank" rel="noopener noreferrer" className="mt-2 inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black">
-										Open Xendit API key guide
-									</a>
+									<div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
+										<a href="https://dashboard.xendit.co/register/1?regional=true" target="_blank" rel="noopener noreferrer" className="inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black">
+											Create your Xendit business account
+										</a>
+										<a href="https://help.xendit.co/hc/en-us/articles/11103239008793-PH-What-are-the-legal-documents-required-to-register-to-Xendit-for-Philippine-Merchants" target="_blank" rel="noopener noreferrer" className="inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black">
+											Philippine business document checklist
+										</a>
+										<a href="https://docs.xendit.co/docs/payouts-creating-an-api-key" target="_blank" rel="noopener noreferrer" className="inline-flex text-sm font-semibold text-gray-900 underline underline-offset-2 hover:text-black">
+											Xendit API key guide
+										</a>
+									</div>
 								</div>
 
 								{xenditSettings.connected ? (
@@ -2632,8 +2644,8 @@ const ShopSetting: React.FC = () => {
 									<div>
 										<label htmlFor="xendit-environment" className="mb-1.5 block text-sm font-medium text-gray-700">Environment</label>
 										<select id="xendit-environment" value={xenditEnvironment} onChange={(event) => setXenditEnvironment(event.target.value as 'test' | 'live')} className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500">
-											<option value="test">Test</option>
-											<option value="live">Live</option>
+										<option value="test">Test (no real money)</option>
+										<option value="live">Live (real payouts)</option>
 										</select>
 									</div>
 									<div className="md:col-span-2">
@@ -2642,17 +2654,17 @@ const ShopSetting: React.FC = () => {
 											<input id="xendit-secret-key" data-tour="xendit-payouts" type={showXenditKey ? 'text' : 'password'} value={xenditSecretKey} onChange={(event) => setXenditSecretKey(event.target.value)} placeholder="Paste the server-side secret key" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
 											<button type="button" onClick={() => setShowXenditKey((value) => !value)} aria-label={showXenditKey ? 'Hide Xendit secret key' : 'Show Xendit secret key'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">{showXenditKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
 										</div>
-										<p className="mt-1 text-xs text-gray-500">The key is encrypted and never shown again. Balance verification may require Money-Out Read; payouts require Money-Out Write.</p>
+										<p className="mt-1 text-xs text-gray-500">Use the private key you created in Xendit for this mode. Xendit shows a new key only once; copy it before leaving that page. It is encrypted after you save it here.</p>
 									</div>
 								</div>
 
 								<div>
 									<label htmlFor="xendit-callback-token" className="mb-1.5 block text-sm font-medium text-gray-700">Payout callback token</label>
 									<div className="relative">
-										<input id="xendit-callback-token" type={showXenditToken ? 'text' : 'password'} value={xenditCallbackToken} onChange={(event) => setXenditCallbackToken(event.target.value)} placeholder="Create or paste a private token" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
+										<input id="xendit-callback-token" type={showXenditToken ? 'text' : 'password'} value={xenditCallbackToken} onChange={(event) => setXenditCallbackToken(event.target.value)} placeholder="Paste the Xendit Callback Token" autoComplete="new-password" className="min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2.5 pr-11 font-mono text-sm text-gray-900 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500" />
 										<button type="button" onClick={() => setShowXenditToken((value) => !value)} aria-label={showXenditToken ? 'Hide Xendit callback token' : 'Show Xendit callback token'} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">{showXenditToken ? <EyeOff size={16} /> : <Eye size={16} />}</button>
 									</div>
-									<p className="mt-1 text-xs text-gray-500">Required to authenticate payout webhooks. Keep it private.</p>
+									<p className="mt-1 text-xs text-gray-500">Use the same Callback Token saved in Xendit&apos;s Payout webhooks settings. This private code helps SoleSpace confirm a payout update really came from Xendit.</p>
 								</div>
 
 								<div className="flex flex-wrap items-center gap-3">
