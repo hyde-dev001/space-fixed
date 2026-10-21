@@ -126,7 +126,7 @@ describe('shop owner OCR applicant status', () => {
       }}
     />);
 
-    expect(screen.getByRole('heading', { name: 'Shop Owner Application Resubmission' })).toBeInTheDocument();
+    expect(screen.getByText('Resubmission')).toBeInTheDocument();
     expect(doubles.useShopOwnerOcr).toHaveBeenCalledWith(expect.objectContaining({
       assets: bootstrap.assets,
       context: expect.objectContaining({
@@ -150,8 +150,16 @@ describe('shop owner OCR applicant status', () => {
         form: {
           firstName: 'Mira',
           lastName: 'Sample',
+          age: 30,
           email: 'mira@example.test',
           phone: '09171234567',
+          address: '123 Example Street, Imus, Cavite',
+          addressRegion: 'CALABARZON',
+          addressProvince: 'Cavite',
+          addressCity: 'Imus',
+          addressBarangay: 'Bayan Luma II',
+          addressLatitude: 14.3,
+          addressLongitude: 120.9,
           businessName: 'Sample Shoe House',
           businessAddress: '123 Example Street, Imus, Cavite',
           postalCode: '4103',

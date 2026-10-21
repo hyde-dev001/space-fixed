@@ -44,6 +44,31 @@ final class ShopOwnerDocumentScreeningService
         'ocr_unavailable', 'ocr_failed', 'ocr_timeout', 'scan_unfinished',
     ];
 
+    private const ADMIN_CHECK_LABELS = [
+        'document_type' => 'Document type',
+        'business_identity' => 'Business identity',
+        'proprietor_identity' => 'Proprietor identity',
+        'business_address' => 'Business address',
+        'owner_identity' => 'Owner identity',
+        'dates' => 'Dates',
+    ];
+
+    private const ADMIN_REASON_LABELS = [
+        'wrong_document_type' => 'Document type differs',
+        'business_identity_conflict' => 'Business name differs',
+        'owner_identity_conflict' => 'Owner name differs',
+        'proprietor_identity_conflict' => 'Proprietor name differs',
+        'business_address_conflict' => 'Business address differs',
+        'date_conflict' => 'Date differs',
+        'uncertain_field' => 'Some fields need review',
+        'low_recognition_confidence' => 'Recognition confidence is low',
+        'unsupported_layout' => 'Document layout needs review',
+        'ocr_unavailable' => 'OCR unavailable',
+        'ocr_failed' => 'OCR failed',
+        'ocr_timeout' => 'OCR timed out',
+        'scan_unfinished' => 'Scan was unfinished',
+    ];
+
     private const ENTRY_KEYS = [
         'assessment_state', 'detected_family', 'relationship', 'reference_day',
         'recognition_confidence', 'checks', 'reason_codes',
@@ -365,6 +390,120 @@ final class ShopOwnerDocumentScreeningService
             'incomplete' => $incomplete,
             'score' => $score,
             'state' => $incomplete ? 'assessment_incomplete' : 'assessed',
+        ];
+    }
+
+    /**
+     * Project an immutable report into fixed, reviewer-facing labels and outcomes.
+     * Internal hashes, checksums, and browser-supplied text never leave this boundary.
+     *
+     * @return array{state: string, score: int|null, referenceDay: string|null, recognitionConfidence: float|null, checks: list<array{key: string, label: string, result: string}>, reasons: list<string>, historical: bool, includedInSummary: bool}
+     */
+    public function adminReviewProjection(ShopOwner $owner, ShopDocument $document): array
+    {
+        $report = $document->ocr_screening;
+        if (! is_array($report)) {
+            return [
+                'state' => $report === null ? 'not_assessed' : 'needs_rescan',
+                'score' => null,
+                'referenceDay' => null,
+                'recognitionConfidence' => null,
+                'checks' => [],
+                'reasons' => [],
+                'historical' => false,
+                'includedInSummary' => false,
+            ];
+        }
+
+        $entry = array_intersect_key($report, array_flip([
+            'assessment_state', 'detected_family', 'relationship', 'reference_day',
+            'recognition_confidence', 'checks', 'reason_codes',
+        ]));
+        if (! array_key_exists('reference_day', $entry) || $entry['reference_day'] === null) {
+            unset($entry['reference_day']);
+        } else {
+            $entry['reference_day'] = $report['reference_day'];
+        }
+
+        $score = null;
+        $validSnapshot = false;
+        try {
+            $derived = $this->scoreEntry(
+                (string) $document->logical_slot,
+                (string) $document->document_type,
+                $entry,
+            );
+            $metadata = [
+                'logical_slot' => (string) $document->logical_slot,
+                'document_type' => (string) $document->document_type,
+                'issued_on' => $document->issued_on,
+                'expiration_mode' => (string) $document->expiration_mode,
+                'expires_on' => $document->expires_on,
+            ];
+            $expectedContext = $this->contextHash($owner, $metadata, $report['relationship'] ?? null);
+            $checksum = $document->getRawOriginal('checksum_sha256');
+
+            $validSnapshot = ($report['schema_version'] ?? null) === self::REPORT_SCHEMA_VERSION
+                && ($report['source'] ?? null) === 'browser_tesseract'
+                && is_string($checksum)
+                && is_string($report['file_checksum_sha256'] ?? null)
+                && hash_equals($checksum, $report['file_checksum_sha256'])
+                && is_string($report['context_hash'] ?? null)
+                && hash_equals($expectedContext, $report['context_hash'])
+                && ($report['assessment_state'] ?? null) === $derived['state']
+                && ($report['score'] ?? null) === $derived['score'];
+            $score = $derived['score'];
+        } catch (ValidationException) {
+            // A malformed legacy/corrupt snapshot is displayed as stale, never trusted.
+        }
+
+        $requiredChecks = in_array((string) $document->logical_slot, self::SLOTS, true)
+            && isset(self::REQUIRED_CHECKS[(string) $document->document_type])
+            ? $this->requiredChecks((string) $document->document_type, $entry)
+            : [];
+        $storedChecks = is_array($report['checks'] ?? null) ? $report['checks'] : [];
+        $checks = [];
+        foreach ($requiredChecks as $key) {
+            $storedCheck = $storedChecks[$key] ?? null;
+            $result = is_array($storedCheck) && in_array($storedCheck['result'] ?? null, ['match', 'mismatch'], true)
+                ? $storedCheck['result']
+                : 'uncertain';
+            $checks[] = [
+                'key' => $key,
+                'label' => self::ADMIN_CHECK_LABELS[$key],
+                'result' => match ($result) {
+                    'match' => 'match',
+                    'mismatch' => 'conflict',
+                    default => 'uncertain',
+                },
+            ];
+        }
+
+        $reasons = [];
+        foreach (is_array($report['reason_codes'] ?? null) ? $report['reason_codes'] : [] as $code) {
+            if (is_string($code) && isset(self::ADMIN_REASON_LABELS[$code])) {
+                $reasons[] = self::ADMIN_REASON_LABELS[$code];
+            }
+        }
+
+        $confidence = $report['recognition_confidence'] ?? null;
+
+        return [
+            'state' => $validSnapshot
+                ? (($derived['state'] === 'unable_to_assess') ? 'unable_to_assess' : 'assessed')
+                : 'needs_rescan',
+            'score' => $validSnapshot ? $score : null,
+            'referenceDay' => $this->isCalendarDay($report['reference_day'] ?? null)
+                ? $report['reference_day']
+                : null,
+            'recognitionConfidence' => (is_float($confidence) || is_int($confidence))
+                && $this->isConfidence($confidence)
+                ? (float) $confidence
+                : null,
+            'checks' => $checks,
+            'reasons' => array_values(array_unique($reasons)),
+            'historical' => false,
+            'includedInSummary' => false,
         ];
     }
 
