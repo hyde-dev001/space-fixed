@@ -13,6 +13,45 @@ export type ShopOwnerOcrDocumentType =
   | 'bir_certificate'
   | 'valid_id';
 export type ShopOwnerOcrResult = 'match' | 'mismatch' | 'uncertain';
+export type ShopOwnerOcrFamily = ShopOwnerOcrDocumentType | 'national_id' | 'drivers_license' | 'passport' | 'umid' | 'other_document';
+export type ShopOwnerOcrCheckKey =
+  | 'document_type'
+  | 'business_identity'
+  | 'proprietor_identity'
+  | 'business_address'
+  | 'owner_identity'
+  | 'dates';
+export type ShopOwnerOcrReasonCode =
+  | 'wrong_document_type'
+  | 'business_identity_conflict'
+  | 'owner_identity_conflict'
+  | 'proprietor_identity_conflict'
+  | 'business_address_conflict'
+  | 'date_conflict'
+  | 'uncertain_field'
+  | 'low_recognition_confidence'
+  | 'unsupported_layout'
+  | 'ocr_unavailable'
+  | 'ocr_failed'
+  | 'ocr_timeout'
+  | 'scan_unfinished';
+export type ShopOwnerOcrCheck = {
+  result: ShopOwnerOcrResult;
+  confidence: number | null;
+  complete_value: boolean;
+  field_associated: boolean;
+  unambiguous: boolean;
+  independent_type_signals: boolean;
+};
+export type ShopOwnerOcrEntry = {
+  assessment_state: 'assessed' | 'unable_to_assess';
+  detected_family: ShopOwnerOcrFamily | null;
+  relationship?: 'sole_proprietor' | 'corporate' | 'unclear';
+  reference_day?: string;
+  recognition_confidence?: number;
+  checks: Partial<Record<ShopOwnerOcrCheckKey, ShopOwnerOcrCheck>>;
+  reason_codes?: ShopOwnerOcrReasonCode[];
+};
 
 const requiredChecks: Record<ShopOwnerOcrDocumentType, readonly string[]> = {
   dti_registration: ['document_type', 'business_identity', 'proprietor_identity', 'dates'],

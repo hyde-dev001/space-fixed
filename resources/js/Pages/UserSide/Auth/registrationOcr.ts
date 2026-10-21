@@ -626,7 +626,7 @@ async function prepareOwnerImage(file: File, signal: AbortSignal): Promise<Owner
     if (signal.aborted) throw new DOMException('OCR cancelled', 'AbortError');
     if (!bitmap.width || !bitmap.height) throw new ImagePreparationError('Image dimensions are unavailable.');
 
-    const scale = Math.min(3, OWNER_IMAGE_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(1, OWNER_IMAGE_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
     canvas = document.createElement('canvas');

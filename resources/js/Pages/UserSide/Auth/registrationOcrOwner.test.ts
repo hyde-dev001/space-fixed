@@ -129,10 +129,26 @@ describe('shop owner OCR reader', () => {
     expect(ocrWorker.recognize.mock.calls[0][0]).toBeInstanceOf(Blob);
   });
 
+  it('does not upscale a small image toward the working-image cap', async () => {
+    stubImage({ width: 600, height: 400, close: vi.fn() });
+    createWorkerMock.mockResolvedValue(worker());
+
+    const evidence = await readShopOwnerDocument(file(), paths);
+
+    expect(evidence.passes[0]).toMatchObject({ image_width: 600, image_height: 400 });
+  });
+
   it('reports unavailable when safe image preparation is unsupported', async () => {
     vi.stubGlobal('createImageBitmap', undefined);
 
     await expect(readShopOwnerDocument(file(), paths)).rejects.toMatchObject({ reasonCode: 'ocr_unavailable' });
+    expect(createWorker).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when a required local runtime path is missing', async () => {
+    await expect(readShopOwnerDocument(file(), { ...paths, corePath: '' })).rejects.toMatchObject({
+      reasonCode: 'ocr_unavailable',
+    });
     expect(createWorker).not.toHaveBeenCalled();
   });
 

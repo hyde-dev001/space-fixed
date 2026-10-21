@@ -3,7 +3,7 @@
   "passes": [
     {
       "id": "registered_business_complete",
-      "pass_id": "full-image",
+      "pass_id": "full_image",
       "words": [
         { "text": "BUSINESS NAME", "confidence": 0.96, "field": "business_identity", "complete": true, "associated": true, "unambiguous": true },
         { "text": "SAMPLE SHOE HOUSE", "confidence": 0.94, "field": "business_identity", "complete": true, "associated": true, "unambiguous": true }
@@ -11,14 +11,14 @@
     },
     {
       "id": "ambiguous_character",
-      "pass_id": "full-image",
+      "pass_id": "full_image",
       "words": [
         { "text": "SAMP1E SHOE HOUSE", "confidence": 0.72, "field": "business_identity", "complete": false, "associated": true, "unambiguous": false }
       ]
     },
     {
       "id": "different_name_roles",
-      "pass_id": "full-image",
+      "pass_id": "full_image",
       "words": [
         { "text": "REGISTERED OWNER", "confidence": 0.96, "field": "proprietor_identity", "complete": true, "associated": true, "unambiguous": true },
         { "text": "MIRA SAMPLE", "confidence": 0.96, "field": "proprietor_identity", "complete": true, "associated": true, "unambiguous": true },
@@ -27,17 +27,45 @@
     },
     {
       "id": "contradictory_passes",
-      "pass_id": "full-image",
+      "pass_id": "full_image",
       "words": [
         { "text": "SAMPLE SHOE HOUSE", "confidence": 0.94, "field": "business_identity", "complete": true, "associated": true, "unambiguous": true }
       ]
     },
     {
       "id": "contradictory_passes",
-      "pass_id": "prepared-image",
+      "pass_id": "full_image",
       "words": [
         { "text": "SAMP1E SHOE HOUSE", "confidence": 0.91, "field": "business_identity", "complete": true, "associated": false, "unambiguous": false }
       ]
+    },
+    {
+      "id": "combined_type_signals_one_line",
+      "pass_id": "full_image",
+      "lines": [
+        { "text": "DEPARTMENT OF TRADE AND INDUSTRY", "signals": ["issuer"] },
+        { "text": "CERTIFICATE OF BUSINESS NAME REGISTRATION", "signals": ["certificate_heading"] },
+        { "text": "REGISTERED BUSINESS NAME: SAMPLE SHOE HOUSE", "signals": ["labeled_structure"] }
+      ],
+      "expected_type_evidence": "uncertain"
+    },
+    {
+      "id": "unsupported_government_id",
+      "pass_id": "full_image",
+      "words": [
+        { "text": "GOVERNMENT IDENTIFICATION CARD", "confidence": 0.96, "field": "document_type", "complete": true, "associated": true, "unambiguous": true },
+        { "text": "MIRA SAMPLE", "confidence": 0.96, "field": "owner_identity", "complete": true, "associated": true, "unambiguous": true }
+      ],
+      "expected_document_type": "uncertain"
+    },
+    {
+      "id": "localized_filipino_nationality",
+      "pass_id": "full_image",
+      "words": [
+        { "text": "NATIONALITY", "confidence": 0.94, "field": "nationality", "complete": true, "associated": true, "unambiguous": true },
+        { "text": "FILIPINO", "confidence": 0.94, "field": "nationality", "complete": true, "associated": true, "unambiguous": true }
+      ],
+      "expected_expiration_policy": "known_non_expiring"
     }
   ]
 }

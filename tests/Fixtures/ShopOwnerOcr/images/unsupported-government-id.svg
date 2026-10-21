@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2200" viewBox="0 0 1600 2200">
+  <rect width="1600" height="2200" fill="white" />
+  <g font-family="Arial, sans-serif" fill="#111">
+    <text x="100" y="110" font-size="34" fill="#a00">SYNTHETIC TEST SAMPLE - NOT AN OFFICIAL DOCUMENT</text>
+    <text x="100" y="300" font-size="46">Republic of the Philippines</text>
+    <text x="100" y="410" font-size="46">Government Identification Card</text>
+    <text x="100" y="650" font-size="42">Full Name: Mira Sample</text>
+    <text x="100" y="770" font-size="42">Identification No: ID-SYN-0005</text>
+    <text x="100" y="2050" font-size="32" fill="#a00">SYNTHETIC VALUES FOR OCR TESTING ONLY</text>
+  </g>
+</svg>
