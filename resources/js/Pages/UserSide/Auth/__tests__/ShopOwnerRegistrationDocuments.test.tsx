@@ -66,4 +66,41 @@ describe('shop owner registration document payload', () => {
     expect(formData.get(`other_document_metadata[${slotId}][expires_on]`)).toBe('2028-01-01');
     expect(formData.get('business_registration_type')).toBe('sec_registration');
   });
+
+  it('appends a complete optional screening snapshot without changing the original files', () => {
+    const file = new File(['original upload'], 'permit.png', { type: 'image/png' });
+    const screening = '{"mayors_permit":{"assessment_state":"unable_to_assess"}}';
+    const formData = new FormData();
+
+    appendRegistrationDocuments(formData, {
+      businessRegistration: { file: null, metadata: metadata('none') },
+      businessRegistrationType: 'dti_registration',
+      mayorsPermit: { file, metadata: metadata('dated', '2027-01-01') },
+      birCertificate: { file: null, metadata: metadata('none') },
+      validId: { file: null, metadata: metadata('none') },
+      submissionKeys: {},
+      supportingDocuments: [],
+      ocrScreening: screening,
+    });
+
+    expect(formData.get('mayors_permit')).toBe(file);
+    expect(formData.get('ocr_screening')).toBe(screening);
+  });
+
+  it('omits an absent or failed optional screening snapshot', () => {
+    const formData = new FormData();
+
+    appendRegistrationDocuments(formData, {
+      businessRegistration: { file: null, metadata: metadata('none') },
+      businessRegistrationType: 'dti_registration',
+      mayorsPermit: { file: null, metadata: metadata('dated', '2027-01-01') },
+      birCertificate: { file: null, metadata: metadata('none') },
+      validId: { file: null, metadata: metadata('none') },
+      submissionKeys: {},
+      supportingDocuments: [],
+      ocrScreening: null,
+    });
+
+    expect(formData.has('ocr_screening')).toBe(false);
+  });
 });

@@ -282,6 +282,24 @@ final class ShopOwnerDocumentScreeningService
         }
     }
 
+    /**
+     * Return only validated local runtime paths; invalid or missing public assets are optional.
+     *
+     * @return array{available: bool, assets: array{workerPath: string, corePath: string, langPath: string}|null, referenceDay: string|null, timezone: string}
+     */
+    public function browserBootstrap(): array
+    {
+        $timezone = (string) config('app.shop_timezone', 'Asia/Manila');
+        $assets = $this->localOcrAssets();
+
+        return [
+            'available' => $assets !== null,
+            'assets' => $assets,
+            'referenceDay' => $this->referenceDay(),
+            'timezone' => $timezone,
+        ];
+    }
+
     /** @param array<string, mixed> $metadata */
     public function contextHash(ShopOwner $owner, array $metadata, ?string $relationship = null): string
     {
@@ -389,6 +407,89 @@ final class ShopOwnerDocumentScreeningService
         }
 
         return is_string($value) && $value !== '' ? $value : null;
+    }
+
+    /** @return array{workerPath: string, corePath: string, langPath: string}|null */
+    private function localOcrAssets(): ?array
+    {
+        $manifestPath = public_path('ocr/manifest.json');
+        $contents = is_file($manifestPath) ? @file_get_contents($manifestPath) : false;
+        if (! is_string($contents)) {
+            return null;
+        }
+
+        try {
+            $manifest = json_decode($contents, true, 32, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return null;
+        }
+
+        if (! is_array($manifest)
+            || ($manifest['schema_version'] ?? null) !== 1
+            || ! is_string($manifest['bundle'] ?? null)
+            || ! preg_match('/\Atesseract-[A-Za-z0-9.+_-]+\z/', $manifest['bundle'])) {
+            return null;
+        }
+
+        $bundle = $manifest['bundle'];
+        $prefix = 'ocr/' . $bundle . '/';
+        $expectedPaths = [
+            'worker' => $prefix . 'worker.min.js',
+            'core' => $prefix . 'core/',
+            'lang' => $prefix . 'lang/',
+        ];
+        $paths = $manifest['paths'] ?? null;
+        $files = $manifest['files'] ?? null;
+        if ($paths !== $expectedPaths || ! is_array($files) || $files === []) {
+            return null;
+        }
+
+        foreach ($files as $relativePath => $checksum) {
+            if (! is_string($relativePath)
+                || ! str_starts_with($relativePath, $prefix)
+                || str_contains($relativePath, '..')
+                || str_contains($relativePath, '\\')
+                || ! is_string($checksum)
+                || ! preg_match('/\A[a-f0-9]{64}\z/', $checksum)
+                || ! is_file(public_path($relativePath))) {
+                return null;
+            }
+        }
+
+        $requiredFiles = [
+            $expectedPaths['worker'],
+            $prefix . 'core/tesseract-core.wasm.js',
+            $prefix . 'lang/eng.traineddata.gz',
+        ];
+        if (array_diff($requiredFiles, array_keys($files)) !== []) {
+            return null;
+        }
+
+        $toSameOriginPath = static function (string $relativePath): ?string {
+            $absoluteUrl = url($relativePath);
+            $path = parse_url($absoluteUrl, PHP_URL_PATH);
+
+            if (! is_string($path) || ! str_starts_with($path, '/')) {
+                return null;
+            }
+
+            return str_ends_with($relativePath, '/') && ! str_ends_with($path, '/')
+                ? $path . '/'
+                : $path;
+        };
+        $workerPath = $toSameOriginPath($expectedPaths['worker']);
+        $corePath = $toSameOriginPath($expectedPaths['core']);
+        $langPath = $toSameOriginPath($expectedPaths['lang']);
+
+        if ($workerPath === null || $corePath === null || $langPath === null) {
+            return null;
+        }
+
+        return [
+            'workerPath' => $workerPath,
+            'corePath' => $corePath,
+            'langPath' => $langPath,
+        ];
     }
 
     private function assertValidEntry(string $slot, string $selectedDocumentType, array $entry): void

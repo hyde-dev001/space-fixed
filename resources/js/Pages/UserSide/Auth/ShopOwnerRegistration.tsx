@@ -16,6 +16,8 @@ import {
   appendRegistrationDocuments,
   type RegistrationDocumentMetadata,
 } from './registrationDocumentPayload';
+import { useShopOwnerOcr, type ShopOwnerOcrAssets } from './useShopOwnerOcr';
+import ShopOwnerOcrStatus from './ShopOwnerOcrStatus';
 import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
 import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '@/utils/carto';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
@@ -130,6 +132,13 @@ interface ExistingDocumentPayload {
   expiresOn?: string | null;
 }
 
+interface ShopOwnerOcrBootstrap {
+  available: boolean;
+  assets: ShopOwnerOcrAssets | null;
+  referenceDay: string | null;
+  timezone: string;
+}
+
 interface ResubmissionPayload {
   isResubmission: boolean;
   submitUrl: string | null;
@@ -172,7 +181,13 @@ interface ResubmissionPayload {
   };
 }
 
-export default function ShopOwnerRegistration({ resubmission }: { resubmission?: ResubmissionPayload | null }) {
+export default function ShopOwnerRegistration({
+  resubmission,
+  ocrBootstrap,
+}: {
+  resubmission?: ResubmissionPayload | null;
+  ocrBootstrap?: ShopOwnerOcrBootstrap | null;
+}) {
   type AdditionalDocument = {
     id: string;
     file: File | null;
@@ -183,6 +198,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   };
   type UploadedDocumentKey = 'dti' | 'mayors_permit' | 'bir' | 'valid_id';
   type FixedDocumentSlot = 'business_registration' | 'mayors_permit' | 'bir_certificate' | 'valid_id';
+  const ocrSlotForUpload = (key: UploadedDocumentKey) => key === 'dti'
+    ? 'business_registration'
+    : key === 'bir'
+      ? 'bir_certificate'
+      : key;
 
   const isResubmission = Boolean(resubmission?.isResubmission);
   const resubmissionMaxAttempts = resubmission?.maxAttempts ?? 3;
@@ -284,6 +304,26 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const [gettingGPS, setGettingGPS] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const [geoError, setGeoError] = useState('');
+
+  const ownerOcr = useShopOwnerOcr({
+    assets: ocrBootstrap?.available ? ocrBootstrap.assets : null,
+    selectedDocumentTypes: {
+      business_registration: businessRegistrationType,
+      mayors_permit: 'mayors_permit',
+      bir_certificate: 'bir_certificate',
+      valid_id: 'valid_id',
+    },
+    context: {
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      businessName: formData.businessName,
+      businessAddress: formData.businessAddress,
+      registrationType: formData.registrationType,
+      referenceDay: ocrBootstrap?.referenceDay ?? null,
+      metadata: documentMetadata,
+    },
+  });
+
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -515,6 +555,8 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const createPreviewUrl = (file: File) => URL.createObjectURL(file);
 
   const updateUploadedDocument = (key: UploadedDocumentKey, file: File) => {
+    ownerOcr.selectFile(ocrSlotForUpload(key), file);
+
     setUploadedDocuments((prev) => {
       const previousPreviewUrl = prev[key].previewUrl;
       if (previousPreviewUrl.startsWith('blob:')) {
@@ -528,6 +570,25 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
           fileName: file.name,
           previewUrl: createPreviewUrl(file),
         },
+      };
+    });
+  };
+
+  const removeUploadedDocument = (key: UploadedDocumentKey) => {
+    ownerOcr.removeFile(ocrSlotForUpload(key));
+    setUploadedDocuments((previous) => {
+      if (previous[key].previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previous[key].previewUrl);
+      }
+      const existing = key === 'dti'
+        ? existingDocuments.dti
+        : key === 'bir'
+          ? existingDocuments.bir
+          : existingDocuments[key];
+
+      return {
+        ...previous,
+        [key]: { file: null, fileName: existing?.fileName ?? '', previewUrl: '' },
       };
     });
   };
@@ -1432,6 +1493,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
         // Operating hours removed — nothing to append for operating hours
 
+        let ocrScreening: string | null = null;
+        try {
+          ocrScreening = ownerOcr.submissionSnapshot();
+        } catch {
+          // Screening serialization is optional and must not interrupt registration.
+        }
+
         appendRegistrationDocuments(submitData, {
           businessRegistration: {
             file: uploadedDocuments.dti.file,
@@ -1459,6 +1527,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             metadata: document.metadata,
             submissionKey: document.submissionKey,
           })),
+          ocrScreening,
         });
         removedOtherDocumentIds.forEach((id, index) => {
           submitData.append(`removed_other_document_ids[${index}]`, String(id));
@@ -1486,6 +1555,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
           },
           onSuccess: () => {
             setIsSubmitting(false);
+            ownerOcr.finish();
             Swal.fire({
               icon: 'success',
               title: isResubmission ? 'Application Resubmitted!' : 'Registration Submitted!',
@@ -2188,6 +2258,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewUrl={uploadedDocuments.dti.previewUrl || existingDocuments.dti?.url || undefined}
                         previewAlt={`${businessRegistrationLabel} preview`}
                       />
+                      <ShopOwnerOcrStatus state={ownerOcr.states.business_registration} />
+                      {uploadedDocuments.dti.file && (
+                        <button type="button" onClick={() => removeUploadedDocument('dti')} className="mt-2 inline-flex min-h-11 items-center rounded px-2 text-sm text-gray-700 underline">
+                          Remove selected Shop Registration file
+                        </button>
+                      )}
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                         <RegistrationDocumentMetadataFields idPrefix="business_registration" label={businessRegistrationLabel} metadata={documentMetadata.business_registration} onChange={(updates) => updateDocumentMetadata('business_registration', updates)} />
                       </div>
@@ -2239,6 +2315,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewUrl={uploadedDocuments.mayors_permit.previewUrl || existingDocuments.mayors_permit?.url || undefined}
                         previewAlt="Mayor's Permit / Shop Permit preview"
                       />
+                      <ShopOwnerOcrStatus state={ownerOcr.states.mayors_permit} />
+                      {uploadedDocuments.mayors_permit.file && (
+                        <button type="button" onClick={() => removeUploadedDocument('mayors_permit')} className="mt-2 inline-flex min-h-11 items-center rounded px-2 text-sm text-gray-700 underline">
+                          Remove selected Mayor's Permit file
+                        </button>
+                      )}
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                         <RegistrationDocumentMetadataFields idPrefix="mayors_permit" label="Mayor's Permit / Shop Permit" metadata={documentMetadata.mayors_permit} expirationRequired onChange={(updates) => updateDocumentMetadata('mayors_permit', updates)} />
                       </div>
@@ -2290,6 +2372,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewUrl={uploadedDocuments.bir.previewUrl || existingDocuments.bir?.url || undefined}
                         previewAlt="BIR Certificate of Registration preview"
                       />
+                      <ShopOwnerOcrStatus state={ownerOcr.states.bir_certificate} />
+                      {uploadedDocuments.bir.file && (
+                        <button type="button" onClick={() => removeUploadedDocument('bir')} className="mt-2 inline-flex min-h-11 items-center rounded px-2 text-sm text-gray-700 underline">
+                          Remove selected BIR certificate file
+                        </button>
+                      )}
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                         <RegistrationDocumentMetadataFields idPrefix="bir_certificate" label="BIR Certificate of Registration (COR)" metadata={documentMetadata.bir_certificate} onChange={(updates) => updateDocumentMetadata('bir_certificate', updates)} />
                       </div>
@@ -2341,6 +2429,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         previewUrl={uploadedDocuments.valid_id.previewUrl || existingDocuments.valid_id?.url || undefined}
                         previewAlt="Valid ID of Owner preview"
                       />
+                      <ShopOwnerOcrStatus state={ownerOcr.states.valid_id} />
+                      {uploadedDocuments.valid_id.file && (
+                        <button type="button" onClick={() => removeUploadedDocument('valid_id')} className="mt-2 inline-flex min-h-11 items-center rounded px-2 text-sm text-gray-700 underline">
+                          Remove selected Valid ID file
+                        </button>
+                      )}
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                         <RegistrationDocumentMetadataFields idPrefix="valid_id" label="Valid ID of Owner" metadata={documentMetadata.valid_id} onChange={(updates) => updateDocumentMetadata('valid_id', updates)} />
                       </div>

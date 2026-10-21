@@ -137,6 +137,7 @@ class ShopOwnerAuthController extends Controller
             );
 
         return Inertia::render('UserSide/Auth/ShopOwnerRegistration', [
+            'ocrBootstrap' => $this->documentScreening->browserBootstrap(),
             'resubmission' => [
                 'isResubmission' => true,
                 'submitUrl' => $submitUrl,
