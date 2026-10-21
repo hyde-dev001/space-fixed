@@ -1,0 +1,43 @@
+{
+  "source": "synthetic-only",
+  "passes": [
+    {
+      "id": "registered_business_complete",
+      "pass_id": "full-image",
+      "words": [
+        { "text": "BUSINESS NAME", "confidence": 0.96, "field": "business_identity", "complete": true, "associated": true, "unambiguous": true },
+        { "text": "SAMPLE SHOE HOUSE", "confidence": 0.94, "field": "business_identity", "complete": true, "associated": true, "unambiguous": true }
+      ]
+    },
+    {
+      "id": "ambiguous_character",
+      "pass_id": "full-image",
+      "words": [
+        { "text": "SAMP1E SHOE HOUSE", "confidence": 0.72, "field": "business_identity", "complete": false, "associated": true, "unambiguous": false }
+      ]
+    },
+    {
+      "id": "different_name_roles",
+      "pass_id": "full-image",
+      "words": [
+        { "text": "REGISTERED OWNER", "confidence": 0.96, "field": "proprietor_identity", "complete": true, "associated": true, "unambiguous": true },
+        { "text": "MIRA SAMPLE", "confidence": 0.96, "field": "proprietor_identity", "complete": true, "associated": true, "unambiguous": true },
+        { "text": "AUTHORIZED SIGNATORY", "confidence": 0.94, "field": "representative", "complete": true, "associated": true, "unambiguous": true }
+      ]
+    },
+    {
+      "id": "contradictory_passes",
+      "pass_id": "full-image",
+      "words": [
+        { "text": "SAMPLE SHOE HOUSE", "confidence": 0.94, "field": "business_identity", "complete": true, "associated": true, "unambiguous": true }
+      ]
+    },
+    {
+      "id": "contradictory_passes",
+      "pass_id": "prepared-image",
+      "words": [
+        { "text": "SAMP1E SHOE HOUSE", "confidence": 0.91, "field": "business_identity", "complete": true, "associated": false, "unambiguous": false }
+      ]
+    }
+  ]
+}

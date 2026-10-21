@@ -1,0 +1,906 @@
+{
+  "required_checks": {
+    "dti_registration": [
+      "document_type",
+      "business_identity",
+      "proprietor_identity",
+      "dates"
+    ],
+    "sec_registration": [
+      "document_type",
+      "business_identity",
+      "dates"
+    ],
+    "mayors_permit": [
+      "document_type",
+      "business_identity",
+      "business_address",
+      "dates"
+    ],
+    "bir_certificate": [
+      "document_type",
+      "business_identity",
+      "business_address",
+      "dates"
+    ],
+    "valid_id": [
+      "document_type",
+      "owner_identity",
+      "dates"
+    ]
+  },
+  "cases": {
+    "dti100": {
+      "expected_score": 100,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "dti_registration",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "sec100": {
+      "expected_score": 100,
+      "selected_document_type": "sec_registration",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "sec_registration",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "permit100": {
+      "expected_score": 100,
+      "selected_document_type": "mayors_permit",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_address": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "mayors_permit",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "mayors_permit"
+    },
+    "permit50": {
+      "expected_score": 50,
+      "selected_document_type": "mayors_permit",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_address": {
+            "confidence": 0,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "uncertain",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "mayors_permit",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "mayors_permit"
+    },
+    "birCorporate100": {
+      "expected_score": 100,
+      "selected_document_type": "bir_certificate",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_address": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "bir_certificate",
+        "relationship": "corporate",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "bir_certificate"
+    },
+    "id100": {
+      "expected_score": 100,
+      "selected_document_type": "valid_id",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "owner_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "national_id",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "valid_id"
+    },
+    "secInDtiSlot0": {
+      "expected_score": 0,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [
+          "wrong_document_type"
+        ],
+        "checks": {
+          "dates": {
+            "confidence": 0,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "uncertain",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "mismatch",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "uncertain",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "uncertain",
+            "complete_value": true
+          }
+        },
+        "detected_family": "sec_registration",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "weakField50": {
+      "expected_score": 50,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.99,
+        "reason_codes": [
+          "low_recognition_confidence"
+        ],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0.84,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "dti_registration",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "missingRequiredDate50": {
+      "expected_score": 50,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "dti_registration",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "unavailable": {
+      "expected_score": null,
+      "selected_document_type": "valid_id",
+      "entry": {
+        "recognition_confidence": 0,
+        "reason_codes": [
+          "ocr_unavailable"
+        ],
+        "checks": {},
+        "detected_family": null,
+        "reference_day": "2026-10-21",
+        "assessment_state": "unable_to_assess"
+      },
+      "slot": "valid_id"
+    },
+    "dtiHighBoundary": {
+      "expected_score": 100,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.2,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0.85,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "dti_registration",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "dtiMediumBoundary": {
+      "expected_score": 50,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0.65,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "dti_registration",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "dtiBelowMediumBoundary": {
+      "expected_score": 50,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0.64999,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "dti_registration",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "dtiMissingReferenceDay": {
+      "expected_score": 50,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "dti_registration",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "birSoleProprietor100": {
+      "expected_score": 100,
+      "selected_document_type": "bir_certificate",
+      "entry": {
+        "reason_codes": [],
+        "recognition_confidence": 0.96,
+        "relationship": "sole_proprietor",
+        "checks": {
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_address": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "bir_certificate",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "bir_certificate"
+    },
+    "dtiUnknownFamily50": {
+      "expected_score": 50,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": null,
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    },
+    "dtiMissingLocalConfidence50": {
+      "expected_score": 50,
+      "selected_document_type": "dti_registration",
+      "entry": {
+        "recognition_confidence": 0.96,
+        "reason_codes": [],
+        "checks": {
+          "dates": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "document_type": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": true,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "proprietor_identity": {
+            "confidence": null,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          },
+          "business_identity": {
+            "confidence": 0.96,
+            "unambiguous": true,
+            "independent_type_signals": false,
+            "field_associated": true,
+            "result": "match",
+            "complete_value": true
+          }
+        },
+        "detected_family": "dti_registration",
+        "reference_day": "2026-10-21",
+        "assessment_state": "assessed"
+      },
+      "slot": "business_registration"
+    }
+  },
+  "summaries": [
+    {
+      "expected": {
+        "incomplete": false,
+        "score": 100,
+        "state": "assessed"
+      },
+      "entries": [
+        "dti100",
+        "permit100",
+        "birCorporate100",
+        "id100"
+      ],
+      "id": "all_four_match",
+      "score_inputs": [
+        100,
+        100,
+        100,
+        100
+      ],
+      "score_map": {
+        "business_registration": 100,
+        "mayors_permit": 100,
+        "bir_certificate": 100,
+        "valid_id": 100
+      }
+    },
+    {
+      "expected": {
+        "incomplete": false,
+        "score": 50,
+        "state": "assessed"
+      },
+      "entries": [
+        "dti100",
+        "permit50",
+        "birCorporate100",
+        "id100"
+      ],
+      "id": "one_uncertain",
+      "score_inputs": [
+        100,
+        50,
+        100,
+        100
+      ],
+      "score_map": {
+        "business_registration": 100,
+        "mayors_permit": 50,
+        "bir_certificate": 100,
+        "valid_id": 100
+      }
+    },
+    {
+      "expected": {
+        "incomplete": false,
+        "score": 0,
+        "state": "assessed"
+      },
+      "entries": [
+        "secInDtiSlot0",
+        "permit100",
+        "birCorporate100",
+        "id100"
+      ],
+      "id": "one_conflict",
+      "score_inputs": [
+        0,
+        100,
+        100,
+        100
+      ],
+      "score_map": {
+        "business_registration": 0,
+        "mayors_permit": 100,
+        "bir_certificate": 100,
+        "valid_id": 100
+      }
+    },
+    {
+      "expected": {
+        "incomplete": true,
+        "score": null,
+        "state": "assessment_incomplete"
+      },
+      "entries": [
+        "dti100",
+        null,
+        "birCorporate100",
+        "id100"
+      ],
+      "id": "missing_one",
+      "score_inputs": [
+        100,
+        null,
+        100,
+        100
+      ],
+      "score_map": {
+        "business_registration": 100,
+        "mayors_permit": null,
+        "bir_certificate": 100,
+        "valid_id": 100
+      }
+    },
+    {
+      "expected": {
+        "incomplete": true,
+        "score": 0,
+        "state": "assessment_incomplete"
+      },
+      "entries": [
+        "secInDtiSlot0",
+        null,
+        "birCorporate100",
+        "id100"
+      ],
+      "id": "conflict_and_missing",
+      "score_inputs": [
+        0,
+        null,
+        100,
+        100
+      ],
+      "score_map": {
+        "business_registration": 0,
+        "mayors_permit": null,
+        "bir_certificate": 100,
+        "valid_id": 100
+      }
+    }
+  ]
+}
