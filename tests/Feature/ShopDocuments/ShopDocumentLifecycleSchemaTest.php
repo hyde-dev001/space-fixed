@@ -31,6 +31,7 @@ final class ShopDocumentLifecycleSchemaTest extends TestCase
             'rejection_reason',
             'submission_key',
             'checksum_sha256',
+            'ocr_screening',
         ]));
 
         $this->assertTrue(Schema::hasTable('shop_document_reminder_deliveries'));
@@ -77,8 +78,11 @@ final class ShopDocumentLifecycleSchemaTest extends TestCase
         $this->assertSame('date', $casts['expires_on'] ?? null);
         $this->assertSame('datetime', $casts['reviewed_at'] ?? null);
         $this->assertSame('datetime', $casts['superseded_at'] ?? null);
+        $this->assertSame('array', $casts['ocr_screening'] ?? null);
 
         $this->assertContains('checksum_sha256', $document->getHidden());
+        $this->assertContains('ocr_screening', $document->getHidden());
+        $this->assertNotContains('ocr_screening', $document->getFillable());
         $this->assertContains('file_path', $document->getHidden());
         $this->assertContains('predecessor_document_id', $document->getFillable());
         $this->assertTrue(method_exists($document, 'predecessor'));

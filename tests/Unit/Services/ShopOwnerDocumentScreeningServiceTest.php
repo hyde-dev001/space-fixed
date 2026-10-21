@@ -44,6 +44,17 @@ final class ShopOwnerDocumentScreeningServiceTest extends TestCase
         }
     }
 
+    public function test_only_absent_or_empty_optional_envelopes_are_omitted(): void
+    {
+        $service = $this->service();
+
+        self::assertSame([], $service->validateRegistrationInput(null, []));
+        self::assertSame([], $service->validateRegistrationInput('', []));
+
+        $this->expectException(\Illuminate\Validation\ValidationException::class);
+        $service->validateRegistrationInput('   ', []);
+    }
+
     public function test_paired_contract_cases_match_expected_aggregate_states(): void
     {
         $service = $this->service();

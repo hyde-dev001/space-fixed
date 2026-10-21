@@ -4,11 +4,18 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\ShopDocument;
+use App\Models\ShopOwner;
+use Carbon\CarbonImmutable;
+use DateTimeInterface;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use JsonException;
 
 final class ShopOwnerDocumentScreeningService
 {
+    public const REPORT_SCHEMA_VERSION = 1;
+
     private const MAX_ENVELOPE_BYTES = 32768;
 
     private const SLOTS = [
@@ -138,6 +145,189 @@ final class ShopOwnerDocumentScreeningService
         return $validated;
     }
 
+    /**
+     * @param array<string, mixed> $registration
+     * @return array<string, array<string, mixed>>
+     */
+    public function validateRegistrationInput(?string $raw, array $registration): array
+    {
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        return $this->validateEnvelope($raw, [
+            'business_registration' => (string) ($registration['business_registration_type'] ?? ''),
+            'mayors_permit' => 'mayors_permit',
+            'bir_certificate' => 'bir_certificate',
+            'valid_id' => 'valid_id',
+        ]);
+    }
+
+    /**
+     * Turn validated browser claims into a private, server-scored snapshot.
+     * No extracted OCR values are accepted or persisted by this boundary.
+     *
+     * @param array<string, mixed> $metadata
+     * @param array<string, mixed> $entry
+     * @return array<string, mixed>
+     */
+    public function createReport(
+        ShopOwner $owner,
+        array $metadata,
+        string $checksum,
+        array $entry,
+    ): array {
+        $slot = (string) ($metadata['logical_slot'] ?? '');
+        $documentType = (string) ($metadata['document_type'] ?? '');
+        $this->assertValidEntry($slot, $documentType, $entry);
+        $serverDay = $this->referenceDay();
+        $evidenceDay = $entry['reference_day'] ?? null;
+
+        if (isset($entry['checks']['dates'])
+            && ((! $this->isCalendarDay($evidenceDay) || $serverDay === null)
+                || ($evidenceDay !== $serverDay
+                    && $entry['checks']['dates']['result'] === 'match'))) {
+            $entry['checks']['dates']['result'] = 'uncertain';
+        }
+        if ($serverDay === null) {
+            unset($entry['reference_day']);
+        } else {
+            $entry['reference_day'] = $serverDay;
+        }
+
+        $score = $this->scoreEntry($slot, $documentType, $entry);
+        $requiredChecks = $this->requiredChecks($documentType, $entry);
+        $checks = [];
+
+        foreach ($requiredChecks as $key) {
+            $claim = $entry['checks'][$key] ?? [];
+            $checks[$key] = [
+                'result' => $this->normalizedCheckResult($entry, $documentType, $key),
+                'confidence' => $claim['confidence'] ?? null,
+                'complete_value' => $claim['complete_value'] ?? false,
+                'field_associated' => $claim['field_associated'] ?? false,
+                'unambiguous' => $claim['unambiguous'] ?? false,
+                'independent_type_signals' => $claim['independent_type_signals'] ?? false,
+            ];
+        }
+
+        $reasonCodes = $entry['reason_codes'] ?? [];
+        if (in_array('uncertain', array_column($checks, 'result'), true)
+            && ! in_array('uncertain_field', $reasonCodes, true)
+            && count($reasonCodes) < 8) {
+            $reasonCodes[] = 'uncertain_field';
+        }
+
+        $report = [
+            'schema_version' => self::REPORT_SCHEMA_VERSION,
+            'source' => 'browser_tesseract',
+            'file_checksum_sha256' => $checksum,
+            'reference_day' => $serverDay,
+            'assessment_state' => $score['state'],
+            'detected_family' => $entry['detected_family'],
+            'recognition_confidence' => $entry['recognition_confidence'] ?? null,
+            'checks' => $checks,
+            'reason_codes' => $reasonCodes,
+            'score' => $score['score'],
+            'context_hash' => $this->contextHash($owner, $metadata, $entry['relationship'] ?? null),
+        ];
+
+        if (isset($entry['relationship'])) {
+            $report['relationship'] = $entry['relationship'];
+        }
+
+        return $report;
+    }
+
+    /**
+     * Inherit only a report whose immutable file, type, context, and schema still agree.
+     *
+     * @param array<string, mixed> $metadata
+     * @return array<string, mixed>|null
+     */
+    public function inheritReport(
+        ShopOwner $owner,
+        ShopDocument $predecessor,
+        array $metadata,
+        string $checksum,
+    ): ?array {
+        $report = $predecessor->ocr_screening;
+        if (! is_array($report)
+            || ($report['schema_version'] ?? null) !== self::REPORT_SCHEMA_VERSION
+            || ($report['source'] ?? null) !== 'browser_tesseract'
+            || ! is_string($report['file_checksum_sha256'] ?? null)
+            || ! hash_equals($report['file_checksum_sha256'], $checksum)
+            || ! is_string($predecessor->checksum_sha256)
+            || ! hash_equals($predecessor->checksum_sha256, $checksum)
+            || (string) $predecessor->document_type !== (string) ($metadata['document_type'] ?? '')
+            || (string) $predecessor->logical_slot !== (string) ($metadata['logical_slot'] ?? '')) {
+            return null;
+        }
+
+        $expectedContext = $this->contextHash($owner, $metadata, $report['relationship'] ?? null);
+        if (! is_string($report['context_hash'] ?? null)
+            || ! hash_equals($report['context_hash'], $expectedContext)) {
+            return null;
+        }
+
+        return $report;
+    }
+
+    public function referenceDay(): ?string
+    {
+        try {
+            return CarbonImmutable::now((string) config('app.shop_timezone', 'Asia/Manila'))->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /** @param array<string, mixed> $metadata */
+    public function contextHash(ShopOwner $owner, array $metadata, ?string $relationship = null): string
+    {
+        $slot = (string) ($metadata['logical_slot'] ?? '');
+        $documentType = (string) ($metadata['document_type'] ?? '');
+        $context = [
+            'schema_version' => self::REPORT_SCHEMA_VERSION,
+            'logical_slot' => $slot,
+            'document_type' => $documentType,
+            'issued_on' => $this->dateValue($metadata['issued_on'] ?? null),
+            'expiration_mode' => $metadata['expiration_mode'] ?? null,
+            'expires_on' => $this->dateValue($metadata['expires_on'] ?? null),
+        ];
+
+        if ($slot !== 'valid_id') {
+            $context['business_name'] = $this->normalizeContextText($owner->business_name);
+            $context['business_type'] = $this->normalizeContextText($owner->business_type);
+        }
+
+        if (in_array($slot, ['mayors_permit', 'bir_certificate'], true)) {
+            $context['business_address'] = $this->normalizeContextText($owner->business_address);
+        }
+
+        if ($documentType === 'dti_registration' || $slot === 'valid_id'
+            || ($slot === 'bir_certificate' && $relationship === 'sole_proprietor')) {
+            $context['first_name'] = $this->normalizeContextText($owner->first_name);
+            $context['last_name'] = $this->normalizeContextText($owner->last_name);
+        }
+
+        if ($documentType === 'dti_registration') {
+            $context['registration_type'] = $this->normalizeContextText($owner->registration_type);
+        }
+        if ($slot === 'bir_certificate') {
+            $context['relationship'] = $relationship;
+        }
+
+        try {
+            return hash('sha256', json_encode(
+                $context,
+                JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR,
+            ));
+        } catch (JsonException) {
+            $this->invalid('The screening comparison context is invalid.');
+        }
+    }
+
     /** @param array<string, int|null> $scores */
     public function summarizeScores(array $scores): array
     {
@@ -167,6 +357,38 @@ final class ShopOwnerDocumentScreeningService
         }
 
         return $confidence >= 0.85 ? 'high' : ($confidence >= 0.65 ? 'medium' : 'low');
+    }
+
+    /** @param array<string, mixed> $entry @return array<int, string> */
+    private function requiredChecks(string $documentType, array $entry): array
+    {
+        $required = self::REQUIRED_CHECKS[$documentType];
+        if ($documentType === 'bir_certificate' && ($entry['relationship'] ?? null) === 'sole_proprietor') {
+            $required[] = 'proprietor_identity';
+        }
+
+        return $required;
+    }
+
+    private function normalizeContextText(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+        $collapsed = preg_replace('/\s+/u', ' ', $trimmed);
+
+        return Str::lower(is_string($collapsed) ? $collapsed : $trimmed);
+    }
+
+    private function dateValue(mixed $value): ?string
+    {
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        return is_string($value) && $value !== '' ? $value : null;
     }
 
     private function assertValidEntry(string $slot, string $selectedDocumentType, array $entry): void
