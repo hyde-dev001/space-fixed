@@ -35,6 +35,16 @@ const appendMetadata = (
   formData.append(`${prefix}[expires_on]`, metadata.expiresOn ?? '');
 };
 
+const appendDocumentFile = (formData: FormData, field: string, file: File): void => {
+  // Hostinger rejects apostrophes in multipart filenames; preserve the selected File and its bytes.
+  const filename = file.name.replace(/'/g, '_');
+  if (filename === file.name) {
+    formData.append(field, file);
+  } else {
+    formData.append(field, file, filename);
+  }
+};
+
 export const appendRegistrationDocuments = (
   formData: FormData,
   documents: RegistrationDocumentPayload,
@@ -54,7 +64,7 @@ export const appendRegistrationDocuments = (
 
   for (const [slot, document, submissionKey] of fixedDocuments) {
     if (document.file) {
-      formData.append(slot, document.file);
+      appendDocumentFile(formData, slot, document.file);
     }
 
     appendMetadata(formData, `document_metadata[${slot}]`, document.metadata);
@@ -66,7 +76,7 @@ export const appendRegistrationDocuments = (
 
   for (const document of documents.supportingDocuments) {
     if (document.file) {
-      formData.append(`other_documents[${document.slotId}]`, document.file);
+      appendDocumentFile(formData, `other_documents[${document.slotId}]`, document.file);
     }
 
     appendMetadata(formData, `other_document_metadata[${document.slotId}]`, document.metadata);
