@@ -23,6 +23,8 @@ The applicant sees the replacement message: **Invalid document image. We couldn'
 
 ## Build and package the local OCR assets
 
+Upload filename compatibility (October 23): the owner multipart helper replaces apostrophes with underscores in transmitted filenames, for both required and supporting files. The original filename remains visible to the applicant and the image bytes/MIME/extension are preserved. A controlled live test reproduced 403 for `Mayor's Permit  Business Permit 1.jpg` and normal Laravel validation for the same synthetic bytes named `Mayor_s Permit  Business Permit 1.jpg`, independently of OCR JSON. See the [403 investigation and correction](2026-10-22-deployed-registration-403.md). This frontend correction requires deploying its matching rebuilt `public/build/`; it does not require a new migration or disabling hosting protections.
+
 Use the pinned lockfiles and Node build tooling:
 
 ```powershell
@@ -42,6 +44,22 @@ The bootstrap builds same-origin asset URLs and has a backend test for a `/porta
 ## Release prerequisites and migration boundary
 
 The release must contain the matching PHP/frontend code and generated OCR assets. Apply the additive nullable `ocr_screening` migration only under a separately approved production release procedure and before application code expects the column. No backfill is required; existing rows remain unassessed. This execution did not run a production or shared database migration.
+
+### Local registration failure repaired on October 22, 2026
+
+The manual local registration reached Laravel, then failed while inserting its first document version: `Unknown column 'ocr_screening' in 'field list'`. The existing OCR migration was pending in the local MySQL/MariaDB database. This is distinct from the reported deployed site's generic HTTP 403; the deployed cause has not been established.
+
+After checking the effective Laravel configuration was `local`, MySQL at `127.0.0.1:3306`, database `solespace`, the existing migration was applied with this scoped command:
+
+```powershell
+php artisan migrate --path=database/migrations/2026_10_21_121709_add_ocr_screening_to_shop_documents_table.php --no-interaction
+```
+
+The migration completed successfully; the nullable report column is present and existing owner/document row counts are unchanged. MariaDB reports its JSON-compatible column as nullable `longtext`. Other pending migrations were left untouched. No application code, environment settings, existing records, production database, or validation rules were changed.
+
+Fresh verification: `php artisan test tests/Feature/ShopDocuments/ShopOwnerOcrPersistenceTest.php tests/Feature/LocationPolicy/ShopOwnerAuthRegistrationTest.php tests/Feature/LocationPolicy/ShopOwnerRegistrationEmailVerificationTest.php tests/Feature/SuperAdmin/ShopOwnerOcrDecisionIsolationTest.php --stop-on-failure --no-ansi` passed **43 tests / 268 assertions** using testing SQLite. These cover scored registration persistence, signed resubmission, required fields/location/OTP, immutable reports, and explicit admin decisions.
+
+The stopped local PHP/Vite servers were restarted. `http://127.0.0.1:8000/shop-owner-register` and the Vite client on port 5187 both returned 200. A local POST with a fresh normal session/CSRF token and deliberately empty input returned Laravel's expected 422 required-field errors rather than 403, without creating an application. A complete manual registration and external email delivery were not exercised by this repair; retry through the normal page. Production was not changed, and its 403 requires separate hosting/request evidence.
 
 After deployment, verify asset availability under the actual public base path, one cold-cache scan with a synthetic permitted fixture, graceful failure when a local asset is blocked, and a Super Admin review that still requires the original document viewing and reviewer metadata. Do not upload applicant images or extracted OCR text to third-party services. Do not use OCR scores for automatic approval, rejection, sorting, or access grants.
 
