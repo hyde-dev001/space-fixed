@@ -32,6 +32,7 @@ class ShopDocument extends Model
     protected $hidden = [
         'file_path',
         'checksum_sha256',
+        'ocr_screening',
     ];
 
     protected $attributes = [
@@ -67,6 +68,7 @@ class ShopDocument extends Model
 
     protected $casts = [
         'version_number' => 'integer',
+        'ocr_screening' => 'array',
         'is_current' => 'boolean',
         'issued_on' => 'date',
         'expires_on' => 'date',

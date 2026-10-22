@@ -10,6 +10,7 @@ use App\Models\SuperAdmin;
 use App\Services\CaviteLocationPolicyService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
@@ -148,6 +149,140 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             ],
             now()->addMinutes(60)
         );
+    }
+
+    private function dtiOcrEntry(string $scoreCase): array
+    {
+        if ($scoreCase === 'unable') {
+            return [
+                'assessment_state' => 'unable_to_assess',
+                'detected_family' => null,
+                'reference_day' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(),
+                'checks' => (object) [],
+                'reason_codes' => ['ocr_unavailable'],
+            ];
+        }
+
+        $fixtures = json_decode(
+            file_get_contents(base_path('tests/Fixtures/ShopOwnerOcr/screening-contract.json')),
+            true,
+            512,
+            JSON_THROW_ON_ERROR,
+        );
+        $entry = $fixtures['cases']['dti100']['entry'];
+        $entry['reference_day'] = now(config('app.shop_timezone', 'Asia/Manila'))->toDateString();
+
+        if ($scoreCase === '50') {
+            unset($entry['checks']['business_identity']);
+        } elseif ($scoreCase === '0') {
+            $entry['detected_family'] = 'sec_registration';
+        }
+
+        return $entry;
+    }
+
+    public function test_registration_persists_optional_scores_without_changing_pending_decision_status(): void
+    {
+        Storage::fake('local');
+        SuperAdmin::factory()->superAdmin()->create();
+
+        foreach (['100' => 100, '50' => 50, '0' => 0, 'unable' => null] as $case => $score) {
+            $email = "ocr-score-{$case}@solespaceph.com";
+            $this->markRegistrationEmailVerified($email);
+            $payload = array_merge(
+                $this->payload(['email' => $email]),
+                $this->docs(),
+                ['ocr_screening' => json_encode([
+                    'business_registration' => $this->dtiOcrEntry($case),
+                ], JSON_THROW_ON_ERROR)],
+            );
+
+            $this->postJson('/shop-owner/register', $payload)->assertCreated();
+
+            $owner = ShopOwner::query()->where('email', $email)->firstOrFail();
+            $document = ShopDocument::query()
+                ->where('shop_owner_id', $owner->id)
+                ->where('logical_slot', 'business_registration')
+                ->firstOrFail();
+            self::assertSame($score, $document->ocr_screening['score']);
+            self::assertSame($case === 'unable' ? 'unable_to_assess' : 'assessed', $document->ocr_screening['assessment_state']);
+            self::assertSame('pending', $owner->status->value);
+            self::assertSame('pending', $document->status);
+            Auth::guard('shop_owner')->logout();
+        }
+    }
+
+    public function test_malformed_submitted_ocr_metadata_is_rejected_without_creating_an_application(): void
+    {
+        Storage::fake('local');
+        $email = 'ocr-malformed@solespaceph.com';
+        $this->markRegistrationEmailVerified($email);
+        $entry = $this->dtiOcrEntry('100');
+        $entry['applicant_score'] = 100;
+
+        $this->postJson('/shop-owner/register', array_merge(
+            $this->payload(['email' => $email]),
+            $this->docs(),
+            ['ocr_screening' => json_encode(['business_registration' => $entry], JSON_THROW_ON_ERROR)],
+        ))->assertStatus(422)->assertJsonValidationErrors(['ocr_screening']);
+
+        self::assertFalse(ShopOwner::query()->where('email', $email)->exists());
+    }
+
+    public function test_invalid_screening_input_is_not_retained_as_redirect_old_input(): void
+    {
+        Storage::fake('local');
+        $email = 'ocr-old-input@solespaceph.com';
+
+        $this->from('/shop-owner/register')->post('/shop-owner/register', array_merge(
+            $this->payload(['email' => $email]),
+            $this->docs(),
+            ['ocr_screening' => 'SENSITIVE-OCR-SENTINEL'],
+        ))->assertRedirect('/shop-owner/register')->assertSessionHasErrors(['ocr_screening']);
+
+        self::assertArrayNotHasKey('ocr_screening', session()->get('_old_input', []));
+        self::assertFalse(ShopOwner::query()->where('email', $email)->exists());
+    }
+
+    public function test_signed_resubmission_saves_only_replacement_screening_and_validates_before_idempotent_return(): void
+    {
+        Storage::fake('local');
+        $owner = $this->rejectedOwnerWithDocuments();
+        $signedUrl = $this->resubmissionUrl($owner);
+        $payload = $this->payload(['email' => $owner->email]);
+        $payload['business_registration'] = UploadedFile::fake()->createWithContent(
+            'replacement-dti.png',
+            $this->pngBytes(),
+        );
+        $payload['ocr_screening'] = json_encode([
+            'business_registration' => $this->dtiOcrEntry('100'),
+        ], JSON_THROW_ON_ERROR);
+
+        $this->withHeaders(['Accept' => 'application/json'])
+            ->post($signedUrl, $payload)
+            ->assertOk()
+            ->assertJsonPath('applied', true);
+
+        $replacement = ShopDocument::query()
+            ->where('shop_owner_id', $owner->id)
+            ->where('logical_slot', 'business_registration')
+            ->orderByDesc('id')
+            ->firstOrFail();
+        self::assertSame(100, $replacement->ocr_screening['score']);
+        self::assertNull($replacement->predecessor?->ocr_screening);
+        self::assertSame('pending', $owner->fresh()->status->value);
+
+        $malformed = $this->payload(['email' => $owner->email]);
+        $badEntry = $this->dtiOcrEntry('100');
+        $badEntry['applicant_score'] = 100;
+        $malformed['ocr_screening'] = json_encode([
+            'business_registration' => $badEntry,
+        ], JSON_THROW_ON_ERROR);
+
+        $this->withHeaders(['Accept' => 'application/json'])
+            ->post($signedUrl, $malformed)
+            ->assertStatus(422)
+            ->assertJsonValidationErrors(['ocr_screening']);
     }
 
     /** @test */

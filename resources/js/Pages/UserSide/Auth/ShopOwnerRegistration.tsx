@@ -1,3 +1,4 @@
+import { displayUploadFileName } from '@/utils/uploadFileName';
 import { useEffect, useRef, useState } from "react";
 import { Head, router } from "@inertiajs/react";
 import { route } from 'ziggy-js';
@@ -16,6 +17,8 @@ import {
   appendRegistrationDocuments,
   type RegistrationDocumentMetadata,
 } from './registrationDocumentPayload';
+import { useShopOwnerOcr, type ShopOwnerOcrAssets } from './useShopOwnerOcr';
+import ShopOwnerOcrStatus, { shopOwnerOcrStatusMessage } from './ShopOwnerOcrStatus';
 import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
 import { CARTO_ATTRIBUTION, getCartoRasterUrl } from '@/utils/carto';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
@@ -130,6 +133,13 @@ interface ExistingDocumentPayload {
   expiresOn?: string | null;
 }
 
+interface ShopOwnerOcrBootstrap {
+  available: boolean;
+  assets: ShopOwnerOcrAssets | null;
+  referenceDay: string | null;
+  timezone: string;
+}
+
 interface ResubmissionPayload {
   isResubmission: boolean;
   submitUrl: string | null;
@@ -172,7 +182,13 @@ interface ResubmissionPayload {
   };
 }
 
-export default function ShopOwnerRegistration({ resubmission }: { resubmission?: ResubmissionPayload | null }) {
+export default function ShopOwnerRegistration({
+  resubmission,
+  ocrBootstrap,
+}: {
+  resubmission?: ResubmissionPayload | null;
+  ocrBootstrap?: ShopOwnerOcrBootstrap | null;
+}) {
   type AdditionalDocument = {
     id: string;
     file: File | null;
@@ -183,6 +199,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   };
   type UploadedDocumentKey = 'dti' | 'mayors_permit' | 'bir' | 'valid_id';
   type FixedDocumentSlot = 'business_registration' | 'mayors_permit' | 'bir_certificate' | 'valid_id';
+  const ocrSlotForUpload = (key: UploadedDocumentKey) => key === 'dti'
+    ? 'business_registration'
+    : key === 'bir'
+      ? 'bir_certificate'
+      : key;
 
   const isResubmission = Boolean(resubmission?.isResubmission);
   const resubmissionMaxAttempts = resubmission?.maxAttempts ?? 3;
@@ -284,6 +305,81 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const [gettingGPS, setGettingGPS] = useState(false);
   const [savingAddress, setSavingAddress] = useState(false);
   const [geoError, setGeoError] = useState('');
+
+  const ownerOcr = useShopOwnerOcr({
+    assets: ocrBootstrap?.available ? ocrBootstrap.assets : null,
+    selectedDocumentTypes: {
+      business_registration: businessRegistrationType,
+      mayors_permit: 'mayors_permit',
+      bir_certificate: 'bir_certificate',
+      valid_id: 'valid_id',
+    },
+    context: {
+      firstName: formData.firstName,
+      lastName: formData.lastName,
+      businessName: formData.businessName,
+      businessAddress: formData.businessAddress,
+      registrationType: formData.registrationType,
+      referenceDay: ocrBootstrap?.referenceDay ?? null,
+      metadata: documentMetadata,
+    },
+  });
+  const submissionBlockReason = ownerOcr.submissionBlockReason();
+  const pendingOcrResults = useRef(new Set<FixedDocumentSlot>());
+  const isCheckingDocuments = Object.values(ownerOcr.states).some(
+    (state) => state.status === 'queued' || state.status === 'loading' || state.status === 'recognizing',
+  );
+
+  useEffect(() => {
+    if (!isCheckingDocuments) return;
+
+    void Swal.fire({
+      title: 'Checking your document',
+      text: 'Please keep this page open while we read your image and check the document type.',
+      showConfirmButton: false,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      customClass: { popup: 'shop-owner-ocr-loading' },
+      didOpen: () => Swal.showLoading(),
+    });
+
+    return () => {
+      if (Swal.getPopup()?.classList.contains('shop-owner-ocr-loading')) Swal.close();
+    };
+  }, [isCheckingDocuments]);
+
+  useEffect(() => {
+    for (const slot of ['business_registration', 'mayors_permit', 'bir_certificate', 'valid_id'] as const) {
+      const status = ownerOcr.states[slot]?.status;
+      if (status === 'queued' || status === 'loading' || status === 'recognizing') pendingOcrResults.current.add(slot);
+    }
+    if (isCheckingDocuments || pendingOcrResults.current.size === 0) return;
+
+    const results = [...pendingOcrResults.current].flatMap((slot) => {
+      const state = ownerOcr.states[slot];
+      return state ? [state] : [];
+    });
+    pendingOcrResults.current.clear();
+    const result = results.find((state) => state.status === 'replacement_required')
+      ?? results.find((state) => state.status === 'unable')
+      ?? results.find((state) => state.status === 'review' && state.score === 0)
+      ?? results.find((state) => state.status === 'review')
+      ?? results[0];
+    if (!result) return;
+
+    const invalid = result.status === 'replacement_required';
+    const unavailable = result.status === 'unable';
+    const complete = result.status === 'complete';
+    void Swal.fire({
+      icon: invalid ? 'error' : unavailable ? 'info' : complete ? 'success' : 'warning',
+      title: invalid ? 'Invalid document image' : unavailable ? 'Unable to check document'
+        : complete ? 'Document check complete' : 'Document needs admin review',
+      text: shopOwnerOcrStatusMessage(result),
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#111827',
+    });
+  }, [isCheckingDocuments, ownerOcr.states]);
+
   const mapRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
@@ -515,6 +611,9 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const createPreviewUrl = (file: File) => URL.createObjectURL(file);
 
   const updateUploadedDocument = (key: UploadedDocumentKey, file: File) => {
+    pendingOcrResults.current.add(ocrSlotForUpload(key));
+    ownerOcr.selectFile(ocrSlotForUpload(key), file);
+
     setUploadedDocuments((prev) => {
       const previousPreviewUrl = prev[key].previewUrl;
       if (previousPreviewUrl.startsWith('blob:')) {
@@ -528,6 +627,25 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
           fileName: file.name,
           previewUrl: createPreviewUrl(file),
         },
+      };
+    });
+  };
+
+  const removeUploadedDocument = (key: UploadedDocumentKey) => {
+    ownerOcr.removeFile(ocrSlotForUpload(key));
+    setUploadedDocuments((previous) => {
+      if (previous[key].previewUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(previous[key].previewUrl);
+      }
+      const existing = key === 'dti'
+        ? existingDocuments.dti
+        : key === 'bir'
+          ? existingDocuments.bir
+          : existingDocuments[key];
+
+      return {
+        ...previous,
+        [key]: { file: null, fileName: existing?.fileName ?? '', previewUrl: '' },
       };
     });
   };
@@ -573,7 +691,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     Swal.fire({
       icon: 'error',
       title: 'Invalid file type',
-      html: `<p><strong>${escapeHtml(fileName || 'Selected file')}</strong> is not allowed for <strong>${escapeHtml(fieldLabel)}</strong>.</p><p class="text-sm text-gray-600 mt-2">Only JPG, JPEG, and PNG image files are accepted.</p>`,
+      html: `<p><strong class="break-all">${escapeHtml(displayUploadFileName(fileName) || 'Selected file')}</strong> is not allowed for <strong>${escapeHtml(fieldLabel)}</strong>.</p><p class="text-sm text-gray-600 mt-2">Only JPG, JPEG, and PNG image files are accepted.</p>`,
       confirmButtonColor: '#3085d6',
     });
   };
@@ -609,7 +727,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
     Swal.fire({
       icon: 'info',
       title: 'File Attached',
-      html: `<p><strong>${file.name}</strong> was added to <strong>Other Supporting Documents</strong>.</p><p class="text-sm text-gray-600">You can add more documents if needed.</p>`,
+      html: `<p><strong class="break-all">${escapeHtml(displayUploadFileName(file.name))}</strong> was added to <strong>Other Supporting Documents</strong>.</p><p class="text-sm text-gray-600">You can add more documents if needed.</p>`,
       confirmButtonText: 'OK',
       confirmButtonColor: '#3085d6',
     });
@@ -1327,6 +1445,11 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (ownerOcr.submissionBlockReason() !== null) {
+      setCurrentStep(3);
+      return;
+    }
+
     if (resubmissionLimitReached) {
       Swal.fire({
         icon: 'error',
@@ -1432,6 +1555,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
         // Operating hours removed — nothing to append for operating hours
 
+        let ocrScreening: string | null = null;
+        try {
+          ocrScreening = ownerOcr.submissionSnapshot();
+        } catch {
+          // Screening serialization is optional and must not interrupt registration.
+        }
+
         appendRegistrationDocuments(submitData, {
           businessRegistration: {
             file: uploadedDocuments.dti.file,
@@ -1459,6 +1589,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
             metadata: document.metadata,
             submissionKey: document.submissionKey,
           })),
+          ocrScreening,
         });
         removedOtherDocumentIds.forEach((id, index) => {
           submitData.append(`removed_other_document_ids[${index}]`, String(id));
@@ -1478,6 +1609,12 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
 
         const csrfToken = await getFreshCsrfToken();
 
+        if (ownerOcr.submissionBlockReason() !== null) {
+          setIsSubmitting(false);
+          setCurrentStep(3);
+          return;
+        }
+
         // Submit to backend
         router.post(submitEndpoint, submitData, {
           forceFormData: true,
@@ -1486,6 +1623,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
           },
           onSuccess: () => {
             setIsSubmitting(false);
+            ownerOcr.finish();
             Swal.fire({
               icon: 'success',
               title: isResubmission ? 'Application Resubmitted!' : 'Registration Submitted!',
@@ -2150,7 +2288,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <Label>{businessRegistrationLabel} {(uploadedDocuments.dti.file || existingDocuments.dti) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
+                      <Label>{businessRegistrationLabel} {(uploadedDocuments.dti.file || existingDocuments.dti) && <span className="text-green-600 font-bold ml-2">✓ Attached</span>}</Label>
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -2161,14 +2299,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             }
 
                             updateUploadedDocument('dti', file);
-
-                            Swal.fire({
-                              icon: 'info',
-                              title: 'File Attached',
-                              html: `<p><strong>${file.name}</strong> was added to <strong>${businessRegistrationLabel}</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
-                              confirmButtonText: 'OK',
-                              confirmButtonColor: '#111827',
-                            });
 
                             // Clear error when file is uploaded
                             if (errors.dti_registration) {
@@ -2184,10 +2314,20 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         }}
                         isUploaded={!!uploadedDocuments.dti.file || !!existingDocuments.dti}
                         isExistingFile={!!existingDocuments.dti && !uploadedDocuments.dti.file}
+                        inputId="shop-owner-business-registration"
+                        inputAriaLabel={`${businessRegistrationLabel} image`}
+                        uploadedLabel="File selected"
+                        previewFit="contain"
                         fileName={uploadedDocuments.dti.fileName}
                         previewUrl={uploadedDocuments.dti.previewUrl || existingDocuments.dti?.url || undefined}
                         previewAlt={`${businessRegistrationLabel} preview`}
                       />
+                      <ShopOwnerOcrStatus state={ownerOcr.states.business_registration} />
+                      {uploadedDocuments.dti.file && (
+                        <button type="button" onClick={() => removeUploadedDocument('dti')} className="mt-2 inline-flex min-h-11 items-center rounded px-2 text-sm text-gray-700 underline">
+                          Remove selected Shop Registration file
+                        </button>
+                      )}
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                         <RegistrationDocumentMetadataFields idPrefix="business_registration" label={businessRegistrationLabel} metadata={documentMetadata.business_registration} onChange={(updates) => updateDocumentMetadata('business_registration', updates)} />
                       </div>
@@ -2196,13 +2336,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                           </svg>
-                          {uploadedDocuments.dti.file ? 'Document uploaded successfully' : 'Existing document will be reused unless you replace it'}
+                          {uploadedDocuments.dti.file ? 'File selected' : 'Existing document will be reused unless you replace it'}
                         </p>
                       )}
                       {errors.dti_registration && <p className="mt-1 text-sm text-red-600">{errors.dti_registration}</p>}
                     </div>
                     <div>
-                      <Label>Mayor's Permit / Shop Permit {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
+                      <Label>Mayor's Permit / Shop Permit {(uploadedDocuments.mayors_permit.file || existingDocuments.mayors_permit) && <span className="text-green-600 font-bold ml-2">✓ Attached</span>}</Label>
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -2213,13 +2353,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             }
 
                             updateUploadedDocument('mayors_permit', file);
-                            Swal.fire({
-                              icon: 'info',
-                              title: 'File Attached',
-                              html: `<p><strong>${file.name}</strong> was added to <strong>Mayor's Permit / Shop Permit</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
-                              confirmButtonText: 'OK',
-                              confirmButtonColor: '#111827',
-                            });
 
                             // Clear error when file is uploaded
                             if (errors.mayors_permit) {
@@ -2235,10 +2368,20 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         }}
                         isUploaded={!!uploadedDocuments.mayors_permit.file || !!existingDocuments.mayors_permit}
                         isExistingFile={!!existingDocuments.mayors_permit && !uploadedDocuments.mayors_permit.file}
+                        inputId="shop-owner-mayors-permit"
+                        inputAriaLabel="Mayor's Permit image"
+                        uploadedLabel="File selected"
+                        previewFit="contain"
                         fileName={uploadedDocuments.mayors_permit.fileName}
                         previewUrl={uploadedDocuments.mayors_permit.previewUrl || existingDocuments.mayors_permit?.url || undefined}
                         previewAlt="Mayor's Permit / Shop Permit preview"
                       />
+                      <ShopOwnerOcrStatus state={ownerOcr.states.mayors_permit} />
+                      {uploadedDocuments.mayors_permit.file && (
+                        <button type="button" onClick={() => removeUploadedDocument('mayors_permit')} className="mt-2 inline-flex min-h-11 items-center rounded px-2 text-sm text-gray-700 underline">
+                          Remove selected Mayor's Permit file
+                        </button>
+                      )}
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                         <RegistrationDocumentMetadataFields idPrefix="mayors_permit" label="Mayor's Permit / Shop Permit" metadata={documentMetadata.mayors_permit} expirationRequired onChange={(updates) => updateDocumentMetadata('mayors_permit', updates)} />
                       </div>
@@ -2247,13 +2390,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                           </svg>
-                          {uploadedDocuments.mayors_permit.file ? 'Document uploaded successfully' : 'Existing document will be reused unless you replace it'}
+                          {uploadedDocuments.mayors_permit.file ? 'File selected' : 'Existing document will be reused unless you replace it'}
                         </p>
                       )}
                       {errors.mayors_permit && <p className="mt-1 text-sm text-red-600">{errors.mayors_permit}</p>}
                     </div>
                     <div>
-                      <Label>BIR Certificate of Registration (COR) {(uploadedDocuments.bir.file || existingDocuments.bir) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
+                      <Label>BIR Certificate of Registration (COR) {(uploadedDocuments.bir.file || existingDocuments.bir) && <span className="text-green-600 font-bold ml-2">✓ Attached</span>}</Label>
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -2264,13 +2407,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             }
 
                             updateUploadedDocument('bir', file);
-                            Swal.fire({
-                              icon: 'info',
-                              title: 'File Attached',
-                              html: `<p><strong>${file.name}</strong> was added to <strong>BIR Certificate of Registration (COR)</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
-                              confirmButtonText: 'OK',
-                              confirmButtonColor: '#111827',
-                            });
 
                             // Clear error when file is uploaded
                             if (errors.bir_certificate) {
@@ -2286,10 +2422,20 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         }}
                         isUploaded={!!uploadedDocuments.bir.file || !!existingDocuments.bir}
                         isExistingFile={!!existingDocuments.bir && !uploadedDocuments.bir.file}
+                        inputId="shop-owner-bir-certificate"
+                        inputAriaLabel="BIR certificate image"
+                        uploadedLabel="File selected"
+                        previewFit="contain"
                         fileName={uploadedDocuments.bir.fileName}
                         previewUrl={uploadedDocuments.bir.previewUrl || existingDocuments.bir?.url || undefined}
                         previewAlt="BIR Certificate of Registration preview"
                       />
+                      <ShopOwnerOcrStatus state={ownerOcr.states.bir_certificate} />
+                      {uploadedDocuments.bir.file && (
+                        <button type="button" onClick={() => removeUploadedDocument('bir')} className="mt-2 inline-flex min-h-11 items-center rounded px-2 text-sm text-gray-700 underline">
+                          Remove selected BIR certificate file
+                        </button>
+                      )}
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                         <RegistrationDocumentMetadataFields idPrefix="bir_certificate" label="BIR Certificate of Registration (COR)" metadata={documentMetadata.bir_certificate} onChange={(updates) => updateDocumentMetadata('bir_certificate', updates)} />
                       </div>
@@ -2298,13 +2444,13 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                           </svg>
-                          {uploadedDocuments.bir.file ? 'Document uploaded successfully' : 'Existing document will be reused unless you replace it'}
+                          {uploadedDocuments.bir.file ? 'File selected' : 'Existing document will be reused unless you replace it'}
                         </p>
                       )}
                       {errors.bir_certificate && <p className="mt-1 text-sm text-red-600">{errors.bir_certificate}</p>}
                     </div>
                     <div>
-                      <Label>Valid ID of Owner {(uploadedDocuments.valid_id.file || existingDocuments.valid_id) && <span className="text-green-600 font-bold ml-2">✓ Ready</span>}</Label>
+                      <Label>Valid ID of Owner {(uploadedDocuments.valid_id.file || existingDocuments.valid_id) && <span className="text-green-600 font-bold ml-2">✓ Attached</span>}</Label>
                       <DropzoneComponent
                         onDrop={(files) => {
                           if (files && files.length > 0) {
@@ -2315,13 +2461,6 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                             }
 
                             updateUploadedDocument('valid_id', file);
-                            Swal.fire({
-                              icon: 'info',
-                              title: 'File Attached',
-                              html: `<p><strong>${file.name}</strong> was added to <strong>Valid ID of Owner</strong>.</p><p class="text-sm text-gray-600">Please ensure the correct document is uploaded in this section.</p>`,
-                              confirmButtonText: 'OK',
-                              confirmButtonColor: '#111827',
-                            });
 
                             // Clear error when file is uploaded
                             if (errors.valid_id) {
@@ -2337,10 +2476,20 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                         }}
                         isUploaded={!!uploadedDocuments.valid_id.file || !!existingDocuments.valid_id}
                         isExistingFile={!!existingDocuments.valid_id && !uploadedDocuments.valid_id.file}
+                        inputId="shop-owner-valid-id"
+                        inputAriaLabel="Owner ID image"
+                        uploadedLabel="File selected"
+                        previewFit="contain"
                         fileName={uploadedDocuments.valid_id.fileName}
                         previewUrl={uploadedDocuments.valid_id.previewUrl || existingDocuments.valid_id?.url || undefined}
                         previewAlt="Valid ID of Owner preview"
                       />
+                      <ShopOwnerOcrStatus state={ownerOcr.states.valid_id} />
+                      {uploadedDocuments.valid_id.file && (
+                        <button type="button" onClick={() => removeUploadedDocument('valid_id')} className="mt-2 inline-flex min-h-11 items-center rounded px-2 text-sm text-gray-700 underline">
+                          Remove selected Valid ID file
+                        </button>
+                      )}
                       <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
                         <RegistrationDocumentMetadataFields idPrefix="valid_id" label="Valid ID of Owner" metadata={documentMetadata.valid_id} onChange={(updates) => updateDocumentMetadata('valid_id', updates)} />
                       </div>
@@ -2349,7 +2498,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                           </svg>
-                          {uploadedDocuments.valid_id.file ? 'Document uploaded successfully' : 'Existing document will be reused unless you replace it'}
+                          {uploadedDocuments.valid_id.file ? 'File selected' : 'Existing document will be reused unless you replace it'}
                         </p>
                       )}
                       {errors.valid_id && <p className="mt-1 text-sm text-red-600">{errors.valid_id}</p>}
@@ -2394,7 +2543,7 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                                 return (
                                   <div key={doc.id} className="min-w-0 rounded-lg border border-gray-200 bg-white p-3">
                                     <div className="mb-2 flex items-start justify-between gap-3">
-                                      <p className="text-sm font-semibold text-gray-900">Supporting Document #{index + 1} <span className="text-green-700">✓ Ready</span></p>
+                                      <p className="text-sm font-semibold text-gray-900">Supporting Document #{index + 1} <span className="text-green-700">✓ Attached</span></p>
                                       <button type="button" onClick={() => handleRemoveExistingOtherDocument(doc.id)} aria-label={`Remove existing supporting document ${index + 1}`} className="inline-flex min-h-9 items-center rounded-md border border-red-200 px-3 text-xs font-semibold text-red-700 hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700">
                                         Remove
                                       </button>
@@ -2596,11 +2745,21 @@ export default function ShopOwnerRegistration({ resubmission }: { resubmission?:
                           ? 'Review your updates before resubmitting your application for approval.'
                           : 'Review all information before submitting your application for approval.'}
                       </p>
+                      {submissionBlockReason === 'scan_pending' && (
+                        <p role="status" aria-live="polite" className="mt-2 text-sm text-amber-800">
+                          Checking your document. Please wait for the document scan to finish before submitting.
+                        </p>
+                      )}
+                      {submissionBlockReason === 'replacement_required' && (
+                        <p role="alert" className="mt-2 text-sm text-red-700">
+                          Replace the flagged required document before submitting.
+                        </p>
+                      )}
                     </div>
                     <button
                       type="submit"
                       onClick={handleSubmit}
-                      disabled={isSubmitting || !caviteLocationState.allowed || resubmissionLimitReached}
+                      disabled={isSubmitting || !caviteLocationState.allowed || resubmissionLimitReached || submissionBlockReason !== null}
                       className="w-full lg:w-auto px-6 py-3 bg-black text-white font-semibold uppercase tracking-wider text-sm hover:bg-black/80 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isResubmission ? 'Resubmit Application' : 'Submit Registration'}

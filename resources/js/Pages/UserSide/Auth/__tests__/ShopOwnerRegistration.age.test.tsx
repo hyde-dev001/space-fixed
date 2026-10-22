@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { swalFireMock, swalCloseMock } = vi.hoisted(() => ({
   swalFireMock: vi.fn(),
@@ -33,6 +33,9 @@ vi.mock('@/components/common/CustomerFooter', () => ({
 }));
 
 import ShopOwnerRegistration from '../ShopOwnerRegistration';
+
+// Complete the browser-only import before this suite can tear down jsdom.
+beforeAll(async () => { await import('leaflet'); });
 
 beforeEach(() => {
   swalFireMock.mockReset();

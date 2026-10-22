@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="2200" viewBox="0 0 1600 2200">
+  <rect width="1600" height="2200" fill="white" />
+  <g font-family="Arial, sans-serif" fill="#111">
+    <text x="100" y="110" font-size="34" fill="#a00">SYNTHETIC TEST SAMPLE - NOT AN OFFICIAL DOCUMENT</text>
+    <text x="100" y="300" font-size="46">Securities and Exchange Commission</text>
+    <text x="100" y="410" font-size="46">Certificate of Incorporation</text>
+    <text x="100" y="650" font-size="42">Legal Entity Name: Sample Holdings Corporation</text>
+    <text x="100" y="770" font-size="42">Trade Name: Sample Shoe House</text>
+    <text x="100" y="890" font-size="42">Registration No: SEC-SYN-2026-002</text>
+    <text x="100" y="1010" font-size="42">Date Issued: January 15, 2025</text>
+    <text x="100" y="1130" font-size="42">Valid Until: January 15, 2030</text>
+    <text x="100" y="2050" font-size="32" fill="#a00">SYNTHETIC VALUES FOR OCR TESTING ONLY</text>
+  </g>
+</svg>

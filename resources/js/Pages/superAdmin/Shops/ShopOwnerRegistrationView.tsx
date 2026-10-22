@@ -4,6 +4,7 @@ import { Head, Link, router } from "@inertiajs/react";
 import AppLayout from "../../../layout/AppLayout";
 import Swal from 'sweetalert2';
 import Button from "../../../components/ui/button/Button";
+import { SHOP_OWNER_OCR_SLOTS, summarizeOwnerOcrScores, type ShopOwnerOcrSlot } from '../../UserSide/Auth/shopOwnerScreening';
 
 // Icon Components
 const CheckCircleIcon = ({ className = "" }) => (
@@ -63,6 +64,24 @@ interface OperatingHours {
 
 export type RegistrationExpirationMode = 'dated' | 'none' | '';
 
+export interface RegistrationOcrScreening {
+  state: 'assessed' | 'unable_to_assess' | 'needs_rescan' | 'not_assessed';
+  score: 0 | 50 | 100 | null;
+  referenceDay: string | null;
+  recognitionConfidence: number | null;
+  checks: Array<{ key: string; label: string; result: 'match' | 'conflict' | 'uncertain' }>;
+  reasons: string[];
+  historical: boolean;
+  includedInSummary: boolean;
+}
+
+export interface RegistrationOcrSummary {
+  state: 'assessed' | 'assessment_incomplete';
+  score: 0 | 50 | 100 | null;
+  incomplete: boolean;
+  historical: boolean;
+}
+
 export interface RegistrationDocument {
   id?: number;
   url: string;
@@ -75,6 +94,7 @@ export interface RegistrationDocument {
   expiresOn?: string | null;
   validity?: string;
   status?: string;
+  ocrScreening?: RegistrationOcrScreening | null;
 }
 
 export interface RegistrationReviewMetadata {
@@ -92,16 +112,16 @@ export const buildRegistrationApprovalPayload = (
   reviewMetadata: Record<number, Partial<RegistrationReviewMetadata>> = {},
 ) => ({
   documents: documents.map((document, index) => {
-    const metadata = reviewMetadata[document.id ?? 0] ?? {};
+    const metadata = effectiveReviewMetadata(document, reviewMetadata[document.id ?? 0]);
 
     return {
       id: document.id ?? 0,
-      document_type: metadata.documentType ?? document.documentType ?? document.type ?? '',
-      logical_slot: metadata.logicalSlot ?? document.logicalSlot ?? '',
-      version_number: metadata.versionNumber ?? document.versionNumber ?? 0,
-      issued_on: metadata.issuedOn ?? document.issuedOn ?? null,
-      expiration_mode: metadata.expirationMode ?? document.expirationMode ?? '',
-      expires_on: metadata.expiresOn ?? document.expiresOn ?? null,
+      document_type: metadata.documentType,
+      logical_slot: metadata.logicalSlot,
+      version_number: metadata.versionNumber,
+      issued_on: metadata.issuedOn,
+      expiration_mode: metadata.expirationMode,
+      expires_on: metadata.expiresOn,
       viewed: viewedDocuments.has(index),
     };
   }),
@@ -150,6 +170,7 @@ interface Registration {
   serviceType: string;
   operatingHours: OperatingHours[];
   documents?: RegistrationDocument[];
+  ocrScreeningSummary?: RegistrationOcrSummary;
   documentUrls: string[];
   status: "pending" | "approved" | "rejected";
   createdAt: string;
@@ -205,6 +226,80 @@ const initialReviewMetadata = (documents: RegistrationDocument[]): Record<number
       }]),
   )
 );
+
+const effectiveReviewMetadata = (
+  document: RegistrationDocument,
+  draft?: Partial<RegistrationReviewMetadata>,
+): RegistrationReviewMetadata => ({
+  documentType: draft?.documentType !== undefined ? draft.documentType : document.documentType ?? document.type ?? '',
+  logicalSlot: draft?.logicalSlot !== undefined ? draft.logicalSlot : document.logicalSlot ?? '',
+  versionNumber: draft?.versionNumber !== undefined ? draft.versionNumber : document.versionNumber ?? 0,
+  issuedOn: draft && Object.hasOwn(draft, 'issuedOn') ? draft.issuedOn ?? null : document.issuedOn ?? null,
+  expirationMode: draft?.expirationMode !== undefined ? draft.expirationMode : document.expirationMode ?? '',
+  expiresOn: draft && Object.hasOwn(draft, 'expiresOn') ? draft.expiresOn ?? null : document.expiresOn ?? null,
+});
+
+const hasOcrRelevantReviewCorrection = (
+  document: RegistrationDocument,
+  draft?: Partial<RegistrationReviewMetadata>,
+): boolean => {
+  const metadata = effectiveReviewMetadata(document, draft);
+
+  return metadata.documentType !== (document.documentType ?? document.type ?? '')
+    || metadata.logicalSlot !== (document.logicalSlot ?? '')
+    || metadata.issuedOn !== (document.issuedOn ?? null)
+    || metadata.expirationMode !== (document.expirationMode ?? '')
+    || metadata.expiresOn !== (document.expiresOn ?? null);
+};
+
+const screeningResultLabel = (screening: RegistrationOcrScreening | RegistrationOcrSummary): string => {
+  if ('incomplete' in screening) {
+    if (screening.score === 0) return '0% — Conflicting Evidence Detected';
+    if (screening.state === 'assessment_incomplete' || screening.score === null) return 'Assessment incomplete';
+    if (screening.score === 50) return '50% — Requires Further Review';
+    return '100% — Automated Checks Passed';
+  }
+  if (screening.state === 'needs_rescan') return 'Needs rescan';
+  if (screening.state === 'not_assessed') return 'Not assessed';
+  if (screening.state === 'unable_to_assess') return 'Unable to assess';
+  if (screening.score === 0) return '0% — Conflicting Evidence Detected';
+  if (screening.score === 50) return '50% — Requires Further Review';
+  if (screening.score === 100) return '100% — Automated Checks Passed';
+  return 'Assessment incomplete';
+};
+
+const documentValidityLabel = (validity?: string): string | null => {
+  switch (validity) {
+    case 'valid': return 'Current server validity: Valid';
+    case 'valid_no_expiration': return 'Current server validity: Valid — no expiration';
+    case 'expiring_soon': return 'Current server validity: Expiring soon';
+    case 'expired': return 'Current server validity: Expired';
+    case 'metadata_unverified': return 'Current server validity: Metadata unverified';
+    default: return null;
+  }
+};
+
+const reviewedOcrSummary = (
+  registration: Registration,
+  documents: RegistrationDocument[],
+  draft: Record<number, Partial<RegistrationReviewMetadata>>,
+): RegistrationOcrSummary => {
+  const serverSummary = registration.ocrScreeningSummary;
+  const candidates = documents.filter((document) => document.ocrScreening?.includedInSummary);
+  if (!serverSummary || candidates.length === 0) {
+    return serverSummary ?? { state: 'assessment_incomplete', score: null, incomplete: true, historical: false };
+  }
+
+  const scores: Partial<Record<ShopOwnerOcrSlot, number | null>> = {};
+  for (const slot of SHOP_OWNER_OCR_SLOTS) {
+    const document = candidates.find((item) => item.logicalSlot === slot);
+    const screening = document?.ocrScreening;
+    const changed = document ? hasOcrRelevantReviewCorrection(document, draft[document.id ?? 0]) : false;
+    scores[slot] = changed || screening?.state !== 'assessed' ? null : screening.score;
+  }
+
+  return { ...summarizeOwnerOcrScores(scores), historical: serverSummary.historical };
+};
 
 interface MetricData {
   title: string;
@@ -564,6 +659,9 @@ export default function ShopOwnerRegistrationView({
   const selectedRegistrationDocuments: RegistrationDocument[] = selectedRegistration
     ? documentsForRegistration(selectedRegistration)
     : [];
+  const selectedOcrSummary = selectedRegistration
+    ? reviewedOcrSummary(selectedRegistration, selectedRegistrationDocuments, reviewMetadata)
+    : null;
   const allDocumentsViewed = areAllDocumentsViewed(
     selectedRegistrationDocuments.length,
     selectedRegistration ? viewedDocuments[selectedRegistration.id] : undefined,
@@ -939,12 +1037,42 @@ export default function ShopOwnerRegistrationView({
                           <DocsIcon className="w-5 h-5 mr-2" />
                           Submitted Documents ({selectedRegistrationDocuments.length})
                         </h4>
+                        <section
+                          aria-label="OCR Match Score — Preliminary"
+                          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100"
+                        >
+                          <h5 className="font-semibold">OCR Match Score — Preliminary</h5>
+                          <p className="mt-1 text-xs">
+                            Browser-based document screening. Results are preliminary and document authenticity has not been independently verified.
+                          </p>
+                          {selectedOcrSummary && (
+                            <div className="mt-2 space-y-1">
+                              <p className="font-medium">Overall assessment: {screeningResultLabel(selectedOcrSummary)}</p>
+                              {selectedOcrSummary.incomplete && (
+                                <p className="text-xs">Assessment incomplete: one or more required documents have no current usable assessment.</p>
+                              )}
+                              {selectedOcrSummary.historical && (
+                                <p className="text-xs">Historical screening for the latest reviewed documents.</p>
+                              )}
+                            </div>
+                          )}
+                        </section>
                         <div className="grid grid-cols-1 items-start gap-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-700/60 xl:grid-cols-2">
                           {selectedRegistrationDocuments.length > 0 ? (
                             selectedRegistrationDocuments.map((document, index) => {
                               const otherCountBefore = selectedRegistrationDocuments
                                 .slice(0, index)
                                 .filter((item) => (item.type || '').toLowerCase().startsWith('other')).length;
+                              const draftMetadata = document.id === undefined ? undefined : reviewMetadata[document.id];
+                              const effectiveMetadata = effectiveReviewMetadata(document, draftMetadata);
+                              const rawScreening = document.ocrScreening;
+                              const screeningChanged = rawScreening !== null
+                                && rawScreening !== undefined
+                                && hasOcrRelevantReviewCorrection(document, draftMetadata);
+                              const screening = rawScreening && screeningChanged
+                                ? { ...rawScreening, state: 'needs_rescan' as const, score: null }
+                                : rawScreening;
+                              const validityLabel = documentValidityLabel(document.validity);
 
                               return (
                               <div key={index} className="min-w-0 rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-600 dark:bg-gray-800">
@@ -989,6 +1117,35 @@ export default function ShopOwnerRegistrationView({
                                 </div>
                                 {document.id !== undefined && (
                                   <div className="mt-3 space-y-3 border-t border-gray-100 pt-3 dark:border-gray-700">
+                                    {screening && (
+                                      <section aria-label={`${getDocumentTypeLabel(document.type, otherCountBefore + 1)} OCR screening`} className="rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-800 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <p className="font-semibold">Preliminary screening: {screeningResultLabel(screening)}</p>
+                                          {screening.historical && <span className="font-medium">Historical</span>}
+                                        </div>
+                                        {screening.referenceDay && <p className="mt-1">Reference day: {screening.referenceDay}</p>}
+                                        {screening.recognitionConfidence !== null && (
+                                          <p className="mt-1">Document recognition confidence: {Math.round(screening.recognitionConfidence * 100)}%</p>
+                                        )}
+                                        {screening.checks.length > 0 && (
+                                          <ul className="mt-2 space-y-1" aria-label="Screened fields">
+                                            {screening.checks.map((check) => (
+                                              <li key={check.key}>{check.label}: {check.result === 'match' ? 'Match' : check.result === 'conflict' ? 'Conflict' : 'Uncertain'}</li>
+                                            ))}
+                                          </ul>
+                                        )}
+                                        {screening.reasons.length > 0 && (
+                                          <ul className="mt-2 space-y-1 font-medium" aria-label="Screening reasons">
+                                            {screening.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                                          </ul>
+                                        )}
+                                      </section>
+                                    )}
+                                    {validityLabel && (
+                                      <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                                        {validityLabel}
+                                      </p>
+                                    )}
                                     <p className="text-xs text-gray-600 dark:text-gray-300">
                                       Owner declaration: issued {document.issuedOn || 'not provided'}; {
                                         document.expirationMode === 'dated'
@@ -1002,7 +1159,7 @@ export default function ShopOwnerRegistrationView({
                                       <label className="block min-w-0 text-xs font-medium text-gray-700 dark:text-gray-300">
                                         Verified authority
                                         <MonochromeSelect
-                                          value={reviewMetadata[document.id]?.documentType ?? document.documentType ?? ''}
+                                          value={effectiveMetadata.documentType}
                                           onChange={(event) => updateReviewMetadata(document.id!, {
                                             documentType: event.target.value,
                                           })}
@@ -1018,7 +1175,7 @@ export default function ShopOwnerRegistrationView({
                                         Verified issue date
                                         <input
                                           type="date"
-                                          value={reviewMetadata[document.id]?.issuedOn ?? document.issuedOn ?? ''}
+                                          value={effectiveMetadata.issuedOn ?? ''}
                                           onChange={(event) => updateReviewMetadata(document.id!, {
                                             issuedOn: event.target.value || null,
                                           })}
@@ -1028,12 +1185,12 @@ export default function ShopOwnerRegistrationView({
                                       <label className="block min-w-0 text-xs font-medium text-gray-700 dark:text-gray-300">
                                         Verified expiration
                                         <MonochromeSelect
-                                          value={reviewMetadata[document.id]?.expirationMode ?? document.expirationMode ?? ''}
+                                          value={effectiveMetadata.expirationMode}
                                           onChange={(event) => updateReviewMetadata(document.id!, {
                                             expirationMode: event.target.value as RegistrationExpirationMode,
                                             expiresOn: event.target.value === 'none'
                                               ? null
-                                              : reviewMetadata[document.id!]?.expiresOn ?? document.expiresOn ?? null,
+                                              : effectiveMetadata.expiresOn,
                                           })}
                                           className="mt-1 h-11 w-full rounded-md border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                                         >
@@ -1043,12 +1200,12 @@ export default function ShopOwnerRegistrationView({
                                         </MonochromeSelect>
                                       </label>
                                     </div>
-                                    {(reviewMetadata[document.id]?.expirationMode ?? document.expirationMode) === 'dated' && (
+                                    {effectiveMetadata.expirationMode === 'dated' && (
                                       <label className="block min-w-0 text-xs font-medium text-gray-700 dark:text-gray-300 md:col-span-2">
                                         Verified expiration date
                                         <input
                                           type="date"
-                                          value={reviewMetadata[document.id]?.expiresOn ?? document.expiresOn ?? ''}
+                                          value={effectiveMetadata.expiresOn ?? ''}
                                           onChange={(event) => updateReviewMetadata(document.id!, {
                                             expiresOn: event.target.value || null,
                                           })}

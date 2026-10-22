@@ -15,6 +15,7 @@ use App\Models\ShopOwner;
 use App\Models\ShopOwnerSubscription;
 use App\Models\User;
 use App\Models\VoucherClaim;
+use App\Services\ShopOwnerDocumentScreeningService;
 use App\Services\ShowroomPlacementService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -806,9 +807,11 @@ class LandingPageController extends Controller
     /**
      * Display the shop owner registration page.
      */
-    public function shopOwnerRegister(): Response
+    public function shopOwnerRegister(ShopOwnerDocumentScreeningService $documentScreening): Response
     {
-        return Inertia::render('UserSide/Auth/ShopOwnerRegistration');
+        return Inertia::render('UserSide/Auth/ShopOwnerRegistration', [
+            'ocrBootstrap' => $documentScreening->browserBootstrap(),
+        ]);
     }
 
     /**

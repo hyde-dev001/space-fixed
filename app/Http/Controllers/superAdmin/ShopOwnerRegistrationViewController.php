@@ -9,10 +9,12 @@ use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
 use App\Services\ShopDocumentValidityService;
+use App\Services\ShopOwnerDocumentScreeningService;
 use App\Services\ShopOwnerRegistrationDecisionService;
 use App\Support\PrivilegedFailureResponse;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -25,6 +27,7 @@ class ShopOwnerRegistrationViewController extends Controller
     public function __construct(
         private readonly ShopOwnerRegistrationDecisionService $registrationDecisions,
         private readonly ShopDocumentValidityService $documentValidity,
+        private readonly ShopOwnerDocumentScreeningService $documentScreening,
     ) {}
 
     public function index(Request $request): Response
@@ -88,6 +91,9 @@ class ShopOwnerRegistrationViewController extends Controller
                         'expiration_mode',
                         'expires_on',
                         'status',
+                        'is_current',
+                        'checksum_sha256',
+                        'ocr_screening',
                     ]);
                 },
             ])
@@ -142,7 +148,37 @@ class ShopOwnerRegistrationViewController extends Controller
 
     private function formatRegistration(ShopOwner $shopOwner): array
     {
-        $documents = $shopOwner->documents->map(function (ShopDocument $document) use ($shopOwner): array {
+        $registrationStatus = $shopOwner->status instanceof \BackedEnum
+            ? $shopOwner->status->value
+            : (string) $shopOwner->status;
+        $screeningCandidates = $this->screeningCandidates($shopOwner->documents, $registrationStatus);
+        $candidateIds = $screeningCandidates->map(static fn (ShopDocument $document): int => (int) $document->getKey());
+        $screenings = $shopOwner->documents->mapWithKeys(function (ShopDocument $document) use ($shopOwner, $candidateIds, $registrationStatus): array {
+            $slot = $this->screeningSlot($document);
+            if ($slot === null) {
+                return [(int) $document->getKey() => null];
+            }
+
+            $projection = $this->documentScreening->adminReviewProjection($shopOwner, $document);
+            $projection['historical'] = $registrationStatus !== 'pending'
+                || ! $candidateIds->contains((int) $document->getKey());
+            $projection['includedInSummary'] = $candidateIds->contains((int) $document->getKey());
+
+            return [(int) $document->getKey() => $projection];
+        });
+        $scores = [
+            'business_registration' => null,
+            'mayors_permit' => null,
+            'bir_certificate' => null,
+            'valid_id' => null,
+        ];
+        foreach ($screeningCandidates as $slot => $document) {
+            $scores[$slot] = $screenings->get((int) $document->getKey())['score'] ?? null;
+        }
+        $summary = $this->documentScreening->summarizeScores($scores);
+        $summary['historical'] = $registrationStatus !== 'pending';
+
+        $documents = $shopOwner->documents->map(function (ShopDocument $document) use ($shopOwner, $screenings): array {
             return [
                 'id' => (int) $document->getKey(),
                 'url' => route('admin.shop-documents.show', [
@@ -158,6 +194,7 @@ class ShopOwnerRegistrationViewController extends Controller
                 'expiresOn' => $document->expires_on?->toDateString(),
                 'validity' => $this->documentValidity->classify($document),
                 'status' => (string) $document->status,
+                'ocrScreening' => $screenings->get((int) $document->getKey()),
             ];
         })->values();
 
@@ -183,9 +220,52 @@ class ShopOwnerRegistrationViewController extends Controller
             'operatingHours' => is_array($shopOwner->operating_hours) ? $shopOwner->operating_hours : [],
             'documents' => $documents->all(),
             'documentUrls' => $documents->pluck('url')->all(),
+            'ocrScreeningSummary' => $summary,
             'status' => $shopOwner->status,
             'createdAt' => $shopOwner->created_at?->format('Y-m-d H:i:s'),
         ];
+    }
+
+    /**
+     * Pick the latest screening candidate for each required slot without mixing predecessors.
+     *
+     * @param Collection<int, ShopDocument> $documents
+     * @return Collection<string, ShopDocument>
+     */
+    private function screeningCandidates(Collection $documents, string $registrationStatus): Collection
+    {
+        $eligible = $documents->filter(function (ShopDocument $document) use ($registrationStatus): bool {
+            if ($this->screeningSlot($document) === null) {
+                return false;
+            }
+
+            return $registrationStatus === 'pending'
+                ? (string) $document->status === 'pending' && ! (bool) $document->is_current
+                : in_array((string) $document->status, ['approved', 'rejected'], true);
+        });
+
+        return $eligible
+            ->groupBy(fn (ShopDocument $document): string => (string) $this->screeningSlot($document))
+            ->map(static fn ($slotDocuments): ShopDocument => $slotDocuments->sort(
+                static fn (ShopDocument $left, ShopDocument $right): int =>
+                    ((int) $right->version_number <=> (int) $left->version_number)
+                    ?: ((int) $right->getKey() <=> (int) $left->getKey()),
+            )->first());
+    }
+
+    private function screeningSlot(ShopDocument $document): ?string
+    {
+        $slot = trim((string) $document->logical_slot);
+        if (in_array($slot, ['business_registration', 'mayors_permit', 'bir_certificate', 'valid_id'], true)) {
+            return $slot;
+        }
+
+        $type = trim((string) $document->document_type);
+        if ($slot === '' && in_array($type, ['dti_registration', 'sec_registration'], true)) {
+            return 'business_registration';
+        }
+
+        return null;
     }
 
     private function whereContains(Builder $query, string $column, string $value, string $boolean = 'and'): void

@@ -1978,6 +1978,14 @@ html.userside-dark #app .userside-auth-ghost:hover {
   justify-content: stretch !important;
 }
 
+.swal2-popup.shop-owner-ocr-loading .swal2-actions {
+  justify-content: center !important;
+}
+
+.swal2-popup.shop-owner-ocr-loading .swal2-loader {
+  margin-inline: auto !important;
+}
+
 .swal2-popup:not(.swal2-toast) .swal2-actions button {
   flex: 1 1 0 !important;
   margin: 0 !important;

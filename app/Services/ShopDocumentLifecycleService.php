@@ -19,6 +19,7 @@ final class ShopDocumentLifecycleService
 {
     public function __construct(
         private readonly ShopOwnerDocumentRequirementService $requirements,
+        private readonly ShopOwnerDocumentScreeningService $screening,
     ) {}
 
     /**
@@ -150,7 +151,7 @@ final class ShopDocumentLifecycleService
      * are locked in lexical slot order after the owner lock so one request
      * cannot race another request into a partial version set.
      *
-     * @param array<int, array{metadata: array<string, mixed>, file?: UploadedFile|null, predecessor?: ShopDocument|null, submission_key?: string|null}> $entries
+     * @param array<int, array{metadata: array<string, mixed>, file?: UploadedFile|null, predecessor?: ShopDocument|null, submission_key?: string|null, ocr_screening?: array<string, mixed>|null}> $entries
      * @return EloquentCollection<int, ShopDocument>
      */
     public function createPendingVersions(
@@ -180,6 +181,10 @@ final class ShopDocumentLifecycleService
                 $file = $entry['file'] ?? null;
                 $predecessor = $entry['predecessor'] ?? null;
                 $submissionKey = $entry['submission_key'] ?? null;
+                $screeningEvidence = $entry['ocr_screening'] ?? null;
+                if ($screeningEvidence !== null && ! is_array($screeningEvidence)) {
+                    throw new ConflictHttpException('The document screening evidence is invalid.');
+                }
                 $checksum = $file
                     ? $this->checksumForUpload($file)
                     : $this->checksumForPredecessor($predecessor);
@@ -208,6 +213,7 @@ final class ShopDocumentLifecycleService
                     'checksum' => $checksum,
                     'staged_path' => $stagedPath,
                     'existing' => $existing,
+                    'ocr_screening' => $file ? $screeningEvidence : null,
                 ];
             }
 
@@ -292,7 +298,17 @@ final class ShopDocumentLifecycleService
 
                     $nextVersion = ((int) ($slotRows->max('version_number') ?? 0)) + 1;
                     $metadata = $item['metadata'];
-                    $created->push(ShopDocument::create([
+                    $report = $item['ocr_screening'] !== null
+                        ? $this->screening->createReport(
+                            $lockedOwner,
+                            $metadata,
+                            $item['checksum'],
+                            $item['ocr_screening'],
+                        )
+                        : ($lockedPredecessor
+                            ? $this->screening->inheritReport($lockedOwner, $lockedPredecessor, $metadata, $item['checksum'])
+                            : null);
+                    $document = new ShopDocument([
                         'shop_owner_id' => $lockedOwner->getKey(),
                         'document_type' => $item['document_type'],
                         'logical_slot' => $item['logical_slot'],
@@ -307,7 +323,13 @@ final class ShopDocumentLifecycleService
                         'expires_on' => $metadata['expires_on'] ?? null,
                         'submission_key' => $item['submission_key'],
                         'checksum_sha256' => $item['checksum'],
-                    ]));
+                    ]);
+                    if ($report !== null) {
+                        // Keep the report outside normal mass assignment; only this lifecycle writes it.
+                        $document->setAttribute('ocr_screening', $report);
+                    }
+                    $document->save();
+                    $created->push($document);
                 }
 
                 return $created->load('predecessor');

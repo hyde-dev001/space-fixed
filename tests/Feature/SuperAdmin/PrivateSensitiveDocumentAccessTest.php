@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\SuperAdmin;
 
+use App\Enums\AdminPage;
+use App\Models\AdminPagePermission;
+use App\Models\IdentityVerification;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
-use App\Models\IdentityVerification;
 use App\Models\User;
 use App\Services\PrivilegedAudit;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -195,8 +197,8 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             'email' => 'private-customer-registration@solespaceph.com',
             'phone' => '09171234567',
             'age' => 25,
-            'password' => 'Password1',
-            'password_confirmation' => 'Password1',
+            'password' => 'Local-Test-Pass-123!',
+            'password_confirmation' => 'Local-Test-Pass-123!',
             'address' => '123 Rizal Street, Ermita, Manila',
             'address_region' => 'National Capital Region',
             'address_province' => 'Metro Manila',
@@ -270,6 +272,15 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             'first_name' => $owner->first_name,
             'last_name' => $owner->last_name,
             'phone' => '09171234567',
+            'age' => 32,
+            'address' => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region' => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city' => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
+            'address_latitude' => 14.3294,
+            'address_longitude' => 120.9367,
             'business_name' => $owner->business_name,
             'business_address' => 'Dasmarinas, Cavite',
             'business_type' => 'retail',
@@ -329,6 +340,15 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             'first_name' => $owner->first_name,
             'last_name' => $owner->last_name,
             'phone' => '09171234567',
+            'age' => 32,
+            'address' => 'Blk 1 Lot 2, Salitran I, Dasmarinas, Cavite',
+            'address_region' => 'Cavite',
+            'address_province' => 'Cavite',
+            'address_city' => 'Dasmarinas',
+            'address_barangay' => 'Salitran I',
+            'address_postal_code' => '4114',
+            'address_latitude' => 14.3294,
+            'address_longitude' => 120.9367,
             'business_name' => $owner->business_name,
             'business_address' => 'Dasmarinas, Cavite',
             'business_type' => 'retail',
@@ -365,6 +385,8 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $owner = ShopOwner::factory()->approved()->create();
         $document = $this->createDocument($owner, 'valid_id', 'local', 'shop_documents/document.png', null, true, 'approved');
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, AdminPage::SHOP_MANAGEMENT);
+        AdminPagePermission::grant($admin, AdminPage::USER_MANAGEMENT);
         $superAdmin = SuperAdmin::factory()->superAdmin()->create();
 
         $this->get(route('admin.shop-documents.show', [$owner, $document]))->assertRedirect(route('admin.login'));
@@ -439,6 +461,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         ]);
         Storage::disk('local')->put($verification->back_file_path, $this->pngBytes());
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, AdminPage::USER_MANAGEMENT);
 
         $response = $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.users.valid-id-back.show', $customer));
@@ -490,6 +513,8 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
             'valid_id_disk' => 'local',
         ]);
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, AdminPage::SHOP_MANAGEMENT);
+        AdminPagePermission::grant($admin, AdminPage::USER_MANAGEMENT);
 
         $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$owner, $document]))
@@ -507,6 +532,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $owner = ShopOwner::factory()->pending()->create();
         $document = $this->createDocument($owner, 'valid_id', 'local', 'shop_documents/range.png');
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, AdminPage::SHOP_MANAGEMENT);
 
         $response = $this->actingAsCompletedPrivileged($admin)
             ->withHeader('Range', 'bytes=0-1')
@@ -567,6 +593,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $owner = ShopOwner::factory()->pending()->create();
         $document = $this->createDocument($owner, 'pending', 'local', 'missing.png', null, false);
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, AdminPage::SHOP_MANAGEMENT);
 
         $this->actingAsCompletedPrivileged($admin)
             ->get(route('admin.shop-documents.show', [$owner, $document]))
@@ -579,6 +606,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
     {
         $owner = ShopOwner::factory()->pending()->create();
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, AdminPage::SHOP_MANAGEMENT);
         $safe = $this->createDocument($owner, 'valid_id', 'local', 'client-name.png', $this->pngBytes());
         $unsafe = $this->createDocument($owner, 'valid_id', 'local', 'unsafe.jpg', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
 
@@ -604,6 +632,7 @@ class PrivateSensitiveDocumentAccessTest extends TestCase
         $owner = ShopOwner::factory()->pending()->create();
         $document = $this->createDocument($owner, 'valid_id');
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, AdminPage::SHOP_MANAGEMENT);
 
         $this->mock(PrivilegedAudit::class, function (MockInterface $mock): void {
             $mock->shouldReceive('documentAccessInitiated')->once()->andThrow(new \RuntimeException('audit unavailable'));

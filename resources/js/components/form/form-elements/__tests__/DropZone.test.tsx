@@ -56,3 +56,25 @@ describe('DropzoneComponent layout', () => {
     expect(container.querySelector('.border-green-500')).toBeNull();
   });
 });
+
+describe('document upload preview', () => {
+  it('constrains long filenames inside the upload card', () => {
+    const fileName = `${'A'.repeat(240)}.png`;
+    const { container } = render(<DropzoneComponent isUploaded fileName={fileName} />);
+    expect(screen.getByText(fileName)).toHaveClass('truncate', 'max-w-full');
+    expect(container.firstElementChild).toHaveClass('min-w-0', 'overflow-hidden');
+  });
+
+  it.each(['data:image/png;base64,AAA', 'blob:http://localhost/internal-image-id'])('does not render an image URL as a filename: %s', (fileName) => {
+    render(<DropzoneComponent isUploaded fileName={fileName} />);
+    expect(screen.queryByText(fileName)).not.toBeInTheDocument();
+    expect(screen.getByText('Selected document')).toBeInTheDocument();
+  });
+
+  it('shows the selected document uncropped with a file-selection label when requested', () => {
+    render(<DropzoneComponent isUploaded uploadedLabel="File selected" previewFit="contain" fileName="permit.png" previewUrl="blob:original-permit" previewAlt="Mayor's Permit preview" />);
+    expect(screen.getByText('File selected')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: "Mayor's Permit preview" })).toHaveClass('object-contain');
+    expect(screen.getByRole('img')).toHaveAttribute('src', 'blob:original-permit');
+  });
+});

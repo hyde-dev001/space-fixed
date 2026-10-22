@@ -22,6 +22,7 @@ export type RegistrationDocumentPayload = {
   validId: RegistrationDocumentUpload;
   submissionKeys: Partial<Record<'businessRegistration' | 'mayorsPermit' | 'birCertificate' | 'validId', string>>;
   supportingDocuments: SupportingDocumentUpload[];
+  ocrScreening?: string | null;
 };
 
 const appendMetadata = (
@@ -73,5 +74,9 @@ export const appendRegistrationDocuments = (
     if (document.submissionKey) {
       formData.append(`submission_keys[supporting_document:${document.slotId}]`, document.submissionKey);
     }
+  }
+
+  if (documents.ocrScreening) {
+    formData.append('ocr_screening', documents.ocrScreening);
   }
 };

@@ -14,6 +14,7 @@ use App\Models\User;
 use App\Services\EmployeeMfaService;
 use App\Services\NominatimService;
 use App\Services\ShopOwnerDocumentRequirementService;
+use App\Services\ShopOwnerDocumentScreeningService;
 use App\Services\ShopDocumentLifecycleService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -43,6 +44,7 @@ class ShopOwnerAuthController extends Controller
 {
     public function __construct(
         private readonly ShopOwnerDocumentRequirementService $documentRequirements,
+        private readonly ShopOwnerDocumentScreeningService $documentScreening,
         private readonly ShopDocumentLifecycleService $documentLifecycle,
         private readonly EmployeeMfaService $mfa,
         private readonly NominatimService $nominatim,
@@ -135,6 +137,7 @@ class ShopOwnerAuthController extends Controller
             );
 
         return Inertia::render('UserSide/Auth/ShopOwnerRegistration', [
+            'ocrBootstrap' => $this->documentScreening->browserBootstrap(),
             'resubmission' => [
                 'isResubmission' => true,
                 'submitUrl' => $submitUrl,
@@ -292,7 +295,14 @@ class ShopOwnerAuthController extends Controller
                 'other_document_metadata.*.issued_on' => 'nullable|date_format:Y-m-d',
                 'removed_other_document_ids' => 'nullable|array|max:50',
                 'removed_other_document_ids.*' => 'required|integer|distinct|min:1',
+                'ocr_screening' => 'nullable|string',
             ]);
+
+            $screeningEvidence = $this->documentScreening->validateRegistrationInput(
+                $validated['ocr_screening'] ?? null,
+                $validated,
+            );
+            unset($validated['ocr_screening']);
 
             $validated = $this->normalizePersonalAddress($validated);
 
@@ -314,7 +324,7 @@ class ShopOwnerAuthController extends Controller
                 return $this->resubmissionResponse($request, true);
             }
 
-            $shopOwner = DB::transaction(function () use ($shopOwner, $validated, $request): ShopOwner {
+            $shopOwner = DB::transaction(function () use ($shopOwner, $validated, $request, $screeningEvidence): ShopOwner {
                 $lockedShopOwner = ShopOwner::query()->lockForUpdate()->findOrFail($shopOwner->id);
                 $lockedStatusValue = $lockedShopOwner->status instanceof ShopOwnerStatus
                     ? $lockedShopOwner->status->value
@@ -334,7 +344,7 @@ class ShopOwnerAuthController extends Controller
                 }
 
                 $predecessors = $this->latestDocumentsByLogicalSlot($lockedShopOwner);
-                $entries = $this->registrationDocumentEntries($request, $validated, $predecessors, true);
+                $entries = $this->registrationDocumentEntries($request, $validated, $predecessors, true, $screeningEvidence);
 
                 $removedIds = $validated['removed_other_document_ids'] ?? [];
                 if ($removedIds !== []) {
@@ -729,6 +739,7 @@ class ShopOwnerAuthController extends Controller
                 'other_document_metadata.*.expiration_mode' => 'required|string',
                 'other_document_metadata.*.expires_on' => 'nullable|date_format:Y-m-d',
                 'other_document_metadata.*.issued_on' => 'nullable|date_format:Y-m-d',
+                'ocr_screening' => 'nullable|string',
             ], [
                 'first_name.required' => 'Please enter your first name.',
                 'first_name.min' => 'First name must be at least 2 characters.',
@@ -791,6 +802,12 @@ class ShopOwnerAuthController extends Controller
                 'other_documents.*.max' => 'Each supporting document must not exceed 5MB.',
             ]);
 
+            $screeningEvidence = $this->documentScreening->validateRegistrationInput(
+                $validated['ocr_screening'] ?? null,
+                $validated,
+            );
+            unset($validated['ocr_screening']);
+
             $normalizedEmail = $this->normalizeEmail((string) ($validated['email'] ?? ''));
 
             $availability = $this->checkRegistrationEmailAvailability($normalizedEmail);
@@ -836,6 +853,7 @@ class ShopOwnerAuthController extends Controller
                 $normalizedEmail,
                 $existingRejectedShopOwner,
                 $isReapplication,
+                $screeningEvidence,
                 $request,
             ): ShopOwner {
                 if ($isReapplication) {
@@ -909,7 +927,7 @@ class ShopOwnerAuthController extends Controller
                 $predecessors = $isReapplication
                     ? $this->latestDocumentsByLogicalSlot($shopOwner)
                     : [];
-                $entries = $this->registrationDocumentEntries($request, $validated, $predecessors, $isReapplication);
+                $entries = $this->registrationDocumentEntries($request, $validated, $predecessors, $isReapplication, $screeningEvidence);
                 $this->documentLifecycle->createPendingVersions($shopOwner, $entries, $isReapplication);
 
                 return $shopOwner->fresh();
@@ -1018,13 +1036,15 @@ class ShopOwnerAuthController extends Controller
     /**
      * @param array<string, mixed> $validated
      * @param array<string, ShopDocument> $predecessors
-     * @return array<int, array{metadata: array<string, mixed>, file?: \Illuminate\Http\UploadedFile|null, predecessor?: ShopDocument|null, submission_key?: string|null}>
+     * @param array<string, array<string, mixed>> $screeningEvidence
+     * @return array<int, array{metadata: array<string, mixed>, file?: \Illuminate\Http\UploadedFile|null, predecessor?: ShopDocument|null, submission_key?: string|null, ocr_screening?: array<string, mixed>|null}>
      */
     private function registrationDocumentEntries(
         Request $request,
         array $validated,
         array $predecessors,
         bool $isReapplication,
+        array $screeningEvidence = [],
     ): array {
         $documentTypes = [
             'business_registration' => (string) $validated['business_registration_type'],
@@ -1070,6 +1090,7 @@ class ShopOwnerAuthController extends Controller
                 'file' => $file,
                 'predecessor' => $predecessor,
                 'submission_key' => $validated['submission_keys'][$slot] ?? Str::uuid()->toString(),
+                'ocr_screening' => $file ? ($screeningEvidence[$slot] ?? null) : null,
             ];
         }
 

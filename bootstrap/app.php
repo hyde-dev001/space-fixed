@@ -223,6 +223,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        $exceptions->dontFlash('ocr_screening');
+
         $exceptions->respond(function (SymfonyResponse $response, \Throwable $exception, Request $request): SymfonyResponse {
             $correlationId = $request->attributes->get(AttachPrivilegedCorrelationId::ATTRIBUTE);
 

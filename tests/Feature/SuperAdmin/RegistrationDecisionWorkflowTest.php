@@ -40,6 +40,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_pending_registration_approval_commits_documents_token_modules_audit_and_delivery(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
 
         $response = $this->actingAsCompletedPrivileged($admin)
@@ -78,6 +79,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_approval_requires_reviewer_verified_document_metadata(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
 
         $this->actingAsCompletedPrivileged($admin)
@@ -99,6 +101,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_approval_requires_each_document_to_be_marked_viewed(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
         $payload = $this->approvalPayload($owner);
         $payload['documents'][0]['viewed'] = false;
@@ -121,6 +124,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_reviewer_can_correct_only_the_business_registration_authority(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
         $payload = $this->approvalPayload($owner);
         $businessRegistrationIndex = collect($payload['documents'])
@@ -144,6 +148,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_rejection_requires_a_reason_and_updates_current_documents_atomically(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
 
         $this->actingAsCompletedPrivileged($admin)
@@ -183,6 +188,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_rejection_retries_are_idempotent_only_for_the_same_reason(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
         $reason = 'The submitted permit is not legible.';
 
@@ -208,6 +214,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_approval_rejects_missing_stale_and_missing_on_disk_required_documents(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
 
         $missing = ShopOwner::factory()->pending()->create();
         $this->createDocuments($missing, ['valid_id']);
@@ -239,6 +246,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_approval_is_idempotent_once_and_non_pending_decisions_conflict(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
 
         $this->actingAsCompletedPrivileged($admin)
@@ -274,6 +282,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_approval_rolls_back_when_the_mandatory_audit_fails(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
 
         $this->mock(PrivilegedAudit::class, function ($mock): void {
@@ -310,6 +319,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_approval_rolls_back_when_module_provisioning_fails(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
 
         $this->mock(BusinessAccessControlService::class, function ($mock): void {
@@ -331,6 +341,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_registration_index_keeps_document_urls_protected(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->pendingRegistrationWithDocuments();
         $document = $owner->documents()->orderBy('id')->firstOrFail();
 
@@ -455,6 +466,7 @@ final class RegistrationDecisionWorkflowTest extends TestCase
     public function test_rejected_predecessors_are_not_accepted_by_default_document_approval(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
         $owner = $this->resubmittedRegistrationWithDocuments();
         $candidate = $owner->documents()->pending()->firstOrFail();
 

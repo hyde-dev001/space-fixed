@@ -6,6 +6,8 @@ namespace Tests\Feature\SuperAdmin;
 
 use App\Enums\PrivilegedDeliveryType;
 use App\Jobs\SendPrivilegedWorkflowMail;
+use App\Enums\AdminPage;
+use App\Models\AdminPagePermission;
 use App\Models\ShopDocument;
 use App\Models\ShopOwner;
 use App\Models\SuperAdmin;
@@ -64,6 +66,7 @@ final class ShopOwnerRegistrationApprovalEndToEndTest extends TestCase
         $this->assertSame(4, $owner->documents()->count());
 
         $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, AdminPage::SHOP_MANAGEMENT);
         $response = $this->actingAsCompletedPrivileged($admin)
             ->postJson(
                 route('admin.registrations.approve', $owner),
