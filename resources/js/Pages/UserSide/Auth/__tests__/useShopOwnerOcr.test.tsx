@@ -45,16 +45,7 @@ function file(name: string): File {
   return new File(['synthetic image bytes'], name, { type: 'image/png' });
 }
 
-function dtiPass(): ShopOwnerOcrPass {
-  const lines = [
-    'Department of Trade and Industry',
-    'Certificate of Business Name Registration',
-    'Registered Business Name: Sample Shoe House',
-    'Proprietor: Mira Sample',
-    'Registration No: DTI-SYN-1200',
-    'Date Issued: January 15, 2025',
-    'Valid Until: January 15, 2030',
-  ];
+function textPass(lines: string[]): ShopOwnerOcrPass {
   return {
     id: 'full_image',
     text: lines.join('\n'),
@@ -79,8 +70,142 @@ function dtiPass(): ShopOwnerOcrPass {
   };
 }
 
+function dtiPass(): ShopOwnerOcrPass {
+  return textPass([
+    'Department of Trade and Industry',
+    'Certificate of Business Name Registration',
+    'Registered Business Name: Sample Shoe House',
+    'Proprietor: Mira Sample',
+    'Registration No: DTI-SYN-1200',
+    'Date Issued: January 15, 2025',
+    'Valid Until: January 15, 2030',
+  ]);
+}
+
 describe('useShopOwnerOcr', () => {
   beforeEach(() => { readDocument.mockReset(); });
+
+  it('uses certificate preparation for business documents and preserves the owner ID layout', async () => {
+    readDocument.mockResolvedValue({ passes: [dtiPass()] });
+    const { result } = renderHook(() => useShopOwnerOcr({
+      ...OPTIONS,
+      selectedDocumentTypes: { ...OPTIONS.selectedDocumentTypes, valid_id: 'valid_id' },
+    }));
+    act(() => {
+      result.current.selectFile('business_registration', file('certificate.png'));
+      result.current.selectFile('valid_id', file('id.png'));
+    });
+    await waitFor(() => expect(readDocument).toHaveBeenCalledTimes(2));
+    expect(readDocument).toHaveBeenNthCalledWith(1, expect.any(File), expect.objectContaining({ layout: 'certificate' }));
+    expect(readDocument).toHaveBeenNthCalledWith(2, expect.any(File), expect.objectContaining({ layout: 'id' }));
+  });
+
+  it('holds submission while a selected required file is queued or scanning', async () => {
+    const scan = deferred<{ passes: ShopOwnerOcrPass[] }>();
+    readDocument.mockReturnValue(scan.promise);
+    const { result } = renderHook(() => useShopOwnerOcr(OPTIONS));
+
+    act(() => result.current.selectFile('business_registration', file('pending.png')));
+    expect(result.current.submissionBlockReason?.()).toBe('scan_pending');
+
+    await act(async () => scan.resolve({ passes: [dtiPass()] }));
+    await waitFor(() => expect(result.current.states.business_registration?.status).toBe('complete'));
+    expect(result.current.submissionBlockReason?.()).toBeNull();
+  });
+
+  it('requires a retake for completed scans without document evidence regardless of pixel layout', async () => {
+    const blank = { ...textPass([]), image_activity: 'flat' as const };
+    const unreadablePhoto = {
+      ...textPass([]),
+      image_activity: 'varied' as const,
+      document_layout: 'document_like' as const,
+    };
+    const randomPhoto = {
+      ...textPass([]),
+      image_activity: 'varied' as const,
+      document_layout: 'non_document_like' as const,
+    };
+    readDocument.mockResolvedValueOnce({ passes: [blank] })
+      .mockResolvedValueOnce({ passes: [unreadablePhoto] })
+      .mockResolvedValueOnce({ passes: [randomPhoto] });
+    const { result } = renderHook(() => useShopOwnerOcr(OPTIONS));
+
+    act(() => result.current.selectFile('business_registration', file('blank.png')));
+    await waitFor(() => expect(result.current.states.business_registration?.status).toBe('replacement_required'));
+    expect(result.current.submissionBlockReason?.()).toBe('replacement_required');
+
+    act(() => result.current.selectFile('business_registration', file('blurred.png')));
+    await waitFor(() => expect(result.current.states.business_registration?.status).toBe('replacement_required'));
+    expect(result.current.states.business_registration?.relevance).toBe('clearly_irrelevant');
+    expect(result.current.states.business_registration?.entry?.reason_codes).not.toContain('ocr_failed');
+    expect(result.current.submissionBlockReason?.()).toBe('replacement_required');
+
+    act(() => result.current.selectFile('business_registration', file('random-photo.png')));
+    await waitFor(() => expect(result.current.states.business_registration?.status).toBe('replacement_required'));
+    expect(result.current.states.business_registration?.relevance).toBe('clearly_irrelevant');
+    expect(result.current.submissionBlockReason?.()).toBe('replacement_required');
+  });
+
+  it('keeps genuine worker failure distinct in recomputed state and permits manual submission', async () => {
+    readDocument.mockRejectedValue(new RegistrationOcrError('ocr_failed', Promise.resolve()));
+    const { result } = renderHook(() => useShopOwnerOcr(OPTIONS));
+    act(() => result.current.selectFile('business_registration', file('worker-failure.png')));
+    await waitFor(() => expect(result.current.states.business_registration).toMatchObject({
+      status: 'unable', relevance: 'technical_failure', reasonCode: 'ocr_failed',
+    }));
+    expect(result.current.submissionBlockReason()).toBeNull();
+  });
+
+  it('requires replacement for a reliably recognized incompatible type but submits a plausible field conflict', async () => {
+    readDocument.mockResolvedValueOnce({ passes: [textPass([
+      'Securities and Exchange Commission',
+      'Certificate of Incorporation',
+      'Registered Entity Name: Sample Holdings Corporation',
+      'Registration No: SEC-SYN-12',
+    ])] }).mockResolvedValueOnce({ passes: [textPass([
+      'Department of Trade and Industry',
+      'Certificate of Business Name Registration',
+      'Registered Business Name: Other Shoe House',
+      'Proprietor: Mira Sample',
+      'Registration No: DTI-SYN-1200',
+      'Date Issued: January 15, 2025',
+      'Valid Until: January 15, 2030',
+    ])] });
+    const { result } = renderHook(() => useShopOwnerOcr(OPTIONS));
+
+    act(() => result.current.selectFile('business_registration', file('wrong-type.png')));
+    await waitFor(() => expect(result.current.states.business_registration?.status).toBe('replacement_required'));
+    expect(result.current.submissionBlockReason?.()).toBe('replacement_required');
+
+    act(() => result.current.selectFile('business_registration', file('field-conflict.png')));
+    await waitFor(() => expect(result.current.states.business_registration?.status).toBe('review'));
+    expect(result.current.states.business_registration).toMatchObject({ score: 0, relevance: 'plausible_document' });
+    expect(result.current.submissionBlockReason?.()).toBeNull();
+  });
+
+  it('recalculates a replacement block when the selected DTI/SEC type changes', async () => {
+    readDocument.mockResolvedValue({ passes: [textPass([
+      'Securities and Exchange Commission',
+      'Certificate of Incorporation',
+      'Registered Entity Name: Sample Shoe House',
+      'Registration No: SEC-SYN-12',
+    ])] });
+    const { result, rerender } = renderHook(
+      ({ selectedType }: { selectedType: 'dti_registration' | 'sec_registration' }) => useShopOwnerOcr({
+        ...OPTIONS,
+        selectedDocumentTypes: { ...OPTIONS.selectedDocumentTypes, business_registration: selectedType },
+      }),
+      { initialProps: { selectedType: 'dti_registration' as const } },
+    );
+
+    act(() => result.current.selectFile('business_registration', file('company.png')));
+    await waitFor(() => expect(result.current.submissionBlockReason?.()).toBe('replacement_required'));
+
+    rerender({ selectedType: 'sec_registration' });
+
+    expect(result.current.states.business_registration?.relevance).toBe('plausible_document');
+    expect(result.current.submissionBlockReason?.()).toBeNull();
+  });
 
   it('processes one file at a time and scans only the latest queued selection for each slot', async () => {
     const first = deferred<{ passes: ShopOwnerOcrPass[] }>();
@@ -139,7 +264,9 @@ describe('useShopOwnerOcr', () => {
     await waitFor(() => expect(readDocument).toHaveBeenCalledTimes(2));
     expect(readDocument.mock.calls[1][0].name).toBe('new.png');
     await act(async () => newRead.resolve({ passes: [] }));
-    expect(result.current.states.business_registration?.entry?.reason_codes).toContain('ocr_failed');
+    expect(result.current.states.business_registration?.entry?.reason_codes).not.toContain('ocr_failed');
+    expect(result.current.states.business_registration?.relevance).toBe('clearly_irrelevant');
+    expect(result.current.submissionBlockReason()).toBe('replacement_required');
   });
 
   it('recalculates retained localized evidence when form context changes without rereading the image', async () => {
@@ -200,6 +327,7 @@ describe('useShopOwnerOcr', () => {
 
     expect(result.current.states.business_registration?.reasonCode).toBe('ocr_timeout');
     expect(result.current.submissionSnapshot()).toContain('ocr_timeout');
+    expect(result.current.submissionBlockReason?.()).toBeNull();
   });
 
   it('blocks queued scans when worker cleanup cannot be confirmed', async () => {

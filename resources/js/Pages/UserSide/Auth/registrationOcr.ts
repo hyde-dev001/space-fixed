@@ -20,6 +20,7 @@ export type ShopOwnerOcrReaderOptions = {
   workerPath: string;
   corePath: string;
   langPath: string;
+  layout?: 'certificate' | 'id';
   signal?: AbortSignal;
   onStage?: (stage: RegistrationOcrStage) => void;
 };
@@ -602,11 +603,17 @@ const structuredLines = (rawBlocks: unknown): ShopOwnerOcrLine[] => {
   return lines;
 };
 
-type OwnerImage = { blob: Blob; width: number; height: number; release: () => void };
+type OwnerImage = {
+  blob: Blob;
+  width: number;
+  height: number;
+  release: () => void;
+};
 
 class ImagePreparationError extends Error {}
 
-async function prepareOwnerImage(file: File, signal: AbortSignal): Promise<OwnerImage> {
+
+async function prepareOwnerImage(file: File, signal: AbortSignal, upscale: boolean): Promise<OwnerImage> {
   if (typeof document === 'undefined' || typeof globalThis.createImageBitmap !== 'function') {
     throw new ImagePreparationError('Image preparation is unavailable.');
   }
@@ -626,7 +633,7 @@ async function prepareOwnerImage(file: File, signal: AbortSignal): Promise<Owner
     if (signal.aborted) throw new DOMException('OCR cancelled', 'AbortError');
     if (!bitmap.width || !bitmap.height) throw new ImagePreparationError('Image dimensions are unavailable.');
 
-    const scale = Math.min(1, OWNER_IMAGE_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
+    const scale = Math.min(upscale ? OCR_MAX_UPSCALE : 1, OWNER_IMAGE_MAX_EDGE / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
     const height = Math.max(1, Math.round(bitmap.height * scale));
     canvas = document.createElement('canvas');
@@ -746,7 +753,7 @@ export async function readShopOwnerDocument(
     }
     options.onStage?.('loading');
     preparedImage = await waitWithSignal(
-      prepareOwnerImage(file, controller.signal),
+      prepareOwnerImage(file, controller.signal, options.layout === 'certificate'),
       controller.signal,
       deadline - Date.now(),
     );
@@ -765,6 +772,13 @@ export async function readShopOwnerDocument(
       () => cleanup.finish(),
     );
     worker = await waitWithSignal(workerPromise, controller.signal, deadline - Date.now());
+    if (options.layout === 'certificate') {
+      await waitWithSignal(
+        worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO }),
+        controller.signal,
+        deadline - Date.now(),
+      );
+    }
     options.onStage?.('recognizing');
     const recognized = await waitWithSignal(
       worker.recognize(preparedImage.blob, undefined, { text: true, blocks: true }),

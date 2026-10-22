@@ -14,7 +14,7 @@
 /auth.json
 /node_modules
 /public/hot
-/public/ocr/
+# Commit the matching OCR runtime with public/build for Git-based deployments.
 /public/storage
 /storage/*.key
 /storage/pail

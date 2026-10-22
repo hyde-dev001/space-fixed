@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { createWorkerMock, psm } = vi.hoisted(() => ({
   createWorkerMock: vi.fn(),
-  psm: { SINGLE_BLOCK: '6', SPARSE_TEXT: '11' },
+  psm: { AUTO: '3', SINGLE_BLOCK: '6', SPARSE_TEXT: '11' },
 }));
 
 vi.mock('tesseract.js', () => ({ createWorker: createWorkerMock, PSM: psm }));
@@ -90,7 +90,7 @@ describe('shop owner OCR reader', () => {
     const ocrWorker = worker();
     createWorkerMock.mockResolvedValue(ocrWorker);
 
-    const evidence = await readShopOwnerDocument(file(), paths);
+    const evidence = await readShopOwnerDocument(file(), { ...paths, layout: 'certificate' });
 
     expect(createWorker).toHaveBeenCalledWith('eng', undefined, expect.objectContaining({
       ...paths,
@@ -98,6 +98,7 @@ describe('shop owner OCR reader', () => {
       gzip: true,
     }));
     expect(ocrWorker.recognize).toHaveBeenCalledWith(expect.any(Blob), undefined, { text: true, blocks: true });
+    expect(ocrWorker.setParameters).toHaveBeenCalledWith({ tessedit_pageseg_mode: psm.AUTO });
     expect(evidence.passes[0]).toMatchObject({
       id: 'full_image',
       text: 'BUSINESS NAME\nSAMPLE SHOE HOUSE',
@@ -129,13 +130,36 @@ describe('shop owner OCR reader', () => {
     expect(ocrWorker.recognize.mock.calls[0][0]).toBeInstanceOf(Blob);
   });
 
-  it('does not upscale a small image toward the working-image cap', async () => {
-    stubImage({ width: 600, height: 400, close: vi.fn() });
+  it('upscales small full images within the 1,800-pixel cap without replacing the upload', async () => {
+    const { bitmap, drawImage } = stubImage({ width: 600, height: 400, close: vi.fn() });
+    const original = file();
+    const ocrWorker = worker();
+    createWorkerMock.mockResolvedValue(ocrWorker);
+
+    const evidence = await readShopOwnerDocument(original, { ...paths, layout: 'certificate' });
+
+    expect(evidence.passes[0]).toMatchObject({ image_width: 1800, image_height: 1200 });
+    expect(drawImage).toHaveBeenCalledWith(bitmap, 0, 0, 1800, 1200);
+    expect(createImageBitmap).toHaveBeenCalledWith(original, { imageOrientation: 'from-image' });
+    expect(ocrWorker.recognize).toHaveBeenCalledOnce();
+  });
+
+  it('limits enlargement of tiny images to the existing three-times upscale bound', async () => {
+    stubImage({ width: 100, height: 50, close: vi.fn() });
     createWorkerMock.mockResolvedValue(worker());
+    const evidence = await readShopOwnerDocument(file(), { ...paths, layout: 'certificate' });
+    expect(evidence.passes[0]).toMatchObject({ image_width: 300, image_height: 150 });
+  });
 
-    const evidence = await readShopOwnerDocument(file(), paths);
-
-    expect(evidence.passes[0]).toMatchObject({ image_width: 600, image_height: 400 });
+  it('preserves native ID preparation and the existing worker segmentation default', async () => {
+    const { bitmap, drawImage } = stubImage({ width: 1600, height: 1200, close: vi.fn() });
+    const ocrWorker = worker();
+    createWorkerMock.mockResolvedValue(ocrWorker);
+    const evidence = await readShopOwnerDocument(file(), { ...paths, layout: 'id' });
+    expect(evidence.passes[0]).toMatchObject({ image_width: 1600, image_height: 1200 });
+    expect(drawImage).toHaveBeenCalledWith(bitmap, 0, 0, 1600, 1200);
+    expect(ocrWorker.setParameters).not.toHaveBeenCalled();
+    expect(ocrWorker.recognize).toHaveBeenCalledOnce();
   });
 
   it('reports unavailable when safe image preparation is unsupported', async () => {

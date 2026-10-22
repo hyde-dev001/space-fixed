@@ -79,12 +79,159 @@ function assess(
 }
 
 describe('shop owner document recognition', () => {
+  it('uses the matched SEC issuer/title words instead of unrelated low-confidence line noise', async () => {
+    const { classifyShopOwnerDocumentRelevance: classify } = await import('../shopOwnerDocumentRecognition');
+    const localized = pass([
+      'NOISE Securities and Exchange Commission',
+      'NOISE Certificate of Incorporation',
+      'NOISE Company Reg. No: DEMO',
+    ]);
+    localized.lines.forEach(line => line.words.forEach(word => {
+      if (word.text === 'NOISE' || word.text === 'DEMO') word.confidence = 0.03;
+    }));
+
+    const result = assess('business_registration', 'sec_registration', [], BASE_CONTEXT, 0.73, [localized]);
+    expect(result.entry.detected_family).toBe('sec_registration');
+    expect(result.entry.checks.document_type?.confidence).toBe(0.96);
+    expect(classify('sec_registration', [localized])).toBe('plausible_document');
+    expect(classify('dti_registration', [localized])).toBe('incompatible_document_type');
+  });
+
+  it('does not average away an unreliable material word in a recognized issuer phrase', () => {
+    const localized = pass([
+      'Securities and Exchange Commission',
+      'Certificate of Incorporation',
+      'Company Reg. No: DEMO',
+    ]);
+    localized.lines[0].words.find(word => word.text === 'Commission')!.confidence = 0.3;
+    const result = assess('business_registration', 'sec_registration', [], BASE_CONTEXT, 0.99, [localized]);
+    expect(result.entry.detected_family).toBeNull();
+    expect(result.entry.checks.document_type?.result).toBe('uncertain');
+  });
+
+  it('recognizes adjacent multi-line certificate headings with independent supporting lines', () => {
+    const result = assess('business_registration', 'sec_registration', [
+      'Securities and Exchange Commission',
+      'Certificate of',
+      'Incorporation',
+      'Company Reg. No: DEMO',
+    ]);
+    expect(result.entry.detected_family).toBe('sec_registration');
+  });
+
+  it('does not invent a competing permit family from a city and business-name label', () => {
+    const result = assess('business_registration', 'dti_registration', [...dtiLines(), 'Example City']);
+    expect(result.entry.detected_family).toBe('dti_registration');
+  });
+
+  it('uses independent incorporation structure when the SEC reference label is weak', () => {
+    const localized = pass([
+      'Securities and Exchange Commission',
+      'Certificate of Incorporation',
+      'Company Reg. No: DEMO',
+      'Articles of Incorporation and By-Laws of',
+    ]);
+    localized.lines[2].words[1].confidence = 0.73;
+    const result = assess('business_registration', 'sec_registration', [], BASE_CONTEXT, 0.93, [localized]);
+    expect(result.entry.detected_family).toBe('sec_registration');
+    expect(result.entry.checks.document_type?.confidence).toBe(0.96);
+  });
+
+  it('recognizes a printed 2303 heading only with independent BIR issuer and taxpayer structure', () => {
+    const result = assess('bir_certificate', 'bir_certificate', [
+      '2303', 'Bureau of Internal Revenue', 'Name of Taxpayer',
+    ]);
+    const numberOnly = assess('bir_certificate', 'bir_certificate', ['2303']);
+    expect(result.entry.detected_family).toBe('bir_certificate');
+    expect(numberOnly.entry.detected_family).toBeNull();
+  });
+
+  it('does not stitch a certificate heading across distant layout regions', () => {
+    const localized = pass([
+      'Securities and Exchange Commission', 'Certificate of', 'Incorporation', 'Company Reg. No: DEMO',
+    ]);
+    localized.lines[2].bbox = { x0: 900, y0: 1100, x1: 1190, y1: 1124 };
+    const result = assess('business_registration', 'sec_registration', [], BASE_CONTEXT, 0.96, [localized]);
+    expect(result.entry.detected_family).toBeNull();
+  });
+
+  it('keeps genuinely conflicting high-confidence families from different passes uncertain', () => {
+    const result = assess('business_registration', 'dti_registration', [], BASE_CONTEXT, 0.96, [
+      pass(dtiLines()),
+      pass(['Securities and Exchange Commission', 'Certificate of Incorporation', 'Company Reg. No: DEMO']),
+    ]);
+    expect(result.entry.detected_family).toBeNull();
+    expect(result.entry.checks.document_type?.result).toBe('uncertain');
+  });
+
   it('keeps the shared synthetic field-evidence fixture limited to approved non-sensitive cases', () => {
     const ids = recognitionEvidence.passes.map((item) => item.id);
     expect(recognitionEvidence.source).toBe('synthetic-only');
     expect(ids).toContain('combined_type_signals_one_line');
     expect(ids).toContain('unsupported_government_id');
     expect(ids).toContain('localized_filipino_nationality');
+  });
+
+  it('classifies completed scans without treating empty output as a technical failure', async () => {
+    type Relevance = 'plausible_document' | 'clearly_irrelevant' | 'incompatible_document_type' | 'uncertain_relevance';
+    type Classifier = (selectedType: 'dti_registration', passes: readonly ShopOwnerOcrPass[]) => Relevance;
+    const recognition = await import('../shopOwnerDocumentRecognition') as unknown as {
+      classifyShopOwnerDocumentRelevance?: Classifier;
+    };
+    const classify = recognition.classifyShopOwnerDocumentRelevance;
+    expect(classify).toBeTypeOf('function');
+    if (!classify) return;
+
+    const blank = Object.assign(pass([], 0), { image_activity: 'flat' as const });
+    const lowQualityPhoto = Object.assign(pass([], 0), {
+      image_activity: 'varied' as const,
+      document_layout: 'document_like' as const,
+    });
+    const randomTextlessPhoto = Object.assign(pass(['QX RV 7Z', 'MNB YT']), {
+      confidence: 0.18,
+      image_activity: 'varied' as const,
+      document_layout: 'non_document_like' as const,
+    });
+    const meme = pass(['WHEN YOU SEE THE LAST PAIR ON SALE', 'AND FORGET TO TIE YOUR SHOELACES']);
+    const randomPictureText = pass(['MOUNTAIN ROAD AT SUNSET', 'WALK THROUGH THE PINE FOREST']);
+    const unsupportedGovernmentDocument = pass([
+      'Republic of the Philippines',
+      'Department of Public Records',
+      'Certificate of Authorization',
+      'Registration Reference: DEMO-1200',
+      'Date Issued: January 15, 2025',
+    ]);
+    const sec = pass([
+      'Securities and Exchange Commission',
+      'Certificate of Incorporation',
+      'Registered Entity Name: Sample Holdings Corporation',
+      'Registration No: SEC-SYN-12',
+    ]);
+
+    expect(classify('dti_registration', [blank])).toBe('clearly_irrelevant');
+    expect(classify('dti_registration', [meme])).toBe('clearly_irrelevant');
+    expect(classify('dti_registration', [randomPictureText])).toBe('clearly_irrelevant');
+    expect(classify('dti_registration', [randomTextlessPhoto])).toBe('clearly_irrelevant');
+    expect(classify('dti_registration', [sec])).toBe('incompatible_document_type');
+    expect(classify('dti_registration', [unsupportedGovernmentDocument])).toBe('uncertain_relevance');
+    expect(classify('dti_registration', [pass(dtiLines())])).toBe('plausible_document');
+    expect(classify('dti_registration', [lowQualityPhoto])).toBe('clearly_irrelevant');
+    expect(classify('dti_registration', [Object.assign(pass(['DTI']), { document_layout: 'non_document_like' as const })])).toBe('clearly_irrelevant');
+  });
+
+  it('requires document evidence after successful empty, junk-text, and single-keyword scans', async () => {
+    const { classifyShopOwnerDocumentRelevance: classify } = await import('../shopOwnerDocumentRecognition');
+    for (const completed of [[], [pass([])], [pass(['RX VV'], 0.33)], [pass(['DTI'])], [pass(['Name: Mira Sample'])]]) {
+      expect(classify('dti_registration', completed)).toBe('clearly_irrelevant');
+    }
+  });
+
+  it('does not turn the first line of a wrapped matching business address into a conflict', () => {
+    const lines = mayorLines('123 Example Street');
+    lines.splice(5, 0, 'Barangay Sample, Imus, Cavite');
+    const result = assess('mayors_permit', 'mayors_permit', lines);
+    expect(result.entry.checks.business_address?.result).toBe('uncertain');
+    expect(result.score).toBe(50);
   });
 
   it('recognizes and matches a DTI registration with localized business, proprietor, and date fields', () => {
@@ -115,6 +262,57 @@ describe('shop owner document recognition', () => {
     expect(result.score).toBe(0);
     expect(result.entry.detected_family).toBe('sec_registration');
     expect(result.entry.reason_codes).toContain('wrong_document_type');
+  });
+
+  it('recognizes the reference DTI certificate number as supporting registration structure', () => {
+    const result = assess('business_registration', 'dti_registration', [
+      'DTI Philippines',
+      'Certificate of Business Name Registration',
+      'Certificate No. DTI-SYN-1200',
+      'Valid from January 15, 2025 to May 7, 2029',
+    ]);
+
+    expect(result.entry.detected_family).toBe('dti_registration');
+  });
+
+  it('recognizes the SEC company registration number as supporting incorporation structure', () => {
+    const result = assess('business_registration', 'sec_registration', [
+      'Securities and Exchange Commission',
+      'Certificate of Incorporation',
+      'Company Reg. No. CS-SYN-1200',
+      'Republic of the Philippines',
+    ]);
+
+    expect(result.entry.detected_family).toBe('sec_registration');
+  });
+
+  it('recognizes the Quezon City Permit to Operate layout and its expiry label', () => {
+    const result = assess('mayors_permit', 'mayors_permit', [
+      'Quezon City Metro Manila',
+      'Business Permits and Licensing Department',
+      'Permit to Operate',
+      "Mayor's Permit No. LGU-SYN-2026-10",
+      'Business Name: Sample Shoe House',
+      'Address: 123 Example Road, Quezon City',
+      'Date Issued: January 10, 2026',
+      'Date Expires: December 31, 2027',
+    ]);
+
+    expect(result.entry.detected_family).toBe('mayors_permit');
+    expect(result.entry.checks.dates?.result).toBe('match');
+  });
+
+  it('recognizes the Filipino BIR issuer and Name of Taxpayer label in Form 2303', () => {
+    const result = assess('bir_certificate', 'bir_certificate', [
+      'Kawanihan ng Rentas Internas',
+      'Revenue Region No. 7B East NCR',
+      'Form 2303 Certificate of Registration',
+      'Name of Taxpayer: Sample Holdings Corporation',
+      'Registered Address: 123 Example Road, Imus, Cavite',
+      'Trade Name 1: Sample Shoe House',
+    ]);
+
+    expect(result.entry.detected_family).toBe('bir_certificate');
   });
 
   it('requires independent type indicators on separate localized lines', () => {
@@ -454,5 +652,7 @@ describe('shop owner document recognition', () => {
 
     expect(result.score).toBeNull();
     expect(result.entry.assessment_state).toBe('unable_to_assess');
+    expect(result.entry.reason_codes).not.toContain('ocr_failed');
+    expect(result.entry.reason_codes).toContain('unsupported_layout');
   });
 });

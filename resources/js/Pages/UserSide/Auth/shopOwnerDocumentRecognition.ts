@@ -33,54 +33,60 @@ type FieldEvidence = {
 };
 type Candidate = FieldEvidence & { key: string };
 type FamilySignal = { family: ShopOwnerOcrFamily; groups: number; confidence: number | null };
-type FamilyEvidence = Pick<FamilySignal, 'groups' | 'confidence'>;
+type FamilyEvidence = Pick<FamilySignal, 'groups' | 'confidence'> & { matchedGroups: number[] };
 type DateValue = { day: string } | { ambiguous: true } | null;
+export type ShopOwnerOcrRelevance =
+  | 'plausible_document'
+  | 'clearly_irrelevant'
+  | 'incompatible_document_type'
+  | 'uncertain_relevance'
+  | 'technical_failure';
 
 const labels = [
-  /\b(?:registered business name|business\s*\/\s*trade name|registered trade name|trade name|business name)\b\s*:?\s*/i,
+  /\b(?:registered business name|business\s*\/\s*trade name|registered trade name|trade name(?:\s+\d+)?|business name)\b\s*:?\s*/i,
   /\b(?:legal entity name|registered entity name|entity name|legal name|corporate name|company name)\b\s*:?\s*/i,
   /\b(?:name of proprietor|proprietor(?:'s)? name|proprietor)\b\s*:?\s*/i,
-  /\b(?:taxpayer classification|type of taxpayer|taxpayer type|entity type)\b\s*:?\s*/i,
-  /\b(?:taxpayer name|registered taxpayer)\b\s*:?\s*/i,
-  /\b(?:business premises|place of business|premises address|business address|registered business address|registered address)\b\s*:?\s*/i,
+  /\b(?:taxpayer classification|type of taxpayer|taxpayer types?|entity type)\b\s*:?\s*/i,
+  /\b(?:name of taxpayer|taxpayer name|registered taxpayer)\b\s*:?\s*/i,
+  /\b(?:business premises|place of business|premises address|business address|registered business address|registered address|address)\b\s*:?\s*/i,
   /\b(?:full name|name of holder|cardholder name|holder name|surname|given names?|name)\b\s*:?\s*/i,
   /\b(?:date of issue|date issued|issue date|issued on|issued|date of registration|registration date)\b\s*:?\s*/i,
-  /\b(?:date of expiration|expiration date|expiry date|valid until|valid through|valid thru|date of validity|expires|expiry|expiration)\b\s*:?\s*/i,
+  /\b(?:date of expiration|expiration date|expiry date|date expires|valid until|valid through|valid thru|date of validity|expires|expiry|expiration)\b\s*:?\s*/i,
   /\b(?:permit reference|permit no\.?|permit number)\b\s*:?\s*/i,
-  /\b(?:registration no\.?|registration number|certificate no\.?|certificate number)\b\s*:?\s*/i,
+  /\b(?:company reg\.? no\.?|company registration no\.?|registration no\.?|registration number|certificate no\.?|certificate number)\b\s*:?\s*/i,
 ];
 
-const businessNameLabel = /\b(?:registered business name|business\s*\/\s*trade name|registered trade name|trade name|business name)\b\s*:?\s*/i;
+const businessNameLabel = /\b(?:registered business name|business\s*\/\s*trade name|registered trade name|trade name(?:\s+\d+)?|business name)\b\s*:?\s*/i;
 const legalNameLabel = /\b(?:legal entity name|registered entity name|entity name|legal name|corporate name|company name)\b\s*:?\s*/i;
 const proprietorLabel = /\b(?:name of proprietor|proprietor(?:'s)? name|proprietor)\b\s*:?\s*/i;
-const taxpayerNameLabel = /\b(?:taxpayer name|registered taxpayer)\b\s*:?\s*/i;
-const addressLabel = /\b(?:business premises|place of business|premises address|business address|registered business address|registered address)\b\s*:?\s*/i;
+const taxpayerNameLabel = /\b(?:name of taxpayer|taxpayer name|registered taxpayer)\b\s*:?\s*/i;
+const addressLabel = /\b(?:business premises|place of business|premises address|business address|registered business address|registered address|address)\b\s*:?\s*/i;
 const holderNameLabel = /\b(?:full name|name of holder|cardholder name|holder name|name)\b\s*:?\s*/i;
 const surnameLabel = /\b(?:surname|last name)\b\s*:?\s*/i;
 const givenNameLabel = /\b(?:given names?|first name)\b\s*:?\s*/i;
 const issueDateLabel = /\b(?:date of issue|date issued|issue date|issued on|issued|date of registration|registration date)\b\s*:?\s*/i;
-const expiryDateLabel = /\b(?:date of expiration|expiration date|expiry date|valid until|valid through|valid thru|date of validity|expires|expiry|expiration)\b\s*:?\s*/i;
-const relationshipLabel = /\b(?:taxpayer classification|type of taxpayer|taxpayer type|entity type)\b\s*:?\s*/i;
+const expiryDateLabel = /\b(?:date of expiration|expiration date|expiry date|date expires|valid until|valid through|valid thru|date of validity|expires|expiry|expiration)\b\s*:?\s*/i;
+const relationshipLabel = /\b(?:taxpayer classification|type of taxpayer|taxpayer types?|entity type)\b\s*:?\s*/i;
 const familyDefinitions: Array<{ family: ShopOwnerOcrFamily; groups: RegExp[] }> = [
   { family: 'dti_registration', groups: [
     /\b(?:department of trade and industry|\bdti\b)/i,
     /\b(?:business name registration|certificate of business name|business name certificate)\b/i,
-    /\b(?:registered business name|business name|registration no\.?|registration number)\b/i,
+    /\b(?:registered business name|business name|registration no\.?|registration number|certificate no\.?|certificate number)\b/i,
   ] },
   { family: 'sec_registration', groups: [
     /\b(?:securities and exchange commission|\bsec\b)/i,
     /\b(?:certificate of incorporation|articles of incorporation|corporate registration certificate)\b/i,
-    /\b(?:registered entity name|legal entity name|company name|registration no\.?|registration number)\b/i,
+    /\b(?:registered entity name|legal entity name|company name|company reg\.? no\.?|company registration no\.?|registration no\.?|registration number|articles of incorporation)\b/i,
   ] },
   { family: 'mayors_permit', groups: [
-    /\b(?:city government|municipal government|municipality of|city of|\blgu\b)/i,
-    /\b(?:mayor'?s permit|business permit)\b/i,
+    /\b(?:city government|municipal government|municipality of|city of|[\p{L} .'-]+\s+city|\blgu\b)/iu,
+    /\b(?:mayor'?s permit|business permit|permit to operate)\b/i,
     /\b(?:permit reference|permit no\.?|permit number|business address|business name)\b/i,
   ] },
   { family: 'bir_certificate', groups: [
-    /\b(?:bureau of internal revenue|\bbir\b)/i,
-    /\b(?:form\s*2303|certificate of registration|BIR COR)\b/i,
-    /\b(?:taxpayer classification|taxpayer name|business name|registered address)\b/i,
+    /\b(?:bureau of internal revenue|kawanihan ng rentas internas|\bbir\b)/i,
+    /\b(?:(?:form\s*)?2303|certificate of registration|BIR COR)\b/i,
+    /\b(?:taxpayer classification|name of taxpayer|taxpayer name|business name|trade name|registered address)\b/i,
   ] },
   { family: 'national_id', groups: [
     /\b(?:philippine statistics authority|\bpsa\b|\bphilsys\b)/i,
@@ -229,18 +235,51 @@ function check(result: ShopOwnerOcrCheck['result'], evidence: FieldEvidence, ind
   };
 }
 
+function matchingSignals(lines: readonly ShopOwnerOcrLine[], pattern: RegExp) {
+  const signals: Array<{ lines: ShopOwnerOcrLine[]; confidence: number }> = [];
+  lines.forEach((line, index) => {
+    const adjacent = [line];
+    for (let end = index; end < Math.min(index + 3, lines.length); end++) {
+      if (end > index) {
+        if (!lineBoxAssociated(lines[end - 1].bbox, lines[end].bbox)) break;
+        adjacent.push(lines[end]);
+      }
+      const words = adjacent.flatMap(item => item.words);
+      const match = pattern.exec(words.map(word => word.text).join(' '));
+      if (!match) continue;
+      let offset = 0;
+      const matched = words.filter(word => {
+        const start = offset;
+        offset += word.text.length + 1;
+        return start < match.index + match[0].length && start + word.text.length > match.index;
+      });
+      const confidence = confidenceOfWords(matched);
+      if (confidence !== null) {
+        signals.push({
+          lines: adjacent.filter(item => item.words.some(word => matched.includes(word))),
+          confidence,
+        });
+      }
+      break;
+    }
+  });
+  return signals.sort((left, right) => right.confidence - left.confidence);
+}
+
 function signalForPass(pass: ShopOwnerOcrPass, groups: readonly RegExp[]): FamilyEvidence {
   const usedLines = new Set<ShopOwnerOcrLine>();
   const confidences: number[] = [];
-  for (const group of groups) {
-    const line = pass.lines.find((item) => !usedLines.has(item) && group.test(item.text) && item.words.length > 0);
-    if (!line) continue;
-    usedLines.add(line);
-    const confidence = confidenceOfWords(line.words);
-    if (confidence !== null) confidences.push(confidence);
+  const matchedGroups: number[] = [];
+  for (const [index, group] of groups.entries()) {
+    const signal = matchingSignals(pass.lines, group).find(item => item.lines.every(line => !usedLines.has(line)));
+    if (!signal) continue;
+    signal.lines.forEach(line => usedLines.add(line));
+    confidences.push(signal.confidence);
+    matchedGroups.push(index);
   }
   return {
     groups: confidences.length,
+    matchedGroups,
     confidence: confidences.length > 0 ? Math.min(...confidences) : null,
   };
 }
@@ -258,12 +297,45 @@ function detectFamily(passes: readonly ShopOwnerOcrPass[]): {
   const strong = signals.filter((signal) => signal.groups === 3 && signal.confidence !== null && signal.confidence >= 0.85);
   const families = [...new Set(strong.map((signal) => signal.family))];
   const family = families.length === 1 ? families[0] : null;
+  // Shared city/field labels cannot compete without that family's category heading.
   const competing = family !== null && signals.some((signal) => signal.family !== family
-    && signal.groups >= 2 && signal.confidence !== null && signal.confidence >= 0.65);
+    && signal.groups >= 2 && signal.matchedGroups.includes(1)
+    && signal.confidence !== null && signal.confidence >= 0.65);
   const unambiguous = family !== null && !competing;
   const matching = strong.filter((signal) => signal.family === family);
   const confidence = matching.length > 0 ? Math.min(...matching.map((signal) => signal.confidence as number)) : null;
   return { family: unambiguous ? family : null, confidence, independent: strong.length > 0, unambiguous };
+}
+
+function hasPlausibleGovernmentDocumentStructure(passes: readonly ShopOwnerOcrPass[]): boolean {
+  const issuer = /\b(?:republic of the philippines|republika ng pilipinas|department|bureau|commission|government|municipality|\blgu\b|kawanihan ng rentas internas)\b/i;
+  const heading = /\b(?:certificate|permit|registration|identification|identity card|license|licence|form\s*\d+|affidavit)\b/i;
+  const structure = new RegExp([...labels.map(label => label.source), '\\b(?:reference|number|no\\.?|date issued|date expires|valid until)\\b'].join('|'), 'i');
+  return passes.some(pass => [[issuer, heading], [heading, structure, structure], [issuer, structure, structure]]
+    .some(groups => {
+      const evidence = signalForPass(pass, groups);
+      return evidence.groups === groups.length && evidence.confidence !== null && evidence.confidence >= 0.65;
+    }));
+}
+
+export function classifyShopOwnerDocumentRelevance(
+  selectedType: ShopOwnerOcrDocumentType,
+  passes: readonly ShopOwnerOcrPass[],
+): Exclude<ShopOwnerOcrRelevance, 'technical_failure'> {
+  const detected = detectFamily(passes);
+  const selectedId = selectedType === 'valid_id';
+  const detectedId = detected.family === 'national_id' || detected.family === 'drivers_license'
+    || detected.family === 'passport' || detected.family === 'umid';
+
+  if (detected.family) {
+    return (selectedId ? detectedId : detected.family === selectedType)
+      ? 'plausible_document'
+      : 'incompatible_document_type';
+  }
+
+  if (hasPlausibleGovernmentDocumentStructure(passes)) return 'uncertain_relevance';
+  // A completed read needs positive document evidence; pixel texture cannot supply it.
+  return 'clearly_irrelevant';
 }
 
 function businessNameCheck(
@@ -315,7 +387,12 @@ function addressCheck(passes: readonly ShopOwnerOcrPass[], context: ShopOwnerOcr
   const normalizeAddress = (value: string) => normalizeComparable(value)
     .replace(/\bbrgy\b/g, 'barangay')
     .replace(/\bblk\b/g, 'block');
-  return check(normalizeAddress(evidence.value) === normalizeAddress(context.businessAddress) ? 'match' : 'mismatch', evidence);
+  const actual = normalizeAddress(evidence.value);
+  const expected = normalizeAddress(context.businessAddress);
+  if (actual !== expected && actual.split(' ').every((token) => expected.split(' ').includes(token))) {
+    return check('uncertain', { ...evidence, complete_value: false });
+  }
+  return check(actual === expected ? 'match' : 'mismatch', evidence);
 }
 
 function parsedDate(value: string): DateValue {
@@ -479,9 +556,8 @@ function documentTypeCheck(
   return check(family === null || !unambiguous ? 'uncertain' : matches ? 'match' : 'mismatch', evidence, independent);
 }
 
-function reasonCodesFor(checks: Partial<Record<ShopOwnerOcrCheckKey, ShopOwnerOcrCheck>>, family: ShopOwnerOcrFamily | null, hasText: boolean): ShopOwnerOcrReasonCode[] {
+function reasonCodesFor(checks: Partial<Record<ShopOwnerOcrCheckKey, ShopOwnerOcrCheck>>, family: ShopOwnerOcrFamily | null): ShopOwnerOcrReasonCode[] {
   const reasons = new Set<ShopOwnerOcrReasonCode>();
-  if (!hasText) reasons.add('ocr_failed');
   if (checks.document_type?.result === 'mismatch') reasons.add('wrong_document_type');
   if (checks.business_identity?.result === 'mismatch') reasons.add('business_identity_conflict');
   if (checks.owner_identity?.result === 'mismatch') reasons.add('owner_identity_conflict');
@@ -492,7 +568,7 @@ function reasonCodesFor(checks: Partial<Record<ShopOwnerOcrCheckKey, ShopOwnerOc
   if (Object.values(checks).some((item) => item?.confidence !== null && item?.confidence !== undefined && item.confidence < 0.85)) {
     reasons.add('low_recognition_confidence');
   }
-  if (hasText && family === null) reasons.add('unsupported_layout');
+  if (family === null) reasons.add('unsupported_layout');
   return [...reasons].slice(0, 8);
 }
 
@@ -554,7 +630,7 @@ export function assessShopOwnerDocument(
       ? { recognition_confidence: Math.max(...passes.map((pass) => pass.confidence).filter((value): value is number => Number.isFinite(value))) }
       : {}),
     checks,
-    reason_codes: reasonCodesFor(checks, type.family, hasText),
+    reason_codes: reasonCodesFor(checks, type.family),
   };
   return entry;
 }

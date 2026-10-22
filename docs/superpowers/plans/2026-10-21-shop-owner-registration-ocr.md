@@ -12,13 +12,13 @@
 
 ## Authority and current status
 
-Planning baseline: 2026-10-21. The user approved the [revised specification](../specs/2026-10-21-shop-owner-registration-ocr-design.md) and requested this separate plan. The user subsequently approved execution in an isolated worktree. Phases 0-6 are implemented; Phase 7 evidence is recorded with unresolved end-to-end/browser and full-suite gates below and in the [execution record](../../operations/shop-owner-registration-ocr-execution.md).
+Planning baseline: 2026-10-21. The user approved the [revised specification](../specs/2026-10-21-shop-owner-registration-ocr-design.md), then approved execution in an isolated worktree. On 2026-10-22 the user approved a scoped relevance-gate revision; its implementation and test evidence are recorded below and in the [execution record](../../operations/shop-owner-registration-ocr-execution.md). Phase 7 remains incomplete because authenticated registration/resubmission/admin browser journeys and production-host compatibility checks are unresolved.
 
 The authoritative specification is the approved working-tree revision, not the older version of that file in HEAD. Its SHA-256 at planning time is `AFF1C92F87DF8A54A80C49C91A8CF35DBBF447B548A3A6844AC6ADE6172E6F27`. Re-read the approved file if its hash changes; do not silently substitute the older committed design.
 
-Planning checkout at approval: `fix/logistics-hardening-follow-up`, HEAD `7ba4d5b36ec509a0ddf9c04a2e99d5fe97d394cd`. Execution checkout: `.worktrees/shop-owner-registration-ocr`, branch `codex/shop-owner-registration-ocr`, based on that HEAD. Customer helper source reference: `6540002bdfb0fd63d5f7f643f225343facc8ac77` on `feat/customer-registration-identity-verification`.
+The isolated execution checkout is `.worktrees/shop-owner-registration-ocr`, branch `codex/shop-owner-registration-ocr-solspace-b`, HEAD `005f1d9cebbdba64cd55ca453c0c1e84ba2477ea`; the fetched `origin/solespace-b` is an ancestor. Customer helper source reference: `6540002bdfb0fd63d5f7f643f225343facc8ac77` on `feat/customer-registration-identity-verification`.
 
-The architecture is settled: browser Tesseract.js only; no VPS/server OCR, paid OCR API, government lookup, auto-approval, or auto-rejection. Scores remain preliminary and untrusted. Optional OCR failures do not block otherwise valid registration, and malformed metadata actually submitted still receives validation errors.
+The architecture is settled: browser Tesseract.js only; no VPS/server OCR, paid OCR API, government lookup, auto-approval, or auto-rejection. Scores remain preliminary and untrusted. Technical OCR failures do not block otherwise valid registration. The 2026-10-22 amendment pauses submission during scans and requires replacement for a successfully classified irrelevant image or reliably incompatible type; field conflicts and plausible uncertainty remain submittable. Malformed metadata actually submitted still receives validation errors.
 
 ## Repository grounding and protection boundary
 
@@ -233,6 +233,7 @@ Expected: focused tests pass; only intended package/lock changes; manifest/check
 - [x] Add Mayor's Permit cases for varied synthetic layouts and premises addresses; add Form 2303 registered/trade/taxpayer role cases without TIN verification or invented annual expiry. Test clear conflicts and legitimate legal/trade-name uncertainty.
 - [x] Add owner-ID name/type/date cases using the existing personal-name helper only as compatible supporting evidence. Partial helper mismatches stay uncertain unless a reliable complete holder field conflicts. No extra side, shop-address comparison, or unsupported-family rejection was introduced.
 - [x] Add common date tests using the supplied reference day: dated expiry, future issue, reversed range, metadata conflict, ambiguous date order, known non-expiring versus unknown/unreadable policy, and reference-day rollover while preserving an unrelated conflict. Add `O`/`0`, `I`/`1`, broken/obscured text, missing labels, and partial address cases.
+- [x] Apply the approved 2026-10-22 relevance amendment: the owner reader returns transient `document_layout` evidence from a bounded grayscale row-edge sample. Several separated high-contrast row bands preserve unreadable but document-like images as uncertain; a successfully scanned image with no plausible document cues and confirmed non-document-like layout requires replacement. Unknown layout evidence remains nonblocking. This is a coarse layout signal, not a template/object classifier or persisted report field.
 - [x] Write deferred-promise hook tests before implementation. Cover latest-file-only queueing, replacement/removal, one active reader, late results, unresolved cleanup, timeout, missing assets, unsupported browser in the reader suite, form edits, and unmount. Reader tests also cover startup timing out and terminating a late-created worker; the hook drains queued work if cleanup is not confirmed.
 - [x] Implement the small hook with per-slot selection generations, a sequential queue, transient pass-local evidence, and a submission snapshot serializer. It dynamically imports the reader only for an eligible required file and uses type-only reader imports; the ordinary registration page is not wired until Phase 5.
 - [x] Recalculate affected checks from retained words when form/date/type context changes, without rereading. Keep owner-ID context independent of shop address and evaluate asynchronous results against the latest selected type/context.
@@ -243,7 +244,7 @@ pnpm run test:frontend resources/js/Pages/UserSide/Auth/__tests__/shopOwnerDocum
 pnpm run test:frontend resources/js/Pages/UserSide/Auth/__tests__/useShopOwnerOcr.test.tsx resources/js/Pages/UserSide/Auth/__tests__/shopOwnerScreening.test.ts
 ```
 
-**Checkpoint:** Met for synthetic recognizer and controlled lifecycle tests. A reliable conflict can yield 0%; missing, weak, unsupported, or contradictory evidence cannot. Live fixture/image checks remain a Phase 7 gate.
+**Checkpoint:** Met for synthetic recognizer and controlled lifecycle tests. A reliable conflict can yield 0%; missing, weak, unsupported, or contradictory evidence cannot. Relevance remains separate from scoring. The row-layout fallback and blur-vs-photo tradeoff require the Phase 7 actual-browser gate.
 
 **Execution record — Phase 3:** `pnpm run test:frontend resources/js/Pages/UserSide/Auth/__tests__/shopOwnerDocumentRecognition.test.ts resources/js/Pages/UserSide/Auth/__tests__/useShopOwnerOcr.test.tsx resources/js/Pages/UserSide/Auth/registrationOcr.test.ts resources/js/Pages/UserSide/Auth/registrationNameMatch.test.ts` passed (4 files, 55 tests). The fixtures are synthetic SVGs, not actual OCR results; no accuracy claim is made. Owner preprocessing caps large images at 1,800px without upscaling smaller ones. A cleanup timeout deliberately blocks new worker creation and leaves submission available.
 
@@ -297,7 +298,7 @@ Final Phase 4 verification: direct `vendor/bin/phpunit tests/Unit/Services/ShopO
 - [x] Write page/bootstrap/payload tests for fresh registration and signed resubmission, absent bootstrap/assets, original-file submission, unfinished scan, safe optional omission, and unchanged CSRF/endpoint choice. Mock only OCR/geolocation/network/modal surfaces needed for focused page behavior, not validation away.
 - [x] Wire required-file selection/replacement/removal and relevant form/date/type changes into the hook. Show compact aria-live progress and preliminary/manual-review/unavailable statuses next to existing fields. Do not show detailed thresholds or add mandatory applicant acknowledgement fields.
 - [x] Extend the payload helper compatibly to append only valid serialized optional evidence. Existing callers with no evidence produce the same multipart files/metadata/submission keys. File field names, accepted formats/size, optional documents, and original image bytes are unchanged.
-- [x] Keep submit enabled/disabled by existing form validation/submission state only. Do not await OCR or add its loading state to admission gates. A serialization/import/worker failure omits optional evidence and leaves current validation/error navigation operational.
+- [x] Keep submit independent of OCR scores and report serialization, but pause it while a newly selected required file is queued/scanning. Require replacement only for a successfully classified irrelevant image or reliably incompatible type; 0% field conflicts and plausible 50% uncertainty remain submitable. Disable the final button and repeat the guard in its handler. Technical failure or safe serializer omission leaves existing validation/error navigation operational.
 - [x] On failed ordinary validation, keep evidence only for unchanged file/context. On completed submission/unmount, release transient evidence/work. Retained signed-resubmission documents without local OCR text remain eligible for manual review and rely only on safe server-side report inheritance.
 
 ```powershell
@@ -350,6 +351,7 @@ php artisan test tests/Feature/SuperAdmin/ShopOwnerOcrReviewTest.php tests/Featu
 - [x] Inspect the built import graph/network: opening registration without a document must not fetch the OCR worker/core/language or execute Tesseract; selecting a required file should load the deferred reader/runtime. Do not introduce a manual vendor chunk, new lazy wrapper, or broad bundle refactor unless necessary to correct an observed eager import.
 - [x] Perform browser verification with `webapp-testing`/available Playwright or browser controls against a disposable local environment, not production. Preserve normal email/location/auth validation. Use existing test setup/accounts/local mail capture and a supported local Cavite-location test arrangement, without adding auth bypass routes or putting credentials in code/artifacts. If the required test actors/environment are unavailable, record that portion as blocked/not run rather than fabricating a pass.
 - [x] Exercise actual browser OCR on synthetic fixtures in Chromium and WebKit, inspect cold-cache lazy loading, and force a missing local worker to confirm failure cleanup without external fallback. Detailed results are in the execution record.
+- [x] After the approved relevance amendment, run the actual Chromium Tesseract engine over synthetic blank/solid images, a meme, landscape, selfie-like drawing, wrong SEC and PhilSys families, an unsupported certificate, a heavily blurred document-like certificate, a DTI field conflict, and a missing-worker failure. Verify relevance outcomes, local-only asset requests, and the 0% conflict remains nonblocking. Synthetic outcomes are functional evidence only; no accuracy rate is claimed.
 - [ ] Complete the full authenticated fresh-registration and signed-resubmission browser journeys, including replacement/removal, relevant form changes, pending scan submission, accessible state, and normal email/location validation. The local OTP path was unavailable; focused tests cover these flows.
 - [ ] Verify the protected Super Admin page in a browser with test registrations spanning scores/unknown states, historical versions, original-document viewing, and explicit decisions. No authenticated test reviewer was available; backend decision-isolation tests passed.
 - [x] Capture local worker/core/language URLs, statuses, MIME types, cold-cache requests, and a smoke archive containing both `public/build/` and ignored `public/ocr/`.
@@ -391,13 +393,13 @@ Verify the selected app/database isolation and port availability before using th
 | A3 Recognition errors | 1-3 | Reader/recognizer cases for local versus document confidence, medium/low/absent words, character ambiguity and obscured fields. |
 | A4 Dates | 1, 3-4, 6 | Date cases, supplied reference day, non-expiry policy, existing mandatory date metadata and unverified pending status. |
 | A5 Scoring | 1, 6 | Shared TS/PHP cases and admin tests for all scores/states/five aggregates, conflict precedence and incomplete indicator. |
-| A6 Nonblocking admission | 3-5, 7 | Hook/page/payload tests and registration feature cases; actual browser submit during scan/failure; malformed metadata stays a separate validation case. |
+| A6 Relevance gate and technical fallback | 3-5, 7 | Hook/page tests cover pending/handler guard, blank/random/meme/wrong type replacement, plausible unsupported and unreadable document-like allowance, 0% conflict allowance, and technical failure. Actual Chromium Tesseract run covers the same relevance boundary on synthetic images; malformed metadata stays a separate Laravel validation case. |
 | A7 Browser lifecycle | 2-3, 5, 7 | Reader/hook deferred-promise/fake-timer tests, worker cleanup/fallback/image bound, browser replacement/unmount/slow-scan checks. |
 | A8 Deployment | 2, 5, 7 | Node packaging tests, actual versioned manifest/checksums, production build, cold-cache same-origin resource/core/base-path checks. |
 | A9 Persistence | 1, 4 | Envelope boundary/forbidden-field cases, model/schema checks, private serialization, server binding, replay and rollback tests. |
 | A10 Version isolation | 4-6 | Retained/replaced signed resubmission and reapplication, context/schema changes, corrected metadata, history/current aggregate tests, dated snapshot warnings. |
 | A11 Authority/privacy | 4, 6-7 | Per-score approve and reject cases, missing-view/metadata/reason denials, viewer authorization/ownership, pending operational-access denial, safe props/logging. |
-| A12 Regressions | 0, 2, 4-7 | Recorded baseline, compatible helper defaults, existing registration/location/email/document/decision/privacy suites, customer tests actually present, unrelated-work diff audit. |
+| A12 Regressions | 0, 2, 4-7 | Recorded baseline, compatible helper defaults, existing registration/location/email/document/decision/privacy suites, full frontend suite (309 files/2,011 tests after amendment), customer tests actually present, unrelated-work diff audit. The full Composer suite remains incomplete. |
 
 ## Review, commits, deployment boundary, and rollback
 
@@ -467,10 +469,35 @@ Phase 7 is **incomplete**. The authenticated registration/resubmission and Super
 | Acceptance group | Current status |
 | --- | --- |
 | A1-A5 | Focused synthetic recognition, field matching/date cases, TS/PHP scoring parity, and admin projection tests pass; actual OCR was exercised on eight synthetic images in Chromium and one in WebKit. Accuracy is not measured. |
-| A6-A7 | Backend/frontend tests pass; the full authenticated integrated browser journey and page-level lifecycle remain unverified. |
+| A6-A7 | Focused and full frontend tests pass after the relevance amendment; synthetic Chromium/Tesseract cases exercise the gate. Authenticated OTP journeys and full integrated page lifecycle remain unverified. |
 | A8 | Build, manifest/checksum, local HTTP/MIME, lazy-load, and archive smoke checks pass. Hostinger, CSP, and browser subpath deployment remain unverified. |
 | A9-A10 | Persistence, privacy, replay, rollback, retained-file, stale-context, and version-isolation tests pass. No production migration was run. |
 | A11 | Backend decision/view authorization tests pass at the scores and unassessed state. Authenticated Super Admin browser verification remains unrun. |
-| A12 | Focused and affected backend regression suites pass. The full frontend and Composer suite gates remain incomplete as described above. |
+| A12 | Full frontend suite passes on the amended worktree (309 files/2,011 tests); the focused backend suite passed after rebase. The full Composer suite remains incomplete as described above. |
 
 Do not describe this worktree as fully verified or deployment-ready until the remaining Phase 7 gates are resolved or accepted in a later release decision. Deployment, push, merge, and production migration remain unauthorized.
+
+## Historical applicant-relevance gate verification addendum - 2026-10-22
+
+The user-approved relevance amendment is implemented in the isolated `solespace-b` worktree. The final wizard pauses while a required scan is queued/running and blocks only successfully classified clearly irrelevant or incompatible required images. The guard is repeated in the submit handler. Plausible documents remain submitable when checks are uncertain or business/owner/address/date fields conflict, including score 0%; technical OCR failures remain nonblocking. No backend report, decision, authorization, or customer OCR code changed for this amendment.
+
+The transient classifier uses local Tesseract pass evidence plus a bounded grayscale row-edge layout signal. It does not use templates, logos, colors, image similarity, faces, or external services. A document-like unreadable image remains uncertain. This heuristic can miss unusual document layouts and can treat structured photos as document-like; the client-only block can be bypassed by manipulating or skipping browser code. It deters obvious troll uploads but does not establish authenticity or enforce a server-side security boundary.
+
+Fresh verification for the amendment:
+
+- Focused Vitest direct-binary run: five files, 80 tests passed.
+- Full frontend direct-binary run: 309 files, 2,011 tests passed. This supersedes the prior full-frontend results in the historical Phase 7 record.
+- Node asset packaging tests: four passed; pinned `public/ocr` manifest/assets passed read-only integrity verification.
+- Project production build script passed with 3,850 modules transformed and output directed to a new temporary directory, preserving tracked `public/build`. The generated manifest keeps `registrationOcr.ts` dynamically imported.
+- Actual Chromium with local Tesseract 7 exercised synthetic blank/solid images, meme and random images, selfie-like drawing, wrong SEC/ID families, unsupported government-like text, unreadable document-like layout, a plausible DTI field conflict, and forced worker failure. Outcomes matched the stated gate; no OCR text was retained and no external OCR requests occurred. These checks are functional examples, not accuracy or fraud-performance evidence.
+- `git diff --check` passed. The asset checker needed authorized package-store read access because default sandbox access could not traverse the pnpm store; the successful check made no changes.
+
+The latest amendment does not close Phase 7: authenticated fresh registration/resubmission/admin browser journeys, production Hostinger delivery/CSP/subpath behavior, and the full Composer suite remain unverified or incomplete as detailed in the [execution record](../../operations/shop-owner-registration-ocr-execution.md). No push, merge, deployment, or production migration occurred.
+
+## Current relevance correction - 2026-10-22
+
+The historical row-edge heuristic above is superseded by the user's subsequent bug-fix request. Actual-form reproduction showed that a synthetic portrait could be called document-like and fall through to allowed uncertainty. A successfully completed scan now requires positive issuer/heading/field-structure evidence to remain eligible. No usable document evidence, including an empty successful read, requires replacement/retake; it is not a technical failure. Reliable incompatible families require replacement. Plausible supported/unsupported documents remain eligible with their existing categorical matching score; real worker/asset/browser failures remain nonblocking.
+
+The implementation removes the unused pixel-layout sampler, preserves technical-failure state, adds a final relevance guard after asynchronous confirmation/CSRF retrieval, and clarifies recognized-type versus uncertain-field feedback. Existing file/preview state is reused, full-document previews and safe bounded filename display are verified, and original multipart files remain unchanged. The administrative score rules, Laravel validation/persistence, signed resubmission and manual decisions are not replaced.
+
+Execution follows the scoped file-level plan and fresh verification in the [correction report](../../operations/2026-10-22-shop-owner-ocr-relevance-fix.md). Its recorded results supersede only the corresponding earlier assertions. Original Phase 7 deployment/authenticated-review/full-suite limitations remain visible rather than being declared complete by this correction.

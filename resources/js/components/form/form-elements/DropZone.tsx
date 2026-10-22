@@ -1,4 +1,5 @@
 import { useDropzone } from "react-dropzone";
+import { displayUploadFileName } from '@/utils/uploadFileName';
 
 interface DropzoneProps {
   onDrop?: (acceptedFiles: File[]) => void;
@@ -9,6 +10,8 @@ interface DropzoneProps {
   fileName?: string;
   previewUrl?: string;
   previewAlt?: string;
+  previewFit?: 'cover' | 'contain';
+  uploadedLabel?: string;
   compact?: boolean;
   uploadLabel?: string;
   accept?: {
@@ -32,12 +35,16 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
   fileName,
   previewUrl,
   previewAlt,
+  previewFit = 'cover',
+  uploadedLabel = 'File Uploaded Successfully!',
   compact = false,
   uploadLabel = 'Upload document',
   accept,
   onInvalidFiles,
 }) => {
   const showUploadedState = isUploaded && !isExistingFile;
+  const displayFileName = displayUploadFileName(fileName);
+  const fileNameTitle = displayFileName && displayFileName.length <= 160 ? displayFileName : undefined;
 
   const handleDrop = (acceptedFiles: File[], fileRejections: Array<{ file: File }>) => {
     if (fileRejections.length > 0 && onInvalidFiles) {
@@ -55,7 +62,7 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
   });
 
   return (
-    <div className={`transition border border-dashed cursor-pointer rounded-xl ${
+    <div className={`min-w-0 max-w-full overflow-hidden focus-within:ring-2 focus-within:ring-inset focus-within:ring-gray-950 dark:focus-within:ring-gray-300 transition border border-dashed cursor-pointer rounded-xl ${
       compact
         ? "border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900"
         : showUploadedState
@@ -83,7 +90,7 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
       >
         <input {...getInputProps()} id={inputId} aria-label={inputAriaLabel} />
 
-        <div className={`dz-message flex flex-col items-center m-0! ${compact ? 'w-full' : ''}`}>
+        <div className="dz-message flex min-w-0 w-full flex-col items-center m-0!">
           <div className={`${compact ? 'mb-3' : 'mb-[22px]'} flex w-full justify-center`}>
             {showUploadedState && previewUrl ? (
               <div className={`flex items-center justify-center overflow-hidden border bg-white shadow-sm ${
@@ -93,8 +100,8 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
               }`}>
                 <img
                   src={previewUrl}
-                  alt={previewAlt || fileName || 'Uploaded preview'}
-                  className={`h-full w-full ${compact ? 'object-contain' : 'object-cover'}`}
+                  alt={previewAlt || displayFileName || 'Uploaded preview'}
+                  className={`h-full w-full ${compact || previewFit === 'contain' ? 'object-contain' : 'object-cover'}`}
                 />
               </div>
             ) : (
@@ -124,8 +131,8 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
 
           {compact ? (
             <>
-              {showUploadedState && fileName && (
-                <p className="mb-2 w-full max-w-[176px] truncate text-center text-xs font-medium text-gray-700 dark:text-gray-200" title={fileName}>{fileName}</p>
+              {showUploadedState && displayFileName && (
+                <p className="mb-2 w-full max-w-[176px] truncate text-center text-xs font-medium text-gray-700 dark:text-gray-200" title={fileNameTitle}>{displayFileName}</p>
               )}
               {!showUploadedState && (
                 <h4 className="mb-2 text-sm font-semibold text-gray-800 dark:text-white/90">
@@ -143,11 +150,11 @@ const DropzoneComponent: React.FC<DropzoneProps> = ({
                   ? "text-green-600 dark:text-green-400"
                   : "text-gray-800 dark:text-white/90"
               }`}>
-                {showUploadedState ? "File Uploaded Successfully!" : isDragActive ? "Drop Files Here" : "Drag & Drop Documents Here"}
+                {showUploadedState ? uploadedLabel : isDragActive ? "Drop Files Here" : "Drag & Drop Documents Here"}
               </h4>
 
-              {showUploadedState && fileName && (
-                <p className={`text-sm mb-2 font-medium ${showUploadedState ? 'text-green-600 dark:text-green-400' : 'text-gray-700 dark:text-gray-200'}`}>{fileName}</p>
+              {showUploadedState && displayFileName && (
+                <p title={fileNameTitle} className={`min-w-0 w-full max-w-full truncate text-center text-sm mb-2 font-medium ${showUploadedState ? 'text-green-600 dark:text-green-400' : 'text-gray-700 dark:text-gray-200'}`}>{displayFileName}</p>
               )}
 
               <span className={`font-medium underline text-theme-sm ${

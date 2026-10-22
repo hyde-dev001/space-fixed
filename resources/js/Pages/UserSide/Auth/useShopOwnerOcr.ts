@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { assessShopOwnerDocument, type ShopOwnerOcrContext } from './shopOwnerDocumentRecognition';
+import {
+  assessShopOwnerDocument,
+  classifyShopOwnerDocumentRelevance,
+  type ShopOwnerOcrContext,
+  type ShopOwnerOcrRelevance,
+} from './shopOwnerDocumentRecognition';
 import {
   scoreOwnerOcrEntry,
   serializeOwnerOcrEnvelope,
@@ -19,12 +24,13 @@ const reasonCodes: ShopOwnerOcrReasonCode[] = [
 ];
 
 export type ShopOwnerOcrAssets = Pick<ShopOwnerOcrReaderOptions, 'workerPath' | 'corePath' | 'langPath'>;
-export type ShopOwnerOcrStatus = 'queued' | 'loading' | 'recognizing' | 'complete' | 'review' | 'unable';
+export type ShopOwnerOcrStatus = 'queued' | 'loading' | 'recognizing' | 'complete' | 'review' | 'unable' | 'replacement_required';
 export type ShopOwnerOcrSlotState = {
   status: ShopOwnerOcrStatus;
   score?: 0 | 50 | 100 | null;
   entry?: ShopOwnerOcrEntry;
   reasonCode?: ShopOwnerOcrReasonCode;
+  relevance?: ShopOwnerOcrRelevance;
 };
 
 export type UseShopOwnerOcrOptions = {
@@ -75,12 +81,20 @@ async function cleanupConfirmed(cleanup: Promise<void>): Promise<boolean> {
   });
 }
 
-function stateForEntry(entry: ShopOwnerOcrEntry, slot: ShopOwnerOcrSlot, type: ShopOwnerOcrDocumentType): ShopOwnerOcrSlotState {
+function stateForEntry(
+  entry: ShopOwnerOcrEntry,
+  slot: ShopOwnerOcrSlot,
+  type: ShopOwnerOcrDocumentType,
+  relevance: ShopOwnerOcrRelevance,
+): ShopOwnerOcrSlotState {
   const { score } = scoreOwnerOcrEntry(slot, type, entry);
-  if (entry.assessment_state === 'unable_to_assess') {
-    return { status: 'unable', score: null, entry, reasonCode: entry.reason_codes?.[0] };
+  if (relevance === 'clearly_irrelevant' || relevance === 'incompatible_document_type') {
+    return { status: 'replacement_required', score, entry, relevance };
   }
-  return { status: score === 100 ? 'complete' : 'review', score, entry };
+  if (entry.assessment_state === 'unable_to_assess') {
+    return { status: 'unable', score: null, entry, reasonCode: entry.reason_codes?.[0], relevance };
+  }
+  return { status: score === 100 ? 'complete' : 'review', score, entry, relevance };
 }
 
 export function useShopOwnerOcr(options: UseShopOwnerOcrOptions) {
@@ -95,9 +109,12 @@ export function useShopOwnerOcr(options: UseShopOwnerOcrOptions) {
   const blocked = useRef(false);
   const finished = useRef(false);
   const mounted = useRef(true);
+  const slotStatuses = useRef(new Map<ShopOwnerOcrSlot, ShopOwnerOcrStatus>());
   const [storedStates, setStoredStates] = useState<Partial<Record<ShopOwnerOcrSlot, ShopOwnerOcrSlotState>>>({});
   const setSlotState = useCallback((slot: ShopOwnerOcrSlot, next: ShopOwnerOcrSlotState | null) => {
     if (!mounted.current || finished.current) return;
+    if (next) slotStatuses.current.set(slot, next.status);
+    else slotStatuses.current.delete(slot);
     setStoredStates((current) => {
       const updated = { ...current };
       if (next) updated[slot] = next;
@@ -123,7 +140,7 @@ export function useShopOwnerOcr(options: UseShopOwnerOcrOptions) {
     }
     const entry = unableEntry(reason, optionsRef.current.context.referenceDay);
     evidence.current.set(slot, { generation, entry });
-    setSlotState(slot, stateForEntry(entry, slot, type));
+    setSlotState(slot, { status: 'unable', score: null, entry, reasonCode: reason, relevance: 'technical_failure' });
   }, [setSlotState]);
 
   const drain = useCallback(async () => {
@@ -152,6 +169,7 @@ export function useShopOwnerOcr(options: UseShopOwnerOcrOptions) {
         const reader = await import('./registrationOcr');
         const result = await reader.readShopOwnerDocument(file, {
           ...assets,
+          layout: slot === 'valid_id' ? 'id' : 'certificate',
           signal: controller.signal,
           onStage: (stage) => {
             if (selections.current.get(slot)?.generation === generation) {
@@ -162,9 +180,10 @@ export function useShopOwnerOcr(options: UseShopOwnerOcrOptions) {
         const currentType = optionsRef.current.selectedDocumentTypes[slot];
         if (selections.current.get(slot)?.generation === generation && !finished.current) {
           if (validTypeForSlot(slot, currentType)) {
+            const relevance = classifyShopOwnerDocumentRelevance(currentType, result.passes);
             const entry = assessShopOwnerDocument(slot, currentType, result.passes, optionsRef.current.context);
             evidence.current.set(slot, { generation, passes: result.passes });
-            setSlotState(slot, stateForEntry(entry, slot, currentType));
+            setSlotState(slot, stateForEntry(entry, slot, currentType, relevance));
           } else {
             makeUnable(slot, generation, 'ocr_unavailable');
           }
@@ -229,6 +248,22 @@ export function useShopOwnerOcr(options: UseShopOwnerOcrOptions) {
     return serializeOwnerOcrEnvelope(entries, optionsRef.current.selectedDocumentTypes);
   }, [currentEntry]);
 
+  const submissionBlockReason = useCallback((): 'scan_pending' | 'replacement_required' | null => {
+    if ([...slotStatuses.current.values()].some((status) => status === 'queued' || status === 'loading' || status === 'recognizing')) {
+      return 'scan_pending';
+    }
+    for (const [slot, item] of evidence.current) {
+      const type = optionsRef.current.selectedDocumentTypes[slot];
+      if (item.passes && validTypeForSlot(slot, type)
+        && ['clearly_irrelevant', 'incompatible_document_type'].includes(
+          classifyShopOwnerDocumentRelevance(type, item.passes),
+        )) {
+        return 'replacement_required';
+      }
+    }
+    return null;
+  }, []);
+
   const finish = useCallback(() => {
     if (finished.current) return;
     finished.current = true;
@@ -239,6 +274,7 @@ export function useShopOwnerOcr(options: UseShopOwnerOcrOptions) {
     generations.current.clear();
     queue.current = [];
     queued.current.clear();
+    slotStatuses.current.clear();
     if (mounted.current) setStoredStates({});
   }, []);
 
@@ -255,6 +291,7 @@ export function useShopOwnerOcr(options: UseShopOwnerOcrOptions) {
       generations.current.clear();
       queue.current = [];
       queued.current.clear();
+      slotStatuses.current.clear();
     };
   }, []);
 
@@ -262,8 +299,13 @@ export function useShopOwnerOcr(options: UseShopOwnerOcrOptions) {
   for (const [slot, item] of evidence.current) {
     const entry = currentEntry(slot, item);
     const type = optionsRef.current.selectedDocumentTypes[slot];
-    if (entry && validDocumentType(type)) states[slot] = stateForEntry(entry, slot, type);
+    if (entry && validTypeForSlot(slot, type)) {
+      const relevance = item.passes
+        ? classifyShopOwnerDocumentRelevance(type, item.passes)
+        : 'technical_failure';
+      states[slot] = stateForEntry(entry, slot, type, relevance);
+    }
   }
 
-  return { states, selectFile, removeFile, submissionSnapshot, finish };
+  return { states, selectFile, removeFile, submissionSnapshot, submissionBlockReason, finish };
 }
