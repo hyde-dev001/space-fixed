@@ -454,7 +454,7 @@ def verify_form(page,target):
     assert old['status'] in ['loading','queued','recognizing'], 'Removal did not occur during an active scan'
     # The loader covers this control while busy; exercise its real callback
     # independently to verify removal/cancellation without modifying state.
-    page.get_by_role('button',name='Remove selected Shop Registration file',exact=True).evaluate("""element=>{const key=Object.keys(element).find(key=>key.startsWith('__reactProps$'));element[key].onClick();}""")
+    page.get_by_role('button',name='Remove selected Shop Registration file',exact=True,include_hidden=True).evaluate("""element=>{const key=Object.keys(element).find(key=>key.startsWith('__reactProps$'));element[key].onClick();}""")
     page.wait_for_timeout(1200)
     assert 'business_registration' not in page.evaluate(OBSERVE)
     assert page.locator('.dropzone').nth(0).locator('img').count()==0
