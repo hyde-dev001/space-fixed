@@ -9,6 +9,9 @@
 # Three.js embeds upstream GLSL text with whitespace that must stay byte-for-byte intact.
 public/build/assets/vendor-three-core-*.js whitespace=-blank-at-eol,-space-before-tab
 
+# Published OCR license bytes are covered by the runtime checksum manifest.
+public/ocr/*/licenses/* whitespace=-blank-at-eof
+
 /.github export-ignore
 CHANGELOG.md export-ignore
 .styleci.yml export-ignore
