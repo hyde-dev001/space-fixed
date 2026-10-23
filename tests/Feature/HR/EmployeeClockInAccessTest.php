@@ -9,6 +9,7 @@ use App\Models\SuperAdmin;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
@@ -70,7 +71,9 @@ class EmployeeClockInAccessTest extends TestCase
             ->assertJsonPath('message', 'Please clock in on the Time In page before processing business actions.');
 
         $this->actingAs($user, 'user')
-            ->postJson('/api/staff/attendance/check-in')
+            ->post('/api/staff/attendance/check-in', [
+                'photo' => $this->validCameraPhoto(),
+            ], ['Accept' => 'application/json'])
             ->assertOk();
 
         $this->actingAs($user, 'user')
@@ -169,7 +172,9 @@ class EmployeeClockInAccessTest extends TestCase
         $user = User::factory()->for($shop)->create(['status' => 'active']);
 
         $this->actingAs($user, 'user')
-            ->postJson('/api/staff/attendance/check-in')
+            ->post('/api/staff/attendance/check-in', [
+                'photo' => $this->validCameraPhoto(),
+            ], ['Accept' => 'application/json'])
             ->assertOk();
     }
 
@@ -197,7 +202,9 @@ class EmployeeClockInAccessTest extends TestCase
         ]);
 
         $this->actingAs($user, 'user')
-            ->postJson('/api/staff/attendance/check-in')
+            ->post('/api/staff/attendance/check-in', [
+                'photo' => $this->validCameraPhoto(),
+            ], ['Accept' => 'application/json'])
             ->assertStatus(422)
             ->assertJsonPath('error', 'You have already checked in and have not clocked out yet');
 
@@ -220,7 +227,9 @@ class EmployeeClockInAccessTest extends TestCase
         $user = User::factory()->for($shop)->create(['status' => 'active']);
 
         $this->actingAs($user, 'user')
-            ->postJson('/api/staff/attendance/check-in')
+            ->post('/api/staff/attendance/check-in', [
+                'photo' => $this->validCameraPhoto(),
+            ], ['Accept' => 'application/json'])
             ->assertStatus(422)
             ->assertJsonPath('error', 'Outside shop hours');
     }
@@ -256,5 +265,13 @@ class EmployeeClockInAccessTest extends TestCase
                 'open' => null,
                 'close' => null,
             ]);
+    }
+
+    private function validCameraPhoto(): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent(
+            'clock-in.png',
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/ynsAAAAASUVORK5CYII='),
+        );
     }
 }

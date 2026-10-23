@@ -216,6 +216,7 @@ final class OwnerErpPageContractTest extends TestCase
         AttendanceRecord::factory()->create([
             'shop_owner_id' => $owner->id,
             'employee_id' => $employee->id,
+            'check_in_photo_path' => "attendance/{$owner->id}/{$employee->id}/2026-10-22/clock-in.png",
         ]);
 
         $this->actingAs($owner, 'shop_owner')
@@ -224,6 +225,8 @@ final class OwnerErpPageContractTest extends TestCase
                 ->component('ERP/HR/HR', false)
                 ->where('initialSection', 'attendance')
                 ->where('initialAttendance.data.0.employee.id', $employee->id)
+                ->where('initialAttendance.data.0.has_check_in_photo', true)
+                ->missing('initialAttendance.data.0.check_in_photo_path')
                 ->missing('initialAttendance.data.0.employee.email')
             );
     }

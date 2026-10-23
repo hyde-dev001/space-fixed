@@ -243,6 +243,7 @@ final class ReadPageController extends Controller
             ->where('shop_owner_id', $this->shopOwnerId())
             ->orderByDesc('date')
             ->paginate(200);
+        $initialAttendance->getCollection()->each(fn (AttendanceRecord $record) => $record->append('has_check_in_photo'));
 
         return Inertia::render('ERP/HR/HR', [
             'initialAttendance' => $initialAttendance,

@@ -136,6 +136,7 @@ class ShopSettingsController extends Controller
                 'repair_warranty_duration' => (int) ($shopOwner->repair_warranty_days ?? 30),
                 'repair_warranty_duration_unit' => (string) ($shopOwner->repair_warranty_duration_unit ?? 'days'),
                 'order_refund_deadline_days' => (int) ($shopOwner->order_refund_deadline_days ?? 7),
+                'late_grace_period_minutes' => (int) ($shopOwner->late_grace_period_minutes ?? 0),
                 'cod_enabled'          => (bool) ($shopOwner->cod_enabled ?? false),
                 'cod_order_threshold'  => (float) ($shopOwner->cod_order_threshold ?? 5000),
                 'cod_can_enable'       => $codEnablement['ready'],
@@ -568,6 +569,7 @@ class ShopSettingsController extends Controller
             'repair_warranty_duration' => ['sometimes', 'integer', 'min:1', 'max:365'],
             'repair_warranty_duration_unit' => ['sometimes', 'string', Rule::in(array_keys(self::REPAIR_WARRANTY_DURATION_LIMITS))],
             'order_refund_deadline_days' => ['sometimes', 'integer', 'min:1', 'max:30'],
+            'late_grace_period_minutes' => ['sometimes', 'integer', 'min:0', 'max:120'],
             'cod_enabled' => ['sometimes', 'boolean'],
             'cod_order_threshold' => ['sometimes', 'numeric', 'gt:0', 'max:9999999.99'],
             'pay_cycle' => ['sometimes', 'string', 'in:monthly,semi_monthly'],
@@ -631,6 +633,9 @@ class ShopSettingsController extends Controller
         }
         if (isset($validated['order_refund_deadline_days'])) {
             $shopOwnerUpdates['order_refund_deadline_days'] = $validated['order_refund_deadline_days'];
+        }
+        if (array_key_exists('late_grace_period_minutes', $validated)) {
+            $shopOwnerUpdates['late_grace_period_minutes'] = $validated['late_grace_period_minutes'];
         }
         if ($isRetailCapable && array_key_exists('cod_enabled', $validated)) {
             $shopOwnerUpdates['cod_enabled'] = filter_var($validated['cod_enabled'], FILTER_VALIDATE_BOOLEAN);

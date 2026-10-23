@@ -1,7 +1,7 @@
 import MonochromeSelect from "@/components/form/Select";
 import React, { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { usePage } from "@inertiajs/react";
+import { router, usePage } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import IconButton from "@/components/ui/icon-button/IconButton";
 
@@ -202,6 +202,7 @@ const transformAttendanceFromApi = (apiRecord: any) => {
   
   return {
     id: apiRecord.id,
+    hasCheckInPhoto: Boolean(apiRecord.has_check_in_photo),
     name: employeeName,
     department: employee.department || apiRecord.department || "Unknown",
     position: employee.position || apiRecord.position || "Unknown",
@@ -237,7 +238,7 @@ const ViewAttendance: React.FC = () => {
   );
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedStatus, setSelectedStatus] = useState<string>("");
-  const [sortBy, setSortBy] = useState<"name" | "date" | "status">("name");
+  const [sortBy, setSortBy] = useState<"name" | "date" | "status">(ownerMode ? "date" : "name");
   const [selectedRecord, setSelectedRecord] = useState<any | null>(null);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -264,6 +265,8 @@ const ViewAttendance: React.FC = () => {
       setIsLoading(false);
       return;
     }
+
+    const controller = new AbortController();
 
     const fetchAttendance = async () => {
       setIsLoading(true);
@@ -293,7 +296,10 @@ const ViewAttendance: React.FC = () => {
             ...(csrfToken && { 'X-CSRF-TOKEN': csrfToken }),
           },
           credentials: 'include',
+          signal: controller.signal,
         });
+
+        if (controller.signal.aborted) return;
 
         if (!response.ok) {
           const errorText = await response.text();
@@ -302,7 +308,8 @@ const ViewAttendance: React.FC = () => {
         }
 
         const data = await response.json();
-        
+        if (controller.signal.aborted) return;
+
         // Extract geofence metadata
         if (data.geofence_enabled !== undefined) setGeofenceEnabled(data.geofence_enabled);
         if (data.geofence_radius  !== undefined) setGeofenceRadius(data.geofence_radius);
@@ -322,15 +329,36 @@ const ViewAttendance: React.FC = () => {
           setAttendanceData(transformedData);
         }
       } catch (error) {
+        if (controller.signal.aborted) return;
+
         console.error('Error fetching attendance:', error);
         setAttendanceData([]);
+        setPaginationMeta(null);
       } finally {
-        setIsLoading(false);
+        if (!controller.signal.aborted) setIsLoading(false);
       }
     };
 
     fetchAttendance();
+    return () => controller.abort();
   }, [filterMonth, initialAttendance, ownerMode, selectedStatus, currentPage, itemsPerPage, violationsOnly]);
+
+  useEffect(() => {
+    if (!ownerMode) return;
+
+    const interval = window.setInterval(() => {
+      router.reload({
+        only: ["initialAttendance"],
+        preserveScroll: true,
+        onSuccess: (page) => {
+          const records = (page.props as any).initialAttendance?.data;
+          if (Array.isArray(records)) setAttendanceData(records.map(transformAttendanceFromApi));
+        },
+      });
+    }, 30_000);
+
+    return () => window.clearInterval(interval);
+  }, [ownerMode]);
 
   // Calculate statistics
   const stats = useMemo(() => {
@@ -357,7 +385,8 @@ const ViewAttendance: React.FC = () => {
       .sort((a, b) => {
         if (sortBy === "name") return a.name.localeCompare(b.name);
         if (sortBy === "status") return a.status.localeCompare(b.status);
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
+        return new Date(b.rawDate ?? b.date).getTime() - new Date(a.rawDate ?? a.date).getTime()
+          || (b.checkInRaw ?? "").localeCompare(a.checkInRaw ?? "");
       });
   }, [attendanceData, searchTerm, sortBy]);
 
@@ -951,6 +980,22 @@ const ViewAttendance: React.FC = () => {
                   <span className="text-gray-600 dark:text-gray-400">Department</span>
                   <span className="text-gray-900 dark:text-white">{selectedRecord.department}</span>
                 </div>
+              </div>
+
+              <div className="border-t border-dashed border-gray-200 dark:border-gray-800" />
+              <div className="space-y-2">
+                <p className="text-xs font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">Check-in Photo</p>
+                {selectedRecord.hasCheckInPhoto ? (
+                  <img
+                    src={`${ownerMode ? '/api/shop-owner/erp' : '/api'}/hr/attendance/${selectedRecord.id}/check-in-photo`}
+                    alt={`Check-in photo for ${selectedRecord.name}`}
+                    referrerPolicy="no-referrer"
+                    onError={() => setSelectedRecord((record: any) => record?.id === selectedRecord.id ? { ...record, hasCheckInPhoto: false } : record)}
+                    className="max-h-96 w-full rounded-lg border border-gray-200 bg-black object-contain dark:border-gray-700"
+                  />
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">No check-in photo</p>
+                )}
               </div>
 
               <div className="border-t border-dashed border-gray-200 dark:border-gray-800" />

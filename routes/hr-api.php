@@ -181,6 +181,9 @@ Route::prefix('api/hr')->middleware(['web', 'auth:user', 'permission:access-hr-d
         Route::get('/lateness/daily/{date}', [AttendanceController::class, 'getDailyLatenessSummary'])->name('hr.attendance.lateness.daily');
         Route::get('/lateness/trends', [AttendanceController::class, 'getLatenessTrends'])->name('hr.attendance.lateness.trends');
         
+        Route::get('/{id}/check-in-photo', [AttendanceController::class, 'showCheckInPhoto'])
+            ->whereNumber('id')
+            ->name('hr.attendance.check_in_photo');
         Route::get('/{id}', [AttendanceController::class, 'show'])->name('hr.attendance.show');
         Route::patch('/{id}', [AttendanceController::class, 'update'])->name('hr.attendance.patch');
         Route::put('/{id}', [AttendanceController::class, 'update'])->name('hr.attendance.update');

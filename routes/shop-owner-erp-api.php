@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\Logistics\RiderProfileController;
 use App\Http\Controllers\Api\Logistics\ShipmentController;
 use App\Http\Controllers\Logistics\ErpLogisticsController;
 use App\Http\Controllers\Erp\InventoryDashboardController;
+use App\Http\Controllers\Erp\HR\AttendanceController;
 use App\Http\Controllers\Erp\ProductInventoryController;
 use App\Http\Controllers\Erp\StockMovementController;
 use App\Http\Controllers\Erp\SupplierController;
@@ -26,6 +27,9 @@ Route::prefix('api/shop-owner/erp')
     ->group(function (): void {
         Route::get('/hr/audit-logs', [HRAuditLogController::class, 'index'])
             ->name('hr.audit-logs');
+        Route::get('/hr/attendance/{id}/check-in-photo', [AttendanceController::class, 'showOwnerCheckInPhoto'])
+            ->whereNumber('id')
+            ->name('hr.attendance.check-in-photo');
         Route::get('/finance/audit-logs', [FinanceAuditLogController::class, 'index'])
             ->name('finance.audit-logs');
         Route::get('/manager/reports', [ManagerController::class, 'getReports'])

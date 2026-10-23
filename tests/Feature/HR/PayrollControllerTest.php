@@ -306,6 +306,39 @@ class PayrollControllerTest extends TestCase
     }
 
     #[Test]
+    public function test_batch_payroll_uses_saved_grace_results_for_late_days_and_hours(): void
+    {
+        $month = Carbon::parse('2026-03-01');
+        $this->shopOwner->update(['late_grace_period_minutes' => 15]);
+        $this->seedFinalizedAttendanceForMonth($this->employee, $month);
+        $records = AttendanceRecord::query()->where('employee_id', $this->employee->id)->orderBy('date')->get();
+        $records[0]->update([
+            'check_in_time' => '08:15:00',
+            'expected_check_in' => '08:00:00',
+            'expected_check_out' => '17:00:00',
+        ]);
+        $records[1]->update([
+            'check_in_time' => '08:16:00',
+            'expected_check_in' => '08:00:00',
+            'expected_check_out' => '17:00:00',
+        ]);
+        $records = $records->fresh();
+        $this->assertSame('present', $records[0]->status);
+        $this->assertSame(0, $records[0]->minutes_late);
+        $this->assertSame('late', $records[1]->status);
+        $this->assertSame(16, $records[1]->minutes_late);
+
+        $this->actingAs($this->hrUser, 'user')
+            ->postJson('/api/hr/payroll/batch/preview', [
+                'payrollPeriod' => $month->format('Y-m'),
+                'employeeIds' => [$this->employee->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('previews.0.attendance.total_late_days', 1)
+            ->assertJsonPath('previews.0.attendance.total_late_hours', 0.27);
+    }
+
+    #[Test]
     public function test_single_preview_matches_generated_payroll_totals()
     {
         $periodStart = now()->startOfMonth()->toDateString();
