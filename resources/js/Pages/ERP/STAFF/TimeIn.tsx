@@ -1,7 +1,7 @@
 import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Swal from 'sweetalert2';
 import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '../../../utils/geolocation';
 
@@ -231,6 +231,120 @@ export default function TimeIn() {
     const [activeOvertimeId, setActiveOvertimeId] = useState<number | null>(null);
     const [isOvertimeLoading, setIsOvertimeLoading] = useState(false);
     const [processingOvertimeId, setProcessingOvertimeId] = useState<number | null>(null);
+    const [showClockInCamera, setShowClockInCamera] = useState(false);
+    const [clockInCameraStream, setClockInCameraStream] = useState<MediaStream | null>(null);
+    const [clockInPhoto, setClockInPhoto] = useState<File | null>(null);
+    const [clockInPhotoPreview, setClockInPhotoPreview] = useState('');
+    const [clockInCameraError, setClockInCameraError] = useState('');
+    const [isOpeningClockInCamera, setIsOpeningClockInCamera] = useState(false);
+    const cameraVideoRef = useRef<HTMLVideoElement>(null);
+    const cameraStreamRef = useRef<MediaStream | null>(null);
+    const cameraRequestRef = useRef(0);
+    const cameraComponentMountedRef = useRef(false);
+
+    const stopClockInCamera = () => {
+        cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+        cameraStreamRef.current = null;
+        setClockInCameraStream(null);
+    };
+
+    const openClockInCamera = async () => {
+        const requestId = ++cameraRequestRef.current;
+        setShowClockInCamera(true);
+        setClockInCameraError('');
+        setIsOpeningClockInCamera(true);
+
+        try {
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error('Camera access is not available in this browser.');
+            }
+
+            stopClockInCamera();
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'user' },
+                audio: false,
+            });
+            if (!cameraComponentMountedRef.current || requestId !== cameraRequestRef.current) {
+                stream.getTracks().forEach((track) => track.stop());
+                return;
+            }
+            cameraStreamRef.current = stream;
+            setClockInCameraStream(stream);
+        } catch (error) {
+            if (requestId === cameraRequestRef.current && cameraComponentMountedRef.current) {
+                setClockInCameraError(error instanceof Error ? error.message : 'Could not open the camera. Check browser camera permission and try again.');
+            }
+        } finally {
+            if (requestId === cameraRequestRef.current && cameraComponentMountedRef.current) {
+                setIsOpeningClockInCamera(false);
+            }
+        }
+    };
+
+    const captureClockInPhoto = () => {
+        const video = cameraVideoRef.current;
+        if (!video?.videoWidth || !video.videoHeight) {
+            setClockInCameraError('The camera is not ready yet. Please wait and try again.');
+            return;
+        }
+
+        const canvas = document.createElement('canvas');
+        const scale = Math.min(1, 1920 / Math.max(video.videoWidth, video.videoHeight));
+        canvas.width = Math.round(video.videoWidth * scale);
+        canvas.height = Math.round(video.videoHeight * scale);
+        const context = canvas.getContext('2d');
+        if (!context) {
+            setClockInCameraError('Could not capture the camera image. Please try again.');
+            return;
+        }
+
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob((blob) => {
+            if (!blob) {
+                setClockInCameraError('Could not capture the camera image. Please try again.');
+                return;
+            }
+
+            setClockInPhoto(new File([blob], `clock-in-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+            stopClockInCamera();
+            setClockInCameraError('');
+        }, 'image/jpeg', 0.85);
+    };
+
+    const closeClockInCamera = () => {
+        cameraRequestRef.current++;
+        stopClockInCamera();
+        setShowClockInCamera(false);
+        setClockInPhoto(null);
+        setClockInCameraError('');
+        setIsOpeningClockInCamera(false);
+    };
+
+    useEffect(() => {
+        if (!clockInCameraStream || !cameraVideoRef.current) return;
+        cameraVideoRef.current.srcObject = clockInCameraStream;
+        void cameraVideoRef.current.play().catch(() => undefined);
+    }, [clockInCameraStream]);
+
+    useEffect(() => {
+        if (!clockInPhoto) {
+            setClockInPhotoPreview('');
+            return;
+        }
+
+        const previewUrl = URL.createObjectURL(clockInPhoto);
+        setClockInPhotoPreview(previewUrl);
+        return () => URL.revokeObjectURL(previewUrl);
+    }, [clockInPhoto]);
+
+    useEffect(() => {
+        cameraComponentMountedRef.current = true;
+        return () => {
+            cameraComponentMountedRef.current = false;
+            cameraRequestRef.current++;
+            cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+        };
+    }, []);
 
     // Check attendance status on component mount
     useEffect(() => {
@@ -634,9 +748,21 @@ export default function TimeIn() {
         setTotalHours(`${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
     };
 
-    const handleClockIn = async () => {
+    const handleClockIn = () => {
+        setClockInPhoto(null);
+        setClockInCameraError('');
+        setShowClockInCamera(true);
+    };
+
+    const submitClockIn = async () => {
+        if (!clockInPhoto) {
+            setClockInCameraError('A check-in photo is required. Open the camera and take a photo to continue.');
+            return;
+        }
+
         // Check if shop is open
         if (!shopHours || shopHours.is_open === false || !shopHours.open || !shopHours.close) {
+            setClockInCameraError('The shop is closed. You cannot clock in at this time.');
             await Swal.fire({
                 icon: 'error',
                 title: 'Shop Closed',
@@ -649,6 +775,7 @@ export default function TimeIn() {
         const now = getPHTime();
 
         if (!isClockInAllowedAtTime(now, shopHours)) {
+            setClockInCameraError('You cannot clock in outside shop hours.');
             const openTimeDisplay = formatTimeFromString(shopHours.open);
             const closeTimeDisplay = formatTimeFromString(shopHours.close);
             
@@ -672,6 +799,7 @@ export default function TimeIn() {
         let locationPayload: { latitude?: number; longitude?: number } = {};
         if (shopHours?.geofence_enabled) {
             if (!navigator.geolocation) {
+                setClockInCameraError('Location access is required to clock in at this shop.');
                 await Swal.fire({
                     icon: 'error',
                     title: 'Location Required',
@@ -684,6 +812,7 @@ export default function TimeIn() {
                 const position = await getCurrentPositionWithTimeout(GPS_POSITION_OPTIONS);
                 locationPayload = { latitude: position.coords.latitude, longitude: position.coords.longitude };
             } catch {
+                setClockInCameraError('Location access is required. Allow location permission and try again.');
                 await Swal.fire({
                     icon: 'error',
                     title: 'Location Access Denied',
@@ -700,19 +829,26 @@ export default function TimeIn() {
 
         setIsLoading(true);
         try {
+            const formData = new FormData();
+            formData.append('photo', clockInPhoto);
+            if (locationPayload.latitude !== undefined && locationPayload.longitude !== undefined) {
+                formData.append('latitude', String(locationPayload.latitude));
+                formData.append('longitude', String(locationPayload.longitude));
+            }
+
             const response = await fetch('/api/staff/attendance/check-in', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
                     'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
                 },
-                body: Object.keys(locationPayload).length ? JSON.stringify(locationPayload) : undefined,
+                body: formData,
                 credentials: 'include',
             });
 
             const data = await response.json();
 
             if (response.ok) {
+                closeClockInCamera();
                 const now = new Date();
                 setLoginTime(now);
                 setIsClockedIn(true);
@@ -792,6 +928,7 @@ export default function TimeIn() {
                 await fetchAttendanceRecords();
                 await fetchLatenessStats();
             } else {
+                setClockInCameraError(data?.errors?.photo?.[0] || data?.message || data?.error || 'Clock-in failed. Please try again.');
                 // Handle geofence distance error
                 if (data.error === 'Too far from shop') {
                     await Swal.fire({
@@ -827,6 +964,7 @@ export default function TimeIn() {
             }
         } catch (error) {
             console.error('Error clocking in:', error);
+            setClockInCameraError('An error occurred while clocking in. Your photo is still available so you can retry.');
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',
@@ -1299,6 +1437,85 @@ export default function TimeIn() {
     return (
         <AppLayoutERP>
             <Head title="Attendance - Time In/Out" />
+
+            {showClockInCamera && (
+                <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm erp-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="clock-in-photo-title">
+                    <div className="w-full max-w-lg space-y-5 rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
+                        <div>
+                            <h2 id="clock-in-photo-title" className="text-xl font-bold text-gray-900 dark:text-white">Photo required to clock in</h2>
+                            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Take a photo now using your camera. Clock-in requires this photo; uploading a saved image is not available.</p>
+                        </div>
+
+                        <div className="flex min-h-56 items-center justify-center overflow-hidden rounded-xl bg-gray-100 dark:bg-gray-800">
+                            {clockInPhotoPreview ? (
+                                <img src={clockInPhotoPreview} alt="Clock-in photo preview" className="max-h-72 w-full object-contain" />
+                            ) : clockInCameraStream ? (
+                                <video ref={cameraVideoRef} autoPlay playsInline muted className="max-h-72 w-full object-contain" aria-label="Live camera preview" />
+                            ) : (
+                                <p className="px-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                    {isOpeningClockInCamera ? 'Opening camera…' : 'Open the camera to take your required clock-in photo.'}
+                                </p>
+                            )}
+                        </div>
+
+                        {clockInCameraError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{clockInCameraError}</p>}
+
+                        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+                            <button
+                                type="button"
+                                onClick={closeClockInCamera}
+                                disabled={isLoading}
+                                className="min-h-11 rounded-lg border border-gray-300 px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                            >
+                                Cancel
+                            </button>
+                            {!clockInPhotoPreview && !clockInCameraStream && (
+                                <button
+                                    type="button"
+                                    onClick={() => void openClockInCamera()}
+                                    disabled={isOpeningClockInCamera || isLoading}
+                                    className="min-h-11 rounded-lg bg-[#111111] px-5 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
+                                >
+                                    {isOpeningClockInCamera ? 'Opening Camera…' : 'Open Camera'}
+                                </button>
+                            )}
+                            {clockInCameraStream && !clockInPhotoPreview && (
+                                <button
+                                    type="button"
+                                    onClick={captureClockInPhoto}
+                                    disabled={isLoading}
+                                    className="min-h-11 rounded-lg bg-[#111111] px-5 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
+                                >
+                                    Take Photo
+                                </button>
+                            )}
+                            {clockInPhotoPreview && (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setClockInPhoto(null);
+                                            void openClockInCamera();
+                                        }}
+                                        disabled={isLoading}
+                                        className="min-h-11 rounded-lg border border-gray-300 px-5 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                                    >
+                                        Retake Photo
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => void submitClockIn()}
+                                        disabled={isLoading}
+                                        className="min-h-11 rounded-lg bg-[#111111] px-5 py-2 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
+                                    >
+                                        {isLoading ? 'Clocking In…' : 'Clock In'}
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
             
             <div data-testid="time-in-page" className="min-h-screen overflow-x-hidden text-gray-900 dark:text-white">
                 <h1 className="sr-only">Attendance Tracking</h1>

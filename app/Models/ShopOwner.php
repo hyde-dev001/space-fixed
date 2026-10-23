@@ -89,6 +89,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'repair_warranty_duration_unit', // Warranty period unit: days, weeks, or months
         'warranty_enabled', // Toggle warranty claim filing for this shop
         'order_refund_deadline_days', // Refund/cancellation eligibility window for product orders
+        'late_grace_period_minutes', // Attendance lateness grace period in minutes
         'cod_enabled', // Allow Cash on Delivery for retail orders
         'cod_order_threshold', // Maximum discounted merchandise amount eligible for COD
         'two_factor_email_enabled', // Require OTP code on login
@@ -169,6 +170,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'repair_warranty_duration_unit' => 'string',
         'warranty_enabled' => 'boolean',
         'order_refund_deadline_days' => 'integer',
+        'late_grace_period_minutes' => 'integer',
         'cod_enabled' => 'boolean',
         'cod_order_threshold' => 'decimal:2',
         'two_factor_email_enabled' => 'boolean',

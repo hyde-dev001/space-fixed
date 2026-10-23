@@ -60,6 +60,7 @@ type ShopSettingsPayload = {
 	repair_warranty_duration: number;
 	repair_warranty_duration_unit: 'days' | 'weeks' | 'months';
 	order_refund_deadline_days: number;
+	late_grace_period_minutes: number;
 	cod_enabled: boolean;
 	cod_order_threshold: number;
 	cod_can_enable: boolean;
@@ -433,6 +434,9 @@ const ShopSetting: React.FC = () => {
 	const [refundDeadlineInputValue, setRefundDeadlineInputValue] = useState<string>(String(shop_settings.order_refund_deadline_days ?? 7));
 	const [refundDeadlineInputError, setRefundDeadlineInputError] = useState<string | null>(null);
 	const [refundDeadlineSaveSuccess, setRefundDeadlineSaveSuccess] = useState(false);
+	const [lateGracePeriodInputValue, setLateGracePeriodInputValue] = useState<string>(String(shop_settings.late_grace_period_minutes ?? 0));
+	const [lateGracePeriodInputError, setLateGracePeriodInputError] = useState<string | null>(null);
+	const [lateGracePeriodSaveSuccess, setLateGracePeriodSaveSuccess] = useState(false);
 	const [codEnabled, setCodEnabled] = useState<boolean>(Boolean(shop_settings.cod_enabled ?? false));
 	const codCanEnable = Boolean(shop_settings.cod_can_enable ?? false);
 	const [codThresholdInputValue, setCodThresholdInputValue] = useState<string>(String(shop_settings.cod_order_threshold ?? 5000));
@@ -1366,6 +1370,30 @@ const ShopSetting: React.FC = () => {
 		);
 	};
 
+	const handleSaveLateGracePeriod = () => {
+		const minutes = Number(lateGracePeriodInputValue);
+		if (!Number.isInteger(minutes) || minutes < 0 || minutes > 120) {
+			setLateGracePeriodInputError('Enter a whole number from 0 to 120 minutes.');
+			return;
+		}
+
+		setLateGracePeriodInputError(null);
+		router.put('/shop-owner/settings', { late_grace_period_minutes: minutes }, {
+			preserveScroll: true,
+			onSuccess: () => {
+				setLateGracePeriodInputValue(String(minutes));
+				setLateGracePeriodSaveSuccess(true);
+				window.setTimeout(() => setLateGracePeriodSaveSuccess(false), 2200);
+			},
+			onError: (pageErrors) => {
+				const pageValidationErrors = pageErrors as Record<string, string | undefined>;
+				setLateGracePeriodInputError(
+					pageValidationErrors.late_grace_period_minutes || 'Failed to save the grace period. Please try again.',
+				);
+			},
+		});
+	};
+
 	const handleSaveCodSettings = () => {
 		const parsed = Number(codThresholdInputValue);
 		if (!Number.isFinite(parsed) || parsed <= 0 || parsed > 9999999.99) {
@@ -2274,6 +2302,60 @@ const ShopSetting: React.FC = () => {
 							</div>
 						</div>
 					)}
+
+					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3 xl:order-7 xl:shadow-none">
+						<div className="border-b border-gray-200 p-6">
+							<h2 className="text-xl font-semibold text-gray-900">Late Check-in Grace Period</h2>
+							<p className="mt-1 text-sm text-gray-600">
+								Allow employees to arrive up to the selected number of minutes after opening without being marked late.
+							</p>
+						</div>
+						<div className="p-6">
+							<div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+								<p className="mb-3 text-sm text-gray-700">
+									Choose 0 to disable the grace period. Allowed range is 0 to 120 minutes.
+								</p>
+								<div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+									<label className="sr-only" htmlFor="attendance-late-grace-period">Late check-in grace period in minutes</label>
+									<div className="flex w-full items-center rounded-lg border border-gray-300 bg-white px-3 sm:max-w-xs">
+										<input
+											id="attendance-late-grace-period"
+											data-testid="attendance-late-grace-period"
+											name="late_grace_period_minutes"
+											type="number"
+											min={0}
+											max={120}
+											step={1}
+											title="Late check-in grace period in minutes"
+											value={lateGracePeriodInputValue}
+											onChange={(event) => {
+												setLateGracePeriodInputValue(event.target.value);
+												if (lateGracePeriodInputError) setLateGracePeriodInputError(null);
+											}}
+											className="w-full border-0 px-1 py-2 text-sm text-gray-900 focus:outline-none focus:ring-0"
+										/>
+										<span className="text-sm font-medium text-gray-500">minutes</span>
+									</div>
+									<button
+										type="button"
+										onClick={handleSaveLateGracePeriod}
+										className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-black"
+									>
+										Save Grace Period
+									</button>
+								</div>
+								{lateGracePeriodInputError && <p role="alert" className="mt-2 text-xs text-red-600">{lateGracePeriodInputError}</p>}
+								{lateGracePeriodSaveSuccess && (
+									<p className="mt-2 flex items-center gap-1 text-xs font-medium text-green-700">
+										<Check size={13} /> Grace period saved.
+									</p>
+								)}
+							</div>
+							<p className="mt-3 text-xs text-gray-500">
+								Current grace period: <span className="font-semibold text-gray-700">{lateGracePeriodInputValue}</span> minute(s).
+							</p>
+						</div>
+					</div>
 
 					{hasRetailSignal && (
 						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3 xl:order-7 xl:shadow-none">

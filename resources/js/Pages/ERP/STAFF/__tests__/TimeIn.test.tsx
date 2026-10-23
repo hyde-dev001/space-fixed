@@ -4,6 +4,60 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import TimeIn, { isClockInAllowedAtTime } from '../TimeIn';
 
 const fetchMock = vi.fn();
+const mediaDescriptors = new Map<[object, PropertyKey], PropertyDescriptor | undefined>();
+
+const overrideDescriptor = (target: object, property: PropertyKey, descriptor: PropertyDescriptor) => {
+    mediaDescriptors.set([target, property], Object.getOwnPropertyDescriptor(target, property));
+    Object.defineProperty(target, property, descriptor);
+};
+
+const setupAttendanceApi = (checkInSucceeds = true) => {
+    fetchMock.mockImplementation(async (url: string) => {
+        if (url === '/api/staff/attendance/status') {
+            return { ok: true, json: async () => ({}) };
+        }
+        if (url === '/api/staff/shop-hours/today') {
+            return { ok: true, json: async () => ({ open: '00:00', close: '23:59', is_open: true }) };
+        }
+        if (url === '/api/staff/attendance/check-in') {
+            if (!checkInSucceeds) {
+                return { ok: false, json: async () => ({ message: 'Photo must be smaller than 5 MB.' }) };
+            }
+            return { ok: true, json: async () => ({ attendance: {} }) };
+        }
+        if (url === '/api/staff/attendance/my-lateness-stats') {
+            return { ok: true, json: async () => ({}) };
+        }
+        return { ok: true, json: async () => ({ data: [] }) };
+    });
+};
+
+const setupCamera = () => {
+    const track = { stop: vi.fn() };
+    const stream = { getTracks: () => [track] } as unknown as MediaStream;
+    const getUserMedia = vi.fn().mockResolvedValue(stream);
+    overrideDescriptor(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
+    overrideDescriptor(HTMLCanvasElement.prototype, 'getContext', {
+        configurable: true,
+        value: () => ({ drawImage: vi.fn() }),
+    });
+    overrideDescriptor(HTMLCanvasElement.prototype, 'toBlob', {
+        configurable: true,
+        value: (callback: BlobCallback) => callback(new Blob(['camera image'], { type: 'image/jpeg' })),
+    });
+    overrideDescriptor(HTMLVideoElement.prototype, 'videoWidth', { configurable: true, value: 640 });
+    overrideDescriptor(HTMLVideoElement.prototype, 'videoHeight', { configurable: true, value: 480 });
+    overrideDescriptor(HTMLVideoElement.prototype, 'play', { configurable: true, value: vi.fn().mockResolvedValue(undefined) });
+    overrideDescriptor(HTMLVideoElement.prototype, 'srcObject', {
+        configurable: true,
+        get() { return (this as HTMLVideoElement & { __srcObject?: MediaStream }).__srcObject; },
+        set(value: MediaStream | null) { Object.defineProperty(this, '__srcObject', { configurable: true, value }); },
+    });
+    overrideDescriptor(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:clock-in-photo') });
+    overrideDescriptor(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+
+    return { getUserMedia, track };
+};
 
 vi.mock('@inertiajs/react', () => ({
     Head: ({ title }: { title: string }) => <title>{title}</title>,
@@ -34,6 +88,11 @@ beforeEach(() => {
 afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+    for (const [[target, property], descriptor] of mediaDescriptors) {
+        if (descriptor) Object.defineProperty(target, property, descriptor);
+        else Reflect.deleteProperty(target, property);
+    }
+    mediaDescriptors.clear();
 });
 
 it('keeps the attendance page mobile-safe and the live clock accessible', async () => {
@@ -284,4 +343,83 @@ it('refreshes shop hours when the attendance tab regains focus', async () => {
             fetchMock.mock.calls.filter(([url]) => url === '/api/staff/shop-hours/today'),
         ).toHaveLength(initialShopHoursCalls + 1);
     });
+});
+
+it('requires an explicit camera click and has no prompt preference checkbox', async () => {
+    setupAttendanceApi();
+    const { getUserMedia, track } = setupCamera();
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    fireEvent.click(screen.getByRole('button', { name: /clock in/i }));
+
+    expect(screen.getByRole('dialog', { name: 'Photo required to clock in' })).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(getUserMedia).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Camera' }));
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledOnce());
+    expect(getUserMedia).toHaveBeenCalledWith({ video: { facingMode: 'user' }, audio: false });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(track.stop).toHaveBeenCalledOnce();
+});
+
+it('lets an employee close the first required-photo prompt without sending a check-in', async () => {
+    setupAttendanceApi();
+    const { getUserMedia } = setupCamera();
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    fireEvent.click(screen.getByRole('button', { name: /clock in/i }));
+
+    expect(screen.getByRole('dialog', { name: 'Photo required to clock in' })).toBeInTheDocument();
+    expect(getUserMedia).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/staff/attendance/check-in')).toBe(false);
+});
+
+it('requires a camera photo and submits it with the clock-in request', async () => {
+    setupAttendanceApi();
+    const { getUserMedia, track } = setupCamera();
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    fireEvent.click(screen.getByRole('button', { name: /clock in/i }));
+    expect(getUserMedia).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Camera' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Take Photo' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Take Photo' }));
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Clock-in photo preview' })).toBeInTheDocument());
+    expect(track.stop).toHaveBeenCalledOnce();
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Photo required to clock in' })).getByRole('button', { name: 'Clock In' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+        '/api/staff/attendance/check-in',
+        expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+    ));
+
+    const request = fetchMock.mock.calls.find(([url]) => url === '/api/staff/attendance/check-in');
+    const formData = request?.[1]?.body as FormData;
+    expect(formData.get('photo')).toBeInstanceOf(File);
+    expect(formData.has('dismiss_camera_prompt')).toBe(false);
+    expect(screen.queryByRole('dialog', { name: 'Photo required to clock in' })).not.toBeInTheDocument();
+});
+
+it('keeps the captured photo available when the check-in request fails', async () => {
+    setupAttendanceApi(false);
+    setupCamera();
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    fireEvent.click(screen.getByRole('button', { name: /clock in/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Camera' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Take Photo' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Take Photo' }));
+    await waitFor(() => expect(screen.getByRole('img', { name: 'Clock-in photo preview' })).toBeInTheDocument());
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Photo required to clock in' })).getByRole('button', { name: 'Clock In' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Photo must be smaller than 5 MB.');
+    expect(screen.getByRole('img', { name: 'Clock-in photo preview' })).toBeInTheDocument();
 });

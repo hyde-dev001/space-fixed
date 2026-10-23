@@ -15,7 +15,10 @@ use App\Services\HR\LatenessTrackingService;
 use App\Traits\HR\LogsHRActivity;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
@@ -77,6 +80,8 @@ class AttendanceController extends Controller
             ->orderBy('check_in_time', 'asc')
             ->paginate($request->get('per_page', 20));
 
+        $attendance->getCollection()->each(fn (AttendanceRecord $record) => $record->append('has_check_in_photo'));
+
         // Merge geofence metadata into the paginator response so the
         // frontend can determine inside/outside threshold without a
         // second request.
@@ -85,6 +90,64 @@ class AttendanceController extends Controller
         $paginatorArray['geofence_radius']  = $shopOwner->shop_geofence_radius ?? 100;
 
         return response()->json($paginatorArray);
+    }
+
+    /**
+     * Stream a private clock-in photo to an authorized same-shop HR viewer.
+     */
+    public function showCheckInPhoto(int $id): Response
+    {
+        $user = Auth::guard('user')->user();
+
+        if (!$user || !$user->can('access-attendance-records')) {
+            abort(403);
+        }
+
+        return $this->streamCheckInPhotoForShopOwner($id, (int) $user->shop_owner_id);
+    }
+
+    /**
+     * Stream a private clock-in photo to its owning Shop Owner.
+     */
+    public function showOwnerCheckInPhoto(int $id): Response
+    {
+        $owner = Auth::guard('shop_owner')->user();
+
+        if (!$owner) {
+            abort(403);
+        }
+
+        return $this->streamCheckInPhotoForShopOwner($id, (int) $owner->id);
+    }
+
+    private function streamCheckInPhotoForShopOwner(int $id, int $shopOwnerId): Response
+    {
+        $attendance = AttendanceRecord::forShopOwner($shopOwnerId)->findOrFail($id);
+        $photoPath = $attendance->check_in_photo_path;
+        $expectedPrefix = "attendance/{$attendance->shop_owner_id}/{$attendance->employee_id}/";
+
+        if (
+            !is_string($photoPath)
+            || !str_starts_with($photoPath, $expectedPrefix)
+            || str_contains($photoPath, '..')
+            || str_contains($photoPath, '\\')
+            || !Storage::disk('local')->exists($photoPath)
+        ) {
+            abort(404);
+        }
+
+        $photo = Storage::disk('local')->get($photoPath);
+        $mimeType = (new \finfo(FILEINFO_MIME_TYPE))->buffer($photo);
+
+        if (!in_array($mimeType, ['image/jpeg', 'image/png', 'image/webp'], true)) {
+            abort(404);
+        }
+
+        return response($photo, 200, [
+            'Content-Type' => $mimeType,
+            'Cache-Control' => 'private, no-store',
+            'X-Content-Type-Options' => 'nosniff',
+        ]);
     }
 
     /**
@@ -490,6 +553,10 @@ class AttendanceController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
+        $validated = $request->validate([
+            'photo' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
+        ]);
+
         // Use shop timezone for all date/time operations
         $shopTimezone = config('app.shop_timezone', 'Asia/Manila');
         $today = Carbon::now($shopTimezone)->toDateString();
@@ -680,28 +747,59 @@ class AttendanceController extends Controller
             ? 'late'
             : 'present';
 
-        if ($existingRecord) {
-            // Update existing record
-            $existingRecord->update(array_merge([
-                'check_in_time' => $checkInTime,
-                'status' => $status,
-                'is_early' => $isEarly,
-                'minutes_early' => $minutesEarly,
-                'expected_check_in' => $expectedCheckIn,
-            ], $locationData));
-            $attendance = $existingRecord;
-        } else {
-            // Create new record
-            $attendance = AttendanceRecord::create(array_merge([
-                'employee_id' => $employee->id,
-                'date' => $today,
-                'check_in_time' => $checkInTime,
-                'status' => $status,
-                'shop_owner_id' => $user->shop_owner_id,
-                'is_early' => $isEarly,
-                'minutes_early' => $minutesEarly,
-                'expected_check_in' => $expectedCheckIn,
-            ], $locationData));
+        $photoPath = $request->file('photo')->store(
+            "attendance/{$user->shop_owner_id}/{$employee->id}/{$today}",
+            'local',
+        );
+
+        if (!$photoPath) {
+            return response()->json(['error' => 'Unable to save the clock-in photo. Please try again.'], 500);
+        }
+
+        try {
+            $attendance = DB::transaction(function () use (
+                $existingRecord,
+                $employee,
+                $user,
+                $shopOwner,
+                $today,
+                $checkInTime,
+                $status,
+                $isEarly,
+                $minutesEarly,
+                $expectedCheckIn,
+                $locationData,
+                $photoPath,
+                $now,
+                $validated,
+            ) {
+                $recordData = array_merge([
+                    'check_in_time' => $checkInTime,
+                    'status' => $status,
+                    'is_early' => $isEarly,
+                    'minutes_early' => $minutesEarly,
+                    'expected_check_in' => $expectedCheckIn,
+                    'late_grace_period_minutes' => (int) ($shopOwner->late_grace_period_minutes ?? 0),
+                    'check_in_photo_path' => $photoPath,
+                    'check_in_photo_captured_at' => $now,
+                ], $locationData);
+
+                if ($existingRecord) {
+                    $existingRecord->update($recordData);
+                    $attendance = $existingRecord;
+                } else {
+                    $attendance = AttendanceRecord::create(array_merge($recordData, [
+                        'employee_id' => $employee->id,
+                        'date' => $today,
+                        'shop_owner_id' => $user->shop_owner_id,
+                    ]));
+                }
+
+                return $attendance;
+            });
+        } catch (\Throwable $exception) {
+            Storage::disk('local')->delete($photoPath);
+            throw $exception;
         }
 
         // Refresh to get calculated lateness fields
@@ -914,6 +1012,8 @@ class AttendanceController extends Controller
 
         $isLate = $attendance ? (bool) ($attendance->is_late ?? false) : false;
         $minutesLate = $attendance ? (int) ($attendance->minutes_late ?? 0) : 0;
+        $attendanceStatus = $attendance?->status ?? 'pending';
+        $hasComputedLateness = false;
 
         $parseMinutesFromTimeValue = static function ($timeValue): ?int {
             if ($timeValue === null) {
@@ -939,23 +1039,29 @@ class AttendanceController extends Controller
             return ($hour * 60) + $minute;
         };
 
-        // Fallback lateness derivation for cases where persisted flags are stale.
+        // Reconcile stale flags against the policy snapshot stored with this attendance.
         if ($attendance && $attendance->check_in_time && $attendance->expected_check_in) {
             $actualCheckInMinutes = $parseMinutesFromTimeValue($attendance->check_in_time);
             $expectedCheckInMinutes = $parseMinutesFromTimeValue($attendance->expected_check_in);
 
-            if (
-                $actualCheckInMinutes !== null
-                && $expectedCheckInMinutes !== null
-                && $actualCheckInMinutes > $expectedCheckInMinutes
-            ) {
-                $computedMinutesLate = $actualCheckInMinutes - $expectedCheckInMinutes;
-                $minutesLate = max($minutesLate, $computedMinutesLate);
-                $isLate = $isLate || $computedMinutesLate > 0;
+            if ($actualCheckInMinutes !== null && $expectedCheckInMinutes !== null) {
+                $hasComputedLateness = true;
+                $computedMinutesLate = max($actualCheckInMinutes - $expectedCheckInMinutes, 0);
+                $gracePeriod = max((int) ($attendance->late_grace_period_minutes ?? 0), 0);
+
+                if ($computedMinutesLate <= $gracePeriod) {
+                    $minutesLate = 0;
+                    $isLate = false;
+                    $attendanceStatus = 'present';
+                } else {
+                    $minutesLate = max($minutesLate, $computedMinutesLate);
+                    $isLate = true;
+                    $attendanceStatus = 'late';
+                }
             }
         }
 
-        if (!$isLate && strtolower((string) ($attendance?->status ?? '')) === 'late') {
+        if (!$hasComputedLateness && !$isLate && strtolower((string) $attendanceStatus) === 'late') {
             $isLate = true;
         }
         
@@ -966,7 +1072,7 @@ class AttendanceController extends Controller
             'check_out_time' => $attendance ? $attendance->check_out_time : null,
             'auto_clocked_out' => $attendance ? (bool) $attendance->auto_clocked_out : false,
             'auto_clockout_reason' => $attendance?->auto_clockout_reason,
-            'status' => $approvedLeave ? 'on_leave' : ($attendance ? $attendance->status : 'pending'),
+            'status' => $approvedLeave ? 'on_leave' : $attendanceStatus,
             'working_hours' => $attendance ? $attendance->working_hours : 0,
             'lunch_break_start' => $attendance ? $attendance->lunch_break_start : null,
             'lunch_break_end' => $attendance ? $attendance->lunch_break_end : null,
