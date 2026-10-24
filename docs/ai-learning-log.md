@@ -221,3 +221,30 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 ## 2026-10-08 - Staff refund evidence projection
 
 - Keep `OrderRefund.evidence_media` distinct from `DeliveryDispute.evidence_media`: staff refund assessment needs both the customer's refund-request attachments and any separate delivery-report proof.
+
+
+## 2026-10-23 - Logistics recovery transaction verification
+
+- After an InnoDB transaction waits for a lock, ordinary reads can still use an earlier repeatable-read snapshot. Use current locking reads for replay and outstanding-transfer decisions, retain a consistent shop/leg lock order, and apply bounded transaction retries for cross-tenant index-gap deadlocks. Verify these behaviors with independent processes on InnoDB; SQLite tests cannot establish them.
+- Keep physical possession separate from work assignment and cash collection. Fresh evidence must bind to its execution; a parcel handoff never transfers the original collector's remittance obligation or supplies an inventory inspection.
+
+## 2026-10-23 - Pending MFA and route catalog boundaries
+
+- A password-established MFA challenge runs before normal authentication. If a route catalog injects authenticated ERP middleware, classify challenge routes explicitly as pre-login and test the actual challenge GET/POST, not only the password endpoint's redirect. Keep pending-session, security-version, active-account, replay and throttle checks in the existing authentication flow.
+
+## 2026-10-24 - Batch interruption evidence and recovery
+
+- A batch interruption is a hold, not a set of invented customer failures. Persist the affected-stop set under the same locks as movement checks, preserve the original stages/proofs/attempts, and require every transferred parcel's actual receipt before replacement execution. Keep the source batch's displayed progress denominator when stops move to a linked recovery batch.
+- Test additive migration reversal on InnoDB as well as SQLite: remove the referencing foreign key before dropping its supporting index, and refuse populated reversals that would erase incident history. Use the shop timezone for operational test dates and freeze multi-step clock-sensitive tests rather than weakening attendance/date validation.
+
+## 2026-10-24 - Route catalogs and financial verification
+
+- Where route metadata injects runtime middleware, missing catalog entries are an authorization-boundary defect, not just inventory debt. Verify declared methods, owner/employee audiences, module gates and actor persistence against actual controllers; test both the route matrix and a real denial before accepting a catalog update.
+- Financial browser fixtures should create refund requests through the existing request service so approval-policy snapshots match the configured shop. Keep inspection, approval and payout actions in the actual journey, and block external HTTP in disposable environments.
+
+
+### October 24, 2026 - recovery usability
+
+- Grouped notification inboxes must retain generic shipment notices when order/repair sections also contain records. A persisted notice and a correct count do not prove a visible, keyboard-reachable destination.
+- A successful mutation response precedes Inertia's refreshed view. Browser checks should wait for the required UI transition and verify saved records; do not replace acceptance or custody actions with fixture writes to make a journey pass.
+- Test populated source-reference projections on the production database engine. An empty SQLite query can conceal a misspelled selected column; also test tenant scoping across related return/order records.
