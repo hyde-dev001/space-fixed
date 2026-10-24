@@ -406,6 +406,19 @@ it('keeps owner shipments read-only even when the server sends dispatch flags', 
   expect(screen.queryByRole('button', { name: 'Schedule & assign rider' })).not.toBeInTheDocument();
 });
 
+it.each(['attempt', 'incident'])('previews private %s evidence for a dispatcher reviewing an issue', (kind) => {
+  const url = kind === 'attempt' ? '/api/logistics/attempts/7/file' : '/api/logistics/incidents/7/evidence/0';
+  setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'needs_resolution', assignments: [],
+    proofs: [], attempts: kind === 'attempt' ? [{ id: 7, status: 'failed', proof_url: url }] : [],
+    incidents: kind === 'incident' ? [{ id: 7, type: 'vehicle_problem', status: 'reported', evidence_urls: [url] }] : [],
+  });
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  expect(screen.getByRole('img', { name: 'Reported issue photo' })).toHaveAttribute('src', url);
+  expect(screen.getByRole('button', { name: 'View issue photo' })).toBeInTheDocument();
+  expect(screen.queryByText('Waiting for rider')).not.toBeInTheDocument();
+});
+
 it('does not expose owner delivery-proof review controls', () => {
   mocks.props = defaultProps();
   mocks.props.auth = { erpActor: { ownerMode: true } };

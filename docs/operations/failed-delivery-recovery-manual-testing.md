@@ -74,6 +74,8 @@ Use a prepaid Retail Delivery first so COD does not obscure the parcel-recovery 
 
 ## 5. Same-rider retry
 
+Dispatcher photo check: after M2, open **Shipments → Open delivery** for the same shipment. When private issue evidence is available, the preview shows **View issue photo** instead of **Waiting for rider**. Open it to review the photo; this is issue evidence, not proof of successful delivery. Incident evidence links and failed-attempt photo links remain available. If no evidence URL is returned, verify the private uploaded file still exists on the serving host; the preview cannot recover missing files.
+
 Use a separate prepared delivery and repeat M1–M6.
 
 | Step | Current user / page | Action and expected result | Next page |
