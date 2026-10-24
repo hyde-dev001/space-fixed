@@ -23,6 +23,7 @@ const ERPNotifications: React.FC = () => {
     <NotificationList 
       basePath={basePath}
       title="ERP Notifications"
+      showSettings={false}
     />
   );
 };

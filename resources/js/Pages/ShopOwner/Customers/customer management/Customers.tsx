@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
@@ -339,21 +340,7 @@ export default function Customers() {
       <Head title="Customers - Shop Owner" />
 
       <div className="space-y-6 p-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <h1 className="mb-1 text-2xl font-semibold text-gray-900 dark:text-white">Customers</h1>
-            <p className="text-gray-600 dark:text-gray-400">
-              {isRetailCapable && isRepairCapable
-                ? "View, edit, and track customer orders, service requests, payments, and staff notes."
-                : isRetailCapable
-                ? "View, edit, and track customer orders, payments, and staff notes."
-                : "View, edit, and track customer service requests, payments, and staff notes."}
-            </p>
-          </div>
-          <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-            Shop Owner Workspace
-          </div>
-        </div>
+        <h1 className="sr-only">Customers</h1>
 
         <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-4">
           <div className={metricCardClasses}>
@@ -417,7 +404,7 @@ export default function Customers() {
                 placeholder="Search by name, email, or phone"
                 className="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
               />
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(event) => {
                   setStatusFilter(event.target.value as "all" | CustomerStatus);
@@ -429,7 +416,7 @@ export default function Customers() {
                 <option value="all">All status</option>
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
-              </select>
+              </MonochromeSelect>
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400">{customers.length} customers</p>
           </div>
@@ -465,12 +452,11 @@ export default function Customers() {
                   <tr key={customer.id} className="bg-white transition-colors hover:bg-gray-50 dark:bg-transparent dark:hover:bg-gray-800/40">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-sm font-bold text-white">
+                        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gray-950 text-sm font-bold text-white dark:bg-linear-to-br dark:from-blue-500 dark:to-indigo-600">
                           {getInitials(customer.name)}
                         </div>
                         <div>
                           <p className="text-sm font-semibold text-gray-900 dark:text-white">{customer.name}</p>
-                          <p className="text-xs text-gray-500 dark:text-gray-400">Customer #{customer.id}</p>
                         </div>
                       </div>
                     </td>
@@ -518,6 +504,7 @@ export default function Customers() {
               </p>
               <div className="flex items-center gap-2">
                 <button
+                  aria-label="Previous page"
                   onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                   disabled={safeCurrentPage === 1}
                   className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -525,6 +512,7 @@ export default function Customers() {
                   Previous
                 </button>
                 <button
+                  aria-label="Next page"
                   onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
                   disabled={safeCurrentPage === totalPages}
                   className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
@@ -538,12 +526,12 @@ export default function Customers() {
 
         {showDetailsModal && selectedCustomer && (
           <>
-            <div className="fixed inset-0 z-100000 bg-black/50" />
+            <div className="fixed inset-0 z-100000 bg-black/50 erp-modal-backdrop" />
             <div className="fixed inset-0 z-100001 flex items-center justify-center p-4">
               <div className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-gray-200 bg-white p-5 shadow-xl dark:border-gray-800 dark:bg-gray-900">
                 <div className="flex flex-col gap-4 border-b border-gray-200 pb-5 dark:border-gray-800 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-base font-bold text-white">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-950 text-base font-bold text-white dark:bg-linear-to-br dark:from-blue-500 dark:to-indigo-600">
                       {getInitials(selectedCustomer.name)}
                     </div>
                     <div>
@@ -666,7 +654,7 @@ export default function Customers() {
                       <div className="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
                         <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">Status</p>
                         {editing ? (
-                          <select
+                          <MonochromeSelect
                             value={formData.status}
                             onChange={(event) => setFormData((prev) => ({ ...prev, status: event.target.value as CustomerStatus }))}
                             title="Customer status"
@@ -674,7 +662,7 @@ export default function Customers() {
                           >
                             <option value="active">Active</option>
                             <option value="inactive">Inactive</option>
-                          </select>
+                          </MonochromeSelect>
                         ) : (
                           <span
                             className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${

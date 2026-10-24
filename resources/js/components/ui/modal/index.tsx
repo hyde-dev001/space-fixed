@@ -1,5 +1,8 @@
 import React, { useRef, useEffect } from "react";
 
+let scrollLocks = 0;
+let bodyStyles = { overflow: '', paddingRight: '' };
+
 interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -8,6 +11,8 @@ interface ModalProps {
   showCloseButton?: boolean; // New prop to control close button visibility
   isFullscreen?: boolean; // Default to false for backwards compatibility
   size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | '5xl' | '6xl' | '7xl'; // Modal size
+  zIndex?: number;
+  ariaLabel?: string;
 }
 
 export const Modal: React.FC<ModalProps> = ({
@@ -18,8 +23,70 @@ export const Modal: React.FC<ModalProps> = ({
   showCloseButton = true, // Default to true for backwards compatibility
   isFullscreen = false,
   size = 'md',
+  zIndex,
+  ariaLabel,
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
+  const layerRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+
+  useEffect(() => {
+    if (!isOpen || !ariaLabel || !modalRef.current || !layerRef.current) return;
+    const dialog = modalRef.current;
+    const layer = layerRef.current;
+    const trigger = document.activeElement;
+    const background: Element[] = [];
+    let branch: Element = layer;
+    while (branch.parentElement) {
+      for (const sibling of branch.parentElement.children) {
+        if (sibling !== branch && !sibling.hasAttribute('inert') && !sibling.classList.contains('swal2-container')) {
+          sibling.setAttribute('inert', '');
+          background.push(sibling);
+        }
+      }
+      if (branch.parentElement === document.body) break;
+      branch = branch.parentElement;
+    }
+    const controls = () => Array.from(dialog.querySelectorAll<HTMLElement>(
+      'button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),summary,[tabindex]:not([tabindex="-1"])',
+    )).filter(element => {
+      if (element.closest('[inert],[hidden]') || getComputedStyle(element).display === 'none') return false;
+      const closed = element.closest('details:not([open])');
+      return !closed || element === closed.querySelector('summary');
+    });
+    const first = () => controls()[0] ?? dialog;
+    const isActive = () => !layer.closest('[inert]') && !document.querySelector('.swal2-container:not([style*="display: none"])');
+    const keyboard = (event: KeyboardEvent) => {
+      if (!isActive()) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeRef.current();
+      }
+      if (event.key === 'Tab') {
+        const items = controls();
+        const end = items.at(-1) ?? dialog;
+        if (!items.length || (!event.shiftKey && document.activeElement === end)) {
+          event.preventDefault(); first().focus();
+        } else if (event.shiftKey && document.activeElement === first()) {
+          event.preventDefault(); end.focus();
+        }
+      }
+    };
+    const keepFocus = (event: FocusEvent) => {
+      if (isActive() && event.target instanceof Node && !dialog.contains(event.target)) first().focus();
+    };
+    first().focus();
+    document.addEventListener('keydown', keyboard);
+    document.addEventListener('focusin', keepFocus);
+    return () => {
+      document.removeEventListener('keydown', keyboard);
+      document.removeEventListener('focusin', keepFocus);
+      background.forEach(element => element.removeAttribute('inert'));
+      if (trigger instanceof HTMLElement && trigger.isConnected && !trigger.closest('[inert]')) trigger.focus();
+    };
+  }, [isOpen, ariaLabel]);
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
@@ -28,24 +95,33 @@ export const Modal: React.FC<ModalProps> = ({
       }
     };
 
-    if (isOpen) {
+    if (isOpen && !ariaLabel) {
       document.addEventListener("keydown", handleEscape);
     }
 
     return () => {
       document.removeEventListener("keydown", handleEscape);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, ariaLabel]);
 
   useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "unset";
+    if (!isOpen) return;
+
+    if (scrollLocks++ === 0) {
+      bodyStyles = { overflow: document.body.style.overflow, paddingRight: document.body.style.paddingRight };
+      const scrollbarWidth = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+      document.body.style.overflow = 'hidden';
+      if (scrollbarWidth > 0) {
+        const currentPaddingRight = Number.parseFloat(window.getComputedStyle(document.body).paddingRight) || 0;
+        document.body.style.paddingRight = `${currentPaddingRight + scrollbarWidth}px`;
+      }
     }
 
     return () => {
-      document.body.style.overflow = "unset";
+      if (--scrollLocks === 0) {
+        document.body.style.overflow = bodyStyles.overflow;
+        document.body.style.paddingRight = bodyStyles.paddingRight;
+      }
     };
   }, [isOpen]);
 
@@ -69,20 +145,30 @@ export const Modal: React.FC<ModalProps> = ({
     : `relative w-full ${sizeClasses[size]} mx-auto rounded-3xl bg-white dark:bg-gray-900`;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center overflow-y-auto modal z-99999">
+    <div
+      ref={layerRef}
+      className="fixed inset-0 flex items-center justify-center overflow-y-auto modal z-99999"
+      style={zIndex === undefined ? undefined : { zIndex }}
+    >
       {!isFullscreen && (
         <div
-          className="fixed inset-0 h-full w-full bg-black/10 backdrop-blur-sm"
+          className="erp-modal-backdrop fixed inset-0 h-full w-full bg-black/10 backdrop-blur-sm"
           onClick={onClose}
         ></div>
       )}
       <div
         ref={modalRef}
+        role={ariaLabel ? 'dialog' : undefined}
+        aria-modal={ariaLabel ? true : undefined}
+        aria-label={ariaLabel}
+        tabIndex={ariaLabel ? -1 : undefined}
         className={`${contentClasses}  ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         {showCloseButton && (
           <button
+            type="button"
+            aria-label="Close dialog"
             onClick={onClose}
             className="absolute right-3 top-3 z-999 flex h-9.5 w-9.5 items-center justify-center rounded-full bg-gray-100 text-gray-400 transition-colors hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white sm:right-6 sm:top-6 sm:h-11 sm:w-11"
           >

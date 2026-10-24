@@ -3,6 +3,7 @@
 namespace Tests\Feature\ERP;
 
 use App\Models\User;
+use App\Models\ShopOwner;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use PHPUnit\Framework\Attributes\Test;
@@ -31,6 +32,24 @@ class ErpPasswordUpdateTest extends TestCase
         $response->assertRedirect();
 
         $this->assertTrue(Hash::check('NewStrongPass1!', $employee->fresh()->password));
+    }
+
+    #[Test]
+    public function employee_password_requires_at_least_twelve_characters(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create();
+        $employee = User::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'password' => Hash::make('CurrentPass1!'),
+        ]);
+
+        $response = $this->actingAs($employee, 'user')->post('/erp/password', [
+            'current_password' => 'CurrentPass1!',
+            'password' => 'NewStrong1!',
+            'password_confirmation' => 'NewStrong1!',
+        ]);
+
+        $response->assertSessionHasErrors('password');
     }
 
     #[Test]

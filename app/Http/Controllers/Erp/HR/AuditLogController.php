@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Erp\HR;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\HR\AuditLog;
+use App\Support\Erp\ErpActorContext;
+use App\Support\Audit\AuditLogPresentation;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
 
 class AuditLogController extends Controller
@@ -28,18 +31,23 @@ class AuditLogController extends Controller
     public function index(Request $request)
     {
         // Authorization check - use permission instead of hardcoded roles
-        $user = auth()->user();
-        if (!$user) {
+        $context = request()->attributes->get('erp.actor_context');
+        $ownerMode = $context instanceof ErpActorContext && $context->isOwnerMode();
+        $user = Auth::guard('user')->user();
+
+        if (! $ownerMode && ! $user) {
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        // Check if user has permission to view audit logs
-        // Managers have all permissions, others need specific audit log permissions
-        if (! $this->canAccessAuditLogs($user)) {
+        // Check if user has permission to view audit logs. Owner routes use
+        // the explicit ERP owner boundary instead of employee permissions.
+        if (! $ownerMode && ! $this->canAccessAuditLogs($user)) {
             return response()->json(['error' => 'You don\'t have permission to access audit logs'], 403);
         }
 
-        $shopOwnerId = $user->shop_owner_id;
+        $shopOwnerId = $ownerMode
+            ? (int) $context->tenantOwner()->getKey()
+            : $user->shop_owner_id;
         $query = AuditLog::forShopOwner($shopOwnerId);
 
         // Apply filters
@@ -115,6 +123,18 @@ class AuditLogController extends Controller
         // Pagination
         $perPage = $request->input('per_page', 50);
         $logs = $query->paginate($perPage);
+
+        $logs->getCollection()->transform(function (AuditLog $log): AuditLog {
+            $log->setAttribute('action_label', AuditLogPresentation::actionLabel($log->action));
+            $log->setAttribute(
+                'display_description',
+                AuditLogPresentation::description($log->description, $log->action),
+            );
+            $log->setAttribute('module_label', AuditLogPresentation::actionLabel($log->module));
+            $log->setAttribute('entity_type_label', AuditLogPresentation::subjectTypeLabel($log->entity_type));
+
+            return $log;
+        });
 
         return response()->json([
             'success' => true,

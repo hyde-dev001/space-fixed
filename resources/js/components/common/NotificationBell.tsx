@@ -7,6 +7,8 @@ import React, { useState } from 'react';
 import { Bell } from 'lucide-react';
 import { useUnreadCount } from '../../hooks/useNotifications';
 import NotificationDropdown from './NotificationDropdown';
+import { usePage } from '@inertiajs/react';
+import { notificationIdentity, type NotificationAuth } from '../../hooks/useNotificationIdentity';
 
 interface NotificationBellProps {
   basePath?: string;
@@ -15,11 +17,16 @@ interface NotificationBellProps {
   badgeClassName?: string;
 }
 
-const NotificationBell: React.FC<NotificationBellProps> = ({ 
+const NotificationBell: React.FC<NotificationBellProps> = (props) => {
+  const { auth } = usePage<{ auth?: NotificationAuth }>().props;
+  return <NotificationBellContent key={notificationIdentity(auth)} {...props} />;
+};
+
+const NotificationBellContent: React.FC<NotificationBellProps> = ({
   basePath = '/api/notifications',
   className = '',
   iconSize = 24,
-  badgeClassName = ''
+  badgeClassName = '',
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const { data: unreadCount = 0, isLoading } = useUnreadCount(basePath);
@@ -28,7 +35,7 @@ const NotificationBell: React.FC<NotificationBellProps> = ({
     <div className="relative">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`relative inline-flex h-10 w-10 shrink-0 items-center justify-center p-0 leading-none text-black transition-opacity hover:opacity-70 dark:text-gray-200 ${className}`}
+        className={`relative inline-flex h-10 w-10 shrink-0 items-center justify-center p-0 leading-none text-black transition-opacity hover:opacity-70 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:text-gray-200 ${className}`}
         aria-label="Notifications"
       >
         <Bell size={iconSize} className="block h-5 w-5 shrink-0" />

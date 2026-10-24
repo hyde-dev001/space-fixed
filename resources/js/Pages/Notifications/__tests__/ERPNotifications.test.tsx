@@ -19,7 +19,12 @@ vi.mock('@inertiajs/react', () => ({
 }));
 
 vi.mock('../NotificationList', () => ({
-  default: ({ basePath }: { basePath: string }) => <div data-testid="base-path">{basePath}</div>,
+  default: ({ basePath, showSettings }: { basePath: string; showSettings?: boolean }) => (
+    <>
+      <div data-testid="base-path">{basePath}</div>
+      <div data-testid="show-settings">{String(showSettings ?? true)}</div>
+    </>
+  ),
 }));
 
 describe('ERPNotifications', () => {
@@ -39,5 +44,11 @@ describe('ERPNotifications', () => {
     render(<ERPNotifications />);
 
     expect(screen.getByTestId('base-path').textContent).toBe('/api/hr/notifications');
+  });
+
+  it('hides notification settings for ERP users', () => {
+    render(<ERPNotifications />);
+
+    expect(screen.getByTestId('show-settings').textContent).toBe('false');
   });
 });

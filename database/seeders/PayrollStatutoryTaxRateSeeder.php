@@ -15,58 +15,44 @@ class PayrollStatutoryTaxRateSeeder extends Seeder
     {
         $shopIds = ShopOwner::pluck('id');
 
-        $sssBrackets = [
-            ['min' => 0, 'max' => 4249.99, 'employee_share' => 180.00],
-            ['min' => 4250, 'max' => 4749.99, 'employee_share' => 202.50],
-            ['min' => 4750, 'max' => 5249.99, 'employee_share' => 225.00],
-            ['min' => 5250, 'max' => 5749.99, 'employee_share' => 247.50],
-            ['min' => 5750, 'max' => 6249.99, 'employee_share' => 270.00],
-            ['min' => 6250, 'max' => 6749.99, 'employee_share' => 292.50],
-            ['min' => 6750, 'max' => 7249.99, 'employee_share' => 315.00],
-            ['min' => 7250, 'max' => 7749.99, 'employee_share' => 337.50],
-            ['min' => 7750, 'max' => 8249.99, 'employee_share' => 360.00],
-            ['min' => 8250, 'max' => 8749.99, 'employee_share' => 382.50],
-            ['min' => 8750, 'max' => 9249.99, 'employee_share' => 405.00],
-            ['min' => 9250, 'max' => 9749.99, 'employee_share' => 427.50],
-            ['min' => 9750, 'max' => 10249.99, 'employee_share' => 450.00],
-            ['min' => 10250, 'max' => 10749.99, 'employee_share' => 472.50],
-            ['min' => 10750, 'max' => 11249.99, 'employee_share' => 495.00],
-            ['min' => 11250, 'max' => 11749.99, 'employee_share' => 517.50],
-            ['min' => 11750, 'max' => 12249.99, 'employee_share' => 540.00],
-            ['min' => 12250, 'max' => 12749.99, 'employee_share' => 562.50],
-            ['min' => 12750, 'max' => 13249.99, 'employee_share' => 585.00],
-            ['min' => 13250, 'max' => 13749.99, 'employee_share' => 607.50],
-            ['min' => 13750, 'max' => 14249.99, 'employee_share' => 630.00],
-            ['min' => 14250, 'max' => 14749.99, 'employee_share' => 652.50],
-            ['min' => 14750, 'max' => 15249.99, 'employee_share' => 675.00],
-            ['min' => 15250, 'max' => 15749.99, 'employee_share' => 697.50],
-            ['min' => 15750, 'max' => 16249.99, 'employee_share' => 720.00],
-            ['min' => 16250, 'max' => 16749.99, 'employee_share' => 742.50],
-            ['min' => 16750, 'max' => 17249.99, 'employee_share' => 765.00],
-            ['min' => 17250, 'max' => 17749.99, 'employee_share' => 787.50],
-            ['min' => 17750, 'max' => 18249.99, 'employee_share' => 810.00],
-            ['min' => 18250, 'max' => 18749.99, 'employee_share' => 832.50],
-            ['min' => 18750, 'max' => 19249.99, 'employee_share' => 855.00],
-            ['min' => 19250, 'max' => null, 'employee_share' => 877.50],
-        ];
+        $sssBrackets = [];
+        for ($msc = 5000; $msc <= 35000; $msc += 500) {
+            $regularEmployee = intdiv(min($msc, 20000) * 5, 100);
+            $mpfEmployee = intdiv(max($msc - 20000, 0) * 5, 100);
+            $regularEmployer = intdiv(min($msc, 20000) * 10, 100);
+            $mpfEmployer = intdiv(max($msc - 20000, 0) * 10, 100);
+
+            $sssBrackets[] = [
+                'min' => $msc === 5000 ? 0 : $msc - 250,
+                'max' => $msc === 35000 ? null : $msc + 249.99,
+                'msc' => $msc,
+                'employee_share' => $regularEmployee + $mpfEmployee,
+                'employer_share' => $regularEmployer + $mpfEmployer + ($msc < 15000 ? 10 : 30),
+            ];
+        }
 
         foreach ($shopIds as $shopId) {
             TaxRate::updateOrCreate(
                 ['shop_id' => $shopId, 'code' => 'PAYROLL_SSS_EE'],
                 [
                     'name' => 'Payroll SSS Employee Share',
-                    'rate' => 0,
-                    'type' => 'fixed',
-                    'fixed_amount' => 0,
-                    'description' => 'SSS employee contribution using salary brackets.',
+                    'rate' => 5.00,
+                    'type' => 'percentage',
+                    'fixed_amount' => null,
+                    'description' => 'SSS employee share using the 2025 MSC schedule; employer share is retained separately.',
                     'applies_to' => 'all',
                     'is_default' => false,
                     'is_inclusive' => false,
                     'is_active' => true,
-                    'effective_from' => '2026-01-01',
+                    'effective_from' => '2025-01-01',
                     'effective_to' => null,
                     'meta' => [
                         'brackets' => $sssBrackets,
+                        'source' => 'https://www.sss.gov.ph/wp-content/uploads/2024/12/CI-2024-006-Publication.pdf',
+                        'employee_rate' => 5.00,
+                        'employer_rate' => 10.00,
+                        'ecp_employer_only' => true,
+                        'calculation_base' => 'sss_msc',
                     ],
                 ]
             );
@@ -83,11 +69,14 @@ class PayrollStatutoryTaxRateSeeder extends Seeder
                     'is_default' => false,
                     'is_inclusive' => false,
                     'is_active' => true,
-                    'effective_from' => '2026-01-01',
+                    'effective_from' => '2024-01-01',
                     'effective_to' => null,
                     'meta' => [
                         'min_salary' => 10000,
                         'max_salary' => 100000,
+                        'employee_rate' => 2.50,
+                        'employer_rate' => 2.50,
+                        'source' => 'https://www.philhealth.gov.ph/about_us/transparency/PCC_Handbook2024_2ndEdition.pdf',
                     ],
                 ]
             );
@@ -104,14 +93,18 @@ class PayrollStatutoryTaxRateSeeder extends Seeder
                     'is_default' => false,
                     'is_inclusive' => false,
                     'is_active' => true,
-                    'effective_from' => '2026-01-01',
+                    'effective_from' => '2023-01-01',
                     'effective_to' => null,
                     'meta' => [
                         'tiers' => [
                             ['max_salary' => 1500, 'rate' => 1.00],
                             ['max_salary' => null, 'rate' => 2.00],
                         ],
+                        'max_salary' => 5000,
                         'max_contribution' => 100,
+                        'employee_rate' => 2.00,
+                        'employer_rate' => 2.00,
+                        'source' => 'https://www.pagibigfund.gov.ph/document/pdf/circulars/provident/HDMF%20Circular%20No.%20274%20-%20Revised%20Guidelines%20on%20Pag-IBIG%20Fund%20Membership.pdf',
                     ],
                 ]
             );
@@ -128,17 +121,18 @@ class PayrollStatutoryTaxRateSeeder extends Seeder
                     'is_default' => false,
                     'is_inclusive' => false,
                     'is_active' => true,
-                    'effective_from' => '2026-01-01',
+                    'effective_from' => '2023-01-01',
                     'effective_to' => null,
                     'meta' => [
                         'monthly_brackets' => [
-                            ['min' => 0, 'max' => 20833, 'fixed' => 0, 'rate' => 0],
-                            ['min' => 20833, 'max' => 33333, 'fixed' => 0, 'rate' => 15],
-                            ['min' => 33333, 'max' => 66667, 'fixed' => 1875, 'rate' => 20],
-                            ['min' => 66667, 'max' => 166667, 'fixed' => 8541.80, 'rate' => 25],
-                            ['min' => 166667, 'max' => 666667, 'fixed' => 33541.80, 'rate' => 30],
+                            ['min' => 0, 'max' => 20832.99, 'fixed' => 0, 'rate' => 0],
+                            ['min' => 20833, 'max' => 33332.99, 'fixed' => 0, 'rate' => 15],
+                            ['min' => 33333, 'max' => 66666.99, 'fixed' => 1875, 'rate' => 20],
+                            ['min' => 66667, 'max' => 166666.99, 'fixed' => 8541.80, 'rate' => 25],
+                            ['min' => 166667, 'max' => 666666.99, 'fixed' => 33541.80, 'rate' => 30],
                             ['min' => 666667, 'max' => null, 'fixed' => 183541.80, 'rate' => 35],
                         ],
+                        'source' => 'https://bir-cdn.bir.gov.ph/local/pdf/Annex%20E%20RR%2011-2018.pdf',
                     ],
                 ]
             );

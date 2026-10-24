@@ -45,7 +45,7 @@ class LeaveRequestRejected extends Notification implements ShouldQueue
             ->line('Days: ' . $this->leaveRequest->days)
             ->line('Rejected by: ' . $this->rejector->name)
             ->line('Reason: ' . ($this->leaveRequest->rejection_reason ?? 'No reason provided'))
-            ->action('View Leave Details', url('/erp/hr/self-service/leaves'))
+            ->action('View Leave Details', url('/erp/time-in?request=' . $this->leaveRequest->id))
             ->line('Please contact HR if you have any questions.');
     }
 
@@ -65,7 +65,7 @@ class LeaveRequestRejected extends Notification implements ShouldQueue
             'days' => $this->leaveRequest->days,
             'rejection_reason' => $this->leaveRequest->rejection_reason ?? 'No reason provided',
             'rejected_by' => $this->rejector->name,
-            'action_url' => '/erp/hr/self-service/leaves',
+            'action_url' => '/erp/time-in?request=' . $this->leaveRequest->id,
             'priority' => 'high',
         ];
     }

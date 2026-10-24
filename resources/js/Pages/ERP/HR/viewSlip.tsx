@@ -1,5 +1,7 @@
+import MonochromeSelect from "@/components/form/Select";
 import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { usePage } from "@inertiajs/react";
 
 type SlipStatus = "processed" | "pending" | "approved" | "paid" | "rejected";
 
@@ -28,6 +30,11 @@ type SlipRecord = {
         pagibig: number;
         other: number;
         total: number;
+    };
+    employerContributions?: {
+        sss: number;
+        philhealth: number;
+        pagibig: number;
     };
     // Hours breakdown (to match Generate Payslip output)
     totalRegularHours?: number;
@@ -74,10 +81,11 @@ const buildDeductionDetails = (apiPayroll: any) => {
     const philhealth = toNumber(apiPayroll.philhealth ?? apiPayroll.philhealth_contributions);
     const pagibig = toNumber(apiPayroll.pag_ibig ?? apiPayroll.pagibig);
 
-    const legacyTotal = toNumber(apiPayroll.deductions);
-    const componentTotal = toNumber(apiPayroll.total_deductions);
+    const storedTotal = apiPayroll.total_deductions ?? apiPayroll.deductions;
     const statutoryTotal = withholdingTax + sss + philhealth + pagibig;
-    const total = legacyTotal > 0 ? legacyTotal : componentTotal + statutoryTotal;
+    const total = storedTotal !== null && storedTotal !== undefined
+        ? toNumber(storedTotal)
+        : statutoryTotal;
     const other = Math.max(0, total - statutoryTotal);
 
     return {
@@ -121,6 +129,7 @@ const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
     const department = apiPayroll.employee?.department || 'N/A';
     const employeeIdDisplay = apiPayroll.employee?.employee_id || 'N/A';
     const deductionDetails = buildDeductionDetails(apiPayroll);
+    const employerSnapshot = apiPayroll.calculation_snapshot?.employer_contributions;
     const attendanceDays = toNumber(apiPayroll.attendance_days);
     const regularHours = toNumber(apiPayroll.regular_hours);
     const absentDays = toNumber(apiPayroll.absent_days ?? apiPayroll.leave_days);
@@ -143,6 +152,11 @@ const transformPayrollFromApi = (apiPayroll: any): SlipRecord => {
             : new Date(apiPayroll.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
         status: resolveSlipStatus(apiPayroll),
         deductionDetails,
+        employerContributions: {
+            sss: toNumber(employerSnapshot?.sss_contribution),
+            philhealth: toNumber(employerSnapshot?.philhealth_contribution),
+            pagibig: toNumber(employerSnapshot?.pagibig_contribution),
+        },
         totalRegularHours: regularHours > 0 ? regularHours : attendanceDays * 8,
         totalOvertimeHours: toNumber(apiPayroll.overtime_hours),
         totalSpecialHolidayHours: toNumber(apiPayroll.special_holiday_hours),
@@ -194,6 +208,9 @@ const getInitials = (name: string) =>
         .toUpperCase();
 
 export default function ViewSlip() {
+    const { auth } = usePage().props as any;
+    const ownerMode = auth?.erpActor?.ownerMode === true;
+    const payrollEndpoint = ownerMode ? "/api/shop-owner/hr/payroll" : "/api/hr/payroll";
     const [slipData, setSlipData] = useState<SlipRecord[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [search, setSearch] = useState("");
@@ -219,7 +236,7 @@ export default function ViewSlip() {
                 params.append('page', page.toString());
                 params.append('per_page', pageSize.toString());
 
-                const response = await fetch(`/api/hr/payroll?${params.toString()}`, {
+                const response = await fetch(payrollEndpoint + "?" + params.toString(), {
                     method: 'GET',
                     headers: {
                         'Content-Type': 'application/json',
@@ -261,7 +278,7 @@ export default function ViewSlip() {
         };
 
         fetchPayrolls();
-    }, [search, status, month, page]);
+    }, [search, status, month, page, payrollEndpoint]);
 
     const months = useMemo(
         () => Array.from(new Set(slipData.map((s) => s.month))),
@@ -309,7 +326,7 @@ export default function ViewSlip() {
 
         try {
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            const response = await fetch(`/api/hr/payroll/${slip.payrollId}`, {
+            const response = await fetch(payrollEndpoint + "/" + slip.payrollId, {
                 method: 'GET',
                 headers: {
                     'Content-Type': 'application/json',
@@ -381,10 +398,7 @@ export default function ViewSlip() {
 
     return (
         <div className="space-y-6">
-            <div className="flex flex-col gap-2">
-                <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">View Slip</h1>
-                <p className="text-gray-600 dark:text-gray-400">Review and download employee payslips by period.</p>
-            </div>
+            <h1 className="sr-only">View Slip</h1>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-2">
@@ -398,7 +412,7 @@ export default function ViewSlip() {
                 </div>
                 <div>
                     <label className="text-sm text-gray-600 dark:text-gray-300">Status</label>
-                    <select
+                    <MonochromeSelect
                         value={status}
                         onChange={(e) => handleStatus(e.target.value)}
                         aria-label="Filter by status"
@@ -409,11 +423,11 @@ export default function ViewSlip() {
                         <option value="approved">Approved</option>
                         <option value="paid">Paid</option>
                         <option value="rejected">Rejected</option>
-                    </select>
+                    </MonochromeSelect>
                 </div>
                 <div>
                     <label className="text-sm text-gray-600 dark:text-gray-300">Month</label>
-                    <select
+                    <MonochromeSelect
                         value={month}
                         onChange={(e) => handleMonth(e.target.value)}
                         aria-label="Filter by month"
@@ -423,7 +437,7 @@ export default function ViewSlip() {
                         {months.map((m) => (
                             <option key={m} value={m}>{m}</option>
                         ))}
-                    </select>
+                    </MonochromeSelect>
                 </div>
             </div>
 
@@ -464,8 +478,8 @@ export default function ViewSlip() {
                                 <tr key={slip.id} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                                     <td className="px-6 py-4">
                                         <div className="flex items-center gap-3">
-                                            <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                                                <span className="text-blue-600 dark:text-blue-300 font-medium text-sm">{getInitials(slip.employeeName)}</span>
+                                            <div className="h-10 w-10 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+                                                <span className="text-white dark:text-blue-300 font-medium text-sm">{getInitials(slip.employeeName)}</span>
                                             </div>
                                             <div className="flex flex-col">
                                                 <span className="font-semibold text-gray-900 dark:text-white">{slip.employeeName}</span>
@@ -562,7 +576,7 @@ export default function ViewSlip() {
             </div>
 
             {selectedSlip && createPortal(
-                <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8">
+                <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center px-4 py-8 erp-modal-backdrop">
                     <div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-8">
                         <div className="flex items-start justify-between mb-4">
                             <div>
@@ -587,8 +601,8 @@ export default function ViewSlip() {
                             <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-800">
                                 <p className="text-sm text-gray-500 dark:text-gray-400">Employee</p>
                                 <div className="mt-1 flex items-center gap-3">
-                                    <div className="h-10 w-10 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                                        <span className="text-blue-600 dark:text-blue-300 font-medium text-sm">{getInitials(selectedSlip.employeeName)}</span>
+                                    <div className="h-10 w-10 rounded-full bg-gray-950 dark:bg-blue-900 flex items-center justify-center">
+                                        <span className="text-white dark:text-blue-300 font-medium text-sm">{getInitials(selectedSlip.employeeName)}</span>
                                     </div>
                                     <div>
                                         <p className="text-lg font-semibold text-gray-900 dark:text-white">{selectedSlip.employeeName}</p>
@@ -703,6 +717,36 @@ export default function ViewSlip() {
                                 </div>
                             </div>
                             
+                            {((selectedSlip.employerContributions?.sss || 0)
+                                + (selectedSlip.employerContributions?.philhealth || 0)
+                                + (selectedSlip.employerContributions?.pagibig || 0)) > 0 && (
+                                <div className="border-t border-dashed border-gray-200 dark:border-gray-700 pt-4">
+                                    <h4 className="text-sm font-semibold text-gray-900 dark:text-white mb-3 uppercase tracking-wide">
+                                        Employer Contributions (not deducted from Net Pay)
+                                    </h4>
+                                    <div className="space-y-2.5">
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-gray-600 dark:text-gray-400">SSS (Employer)</span>
+                                            <span className="text-gray-900 dark:text-white font-medium">
+                                                {formatPHP(selectedSlip.employerContributions?.sss || 0)}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-gray-600 dark:text-gray-400">PhilHealth (Employer)</span>
+                                            <span className="text-gray-900 dark:text-white font-medium">
+                                                {formatPHP(selectedSlip.employerContributions?.philhealth || 0)}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-sm">
+                                            <span className="text-gray-600 dark:text-gray-400">Pag-IBIG (Employer)</span>
+                                            <span className="text-gray-900 dark:text-white font-medium">
+                                                {formatPHP(selectedSlip.employerContributions?.pagibig || 0)}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             <div className="border-t border-dashed border-gray-200 dark:border-gray-700" />
                             <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 -mx-5 px-5 py-3">
                                 <div className="flex items-center justify-between">

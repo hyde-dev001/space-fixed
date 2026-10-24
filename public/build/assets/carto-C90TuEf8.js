@@ -1,0 +1,1 @@
+const o='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';function r(t="light_all",e=!1){return`https://{s}.basemaps.cartocdn.com/rastertiles/${t}/{z}/{x}/{y}${e?"{r}":""}.png?key=${encodeURIComponent("")}`}export{o as C,r as g};

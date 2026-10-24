@@ -42,6 +42,7 @@ class PositionSeeder extends Seeder
                     'view-finance-reports',
                     'export-finance-reports',
                     'view-finance-audit-logs',
+                    'manage-finance-tax',
                     'view-dashboard',
                     'manage-cost-centers',
                     'view-revenue-accounts',

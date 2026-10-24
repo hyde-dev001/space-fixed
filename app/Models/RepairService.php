@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Activitylog\Traits\LogsActivity;
 use Spatie\Activitylog\LogOptions;
 
@@ -32,7 +33,12 @@ class RepairService extends Model
         'approval_id',
         'current_approval_level',
         'approval_workflow_version',
+        'image_path',
     ];
+
+    protected $hidden = ['image_path'];
+
+    protected $appends = ['image_url'];
 
     protected $casts = [
         'price' => 'decimal:2',
@@ -48,6 +54,13 @@ class RepairService extends Model
             ->logOnly(['name', 'category', 'price', 'duration', 'status'])
             ->logOnlyDirty()
             ->dontSubmitEmptyLogs();
+    }
+
+    public function getImageUrlAttribute(): ?string
+    {
+        return $this->image_path
+            ? Storage::disk('public')->url($this->image_path)
+            : null;
     }
 
     /**

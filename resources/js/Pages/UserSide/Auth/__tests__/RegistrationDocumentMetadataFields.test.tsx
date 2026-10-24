@@ -1,0 +1,76 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { useState } from 'react';
+import { describe, expect, it, vi } from 'vitest';
+import RegistrationDocumentMetadataFields from '@/components/form/RegistrationDocumentMetadataFields';
+
+describe('registration document metadata fields', () => {
+  it('renders and updates the issued date picker', () => {
+    const onChange = vi.fn();
+
+    function MetadataFieldsWithState() {
+      const [metadata, setMetadata] = useState({ expirationMode: 'none' as const, expiresOn: '', issuedOn: '' });
+
+      return (
+        <RegistrationDocumentMetadataFields
+          idPrefix="business_registration"
+          label="Business registration"
+          metadata={metadata}
+          onChange={(updates) => {
+            onChange(updates);
+            setMetadata((current) => ({ ...current, ...updates }));
+          }}
+        />
+      );
+    }
+
+    render(<MetadataFieldsWithState />);
+
+    const issuedDate = screen.getByLabelText('Business registration issued date');
+    const expirationMode = screen.getByLabelText('Business registration expiration');
+
+    expect(issuedDate).toHaveAttribute('type', 'date');
+    expect(expirationMode).toHaveValue('none');
+    expect(screen.queryByLabelText('Business registration expiration date')).not.toBeInTheDocument();
+
+    fireEvent.change(issuedDate, { target: { value: '2026-01-15' } });
+
+    expect(onChange).toHaveBeenCalledWith({ issuedOn: '2026-01-15' });
+
+    fireEvent.change(expirationMode, { target: { value: 'dated' } });
+
+    expect(screen.getByLabelText('Business registration expiration date')).toHaveAttribute('type', 'date');
+  });
+
+  it('shows a required expiration date without an expiration mode selector', () => {
+    render(
+      <RegistrationDocumentMetadataFields
+        idPrefix="mayors_permit"
+        label="Mayor's Permit / Shop Permit"
+        metadata={{ expirationMode: 'dated', expiresOn: '', issuedOn: '' }}
+        expirationRequired
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByLabelText("Mayor's Permit / Shop Permit expiration")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Mayor's Permit / Shop Permit expiration date")).toHaveAttribute('type', 'date');
+  });
+
+  it('aligns date fields and removes the left gap for optional expiration dates', () => {
+    render(
+      <RegistrationDocumentMetadataFields
+        idPrefix="bir_certificate"
+        label="BIR Certificate of Registration (COR)"
+        metadata={{ expirationMode: 'dated', expiresOn: '', issuedOn: '' }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const issuedDate = screen.getByLabelText('BIR Certificate of Registration (COR) issued date');
+    const expirationDate = screen.getByLabelText('BIR Certificate of Registration (COR) expiration date');
+
+    expect(issuedDate.previousElementSibling).toHaveClass('min-h-8');
+    expect(expirationDate.previousElementSibling).toHaveClass('min-h-8');
+    expect(expirationDate.parentElement).toHaveClass('sm:col-span-2');
+  });
+});

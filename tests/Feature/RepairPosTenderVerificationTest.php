@@ -49,7 +49,7 @@ class RepairPosTenderVerificationTest extends TestCase
             'payment_lines' => [
                 [
                     'tender_type' => 'paymongo_wallet',
-                    'amount' => 1120,
+                    'amount' => 1000,
                     'provider_reference' => 'PM-REF-001',
                 ],
             ],

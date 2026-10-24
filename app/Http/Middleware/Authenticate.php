@@ -2,7 +2,8 @@
 
 namespace App\Http\Middleware;
 
-use Closure;
+use App\Support\Erp\ErpAccessResponder;
+use Illuminate\Http\Request;
 use Illuminate\Auth\Middleware\Authenticate as Middleware;
 
 class Authenticate extends Middleware
@@ -15,6 +16,11 @@ class Authenticate extends Middleware
      */
     protected function redirectTo($request)
     {
+        if ($request instanceof Request
+            && app(ErpAccessResponder::class)->isOwnerErpRequest($request)) {
+            return route('shop-owner.login.form');
+        }
+
         if (! $request->expectsJson()) {
             return route('login');
         }

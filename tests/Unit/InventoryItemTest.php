@@ -121,8 +121,47 @@ class InventoryItemTest extends TestCase
             'available_quantity' => 5,
         ]);
 
-        $this->expectException(\Exception::class);
-        $item->decrementStock(10, 'stock_out', 'Sold', $this->user->id);
+        try {
+            $item->decrementStock(10, 'stock_out', 'Sold', $this->user->id);
+            $this->fail('Expected over-deduction to be rejected.');
+        } catch (\InvalidArgumentException) {
+            $this->assertSame(5, $item->fresh()->available_quantity);
+            $this->assertSame(0, $item->stockMovements()->count());
+        }
+    }
+
+    /** @test */
+    public function it_rejects_non_positive_stock_deductions(): void
+    {
+        foreach ([0, -1] as $quantity) {
+            $item = InventoryItem::factory()->create([
+                'available_quantity' => 5,
+            ]);
+
+            try {
+                $item->decrementStock($quantity, 'stock_out', 'Invalid deduction', $this->user->id);
+                $this->fail("Expected quantity {$quantity} to be rejected.");
+            } catch (\InvalidArgumentException) {
+                $this->assertSame(5, $item->fresh()->available_quantity);
+                $this->assertSame(0, $item->stockMovements()->count());
+            }
+        }
+    }
+
+    /** @test */
+    public function it_rolls_back_deduction_when_movement_cannot_be_recorded(): void
+    {
+        $item = InventoryItem::factory()->create([
+            'available_quantity' => 5,
+        ]);
+
+        try {
+            $item->decrementStock(2, 'invalid_type', 'Invalid movement', $this->user->id);
+            $this->fail('Expected invalid movement type to be rejected.');
+        } catch (\InvalidArgumentException) {
+            $this->assertSame(5, $item->fresh()->available_quantity);
+            $this->assertSame(0, $item->stockMovements()->count());
+        }
     }
 
     /** @test */

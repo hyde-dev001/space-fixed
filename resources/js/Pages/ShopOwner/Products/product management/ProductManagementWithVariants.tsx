@@ -1,6 +1,7 @@
   import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Head } from '@inertiajs/react';
+import { Head, usePage } from '@inertiajs/react';
+import AppLayoutERP from '../../../../layout/AppLayout_ERP';
 import AppLayoutShopOwner from '../../../../layout/AppLayout_shopOwner';
 import Swal from 'sweetalert2';
 import { ColorVariantManager, ColorVariant } from '@/components/variants/ColorVariantManager';
@@ -37,6 +38,15 @@ type Product = {
   variants?: Variant[];
 };
 
+type ProductPageProps = {
+  erpMode?: boolean;
+  auth?: {
+    shop_owner?: {
+      registration_type?: string | null;
+    } | null;
+  };
+};
+
 type ShowroomEntitlement = {
   business_type: string;
   is_eligible: boolean;
@@ -71,19 +81,7 @@ const resolveImagePreviewUrl = (pathOrUrl?: string | null): string => {
   return `/storage/${pathOrUrl.replace(/^\/+/, '')}`;
 };
 
-// Icon Components  
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
+// Icon Components
 const ShoppingCartIcon: React.FC<{ className?: string }> = ({ className }) => (
   <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
@@ -112,8 +110,6 @@ const TrendingUpIcon: React.FC<{ className?: string }> = ({ className }) => (
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -122,8 +118,6 @@ type MetricCardProps = {
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
@@ -142,20 +136,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -170,6 +154,9 @@ const MetricCard: React.FC<MetricCardProps> = ({
 };
 
 export default function ProductManagement() {
+  const page = usePage<ProductPageProps>();
+  const Layout = page.props.erpMode ? AppLayoutERP : AppLayoutShopOwner;
+  const isCompanyOwner = page.props.auth?.shop_owner?.registration_type === 'company';
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
@@ -500,6 +487,8 @@ export default function ProductManagement() {
   };
 
   const handleOpenModal = async (product?: Product) => {
+    if (isCompanyOwner) return;
+
     setShow3DShoeModels(false);
     setProduct3DFiles([]);
     setExistingShowroomFrameCount(0);
@@ -1312,6 +1301,8 @@ export default function ProductManagement() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isCompanyOwner) return;
+
     // Validation
     if (!formData.name || (!editingProduct && !formData.price)) {
       Swal.fire({
@@ -1535,6 +1526,8 @@ export default function ProductManagement() {
   };
 
   const handleArchive = async (id: number) => {
+    if (isCompanyOwner) return;
+
     const result = await Swal.fire({
       title: 'Archive Product?',
       text: 'This product will be hidden from active lists until it is restored.',
@@ -1584,6 +1577,8 @@ export default function ProductManagement() {
   };
 
   const handleRestore = async (id: number) => {
+    if (isCompanyOwner) return;
+
     const result = await Swal.fire({
       title: 'Restore Product?',
       text: 'This product will be moved back to active products.',
@@ -1650,19 +1645,18 @@ export default function ProductManagement() {
 
   return (
     <>
-      <AppLayoutShopOwner>
-        <Head title="Product Management" />
+      <Layout>
+        <Head title={isCompanyOwner ? 'Product Catalog' : 'Product Management'} />
 
         <div className="space-y-6">
           {/* Header */}
-          <div className="flex items-center justify-between">
+          <div className="flex w-full items-center justify-end">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Product Management</h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">
-                Manage your shoe inventory with variant-based stock control
-              </p>
+              <h1 className="sr-only">
+                {isCompanyOwner ? 'Product Catalog' : 'Product Management'}
+              </h1>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowArchived((prev) => !prev)}
@@ -1670,7 +1664,7 @@ export default function ProductManagement() {
               >
                 {showArchived ? 'Show Active' : 'Show Archived'}
               </button>
-              {!showArchived && (
+              {!showArchived && !isCompanyOwner && (
                 <button
                   onClick={() => handleOpenModal()}
                   className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
@@ -1744,7 +1738,11 @@ export default function ProductManagement() {
                 ) : products.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                      {showArchived ? 'No archived products found.' : 'No products yet. Create your first product!'}
+                      {showArchived
+                        ? 'No archived products found.'
+                        : isCompanyOwner
+                          ? 'No shoe products are available yet. Ask authorized staff to add products for this shop.'
+                          : 'No products yet. Create your first product!'}
                     </td>
                   </tr>
                 ) : (
@@ -1811,7 +1809,9 @@ export default function ProductManagement() {
                         </span>
                       </td>
                       <td className="px-6 py-4 text-right flex items-center justify-end gap-2">
-                        {!showArchived ? (
+                        {isCompanyOwner ? (
+                          <span className="text-xs font-medium text-gray-500 dark:text-gray-400">View only</span>
+                        ) : !showArchived ? (
                           <>
                             <button
                               onClick={() => handleOpenModal(product)}
@@ -1883,11 +1883,11 @@ export default function ProductManagement() {
             )}
           </div>
         </div>
-      </AppLayoutShopOwner>
+      </Layout>
 
       {/* Add/Edit Product Modal with Variant Management */}
-      {isModalOpen && createPortal(
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2">
+      {!isCompanyOwner && isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-7xl w-full shadow-2xl relative flex flex-col" style={{ height: 'calc(100vh - 1rem)' }}>
             <div className="sticky top-0 p-6 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-t-xl z-10">
               <div className="flex items-start justify-between gap-4">
@@ -2149,7 +2149,7 @@ export default function ProductManagement() {
             </form>
 
             {isCategoryModalOpen && (
-              <div className="fixed inset-0 z-[1000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="fixed inset-0 z-[1000000] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
                 <div className="bg-white dark:bg-gray-800 rounded-xl w-full max-w-lg shadow-2xl border border-gray-200 dark:border-gray-700">
                   <div className="p-4 border-b border-gray-200 dark:border-gray-700">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Select Categories</h3>
@@ -2203,7 +2203,7 @@ export default function ProductManagement() {
 
       {/* Upload Loading Overlay */}
       {uploading && createPortal(
-        <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-black/80 backdrop-blur-sm erp-modal-backdrop">
           <div className="flex flex-col items-center gap-6">
             <div className="relative flex items-center justify-center">
               <span className="absolute inline-block h-36 w-36 rounded-full border-8 border-white/25" />

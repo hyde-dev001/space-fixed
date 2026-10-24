@@ -8,6 +8,9 @@ export type BusinessType = 'retail' | 'repair' | 'both' | 'both (retail & repair
 export type RegistrationType = 'individual' | 'company';
 export type ShopOwnerStatusType = 'pending' | 'approved' | 'rejected' | 'suspended';
 
+export type { ShopModuleKey, ShopModuleState, ShopModuleStates } from './shopModules';
+import type { ShopModuleStates } from './shopModules';
+
 /**
  * Shop Owner model interface
  * Matches the data shared from backend via Inertia middleware
@@ -64,6 +67,7 @@ export interface NavigationSubItem {
 export interface ShopOwnerPageProps {
     auth: {
         shop_owner: ShopOwner | null;
+        shopModules?: ShopModuleStates;
         user?: any;
         super_admin?: any;
     };

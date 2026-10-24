@@ -171,7 +171,7 @@ const Virtual3DShowroom: React.FC<{
 
   return (
     <div
-      className={embedded ? 'w-full' : 'fixed inset-0 z-50 bg-black/80 flex items-center justify-center'}
+      className={embedded ? 'w-full' : 'fixed inset-0 z-50 bg-black/80 flex items-center justify-center erp-modal-backdrop'}
       onClick={(event) => {
         if (embedded) return;
         if (event.target === event.currentTarget && onClose) {

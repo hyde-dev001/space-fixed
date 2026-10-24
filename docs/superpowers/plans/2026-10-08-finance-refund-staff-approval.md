@@ -1,0 +1,30 @@
+# Finance refund actions after Staff approval
+
+**Worktree/branch:** `.worktrees/qa-four-follow-up`, `fix/qa-four-follow-up`. One main agent, sequential changes.
+
+**Acceptance:** A company retail refund accepted by Staff must expose Approve and Reject to authorized same-shop Finance while its Finance stage is pending, including shop-owned/unspecified delivery. Staff, Finance and optional owner stages remain separate. No payout before required return receipt/inspection. Other-shop access, completed/rejected requests and owner-waiting stages remain protected.
+
+**Root cause:** `OrderRefundService` accepts ordinary company Staff review independent of delivery classification, while `RefundApprovalController::transformRefund` projects Staff approval only through `requiresStaffCustomerAssessment` (third-party/warranty). Other company records reach Finance with `requiresStaffApproval=false`, `staffApprovalStatus=null` and owner pending, so existing frontend predicates hide both actions.
+
+- [x] Add failing API regression for company shop-owned/unspecified Staff approval, policy on/off, existing audit fields and successful Finance review/rejection.
+- [x] Align only the controller projection with the existing company Staff acceptance rules; keep third-party/warranty classification and return logistics unchanged.
+- [x] Add actual Finance modal tests for server-projected Staff approval, before-Staff blocking, owner waiting and terminal requests.
+- [x] Run targeted workflow/API/frontend tests; browser verify using isolated synthetic data if runnable; rebuild `public/build`.
+- [x] Sequential Standards/Spec/risk/simplify/reuse/dead-code review, syntax/diff/manifest checks and exact result record. Full-backend historical failures are not a passing full-suite claim.
+
+**Likely files:** `app/Http/Controllers/Api/RefundApprovalController.php`, `tests/Feature/OrderRefundApprovalWorkflowTest.php`, `resources/js/Pages/ERP/Finance/__tests__/refundApproval.payout.test.tsx`, this plan and fresh deployment assets. No migration, production-record update, payout execution or new dependency.
+
+## Verification and sequential review
+
+- Red: two new API regressions failed because a real Staff-approved company refund was projected with `requiresStaffApproval=false`. This was reproduced before application edits.
+- Green: `php -d extension=gd artisan test tests/Feature/OrderRefundApprovalWorkflowTest.php --filter=finance_projection`: **2 tests / 64 assertions, no failures**, exit 0; existing absent-worktree-`.env` warnings. Cases cover shop-owned/unspecified delivery, owner approval on/off, dedicated timestamp and legacy owner-field Staff audit, real Finance approval and rejection; payout remains blocked.
+- Backend regressions: `php -d extension=gd artisan test tests/Feature/OrderRefundApprovalWorkflowTest.php tests/Feature/StaffOrderRefundPayloadTest.php tests/Feature/OrderRefundReturnInspectionTest.php tests/Feature/Cod/CodRefundTest.php tests/Feature/Cod/CodDisputeRefundWorkflowTest.php tests/Feature/RetailWarranty/RefundIntegrationTest.php`: **64 tests / 567 assertions, no failures**, exit 0; existing `.env` warnings.
+- Frontend: `pnpm exec vitest run resources/js/Pages/ERP/Finance/__tests__/refundApproval.payout.test.tsx resources/js/Pages/ERP/Finance/__tests__/refundApproval.return-gates.test.tsx resources/js/Pages/ERP/Finance/__tests__/refundApproval.deliveryReconciliation.test.tsx --maxWorkers=2`: **3 files / 19 tests passed**, exit 0. Actual modal displays Approve/Reject after Staff approval with owner policy on/off; hides decisions before Staff, while awaiting owner and after rejection; no premature Execute action.
+- Actual browser: isolated synthetic company shop-owned purchase was accepted through the real Staff service. Finance loaded HTTP 200, actual API returned staff approved/Finance pending/owner pending with payout false, desktop and 390px modal displayed enabled Approve and Reject, both confirmation dialogs opened and were cancelled; **zero page JavaScript errors**, no payout executed. QA fixtures/screenshots/logs remain ignored; production data was not accessed or changed.
+- `pnpm run build`: **passed (47.01s)**. Rebuilt `public/build` is byte-identical to the previous published bundle because production frontend/routes did not change; no artificial asset modification. All **398 manifest asset references** exist.
+- `php -l app/Http/Controllers/Api/RefundApprovalController.php` and `php -l tests/Feature/OrderRefundApprovalWorkflowTest.php`: **passed**. `git diff --check` and untracked document whitespace: **passed**.
+- Full backend/frontend repository suites were not rerun for this bounded controller projection fix. Previously documented baseline backend failures remain separate. No configured TypeScript compiler/frontend lint check is claimed.
+
+Review stack: simplify **pass** (one projection change, no service abstraction/dependency); Standards, Spec then risk **pass** (same service acceptance semantics; tenant permission and return/owner/payment gates unchanged); TypeScript **manual pass for added tests**, production TS unchanged; Karpathy **pass** (surgical four-file source/test/doc scope); code splitting **N/A** (no production frontend change); gauge improvements **measured** (incorrect Staff flags/hidden actions become approved Staff flags/two enabled actions; performance not measured); security **pass** (server decisions/permissions still authoritative, no payout/production mutations); verification **pass** (fresh relevant tests/build/browser evidence above). Reuse/dead-code **pass** (existing request payload, modal, workflow service and factories reused; no orphan added). Vault learning **N/A** (task-specific correction documented here).
+
+Final files: modify `app/Http/Controllers/Api/RefundApprovalController.php`, `tests/Feature/OrderRefundApprovalWorkflowTest.php`, `resources/js/Pages/ERP/Finance/__tests__/refundApproval.payout.test.tsx`; create this plan/result record. Existing deployment bundle regenerated and verified; no schema, settings, route, approval-service or production UI-source changes.
