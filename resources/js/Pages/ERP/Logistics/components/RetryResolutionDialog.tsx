@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/modal';
 import type { TrackingShipmentLeg } from '@/types/logistics';
 
 type Props = {
+  embedded?: boolean;
   leg: TrackingShipmentLeg;
   riders: LogisticsRiderOption[];
   schedule?: LogisticsSchedule;
@@ -16,7 +17,7 @@ type Props = {
   onSubmit: (payload: Record<string, unknown>) => Promise<boolean>;
 };
 
-export default function RetryResolutionDialog({ leg, riders, today, error, onClose, onSubmit, schedule }: Props) {
+export default function RetryResolutionDialog({ leg, riders, today, error, onClose, onSubmit, schedule, embedded = false }: Props) {
   const [date, setDate] = useState(today);
   const [window, setWindow] = useState('morning');
   const [rider, setRider] = useState('');
@@ -29,10 +30,11 @@ export default function RetryResolutionDialog({ leg, riders, today, error, onClo
   const [requestKey] = useState(() => crypto.randomUUID());
   const formRef = useRef<HTMLFormElement>(null);
   useEffect(() => {
+    if (embedded) return;
     const trigger = document.activeElement;
     formRef.current?.querySelector('button')?.focus();
     return () => { if (trigger instanceof HTMLElement) trigger.focus(); };
-  }, []);
+  }, [embedded]);
   const assignmentId = Math.max(0, ...(leg.assignments ?? []).map(item => item.id));
   const valid = Boolean(date && Number(rider) > 0 && reason.trim() && (!appointment || agreement.trim()));
   const submit = async (event: FormEvent) => {
@@ -53,10 +55,9 @@ export default function RetryResolutionDialog({ leg, riders, today, error, onClo
     if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
   };
   const inputClass = 'mt-1 block min-h-11 w-full rounded-lg border border-gray-300 bg-white p-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
-  return <Modal isOpen onClose={() => { if (!pending) onClose(); }} showCloseButton={false} size="xl">
-    <form ref={formRef} role="dialog" aria-modal="true" aria-labelledby="retry-resolution-title" onKeyDown={trapFocus}
-      onSubmit={event => void submit(event)} className="max-h-[90dvh] space-y-4 overflow-y-auto p-5 text-gray-900 dark:text-white">
-      <h2 id="retry-resolution-title" className="text-xl font-semibold">Arrange another visit</h2>
+  const form = <form ref={formRef} role={embedded ? undefined : "dialog"} aria-modal={embedded ? undefined : true} aria-label={embedded ? "Retry schedule and rider" : undefined} aria-labelledby={embedded ? undefined : "retry-resolution-title"} onKeyDown={embedded ? undefined : trapFocus}
+      onSubmit={event => void submit(event)} className={embedded ? "space-y-4" : "max-h-[90dvh] space-y-4 overflow-y-auto p-5 text-gray-900 dark:text-white"}>
+      {!embedded && <h2 id="retry-resolution-title" className="text-xl font-semibold">Arrange another visit</h2>}
       <p className="text-sm text-gray-600 dark:text-gray-300">Choose the schedule and rider. Parcel possession changes only after confirmed release and receipt.</p>
       {error && <p role="alert" className="text-sm text-red-700 dark:text-red-300">{error}</p>}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -74,10 +75,11 @@ export default function RetryResolutionDialog({ leg, riders, today, error, onClo
       {appointment && <label className="block">Customer agreement note<textarea className={inputClass} required maxLength={1000} value={agreement} onChange={event => setAgreement(event.target.value)} disabled={pending} /></label>}
       <p className="text-sm text-gray-600 dark:text-gray-300">Internal planning dates allow eligible early starts. Existing customer appointments stay binding until an agreed reschedule is recorded. Additional visits beyond the attempt limit require this explicit authorization.</p>
       <details><summary className="cursor-pointer text-sm">Capacity override, when authorized</summary><label className="mt-2 block">Capacity override reason<textarea className={inputClass} maxLength={1000} value={override} onChange={event => setOverride(event.target.value)} disabled={pending} /></label></details>
+      <p role="status" className="text-sm">Next: the selected rider accepts the offer and completes every required parcel receipt before starting. Assignment alone does not transfer custody.</p>
       <div className="flex flex-wrap justify-end gap-3">
-        <button type="button" onClick={onClose} disabled={pending} className="min-h-11 rounded-lg border px-4 py-2">Cancel</button>
+        {!embedded && <button type="button" onClick={onClose} disabled={pending} className="min-h-11 rounded-lg border px-4 py-2">Cancel</button>}
         <button type="submit" disabled={!valid || pending} className="min-h-11 rounded-lg bg-gray-950 px-4 py-2 font-semibold text-white disabled:opacity-50">{pending ? 'Authorizing…' : 'Authorize retry'}</button>
       </div>
-    </form>
-  </Modal>;
+    </form>;
+  return embedded ? form : <Modal isOpen onClose={() => { if (!pending) onClose(); }} showCloseButton={false} size="xl">{form}</Modal>;
 }

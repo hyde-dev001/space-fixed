@@ -57,6 +57,20 @@ class DeliveryIncidentControllerTest extends TestCase
         Storage::disk('local')->assertExists($path);
         Storage::disk('public')->assertMissing($path);
         $this->assertStringContainsString('/api/logistics/incidents/'.$incident->id.'/evidence/0', $response->json('incident.evidence_urls.0'));
+
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg->shipment->update(['source_type' => 'order']);
+        $this->clockInEmployee($dispatcher);
+        foreach (['view-logistics-shipments', 'assign-logistics-deliveries', 'resolve-logistics-exceptions'] as $permission) {
+            Permission::findOrCreate($permission, 'user');
+            $dispatcher->givePermissionTo($permission);
+        }
+        $props = $this->actingAs($dispatcher, 'user')->get('/erp/logistics/shipments')
+            ->assertOk()->viewData('page')['props'];
+        $payload = $props['shipments']['data'][0]['legs'][0]['incidents'][0];
+        $this->assertStringContainsString('/api/logistics/incidents/'.$incident->id.'/evidence/0', $payload['evidence_urls'][0] ?? '');
+        $this->assertArrayNotHasKey('photo_paths', $payload);
+        $this->actingAs($dispatcher, 'user')->get($payload['evidence_urls'][0])->assertOk();
     }
 
     public function test_client_supplied_incident_paths_are_rejected(): void
