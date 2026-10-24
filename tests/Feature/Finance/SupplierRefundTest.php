@@ -261,11 +261,23 @@ class SupplierRefundTest extends TestCase
     }
 
     /** @return array<string, mixed> */
+    public function test_supplier_resolution_still_requires_active_attendance(): void
+    {
+        $context = $this->refundContext();
+        \Illuminate\Support\Facades\DB::table('attendance_records')->delete();
+        $this->actingAs($context['procurement'], 'user')
+            ->postJson("/api/erp/procurement/supplier-adjustments/{$context['adjustment']->id}/resolution", ['resolution' => 'refund'])
+            ->assertStatus(423)->assertJsonPath('code', 'EMPLOYEE_NOT_CLOCKED_IN');
+        $this->assertSame(SupplierAdjustment::STATUS_REPORTED, $context['adjustment']->fresh()->status);
+    }
+
     private function refundContext(string $issueStage = SupplierAdjustment::ISSUE_STAGE_POST_PAYMENT): array
     {
         $shop = ShopOwner::factory()->create();
         $finance = User::factory()->for($shop)->create();
         $procurement = User::factory()->for($shop)->create();
+        $this->clockInEmployee($finance);
+        $this->clockInEmployee($procurement);
         $finance->givePermissionTo('access-finance-expenses');
         $procurement->givePermissionTo(['procurement.manage_suppliers', 'procurement.view']);
 

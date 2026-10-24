@@ -36,7 +36,8 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
 }) => {
   const page = usePage();
   const [currentPage, setCurrentPage] = useState(1);
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(() => window.innerWidth >= 1280);
+  const [showTools, setShowTools] = useState(() => window.innerWidth >= 1280);
   const [showArchived, setShowArchived] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [bulkActionMode, setBulkActionMode] = useState(false);
@@ -511,7 +512,7 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
     }
   };
 
-  const getCustomerSegment = (notification: Notification): 'orders' | 'repairs' | 'messages' | null => {
+  const getCustomerSegment = (notification: Notification): 'orders' | 'repairs' | 'messages' | 'deliveries' | null => {
     const type = notification.type?.toLowerCase() || '';
     const title = notification.title?.toLowerCase() || '';
     const message = notification.message?.toLowerCase() || '';
@@ -520,6 +521,8 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
     if (type.includes('order') || data.order_id || title.includes('order')) return 'orders';
     if (type.includes('repair') || data.repair_id || data.repair_request_id || title.includes('repair')) return 'repairs';
     if (type.includes('message') || data.conversation_id || title.includes('message') || message.includes('chat')) return 'messages';
+
+    if (data.shipment_id || type.startsWith('logistics_')) return 'deliveries';
 
     return null;
   };
@@ -600,7 +603,7 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
   };
 
   const customerCategorySections = useMemo(() => {
-    if (!isCustomerView) return [] as Array<{ key: 'orders' | 'repairs' | 'messages'; label: string; notifications: Notification[] }>;
+    if (!isCustomerView) return [] as Array<{ key: 'orders' | 'repairs' | 'messages' | 'deliveries'; label: string; notifications: Notification[] }>;
 
     return [
       {
@@ -617,6 +620,11 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
         key: 'messages' as const,
         label: 'Messages from Shop',
         notifications: notifications.filter((notification: Notification) => getCustomerSegment(notification) === 'messages'),
+      },
+      {
+        key: 'deliveries' as const,
+        label: 'Delivery Updates',
+        notifications: notifications.filter((notification: Notification) => getCustomerSegment(notification) === 'deliveries'),
       },
     ];
   }, [isCustomerView, notifications]);
@@ -803,7 +811,11 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
                 <h3 className={`text-base font-semibold ${notification.is_read
                   ? themeClasses('text-gray-600', 'dark:text-gray-400')
                   : themeClasses('text-gray-900', 'dark:text-white')}`}>
-                  {notification.title}
+                  <a href={getNotificationHref(notification)} onClick={event => {
+                    event.preventDefault(); event.stopPropagation(); handleNotificationNavigate(notification);
+                  }} className="inline-block rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                    {notification.title}
+                  </a>
                 </h3>
               </div>
 
@@ -824,7 +836,7 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
                   : themeClasses('text-gray-950', 'dark:text-gray-200')} font-medium`}>
                   {isCustomerView ? formatTimeAgo(notification.created_at) : new Date(notification.created_at).toLocaleString()}
                 </span>
-                {notification.requires_action && (
+                {notification.requires_action && !(isCustomerView && /^(batch_interruption_|custody_transfer_)/.test(String(notification.data?.event_type ?? ''))) && (
                   <span className="inline-flex items-center rounded border border-gray-300 bg-gray-100 px-2 py-0.5 font-medium text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
                     Action Required
                   </span>
@@ -903,7 +915,7 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
     <>
       <Head title={title} />
 
-      <div className={themeClasses('min-h-screen px-4 sm:px-6 lg:px-8 py-8 bg-gray-50', 'dark:bg-gray-950')}>
+      <div className={themeClasses(`min-h-screen px-4 sm:px-6 lg:px-8 pb-8 ${isCustomerView ? 'pt-24 xl:pt-32' : 'pt-8'} bg-gray-50`, 'dark:bg-gray-950')}>
         <div className="mb-4">
           <button
             type="button"
@@ -941,7 +953,11 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-3 flex-wrap">
+            <button type="button" aria-label="Notification tools" aria-expanded={showTools} aria-controls="notification-tools"
+              onClick={() => setShowTools(!showTools)} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold dark:border-gray-700">
+              {showTools ? 'Hide tools' : 'Tools'}
+            </button>
+            {showTools && <div id="notification-tools" className="flex items-center gap-3 flex-wrap">
               {/* Bulk Actions Toggle */}
               <button
                 onClick={() => {
@@ -1018,7 +1034,7 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
                   Mark All Read
                 </button>
               )}
-            </div>
+            </div>}
           </div>
         </div>
 
@@ -1061,24 +1077,6 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
           </div>
         )}
 
-        {/* Advanced Filters */}
-        <div className={themeClasses('bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden', 'dark:bg-gray-900 dark:border-gray-700')}>
-          <button
-            onClick={() => setShowFilters(!showFilters)}
-            className={themeClasses('w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors', 'dark:hover:bg-gray-800')}
-          >
-            <div className="flex items-center gap-2">
-              <Filter size={20} className={themeClasses('text-gray-600', 'dark:text-gray-300')} />
-              <h2 className={themeClasses('text-lg font-semibold text-gray-900', 'dark:text-white')}>Advanced Filters</h2>
-            </div>
-            <ChevronDown
-              size={20}
-              className={`${themeClasses('text-gray-600', 'dark:text-gray-300')} transition-transform ${showFilters ? 'rotate-180' : ''}`}
-            />
-          </button>
-
-          {showFilters && (
-            <div className={themeClasses('p-4 border-t border-gray-200 bg-gray-50', 'dark:border-gray-700 dark:bg-gray-800/70')}>
               {/* Search Bar */}
               <div className="mb-4">
                 <label className={themeClasses('block text-sm font-medium text-gray-700 mb-2', 'dark:text-gray-300')}>
@@ -1087,7 +1085,7 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
                 <div className="relative">
                   <Search size={18} className={themeClasses('absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400', 'dark:text-gray-500')} />
                   <input
-                    type="text"
+                    type="text" aria-label="Search notifications"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     placeholder="Search in title or message..."
@@ -1112,6 +1110,31 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
                 </div>
               </div>
 
+
+        <label className="mb-4 flex min-h-11 w-fit cursor-pointer items-center gap-2 text-sm">
+          <input type="checkbox" aria-label="Unread only" checked={filters.unread_only}
+            onChange={event => handleFilterChange('unread_only', event.target.checked)} className="h-4 w-4 accent-gray-950" />
+          Unread only
+        </label>
+
+        {/* Advanced Filters */}
+        <div className={themeClasses('bg-white rounded-lg shadow-sm border border-gray-200 mb-6 overflow-hidden', 'dark:bg-gray-900 dark:border-gray-700')}>
+          <button
+            aria-expanded={showFilters} aria-controls="notification-advanced-filters" onClick={() => setShowFilters(!showFilters)}
+            className={themeClasses('w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors', 'dark:hover:bg-gray-800')}
+          >
+            <div className="flex items-center gap-2">
+              <Filter size={20} className={themeClasses('text-gray-600', 'dark:text-gray-300')} />
+              <h2 className={themeClasses('text-lg font-semibold text-gray-900', 'dark:text-white')}>Advanced Filters</h2>
+            </div>
+            <ChevronDown
+              size={20}
+              className={`${themeClasses('text-gray-600', 'dark:text-gray-300')} transition-transform ${showFilters ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {showFilters && (
+            <div id="notification-advanced-filters" className={themeClasses('p-4 border-t border-gray-200 bg-gray-50', 'dark:border-gray-700 dark:bg-gray-800/70')}>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Category Filter */}
                 <div>
@@ -1200,17 +1223,7 @@ const NotificationListContent: React.FC<NotificationListProps> = ({
 
               {/* Quick Filters */}
               <div className={themeClasses('flex flex-wrap gap-3 mt-4 pt-4 border-t border-gray-200', 'dark:border-gray-700')}>
-                <label className="flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={filters.unread_only}
-                    onChange={(e) => handleFilterChange('unread_only', e.target.checked)}
-                    title="Show unread notifications only"
-                    aria-label="Show unread notifications only"
-                    className="w-4 h-4 text-gray-950 border-gray-300 rounded focus:ring-2 focus:ring-gray-950 dark:border-gray-600 dark:text-gray-200 dark:focus:ring-gray-300"
-                  />
-                  <span className={themeClasses('ml-2 text-sm text-gray-700', 'dark:text-gray-300')}>Unread only</span>
-                </label>
+
 
                 <label className="flex items-center cursor-pointer">
                   <input

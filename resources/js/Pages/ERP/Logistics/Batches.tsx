@@ -15,6 +15,9 @@ import {
 import { workflowFeedback } from '@/utils/workflowFeedback';
 import AvailableDeliveriesPanel from './components/AvailableDeliveriesPanel';
 import BatchDetailsModal from './components/BatchDetailsModal';
+import { BatchInterruptionDialog } from './components/BatchInterruptionDialog';
+import CustodyHandoffs from './components/CustodyHandoffs';
+import type { CustodyHandoff } from '@/types/logistics';
 import BatchHistoryModal from './components/BatchHistoryModal';
 import BatchTable from './components/BatchTable';
 import BatchWorkspace from './components/BatchWorkspace';
@@ -45,7 +48,10 @@ export default function Batches() {
     showModuleFilter = false,
     today = '',
     logisticsSchedule,
-  } = usePage<DeliveryBatchPageProps & { auth?: any }>().props;
+    canResolveBatchIncidents = false,
+    canAssignBatchRecovery = false,
+    custodyHandoffs = [],
+  } = usePage<DeliveryBatchPageProps & { auth?: any; canResolveBatchIncidents?: boolean; canAssignBatchRecovery?: boolean; custodyHandoffs?: CustodyHandoff[] }>().props;
   const ownerMode = (auth as any)?.erpActor?.ownerMode === true;
   const { isRouteFrozen } = useMaintenance();
   const createBatchFrozen = isRouteFrozen('logistics.api.batches.store');
@@ -75,6 +81,16 @@ export default function Batches() {
   const [offerOverrideRiderId, setOfferOverrideRiderId] = useState<number>();
   const [activeStatus, setActiveStatus] = useState<'all' | DeliveryBatchStatus>('all');
   const [detailsBatchId, setDetailsBatchId] = useState<number>();
+  const [resolutionBatchId, setResolutionBatchId] = useState<number>();
+  const focusedQuery = useRef<string | null>(null);
+  useEffect(() => {
+    const query = globalThis.location.search;
+    if (focusedQuery.current === query) return;
+    focusedQuery.current = query;
+    const params = new URLSearchParams(query);
+    const target = batches.find(batch => batch.id === Number(params.get('batch')));
+    if (target && (!params.has('incident') || target.interruption?.id === Number(params.get('incident')))) setDetailsBatchId(target.id);
+  }, [batches]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deliveriesCollapsed, setDeliveriesCollapsed] = useState(false);
   const detailsTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -138,10 +154,11 @@ export default function Batches() {
     ? logisticsModuleForSourceType(selectedLegs[0].shipment?.source_type)
     : null;
   const selectedBatch = batches.find((batch) => batch.id === selectedBatchId);
-  const activeBatches = batches.filter((batch) => !['completed', 'cancelled'].includes(batch.status));
-  const historyBatches = batches.filter((batch) => ['completed', 'cancelled'].includes(batch.status));
+  const activeBatches = batches.filter((batch) => !['completed', 'cancelled', 'recovered'].includes(batch.status));
+  const historyBatches = batches.filter((batch) => ['completed', 'cancelled', 'recovered'].includes(batch.status));
   const visibleActiveBatches = activeStatus === 'all' ? activeBatches : activeBatches.filter((batch) => batch.status === activeStatus);
   const detailsBatch = batches.find((batch) => batch.id === detailsBatchId);
+  const resolutionBatch = batches.find((batch) => batch.id === resolutionBatchId);
 
   const startNewBatch = () => {
     setBuilding(true);
@@ -446,6 +463,7 @@ export default function Batches() {
       </div>
     </div>
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-red-700">{error}</p>}
+    <CustodyHandoffs handoffs={custodyHandoffs} />
     <div id="batch-workspace" data-testid="batch-workspace" className={`grid min-w-0 scroll-mt-28 gap-5 ${deliveriesCollapsed ? 'xl:grid-cols-1' : 'xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]'}`}>
       <AvailableDeliveriesPanel
         rows={filteredDeliveries} totalRows={allDeliveries.length} selectedIds={selectedIds} loading={refreshing}
@@ -467,7 +485,7 @@ export default function Batches() {
       /> : <section className="grid min-h-72 place-items-center rounded-2xl border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">Choose New Batch or open an existing batch to begin.</section>}
     </div>
     <section aria-label="Active batches" className="min-w-0 space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-gray-950 dark:text-white">Active batches</h2><div data-testid="active-batch-filters" className="w-full min-w-0 overflow-x-auto pb-1 xl:w-auto xl:overflow-visible xl:pb-0"><div className="flex w-max min-w-full gap-2 xl:w-auto xl:min-w-0 xl:flex-wrap xl:gap-1">{(['all', 'draft', 'offered', 'accepted', 'in_progress'] as const).map((tab) => {
+      <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold text-gray-950 dark:text-white">Active batches</h2><div data-testid="active-batch-filters" className="w-full min-w-0 overflow-x-auto pb-1 xl:w-auto xl:overflow-visible xl:pb-0"><div className="flex w-max min-w-full gap-2 xl:w-auto xl:min-w-0 xl:flex-wrap xl:gap-1">{(['all', 'draft', 'offered', 'accepted', 'in_progress', 'interrupted'] as const).map((tab) => {
         const count = tab === 'all' ? activeBatches.length : activeBatches.filter((batch) => batch.status === tab).length;
         const tabLabel = tab === 'all' ? 'All' : tab.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
         return <button key={tab} type="button" aria-pressed={activeStatus === tab} onClick={() => setActiveStatus(tab)} className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-semibold xl:min-h-10 ${activeStatus === tab ? 'bg-gray-950 text-white dark:bg-gray-950 dark:text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700'}`}>{tabLabel} ({count})</button>;
@@ -476,7 +494,10 @@ export default function Batches() {
       {!visibleActiveBatches.length && <p className="rounded-xl border border-dashed p-6 text-center text-sm text-gray-500">No active batches in this status.</p>}
     </section>
     <BatchHistoryModal batches={historyBatches} isOpen={historyOpen} onClose={closeHistory} onOpen={(batchId) => { closeHistory(); openBatch(batchId); }} onDetails={openDetails} onRestore={restoreBatch} />
-    <BatchDetailsModal batch={detailsBatch} isOpen={Boolean(detailsBatch)} onClose={closeDetails} />
+    <BatchDetailsModal batch={detailsBatch} isOpen={Boolean(detailsBatch)} onClose={closeDetails}
+      canResolveInterruption={canResolveBatchIncidents && !ownerMode} onResolveInterruption={() => { setResolutionBatchId(detailsBatchId); closeDetails(); }} />
+    {resolutionBatch?.interruption && <BatchInterruptionDialog key={`${resolutionBatch.id}:${resolutionBatch.interruption.revision}`} batchId={resolutionBatch.id}
+      incident={resolutionBatch.interruption} canAssign={canAssignBatchRecovery && !ownerMode} today={today} riders={riders} schedule={logisticsSchedule} onClose={() => setResolutionBatchId(undefined)} />}
     <OfferBatchModal isOpen={reviewOpen} batch={selectedBatch} batches={batches} riders={riders} dailyRiderCapacity={dailyRiderCapacity} forceCapacityOverrideForRiderId={offerOverrideRiderId} submitting={offerSubmitting} error={offerError} disabled={offerBatchFrozen} disabledReason={maintenanceActionMessage} onClose={() => { setReviewOpen(false); setOfferOverrideRiderId(undefined); }} onOffer={offerBatch} />
   </main></AppLayoutERP>;
 }

@@ -515,7 +515,8 @@ export const canSelectShopOwnedReturn = (
 
 export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund">) => {
   const latestRefund = order.latest_refund;
-  if (!latestRefund || String(latestRefund.reason_code || '').toLowerCase() === 'delivery_attempts_exhausted') return false;
+  if (!latestRefund) return false;
+  if (latestRefund.reason_code === 'delivery_attempts_exhausted') return latestRefund.return_status === 'in_transit';
   if (String(latestRefund.flow_type || '').toLowerCase() !== 'request_approval'
     || ['rejected', 'failed'].includes(String(latestRefund.status || '').toLowerCase())) {
     return false;
@@ -1571,7 +1572,7 @@ export default function JobOrdersPage() {
           : []);
 
     const result = await Swal.fire({
-      title: 'Confirm Returned Item Received?',
+      title: 'Inspect Returned Items',
       html: `
         <div style="text-align: left; margin-top: 0.75rem; line-height: 1.55;">
           <p><strong>Order:</strong> ${order.order_number}</p>
@@ -1581,7 +1582,7 @@ export default function JobOrdersPage() {
           <p><strong>Tracking Number:</strong> ${returnTrackingNumber}</p>
           <p><strong>Tracking Link:</strong> ${returnTrackingLink}</p>
           <p><strong>Return Transport Started At:</strong> ${returnShippedAt}</p>
-          <p style="margin-top: 0.75rem; color: #6b7280;">Confirm this after staff has physically received and verified the returned defective item.</p>
+          <p style="margin-top: 0.75rem; color: #6b7280;">Record the condition only after physical inspection. Resellable items add the inspected quantity to stock. Damaged items are written off and do not add stock. This does not approve or pay a refund.</p>
         </div>
         ${refundLines.length > 0 ? `
           <div style="text-align:left; display:flex; flex-direction:column; gap:10px; max-height:260px; overflow:auto; padding-right:4px; margin-top:12px; border-top:1px solid #e5e7eb; padding-top:12px;">
@@ -1608,7 +1609,7 @@ export default function JobOrdersPage() {
       `,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Yes, confirm',
+      confirmButtonText: 'Save inspection and confirm return',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
       focusConfirm: false,
@@ -2216,8 +2217,31 @@ export default function JobOrdersPage() {
             </div>
           )}
 
-          {/* Table */}
-          <div className="h-135 overflow-y-auto">
+          <section aria-label="Compact job orders" className="space-y-3 p-4 xl:hidden">
+            {paginatedOrders.length === 0 && <p className="py-8 text-center text-sm text-gray-600 dark:text-gray-300">No orders found</p>}
+            {paginatedOrders.map(order => <article key={order.id} className="space-y-3 rounded-xl border border-gray-200 p-4 text-gray-950 dark:border-gray-700 dark:text-white">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0 break-words"><h2 className="font-semibold">{order.order_number}</h2><p className="mt-1 text-sm">{order.customer}</p></div>
+                <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold dark:bg-gray-800">{getOrderStatusPresentation(order.status).label}</span>
+              </div>
+              <dl className="grid grid-cols-2 gap-3 text-sm">
+                <div className="min-w-0"><dt className="text-gray-600 dark:text-gray-300">Item</dt><dd className="mt-1 break-words">{order.product || 'See order details'}{order.items.length > 1 && ` + ${order.items.length - 1} more`}</dd></div>
+                <div><dt className="text-gray-600 dark:text-gray-300">Order quantity</dt><dd className="mt-1">{order.quantity}</dd></div>
+                <div><dt className="text-gray-600 dark:text-gray-300">Total</dt><dd className="mt-1">{formatOrderTotal(order.grand_total)}</dd></div>
+                <div><dt className="text-gray-600 dark:text-gray-300">Refund / return</dt><dd className="mt-1 break-words">{getRefundReturnDisplay(order).label}</dd></div>
+              </dl>
+              {Boolean(order.latest_refund?.items?.length) && <div className="rounded-lg bg-gray-50 p-3 text-sm dark:bg-gray-800"><p className="font-semibold">Returned quantities</p><ul className="mt-1 space-y-1">{order.latest_refund?.items?.map(line => <li key={line.order_item_id}>{line.product_name}: {line.approved_qty}</li>)}</ul></div>}
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => handleViewOrder(order)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 dark:border-gray-600">View order details</button>
+                {canConfirmReturnReceived(order) && <button type="button" onClick={() => handleConfirmReturnReceived(order)} className="min-h-11 rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 dark:bg-white dark:text-gray-950">Inspect returned items</button>}
+                {canArrangeReturnPickup(order) && <button type="button" onClick={() => handleArrangeReturnPickup(order)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold dark:border-gray-600">{isRetryableShopOwnedReturn(order) ? 'Retry return pickup' : 'Arrange return pickup'}</button>}
+                {order.availableActions?.includes('shipped') && <button type="button" onClick={() => handleShipOrder(order)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold dark:border-gray-600">Mark as shipped</button>}
+                {order.availableActions?.includes('processing') && <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={() => handleSelectOrder(order.id)} />Select for processing</label>}
+              </div>
+            </article>)}
+          </section>
+          {/* Desktop table */}
+          <div className="hidden h-135 overflow-y-auto xl:block">
             <table className="w-full table-fixed">
               <colgroup>
                 <col className="w-[3%]" />

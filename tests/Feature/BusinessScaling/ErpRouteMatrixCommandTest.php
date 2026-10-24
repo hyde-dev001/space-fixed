@@ -14,7 +14,7 @@ final class ErpRouteMatrixCommandTest extends TestCase
         $exitCode = Artisan::call('erp:route-matrix');
         $output = Artisan::output();
 
-        $this->assertSame(0, $exitCode);
+        $this->assertSame(0, $exitCode, $output);
         $this->assertStringContainsString('# Shop Owner ERP Route Matrix', $output);
         $this->assertStringContainsString(
             'Method | Employee route | Owner policy | Owner exposure/route | Component/controller | Supporting APIs | ERP group | Module gate | Business type | Employee rule | Domain rule | Risk | Actor persistence | Self-service',

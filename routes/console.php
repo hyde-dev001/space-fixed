@@ -11,6 +11,7 @@ Schedule::command('maintenance:reconcile')
     ->onOneServer();
 
 Schedule::command('logistics:monitor-overdue')->everyFiveMinutes()->withoutOverlapping();
+Schedule::command('logistics:deliver-pending-notifications')->everyMinute()->withoutOverlapping();
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());

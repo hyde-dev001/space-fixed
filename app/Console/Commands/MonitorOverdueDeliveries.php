@@ -47,6 +47,7 @@ class MonitorOverdueDeliveries extends Command
                 }
 
                 if (in_array($leg->status->value, ['pending', 'assigned'], true)
+                    && ! $leg->customer_appointment_date
                     && !$leg->events()->where('event_type', 'delivery_estimate_delayed')->exists()) {
                     $nextDate = $this->nextOperatingDate($now->startOfDay()->addDay(), $settings);
                     $leg->update(['scheduled_delivery_date' => $nextDate->toDateString()]);

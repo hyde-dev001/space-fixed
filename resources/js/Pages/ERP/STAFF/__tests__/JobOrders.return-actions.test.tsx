@@ -8,7 +8,7 @@ import {
 } from "../JobOrders";
 
 describe("staff failed-delivery return actions", () => {
-  it("does not offer manual confirmation for failed-delivery refunds", () => {
+  it("offers inspection for physically returned failed-delivery refunds", () => {
     expect(canConfirmReturnReceived({
       latest_refund: {
         id: 1,
@@ -21,7 +21,7 @@ describe("staff failed-delivery return actions", () => {
         staff_return_carrier: "Shop-owned logistics",
         flow_type: "request_approval",
       },
-    })).toBe(false);
+    })).toBe(true);
   });
 });
 

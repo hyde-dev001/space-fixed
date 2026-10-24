@@ -21,8 +21,19 @@ export const logisticsDeliveryLabel = (value?: DeliveryTypePresentation | null):
   value?.delivery_label || 'Unknown Delivery Type';
 
 export type LogisticsSchedule = {
+  morning_start?: string;
+  morning_end?: string;
+  afternoon_start?: string;
+  afternoon_end?: string;
+  timezone?: string;
   operating_days: number[];
   blackout_dates: string[];
+};
+
+export const logisticsWindowLabel = (window: 'morning' | 'afternoon', schedule?: LogisticsSchedule) => {
+  const label = window === 'morning' ? 'Morning' : 'Afternoon';
+  const start = schedule?.[`${window}_start`], end = schedule?.[`${window}_end`];
+  return start && end ? `${label} (${start} - ${end})` : `${label} (hours set by shop)`;
 };
 
 export const logisticsModuleForSourceType = (sourceType?: string | null): LogisticsModule | null => {
@@ -205,6 +216,12 @@ export type ProofReviewSummary = {
 };
 
 export type TrackingShipmentLeg = {
+  custody_state?: string;
+  custody_rider_profile_id?: number | null;
+  batch_interruption?: BatchInterruption | null;
+  start_blocked_reason?: string | null;
+  customer_appointment_date?: string | null;
+  customer_appointment_window?: 'morning' | 'afternoon' | null;
   id: number;
   delivery_number?: number | null;
   delivery_type?: DeliveryType | string | null;
@@ -331,6 +348,7 @@ export type TrackingShipmentEvent = {
 };
 
 export type TrackingShipment = {
+  recovery?: { state: 'delayed' | 'awaiting_handoff' | 'preparing_continuation'; label: string; message: string; next_step: string } | null;
   id: number;
   shipment_number?: number | null;
   delivery_type?: DeliveryType | string | null;
@@ -411,6 +429,8 @@ export type LogisticsShipment = {
   legs?: TrackingShipmentLeg[];
 };
 
+export type LogisticsRiderOption = { id: number; name: string; daily_capacity?: number | null; availability_status?: string };
+
 export type LogisticsRider = {
   id: number;
   rider_type: string;
@@ -421,7 +441,29 @@ export type LogisticsRider = {
   daily_capacity?: number | null;
 };
 
-export type DeliveryBatchStatus = 'draft' | 'offered' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
+export type DeliveryBatchStatus = 'draft' | 'offered' | 'accepted' | 'in_progress' | 'interrupted' | 'recovered' | 'completed' | 'cancelled';
+
+export type BatchInterruption = {
+  id: number;
+  revision: number;
+  status: string;
+  source_batch_id: number;
+  recovery_batch_id?: number | null;
+  recovery_batch_status?: string | null;
+  notes?: string;
+  resolution?: string | null;
+  resolution_note?: string | null;
+  reported_at?: string | null;
+  decided_at?: string | null;
+  decided_by_user_id?: number | null;
+  resolved_at?: string | null;
+  required_parcels: number;
+  confirmed_parcels: number;
+  evidence_urls?: string[];
+  stops: Array<{ shipment_leg_id: number; delivery_reference: string; sequence: number | null; status: string;
+    custody_state: string; custody_rider_profile_id?: number | null; requires_handoff: boolean; handoff_complete: boolean; transfer_status: string | null;
+    customer_appointment_date?: string | null; customer_appointment_window?: string | null }>;
+};
 
 export type BatchSuggestion = {
   rider_profile_id: number;
@@ -433,6 +475,7 @@ export type BatchSuggestion = {
 };
 
 export type DeliveryBatch = {
+  interruption?: BatchInterruption | null;
   id: number;
   delivery_date: string;
   delivery_window: 'morning' | 'afternoon';
@@ -471,6 +514,8 @@ export type RiderDeliveryBusiness = 'all' | 'retail' | 'repair';
 export type RiderDeliveryTab = 'upcoming' | 'history' | 'issues' | 'all';
 
 export type RiderDeliveryWorkItem = {
+  interruption?: BatchInterruption | null;
+  start_blocked_reason?: string | null;
   item_type: 'work';
   key: string;
   kind: 'batch' | 'single';
@@ -537,3 +582,18 @@ export type LiveTrackingRoute = {
   updated_at?: string | null;
   off_route_state?: 'on_route' | 'monitoring' | 'cooldown' | string;
 };
+export interface CustodyHandoff {
+  source_reference?: string;
+  shipment_reference?: string;
+  stage?: string;
+  details_url?: string;
+  id: number;
+  shipment_leg_id: number;
+  delivery_reference: string;
+  status: 'requested' | 'released';
+  from_label: string;
+  to_label: string;
+  can_release: boolean;
+  can_receive: boolean;
+  can_cancel?: boolean;
+}

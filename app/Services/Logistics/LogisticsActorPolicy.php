@@ -355,6 +355,21 @@ final class LogisticsActorPolicy
             : $this->deny(self::BATCH_MANAGEMENT_ACTION, 'action_not_allowed');
     }
 
+    public function assertBatchInterruption(User $actor, ShopOwner $shop, \App\Models\Logistics\DeliveryBatch $batch, bool $resolve = false): void
+    {
+        abort_unless((int) $actor->shop_owner_id === (int) $shop->id && (int) $batch->shop_owner_id === (int) $shop->id, 403);
+        if ($resolve) {
+            abort_unless($actor->can('resolve-logistics-exceptions'), 403);
+        } else {
+            $rider = $this->resolveRiderProfile($actor, $shop);
+            abort_unless($rider && (int) $rider->id === (int) $batch->rider_profile_id
+                && $actor->can('operate-logistics-deliveries') && $actor->can('update-logistics-status'), 403);
+        }
+        if (! $this->movements->canStart($shop) && ! $batch->legs()->get()->contains(fn ($leg) => $this->movements->canContinue($shop, $leg))) {
+            $this->movements->assertCanStart($shop);
+        }
+    }
+
     /**
      * @return array{allowed: bool, action: string, reason_category: ?string}
      */

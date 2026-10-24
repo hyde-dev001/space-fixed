@@ -11,6 +11,19 @@ class LogisticsSeederTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_seeded_logistics_accounts_use_staff_legacy_role_and_distinct_permissions(): void
+    {
+        $shop = \App\Models\ShopOwner::factory()->approved()->withLogistics()->create(['business_type' => 'both']);
+        $this->seed(RolesAndPermissionsSeeder::class);
+        $this->seed(\Database\Seeders\EmployeeSeeder::class);
+        foreach (['Logistics Dispatcher', 'Logistics Rider'] as $roleName) {
+            $user = \App\Models\User::where('shop_owner_id', $shop->id)->whereHas('roles', fn ($q) => $q->where('name', $roleName))->firstOrFail();
+            $this->assertSame('STAFF', $user->role);
+            $this->assertSame($roleName === 'Logistics Dispatcher', $user->can('resolve-logistics-exceptions'));
+            $this->assertSame($roleName === 'Logistics Rider', $user->can('operate-logistics-deliveries'));
+        }
+    }
+
     public function test_logistics_permissions_and_default_methods_are_seeded(): void
     {
         $this->seed(RolesAndPermissionsSeeder::class);

@@ -138,7 +138,7 @@ export default function BatchWorkspace({
   suggestionRiders = [], suggestionsLoading = false, suggestionsError = '', onApplySuggestion,
   saveDisabled = false, saveDisabledReason,
 }: Props) {
-  const history = batch && ['completed', 'cancelled'].includes(batch.status);
+  const history = batch && ['completed', 'cancelled', 'recovered'].includes(batch.status);
   const legs = !batch ? selectedLegs : history
     ? batch.stop_snapshot?.length ? batch.stop_snapshot
       : batch.cancelled_stops?.length ? batch.cancelled_stops : batch.legs

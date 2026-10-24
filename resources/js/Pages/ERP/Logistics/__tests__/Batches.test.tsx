@@ -113,6 +113,22 @@ beforeEach(() => {
   mocks.suggestions.mockResolvedValue({ data: { suggestions: [] } });
 });
 
+it('opens the authorized incident from its notification link and resolves outside the details dialog', () => {
+  const oldPath = globalThis.location.pathname + globalThis.location.search;
+  globalThis.history.replaceState({}, '', '/erp/logistics/batches?batch=7&incident=77');
+  try {
+    mocks.props = { ...mocks.props, canResolveBatchIncidents: true, canAssignBatchRecovery: true, batches: [{
+      id: 7, status: 'interrupted', delivery_date: '2026-07-01', delivery_window: 'morning', capacity: 10, assigned_stop_count: 1, legs: [scheduledLeg],
+      interruption: { id: 77, revision: 0, source_batch_id: 7, status: 'reported', required_parcels: 1, confirmed_parcels: 0, stops: [] },
+    }] };
+    render(<Batches />);
+    expect(screen.getByRole('dialog', { name: 'Batch 7 details' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Resolve interruption' }));
+    expect(screen.getByRole('dialog', { name: 'Resolve batch interruption' })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: 'Batch 7 details' })).not.toBeInTheDocument();
+  } finally { globalThis.history.replaceState({}, '', oldPath); }
+});
+
 function openBuilder() {
   fireEvent.click(screen.getByRole('button', { name: 'New Batch' }));
   fireEvent.change(screen.getByLabelText('Delivery date'), { target: { value: '2026-07-15' } });
@@ -892,7 +908,7 @@ it('keeps saved stops visible in a cancelled batch history card', () => {
   expect(details).toHaveTextContent('Urgent');
 });
 
-it.each(['completed', 'cancelled'])('uses the immutable stop snapshot throughout %s history', (status) => {
+it.each(['completed', 'cancelled', 'recovered'])('uses the immutable stop snapshot throughout %s history', (status) => {
   mocks.props.batches = [{
     ...batchForStatus(6, status),
     assigned_stop_count: 99,
@@ -959,7 +975,7 @@ it('falls back from empty persisted history to live legs', () => {
   expect(within(details).getByText('1/10 stops')).toBeInTheDocument();
 });
 
-it.each(['completed', 'cancelled'])('shows unavailable history details only when every %s source is empty', (status) => {
+it.each(['completed', 'cancelled', 'recovered'])('shows unavailable history details only when every %s source is empty', (status) => {
   mocks.props.batches = [{
     ...batchForStatus(6, status), legs: [], stop_snapshot: [], cancelled_stops: [],
   }];

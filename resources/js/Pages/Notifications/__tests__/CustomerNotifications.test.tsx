@@ -45,8 +45,15 @@ vi.mock('../../../hooks/useNotifications', () => ({
         action_url: '/erp/logistics/shipments?status=customer_disputes',
         is_read: false,
         created_at: '2026-08-11T09:00:00.000Z',
+      }, {
+        id: 3, type: 'repair_status_updated', title: 'Repair completed', message: 'Your repair is complete.',
+        data: { repair_request_id: 73 }, is_read: false, created_at: '2026-10-24T09:00:00.000Z',
+      }, {
+        id: 4, type: 'logistics_exception', title: 'Delivery Route Interrupted', message: 'The shop is arranging recovery.',
+        data: { shipment_id: 74, event_type: 'batch_interruption_reported' }, action_url: '/tracking/shipments/74',
+        is_read: false, created_at: '2026-10-24T09:00:00.000Z',
       }],
-      total: 2,
+      total: 4,
       unread_count: 2,
       last_page: 1,
       from: 1,
@@ -70,6 +77,32 @@ vi.mock('../../../components/Notifications/ExportModal', () => ({
 }));
 
 describe('CustomerNotifications', () => {
+  it('keeps delivery notices visible beside categorized repair and order notices', () => {
+    render(<NotificationList />);
+    expect(screen.getByRole('link', { name: 'Repair completed' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Delivery Route Interrupted' })).toHaveAttribute('href', '/tracking/shipments/74');
+    expect(screen.getByRole('heading', { name: 'Delivery Updates' })).toBeInTheDocument();
+  });
+
+  it('puts search and notices before collapsed secondary filters on compact screens',()=>{
+    render(<NotificationList/>);
+    expect(screen.getByRole('textbox',{name:'Search notifications'})).toBeVisible();
+    expect(screen.getByRole('button',{name:'Notification tools'})).toHaveAttribute('aria-expanded','false');
+    expect(screen.queryByRole('button',{name:'Select Multiple'})).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox',{name:'Unread only'})).toBeVisible();
+    fireEvent.click(screen.getByRole('button',{name:'Notification tools'}));
+    expect(screen.getByRole('button',{name:'Select Multiple'})).toBeInTheDocument();
+    expect(screen.getByRole('button',{name:'Advanced Filters'})).toHaveAttribute('aria-expanded','false');
+    expect(screen.queryByLabelText('Filter by category')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Advanced Filters'}));
+    expect(screen.getByLabelText('Filter by category')).toBeInTheDocument();
+  });
+
+  it('provides a real keyboard destination independent of notification management controls', () => {
+    render(<NotificationList />);
+    expect(screen.getByRole('link', { name: 'Order update' })).toHaveAttribute('href', '/my-orders?highlightOrder=42');
+  });
+
   it('keeps the customer notification page dark-aware for the shared user theme', () => {
     const { container } = render(<CustomerNotifications />);
     const page = container.querySelector('.min-h-screen');
@@ -93,6 +126,7 @@ describe('CustomerNotifications', () => {
   ])('uses monochrome controls for %s', (basePath, title) => {
     const { container } = render(<NotificationList basePath={basePath} title={title} />);
     const page = container.querySelector('.min-h-screen');
+    fireEvent.click(screen.getByRole('button', { name: 'Notification tools' }));
     const markAllReadButton = screen.getByRole('button', { name: 'Mark All Read' });
 
     expect(markAllReadButton).toHaveClass('bg-gray-950', 'text-white', 'hover:bg-black');

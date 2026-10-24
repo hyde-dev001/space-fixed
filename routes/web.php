@@ -545,6 +545,11 @@ Route::post('/api/cart/clear', [CartController::class, 'clear'])->middleware('au
 Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth:user')->name('cart.sync');
 
 Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(function () {
+    Route::post('/legs/{leg}/custody-transfers', [\App\Http\Controllers\Api\Logistics\ShipmentCustodyController::class, 'store']);
+    Route::post('/custody-transfers/{transfer}/release', [\App\Http\Controllers\Api\Logistics\ShipmentCustodyController::class, 'release']);
+    Route::post('/custody-transfers/{transfer}/receive', [\App\Http\Controllers\Api\Logistics\ShipmentCustodyController::class, 'receive']);
+    Route::post('/custody-transfers/{transfer}/cancel', [\App\Http\Controllers\Api\Logistics\ShipmentCustodyController::class, 'cancel']);
+    Route::post('/batches/{batch}/incidents', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'storeBatch']);
     Route::get('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'index']);
     Route::get('/batch-suggestions', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'suggestions']);
     Route::post('/batches', [\App\Http\Controllers\Api\Logistics\DeliveryBatchController::class, 'store'])

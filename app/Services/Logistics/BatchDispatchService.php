@@ -22,6 +22,7 @@ class BatchDispatchService
         private DeliveryEventService $events,
         private RiderActiveWorkGuard $activeWork,
         private LogisticsMovementEligibility $movements,
+        private DeliveryStartEligibility $starts,
     ) {}
 
     public function schedule(ShopOwner $shop, string $date, string $window, array $legIds): void
@@ -118,7 +119,7 @@ class BatchDispatchService
                 throw ValidationException::withMessages(['capacity_override_reason' => 'Capacity override reason is required.']);
             }
             foreach ($batch->legs()->orderBy('id')->lockForUpdate()->get() as $leg) {
-                $this->assignments->assignInternalRider($leg, $rider, $actor, ['delivery_batch_id' => $batch->id]);
+                $this->assignments->assignInternalRider($leg, $rider, $actor, ['delivery_batch_id' => $batch->id, 'capacity_override_reason' => $capacityOverrideReason]);
             }
             $this->syncStopSnapshot($batch);
             $batch->update([
@@ -143,6 +144,7 @@ class BatchDispatchService
     {
         return DB::transaction(function () use ($batch, $legIds) {
             $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            $this->activeWork->assertBatchNotHeld($batch);
             if ($batch->status !== 'draft' || count($legIds) !== count(array_unique($legIds))) {
                 throw ValidationException::withMessages(['legs' => 'Only draft batches may be reordered.']);
             }
@@ -165,6 +167,7 @@ class BatchDispatchService
     {
         return DB::transaction(function () use ($batch, $leg) {
             $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            $this->activeWork->assertBatchNotHeld($batch);
             $leg = ShipmentLeg::query()->lockForUpdate()->findOrFail($leg->id);
             if ($batch->status !== 'draft' || $leg->delivery_batch_id !== $batch->id) {
                 throw ValidationException::withMessages(['leg' => 'Stop does not belong to this draft.']);
@@ -281,17 +284,24 @@ class BatchDispatchService
 
     public function start(DeliveryBatch $batch, RiderProfile $rider): DeliveryBatch
     {
-        $this->assertRiderBelongsToBatch($batch, $rider);
-        if ($batch->fresh()->status === 'in_progress' && $batch->rider_profile_id === $rider->id) {
-            return $batch->fresh('legs.assignments');
-        }
-
-        return $this->riderTransition($batch, $rider, 'accepted', function ($locked) use ($rider) {
-            $this->assertBatchCanStart($locked);
-            $this->activeWork->assertCanStartBatch($rider, $locked);
-            $locked->update(['status' => 'in_progress', 'started_at' => now()]);
-            $this->recordBatchEvent($locked, 'batch_started', 'Delivery batch started.');
-        });
+        return DB::transaction(function () use ($batch, $rider) {
+            ShopOwner::whereKey($batch->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $batch = DeliveryBatch::lockForUpdate()->findOrFail($batch->id);
+            $this->assertRiderBelongsToBatch($batch, $rider);
+            if ($batch->status === 'in_progress') {
+                $this->activeWork->assertBatchNotHeld($batch);
+                return $batch->load('legs.assignments');
+            }
+            return $this->riderTransition($batch, $rider, 'accepted', function ($locked) use ($rider) {
+                if ($locked->active_incident_id) app(BatchInterruptionService::class)->activateReplacement($locked, $rider);
+                $this->assertBatchCanStart($locked);
+                if ($first = $locked->legs()->with('shipment.shopOwner.logisticsSetting')->orderBy('stop_sequence')->first()) $this->starts->assertCanStart($first, $rider);
+                $this->activeWork->assertCanStartBatch($rider, $locked);
+                $locked->update(['status' => 'in_progress', 'started_at' => now()]);
+                app(BatchInterruptionService::class)->recordStartedContinuation($locked, $rider);
+                $this->recordBatchEvent($locked, 'batch_started', 'Delivery batch started.');
+            });
+        }, 3);
     }
 
     public function cancel(DeliveryBatch $batch, string $reason): DeliveryBatch
@@ -301,7 +311,9 @@ class BatchDispatchService
         }
 
         return DB::transaction(function () use ($batch, $reason) {
+            ShopOwner::whereKey($batch->shop_owner_id)->lockForUpdate()->firstOrFail();
             $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($batch->id);
+            $this->activeWork->assertBatchNotHeld($batch);
             if ($batch->status === 'cancelled') {
                 return $batch->load('legs');
             }
@@ -360,7 +372,7 @@ class BatchDispatchService
         });
     }
 
-    private function validateBatchComposition($legs, ShopOwner $shop): void
+    private function validateBatchComposition($legs, ShopOwner $shop, bool $recovery = false): void
     {
         foreach ($legs as $leg) {
             $this->movements->assertInternalLeg($leg);
@@ -371,7 +383,7 @@ class BatchDispatchService
             ]);
         }
 
-        if ($legs->count() < 2) {
+        if ($legs->count() < ($recovery ? 1 : 2)) {
             throw ValidationException::withMessages(['legs' => 'A batch requires at least two deliveries.']);
         }
 
@@ -383,6 +395,41 @@ class BatchDispatchService
         if (! in_array($modules->first(), $shop->logisticsModules(), true)) {
             throw ValidationException::withMessages(['legs' => 'This shop cannot dispatch that delivery module.']);
         }
+    }
+
+    public function createRecoveryOffer(\App\Models\Logistics\DeliveryIncident $incident, User $actor, RiderProfile $rider, Collection $stops, array $options): DeliveryBatch
+    {
+        $shop = ShopOwner::whereKey($incident->shop_owner_id)->lockForUpdate()->firstOrFail();
+        $this->movements->assertCanStart($shop);
+        $this->validateBatchComposition($stops->map->leg, $shop, recovery: true);
+        abort_unless((int) $actor->shop_owner_id === (int) $shop->id && $actor->can('resolve-logistics-exceptions'), 403);
+        $this->assignments->assertEligibleForDate($rider, $shop, $options['delivery_date'], checkCapacity: false);
+        $ids = $stops->pluck('shipment_leg_id');
+        $existing = ShipmentLeg::whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $shop->id))
+            ->whereDate('scheduled_delivery_date', $options['delivery_date'])->whereNotIn('id', $ids)->where('status', '!=', 'cancelled')
+            ->whereHas('latestAssignment', fn ($query) => $query->where('rider_profile_id', $rider->id)->whereIn('status', ['assigned', 'accepted', 'completed']))
+            ->lockForUpdate()->get(['id'])->count();
+        $capacity = $rider->daily_capacity ?? $shop->logisticsSetting?->daily_rider_capacity ?? 20;
+        if ($existing + $stops->count() > $capacity && ! filled($options['capacity_override_reason'] ?? null)) {
+            throw ValidationException::withMessages(['capacity_override_reason' => 'Rider capacity is full. Record an authorized override or select another rider.']);
+        }
+        $batch = DeliveryBatch::create(['shop_owner_id' => $shop->id, 'rider_profile_id' => $rider->id, 'status' => 'offered',
+            'delivery_date' => $options['delivery_date'], 'delivery_window' => $options['delivery_window'],
+            'offered_at' => now(), 'capacity' => $capacity, 'assigned_stop_count' => $stops->count(),
+            'dispatcher_override_reason' => $options['capacity_override_reason'] ?? null, 'active_incident_id' => $incident->id]);
+        $incident->forceFill(['recovery_batch_id' => $batch->id])->save();
+        foreach ($stops->values() as $index => $stop) {
+            $leg = $stop->leg;
+            $leg->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1,
+                'scheduled_delivery_date' => $options['delivery_date'], 'delivery_window' => $options['delivery_window']]);
+            $assignment = $this->assignments->replaceInterruptedAssignment($leg, $rider, $actor, $incident);
+            $this->events->record($leg->shipment, $leg, ['event_type' => 'leg_assigned', 'message' => 'Batch recovery offer assigned.',
+                'metadata' => ['delivery_batch_id' => $batch->id, 'incident_id' => $incident->id, 'delivery_assignment_id' => $assignment->id, 'rider_profile_id' => $rider->id],
+                'created_by_type' => User::class, 'created_by_id' => $actor->id]);
+        }
+        $this->syncStopSnapshot($batch);
+        $this->recordBatchEvent($batch, 'batch_offered', 'Replacement batch offered.', ['rider_profile_id' => $rider->id, 'stop_count' => $stops->count(), 'incident_id' => $incident->id]);
+        return $batch;
     }
 
     private function assertOperatingDeliveryDate(ShopOwner $shop, string $date): void

@@ -12,6 +12,15 @@ const mocks = vi.hoisted(() => ({
   props: {} as any,
 }));
 
+it('shows batch interruption guidance instead of collecting new customer proof on held work', () => {
+  mocks.props.shipments.data[0].legs[0].batch_interruption = { id: 77, revision: 0, status: 'reported', source_batch_id: 7,
+    required_parcels: 1, confirmed_parcels: 0, stops: [] };
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  expect(screen.getByText('Batch interrupted')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Submit proof' })).not.toBeInTheDocument();
+});
+
 const defaultProps = () => ({
   shipments: { data: [{ id: 1, purpose: 'retail_delivery', delivery_type: 'retail_delivery', delivery_label: 'Retail Delivery', status: 'active', source_type: 'order', source_id: 10, order_summary: {
     available: true,
@@ -63,6 +72,7 @@ vi.mock('@/components/logistics/ShipmentTrackingModal', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(Swal.fire).mockReset().mockResolvedValue({ isConfirmed: true, isDenied: false, isDismissed: false });
   mocks.props = defaultProps();
   mocks.axiosGet.mockResolvedValue({ data: { locations: [] } });
   mocks.post.mockResolvedValue(undefined);
@@ -688,11 +698,17 @@ it('lets dispatchers review and resolve failed repair pickups', async () => {
     .toHaveAttribute('href', '/api/logistics/attempts/91/file');
 
   fireEvent.click(screen.getByRole('button', { name: 'Reschedule Pickup' }));
+  fireEvent.change(screen.getByLabelText('Retry date'), { target: { value: '2026-07-30' } });
+  fireEvent.change(screen.getByLabelText('Retry rider'), { target: { value: '9' } });
+  fireEvent.change(screen.getByLabelText('Resolution reason'), { target: { value: 'Customer confirmed Monday.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Authorize retry' }));
   await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(1,
     '/api/logistics/legs/91/resolve/retry',
-    { reason: 'Customer confirmed Monday.' },
-    undefined,
+    expect.objectContaining({ reason: 'Customer confirmed Monday.', delivery_date: '2026-07-30', rider_profile_id: 9 }),
   ));
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Arrange another visit' })).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  vi.mocked(Swal.fire).mockReset().mockResolvedValue({ isConfirmed: true, isDenied: false, isDismissed: false, value: 'Customer cancelled.' });
   fireEvent.click(screen.getByRole('button', { name: 'Cancel Pickup' }));
   await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(2,
     '/api/logistics/legs/91/cancel',
@@ -905,12 +921,18 @@ it('lets dispatchers choose one delivery recovery path and hides it after a retu
   expect(screen.getByRole('button', { name: 'Return to shop' })).toBeInTheDocument();
 
   fireEvent.click(screen.getByRole('button', { name: 'Retry delivery' }));
+  fireEvent.change(screen.getByLabelText('Retry date'), { target: { value: '2026-07-22' } });
+  fireEvent.change(screen.getByLabelText('Retry rider'), { target: { value: '9' } });
+  fireEvent.change(screen.getByLabelText('Resolution reason'), { target: { value: 'Try delivery again.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Authorize retry' }));
   await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(1,
     '/api/logistics/legs/2/resolve/retry',
-    { reason: 'Try delivery again.' },
+    expect.objectContaining({ reason: 'Try delivery again.', delivery_date: '2026-07-22', rider_profile_id: 9, expected_assignment_id: 3, handoff_route: 'direct' }),
   ));
-  expect((Swal.fire as any).mock.calls[0][0]).toMatchObject({ input: 'textarea' });
 
+  await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Arrange another visit' })).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  vi.mocked(Swal.fire).mockReset().mockResolvedValue({ isConfirmed: true, isDenied: false, isDismissed: false, value: 'Return to shop.' });
   fireEvent.click(screen.getByRole('button', { name: 'Return to shop' }));
   await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(2,
     '/api/logistics/legs/2/resolve/return',
@@ -1020,7 +1042,7 @@ it('submits required issue evidence only to the failed-attempt endpoint', async 
   expect((body as FormData).get('delivery_assignment_id')).toBe('3');
   expect((body as FormData).get('proof_file')).toBe(attemptPhoto);
   expect(mocks.post.mock.calls.some(([requestUrl]) => requestUrl === '/api/logistics/legs/2/proof')).toBe(false);
-  expect(mocks.reload).toHaveBeenCalledWith({ only: ['shipments', 'batches'] });
+  expect(mocks.reload).toHaveBeenCalledWith({ only: ['shipments', 'batches', 'custodyHandoffs'] });
 });
 
 it('schedules an eligible pending leg before assigning its rider', async () => {
@@ -1368,4 +1390,16 @@ it.each([null, '2026-07-22'])('keeps third-party courier tracking read-only for 
   expect(screen.queryByRole('button', { name: 'Assign', exact: true })).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Choose rider for outbound leg')).not.toBeInTheDocument();
   expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it('offers Retail Return failed-collection rescheduling without claiming a repair cancellation', () => {
+  const props = defaultProps();
+  setDispatcherLeg({ ...props.shipments.data[0].legs[0], status: 'needs_resolution', resolution_type: 'pickup_failed',
+    attempts: [{ id: 500, attempt_type: 'pickup', status: 'failed', attempt_number: 1, reason_code: 'customer_unavailable' }] });
+  mocks.props.shipments.data[0].purpose = 'refund_return';
+  mocks.props.shipments.data[0].source_type = 'order_refund';
+  mocks.props.shipments.data[0].legs[0].leg_type = 'return_to_shop';
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  expect(screen.getByRole('button', { name: 'Reschedule Pickup' })).toBeInTheDocument();
 });

@@ -517,8 +517,13 @@ class CustomerTrackingTest extends TestCase
             ->assertOk()
             ->assertHeader('Content-Type', 'image/jpeg')
             ->assertHeader('Content-Disposition', "inline; filename=\"delivery-proof-{$proof->id}.jpeg\"")
-            ->assertHeader('Cache-Control', 'private, no-store')
             ->assertHeader('X-Content-Type-Options', 'nosniff');
+        $this->assertTrue($response->headers->hasCacheControlDirective('private'));
+        $this->assertTrue($response->headers->hasCacheControlDirective('no-store'));
+        $this->assertFalse($response->headers->hasCacheControlDirective('public'));
+        $decoded = imagecreatefromstring($response->getContent());
+        $this->assertNotFalse($decoded);
+        imagedestroy($decoded);
         $this->assertStringNotContainsString('GPS-SENTINEL', $response->getContent());
         $this->assertStringNotContainsString('PUBLIC-DUPLICATE', $response->getContent());
         $this->assertSame($original, Storage::disk('local')->get($path));

@@ -103,7 +103,7 @@ class ProofReviewService
                 'leg' => $delivered->fresh(),
                 'proof' => $lockedProof->fresh(),
             ];
-        });
+        }, 3);
     }
 
     /**
@@ -177,7 +177,7 @@ class ProofReviewService
                 'leg' => $leg->fresh(),
                 'proof' => $lockedProof->fresh(),
             ];
-        });
+        }, 3);
     }
 
     /**
@@ -188,6 +188,7 @@ class ProofReviewService
         $legId = HandoffProof::query()->whereKey($proofId)->value('shipment_leg_id');
         abort_unless($legId, 404);
 
+        app(LogisticsMovementEligibility::class)->lockShopForLeg(ShipmentLeg::findOrFail($legId));
         $leg = ShipmentLeg::query()
             ->with('shipment')
             ->lockForUpdate()

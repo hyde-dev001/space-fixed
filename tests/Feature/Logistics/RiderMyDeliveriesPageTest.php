@@ -407,6 +407,29 @@ class RiderMyDeliveriesPageTest extends TestCase
         $this->assertSame('proof_correction', $props['list']['data'][0]['issue_type']);
     }
 
+    public function test_unaccepted_outbound_retries_remain_offers_until_the_current_rider_accepts(): void
+    {
+        foreach (['retail_delivery', 'repair_return'] as $purpose) {
+            [, $leg] = $this->shipmentWithLeg($purpose, [
+                'status' => 'needs_resolution', 'resolution_type' => 'retry',
+                'picked_up_at' => now(), 'custody_state' => 'rider',
+                'custody_rider_profile_id' => $this->rider->id,
+            ]);
+            $assignment = $this->assign($leg, $this->rider);
+            $props = $this->deliveryData();
+            $offer = collect($props['offers'])->firstWhere('key', "single:{$leg->id}");
+            $this->assertNotNull($offer, 'A new retry must be offered before execution.');
+            $this->assertSame('offered', $offer['status']);
+            $this->assertNull($props['current']);
+            $this->assertSame('assigned', $assignment->fresh()->status);
+            $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+            $assignment->update(['status' => 'accepted', 'accepted_at' => now()]);
+            $this->assertSame("single:{$leg->id}", $this->deliveryData()['current']['key']);
+            $assignment->update(['status' => 'completed']);
+            $leg->update(['status' => 'delivered']);
+        }
+    }
+
     private function deliveryData(string $query = ''): array
     {
         return $this->actingAs($this->user->fresh(), 'user')

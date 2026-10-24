@@ -104,7 +104,9 @@ final class ShopModuleCatalogTest extends TestCase
             }
 
             if ($route['self_service']) {
-                $this->assertSame('user', $route['audience'], $routeName);
+                $guard = $routeName === 'shop-owner.shell.platform-balance' ? 'shop_owner' : 'user';
+                $this->assertSame($guard, $route['audience'], $routeName);
+                $this->assertSame($guard, $route['actor_guard'], $routeName);
                 $this->assertNull($route['paired_route'], $routeName);
             }
         }

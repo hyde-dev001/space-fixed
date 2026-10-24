@@ -73,6 +73,16 @@ afterEach(() => {
 });
 
 describe("Finance canonical retail refund payout", () => {
+  it('opens named refund details and closes with Escape', async () => {
+    render(<RefundApproval />);
+    const trigger=await screen.findByTitle('View Details');trigger.focus();fireEvent.click(trigger);
+    const dialog=await screen.findByRole('dialog',{name:'Refund request details'});
+    expect(screen.getByRole('button',{name:'Close refund details'})).toHaveFocus();
+    fireEvent.keyDown(dialog,{key:'Escape'});
+    expect(screen.queryByRole('dialog',{name:'Refund request details'})).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
   it.each([
     { name: 'Staff accepted, owner approval enabled', staff: 'approved', ownerRequired: true, finance: 'pending', raw: 'pending_approval', actionable: true },
     { name: 'Staff accepted, owner approval disabled', staff: 'approved', ownerRequired: false, finance: 'pending', raw: 'pending_approval', actionable: true },

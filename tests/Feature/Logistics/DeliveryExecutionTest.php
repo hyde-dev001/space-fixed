@@ -151,9 +151,9 @@ class DeliveryExecutionTest extends TestCase
         $this->assertSame($originatingBatchId, $attempt->delivery_batch_id);
         $this->assertSame($proofCount, $leg->proofs()->count());
         $this->assertSame(2, $leg->fresh()->attempt_number);
-        $this->assertSame('pending', $leg->fresh()->status->value);
-        $this->assertSame('cancelled', $firstAssignment->fresh()->status);
-        $this->assertNotNull($firstAssignment->fresh()->cancelled_at);
+        $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+        $this->assertSame('accepted', $firstAssignment->fresh()->status);
+        $this->assertNull($firstAssignment->fresh()->cancelled_at);
 
         $replayed = $service->recordFailedAttempt($leg->fresh(), [
             'delivery_assignment_id' => $firstAssignment->id,
@@ -164,11 +164,10 @@ class DeliveryExecutionTest extends TestCase
         $this->assertSame($attempt->id, $replayed->id);
         $this->assertSame(1, $leg->attempts()->count());
 
-        $secondAssignment = DeliveryAssignment::factory()->create([
-            'shipment_leg_id' => $leg->id,
-            'rider_profile_id' => $rider->id,
-            'status' => 'accepted',
-        ]);
+        $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
+        $service->resolveRetry($leg->fresh(), 'Another visit authorized');
+        app(AssignmentService::class)->respondToOffer($leg->fresh(), $rider, true);
+        $secondAssignment = $leg->assignments()->latest('id')->firstOrFail();
         $leg->update(['status' => 'in_transit']);
         HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'handoff_type' => 'delivery', 'proof_type' => 'photo']);
         $service->recordFailedAttempt($leg->fresh(), [
@@ -325,13 +324,15 @@ class DeliveryExecutionTest extends TestCase
 
     public function test_needs_resolution_can_retry_or_stage_return(): void
     {
-        [$leg] = $this->fixture();
-        $leg->update(['status' => 'needs_resolution']);
+        [$leg, $rider] = $this->fixture();
+        $leg->update(['status' => 'needs_resolution', 'custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
         $service = app(ShipmentLegService::class);
         $retry = $service->resolveRetry($leg->fresh(), 'One final attempt');
         $this->assertSame('needs_resolution', $retry->status->value);
         $this->assertSame('retry', $retry->resolution_type);
-        $this->assertSame('accepted', $leg->assignments()->latest('id')->value('status'));
+        $this->assertSame('assigned', $leg->assignments()->latest('id')->value('status'));
+        $this->assertSame(2, $leg->assignments()->count());
+        $this->assertSame(1, $leg->assignments()->where('status', 'cancelled')->count());
         $this->assertSame(2, $leg->events()->where('event_type', 'delivery_retry_authorized')->count());
         $retryAgain = $service->resolveRetry($retry->fresh(), 'One final attempt');
         $this->assertSame($retry->id, $retryAgain->id);
@@ -362,12 +363,16 @@ class DeliveryExecutionTest extends TestCase
         }
     }
 
-    public function test_staged_delivery_retry_requires_due_date_and_assigned_rider(): void
+    public function test_staged_delivery_retry_respects_customer_appointment_and_assigned_rider(): void
     {
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-23 09:00', 'Asia/Manila'));
         [$leg, $rider] = $this->fixture();
         $leg->update([
             'status' => 'needs_resolution',
             'resolution_type' => 'retry',
+            'custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now(),
+            'customer_appointment_window' => 'morning',
+            'customer_appointment_date' => now(config('app.shop_timezone', 'Asia/Manila'))->addDay()->toDateString(),
             'scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->addDay()->toDateString(),
         ]);
 
@@ -375,10 +380,10 @@ class DeliveryExecutionTest extends TestCase
             app(ShipmentLegService::class)->markInTransit($leg->fresh(), $rider);
             $this->fail('A staged retry started before its scheduled date.');
         } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('scheduled_delivery_date', $exception->errors());
+            $this->assertArrayHasKey('customer_appointment', $exception->errors());
         }
 
-        $leg->update(['scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString()]);
+        $leg->update(['customer_appointment_date' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(), 'scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString()]);
 
         try {
             app(ShipmentLegService::class)->markInTransit($leg->fresh());

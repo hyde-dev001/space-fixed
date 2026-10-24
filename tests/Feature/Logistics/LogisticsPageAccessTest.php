@@ -1410,6 +1410,8 @@ class LogisticsPageAccessTest extends TestCase
             'order_id' => $shipment->source_id,
             'order_number' => null,
             'payment_method' => null,
+            'delivery_method' => null,
+            'carrier_company' => null,
             'cod_expected_amount' => null,
             'cod_collection_status' => null,
             'cod_collected_amount' => null,

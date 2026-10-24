@@ -381,6 +381,12 @@ class SourceShipmentService
                     'delivery_window' => $requestedSchedule['delivery_window'],
                     'schedule_status' => 'scheduled',
                 ];
+                if ((int) ($requestedSchedule['appointment_agreed_by_user_id'] ?? 0) === (int) $lockedRepair->user_id) {
+                    $schedule += ['customer_appointment_date' => $requestedSchedule['scheduled_delivery_date'],
+                        'customer_appointment_window' => $requestedSchedule['delivery_window'],
+                        'appointment_agreed_by_user_id' => $lockedRepair->user_id, 'appointment_agreed_at' => now(),
+                        'appointment_agreement_note' => 'Customer selected this appointment in repair return recovery.'];
+                }
             }
             $legData = [
                 'leg_type' => 'outbound',
@@ -505,6 +511,10 @@ class SourceShipmentService
 
     private function recordScheduleEvents(Shipment $shipment, $leg, array $schedule): void
     {
+        if (! empty($schedule['customer_appointment_date'])) {
+            $leg->update(\Illuminate\Support\Arr::only($schedule, ['customer_appointment_date', 'customer_appointment_window',
+                'appointment_agreed_by_user_id', 'appointment_agreed_at', 'appointment_agreement_note']));
+        }
         if (($schedule['schedule_status'] ?? null) === 'scheduled') {
             $this->events->record($shipment, $leg, [
                 'event_type' => 'delivery_schedule_created',

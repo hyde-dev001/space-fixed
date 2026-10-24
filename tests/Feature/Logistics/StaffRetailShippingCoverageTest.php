@@ -197,7 +197,7 @@ class StaffRetailShippingCoverageTest extends TestCase
         $leg = Shipment::where('source_type', 'order')->where('source_id', $order->id)->firstOrFail()->legs()->firstOrFail();
         Permission::findOrCreate('assign-logistics-deliveries', 'user');
         $this->staff->givePermissionTo('assign-logistics-deliveries');
-        $this->postJson('/api/logistics/legs/schedule', ['leg_ids' => [$leg->id], 'delivery_date' => today()->addDay()->toDateString(), 'delivery_window' => 'morning'])->assertOk();
+        $this->postJson('/api/logistics/legs/schedule', ['leg_ids' => [$leg->id], 'delivery_date' => today(config('app.shop_timezone'))->addWeekday()->toDateString(), 'delivery_window' => 'morning'])->assertOk();
     }
 
     public function test_staff_shipping_replaces_stale_shop_owned_method_when_a_third_party_carrier_is_selected(): void

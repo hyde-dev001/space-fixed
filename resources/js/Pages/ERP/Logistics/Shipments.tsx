@@ -1,3 +1,7 @@
+import RetryResolutionDialog from './components/RetryResolutionDialog';
+import CustodyHandoffs from './components/CustodyHandoffs';
+import BatchInterruptionControls from './components/BatchInterruptionDialog';
+import type { CustodyHandoff } from '@/types/logistics';
 import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useRef, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -122,8 +126,9 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes = false, canReportIssue: serverCanReportIssue = false, canViewShipments = false, liveTrackingEnabled = false, liveTrackingIntervalSeconds = 5, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, logisticsSchedule, auth, erpCapabilities } = usePage<{
+  const { shipments, custodyHandoffs = [], filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes = false, canReportIssue: serverCanReportIssue = false, canViewShipments = false, liveTrackingEnabled = false, liveTrackingIntervalSeconds = 5, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, logisticsSchedule, auth, erpCapabilities } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
+    custodyHandoffs?: CustodyHandoff[];
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
     canAssign: boolean;
@@ -154,6 +159,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const { isRouteFrozen } = useMaintenance();
   const scheduleFrozen = isRouteFrozen('logistics.api.legs.schedule');
   const scheduleFreezeMessage = 'Critical logistics scheduling is paused during maintenance.';
+  const [retryIncidentId, setRetryIncidentId] = useState<number | null>(null);
+  const [retryLegId, setRetryLegId] = useState<number | null>(null);
+  const retryLeg = shipments.data.flatMap(shipment => shipment.legs ?? []).find(leg => leg.id === retryLegId);
   const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
   const [selectedTrackingShipmentId, setSelectedTrackingShipmentId] = useState<number | null>(null);
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
@@ -170,6 +178,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const [proofFiles, setProofFiles] = useState<Record<number, File | null>>({});
   const [issueProofFiles, setIssueProofFiles] = useState<Record<number, File | null>>({});
   const [issueForms, setIssueForms] = useState<Record<number, { reason_code: string; notes: string }>>({});
+  const [incidentResponsibility, setIncidentResponsibility] = useState<Record<number, string>>({});
   const [incidentNotes, setIncidentNotes] = useState<Record<number, string>>({});
   const [incidentResolutions, setIncidentResolutions] = useState<Record<number, string>>({});
   const [incidentEvidenceFiles, setIncidentEvidenceFiles] = useState<Record<number, File | null>>({});
@@ -303,7 +312,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
         ? axios.post(target, body, body instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined)
         : target());
       toast(issue ? 'warning' : 'success', issue ? 'Delivery issue reported.' : 'Delivery updated.');
-      router.reload({ only: issue && riderMode ? ['shipments', 'batches'] : ['shipments'] });
+      router.reload({ only: issue && riderMode ? ['shipments', 'batches', 'custodyHandoffs'] : ['shipments', 'custodyHandoffs'] });
       return true;
     } catch (error: any) {
       const errors = error.response?.data?.errors;
@@ -373,42 +382,42 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   };
 
   const resolveFailedPickup = async (legId: number, action: 'retry' | 'cancel') => {
+    if (action === 'retry') { setRetryIncidentId(null); setRetryLegId(legId); setSelectedShipmentId(null); setActionError(null); return; }
     const result = await Swal.fire({
-      title: action === 'retry' ? 'Reschedule pickup?' : 'Cancel pickup?',
+      title: 'Cancel pickup?',
       input: 'textarea',
-      inputLabel: action === 'retry' ? 'Dispatcher note' : 'Cancellation reason',
+      inputLabel: 'Cancellation reason',
       inputValidator: (value) => value.trim() ? undefined : 'Enter a reason.',
       showCancelButton: true,
-      confirmButtonText: action === 'retry' ? 'Reschedule Pickup' : 'Cancel Pickup',
+      confirmButtonText: 'Cancel Pickup',
     });
     if (!result.isConfirmed) return;
     const reason = String(result.value ?? '').trim();
     if (!reason) return;
 
     await act(
-      `/api/logistics/legs/${legId}/${action === 'retry' ? 'resolve/retry' : 'cancel'}`,
+      `/api/logistics/legs/${legId}/cancel`,
       { reason },
     );
   };
 
   const resolveFailedDelivery = async (legId: number, action: 'retry' | 'return') => {
+    if (action === 'retry') { setRetryIncidentId(null); setRetryLegId(legId); setSelectedShipmentId(null); setActionError(null); return; }
     const result = await Swal.fire({
-      title: action === 'retry' ? 'Retry delivery?' : 'Return to shop?',
+      title: 'Return to shop?',
       input: 'textarea',
       inputLabel: 'Resolution reason',
       inputPlaceholder: 'Explain why this recovery path was selected...',
       inputValidator: (value) => value.trim() ? undefined : 'Enter a reason.',
       showCancelButton: true,
-      confirmButtonText: action === 'retry' ? 'Retry delivery' : 'Return to shop',
+      confirmButtonText: 'Return to shop',
       cancelButtonText: 'Back',
     });
     if (!result.isConfirmed) return;
     const reason = String(result.value ?? '').trim();
     if (!reason) return;
 
-    await act(() => action === 'retry'
-      ? logisticsApi.retryDelivery(legId, reason)
-      : logisticsApi.returnDelivery(legId, reason));
+    await act(() => logisticsApi.returnDelivery(legId, reason));
   };
 
   const submitProof = (legId: number) => {
@@ -533,17 +542,19 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     void act(`/api/logistics/legs/${legId}/report-issue`, data, true);
   };
 
-  const resolveIncident = (incident: LogisticsIncident) => {
+  const resolveIncident = (incident: LogisticsIncident, legId: number) => {
     const resolution = incidentResolutions[incident.id] ?? '';
     const note = incidentNotes[incident.id]?.trim() ?? '';
     const evidence = incidentEvidenceFiles[incident.id];
     if (!resolution) return setActionError('Choose an incident resolution first.');
     if (!note) return setActionError('Add a resolution note.');
+    if (resolution === 'retry') { setRetryIncidentId(incident.id); setRetryLegId(legId); setSelectedShipmentId(null); setActionError(null); return; }
     if (resolution === 'loss_confirmed' && !evidence) return setActionError('Upload investigation evidence for confirmed loss.');
 
     const form = new FormData();
     form.append('resolution', resolution);
     form.append('note', note);
+    form.append('responsible_party', incidentResponsibility[incident.id] ?? 'undetermined');
     if (evidence) form.append('evidence_files[]', evidence);
     void act(() => logisticsApi.resolveIncident(incident.id, form));
   };
@@ -581,6 +592,16 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   return (
     <AppLayoutERP>
       <Head title={riderMode ? "My Deliveries" : ownerMode ? "Shipment Monitoring" : "ERP Logistics Shipments"} />
+      <CustodyHandoffs handoffs={custodyHandoffs} />
+      {retryLeg && <RetryResolutionDialog key={retryLeg.id} leg={retryLeg} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}
+        onClose={() => setRetryLegId(null)} onSubmit={async payload => {
+          const saved = await act(() => retryIncidentId
+            ? logisticsApi.resolveIncident(retryIncidentId, { ...payload, resolution: 'retry', note: payload.reason })
+            : logisticsApi.retryDelivery(retryLeg.id, payload));
+          if (saved) setRetryLegId(null);
+          return saved;
+        }} />}
+
       <div data-testid="shipments-page" className="min-w-0 space-y-6 overflow-x-clip">
         <div className="min-w-0">
           <h1 className="sr-only">{riderMode ? 'My Deliveries' : 'Shipments'}</h1>
@@ -864,7 +885,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const recipient = contact(leg);
                             const activeAssignment = leg.assignments?.find((assignment) => ['assigned', 'accepted'].includes(assignment.status));
                             const latestAttempt = leg.attempts?.[0];
-                            const isPickupAttempt = shipment.purpose === 'repair_pickup'
+                            const isPickupAttempt = ['repair_pickup', 'refund_return'].includes(shipment.purpose)
                               && latestAttempt?.attempt_type === 'pickup';
                             const isFailedPickup = isPickupAttempt
                               && leg.status === 'needs_resolution'
@@ -872,10 +893,11 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const failedAttemptCount = leg.failed_attempt_count ?? latestAttempt?.attempt_number ?? 0;
                             const failedPickupCount = leg.failed_pickup_count ?? latestAttempt?.attempt_number ?? 0;
                             const attemptsMaxed = !isPickupAttempt && failedAttemptCount >= maxDeliveryAttempts;
-                            const canAssignLeg = canAssign && leg.status === 'pending' && !activeAssignment && !attemptsMaxed;
+                            const held = Boolean(leg.batch_interruption && leg.batch_interruption.status !== 'resolved');
+                            const canAssignLeg = !held && canAssign && leg.status === 'pending' && !activeAssignment && !attemptsMaxed;
                             const isReturnToShop = leg.leg_type === 'return_to_shop';
                             const hasReturnLeg = (shipment.legs ?? []).some((candidate) => candidate.return_for_leg_id === leg.id);
-                            const canResolveDelivery = canAssign
+                            const canResolveDelivery = !held && canAssign
                               && !riderMode
                               && !isReturnToShop
                               && leg.status === 'needs_resolution'
@@ -884,21 +906,21 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                               && Boolean(activeAssignment);
                             const returnProof = leg.proofs?.find((proof) => proof.handoff_type === 'receive');
                             const latestProof = [...(leg.proofs ?? [])].reverse().find((proof) => ['delivery', 'receive'].includes(proof.handoff_type) && proof.proof_url);
-                            const canReportIssueForLeg = canReportIssue && riderMode && !isReturnToShop
+                            const canReportIssueForLeg = !held && canReportIssue && riderMode && !isReturnToShop
                               && ['in_transit', 'delivery_attempted'].includes(leg.status);
                             const thirdPartyTracking = shipment.source_type === 'order' && shipment.purpose === 'retail_delivery'
                               && shipment.order_summary?.delivery_method === 'third_party';
-                            const canScheduleLeg = canAssign && !thirdPartyTracking && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
+                            const canScheduleLeg = !held && canAssign && !thirdPartyTracking && !riderMode && !leg.scheduled_delivery_date && leg.delivery_batch_id == null && ['pending', 'assigned'].includes(leg.status);
                             const schedule = deliverySchedules[leg.id] ?? { date: '', window: 'morning' };
                             const issueForm = issueForms[leg.id] ?? { reason_code: '', notes: '' };
                             const requiresIssuePhoto = photoIssueReasons.has(issueForm.reason_code);
                             const requiresIssueNotes = noteIssueReasons.has(issueForm.reason_code);
                             const resolutionInstruction = riderResolutionInstruction(leg);
-                            const canSubmitProof = canRecordProof
+                            const canSubmitProof = !held && canRecordProof
                               && !isReturnToShop
                               && leg.status === 'in_transit'
                               && (leg.rider_progress_state === undefined || leg.rider_progress_state === 'active');
-                            const canSubmitReturnHandoff = riderMode && canRecordProof && isReturnToShop && leg.status === 'in_transit' && !returnProof;
+                            const canSubmitReturnHandoff = !held && riderMode && canRecordProof && isReturnToShop && leg.status === 'in_transit' && !returnProof;
                             const showOutcomeChoice = canSubmitProof && canReportIssueForLeg;
                             const deliveryOutcome = deliveryOutcomes[leg.id];
                             const incidents = leg.incidents ?? [];
@@ -906,6 +928,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             return (
                               <div key={leg.id} className="grid min-w-0 gap-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:shadow-none sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:rounded-lg lg:p-4 lg:shadow-none">
                                 <div>
+                                  {leg.batch_interruption && <BatchInterruptionControls batchId={leg.batch_interruption.source_batch_id} incident={leg.batch_interruption} today={today} />}
+                                  {held && canResolveDisputes && !riderMode && !ownerMode && <a className="inline-block min-h-11 py-2 text-sm underline" href={`/erp/logistics/batches?batch=${leg.batch_interruption?.source_batch_id}&incident=${leg.batch_interruption?.id}`}>Open batch recovery</a>}
                                   <div className="flex flex-wrap items-start justify-between gap-2">
                                     <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Delivery details · {logisticsDeliveryLabel(leg)} · {label(leg.leg_type)} leg</h3>
                                     <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600 dark:bg-gray-700 dark:text-gray-200 lg:rounded-none lg:bg-transparent lg:px-0 lg:py-0 lg:font-normal lg:text-gray-500">{label(leg.status)}</span>
@@ -956,6 +980,13 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                               <option value="return_required">Require return to shop</option>
                                             </>}
                                           </MonochromeSelect>
+                                          <label className="block text-sm">Investigated responsibility
+                                            <select aria-label={`Responsibility for incident ${incident.id}`} value={incidentResponsibility[incident.id] ?? 'undetermined'}
+                                              onChange={event => setIncidentResponsibility({ ...incidentResponsibility, [incident.id]: event.target.value })}
+                                              className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-gray-800">
+                                              <option value="undetermined">Undetermined</option><option value="customer">Customer</option><option value="rider">Rider</option><option value="shop">Shop</option><option value="third_party">Third party</option>
+                                            </select>
+                                          </label>
                                           <textarea
                                             aria-label={`Resolution note for incident ${incident.id}`}
                                             value={incidentNotes[incident.id] ?? ''}
@@ -976,7 +1007,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           <button
                                             type="button"
                                             disabled={!incidentResolutions[incident.id] || !(incidentNotes[incident.id] ?? '').trim() || (incidentResolutions[incident.id] === 'loss_confirmed' && !incidentEvidenceFiles[incident.id])}
-                                            onClick={() => resolveIncident(incident)}
+                                            onClick={() => resolveIncident(incident, leg.id)}
                                             className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                                           >
                                             Save incident resolution
@@ -1016,7 +1047,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                   {canResolveDelivery && (
                                     <div className="grid gap-2 rounded-lg border border-red-200 bg-red-50 p-3 sm:grid-cols-2 dark:border-red-900 dark:bg-red-950/30">
                                       <p className="sm:col-span-2 text-sm font-semibold text-red-900 dark:text-red-100">
-                                        Choose one recovery path for this exhausted delivery.
+                                        Choose a recovery path for this failed visit.
                                       </p>
                                       <button
                                         type="button"
@@ -1034,8 +1065,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       </button>
                                     </div>
                                   )}
-                                  {canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">Picked up</button>}
-                                  {canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">In transit</button>}
+                                  {!held && canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">Picked up</button>}
+                                  {!held && canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">In transit</button>}
                                   {showOutcomeChoice && <div role="group" aria-label="Choose delivery outcome" className="rounded-xl border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-900/40"><p className="mb-2 text-sm font-semibold text-gray-900 dark:text-white">What happened with this delivery?</p><div className="grid gap-2 sm:grid-cols-2"><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'proof')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'proof' ? 'border-gray-950 bg-gray-950 text-white hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:text-white dark:hover:bg-black' : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700'}`}>Delivered successfully</button><button type="button" onClick={() => chooseDeliveryOutcome(leg.id, 'issue')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition-colors ${deliveryOutcome === 'issue' ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:border-amber-400 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200'}`}>Couldn't deliver</button></div></div>}
                                   {canSubmitProof && (!showOutcomeChoice || deliveryOutcome === 'proof') && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Delivery proof</p><p className="text-xs text-blue-700 dark:text-blue-300">Upload a clear photo showing the successful handoff.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Delivery proof photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-gray-800 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-gray-200" /><div className="flex flex-wrap gap-2"><button type="button" onClick={() => submitProof(leg.id)} className="rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">Submit proof</button>{proofFiles[leg.id] && <button type="button" onClick={(event) => { setProofFiles({ ...proofFiles, [leg.id]: null }); const input = event.currentTarget.closest('div.space-y-3')?.querySelector<HTMLInputElement>('input[type="file"]'); if (input) input.value = ''; }} className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200">Clear photo</button>}</div></div>}
                                   {canSubmitReturnHandoff && <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4 dark:border-blue-800 dark:bg-blue-950/30"><div><p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Return handoff</p><p className="text-xs text-blue-700 dark:text-blue-300">At the shop, upload a clear photo of the parcel handoff. The dispatcher will confirm physical receipt.</p></div><input type="file" accept="image/jpeg,image/png,image/webp" aria-label="Return handoff photo" onChange={(event) => setProofFiles({ ...proofFiles, [leg.id]: event.target.files?.[0] ?? null })} className="block w-full text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:font-semibold file:text-gray-800 dark:text-gray-200 dark:file:bg-gray-800 dark:file:text-gray-200" /><button type="button" disabled={!proofFiles[leg.id]} onClick={() => void submitReturnHandoff(leg.id)} className="rounded-lg bg-gray-950 px-4 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black disabled:cursor-not-allowed disabled:opacity-50">Confirm return handoff</button></div>}

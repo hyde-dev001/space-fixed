@@ -54,6 +54,15 @@ describe('ShipmentTracking', () => {
     }];
   });
 
+  it('places a clear recovery summary ahead of movement and avoids claiming held movement', () => {
+    shipment.recovery={state:'delayed',label:'Delivery delayed',message:'The shop is arranging safe recovery.',next_step:'No action needed. The shop will update you.'};
+    shipment.legs[0].status='in_transit';
+    render(<ShipmentTracking />);
+    expect(screen.getByRole('status',{name:'Delivery recovery'})).toHaveTextContent('Delivery delayed');
+    expect(screen.queryByText('In Transit')).not.toBeInTheDocument();
+    delete shipment.recovery;
+  });
+
   it('shows the formatted scheduled estimate', () => {
     render(<ShipmentTracking />);
 

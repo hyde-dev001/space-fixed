@@ -25,6 +25,8 @@ use App\Services\Logistics\LogisticsActorPolicy;
 use App\Services\Logistics\LogisticsMovementEligibility;
 use App\Services\Logistics\ProofService;
 use App\Services\Logistics\RiderProfileSyncService;
+use App\Services\Logistics\ShipmentCustodyService;
+use App\Services\Logistics\DeliveryStartEligibility;
 use App\Services\CodCollectionService;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Http\RedirectResponse;
@@ -42,6 +44,18 @@ use Inertia\Response;
 
 class ErpLogisticsController extends Controller
 {
+    private array $batchIncidentPayloads = [];
+
+    private function batchIncidentPayload(DeliveryBatch $batch): ?array
+    {
+        if (! array_key_exists($batch->id, $this->batchIncidentPayloads)) {
+            $actor = Auth::guard('user')->user();
+            $includeEvidence = Auth::guard('shop_owner')->check() || ($actor && ($actor->can('resolve-logistics-exceptions') || $actor->can('assign-logistics-deliveries')));
+            $this->batchIncidentPayloads[$batch->id] = app(\App\Services\Logistics\BatchInterruptionService::class)->forBatch($batch, (bool) $includeEvidence);
+        }
+        return $this->batchIncidentPayloads[$batch->id];
+    }
+
     public function __construct(
         private ArrivalService $arrivals,
         private DeliveryTypeResolver $deliveryTypes,
@@ -49,6 +63,8 @@ class ErpLogisticsController extends Controller
         private ProofService $proofs,
         private CodCollectionService $codCollections,
         private LogisticsMovementEligibility $movements,
+        private ShipmentCustodyService $custody,
+        private DeliveryStartEligibility $starts,
     ) {}
 
     public function dashboard(): Response|RedirectResponse
@@ -135,6 +151,9 @@ class ErpLogisticsController extends Controller
                 ->with(['deliveryDisputes', 'legs' => function ($query) use ($isDispatcher, $riderProfileId) {
                     $query->with([
                         'assignments.riderProfile',
+                        'shipment.shopOwner.logisticsSetting',
+                        'custodyTransfers',
+                        'latestAssignment',
                         'proofs',
                         'incidents',
                         'events' => fn ($events) => $events
@@ -195,7 +214,7 @@ class ErpLogisticsController extends Controller
                     ->whereHas('legs.attempts', fn ($attempts) => $attempts
                         ->where('attempt_type', 'delivery')->where('status', 'failed')))
                 ->when($status === 'failed_pickups', fn ($query) => $query
-                    ->where('purpose', 'repair_pickup')
+                    ->whereIn('purpose', ['repair_pickup', 'refund_return'])
                     ->whereHas('legs', fn ($legs) => $legs
                         ->where('status', 'needs_resolution')
                         ->where('resolution_type', 'pickup_failed')
@@ -233,9 +252,13 @@ class ErpLogisticsController extends Controller
             'logisticsSchedule' => [
                 'operating_days' => array_values($settings->operating_days ?? []),
                 'blackout_dates' => array_values($settings->blackout_dates ?? []),
+                'morning_start' => $settings->morning_start, 'morning_end' => $settings->morning_end,
+                'afternoon_start' => $settings->afternoon_start, 'afternoon_end' => $settings->afternoon_end,
+                'timezone' => config('app.shop_timezone', 'Asia/Manila'),
             ],
             'today' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(),
             'canAssign' => $canAssign,
+            'custodyHandoffs' => ! $ownerMode && $user instanceof User ? $this->custody->pendingFor($user) : [],
             'canUpdateStatus' => $canUpdateStatus,
             'canRecordProof' => $canRecordProof,
             'canApproveProof' => $canApproveProof,
@@ -252,7 +275,7 @@ class ErpLogisticsController extends Controller
                     ->where('active', true)
                     ->where('availability_status', 'available')
                     ->orderBy('name')
-                    ->get(['id', 'name', 'phone', 'rider_type', 'availability_status'])
+                    ->get(['id', 'name', 'phone', 'rider_type', 'availability_status', 'daily_capacity'])
                 : [],
         ]);
     }
@@ -293,7 +316,9 @@ class ErpLogisticsController extends Controller
 
         $batches = DeliveryBatch::query()
             ->with([
-                'legs.shipment',
+                'legs.shipment.shopOwner.logisticsSetting',
+                'legs.custodyTransfers',
+                'legs.latestAssignment',
                 'legs.proofs',
                 'legs.incidents',
                 'legs.events' => fn ($query) => $query
@@ -317,7 +342,8 @@ class ErpLogisticsController extends Controller
 
         $standalone = ShipmentLeg::query()
             ->with([
-                'shipment',
+                'shipment.shopOwner.logisticsSetting',
+                'custodyTransfers',
                 'proofs',
                 'incidents',
                 'events' => fn ($query) => $query
@@ -346,6 +372,18 @@ class ErpLogisticsController extends Controller
             ->concat($standalone->map(fn (ShipmentLeg $leg) => $this->standaloneWorkItem($leg, $rider)))
             ->filter()
             ->values();
+
+        if (! $this->movements->canStart(ShopOwner::findOrFail($shopOwnerId))) {
+            $workItems = $workItems->map(function (array $item) {
+                $reason = 'Logistics is OFF. Ask the shop to enable Logistics before starting new work.';
+                if ($item['kind'] === 'batch' && in_array($item['status'], ['accepted', 'offered'], true)) $item['start_blocked_reason'] = $reason;
+                $item['deliveries'] = collect($item['deliveries'])->map(function (array $leg) use ($reason) {
+                    if (($leg['resolution_type'] ?? null) === 'retry') $leg['start_blocked_reason'] = $reason;
+                    return $leg;
+                })->all();
+                return $item;
+            });
+        }
 
         $currentCandidates = $workItems->where('group', 'current')
             ->sortBy(fn (array $item) => [
@@ -438,6 +476,7 @@ class ErpLogisticsController extends Controller
                 'filters' => compact('tab', 'business', 'window', 'search'),
             ],
             'canRecordProof' => $hasActiveAssignment && $user->can('record-logistics-proof'),
+            'custodyHandoffs' => $this->custody->pendingFor($user),
             'canUpdateStatus' => $hasActiveAssignment,
             'canReportIssue' => $hasActiveAssignment,
             'liveTrackingEnabled' => (bool) config('logistics_tracking.enabled'),
@@ -481,7 +520,8 @@ class ErpLogisticsController extends Controller
             'offered' => 'offer',
             'accepted' => 'upcoming',
             'in_progress' => $hasActiveRiderStop ? 'current' : 'history',
-            'completed', 'cancelled' => 'history',
+            'interrupted' => 'current',
+            'completed', 'cancelled', 'recovered' => 'history',
             default => null,
         } : ($rejected ? 'history' : null);
 
@@ -499,8 +539,10 @@ class ErpLogisticsController extends Controller
         return [
             'item_type' => 'work',
             'key' => "batch:{$batch->id}",
+            'start_blocked_reason' => $deliveries->sortBy('stop_sequence')->first()['start_blocked_reason'] ?? null,
             'kind' => 'batch',
             'id' => $batch->id,
+            'interruption' => $this->batchIncidentPayload($batch),
             'status' => $status,
             'group' => $group,
             'business_types' => $businessTypes,
@@ -551,7 +593,8 @@ class ErpLogisticsController extends Controller
                     default => $legStatus,
                 };
         } elseif ($riderAssignment->status === 'assigned'
-            && in_array($legStatus, ['assigned', 'pickup_scheduled'], true)) {
+            && (in_array($legStatus, ['assigned', 'pickup_scheduled'], true)
+                || ($legStatus === 'needs_resolution' && $leg->resolution_type === 'retry'))) {
             $group = 'offer';
             $status = 'offered';
         } elseif ($riderProgressState !== RiderProgressState::ACTIVE) {
@@ -737,6 +780,12 @@ class ErpLogisticsController extends Controller
         $payload['status'] = $leg->status->value;
         $payload['rider_progress_state'] = $leg->rider_progress_state->value;
         $payload['failed_attempt_count'] = $leg->attempts->count();
+        $payload['start_blocked_reason'] = $this->starts->blockedReason($leg);
+        if ($leg->resolution_type === 'retry' && $leg->status->value === 'needs_resolution'
+            && ($leg->custody_state !== 'rider' || (int) $leg->custody_rider_profile_id !== (int) $leg->latestAssignment?->rider_profile_id
+                || $leg->custodyTransfers->contains(fn ($transfer) => in_array($transfer->status, ['requested', 'released'], true)))) {
+            $payload['start_blocked_reason'] ??= 'Confirm the parcel handoff before starting this retry.';
+        }
         $payload['arrivals'] = $this->arrivalPayload($leg);
         $proofNumbers = $leg->relationLoaded('proofs')
             ? $leg->proofs->keyBy('id')
@@ -809,6 +858,10 @@ class ErpLogisticsController extends Controller
 
     private function attachArrivalPayload(ShipmentLeg $leg): void
     {
+        if ($leg->delivery_batch_id && $leg->deliveryBatch) {
+            $leg->setAttribute('batch_interruption', $this->batchIncidentPayload($leg->deliveryBatch));
+            $leg->unsetRelation('deliveryBatch');
+        }
         $leg->setAttribute('arrivals', $this->arrivalPayload($leg));
         $leg->unsetRelation('events');
     }
@@ -1063,7 +1116,9 @@ class ErpLogisticsController extends Controller
                 ->whereIn('source_type', Shipment::sourceTypesForModule($module)));
         $batches = DeliveryBatch::with([
             'riderProfile',
-            'legs.shipment',
+            'legs.shipment.shopOwner.logisticsSetting',
+                'legs.custodyTransfers',
+                'legs.latestAssignment',
             'legs.events' => fn ($events) => $events
                 ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived']),
             'legs.attempts' => $attemptRelations['attempts'],
@@ -1075,6 +1130,8 @@ class ErpLogisticsController extends Controller
             ->latest()
             ->get()
             ->each(function (DeliveryBatch $batch): void {
+                $batch->setAttribute('interruption', $this->batchIncidentPayload($batch));
+                $batch->unsetRelation('activeIncident')->unsetRelation('recoveryIncident');
                 $modules = $batch->legs
                     ->map(fn ($leg) => Shipment::moduleForSourceType((string) $leg->shipment?->source_type))
                     ->unique();
@@ -1100,7 +1157,7 @@ class ErpLogisticsController extends Controller
         $pool = $pool->whereIn('id', $internalIds)->values();
         $unscheduled = $unscheduled->whereIn('id', $internalIds)->values();
         $this->attachShipmentSummaries(
-            $batches->whereNotIn('status', ['completed', 'cancelled'])->flatMap->legs->pluck('shipment')
+            $batches->whereNotIn('status', ['completed', 'cancelled', 'recovered'])->flatMap->legs->pluck('shipment')
                 ->merge($pool->pluck('shipment'))
                 ->merge($unscheduled->pluck('shipment')),
             $shopOwnerId,
@@ -1111,6 +1168,9 @@ class ErpLogisticsController extends Controller
             ->each(fn (ShipmentLeg $leg) => $this->attachDeliveryTypeToLeg($leg));
 
         return Inertia::render('ERP/Logistics/Batches', [
+            'canResolveBatchIncidents' => (bool) Auth::guard('user')->user()?->can('resolve-logistics-exceptions'),
+            'canAssignBatchRecovery' => (bool) (Auth::guard('user')->user()?->can('assign-logistics-deliveries') || Auth::guard('user')->user()?->can('manage-logistics-batches')),
+            'custodyHandoffs' => Auth::guard('user')->user() instanceof User ? $this->custody->pendingFor(Auth::guard('user')->user()) : [],
             'batches' => $batches,
             'pool' => $pool,
             'unscheduled' => $unscheduled,
@@ -1122,6 +1182,9 @@ class ErpLogisticsController extends Controller
             'logisticsSchedule' => [
                 'operating_days' => array_values($settings->operating_days ?? []),
                 'blackout_dates' => array_values($settings->blackout_dates ?? []),
+                'morning_start' => $settings->morning_start, 'morning_end' => $settings->morning_end,
+                'afternoon_start' => $settings->afternoon_start, 'afternoon_end' => $settings->afternoon_end,
+                'timezone' => config('app.shop_timezone', 'Asia/Manila'),
             ],
             'availableModules' => $availableModules,
             'showModuleFilter' => count($availableModules) > 1,
