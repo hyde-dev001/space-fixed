@@ -1,3 +1,5 @@
+> Publication follow-up: [October 24 commit/rebase verification](2026-10-24-logistics-publication.md) records the authorized feature publication and new upstream camera-photo clock-in requirements. Historical uncommitted-status notes below describe earlier implementation checkpoints. Merge and deployment remain separate actions.
+
 # Failed-delivery recovery operations
 
 For role-by-role testing with explicit next-page directions, use the [manual testing guide](failed-delivery-recovery-manual-testing.md).

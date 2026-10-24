@@ -5,7 +5,7 @@ import re
 import subprocess
 import sys
 from playwright.sync_api import sync_playwright, expect
-from failed_delivery_recovery import ROOT, OUT, URL, PHOTO, login, navigate, post, ok
+from failed_delivery_recovery import ROOT, OUT, URL, PHOTO, CAMERA_ARGS, login, navigate, post, ok
 
 expect.set_options(timeout=30000)
 
@@ -129,7 +129,7 @@ def run():
         'repair_pickup@mid_direct', 'repair_return@mid_shop', 'refund_return@mid_direct']
     results = json.loads(RESULTS.read_text(encoding='utf-8')) if cases and RESULTS.exists() else []
     with sync_playwright() as runtime:
-        browser = runtime.chromium.launch(headless=True)
+        browser = runtime.chromium.launch(headless=True, args=CAMERA_ARGS)
         for case in cases:
             purpose, variant = case.split('@')
             stage = 'before' if variant.startswith('before') else 'last' if variant.startswith('last') else 'appointment' if variant == 'appointment' else 'mid'

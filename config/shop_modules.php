@@ -448,6 +448,7 @@ $routeBuckets = [
         'hr.attendance.by_employee',
         'hr.attendance.checkin',
         'hr.attendance.checkout',
+        'hr.attendance.check_in_photo',
         'hr.attendance.destroy',
         'hr.attendance.index',
         'hr.attendance.lateness.daily',
@@ -1474,6 +1475,7 @@ $routes['shop-owner.erp.hr.audit-logs'] = $ownerHrAuditRoute;
 
 $ownerReadApiPairs = [
     'hr.audit.index' => 'shop-owner.erp.api.hr.audit-logs',
+    'hr.attendance.check_in_photo' => 'shop-owner.erp.api.hr.attendance.check-in-photo',
     'finance.audit.index' => 'shop-owner.erp.api.finance.audit-logs',
     'api.manager.reports.index' => 'shop-owner.erp.api.manager.reports',
     'api.manager.reports.download' => 'shop-owner.erp.api.manager.reports.download',
@@ -2248,7 +2250,7 @@ $ownerOperationalApiRouteGroups = [
         'page_route' => 'shop-owner.erp.hr.attendance',
         'risk_tier' => 'sensitive',
         'domain_rule' => 'Owner attendance reads remain scoped to the authenticated company.',
-        'routes' => ['shop_owner.hr.attendance.by_employee'],
+        'routes' => ['shop_owner.hr.attendance.by_employee', 'shop-owner.erp.api.hr.attendance.check-in-photo'],
     ],
     [
         'page_route' => 'shop-owner.erp.hr.payroll-view',
@@ -2289,6 +2291,8 @@ foreach ($ownerOperationalApiRouteGroups as $group) {
         $routes[$routeName]['domain_rule'] = $group['domain_rule'];
     }
 }
+
+$routes['hr.attendance.check_in_photo']['risk_tier'] = 'sensitive';
 
 $ownerSupplierPaymentRoutes = [
     'shop_owner.finance.supplier-payment-attempts.confirm',

@@ -18,7 +18,7 @@ def run(observe=None, compact_inspection=False):
     print('Synthetic fixture created.',flush=True)
     (OUT/'finance-fixture.json').write_text(json.dumps(fixture),encoding='utf-8')
     with sync_playwright() as runtime:
-        browser=runtime.chromium.launch(headless=True)
+        browser=runtime.chromium.launch(headless=True,args=base.CAMERA_ARGS)
         pages={name:base.login(browser,actor) for name,actor in fixture['actors'].items()}
         print('Five normal password/MFA/attendance logins completed.',flush=True)
         a,b,dispatch,staff,finance=[pages[name] for name in ['a','b','dispatcher','staff','finance']]

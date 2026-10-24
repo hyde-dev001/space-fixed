@@ -43,7 +43,7 @@ If a page or button is unavailable to a correctly provisioned account, capture t
 | --- | --- | --- | --- |
 | L1 | Employee — Sign in | Enter the account's password. An enrolled account must reach the MFA challenge, not return to login or open work directly. | Same employee → **Two-Factor Authentication**. |
 | L2 | Employee — MFA challenge | Enter the real test authenticator code and choose **Verify**. Invalid codes must not sign in. | Same employee → **Log Attendance / Time In**. |
-| L3 | Employee — Time In | Choose **Clock In**. Confirm attendance succeeds; do not bypass a suspension or attendance error. | Dispatcher → **Shipments**; rider → **My Deliveries**; Staff → **Job Orders**; Finance → **COD Remittances**, as needed. |
+| L3 | Employee — Time In | Choose **Clock In**, select **Open Camera**, allow camera access, select **Take Photo**, then confirm **Clock In** in the photo dialog. The upstream attendance flow requires a fresh camera photo. Confirm attendance succeeds; do not bypass photo, suspension or attendance errors. | Dispatcher → **Shipments**; rider → **My Deliveries**; Staff → **Job Orders**; Finance → **COD Remittances**, as needed. |
 
 The customer signs in through the normal customer flow and opens **Notifications**; customer attendance is not required.
 

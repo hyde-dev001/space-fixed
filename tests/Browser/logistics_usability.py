@@ -125,7 +125,7 @@ def batch_flow(browser,purpose,route):
 def run():
     modes=sys.argv[1:] or ['retail_delivery','repair_pickup','repair_return','refund_return','direct','via_shop']
     with sync_playwright() as rt:
-        browser=rt.chromium.launch(headless=True)
+        browser=rt.chromium.launch(headless=True,args=base.CAMERA_ARGS)
         try:
             for mode in modes:
                 if mode in ['direct','via_shop']:batch_flow(browser,'retail_delivery' if mode=='direct' else 'repair_return',mode)

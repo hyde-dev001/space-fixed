@@ -27,6 +27,19 @@ class ReleaseRouteCatalogTest extends TestCase
         $this->actingAs($user->fresh(), 'user')->getJson('/api/finance/expense-categories')->assertForbidden();
     }
 
+    public function test_attendance_photo_routes_keep_sensitive_hr_read_boundaries(): void
+    {
+        foreach (['hr.attendance.check_in_photo' => 'user', 'shop-owner.erp.api.hr.attendance.check-in-photo' => 'shop_owner'] as $name => $guard) {
+            $entry = config('shop_modules.routes')[$name] ?? null;
+            $this->assertNotNull($entry, $name);
+            $this->assertSame(['GET'], $entry['methods']);
+            $this->assertSame(['hr_employees'], $entry['module_keys']);
+            $this->assertSame($guard, $entry['actor_guard']);
+            $this->assertSame('view', $entry['action']);
+            $this->assertSame('sensitive', $entry['risk_tier']);
+        }
+    }
+
     public function test_owner_platform_balance_stays_owner_only_core_self_service(): void
     {
         $entry = config('shop_modules.routes')['shop-owner.shell.platform-balance'];

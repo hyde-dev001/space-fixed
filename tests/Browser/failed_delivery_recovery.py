@@ -10,6 +10,7 @@ from playwright.sync_api import sync_playwright, expect, TimeoutError as Browser
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / 'output/failed-delivery-recovery'
 URL = 'http://127.0.0.1:8027'
+CAMERA_ARGS = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream']
 MFA = '--mfa' in sys.argv[1:] or '--batch' in sys.argv[1:]
 CASES = [value for value in sys.argv[1:] if value != '--mfa']
 RESULT_FILE = OUT / ('browser-mfa-results.json' if MFA else 'browser-results.json')
@@ -71,8 +72,15 @@ def login(browser, actor):
     page.wait_for_url('**/erp/time-in', wait_until='domcontentloaded', timeout=60000)
     clock = page.get_by_role('button', name='Clock In', exact=True)
     expect(clock).to_be_enabled(timeout=30000)
+    clock.click()
+    camera = page.get_by_role('dialog', name='Photo required to clock in', exact=True)
+    expect(camera).to_be_visible(timeout=30000)
+    camera.get_by_role('button', name='Open Camera', exact=True).click()
+    page.wait_for_function("document.querySelector('video[aria-label=\"Live camera preview\"]')?.readyState >= 2")
+    camera.get_by_role('button', name='Take Photo', exact=True).click()
+    expect(camera.get_by_alt_text('Clock-in photo preview')).to_be_visible()
     with page.expect_response(lambda r: '/api/staff/attendance/check-in' in r.url and r.request.method == 'POST') as response:
-        clock.click()
+        camera.get_by_role('button', name='Clock In', exact=True).click()
     assert response.value.status == 200, response.value.status
     return page
 
@@ -94,7 +102,7 @@ if __name__ == '__main__':
         results = json.loads(RESULT_FILE.read_text()) if CASES and RESULT_FILE.exists() else []
         purposes = CASES or ['retail_delivery', 'repair_pickup', 'repair_return', 'refund_return']
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
+            browser = p.chromium.launch(headless=True, args=CAMERA_ARGS)
             for case in purposes:
                 purpose, _, variant = case.partition('@')
                 run = subprocess.run(['php', 'tests/Browser/failed_delivery_fixture.php', purpose, *([] if MFA else ['--unenrolled'])], cwd=ROOT, capture_output=True, text=True, timeout=90)
