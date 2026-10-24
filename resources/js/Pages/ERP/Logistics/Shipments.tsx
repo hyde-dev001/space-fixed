@@ -1,3 +1,4 @@
+import DeliveryIssueResolution from './components/DeliveryIssueResolution';
 import RetryResolutionDialog from './components/RetryResolutionDialog';
 import CustodyHandoffs from './components/CustodyHandoffs';
 import BatchInterruptionControls from './components/BatchInterruptionDialog';
@@ -25,7 +26,6 @@ import {
   logisticsModuleLabel,
   logisticsSourceLabel,
   type LogisticsModule,
-  type LogisticsIncident,
   type LogisticsSchedule,
   type LogisticsShipment,
   type PaginatedResponse,
@@ -159,9 +159,9 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const { isRouteFrozen } = useMaintenance();
   const scheduleFrozen = isRouteFrozen('logistics.api.legs.schedule');
   const scheduleFreezeMessage = 'Critical logistics scheduling is paused during maintenance.';
-  const [retryIncidentId, setRetryIncidentId] = useState<number | null>(null);
   const [retryLegId, setRetryLegId] = useState<number | null>(null);
   const retryLeg = shipments.data.flatMap(shipment => shipment.legs ?? []).find(leg => leg.id === retryLegId);
+  const [resolutionPending, setResolutionPending] = useState(false);
   const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
   const [selectedTrackingShipmentId, setSelectedTrackingShipmentId] = useState<number | null>(null);
   const [selectedProofUrl, setSelectedProofUrl] = useState<string | null>(null);
@@ -178,10 +178,6 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const [proofFiles, setProofFiles] = useState<Record<number, File | null>>({});
   const [issueProofFiles, setIssueProofFiles] = useState<Record<number, File | null>>({});
   const [issueForms, setIssueForms] = useState<Record<number, { reason_code: string; notes: string }>>({});
-  const [incidentResponsibility, setIncidentResponsibility] = useState<Record<number, string>>({});
-  const [incidentNotes, setIncidentNotes] = useState<Record<number, string>>({});
-  const [incidentResolutions, setIncidentResolutions] = useState<Record<number, string>>({});
-  const [incidentEvidenceFiles, setIncidentEvidenceFiles] = useState<Record<number, File | null>>({});
   const [deliveryOutcomes, setDeliveryOutcomes] = useState<Record<number, 'proof' | 'issue'>>({});
   const [liveTrackingShipmentIds, setLiveTrackingShipmentIds] = useState<number[]>([]);
   const [search, setSearch] = useState(filters.search ?? '');
@@ -228,6 +224,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   };
 
   const closeShipment = () => {
+    if (resolutionPending) return;
     const trigger = returnFocusRef.current;
     setSelectedProofUrl(null);
     setSelectedShipmentId(null);
@@ -382,7 +379,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   };
 
   const resolveFailedPickup = async (legId: number, action: 'retry' | 'cancel') => {
-    if (action === 'retry') { setRetryIncidentId(null); setRetryLegId(legId); setSelectedShipmentId(null); setActionError(null); return; }
+    if (action === 'retry') { setRetryLegId(legId); setSelectedShipmentId(null); setActionError(null); return; }
     const result = await Swal.fire({
       title: 'Cancel pickup?',
       input: 'textarea',
@@ -399,25 +396,6 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       `/api/logistics/legs/${legId}/cancel`,
       { reason },
     );
-  };
-
-  const resolveFailedDelivery = async (legId: number, action: 'retry' | 'return') => {
-    if (action === 'retry') { setRetryIncidentId(null); setRetryLegId(legId); setSelectedShipmentId(null); setActionError(null); return; }
-    const result = await Swal.fire({
-      title: 'Return to shop?',
-      input: 'textarea',
-      inputLabel: 'Resolution reason',
-      inputPlaceholder: 'Explain why this recovery path was selected...',
-      inputValidator: (value) => value.trim() ? undefined : 'Enter a reason.',
-      showCancelButton: true,
-      confirmButtonText: 'Return to shop',
-      cancelButtonText: 'Back',
-    });
-    if (!result.isConfirmed) return;
-    const reason = String(result.value ?? '').trim();
-    if (!reason) return;
-
-    await act(() => logisticsApi.returnDelivery(legId, reason));
   };
 
   const submitProof = (legId: number) => {
@@ -542,23 +520,6 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     void act(`/api/logistics/legs/${legId}/report-issue`, data, true);
   };
 
-  const resolveIncident = (incident: LogisticsIncident, legId: number) => {
-    const resolution = incidentResolutions[incident.id] ?? '';
-    const note = incidentNotes[incident.id]?.trim() ?? '';
-    const evidence = incidentEvidenceFiles[incident.id];
-    if (!resolution) return setActionError('Choose an incident resolution first.');
-    if (!note) return setActionError('Add a resolution note.');
-    if (resolution === 'retry') { setRetryIncidentId(incident.id); setRetryLegId(legId); setSelectedShipmentId(null); setActionError(null); return; }
-    if (resolution === 'loss_confirmed' && !evidence) return setActionError('Upload investigation evidence for confirmed loss.');
-
-    const form = new FormData();
-    form.append('resolution', resolution);
-    form.append('note', note);
-    form.append('responsible_party', incidentResponsibility[incident.id] ?? 'undetermined');
-    if (evidence) form.append('evidence_files[]', evidence);
-    void act(() => logisticsApi.resolveIncident(incident.id, form));
-  };
-
   const trapDialogFocus = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== 'Tab') return;
 
@@ -595,9 +556,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
       <CustodyHandoffs handoffs={custodyHandoffs} />
       {retryLeg && <RetryResolutionDialog key={retryLeg.id} leg={retryLeg} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}
         onClose={() => setRetryLegId(null)} onSubmit={async payload => {
-          const saved = await act(() => retryIncidentId
-            ? logisticsApi.resolveIncident(retryIncidentId, { ...payload, resolution: 'retry', note: payload.reason })
-            : logisticsApi.retryDelivery(retryLeg.id, payload));
+          const saved = await act(() => logisticsApi.retryDelivery(retryLeg.id, payload));
           if (saved) setRetryLegId(null);
           return saved;
         }} />}
@@ -819,6 +778,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                     </div>
                     <button
                       ref={closeButtonRef}
+                      disabled={resolutionPending}
                       type="button"
                       aria-label={`Close delivery details for Shipment ${shipmentNumber}`}
                       onClick={closeShipment}
@@ -969,55 +929,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       ))}
                                       {incident.status === 'resolved' ? (
                                         <p className="font-semibold text-emerald-800 dark:text-emerald-300">Resolution: {label(incident.resolution ?? 'resolved')}</p>
-                                      ) : !riderMode && canAssign ? (
-                                        <div className="space-y-2">
-                                          <MonochromeSelect
-                                            aria-label={`Resolution for incident ${incident.id}`}
-                                            value={incidentResolutions[incident.id] ?? ''}
-                                            onChange={(event) => setIncidentResolutions({ ...incidentResolutions, [incident.id]: event.target.value })}
-                                            className="block w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm dark:bg-gray-800 dark:text-white"
-                                          >
-                                            <option value="">Choose resolution</option>
-                                            {incident.type === 'lost' && <option value="loss_confirmed">Confirm loss</option>}
-                                            <option value="dismissed">Dismiss / issue addressed</option>
-                                            {leg.status === 'needs_resolution' && <>
-                                              <option value="retry">Authorize retry</option>
-                                              <option value="return_required">Require return to shop</option>
-                                            </>}
-                                          </MonochromeSelect>
-                                          <label className="block text-sm">Investigated responsibility
-                                            <select aria-label={`Responsibility for incident ${incident.id}`} value={incidentResponsibility[incident.id] ?? 'undetermined'}
-                                              onChange={event => setIncidentResponsibility({ ...incidentResponsibility, [incident.id]: event.target.value })}
-                                              className="mt-1 block w-full rounded-lg border px-3 py-2 dark:bg-gray-800">
-                                              <option value="undetermined">Undetermined</option><option value="customer">Customer</option><option value="rider">Rider</option><option value="shop">Shop</option><option value="third_party">Third party</option>
-                                            </select>
-                                          </label>
-                                          <textarea
-                                            aria-label={`Resolution note for incident ${incident.id}`}
-                                            value={incidentNotes[incident.id] ?? ''}
-                                            onChange={(event) => setIncidentNotes({ ...incidentNotes, [incident.id]: event.target.value })}
-                                            placeholder="Explain the decision"
-                                            rows={2}
-                                            className="block w-full rounded-lg border border-red-300 bg-white px-3 py-2 text-sm dark:bg-gray-800 dark:text-white"
-                                          />
-                                          {(incidentResolutions[incident.id] ?? '') === 'loss_confirmed' && (
-                                            <input
-                                              type="file"
-                                              accept="image/jpeg,image/png,image/webp"
-                                              aria-label={`Investigation evidence for incident ${incident.id}`}
-                                              onChange={(event) => setIncidentEvidenceFiles({ ...incidentEvidenceFiles, [incident.id]: event.target.files?.[0] ?? null })}
-                                              className="block w-full text-sm"
-                                            />
-                                          )}
-                                          <button
-                                            type="button"
-                                            disabled={!incidentResolutions[incident.id] || !(incidentNotes[incident.id] ?? '').trim() || (incidentResolutions[incident.id] === 'loss_confirmed' && !incidentEvidenceFiles[incident.id])}
-                                            onClick={() => resolveIncident(incident, leg.id)}
-                                            className="rounded-lg bg-red-600 px-3 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                          >
-                                            Save incident resolution
-                                          </button>
-                                        </div>
+                                      ) : !riderMode && canAssign && !held ? (
+                                        <DeliveryIssueResolution onPendingChange={setResolutionPending} leg={leg} incident={incident} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}
+                                          onRetry={payload => act(() => logisticsApi.resolveIncident(incident.id, { ...payload, resolution: 'retry', note: payload.reason }))}
+                                          onResolve={form => act(() => logisticsApi.resolveIncident(incident.id, form))} />
                                       ) : null}
                                     </div>
                                   ))}
@@ -1049,26 +964,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                       <button type="button" onClick={() => void resolveFailedPickup(leg.id, 'cancel')} className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-600 hover:bg-red-50">Cancel Pickup</button>
                                     </div>
                                   )}
-                                  {canResolveDelivery && (
-                                    <div className="grid gap-2 rounded-lg border border-red-200 bg-red-50 p-3 sm:grid-cols-2 dark:border-red-900 dark:bg-red-950/30">
-                                      <p className="sm:col-span-2 text-sm font-semibold text-red-900 dark:text-red-100">
-                                        Choose a recovery path for this failed visit.
-                                      </p>
-                                      <button
-                                        type="button"
-                                        onClick={() => void resolveFailedDelivery(leg.id, 'retry')}
-                                        className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black"
-                                      >
-                                        Retry delivery
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => void resolveFailedDelivery(leg.id, 'return')}
-                                        className="rounded-lg border border-red-600 px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 dark:text-red-300"
-                                      >
-                                        Return to shop
-                                      </button>
-                                    </div>
+                                  {canResolveDelivery && !incidents.some(incident => incident.status !== 'resolved') && (
+                                    <DeliveryIssueResolution onPendingChange={setResolutionPending} leg={leg} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}
+                                      onRetry={payload => act(() => logisticsApi.retryDelivery(leg.id, payload))}
+                                      onResolve={form => act(() => logisticsApi.returnDelivery(leg.id, String(form.get('note') ?? '')))} />
                                   )}
                                   {!held && canUpdateStatus && leg.status === 'assigned' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/picked-up`)} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">Picked up</button>}
                                   {!held && canUpdateStatus && leg.status === 'picked_up' && <button type="button" onClick={() => void act(`/api/logistics/legs/${leg.id}/in-transit`)} className="rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black">In transit</button>}

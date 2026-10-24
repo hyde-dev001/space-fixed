@@ -58,8 +58,8 @@ Use a prepaid Retail Delivery first so COD does not obscure the parcel-recovery 
 | M3 | Customer — **Notifications** | Allow the normal 10/15-second refresh or refresh the page. Check one new failure notice for this shipment and open it. | Same customer → **Shipment tracking** for the same shipment. |
 | M4 | Customer — **Shipment tracking** | Verify failed-attempt information is visible, delivery is not marked successful, and internal dispatcher notes/other customers' records are not exposed. | Dispatcher → **ERP Notifications**. |
 | M5 | Dispatcher — **ERP Notifications** | Verify the shop's failure notice and open its action link. It should lead to Shipments, with the failure filter/context where supported. Locate the recorded shipment number. | Same dispatcher → **Shipments → Open delivery**. |
-| M6 | Dispatcher — **Shipments**, filter **Failed attempts**, then **Open delivery** | Check the failed attempt/reason/photo/time and Rider A's history. Choose **Retry delivery**. Do not use a normal initial Assign action to skip resolution. | Same dispatcher → **Arrange another visit** dialog. |
-| M7 | Dispatcher — Arrange another visit | Set **Retry date**, **Retry window**, **Retry rider = B**, **Handoff route = Direct to assigned rider / same rider keeps parcel**, and **Resolution reason**. For this case use an internal planning date: leave **Customer confirmed this date and window** unchecked only when no binding appointment exists. Choose **Authorize retry**. Expect a new offer; A still has custody. | Rider B → **My Deliveries**. |
+| M6 | Dispatcher — **Shipments**, filter **Failed attempts**, then **Open delivery** | Check the failed attempt/reason/photo/time and Rider A's history. In **Resolve delivery issue**, select **Arrange another delivery attempt**. Do not use a normal initial Assign action to skip resolution. | Same dispatcher → **Resolve delivery issue** panel. |
+| M7 | Dispatcher — Resolve delivery issue | Set **Retry date**, **Retry window**, **Retry rider = B**, **Handoff route = Direct to assigned rider / same rider keeps parcel**, and **Resolution reason**. For this case use an internal planning date: leave **Customer confirmed this date and window** unchecked only when no binding appointment exists. Choose **Authorize retry**. Expect a new offer; A still has custody. | Rider B → **My Deliveries**. |
 | M8 | Rider B — **My Deliveries** | Find the new offer, choose **Accept delivery** and confirm. Acceptance must not mean parcel receipt. Refresh if the offer has not arrived yet. | Stay on **My Deliveries → Current delivery / Package handoffs**. |
 | M9 | Rider B — My Deliveries | Check **Start retry** is disabled while the handoff is outstanding. B must not submit completion proof or collect this parcel's COD before possession. | Rider A → **My Deliveries → Package handoffs**. |
 | M10 | Rider A — Package handoffs | Physically hand the test parcel to B. Select **Handoff photo → Confirm release**. Expect **Released — awaiting receipt**. Release alone must not enable B to start. | Rider B → **My Deliveries → Package handoffs**. |
@@ -80,7 +80,7 @@ Use a separate prepared delivery and repeat M1–M6.
 
 | Step | Current user / page | Action and expected result | Next page |
 | --- | --- | --- | --- |
-| S1 | Dispatcher — Arrange another visit | Select **Rider A** and the direct/same-rider route, valid date/window and reason; **Authorize retry**. | Rider A → **My Deliveries**. |
+| S1 | Dispatcher — Resolve delivery issue | Select **Rider A** and the direct/same-rider route, valid date/window and reason; **Authorize retry**. | Rider A → **My Deliveries**. |
 | S2 | Rider A — My Deliveries | Accept the new offer. A's already confirmed possession remains; no A-to-A release/receipt should be invented. | Same rider → **Current delivery → Start retry**. |
 | S3 | Rider A — Current delivery | Start when eligible. Complete M13–M16, or use the repeated-failure case below. | Dispatcher → **Shipments → Open delivery** for review. |
 
@@ -104,8 +104,8 @@ Use two separate failed deliveries and choose future operating dates with an oth
 
 | Case | Current page and action | Expected result | Next page |
 | --- | --- | --- | --- |
-| Internal planning date | Dispatcher — **Arrange another visit**: choose a future date without declaring a customer appointment. Finish the required offer acceptance/handoff. | An eligible rider may start early; the future planning date alone must not block. Availability, custody, attendance, source and module rules still apply. | Assigned rider → **My Deliveries → Start retry**. |
-| Confirmed appointment | Dispatcher — **Arrange another visit**: tick **Customer confirmed this date and window** and enter the agreement note. Finish offer acceptance/handoff. | Before that appointment window, **Start retry** remains disabled even after receipt. | Assigned rider → **My Deliveries** at the agreed date/window, or dispatcher → **Shipments → Open delivery** to arrange an authorized reschedule where available. |
+| Internal planning date | Dispatcher — **Resolve delivery issue > Arrange another delivery attempt**: choose a future date without declaring a customer appointment. Finish the required offer acceptance/handoff. | An eligible rider may start early; the future planning date alone must not block. Availability, custody, attendance, source and module rules still apply. | Assigned rider → **My Deliveries → Start retry**. |
+| Confirmed appointment | Dispatcher — **Resolve delivery issue > Arrange another delivery attempt**: tick **Customer confirmed this date and window** and enter the agreement note. Finish offer acceptance/handoff. | Before that appointment window, **Start retry** remains disabled even after receipt. | Assigned rider → **My Deliveries** at the agreed date/window, or dispatcher → **Shipments → Open delivery** to arrange an authorized reschedule where available. |
 | Attempted unagreed change | Dispatcher — retry dialog on a case where retry resolution is available: attempt to move an existing appointment without recording agreement. | Validation must reject the change. If a handoff/offer is still outstanding, resolve that existing state first through its permitted controls; do not assume every state can be edited immediately. | Stay on the same dialog to record genuine test customer agreement, or mark Blocked with the actual state/error. |
 
 Do not change device/server clocks or edit database appointment/custody fields. A valid start at the intended future time can be recorded as Not run until that time is reached.
@@ -115,7 +115,7 @@ Do not change device/server clocks or edit database appointment/custody fields. 
 | Step | Current user / page | Action and expected result | Next page |
 | --- | --- | --- | --- |
 | F1 | Assigned rider — **My Deliveries**, after Start retry | **Report issue** again with `QA second failed visit`, the appropriate reason and evidence. Submit/confirm. | Dispatcher → **Shipments → Failed attempts → Open delivery**. |
-| F2 | Dispatcher — delivery details | Verify two distinct failed visits/counts with preserved first-visit information. A duplicate click/reload must not create a third attempt. The second failure must not silently reuse the first visit or auto-authorize another retry. | Dispatcher → **Retry delivery** for another explicit decision, or **Return to shop** if appropriate. |
+| F2 | Dispatcher — delivery details | Verify two distinct failed visits/counts with preserved first-visit information. A duplicate click/reload must not create a third attempt. The second failure must not silently reuse the first visit or auto-authorize another retry. | Dispatcher → **Resolve delivery issue** for another explicit decision, or **Return to shop** if appropriate. |
 
 Reaching an attempt limit requires explicit resolution/escalation. It must not automatically approve a refund, clear cash liability or mark a parcel delivered. Existing Repair Pickup terminal compensation rules are source-specific; do not generalize Retail Delivery behavior to exhausted repair collections.
 
@@ -140,7 +140,7 @@ The earlier browser record used an authenticated arrival API request. The batch 
 
 | Step | Current user / page | Action and expected result | Next page |
 | --- | --- | --- | --- |
-| R1 | Dispatcher — **Shipments → Failed attempts → Open delivery** | Choose **Return to shop**, enter the resolution reason and confirm. Only use an eligible unresolved case; finish/cancel any permitted outstanding handoff first. | Actual parcel holder → **My Deliveries** for the return work. |
+| R1 | Dispatcher — **Shipments → Failed attempts → Open delivery** | Select **Return parcel to shop** in **Resolve delivery issue**, enter **Decision reason**, then choose **Authorize return**. Only use an eligible unresolved case; finish/cancel any permitted outstanding handoff first. | Actual parcel holder → **My Deliveries** for the return work. |
 | R2 | Actual holder — My Deliveries | Follow the return work's displayed pickup/start requirements. Use **Start return to shop** when offered. At the shop attach **Return handoff photo → Confirm return handoff**. The former rider must still have a custody hold until receipt. | Dispatcher → **Shipments → Open delivery**, return leg/proof. |
 | R3 | Dispatcher — return proof | Physically receive the parcel and choose **Confirm return received**. The parcel receipt must not automatically mark every item resellable. | Staff → **Job Orders**, the source order/refund. |
 | R4 | Staff — Job Orders | Select the **Refund** tab, locate the source order, then choose **Inspect returned items** on the compact card (or **Confirm returned item received** on the desktop row). In **Inspect Returned Items**, inspect each line's **Inspection Disposition** and select the actual **Resellable (restock)** or **Damaged (write-off)** result; choose **Save inspection and confirm return** only when accurate. Missing/partial quantities must follow the existing supported assessment path; if it cannot represent the actual result, stop and report instead of pretending full receipt. | Finance → existing refund approval/payout workflow, only when the normal prerequisites are met. |
@@ -232,7 +232,7 @@ See the [implementation and verification record](2026-10-24-logistics-usability-
 
 | Current page / actor | What to check | Next page / action |
 | --- | --- | --- |
-| Dispatcher > Shipments > Arrange another visit | Use the calendar; Escape closes only the calendar. Check configured window hours, actual holder, candidate capacity and any customer agreement. Assignment does not transfer custody. | Assigned rider > My Deliveries > Accept delivery. |
+| Dispatcher > Shipments > Resolve delivery issue > Arrange another delivery attempt | Use the calendar; Escape closes only the calendar. Check configured window hours, actual holder, candidate capacity and any customer agreement. Assignment does not transfer custody. | Assigned rider > My Deliveries > Accept delivery. |
 | Rider > My Deliveries | Accept the retry offer first. Read the reason beside a disabled start; use Package handoffs for each outstanding parcel. An idle visible page refreshes delivery/custody props. A selected photo, note or open dialog pauses that refresh. | Named releaser/recipient > Package handoffs, then assigned rider > Start retry / Start batch. |
 | Rider / dispatcher > Package handoffs | Match order/repair, shipment, route stage and participants. Replace an invalid photo after its inline error; confirm only actual physical release/receipt. Check the success announcement and remaining parcels. | Other named participant > their own Package handoffs; rider > Start only after all requirements clear. |
 | Customer > Notifications | Search and Unread only are always available. Tools and Advanced Filters start collapsed on compact screens; open Tools for archive/export/settings/bulk actions. Use Tab and Enter on the notice title; delivery notices appear under Delivery Updates when not already categorized. Internal parcel transfers are not customer tasks. | Same customer's Shipment tracking. |
@@ -243,3 +243,17 @@ See the [implementation and verification record](2026-10-24-logistics-usability-
 
 
 Later release evidence: the route-catalog failures described in the earlier verification-gap report were corrected and rerun in the [October 24 release-readiness report](2026-10-24-logistics-release-readiness.md). The [usability execution report](2026-10-24-logistics-usability-execution.md) records this follow-up's separate results and limitations. Neither report authorizes a production deployment.
+
+
+## Unified delivery issue resolution - October 25, 2026
+
+On **Dispatcher → Shipments → Open delivery**, review the reported issue and private photo, then use the single **Resolve delivery issue** panel. The separate Retry/Return shortcuts are removed when an incident is unresolved. Batch-held shipments continue through **Batches → Resolve interruption**; do not resolve individual stops to bypass that hold.
+
+| Selected action | Required information / meaning | Next page / action |
+| --- | --- | --- |
+| Issue resolved — continue delivery | Incident-only option. Record the decision reason and investigated responsibility (default **Undetermined**). No new offer is created; the backend must validate restoration of the previous state. | Same rider → **My Deliveries**, ordinary eligibility and existing delivery controls. |
+| Arrange another delivery attempt | Schedule, eligible rider, handoff route, reason and any required customer agreement appear inline. For an incident, the same save resolves the incident and authorizes recovery; its responsibility selection is retained. Choose **Authorize retry**. | Selected rider → **My Deliveries → Accept delivery**, then the named participants → **Package handoffs** before eligible start. |
+| Return parcel to shop | Record **Decision reason**, then **Authorize return**. Incident responsibility is recorded when applicable. | Actual holder → existing return workflow; dispatcher → physical receipt. Receipt does not inspect stock or approve a refund. |
+| Confirm parcel lost | Available only for a reported lost incident. Require investigation reason and evidence; use only an actual investigated finding. Existing source-specific loss/financial rules still apply. | Existing authorized exception and financial review, as required by the source workflow. |
+
+While a decision is saving, action changes and closing the delivery details are blocked. Failed saves retain the form and display the server error. Successful saves announce the decision and refresh the existing shipment/custody data. Failed customer pickups retain their separate **Reschedule Pickup / Cancel Pickup** workflow and required arrival checks.

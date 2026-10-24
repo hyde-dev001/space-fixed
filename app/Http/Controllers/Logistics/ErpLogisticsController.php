@@ -237,6 +237,9 @@ class ErpLogisticsController extends Controller
                         ->each(function (ShipmentLeg $leg): void {
                             $this->attachArrivalPayload($leg);
                             $this->attachProofPayload($leg);
+                            $leg->incidents->each(fn (DeliveryIncident $incident) => $incident->setAttribute(
+                                'evidence_urls', $this->incidentPayload($incident)['evidence_urls'],
+                            ));
                             $leg->attempts->each(fn (DeliveryAttempt $attempt) => $this->attachAttemptEvidencePayload($attempt));
                         });
                 }),

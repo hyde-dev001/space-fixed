@@ -930,10 +930,10 @@ it('lets dispatchers choose one delivery recovery path and hides it after a retu
   const view = render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
 
-  expect(screen.getByRole('button', { name: 'Retry delivery' })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Return to shop' })).toBeInTheDocument();
+  expect(screen.getByRole('radio', { name: 'Arrange another delivery attempt' })).toBeInTheDocument();
+  expect(screen.getByRole('radio', { name: 'Return parcel to shop' })).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Retry delivery' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Arrange another delivery attempt' }));
   fireEvent.change(screen.getByLabelText('Retry date'), { target: { value: '2026-07-22' } });
   fireEvent.change(screen.getByLabelText('Retry rider'), { target: { value: '9' } });
   fireEvent.change(screen.getByLabelText('Resolution reason'), { target: { value: 'Try delivery again.' } });
@@ -944,9 +944,12 @@ it('lets dispatchers choose one delivery recovery path and hides it after a retu
   ));
 
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Arrange another visit' })).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: /Close delivery details for Shipment/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
   vi.mocked(Swal.fire).mockReset().mockResolvedValue({ isConfirmed: true, isDenied: false, isDismissed: false, value: 'Return to shop.' });
-  fireEvent.click(screen.getByRole('button', { name: 'Return to shop' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Return parcel to shop' }));
+  fireEvent.change(screen.getByLabelText('Decision reason'), { target: { value: 'Return to shop.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Authorize return' }));
   await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(2,
     '/api/logistics/legs/2/resolve/return',
     { reason: 'Return to shop.' },
@@ -957,8 +960,8 @@ it('lets dispatchers choose one delivery recovery path and hides it after a retu
     { id: 99, leg_type: 'return_to_shop', status: 'picked_up', return_for_leg_id: 2, assignments: [], proofs: [], attempts: [] },
   ];
   view.rerender(<Shipments />);
-  expect(screen.queryByRole('button', { name: 'Retry delivery' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Return to shop' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('radio', { name: 'Arrange another delivery attempt' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('radio', { name: 'Return parcel to shop' })).not.toBeInTheDocument();
 });
 
 it('shows the dispatcher resolution selected for a delivery', () => {
@@ -1242,11 +1245,12 @@ it('shows dispatcher incident details and saves a resolution', async () => {
   expect(screen.getByText(/Incident #41/)).toBeInTheDocument();
   expect(screen.getByText('Customer disputes the handoff location.')).toBeInTheDocument();
   expect(screen.getByRole('link', { name: 'View evidence 1' })).toHaveAttribute('href', '/api/logistics/incidents/41/evidence/0');
-  expect(screen.getByRole('option', { name: 'Authorize retry' })).toBeInTheDocument();
-  expect(screen.getByRole('option', { name: 'Require return to shop' })).toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText('Resolution for incident 41'), { target: { value: 'dismissed' } });
-  fireEvent.change(screen.getByLabelText('Resolution note for incident 41'), { target: { value: 'Dispatcher reviewed the customer claim.' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save incident resolution' }));
+  expect(screen.getByRole('radio', { name: 'Arrange another delivery attempt' })).toBeInTheDocument();
+  expect(screen.getAllByRole('radio', { name: 'Arrange another delivery attempt' })).toHaveLength(1);
+  expect(screen.getByRole('radio', { name: 'Return parcel to shop' })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('radio', { name: 'Issue resolved — continue delivery' }));
+  fireEvent.change(screen.getByLabelText('Decision reason'), { target: { value: 'Dispatcher reviewed the customer claim.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm issue resolved' }));
 
   await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(
     '/api/logistics/incidents/41/resolve',
@@ -1255,6 +1259,54 @@ it('shows dispatcher incident details and saves a resolution', async () => {
   ));
   expect((mocks.post.mock.calls[0][1] as FormData).get('resolution')).toBe('dismissed');
   expect((mocks.post.mock.calls[0][1] as FormData).get('note')).toBe('Dispatcher reviewed the customer claim.');
+});
+
+it('authorizes an incident retry inline with responsibility and no duplicate recovery actions', async () => {
+  setDispatcherLeg({ ...defaultProps().shipments.data[0].legs[0], status: 'needs_resolution',
+    incidents: [{ id: 41, type: 'vehicle_problem', status: 'reported' }],
+  });
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  expect(screen.getAllByRole('region', { name: 'Resolve delivery issue' })).toHaveLength(1);
+  expect(screen.queryByRole('radio', { name: 'Confirm parcel lost' })).not.toBeInTheDocument();
+  expect(screen.getByLabelText('Investigated responsibility')).toHaveValue('undetermined');
+  fireEvent.change(screen.getByLabelText('Investigated responsibility'), { target: { value: 'third_party' } });
+  fireEvent.click(screen.getByRole('radio', { name: 'Arrange another delivery attempt' }));
+  expect(screen.queryByRole('dialog', { name: 'Arrange another visit' })).not.toBeInTheDocument();
+  expect(screen.getByRole('form', { name: 'Retry schedule and rider' })).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText('Retry rider'), { target: { value: '9' } });
+  fireEvent.change(screen.getByLabelText('Resolution reason'), { target: { value: 'Repair completed; arrange a new visit.' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Authorize retry' }));
+  await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/logistics/incidents/41/resolve',
+    expect.objectContaining({ resolution: 'retry', responsible_party: 'third_party', rider_profile_id: 9,
+      note: 'Repair completed; arrange a new visit.', handoff_route: 'direct' }), undefined));
+});
+
+it('requires loss evidence and prevents duplicate decisions or closing while a save is pending', async () => {
+  setDispatcherLeg({ ...defaultProps().shipments.data[0].legs[0], status: 'needs_resolution',
+    incidents: [{ id: 41, type: 'lost', status: 'reported' }],
+  });
+  let finish!: () => void;
+  mocks.post.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('radio', { name: 'Confirm parcel lost' }));
+  fireEvent.change(screen.getByLabelText('Decision reason'), { target: { value: 'Investigation confirmed loss.' } });
+  const save = screen.getByRole('button', { name: 'Confirm parcel lost' });
+  expect(save).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Investigation evidence'), { target: { files: [new File(['synthetic'], 'evidence.jpg', { type: 'image/jpeg' })] } });
+  fireEvent.click(save);
+  fireEvent.click(save);
+  expect(mocks.post).toHaveBeenCalledTimes(1);
+  expect(screen.getByRole('button', { name: /Close delivery details for Shipment/ })).toBeDisabled();
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
+  const form = mocks.post.mock.calls[0][1] as FormData;
+  expect(form.get('resolution')).toBe('loss_confirmed');
+  expect(form.get('responsible_party')).toBe('undetermined');
+  expect(form.get('evidence_files[]')).toBeInstanceOf(File);
+  finish();
+  await waitFor(() => expect(screen.getByText(/Recovery decision saved/)).toBeInTheDocument());
 });
 
 it('requires investigation before showing customer dispute resolution', async () => {
