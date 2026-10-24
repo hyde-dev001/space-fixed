@@ -924,6 +924,11 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                             const showOutcomeChoice = canSubmitProof && canReportIssueForLeg;
                             const deliveryOutcome = deliveryOutcomes[leg.id];
                             const incidents = leg.incidents ?? [];
+                            const issuePhotoUrl = latestAttempt?.proof_url
+                              ?? incidents.find((incident) => incident.status !== 'resolved' && incident.evidence_urls?.length)?.evidence_urls?.[0];
+                            const showIssuePhoto = Boolean(issuePhotoUrl && (leg.status === 'needs_resolution' || !latestProof?.proof_url));
+                            const previewUrl = showIssuePhoto ? issuePhotoUrl : latestProof?.proof_url;
+                            const previewLabel = showIssuePhoto ? 'Reported issue photo' : 'Uploaded delivery proof';
 
                             return (
                               <div key={leg.id} className="grid min-w-0 gap-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:shadow-none sm:p-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:rounded-lg lg:p-4 lg:shadow-none">
@@ -1036,7 +1041,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                 </div>
                                 <div className="flex min-w-0 flex-col gap-3 rounded-2xl border border-gray-200 bg-gray-50/70 p-4 dark:border-gray-700 dark:bg-gray-900/40 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0">
                                   {!riderMode && <div data-testid="shipment-proof-preview" className="relative flex h-48 w-full items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-900">
-                                    {latestProof?.proof_url ? <><img src={latestProof.proof_url} alt="Uploaded delivery proof" loading="lazy" className="h-full w-full object-cover" /><div className="absolute inset-0 flex items-center justify-center bg-black/15 transition-colors hover:bg-black/25"><button type="button" aria-label="View delivery proof" onClick={(event) => openProof(latestProof.proof_url!, event.currentTarget)} className="min-h-11 cursor-pointer rounded-lg bg-black/65 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">View</button></div></> : <p className="text-sm font-semibold text-gray-500 dark:text-gray-300">{thirdPartyTracking ? 'Waiting for courier update' : 'Waiting for rider'}</p>}
+                                    {previewUrl ? <><img src={previewUrl} alt={previewLabel} loading="lazy" className="h-full w-full object-cover" /><div className="absolute inset-0 flex items-center justify-center bg-black/15 transition-colors hover:bg-black/25"><button type="button" aria-label={showIssuePhoto ? 'View issue photo' : 'View delivery proof'} onClick={(event) => openProof(previewUrl, event.currentTarget)} className="min-h-11 cursor-pointer rounded-lg bg-black/65 px-4 py-2 text-sm font-semibold text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">{showIssuePhoto ? 'View issue photo' : 'View'}</button></div></> : <p className="text-sm font-semibold text-gray-500 dark:text-gray-300">{thirdPartyTracking ? 'Waiting for courier update' : 'Waiting for rider'}</p>}
                                   </div>}
                                   {canAssign && !riderMode && isFailedPickup && (
                                     <div className="grid gap-2 sm:grid-cols-2">
