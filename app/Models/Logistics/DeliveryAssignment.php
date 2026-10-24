@@ -12,6 +12,7 @@ class DeliveryAssignment extends Model
 
     protected $fillable = [
         'shipment_leg_id',
+        'recovery_key',
         'assignment_type',
         'rider_profile_id',
         'courier_provider_id',

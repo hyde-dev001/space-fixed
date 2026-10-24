@@ -33,6 +33,7 @@ export default function CodRemittances({ children }: PropsWithChildren) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await axios.get<{ data: CodRemittanceView[] }>('/api/finance/cod-remittances');
       const data = response.data.data ?? [];
@@ -117,13 +118,14 @@ export default function CodRemittances({ children }: PropsWithChildren) {
           </p>
         </header>
 
-        {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}</div>}
+        {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">{error}<button type="button" onClick={() => void load()} disabled={loading} className="mt-3 block min-h-11 rounded-lg border border-red-300 px-4 py-2 font-semibold focus-visible:outline focus-visible:outline-2">Retry loading remittances</button></div>}
+        {error && remittances.length > 0 && <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">Previous amounts are shown for reference. Confirmation is unavailable until the ledger reloads.</p>}
         {loading && <p className="text-sm text-gray-500">Loading remittances…</p>}
-        {!loading && remittances.length === 0 && <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">No COD remittances have been submitted.</div>}
+        {!loading && !error && remittances.length === 0 && <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">No COD remittances have been submitted.</div>}
 
         <div className="space-y-4">
           {remittances.map((remittance) => {
-            const isOpen = remittance.status === 'submitted';
+            const isOpen = !loading && !error && remittance.status === 'submitted';
             return (
               <article key={remittance.id} className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -184,7 +186,7 @@ export default function CodRemittances({ children }: PropsWithChildren) {
                             </p>
                           </div>
                           {supplement.dispute_reason && <p className="mt-2 text-sm text-red-700 dark:text-red-200">{supplement.dispute_reason}</p>}
-                          {supplement.pending && (
+                          {supplement.pending && !loading && !error && (
                             <div className="mt-3 grid gap-3 border-t border-gray-200 pt-3 dark:border-gray-700 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] sm:items-end">
                               <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
                                 Physical cash received

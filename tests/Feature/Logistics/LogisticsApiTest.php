@@ -786,7 +786,7 @@ class LogisticsApiTest extends TestCase
             'recorded_by_type' => User::class,
             'recorded_by_id' => $rider->id,
         ]);
-        $this->assertSame('cancelled', $leg->assignments()->firstOrFail()->fresh()->status);
+        $this->assertSame('assigned', $leg->assignments()->firstOrFail()->fresh()->status);
         $event = DeliveryEvent::query()->where('shipment_leg_id', $leg->id)->where('visibility', 'customer')->latest('id')->firstOrFail();
         $this->assertStringNotContainsString('Gate code', $event->message);
         $this->assertArrayNotHasKey('notes', $event->metadata);
@@ -1335,6 +1335,7 @@ class LogisticsApiTest extends TestCase
 
     public function test_failed_repair_pickup_accepts_each_approved_reason(): void
     {
+        $this->freezeTime();
         Storage::fake('local');
         Permission::findOrCreate('update-logistics-status', 'user');
         $reasons = [

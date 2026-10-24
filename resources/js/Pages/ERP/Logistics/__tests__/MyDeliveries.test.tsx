@@ -1,7 +1,8 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import MyDeliveries from '../MyDeliveries';
+import type { CustodyHandoff } from '@/types/logistics';
 
 const mocks = vi.hoisted(() => ({
   props: {
@@ -28,6 +29,7 @@ const mocks = vi.hoisted(() => ({
     liveTrackingEnabled: false,
     maxDeliveryAttempts: 2,
     today: '2026-07-29',
+    custodyHandoffs: [] as CustodyHandoff[],
   },
   reload: vi.fn((options?: { onFinish?: () => void }) => options?.onFinish?.()),
   get: vi.fn(),
@@ -152,7 +154,47 @@ const choosePickerOption = (label: string, option: string) => {
   fireEvent.click(within(picker).getByRole('option', { name: option }));
 };
 
+it('offers an explicit whole-batch breakdown action and requires private evidence', () => {
+  mocks.props.deliveryData.current = workItem('batch', 'in_progress', [leg(2, 1, 'picked_up')]);
+  render(<MyDeliveries />);
+  fireEvent.click(screen.getByRole('button', { name: 'Report vehicle breakdown' }));
+  const dialog = screen.getByRole('dialog', { name: 'Report vehicle breakdown' });
+  expect(within(dialog).getByRole('button', { name: 'Hold remaining stops' })).toBeDisabled();
+  expect(within(dialog).getByLabelText('Vehicle evidence')).toHaveAttribute('type', 'file');
+});
+
+it('blocks replacement batch start during partial parcel handoff', () => {
+  mocks.props.deliveryData.up_next = workItem('batch', 'accepted', [leg(2, 1, 'picked_up')], {
+    group: 'upcoming', interruption: { id: 77, revision: 1, status: 'under_review', resolution: 'reassign', source_batch_id: 6,
+      recovery_batch_id: 7, required_parcels: 2, confirmed_parcels: 1, stops: [] },
+  });
+  render(<MyDeliveries />);
+  expect(screen.getByRole('button', { name: 'Start batch' })).toBeDisabled();
+});
+
+it('shows the batch hold and removes customer movement actions', () => {
+  mocks.props.deliveryData.current = workItem('batch', 'interrupted', [leg(2, 1, 'in_transit')], {
+    interruption: { id: 77, revision: 0, status: 'reported', source_batch_id: 7, required_parcels: 2, confirmed_parcels: 0, stops: [] },
+  });
+  render(<MyDeliveries />);
+  expect(screen.getByText('Batch interrupted')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: /record arrival|complete delivery|out for delivery/i })).not.toBeInTheDocument();
+});
+
+it('keeps transferred held stops in the source batch progress total', () => {
+  mocks.props.deliveryData.current = workItem('batch', 'interrupted', [leg(1, 1, 'delivered')], {
+    interruption: { id: 77, revision: 1, status: 'under_review', source_batch_id: 7, recovery_batch_id: 8,
+      required_parcels: 2, confirmed_parcels: 0, stops: [
+        { shipment_leg_id: 2, status: 'in_transit', custody_state: 'rider', delivery_reference: 'Delivery #2' },
+        { shipment_leg_id: 3, status: 'picked_up', custody_state: 'rider', delivery_reference: 'Delivery #3' },
+      ] },
+  });
+  render(<MyDeliveries />);
+  expect(screen.getByRole('progressbar', { name: 'Batch progress: 1 of 3 delivered' })).toHaveAttribute('aria-valuenow', '33');
+});
+
 beforeEach(() => {
+  mocks.props.custodyHandoffs = [];
   mocks.props.canRecordProof = true;
   mocks.props.canUpdateStatus = true;
   mocks.props.canReportIssue = true;
@@ -483,6 +525,21 @@ describe('MyDeliveries task-first hierarchy', () => {
 });
 
 describe('MyDeliveries rider interactions', () => {
+  it('allows an early retry for an internal planning date when the server reports no blocker', () => {
+    mocks.props.deliveryData.current = workItem('single', 'needs_resolution', [{
+      ...leg(18, null, 'needs_resolution'), resolution_type: 'retry', scheduled_delivery_date: '2026-07-30', start_blocked_reason: null,
+    }]);
+    render(<MyDeliveries />);
+    expect(screen.getByRole('button', { name: 'Start retry' })).toBeEnabled();
+  });
+  it('shows pending parcel release even when its assignment moved to another rider', () => {
+    mocks.props.custodyHandoffs = [{ id: 44, shipment_leg_id: 9, delivery_reference: 'Delivery #42', status: 'requested', from_label: 'Rider A', to_label: 'Rider B', can_release: true, can_receive: false }];
+    render(<MyDeliveries />);
+    expect(screen.getByRole('heading', { name: 'Package handoffs' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Confirm release' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Confirm receipt' })).not.toBeInTheDocument();
+    mocks.props.custodyHandoffs = [];
+  });
   it('clears the selected proof when a batch advances to its next delivery', async () => {
     const uuid = '2a24f0bd-c8e6-4b34-b36c-f40c6ca14252';
     vi.spyOn(crypto, 'randomUUID').mockReturnValue(uuid);
@@ -645,7 +702,7 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled());
   });
 
-  it('shows repair pickup actions without an arrival gate', () => {
+  it('records customer pickup arrival through the existing action before reporting a failed visit', async () => {
     const repairPickup = {
       ...leg(20, null, 'assigned'),
       shipment: {
@@ -664,6 +721,8 @@ describe('MyDeliveries rider interactions', () => {
 
     expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Failed pickup' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: "I've arrived for pickup" }));
+    await waitFor(() => expect(mocks.arrive).toHaveBeenCalledWith(20, { arrival_type: 'pickup' }));
 
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [repairPickup], {
       group: 'upcoming',
@@ -1129,12 +1188,13 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.getAllByText('Return item to shop: Customer cancelled.')).toHaveLength(2);
   });
 
-  it('shows a staged retry, blocks it before the scheduled date, and starts it when due', async () => {
+  it('shows a confirmed appointment blocker and starts retry when the server clears it', async () => {
     const retry = {
       ...leg(18, null, 'needs_resolution', 'Retry customer'),
       resolution_type: 'retry',
       resolution_reason: 'Customer requested another attempt.',
       scheduled_delivery_date: '2026-07-30',
+      start_blocked_reason: 'Wait for the customer-confirmed appointment.' as string | null,
       assignments: [{ id: 180, status: 'accepted' }],
     };
     mocks.props.deliveryData.current = workItem('single', 'needs_resolution', [retry]);
@@ -1145,6 +1205,7 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.getByRole('button', { name: 'Start retry' })).toBeDisabled();
 
     mocks.props.today = '2026-07-30';
+    retry.start_blocked_reason = null;
     view.rerender(<MyDeliveries />);
     expect(screen.getByRole('button', { name: 'Start retry' })).toBeEnabled();
     fireEvent.click(screen.getByRole('button', { name: 'Start retry' }));
@@ -1191,7 +1252,7 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh deliveries' }));
 
     expect(mocks.reload).toHaveBeenCalledWith(expect.objectContaining({
-      only: ['deliveryData'],
+      only: ['deliveryData', 'custodyHandoffs'],
       onFinish: expect.any(Function),
     }));
   });
@@ -1211,7 +1272,7 @@ describe('MyDeliveries rider interactions', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start delivery' }));
 
     await waitFor(() => expect(mocks.reload).toHaveBeenCalledWith(expect.objectContaining({
-      only: ['deliveryData'],
+      only: ['deliveryData', 'custodyHandoffs'],
       onFinish: expect.any(Function),
     })));
     expect(screen.getByRole('alert')).toHaveTextContent(
@@ -1351,7 +1412,7 @@ describe('MyDeliveries rider interactions', () => {
       exception_reason: 'other',
       exception_notes: 'Customer met at gate',
     })));
-    expect(mocks.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['deliveryData'] }));
+    expect(mocks.reload).toHaveBeenLastCalledWith(expect.objectContaining({ only: ['deliveryData', 'custodyHandoffs'] }));
   });
 
   it('allows a reason after browser location fails without claiming arrival was saved', async () => {
@@ -1438,4 +1499,31 @@ describe('MyDeliveries rider interactions', () => {
     await waitFor(() => expect(mocks.recordProof).toHaveBeenCalledWith(12, expect.any(FormData)));
     expect((mocks.recordProof.mock.calls[0][1] as FormData).get('replaces_proof_id')).toBe('18');
   });
+});
+
+it('does not label a partially received recovery batch ready to start', () => {
+ mocks.props.deliveryData.up_next=workItem('batch','accepted',[leg(2,1,'picked_up')],{interruption:{id:77,revision:1,status:'under_review',resolution:'reassign',source_batch_id:6,recovery_batch_id:7,required_parcels:2,confirmed_parcels:1,stops:[]}});
+ render(<MyDeliveries/>);expect(screen.queryByText('Ready to start')).not.toBeInTheDocument();
+ expect(screen.getByText(/Waiting for 1 more parcel/)).toBeInTheDocument();
+});
+it('shows a useful error when a denied request has an empty server message',async()=>{
+ mocks.props.deliveryData.up_next=workItem('batch','accepted',[leg(2,1)]);
+ mocks.startBatch.mockRejectedValueOnce({response:{status:403,data:{message:''}}});render(<MyDeliveries/>);
+ fireEvent.click(screen.getByRole('button',{name:'Start batch'}));
+ expect(await screen.findByRole('alert')).toHaveTextContent('Refresh deliveries');
+});
+it('refreshes cross-actor work while idle and preserves notes, selected evidence and open dialogs',()=>{
+ vi.useFakeTimers();
+ try {
+  mocks.props.deliveryData.current=workItem('batch','in_progress',[leg(2,1,'picked_up')]);render(<MyDeliveries/>);
+  act(()=>vi.advanceTimersByTime(15000));expect(mocks.reload).toHaveBeenCalled();mocks.reload.mockClear();
+  const note = document.createElement('textarea'); note.value = 'Unsubmitted recovery note'; document.body.append(note);
+  act(()=>vi.advanceTimersByTime(15000));expect(mocks.reload).not.toHaveBeenCalled();expect(note.value).toBe('Unsubmitted recovery note');note.remove();
+  const upload = document.createElement('input'); upload.type = 'file';
+  const photo = new File(['synthetic'], 'evidence.png', { type: 'image/png' });
+  Object.defineProperty(upload, 'files', { value: [photo] });document.body.append(upload);
+  act(()=>vi.advanceTimersByTime(15000));expect(mocks.reload).not.toHaveBeenCalled();expect(upload.files?.[0]).toBe(photo);upload.remove();
+  fireEvent.click(screen.getByRole('button',{name:'Report vehicle breakdown'}));
+  act(()=>vi.advanceTimersByTime(15000));expect(mocks.reload).not.toHaveBeenCalled();
+ } finally {vi.useRealTimers()}
 });

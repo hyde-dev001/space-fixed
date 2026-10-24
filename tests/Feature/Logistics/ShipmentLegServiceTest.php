@@ -509,17 +509,17 @@ class ShipmentLegServiceTest extends TestCase
 
         $retried = $service->resolveRetry($leg->fresh(), 'Customer requested Monday pickup.');
 
-        $this->assertSame('pending', $retried->status->value);
+        $this->assertSame('assigned', $retried->status->value);
         $this->assertSame('retry', $retried->resolution_type);
         $this->assertSame('Customer requested Monday pickup.', $retried->resolution_reason);
         $this->assertSame('2026-08-03', $retried->scheduled_delivery_date->toDateString());
         $this->assertNull($retried->delivery_batch_id);
-        $this->assertFalse($retried->assignments()->whereIn('status', ['assigned', 'accepted'])->exists());
+        $this->assertSame('assigned', $retried->assignments()->latest('id')->value('status'));
         $this->assertDatabaseHas('delivery_events', [
             'shipment_leg_id' => $leg->id,
             'event_type' => 'pickup_rescheduled',
             'visibility' => 'customer',
-            'message' => 'Another pickup attempt has been scheduled.',
+            'message' => 'Another visit has been scheduled.',
         ]);
     }
 
@@ -649,6 +649,7 @@ class ShipmentLegServiceTest extends TestCase
         ]);
         $assignment = DeliveryAssignment::factory()->create([
             'shipment_leg_id' => $leg->id,
+            'rider_profile_id' => \App\Models\Logistics\RiderProfile::factory()->create(['shop_owner_id' => $shop->id])->id,
             'status' => 'accepted',
         ]);
         $leg->events()->create([

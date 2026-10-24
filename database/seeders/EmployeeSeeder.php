@@ -216,8 +216,8 @@ class EmployeeSeeder extends Seeder
                 'Inventory Manager' => ['role' => 'INVENTORY_MANAGER', 'spatie' => 'Inventory Manager'],
                 'Procurement Manager' => ['role' => 'PROCUREMENT_MANAGER', 'spatie' => 'Procurement Manager'],
                 'Staff' => ['role' => 'STAFF', 'spatie' => 'Staff'],
-                'Logistics Dispatcher' => ['role' => 'LOGISTICS_DISPATCHER', 'spatie' => 'Logistics Dispatcher'],
-                'Logistics Rider' => ['role' => 'LOGISTICS_RIDER', 'spatie' => 'Logistics Rider'],
+                'Logistics Dispatcher' => ['role' => 'STAFF', 'spatie' => 'Logistics Dispatcher'],
+                'Logistics Rider' => ['role' => 'STAFF', 'spatie' => 'Logistics Rider'],
             ];
             
             $department = $employeeData['department'];

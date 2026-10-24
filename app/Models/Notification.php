@@ -15,6 +15,7 @@ class Notification extends Model
         'type',
         'priority',
         'group_key',
+        'logistics_delivery_key',
         'title',
         'message',
         'data',

@@ -333,6 +333,8 @@ class XenditSupplierPayoutTest extends TestCase
         [$shop, $finance, $owner, $supplier, $expense] = $this->paymentContext();
         $this->connect($shop);
         $this->startXenditAttempt($finance, $expense, 'xendit-attempt-002');
+        $procurement = User::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        $procurement->assignRole(\Spatie\Permission\Models\Role::findOrCreate('Procurement Manager', 'user'));
 
         $payload = [
             'event' => 'v3_payout.succeeded',
@@ -368,12 +370,14 @@ class XenditSupplierPayoutTest extends TestCase
         ]);
         $this->assertDatabaseCount('finance_expense_settlements', 1);
         $this->assertDatabaseHas('notifications', [
-            'shop_owner_id' => $shop->id,
+            'user_id' => $procurement->id,
+            'shop_id' => $shop->id,
             'type' => NotificationType::SUPPLIER_PAYMENT_VERIFIED->value,
-            'title' => 'Supplier Payment Completed',
-            'action_url' => '/shop-owner/erp/finance/expenses',
-            'requires_action' => true,
+            'title' => 'Supplier Payment Verified',
+            'action_url' => '/erp/procurement/purchase-orders',
+            'requires_action' => false,
         ]);
+        $this->assertDatabaseCount('notifications', 1);
     }
 
     public function test_pending_or_failed_xendit_webhooks_do_not_mark_the_expense_paid(): void
@@ -537,6 +541,7 @@ class XenditSupplierPayoutTest extends TestCase
         ]);
         $finance = User::factory()->create(['shop_owner_id' => $shop->id]);
         $finance->givePermissionTo('access-finance-expenses');
+        $this->clockInEmployee($finance);
         $supplier = Supplier::factory()->create([
             'shop_owner_id' => $shop->id,
             'email' => 'supplier@example.test',

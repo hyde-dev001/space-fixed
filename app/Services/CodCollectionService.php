@@ -10,6 +10,8 @@ use App\Models\Order;
 use App\Models\ShopOwner;
 use App\Models\User;
 use App\Services\Logistics\LogisticsActorPolicy;
+use App\Services\Logistics\ShipmentCustodyService;
+use App\Services\Logistics\RiderActiveWorkGuard;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -18,6 +20,8 @@ final class CodCollectionService
 {
     public function __construct(
         private readonly LogisticsActorPolicy $logisticsActorPolicy,
+        private readonly ShipmentCustodyService $custody,
+        private readonly RiderActiveWorkGuard $activeWork,
     ) {}
 
     public function ensureForOrder(Order $order): CodCollection
@@ -95,6 +99,7 @@ final class CodCollectionService
             : 'cod-collection-order-'.$order->id;
 
         return DB::transaction(function () use ($order, $actor, $amountCents, $idempotencyKey): CodCollection {
+            ShopOwner::whereKey($order->shop_owner_id)->lockForUpdate()->firstOrFail();
             $lockedOrder = Order::query()
                 ->whereKey($order->getKey())
                 ->lockForUpdate()
@@ -304,6 +309,8 @@ final class CodCollectionService
         if (! $decision['allowed']) {
             throw new AuthorizationException('This COD delivery is not eligible for the rider action.');
         }
+        $this->custody->assertCanContinue($leg, $profile);
+        $this->activeWork->assertCanAdvanceLeg($profile, $leg);
 
         $status = $leg->status instanceof ShipmentLegStatus
             ? $leg->status->value

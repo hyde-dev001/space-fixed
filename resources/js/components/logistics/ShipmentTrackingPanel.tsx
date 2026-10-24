@@ -336,7 +336,8 @@ export default function ShipmentTrackingPanel({
   useEffect(() => setCurrentShipment(shipment), [shipment]);
 
   const currentLeg = currentShipment.legs[currentShipment.legs.length - 1];
-  const liveTracking = currentLeg?.live_tracking ?? null;
+  const recovery = currentShipment.recovery;
+  const liveTracking = recovery ? null : currentLeg?.live_tracking ?? null;
   const deliveryMethod = currentLeg?.delivery_method ?? currentShipment.delivery_method;
   const isThirdParty = deliveryMethod === 'third_party';
   const isLiveCustomerDelivery = trackableStatuses.includes(currentLeg?.status ?? '')
@@ -350,10 +351,8 @@ export default function ShipmentTrackingPanel({
   const isLiveRetailRefundReturn = isRetailRefundReturnTrackingLeg(currentShipment, currentLeg);
   const isRetailRefundReturnHandoff = isRetailRefundReturnHandoffPending(currentShipment, currentLeg);
   const isRetailRefundReturnPhase = isLiveRetailRefundReturn || isRetailRefundReturnHandoff;
-  const shouldPoll = currentShipment.live_tracking_enabled === true
-    && currentShipment.status === 'active'
-    && !isThirdParty
-    && (isLiveCustomerDelivery || isRepairPickupPhase || isRepairReturnPhase || isRetailRefundReturnPhase);
+  const shouldPoll = currentShipment.status === 'active' && !isThirdParty
+    && !['delivered', 'cancelled'].includes(currentLeg?.status ?? '');
 
   useEffect(() => {
     if (!shouldPoll) {
@@ -438,9 +437,13 @@ export default function ShipmentTrackingPanel({
           <h1 className="text-2xl font-bold tracking-tight text-slate-950">{itemLabel}</h1>
         </div>
         <span className="w-fit rounded-full border border-gray-300 bg-white px-3 py-1 text-sm font-semibold text-gray-800">
-          {awaitingConfirmation ? customerStatus(currentLeg?.status ?? '') : titleCase(currentShipment.status)}
+          {recovery ? recovery.label : awaitingConfirmation ? customerStatus(currentLeg?.status ?? '') : titleCase(currentShipment.status)}
         </span>
       </div>
+
+      {recovery && <section role="status" aria-label="Delivery recovery" className="rounded-2xl border border-gray-300 bg-gray-100 p-5 text-gray-950">
+        <h2 className="font-semibold">{recovery.label}</h2><p className="mt-2 text-sm leading-6">{recovery.message}</p><p className="mt-2 text-sm font-semibold">{recovery.next_step}</p>
+      </section>}
 
       {awaitingConfirmation && (
         <section className="rounded-2xl border border-slate-300 bg-slate-100 p-5">
@@ -494,7 +497,7 @@ export default function ShipmentTrackingPanel({
         </section>
       )}
 
-      {(liveTracking || shouldPoll) && (
+      {!recovery && (liveTracking || (currentShipment.live_tracking_enabled && (isLiveCustomerDelivery || isRepairPickupPhase || isRepairReturnPhase || isRetailRefundReturnPhase))) && (
         <section className="rounded-2xl border border-slate-300 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)] sm:p-6" aria-live="polite">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -547,17 +550,17 @@ export default function ShipmentTrackingPanel({
         </section>
       )}
 
-      {currentLeg?.schedule_status === 'scheduled' && (
+      {(currentLeg?.schedule_status === 'scheduled' || currentLeg?.customer_appointment_date) && (
         <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-[0_18px_50px_-35px_rgba(15,23,42,0.25)] sm:p-6">
-          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Estimated delivery</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{recovery ? 'Previous estimate - awaiting recovery update' : currentLeg?.customer_appointment_date ? 'Customer-confirmed appointment' : 'Estimated delivery'}</p>
           <p className="mt-1 text-base font-semibold text-gray-900">
-            {formatDeliveryDate(currentLeg.scheduled_delivery_date)} {'\u00B7'} {titleCase(currentLeg.delivery_window || '')}
+            {formatDeliveryDate(currentLeg.customer_appointment_date || currentLeg.scheduled_delivery_date)} {'\u00B7'} {titleCase(currentLeg.customer_appointment_window || currentLeg.delivery_window || '')}
           </p>
         </section>
       )}
 
       <div className="space-y-5">
-        {shipment.legs.filter((leg) => leg.latest_failed_attempt).map((leg) => {
+        {currentShipment.legs.filter((leg) => leg.latest_failed_attempt).map((leg) => {
           const attempt = leg.latest_failed_attempt!;
           const isPickupFailure = attempt.attempt_type === 'pickup';
           const isActiveFailure = leg.id === currentLeg?.id
@@ -609,7 +612,7 @@ export default function ShipmentTrackingPanel({
                   <p className="mt-1 text-sm leading-6 text-gray-900">{snapshotText(leg.destination_snapshot)}</p>
                 </div>
                 <div className="flex flex-col items-start md:items-center md:text-center">
-                  <p className="text-sm font-semibold text-gray-800">{customerStatus(leg.status)}</p>
+                  <p className="text-sm font-semibold text-gray-800">{recovery && leg.id === currentLeg?.id ? 'Delivery paused' : customerStatus(leg.status)}</p>
                   {leg.delivery_proof?.available && leg.delivery_proof.url ? (
                     <button
                       type="button"
@@ -645,7 +648,7 @@ export default function ShipmentTrackingPanel({
               currentShipment.events.map((event) => (
                 <div key={event.id} className="px-5 py-5">
                   <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm font-semibold text-gray-900">{titleCase(event.event_type)}</p>
+                    <p className="text-sm font-semibold text-gray-900">{({batch_interruption_reported:'Delivery delayed',batch_interruption_rescheduled:'Delivery arrangement updated',batch_interruption_delayed:'Shop arranging recovery',batch_interruption_continued:'Delivery continuing',delivery_retry_authorized:'Next visit arranged',pickup_rescheduled:'Next pickup arranged'} as Record<string,string>)[event.event_type] ?? titleCase(event.event_type)}</p>
                     <p className="text-xs text-gray-500">{formatDate(event.created_at)}</p>
                   </div>
                   {event.message ? <p className="mt-1 text-sm leading-6 text-gray-600">{event.message}</p> : null}

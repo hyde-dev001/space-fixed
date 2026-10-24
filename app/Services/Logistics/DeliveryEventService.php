@@ -6,6 +6,7 @@ use App\Models\Logistics\DeliveryEvent;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class DeliveryEventService
 {
@@ -26,14 +27,16 @@ class DeliveryEventService
             'metadata' => $payload['metadata'] ?? [],
             'created_by_type' => $payload['created_by_type'] ?? null,
             'created_by_id' => $payload['created_by_id'] ?? null,
+            'notification_requested_at' => now(),
         ]);
 
         $eventId = $event->id;
         $notify = function () use ($eventId): void {
-            $committedEvent = DeliveryEvent::query()->find($eventId);
-
-            if ($committedEvent) {
-                $this->notifications->notifyForEvent($committedEvent);
+            try {
+                $this->deliverNotifications($eventId);
+            } catch (\Throwable $exception) {
+                // Business state is already committed; the persisted event is retried by the scheduler.
+                Log::warning('Logistics notification processing deferred.', ['event_id' => $eventId, 'exception_class' => $exception::class]);
             }
         };
 
@@ -44,5 +47,24 @@ class DeliveryEventService
         }
 
         return $event;
+    }
+
+    public function deliverNotifications(int $eventId): void
+    {
+        try {
+            DB::transaction(function () use ($eventId) {
+                $event = DeliveryEvent::lockForUpdate()->find($eventId);
+                if (! $event || $event->notifications_processed_at) return;
+                $this->notifications->notifyForEvent($event);
+                $event->update(['notifications_processed_at' => now(), 'notification_last_error' => null,
+                    'notification_attempts' => $event->notification_attempts + 1]);
+            });
+        } catch (\Throwable $exception) {
+            DeliveryEvent::whereKey($eventId)->whereNull('notifications_processed_at')->update([
+                'notification_attempts' => DB::raw('notification_attempts + 1'),
+                'notification_last_error' => $exception::class,
+            ]);
+            throw $exception;
+        }
     }
 }

@@ -28,7 +28,7 @@ type Props = {
 const BatchStatus = ({ status }: { status: DeliveryBatchStatus }) => <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">{label(status)}</span>;
 
 function SecondaryActions({ batch, onReview, onCancel, onRestore }: Pick<Props, 'onReview' | 'onCancel' | 'onRestore'> & { batch: DeliveryBatch }) {
-  const active = !['completed', 'cancelled'].includes(batch.status);
+  const active = !['completed', 'cancelled', 'recovered'].includes(batch.status);
   const hasActions = (batch.status === 'draft' && Boolean(onReview))
     || (['draft', 'offered', 'accepted'].includes(batch.status) && Boolean(onCancel));
 
@@ -148,7 +148,7 @@ function BatchActions({ batch, onOpen, onDetails, onReview, onCancel, onRestore 
 
 export default function BatchTable({ batches, variant = 'active', onOpen, onDetails, onReview, onCancel, onRestore }: Props) {
   const history = variant === 'history';
-  const legsFor = (batch: DeliveryBatch) => ['completed', 'cancelled'].includes(batch.status)
+  const legsFor = (batch: DeliveryBatch) => ['completed', 'cancelled', 'recovered'].includes(batch.status)
     ? (batch.stop_snapshot?.length ? batch.stop_snapshot : batch.cancelled_stops?.length ? batch.cancelled_stops : batch.legs)
     : batch.legs;
 
@@ -156,7 +156,7 @@ export default function BatchTable({ batches, variant = 'active', onOpen, onDeta
     <div data-testid="compact-batch-list" className="space-y-3 xl:hidden">
       {batches.map((batch) => {
         const stops = legsFor(batch);
-        const stopCount = ['completed', 'cancelled'].includes(batch.status) ? stops.length : batch.assigned_stop_count;
+        const stopCount = ['completed', 'cancelled', 'recovered'].includes(batch.status) ? stops.length : batch.assigned_stop_count;
         const urgentCount = stops.filter((leg) => leg.urgent_at).length;
 
         return <article key={batch.id} className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-5">
@@ -184,7 +184,7 @@ export default function BatchTable({ batches, variant = 'active', onOpen, onDeta
     <div data-testid="desktop-batch-table" className="hidden xl:block">
       <div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-800">
       <table aria-label={history ? 'Batch history' : 'Active batches'} className="w-full min-w-[760px] text-left text-sm">
-        <caption className="sr-only">{history ? 'Completed and cancelled delivery batches' : 'Current delivery batches'}</caption>
+        <caption className="sr-only">{history ? 'Completed, recovered and cancelled delivery batches' : 'Current delivery batches'}</caption>
         <thead className="border-b border-gray-200 bg-gray-50 text-xs uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:bg-gray-900/40">
           <tr><th scope="col" className="px-4 py-3">Batch</th><th scope="col" className="px-4 py-3">Schedule</th><th scope="col" className="px-4 py-3">Rider</th><th scope="col" className="px-4 py-3">Stops</th><th scope="col" className="px-4 py-3 text-right">Actions</th></tr>
         </thead>
@@ -193,7 +193,7 @@ export default function BatchTable({ batches, variant = 'active', onOpen, onDeta
             <td className="px-4 py-4 align-top"><BatchSummary batch={batch} /></td>
             <td className="px-4 py-4 align-top text-gray-600 dark:text-gray-300"><span>{formatDate(batch.delivery_date)} · {label(batch.delivery_window)}</span></td>
             <td className="px-4 py-4 align-top text-gray-700 dark:text-gray-200">{batch.rider_profile?.name || 'Not assigned'}</td>
-            <td className="px-4 py-4 align-top text-gray-600 dark:text-gray-300">{['completed', 'cancelled'].includes(batch.status) ? legsFor(batch).length : batch.assigned_stop_count}/{batch.capacity}<span className="block text-xs text-gray-500">{legsFor(batch).filter((leg) => leg.urgent_at).length} urgent</span></td>
+            <td className="px-4 py-4 align-top text-gray-600 dark:text-gray-300">{['completed', 'cancelled', 'recovered'].includes(batch.status) ? legsFor(batch).length : batch.assigned_stop_count}/{batch.capacity}<span className="block text-xs text-gray-500">{legsFor(batch).filter((leg) => leg.urgent_at).length} urgent</span></td>
             <td className="px-4 py-4 align-top"><div className="flex flex-wrap justify-end gap-2"><BatchActions batch={batch} onOpen={onOpen} onDetails={onDetails} onReview={onReview} onCancel={onCancel} onRestore={onRestore} /></div></td>
           </tr>)}
         </tbody>

@@ -539,6 +539,12 @@ final class RepairDeliveryService
                     'destination_snapshot' => $existing->legs()->first()?->destination_snapshot,
                     'requires_pickup_proof' => false,
                     'requires_delivery_proof' => true,
+                    ...($hasExplicitSchedule && data_get($recovery, 'selected_by_type') === User::class
+                        && (int) data_get($recovery, 'selected_by_id') === (int) $lockedRepair->user_id ? [
+                            'customer_appointment_date' => $recoveryDate, 'customer_appointment_window' => $recoveryWindow,
+                            'appointment_agreed_by_user_id' => $lockedRepair->user_id, 'appointment_agreed_at' => now(),
+                            'appointment_agreement_note' => 'Customer selected the paid pickup recovery appointment.',
+                        ] : []),
                     'scheduled_delivery_date' => $hasExplicitSchedule ? $recoveryDate : null,
                     'delivery_window' => $hasExplicitSchedule ? $recoveryWindow : null,
                     'schedule_status' => $hasExplicitSchedule ? 'scheduled' : 'unscheduled',
@@ -663,6 +669,9 @@ final class RepairDeliveryService
                     ? [
                         'scheduled_delivery_date' => $paidRecovery['scheduled_delivery_date'] ?? null,
                         'delivery_window' => $paidRecovery['delivery_window'] ?? null,
+                        'appointment_agreed_by_user_id' => ($paidRecovery['selected_by_type'] ?? null) === User::class
+                            && (int) ($paidRecovery['selected_by_id'] ?? 0) === (int) $lockedRepair->user_id
+                                ? (int) $lockedRepair->user_id : null,
                     ]
                     : null,
             );

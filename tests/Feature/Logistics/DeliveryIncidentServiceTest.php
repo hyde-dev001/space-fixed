@@ -94,6 +94,7 @@ class DeliveryIncidentServiceTest extends TestCase
 
         $this->assertSame(1, $leg->incidents()->count());
 
+        $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
         app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Vehicle issue resolved; retry approved.');
 
         $this->assertSame('needs_resolution', $leg->fresh()->status->value);
@@ -311,5 +312,19 @@ class DeliveryIncidentServiceTest extends TestCase
 
         $this->assertSame('dismissed', $incident->fresh()->resolution);
         $this->assertSame('resolved', $incident->fresh()->status);
+    }
+    public function test_investigation_records_explicit_responsibility_without_changing_the_report(): void
+    {
+        $shop = ShopOwner::factory()->approved()->withLogistics()->create(['registration_type' => 'company']);
+        $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => Shipment::factory()->create(['shop_owner_id' => $shop->id])->id, 'status' => 'assigned']);
+        DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'rider_profile_id' => $rider->id, 'status' => 'accepted']);
+        $service = app(DeliveryIncidentService::class);
+        $incident = $service->report($leg, $rider, ['type' => 'damaged', 'notes' => 'Synthetic damaged packaging report', 'photo_paths' => ['incident-evidence/test.jpg']]);
+        $actor = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $resolved = $service->resolve($incident, $shop, 'dismissed', 'Packaging inspected, contents intact', [], $actor, [], 'undetermined');
+        $this->assertSame('undetermined', $resolved->responsible_party);
+        $this->assertSame('Synthetic damaged packaging report', $resolved->notes);
+        $this->assertDatabaseHas('delivery_events', ['shipment_leg_id' => $leg->id, 'event_type' => 'delivery_incident_resolved', 'created_by_type' => User::class, 'created_by_id' => $actor->id]);
     }
 }

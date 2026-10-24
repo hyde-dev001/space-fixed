@@ -25,10 +25,12 @@ class ProofService
     ];
 
     public function __construct(
+        private LogisticsMovementEligibility $movements,
         private DeliveryEventService $events,
         private RiderActiveWorkGuard $activeWork,
         private ArrivalService $arrivals,
         private CodCollectionService $codCollections,
+        private ShipmentCustodyService $custody,
     ) {}
 
     public function recordProof(ShipmentLeg $leg, array $payload, ?RiderProfile $rider = null): HandoffProof
@@ -55,7 +57,9 @@ class ProofService
             : null;
 
         return DB::transaction(function () use ($leg, $data, $rider) {
+            $this->movements->lockShopForLeg($leg);
             $leg = ShipmentLeg::query()->with('shipment')->lockForUpdate()->findOrFail($leg->id);
+            $this->activeWork->assertNotHeld($leg);
             $assignment = null;
             if ($rider) {
                 $assignment = $leg->assignments()
@@ -112,6 +116,9 @@ class ProofService
 
                 if ($rider) {
                     $this->activeWork->assertCanAdvanceLeg($rider, $leg);
+                    if (in_array($data['handoff_type'], ['delivery', 'receive'], true)) {
+                        $this->custody->assertCanContinue($leg, $rider);
+                    }
                     if ($data['handoff_type'] === 'delivery'
                         && ! $this->arrivals->eventForAssignment($leg, 'dropoff_arrived', $assignment)) {
                         throw ValidationException::withMessages([
@@ -140,6 +147,7 @@ class ProofService
 
             $proof = $leg->proofs()->create([
                 ...$data,
+                'delivery_assignment_id' => $assignment?->id,
                 'shop_owner_id' => $shopOwnerId,
                 'proof_number' => $proofNumber,
                 'recorded_at' => now(),
@@ -162,7 +170,7 @@ class ProofService
             }
 
             return $proof;
-        });
+        }, 3);
     }
 
     public function storageDisk(HandoffProof $proof): ?string
@@ -190,7 +198,9 @@ class ProofService
             return true;
         }
 
-        return $leg->proofs()->where('handoff_type', 'pickup')->exists();
+        $assignmentId = $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->latest('id')->value('id');
+        return $assignmentId && $leg->proofs()->where('handoff_type', 'pickup')
+            ->where('delivery_assignment_id', $assignmentId)->exists();
     }
 
     public function hasRequiredDeliveryProof(ShipmentLeg $leg): bool

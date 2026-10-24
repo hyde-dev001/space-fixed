@@ -1,3 +1,4 @@
+import { Modal } from "@/components/ui/modal";
 import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import type { ComponentType } from "react";
@@ -1732,9 +1733,7 @@ export default function RefundApproval() {
 			</div>
 
 			{viewModalOpen && selectedRequest && (
-				<div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
-					<div className="absolute inset-0" onClick={handleCloseModal} />
-					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-hidden">
+				<Modal isOpen ariaLabel="Refund request details" onClose={() => { if (!isActionProcessing) handleCloseModal(); }} size="5xl" zIndex={999999} showCloseButton={false} className="max-h-[90dvh] overflow-hidden rounded-2xl mx-4">
 						<div className="px-8 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
 							<div className="flex items-center gap-3">
 								<div className="flex items-center justify-center w-10 h-10 rounded-xl bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
@@ -1747,9 +1746,10 @@ export default function RefundApproval() {
 							</div>
 							<button
 								onClick={handleCloseModal}
+                                disabled={isActionProcessing}
 								aria-label="Close refund details"
 								title="Close"
-								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+								className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-600 focus-visible:outline focus-visible:outline-2 dark:text-gray-300"
 							>
 								<XIcon className="size-5" />
 							</button>
@@ -1938,7 +1938,7 @@ export default function RefundApproval() {
 						<div className="px-8 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-3">
 							<button
 								onClick={handleCloseModal}
-								disabled={isActionProcessing}
+                                disabled={isActionProcessing}
 								className="px-5 py-2.5 text-sm font-semibold rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Close
@@ -1972,14 +1972,11 @@ export default function RefundApproval() {
 								</button>
 							)}
 						</div>
-					</div>
-				</div>
+				</Modal>
 			)}
 
 			{executeModalOpen && executeRequest && (
-				<div className="fixed inset-0 z-[1000001] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
-					<div className="absolute inset-0" onClick={() => closeExecuteModal()} />
-					<div className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-xl w-full max-w-2xl overflow-hidden">
+				<Modal isOpen ariaLabel="Execute refund payout" onClose={() => closeExecuteModal()} size="2xl" zIndex={1000001} showCloseButton={false} className="max-h-[95dvh] overflow-y-auto rounded-2xl mx-4">
 						<div className="px-6 py-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between">
 							<div>
 								<h3 className="text-lg font-semibold text-gray-900 dark:text-white">
@@ -1994,7 +1991,7 @@ export default function RefundApproval() {
 								disabled={isActionProcessing}
 								aria-label="Close execute modal"
 								title="Close"
-								className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 disabled:opacity-50"
+								className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-gray-600 focus-visible:outline focus-visible:outline-2 dark:text-gray-300 disabled:opacity-50"
 							>
 								<XIcon className="size-5" />
 							</button>
@@ -2032,7 +2029,7 @@ export default function RefundApproval() {
 										value={executeReference}
 										onChange={(event) => setExecuteReference(event.target.value)}
 										placeholder="Reference / auth code"
-										className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+										className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
 									/>
 								</div>
 
@@ -2053,7 +2050,7 @@ export default function RefundApproval() {
 										accept="image/png,image/jpeg,image/webp"
 										multiple
 										onChange={(event) => setExecuteProofImages(Array.from(event.target.files ?? []))}
-										className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+										className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 file:mr-3 file:rounded-md file:border-0 file:bg-gray-950 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-white hover:file:bg-black focus:outline-none focus:ring-2 focus:ring-gray-950 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
 									/>
 									<p className="mt-1 text-xs text-gray-500">Upload screenshot(s) of the payout transaction receipt or confirmation.</p>
 									{executeProofImages.length > 0 && (
@@ -2065,7 +2062,7 @@ export default function RefundApproval() {
 														type="button"
 														key={`${preview.name}-${preview.url}`}
 														onClick={() => setActiveImage(preview.url)}
-														className="overflow-hidden rounded-md border border-gray-200 bg-white text-left transition hover:border-indigo-400 dark:border-gray-700 dark:bg-gray-900"
+														className="overflow-hidden rounded-md border border-gray-200 bg-white text-left transition hover:border-gray-600 dark:border-gray-700 dark:bg-gray-900"
 														title={preview.name}
 													>
 														<img src={preview.url} alt={preview.name} className="h-20 w-full object-cover" />
@@ -2085,7 +2082,7 @@ export default function RefundApproval() {
 							)}
 
 							{executeError && (
-								<div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
+								<div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300">
 									{executeError}
 								</div>
 							)}
@@ -2107,15 +2104,14 @@ export default function RefundApproval() {
 								{isActionProcessing ? "Executing..." : "Execute"}
 							</button>
 						</div>
-					</div>
-				</div>
+				</Modal>
 			)}
 
 			{activeImage && (
-				<div className="fixed inset-0 z-[1000000] flex items-center justify-center bg-black/80 p-6 erp-modal-backdrop" onClick={() => setActiveImage(null)}>
+				<Modal isOpen ariaLabel="Refund evidence" onClose={() => setActiveImage(null)} size="5xl" zIndex={1000002} showCloseButton={false} className="relative p-6">
 					<button
-						aria-label="Close image preview"
-						className="absolute top-4 right-4 text-white/80 hover:text-white"
+						onClick={() => setActiveImage(null)} aria-label="Close image preview"
+						className="absolute top-1 right-1 min-h-11 min-w-11 text-gray-950 dark:text-white"
 						title="Close"
 					>
 						<XIcon className="size-6" />
@@ -2130,7 +2126,7 @@ export default function RefundApproval() {
 					) : (
 						<img src={activeImage} alt="Refund evidence" className="max-h-[85vh] max-w-[90vw] rounded-xl shadow-2xl" />
 					)}
-				</div>
+				</Modal>
 			)}
 		</>
 	);

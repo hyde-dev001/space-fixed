@@ -130,6 +130,19 @@ $routeEntry = static function (
 
 $routeBuckets = [
     'core' => [
+        'shop-owner.settings.xendit-key',
+        'shop-owner.settings.xendit-key.test',
+        'shop-owner.settings.xendit-key.remove',
+        'shop_owner.finance.platform-balance.index',
+        'shop_owner.finance.platform-balance.payment-requests.index',
+        'shop_owner.finance.platform-balance.payment-requests.approve',
+        'shop_owner.finance.platform-balance.payment-requests.reject',
+        'shop_owner.finance.platform-balance.pay',
+        'shop_owner.finance.platform-balance.reconcile',
+        'shop_owner.finance.platform-balance.terms.accept',
+        'shop-owner.shell.setup-guide.show',
+        'shop-owner.shell.setup-guide.progress',
+        'shop-owner.shell.setup-guide.welcome',
         'api.manager.audit-logs',
         'api.manager.dashboard.stats',
         'api.manager.dss-insights',
@@ -164,8 +177,6 @@ $routeBuckets = [
         'erp.notifications.update-preferences',
         'erp.password.update',
         'erp.profile',
-        'erp.mfa.challenge',
-        'erp.mfa.challenge.verify',
         'erp.security.activity',
         'erp.security.sessions.index',
         'erp.security.sessions.logout-others',
@@ -346,6 +357,10 @@ $routeBuckets = [
         'shop_owner.promos.update-status',
     ],
     'repair_operations' => [
+        'shop_owner.repairs.approve-rejection',
+        'shop_owner.repairs.reject-rejection',
+        'shop_owner.repair-services.owner.approve',
+        'shop_owner.repair-services.owner.reject',
         'erp.staff.api.repair-dashboard',
         'erp.manager.shoe-pricing',
         'erp.repairer.point-of-sale',
@@ -433,6 +448,7 @@ $routeBuckets = [
         'hr.attendance.by_employee',
         'hr.attendance.checkin',
         'hr.attendance.checkout',
+        'hr.attendance.check_in_photo',
         'hr.attendance.destroy',
         'hr.attendance.index',
         'hr.attendance.lateness.daily',
@@ -598,6 +614,18 @@ $routeBuckets = [
         'staff.shop_hours.today',
     ],
     'finance' => [
+        'finance.platform-balance',
+        'finance.platform-balance.index',
+        'finance.platform-balance.reconcile',
+        'finance.platform-balance.payment-requests.store',
+        'finance.platform-balance.payment-requests.execute',
+        'finance.expenses.categories',
+        'finance.expenses.supplier-adjustments.supplier-refund-proof',
+        'finance.expenses.supplier-adjustments.refund-confirmations',
+        'finance.supplier-payment-attempts.send-receipt',
+        'finance.supplier-adjustments.refund-proof',
+        'finance.suppliers.payment-profile.reveal',
+        'finance.refunds.destination.reveal',
         'erp.finance.audit-logs',
         'erp.my-payslips',
         'finance.audit.export',
@@ -855,6 +883,13 @@ $routeBuckets = [
         'shop_owner.inventory.overview',
     ],
     'procurement' => [
+        'procurement.purchase-orders.receipts.finalize',
+        'procurement.supplier-adjustments.resolution',
+        'procurement.supplier-adjustments.replacement-action',
+        'procurement.supplier-adjustments.refund-declined',
+        'procurement.supplier-adjustments.short-fulfillment',
+        'procurement.supplier-adjustments.return',
+        'procurement.supplier-adjustments.supplier-refund-proof',
         'erp.procurement.dashboard',
         'erp.procurement.purchase-orders',
         'erp.procurement.purchase-request',
@@ -914,6 +949,7 @@ $routeBuckets = [
         'shop_owner.purchase-requests.show',
     ],
     'logistics' => [
+        'erp.logistics.cod-collections',
         'api.logistics.attempts.file',
         'api.logistics.delivery-disputes.evidence',
         'api.logistics.incidents.evidence',
@@ -933,6 +969,8 @@ $routeBuckets = [
         'shop_owner.repairs.delivery-method',
     ],
     'excluded' => [
+        'erp.mfa.challenge',
+        'erp.mfa.challenge.verify',
         'api.notifications.index',
         'api.notifications.unread-count',
         'api.notifications.recent',
@@ -960,6 +998,33 @@ $routeBuckets = [
 
 $routeMethods = static function (string $routeName): array {
     $overrides = [
+        'shop-owner.settings.xendit-key' => ['POST'],
+        'shop-owner.settings.xendit-key.test' => ['POST'],
+        'shop-owner.shell.setup-guide.progress' => ['POST'],
+        'shop-owner.shell.setup-guide.welcome' => ['POST'],
+        'shop_owner.repairs.approve-rejection' => ['POST'],
+        'shop_owner.repairs.reject-rejection' => ['POST'],
+        'shop_owner.repair-services.owner.approve' => ['POST'],
+        'shop_owner.repair-services.owner.reject' => ['POST'],
+        'procurement.purchase-orders.receipts.finalize' => ['POST'],
+        'procurement.supplier-adjustments.resolution' => ['POST'],
+        'procurement.supplier-adjustments.replacement-action' => ['POST'],
+        'procurement.supplier-adjustments.refund-declined' => ['POST'],
+        'procurement.supplier-adjustments.short-fulfillment' => ['POST'],
+        'procurement.supplier-adjustments.return' => ['POST'],
+        'procurement.supplier-adjustments.supplier-refund-proof' => ['POST'],
+        'finance.platform-balance.reconcile' => ['POST'],
+        'finance.platform-balance.payment-requests.store' => ['POST'],
+        'finance.platform-balance.payment-requests.execute' => ['POST'],
+        'finance.expenses.supplier-adjustments.supplier-refund-proof' => ['POST'],
+        'finance.expenses.supplier-adjustments.refund-confirmations' => ['POST'],
+        'finance.supplier-payment-attempts.send-receipt' => ['POST'],
+        'shop_owner.finance.platform-balance.payment-requests.approve' => ['POST'],
+        'shop_owner.finance.platform-balance.payment-requests.reject' => ['POST'],
+        'shop_owner.finance.platform-balance.pay' => ['POST'],
+        'shop_owner.finance.platform-balance.reconcile' => ['POST'],
+        'shop_owner.finance.platform-balance.terms.accept' => ['POST'],
+        'shop-owner.settings.xendit-key.remove' => ['DELETE'],
         'inventory.suppliers.update' => ['PATCH', 'PUT'],
         'finance.expenses.update' => ['PATCH'],
         'finance.expenses.review_release' => ['POST'],
@@ -1174,6 +1239,9 @@ $isOwnerRoute = static fn (string $routeName): bool => str_starts_with($routeNam
     || str_starts_with($routeName, 'api.shop_owner.');
 
 $isPublicRoute = static fn (string $routeName): bool => in_array($routeName, [
+    // These routes validate a password-established pending session before user authentication exists.
+    'erp.mfa.challenge',
+    'erp.mfa.challenge.verify',
     'shop-owner.email-verification.send-code',
     'shop-owner.email-verification.verify-code',
     'shop-owner.login',
@@ -1407,6 +1475,7 @@ $routes['shop-owner.erp.hr.audit-logs'] = $ownerHrAuditRoute;
 
 $ownerReadApiPairs = [
     'hr.audit.index' => 'shop-owner.erp.api.hr.audit-logs',
+    'hr.attendance.check_in_photo' => 'shop-owner.erp.api.hr.attendance.check-in-photo',
     'finance.audit.index' => 'shop-owner.erp.api.finance.audit-logs',
     'api.manager.reports.index' => 'shop-owner.erp.api.manager.reports',
     'api.manager.reports.download' => 'shop-owner.erp.api.manager.reports.download',
@@ -2181,7 +2250,7 @@ $ownerOperationalApiRouteGroups = [
         'page_route' => 'shop-owner.erp.hr.attendance',
         'risk_tier' => 'sensitive',
         'domain_rule' => 'Owner attendance reads remain scoped to the authenticated company.',
-        'routes' => ['shop_owner.hr.attendance.by_employee'],
+        'routes' => ['shop_owner.hr.attendance.by_employee', 'shop-owner.erp.api.hr.attendance.check-in-photo'],
     ],
     [
         'page_route' => 'shop-owner.erp.hr.payroll-view',
@@ -2222,6 +2291,8 @@ foreach ($ownerOperationalApiRouteGroups as $group) {
         $routes[$routeName]['domain_rule'] = $group['domain_rule'];
     }
 }
+
+$routes['hr.attendance.check_in_photo']['risk_tier'] = 'sensitive';
 
 $ownerSupplierPaymentRoutes = [
     'shop_owner.finance.supplier-payment-attempts.confirm',
@@ -2659,6 +2730,9 @@ foreach ($ownerRefundRouteBusinessTypes as $routeName => $businessTypes) {
     $routes[$routeName]['actor_guard'] = 'shop_owner';
     $routes[$routeName]['owner_access'] = 'allowed';
     $routes[$routeName]['owner_denial_reason'] = null;
+    $routes[$routeName]['supporting_routes'] = ['shop-owner.erp.finance.refund-approvals'];
+    $routes[$routeName]['actor_persistence'] = 'existing_owner_ref';
+    $routes[$routeName]['domain_rule'] = 'Existing owner refund stage, shop tenancy, Finance approval and payout eligibility remain required.';
 }
 
 // Assist Center is a company-owner destination. Individual owners keep the
@@ -2724,7 +2798,86 @@ $platformBalanceRoute['business_types'] = ['retail', 'repair', 'both'];
 $platformBalanceRoute['owner_access'] = 'allowed';
 $platformBalanceRoute['owner_denial_reason'] = null;
 $platformBalanceRoute['actor_persistence'] = 'server_resolved_shop_owner';
+$platformBalanceRoute['supporting_routes'] = ['shop_owner.finance.platform-balance.index'];
 $routes['shop-owner.shell.platform-balance'] = $platformBalanceRoute;
+
+// Classify the newer named surfaces explicitly; declared route permissions and
+// controller maker/checker, payment and tenant checks remain authoritative.
+foreach ([
+    'shop-owner.settings.xendit-key',
+    'shop-owner.settings.xendit-key.test',
+    'shop-owner.settings.xendit-key.remove',
+    'shop_owner.finance.platform-balance.index',
+    'shop_owner.finance.platform-balance.payment-requests.index',
+    'shop_owner.finance.platform-balance.payment-requests.approve',
+    'shop_owner.finance.platform-balance.payment-requests.reject',
+    'shop_owner.finance.platform-balance.pay',
+    'shop_owner.finance.platform-balance.reconcile',
+    'shop_owner.finance.platform-balance.terms.accept',
+    'shop-owner.shell.setup-guide.show',
+    'shop-owner.shell.setup-guide.progress',
+    'shop-owner.shell.setup-guide.welcome',
+    'shop_owner.repairs.approve-rejection',
+    'shop_owner.repairs.reject-rejection',
+    'shop_owner.repair-services.owner.approve',
+    'shop_owner.repair-services.owner.reject',
+] as $routeName) {
+    $routes[$routeName]['owner_access'] = 'allowed';
+    $routes[$routeName]['owner_denial_reason'] = null;
+    $routes[$routeName]['actor_persistence'] = 'server_resolved_shop_owner';
+    $routes[$routeName]['supporting_routes'] = [match (true) {
+        str_starts_with($routeName, 'shop-owner.settings.xendit-key') => 'shop-owner.shell.settings.payments-approvals',
+        str_starts_with($routeName, 'shop_owner.finance.platform-balance.') => 'shop-owner.shell.platform-balance',
+        str_starts_with($routeName, 'shop_owner.repairs.') => 'shop-owner.erp.repair.job-orders',
+        str_starts_with($routeName, 'shop_owner.repair-services.') => 'shop-owner.erp.repair.services',
+        default => 'shop-owner.shell.home',
+    }];
+    $routes[$routeName]['domain_rule'] = match (true) {
+        str_starts_with($routeName, 'shop-owner.settings.xendit-key') => 'Authenticated owner manages only their shop integration; credentials stay encrypted and in-flight payouts prevent removal.',
+        str_starts_with($routeName, 'shop_owner.finance.platform-balance.') => 'Owner platform liability and payment decisions use the server-resolved shop, existing approval states and idempotent payment services.',
+        str_starts_with($routeName, 'shop-owner.shell.setup-guide.') => 'Owner reads or records only their own onboarding progress.',
+        default => 'Existing owner repair approval stage, shop tenancy and request-state validation remain required.',
+    };
+    if ($routes[$routeName]['action'] === 'view' && array_intersect(['POST', 'DELETE'], $routes[$routeName]['methods']) !== []) {
+        $routes[$routeName]['action'] = in_array('DELETE', $routes[$routeName]['methods'], true) ? 'delete' : 'update';
+    }
+    if (str_starts_with($routeName, 'shop-owner.settings.xendit-key')) {
+        $routes[$routeName]['risk_tier'] = 'sensitive';
+    }
+}
+foreach ([
+    'shop_owner.finance.platform-balance.index',
+    'shop_owner.finance.platform-balance.payment-requests.index',
+    'shop_owner.finance.platform-balance.payment-requests.approve',
+    'shop_owner.finance.platform-balance.payment-requests.reject',
+    'shop_owner.finance.platform-balance.pay',
+    'shop_owner.finance.platform-balance.reconcile',
+    'shop_owner.finance.platform-balance.terms.accept',
+    'finance.platform-balance',
+    'finance.platform-balance.index',
+    'finance.platform-balance.reconcile',
+    'finance.platform-balance.payment-requests.store',
+    'finance.platform-balance.payment-requests.execute',
+    'finance.expenses.categories',
+    'finance.expenses.supplier-adjustments.supplier-refund-proof',
+    'finance.expenses.supplier-adjustments.refund-confirmations',
+    'finance.supplier-payment-attempts.send-receipt',
+    'finance.supplier-adjustments.refund-proof',
+    'finance.suppliers.payment-profile.reveal',
+    'finance.refunds.destination.reveal',
+    'procurement.purchase-orders.receipts.finalize',
+    'procurement.supplier-adjustments.resolution',
+    'procurement.supplier-adjustments.replacement-action',
+    'procurement.supplier-adjustments.refund-declined',
+    'procurement.supplier-adjustments.short-fulfillment',
+    'procurement.supplier-adjustments.return',
+    'procurement.supplier-adjustments.supplier-refund-proof',
+] as $routeName) {
+    $routes[$routeName]['risk_tier'] = 'financial';
+    if ($routes[$routeName]['action'] === 'view' && in_array('POST', $routes[$routeName]['methods'], true)) {
+        $routes[$routeName]['action'] = 'update';
+    }
+}
 
 // Articles are a read-only core page. Keep the owner catalog outside the
 // module gates so every approved owner variant can open its own guides.

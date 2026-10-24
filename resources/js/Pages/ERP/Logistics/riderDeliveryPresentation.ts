@@ -46,7 +46,7 @@ export const orderedDeliveries = (deliveries: TrackingShipmentLeg[]) =>
       a.id - b.id,
   );
 
-export const completedProgress = (deliveries: TrackingShipmentLeg[]) => {
+export const completedProgress = (deliveries: Pick<TrackingShipmentLeg, 'status'>[]) => {
   const completed = deliveries.filter(({ status }) => status === 'delivered').length;
   const total = deliveries.length;
 

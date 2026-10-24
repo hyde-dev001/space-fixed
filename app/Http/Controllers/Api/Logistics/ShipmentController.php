@@ -123,7 +123,7 @@ class ShipmentController extends Controller
         $rider = RiderProfile::query()
             ->where('shop_owner_id', $shop->id)
             ->findOrFail($request->integer('rider_profile_id'));
-        $assignment = $assignments->assignInternalRider($leg, $rider, $shop);
+        $assignment = $assignments->assignInternalRider($leg, $rider, $shop, [], $this->authenticatedActor());
 
         return response()->json([
             'assignment' => $assignment->load('riderProfile'),
@@ -537,13 +537,13 @@ class ShipmentController extends Controller
         ]);
     }
 
-    public function retryResolution(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
+    public function retryResolution(\App\Http\Requests\Logistics\ResolveDeliveryRetryRequest $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
     {
         $shop = $this->authorizeAction(LogisticsAction::RESOLVE_EXCEPTION, $leg);
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
 
-        return response()->json(['leg' => $legs->resolveRetry($leg, $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'])]);
+        return response()->json(['leg' => $legs->resolveRetry($leg, $request->validated('reason'), $request->validated(), $this->authenticatedActor())]);
     }
 
     public function returnResolution(Request $request, ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
@@ -552,7 +552,7 @@ class ShipmentController extends Controller
         $leg->loadMissing('shipment');
         $this->abortUnlessTenant($leg->shipment->shop_owner_id, $shop);
 
-        return response()->json(['leg' => $legs->requireReturn($leg, $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'])]);
+        return response()->json(['leg' => $legs->requireReturn($leg, $request->validate(['reason' => ['required', 'string', 'max:1000']])['reason'], $this->authenticatedActor())]);
     }
 
     public function createReturn(ShipmentLeg $leg, ShipmentLegService $legs): JsonResponse
@@ -574,7 +574,7 @@ class ShipmentController extends Controller
         $leg->loadMissing('shipment');
         $shop = $this->authorizeAction(LogisticsAction::CONFIRM_RETURN_RECEIPT, $leg, $proof);
 
-        return response()->json(['leg' => $legs->confirmReturnReceipt($leg, $proof, $shop)]);
+        return response()->json(['leg' => $legs->confirmReturnReceipt($leg, $proof, $shop, $this->authenticatedActor())]);
     }
 
     private function authorizeLegUpdate(ShipmentLeg $leg): RiderProfile

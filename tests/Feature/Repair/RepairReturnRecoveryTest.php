@@ -358,6 +358,8 @@ class RepairReturnRecoveryTest extends TestCase
         $this->assertSame('scheduled', $newLeg->schedule_status);
         $this->assertSame($deliveryDate, $newLeg->scheduled_delivery_date?->toDateString());
         $this->assertSame('afternoon', $newLeg->delivery_window);
+        $this->assertSame($deliveryDate, $newLeg->customer_appointment_date?->toDateString());
+        $this->assertSame('afternoon', $newLeg->customer_appointment_window);
         $this->assertSame('returned', $original->fresh()->resolution_type);
         $this->assertSame('delivered', $return->fresh()->status->value);
         $entry = collect(data_get($settled->logistics_payment_reconciliation, 'entries', []))

@@ -2,6 +2,10 @@ import axios from 'axios';
 import type { BatchSuggestion, CodCollectionPageData, LogisticsModule } from '@/types/logistics';
 
 export const logisticsApi = {
+  reportBatchInterruption: (id: number, payload: FormData) => axios.post(`/api/logistics/batches/${id}/incidents`, payload),
+  releaseCustody: (id: number, payload: FormData) => axios.post(`/api/logistics/custody-transfers/${id}/release`, payload),
+  receiveCustody: (id: number, payload: FormData) => axios.post(`/api/logistics/custody-transfers/${id}/receive`, payload),
+  cancelCustody: (id: number, reason: string) => axios.post(`/api/logistics/custody-transfers/${id}/cancel`, { reason }),
   shipments: () => axios.get('/api/logistics/shipments'),
   liveLocations: () => axios.get('/api/logistics/live-locations'),
   riders: () => axios.get('/api/logistics/riders'),
@@ -33,8 +37,8 @@ export const logisticsApi = {
   markInTransit: (legId: number) => axios.post(`/api/logistics/legs/${legId}/in-transit`),
   recordLocation: (legId: number, payload: Record<string, unknown>) =>
     axios.post(`/api/logistics/legs/${legId}/location`, payload),
-  retryDelivery: (legId: number, reason: string) =>
-    axios.post(`/api/logistics/legs/${legId}/resolve/retry`, { reason }),
+  retryDelivery: (legId: number, payload: Record<string, unknown>) =>
+    axios.post(`/api/logistics/legs/${legId}/resolve/retry`, payload),
   returnDelivery: (legId: number, reason: string) =>
     axios.post(`/api/logistics/legs/${legId}/resolve/return`, { reason }),
   arrive: (legId: number, payload: Record<string, unknown>) =>

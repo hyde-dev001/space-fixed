@@ -41,6 +41,8 @@ class ShipmentLeg extends Model
         'schedule_override_reason',
         'distance_km',
         'estimated_at',
+        'custody_state', 'custody_rider_profile_id', 'custody_confirmed_at',
+        'customer_appointment_date', 'customer_appointment_window', 'appointment_agreement_note', 'appointment_agreed_by_user_id', 'appointment_agreed_at',
         'delivery_batch_id', 'stop_sequence', 'attempt_number', 'out_for_delivery_at', 'resolution_type', 'resolution_reason', 'return_for_leg_id', 'urgent_at',
     ];
 
@@ -59,10 +61,15 @@ class ShipmentLeg extends Model
         'scheduled_delivery_date' => 'date',
         'distance_km' => 'decimal:2',
         'estimated_at' => 'datetime',
+        'custody_confirmed_at' => 'datetime',
+        'customer_appointment_date' => 'date',
+        'appointment_agreed_at' => 'datetime',
+        'custody_rider_profile_id' => 'integer',
         'stop_sequence' => 'integer', 'attempt_number' => 'integer', 'out_for_delivery_at' => 'datetime', 'urgent_at' => 'datetime',
     ];
 
     protected $attributes = [
+        'custody_state' => 'unknown',
         'rider_progress_state' => RiderProgressState::ACTIVE->value,
     ];
 
@@ -146,5 +153,15 @@ class ShipmentLeg extends Model
     public function incidents(): HasMany
     {
         return $this->hasMany(DeliveryIncident::class);
+    }
+
+    public function incidentStops(): HasMany
+    {
+        return $this->hasMany(DeliveryIncidentStop::class);
+    }
+
+    public function custodyTransfers(): HasMany
+    {
+        return $this->hasMany(ShipmentCustodyTransfer::class);
     }
 }

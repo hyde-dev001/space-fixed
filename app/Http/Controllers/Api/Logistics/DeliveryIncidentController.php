@@ -23,6 +23,22 @@ class DeliveryIncidentController extends Controller
 {
     public function __construct(private LogisticsActorPolicy $policy) {}
 
+    public function storeBatch(\App\Http\Requests\Logistics\ReportBatchInterruptionRequest $request,
+        \App\Models\Logistics\DeliveryBatch $batch, \App\Services\Logistics\BatchInterruptionService $service): JsonResponse
+    {
+        $actor = Auth::guard('user')->user();
+        abort_unless($actor instanceof User && (int) $actor->shop_owner_id === (int) $batch->shop_owner_id, 403);
+        $paths = $this->storeEvidenceFiles($request->file('photo_files', []), "incident-evidence/batch-{$batch->id}");
+        try {
+            $incident = $service->report($batch, $actor, [...$request->validated(), 'photo_paths' => $paths]);
+            $this->deleteUncommittedEvidence($paths, $incident->photo_paths ?? []);
+            return response()->json(['incident' => $this->incidentPayload($incident)], 201);
+        } catch (\Throwable $exception) {
+            $this->deleteUncommittedEvidence($paths, []);
+            throw $exception;
+        }
+    }
+
     public function store(Request $request, ShipmentLeg $leg, DeliveryIncidentService $service): JsonResponse
     {
         $leg->loadMissing('shipment');
@@ -60,6 +76,13 @@ class DeliveryIncidentController extends Controller
 
     public function resolve(Request $request, DeliveryIncident $incident, DeliveryIncidentService $service): JsonResponse
     {
+        if ($incident->delivery_batch_id) {
+            $actor = Auth::guard('user')->user();
+            abort_unless($actor instanceof User && $actor->can('resolve-logistics-exceptions'), 403);
+            $data = $request->validate(\App\Http\Requests\Logistics\ResolveBatchInterruptionRequest::decisionRules());
+            $resolved = app(\App\Services\Logistics\BatchInterruptionService::class)->resolve($incident, $actor, $data);
+            return response()->json(['incident' => $this->incidentPayload($resolved)]);
+        }
         $incident->loadMissing('leg.shipment');
         $actor = $this->authenticatedActor();
         $shop = $this->shopForActor($actor);
@@ -76,6 +99,7 @@ class DeliveryIncidentController extends Controller
         $data = $request->validate([
             'resolution' => ['required', 'string', Rule::in(DeliveryIncidentService::RESOLUTIONS)],
             'note' => ['required', 'string', 'max:1000'],
+            'responsible_party' => ['nullable', 'in:undetermined,customer,rider,shop,third_party'],
             'evidence_files' => [
                 Rule::requiredIf($request->input('resolution') === 'loss_confirmed'),
                 'nullable',
@@ -85,10 +109,12 @@ class DeliveryIncidentController extends Controller
             ],
             'evidence_files.*' => $this->evidenceFileRules(),
         ]);
+        $retryOptions = $data['resolution'] === 'retry'
+            ? $request->validate(\App\Http\Requests\Logistics\ResolveDeliveryRetryRequest::retryRules()) : [];
         $storedPaths = $this->storeEvidenceFiles($request->file('evidence_files', []), "incident-evidence/incident-{$incident->id}");
 
         try {
-            $resolved = $service->resolve($incident, $shop, $data['resolution'], $data['note'], $storedPaths);
+            $resolved = $service->resolve($incident, $shop, $data['resolution'], $data['note'], $storedPaths, $actor, $retryOptions, $data['responsible_party'] ?? null);
             $this->deleteUncommittedEvidence($storedPaths, $resolved->photo_paths ?? []);
 
             return response()->json(['incident' => $this->incidentPayload($resolved)]);
@@ -101,10 +127,10 @@ class DeliveryIncidentController extends Controller
     public function evidence(DeliveryIncident $incident, int $index)
     {
         $shop = $this->authorizedIncidentShop();
-        $incident->loadMissing('leg.shipment');
-        abort_unless($incident->leg?->shipment, 404);
-        abort_unless((int) $incident->shop_owner_id === (int) $incident->leg->shipment->shop_owner_id, 403);
-        abort_unless((int) $incident->leg->shipment->shop_owner_id === (int) $shop->id, 403);
+        $incident->loadMissing(['leg.shipment', 'batch']);
+        $subjectShop = $incident->delivery_batch_id ? $incident->batch?->shop_owner_id : $incident->leg?->shipment?->shop_owner_id;
+        abort_unless($subjectShop, 404);
+        abort_unless((int) $incident->shop_owner_id === (int) $subjectShop && (int) $subjectShop === (int) $shop->id, 403);
 
         $path = $incident->photo_paths[$index] ?? null;
         abort_unless(is_string($path) && $this->isSafeEvidencePath($path), 404);

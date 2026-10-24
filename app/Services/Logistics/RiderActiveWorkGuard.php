@@ -10,6 +10,24 @@ use Illuminate\Validation\ValidationException;
 
 final class RiderActiveWorkGuard
 {
+    public function assertNotHeld(ShipmentLeg $leg): void
+    {
+        if (\App\Models\Logistics\DeliveryIncidentStop::where('shipment_leg_id', $leg->id)->where('held', true)->lockForUpdate()->first()) {
+            throw ValidationException::withMessages(['batch_interruption' => 'This batch is interrupted. Wait for dispatcher recovery and all required handoffs.']);
+        }
+    }
+
+    public function assertBatchNotHeld(DeliveryBatch $batch): void
+    {
+        if (DeliveryBatch::whereKey($batch->id)->whereNotNull('active_incident_id')->lockForUpdate()->first()) {
+            throw ValidationException::withMessages(['batch_interruption' => 'This batch is interrupted. Dispatcher authorization and all parcel handoffs are required.']);
+        }
+    }
+
+    private function hasInterruptionResponsibility(RiderProfile $rider): bool
+    {
+        return DeliveryBatch::where('rider_profile_id', $rider->id)->where('status', 'interrupted')->whereNotNull('active_incident_id')->exists();
+    }
     private const ACTIVE_STANDALONE_STATUSES = [
         'picked_up',
         'in_transit',
@@ -18,13 +36,14 @@ final class RiderActiveWorkGuard
 
     public function assertCanStartBatch(RiderProfile $rider, DeliveryBatch $batch): void
     {
+        $this->assertBatchNotHeld($batch);
         RiderProfile::query()->whereKey($rider->id)->lockForUpdate()->firstOrFail();
 
         $hasBatch = $this->activeBatchQuery($rider)
             ->whereKeyNot($batch->id)
             ->exists();
 
-        $this->reject($hasBatch
+        $this->reject($hasBatch || $this->hasInterruptionResponsibility($rider)
             || $this->activeStandaloneQuery($rider)->exists()
             || $this->custodyHoldQuery($rider)->exists());
     }
@@ -39,11 +58,15 @@ final class RiderActiveWorkGuard
             ->whereKeyNot($leg->id)
             ->exists();
 
-        $this->reject($hasBatch || $hasStandalone || $this->custodyHoldQuery($rider)->exists());
+        $this->reject($hasBatch || $hasStandalone || $this->custodyHoldQuery($rider)->exists() || $this->hasInterruptionResponsibility($rider));
     }
 
     public function assertCanAdvanceLeg(RiderProfile $rider, ShipmentLeg $leg): void
     {
+        $this->assertNotHeld($leg);
+        if ($leg->customer_appointment_date && ($reason = app(DeliveryStartEligibility::class)->blockedReason($leg))) {
+            throw ValidationException::withMessages(['customer_appointment' => $reason]);
+        }
         RiderProfile::query()->whereKey($rider->id)->lockForUpdate()->firstOrFail();
 
         if ($leg->rider_progress_state !== RiderProgressState::ACTIVE
@@ -156,9 +179,11 @@ final class RiderActiveWorkGuard
     {
         return ShipmentLeg::query()
             ->where('status', 'needs_resolution')
-            ->whereHas('latestAssignment', fn ($query) => $query
-                ->where('rider_profile_id', $rider->id)
-                ->where('status', 'accepted'));
+            ->where(function ($query) use ($rider) {
+                $query->where(fn ($held) => $held->where('custody_state', 'rider')->where('custody_rider_profile_id', $rider->id))
+                    ->orWhere(fn ($legacy) => $legacy->where('custody_state', 'unknown')
+                        ->whereHas('latestAssignment', fn ($assignment) => $assignment->where('rider_profile_id', $rider->id)->where('status', 'accepted')));
+            });
     }
 
     private function reject(bool $blocked): void

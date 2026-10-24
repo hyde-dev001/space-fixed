@@ -56,6 +56,24 @@ describe('Finance COD remittance supplements', () => {
     mocks.error.mockResolvedValue(undefined);
   });
 
+  it('does not call a failed ledger read empty and lets Finance retry safely',async()=>{
+    mocks.get.mockRejectedValueOnce(new Error('Synthetic unavailable read'));render(<CodRemittances/>);
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded');
+    expect(screen.queryByText('No COD remittances have been submitted.')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button',{name:'Retry loading remittances'}));
+    expect(await screen.findByText('COD-REM-SHORTAGE')).toBeInTheDocument();
+  });
+
+  it('blocks supplemental confirmation when the refreshed ledger is unavailable', async () => {
+    render(<CodRemittances />);
+    const confirm = await screen.findByRole('button', { name: 'Confirm supplemental cash' });
+    mocks.get.mockRejectedValueOnce(new Error('Synthetic unavailable refresh'));
+    fireEvent.click(confirm);
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded');
+    expect(screen.queryByRole('button', { name: 'Confirm supplemental cash' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Previous amounts/)).toBeInTheDocument();
+  });
+
   it('shows supplemental history and confirms the physically received amount', async () => {
     render(<CodRemittances />);
 

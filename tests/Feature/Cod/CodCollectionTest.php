@@ -235,6 +235,27 @@ class CodCollectionTest extends TestCase
         ]);
     }
 
+    #[Test]
+    public function reassignment_never_transfers_collected_cash_or_creates_a_second_collection(): void
+    {
+        [$order, $a, $shop] = $this->fixture();
+        $service = app(CodCollectionService::class);
+        $collection = $service->cashCollected($order, $a, ['amount' => '1170.00']);
+        $leg = ShipmentLeg::whereHas('shipment', fn ($query) => $query->where('source_type', 'order')->where('source_id', $order->id))->firstOrFail();
+        $leg->assignments()->update(['status' => 'cancelled']);
+        $b = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'rider_profile_id' => $b->id, 'status' => 'accepted']);
+        try {
+            $service->cashCollected($order->fresh(), User::findOrFail($b->linked_id), ['amount' => '1170.00']);
+            $this->fail('The second rider collected the same order again.');
+        } catch (ValidationException) {
+            $this->assertSame($a->id, $collection->fresh()->rider_user_id);
+            $this->assertSame($a->id, $collection->fresh()->collected_by_user_id);
+            $this->assertSame(CodCollection::STATUS_CASH_COLLECTED, $collection->fresh()->status);
+            $this->assertSame(1, CodCollection::where('order_id', $order->id)->count());
+        }
+    }
+
     /** @return array{0: Order, 1: User, 2: ShopOwner} */
     private function fixture(): array
     {

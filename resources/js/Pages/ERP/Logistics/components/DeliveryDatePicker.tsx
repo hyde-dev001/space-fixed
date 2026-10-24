@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react';
 
 type Props = {
+  label?: string;
   value: string;
   minDate: string;
   onChange: (value: string) => void;
@@ -38,7 +39,7 @@ const todayFallback = () => {
   return `${value('year')}-${value('month')}-${value('day')}`;
 };
 
-export default function DeliveryDatePicker({ value, minDate, onChange, operatingDays = [], blackoutDates = [], disabled = false, calendarId = 'delivery-date-calendar', insideModal = false }: Props) {
+export default function DeliveryDatePicker({ value, minDate, onChange, operatingDays = [], blackoutDates = [], disabled = false, calendarId = 'delivery-date-calendar', insideModal = false, label = 'Delivery date' }: Props) {
   const minimum = minDate || todayFallback();
   const minimumDate = parseDate(minimum) ?? firstOfMonth(new Date());
   const initialMonth = firstOfMonth(parseDate(value) ?? minimumDate);
@@ -102,11 +103,16 @@ export default function DeliveryDatePicker({ value, minDate, onChange, operating
     if (nextDate && !isShopClosed(nextDate)) onChange(nextValue);
   };
 
-  return <div ref={rootRef} className="relative min-w-0">
-    <input aria-label="Delivery date" tabIndex={-1} value={value} onChange={(event) => updateInputValue(event.target.value)} className="sr-only" />
+  return <div ref={rootRef} className="relative min-w-0" onKeyDown={event => {
+    if (open && event.key === 'Escape') {
+      event.preventDefault(); event.stopPropagation(); setOpen(false);
+      rootRef.current?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.focus();
+    }
+  }}>
+    <input aria-label={label} tabIndex={-1} value={value} onChange={(event) => updateInputValue(event.target.value)} className="sr-only" />
     <button
       type="button"
-      aria-label="Open delivery date picker"
+      aria-label={`Open ${label.toLowerCase()} picker`}
       aria-haspopup="dialog"
       aria-expanded={open}
       aria-controls={calendarId}
@@ -117,13 +123,13 @@ export default function DeliveryDatePicker({ value, minDate, onChange, operating
       <span className={value ? 'text-gray-900 dark:text-white' : 'text-gray-500'}>{displayDate(value)}</span>
       <CalendarDays aria-hidden="true" size={17} className="shrink-0 text-gray-500" />
     </button>
-    {open && <div id={calendarId} role="dialog" aria-label="Delivery date calendar" className={calendarClassName}>
+    {open && <div id={calendarId} role="dialog" aria-label={`${label} calendar`} className={calendarClassName}>
       <div className="flex items-center justify-between gap-3">
-        <button type="button" aria-label="Previous month" disabled={previousMonthDisabled} onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() - 1, 1)))} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white">
+        <button type="button" aria-label="Previous month" disabled={previousMonthDisabled} onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() - 1, 1)))} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white">
           <ChevronLeft aria-hidden="true" size={17} />
         </button>
         <h3 className="text-base font-bold text-gray-900 dark:text-white">{monthFormatter.format(visibleMonth)}</h3>
-        <button type="button" aria-label="Next month" onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() + 1, 1)))} className="inline-flex min-h-9 min-w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white">
+        <button type="button" aria-label="Next month" onClick={() => setVisibleMonth(new Date(Date.UTC(visibleMonth.getUTCFullYear(), visibleMonth.getUTCMonth() + 1, 1)))} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 text-gray-600 transition hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 focus:outline-none focus:ring-2 focus:ring-gray-950 dark:border-gray-600 dark:text-gray-300 dark:hover:border-gray-500 dark:hover:bg-gray-800 dark:hover:text-white">
           <ChevronRight aria-hidden="true" size={17} />
         </button>
       </div>
@@ -132,7 +138,7 @@ export default function DeliveryDatePicker({ value, minDate, onChange, operating
       </div>
       <div className="mt-2 grid grid-cols-7 gap-2">
         {days.map((day, index) => {
-          if (!day) return <span key={`empty-${index}`} aria-hidden="true" className="min-h-10" />;
+          if (!day) return <span key={`empty-${index}`} aria-hidden="true" className="min-h-11" />;
           const valueForDay = dateKey(day);
           const isPast = valueForDay < minimum;
           const isShopClosedDate = isShopClosed(day);
@@ -146,7 +152,7 @@ export default function DeliveryDatePicker({ value, minDate, onChange, operating
             title={isPast ? 'Past date' : isShopClosedDate ? 'Shop closed' : undefined}
             aria-pressed={isSelected}
             onClick={() => chooseDate(day)}
-            className={`min-h-10 rounded-lg border text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-gray-950 dark:focus:ring-gray-300 ${isSelected ? 'border-gray-950 bg-gray-950 text-white shadow-sm hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:hover:bg-black' : unavailable ? 'cursor-not-allowed border-gray-100 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-500' : 'border-gray-200 text-gray-700 hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-600 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700 dark:hover:text-white'}`}
+            className={`min-h-11 rounded-lg border text-sm font-semibold transition focus:outline-none focus:ring-2 focus:ring-gray-950 dark:focus:ring-gray-300 ${isSelected ? 'border-gray-950 bg-gray-950 text-white shadow-sm hover:bg-black dark:border-gray-950 dark:bg-gray-950 dark:hover:bg-black' : unavailable ? 'cursor-not-allowed border-gray-100 bg-gray-100 text-gray-400 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-500' : 'border-gray-200 text-gray-700 hover:border-gray-400 hover:bg-gray-100 hover:text-gray-950 dark:border-gray-600 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:bg-gray-700 dark:hover:text-white'}`}
           >{day.getUTCDate()}</button>;
         })}
       </div>

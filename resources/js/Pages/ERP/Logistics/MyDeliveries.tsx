@@ -1,3 +1,7 @@
+import DeliveryPhotoUpload from './components/DeliveryPhotoUpload';
+import CustodyHandoffs from './components/CustodyHandoffs';
+import BatchInterruptionControls from './components/BatchInterruptionDialog';
+import type { CustodyHandoff } from '@/types/logistics';
 import MonochromeSelect from "@/components/form/Select";
 import AppLayoutERP from '@/layout/AppLayout_ERP';
 import { logisticsApi } from '@/services/logisticsApi';
@@ -365,144 +369,6 @@ function DeliveryActionModal({
   );
 }
 
-function DeliveryPhotoUpload({
-  inputId,
-  inputLabel,
-  label,
-  file,
-  onChange,
-  required = false,
-  accept = 'image/*',
-  capture,
-}: {
-  inputId: string;
-  inputLabel: string;
-  label: string;
-  file: File | null;
-  onChange: (file: File | null) => void;
-  required?: boolean;
-  accept?: string;
-  capture?: 'environment';
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!file || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
-      setPreviewUrl(null);
-      return;
-    }
-
-    const nextPreviewUrl = URL.createObjectURL(file);
-    setPreviewUrl(nextPreviewUrl);
-
-    return () => {
-      if (typeof URL.revokeObjectURL === 'function') URL.revokeObjectURL(nextPreviewUrl);
-    };
-  }, [file]);
-
-  const openFilePicker = () => inputRef.current?.click();
-  const removeFile = () => {
-    if (inputRef.current) inputRef.current.value = '';
-    onChange(null);
-  };
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-slate-950 dark:text-white">
-            {label}{' '}
-            <span className="font-medium text-slate-500 dark:text-slate-400">
-              · {required ? 'Required' : 'Optional'}
-            </span>
-          </p>
-          <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-            {required ? 'Add a clear photo to continue.' : 'Add a photo if it helps explain the issue.'}
-          </p>
-        </div>
-        {file && (
-          <span className="shrink-0 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-            Ready
-          </span>
-        )}
-      </div>
-
-      <input
-        ref={inputRef}
-        id={inputId}
-        type="file"
-        required={required}
-        accept={accept}
-        capture={capture}
-        aria-label={inputLabel}
-        onChange={(event) => onChange(event.target.files?.[0] ?? null)}
-        className="sr-only"
-      />
-
-      {file ? (
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 dark:border-slate-700 dark:bg-slate-900">
-          <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950">
-            {previewUrl ? (
-              <img
-                src={previewUrl}
-                alt={`${label} preview`}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-full items-center justify-center px-2 text-center text-[10px] font-bold uppercase tracking-wide text-slate-500">
-                Image ready
-              </div>
-            )}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-slate-950 dark:text-white">{file.name}</p>
-            <button
-              type="button"
-              onClick={openFilePicker}
-              className="mt-1 inline-flex min-h-11 items-center rounded-lg px-1 text-xs font-bold text-slate-700 underline decoration-slate-400 underline-offset-2 transition-colors hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:text-slate-200 dark:hover:text-white dark:focus:ring-gray-300"
-            >
-              Replace photo
-            </button>
-          </div>
-          <button
-            type="button"
-            aria-label={`Remove ${inputLabel}`}
-            title="Remove photo"
-            onClick={removeFile}
-            className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 transition-colors hover:bg-slate-100 hover:text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white dark:focus:ring-gray-300"
-          >
-            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
-              <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7l1-3h4l1 3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-      ) : (
-        <div className="flex flex-col items-start gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 sm:flex-row sm:items-center dark:border-slate-700 dark:bg-slate-900">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
-            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 24 24" fill="none">
-              <path d="M4 16.5V19a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-2.5M12 4v11m0-11L8.5 7.5M12 4l3.5 3.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-slate-950 dark:text-white">No photo selected</p>
-            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
-              Upload a clear photo from your device or camera.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={openFilePicker}
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 sm:w-auto dark:bg-slate-950 dark:text-white dark:hover:bg-black dark:focus:ring-gray-300"
-          >
-            Upload photo
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 const photoIssueReasons = new Set([
   'recipient_unavailable',
   'wrong_or_incomplete_address',
@@ -779,11 +645,17 @@ function DeliveryActions({
 
   if (canUpdateStatus && item.kind === 'batch' && item.status === 'accepted') {
     const key = `batch-start:${item.id}`;
+    const incident = item.interruption;
+    const custodyReady = !incident || incident.status === 'resolved' || (incident.recovery_batch_id === item.id && incident.resolution === 'reassign'
+      && incident.confirmed_parcels === incident.required_parcels && !incident.stops.some(stop => stop.transfer_status));
 
     return (
+      <div className="space-y-2">
+      {item.start_blocked_reason && <p role="status" className="text-sm font-semibold">{item.start_blocked_reason}</p>}
+      {!custodyReady && <p role="status" className="text-sm font-semibold">Waiting for {Math.max(0, (incident?.required_parcels ?? 0) - (incident?.confirmed_parcels ?? 0))} more parcel handoff(s). <a href="#package-handoffs" className="underline">Check package handoffs</a>.</p>}
       <button
         type="button"
-         disabled={mutationDisabled || !canUpdateStatus || pendingAction === key}
+         disabled={mutationDisabled || !canUpdateStatus || !custodyReady || Boolean(item.start_blocked_reason) || pendingAction === key}
         onClick={() =>
           runAction(key, () => logisticsApi.startBatch(item.id), {
             title: `Start batch #${item.id}?`,
@@ -795,16 +667,18 @@ function DeliveryActions({
       >
         Start batch
       </button>
+      </div>
     );
   }
 
+  if (item.interruption && item.interruption.status !== 'resolved') return null;
   if (!delivery) return null;
   const isReturnToShop = delivery.leg_type === 'return_to_shop';
   const isStagedRetry = delivery.status === 'needs_resolution' && delivery.resolution_type === 'retry';
-  const isRepairPickup = delivery.shipment?.purpose === 'repair_pickup'
+  const isCustomerCollection = (delivery.shipment?.purpose === 'repair_pickup' || delivery.shipment?.purpose === 'refund_return')
     && ['assigned', 'pickup_scheduled'].includes(delivery.status);
-  const requiresIssuePhoto = isRepairPickup || photoIssueReasons.has(issueReason);
-  const requiresIssueNotes = isRepairPickup
+  const requiresIssuePhoto = isCustomerCollection || photoIssueReasons.has(issueReason);
+  const requiresIssueNotes = isCustomerCollection
     ? issueReason === 'other'
     : noteIssueReasons.has(issueReason);
   const assignment = delivery.assignments?.find(({ status }) =>
@@ -819,9 +693,9 @@ function DeliveryActions({
     return proofKeys.current[requestKey]
       ?? (proofKeys.current[requestKey] = crypto.randomUUID());
   };
-  const issueKey = `${isRepairPickup ? 'pickup-issue' : 'issue'}:${delivery.id}`;
-  const issueRequestKey = `${isRepairPickup ? 'pickup' : 'delivery'}:${delivery.id}:${assignment?.id ?? 'none'}`;
-  const issueOptions = isRepairPickup ? pickupIssueReasons : deliveryIssueReasons;
+  const issueKey = `${isCustomerCollection ? 'pickup-issue' : 'issue'}:${delivery.id}`;
+  const issueRequestKey = `${isCustomerCollection ? 'pickup' : 'delivery'}:${delivery.id}:${assignment?.id ?? 'none'}`;
+  const issueOptions = isCustomerCollection ? pickupIssueReasons : deliveryIssueReasons;
  const deliveryReference =
    item.kind === 'batch'
      ? `stop ${delivery.stop_sequence ?? delivery.id} in batch #${item.id}`
@@ -885,7 +759,7 @@ function DeliveryActions({
 
   if (isStagedRetry) {
     const scheduledDate = delivery.scheduled_delivery_date?.slice(0, 10) ?? null;
-    const retryDue = Boolean(scheduledDate && scheduledDate <= today);
+    const retryDue = !delivery.start_blocked_reason;
     const key = `delivery-retry:${delivery.id}`;
 
     return (
@@ -907,7 +781,7 @@ function DeliveryActions({
         </button>
         {!retryDue && (
           <p role="status" className="text-center text-xs font-semibold text-slate-700 dark:text-slate-300">
-            Retry is unavailable until the scheduled date.
+            {delivery.start_blocked_reason}
           </p>
         )}
       </div>
@@ -937,7 +811,7 @@ function DeliveryActions({
     const form = new FormData();
     const idempotencyKey = issueKeys.current[issueRequestKey]
       ?? (issueKeys.current[issueRequestKey] = crypto.randomUUID());
-    form.append('attempt_type', isRepairPickup ? 'pickup' : 'delivery');
+    form.append('attempt_type', isCustomerCollection ? 'pickup' : 'delivery');
     form.append('delivery_assignment_id', String(assignment.id));
     form.append('idempotency_key', idempotencyKey);
     form.append('reason_code', issueReason);
@@ -948,7 +822,7 @@ function DeliveryActions({
       async () => {
         const response = await logisticsApi.reportIssue(delivery.id, form);
         await workflowFeedback.success({
-          title: isRepairPickup ? 'Failed pickup submitted successfully' : 'Issue submitted successfully',
+          title: isCustomerCollection ? 'Failed pickup submitted successfully' : 'Issue submitted successfully',
           text: 'The dispatcher will review this report.',
           timer: 1800,
           showConfirmButton: false,
@@ -956,13 +830,13 @@ function DeliveryActions({
         return response;
       },
       {
-        title: isRepairPickup
+        title: isCustomerCollection
           ? `Submit failed pickup for ${deliveryReference}?`
           : `Submit issue for ${deliveryReference}?`,
-        text: isRepairPickup
+        text: isCustomerCollection
           ? 'The dispatcher will choose whether to reschedule or cancel this pickup.'
           : 'This records a failed delivery attempt for dispatcher review.',
-        confirmButtonText: isRepairPickup ? 'Submit failed pickup' : 'Submit issue',
+        confirmButtonText: isCustomerCollection ? 'Submit failed pickup' : 'Submit issue',
       },
     );
   };
@@ -995,26 +869,26 @@ function DeliveryActions({
     <DeliveryActionModal
       modalId={`delivery-issue-${delivery.id}`}
       open={showIssue}
-      title={isRepairPickup ? 'Failed pickup' : 'Report issue'}
-      description={isRepairPickup
+      title={isCustomerCollection ? 'Failed pickup' : 'Report issue'}
+      description={isCustomerCollection
         ? 'Record why the pickup could not be completed.'
         : 'Share the delivery issue for dispatcher review.'}
       onClose={() => setShowIssue(false)}
     >
       <div
-        aria-label={isRepairPickup ? 'Failed pickup details' : 'Delivery issue details'}
+        aria-label={isCustomerCollection ? 'Failed pickup details' : 'Delivery issue details'}
         className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:p-5"
       >
         <div className="block text-sm font-semibold">
           <label
             className="block"
-            htmlFor={`${isRepairPickup ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
+            htmlFor={`${isCustomerCollection ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
           >
-            {isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
+            {isCustomerCollection ? 'Failed pickup reason' : 'Issue reason'}
           </label>
           <CompactModalPicker
-            pickerId={`${isRepairPickup ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
-            label={isRepairPickup ? 'Failed pickup reason' : 'Issue reason'}
+            pickerId={`${isCustomerCollection ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
+            label={isCustomerCollection ? 'Failed pickup reason' : 'Issue reason'}
             value={issueReason}
             onChange={setIssueReason}
             options={issueOptions}
@@ -1022,9 +896,9 @@ function DeliveryActions({
           />
         </div>
         <label className="block text-sm font-semibold">
-          {isRepairPickup ? 'Failed pickup notes' : 'Notes'} {requiresIssueNotes ? '(required)' : '(optional)'}
+          {isCustomerCollection ? 'Failed pickup notes' : 'Notes'} {requiresIssueNotes ? '(required)' : '(optional)'}
           <textarea
-            aria-label={isRepairPickup ? 'Failed pickup notes' : 'Issue notes'}
+            aria-label={isCustomerCollection ? 'Failed pickup notes' : 'Issue notes'}
             required={requiresIssueNotes}
             value={issueNotes}
             onChange={(event) => setIssueNotes(event.target.value)}
@@ -1032,13 +906,13 @@ function DeliveryActions({
           />
         </label>
         <DeliveryPhotoUpload
-          inputId={`${isRepairPickup ? 'failed-pickup' : 'delivery-issue'}-photo-${delivery.id}`}
-          inputLabel={isRepairPickup ? 'Failed pickup photo' : 'Issue photo'}
-          label={isRepairPickup ? 'Failed pickup photo' : 'Issue photo'}
+          inputId={`${isCustomerCollection ? 'failed-pickup' : 'delivery-issue'}-photo-${delivery.id}`}
+          inputLabel={isCustomerCollection ? 'Failed pickup photo' : 'Issue photo'}
+          label={isCustomerCollection ? 'Failed pickup photo' : 'Issue photo'}
           file={issueFile}
           onChange={setIssueFile}
           required={requiresIssuePhoto}
-          capture={isRepairPickup ? 'environment' : undefined}
+          capture={isCustomerCollection ? 'environment' : undefined}
         />
         {!online && (
           <p role="status" className="text-center text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -1058,7 +932,7 @@ function DeliveryActions({
           onClick={submitIssue}
           className={compactPrimaryButtonClass}
         >
-          {isRepairPickup ? 'Submit failed pickup' : 'Submit issue'}
+          {isCustomerCollection ? 'Submit failed pickup' : 'Submit issue'}
         </button>
       </div>
     </DeliveryActionModal>
@@ -1243,7 +1117,7 @@ function DeliveryActions({
   ) : null;
 
   if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
-    if (!canUpdateStatus && !(canReportIssue && isRepairPickup)) return null;
+    if (!canUpdateStatus && !(canReportIssue && isCustomerCollection)) return null;
     const key = `pickup:${delivery.id}`;
     const pickupProof = delivery.proofs
       ?.filter(({ handoff_type }) => handoff_type === 'pickup')
@@ -1251,10 +1125,14 @@ function DeliveryActions({
 
     return (
       <div className="space-y-3">
+        {canUpdateStatus && isCustomerCollection && !arrival && <button type="button"
+          disabled={mutationDisabled || pendingAction === arrivalKey}
+          onClick={() => runAction(arrivalKey, () => logisticsApi.arrive(delivery.id, { arrival_type: 'pickup' }))}
+          className={buttonClass}>I've arrived for pickup</button>}
         {canUpdateStatus && (
           <button
             type="button"
-            disabled={mutationDisabled || pendingAction === key}
+            disabled={mutationDisabled || Boolean(delivery.start_blocked_reason) || pendingAction === key}
             onClick={() =>
               runAction(
                 key,
@@ -1274,7 +1152,7 @@ function DeliveryActions({
             Confirm pickup
           </button>
         )}
-        {canReportIssue && isRepairPickup && (
+        {canReportIssue && isCustomerCollection && (
           <>
             <button
               type="button"
@@ -1299,7 +1177,7 @@ function DeliveryActions({
     return (
       <button
         type="button"
-        disabled={mutationDisabled || pendingAction === key}
+        disabled={mutationDisabled || Boolean(delivery.start_blocked_reason) || pendingAction === key}
         onClick={() =>
           runAction(
             key,
@@ -1624,7 +1502,9 @@ function CurrentDeliveryCard({
     );
   }
 
-  const progress = completedProgress(item.deliveries);
+  const sourceStops = item.interruption?.source_batch_id === item.id ? item.interruption.stops : [];
+  const progress = completedProgress([...item.deliveries, ...sourceStops.filter(stop =>
+    !item.deliveries.some(delivery => delivery.id === stop.shipment_leg_id))]);
   const ordered = orderedDeliveries(item.deliveries);
   const actionable = nextActionableDelivery(ordered);
   const actionableSequence = actionable
@@ -1673,6 +1553,8 @@ function CurrentDeliveryCard({
         </header>
 
         <div className="p-5 xl:p-4">
+          {item.kind === 'batch' && <BatchInterruptionControls batchId={item.id} incident={item.interruption} today={today}
+            canReport={canReportIssue && canUpdateStatus && ['accepted', 'in_progress'].includes(item.status)} disabled={!online || pendingAction !== null} />}
           {actionable ? (
             <>
               <p className="mb-3 text-sm font-bold text-blue-700 dark:text-blue-300">
@@ -1681,6 +1563,7 @@ function CurrentDeliveryCard({
               <ResolutionNotice delivery={actionable} />
               <DeliveryContact delivery={actionable} />
               {liveTrackingEnabled
+                && (!item.interruption || item.interruption.status === 'resolved')
                 && canUpdateStatus
                 && canRiderTrack(actionable)
                 && (
@@ -1722,7 +1605,7 @@ function CurrentDeliveryCard({
                 || (rider_progress_state === undefined && status === 'awaiting_proof_approval')) ? (
                 <p className="font-semibold text-slate-900 dark:text-white">Delivery submitted successfully</p>
               ) : (
-                <p className="font-semibold text-slate-900 dark:text-white">No rider action needed right now</p>
+                <p className="font-semibold text-slate-900 dark:text-white">{item.interruption && item.interruption.status !== 'resolved' ? 'Recovery handoffs are in progress' : 'No rider action needed right now'}</p>
               )}
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                 {item.deliveries.some(({ rider_progress_state }) => rider_progress_state === 'proof_action_required')
@@ -1731,7 +1614,7 @@ function CurrentDeliveryCard({
                     rider_progress_state === 'proof_submitted'
                     || (rider_progress_state === undefined && status === 'awaiting_proof_approval'))
                     ? 'Proof is awaiting dispatcher review. You can continue with other eligible deliveries.'
-                    : 'This page will update when the delivery is ready to continue.'}
+                    : item.interruption && item.interruption.status !== 'resolved' ? 'Check Package handoffs above for your release or receipt. If no action is available, wait for the named participant.' : 'Updates refresh automatically while you are not editing. You can also use Refresh deliveries.'}
               </p>
             </div>
           )}
@@ -1799,9 +1682,11 @@ function UpNextCard({
               {scheduleText(item)} · {deliveryCount(item)}
             </p>
           </div>
-          <StatusChip status={item.status} />
+          <StatusChip status={item.status} label={item.interruption && item.interruption.status !== 'resolved' ? 'Awaiting recovery steps' : item.start_blocked_reason ? 'Start unavailable' : undefined} />
         </div>
         <div className="mt-5 xl:mt-4">
+          {item.kind === 'batch' && <BatchInterruptionControls batchId={item.id} incident={item.interruption} today={today}
+            canReport={canReportIssue && canUpdateStatus && ['accepted', 'in_progress'].includes(item.status)} disabled={!online || pendingAction !== null} />}
           <DeliveryActions
             key={`${item.key}:${actionable?.id ?? 'none'}`}
             item={item}
@@ -2074,7 +1959,7 @@ function CompactListItem({
               {logisticsDeliveryLabel(item)} · {scheduleText(item)} · {deliveryCount(item)}
             </p>
           </div>
-          <StatusChip status={item.status} />
+          <StatusChip status={item.status} label={item.interruption && item.interruption.status !== 'resolved' ? 'Awaiting recovery steps' : item.start_blocked_reason ? 'Start unavailable' : undefined} />
         </div>
       </summary>
       <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
@@ -2246,6 +2131,7 @@ function DeliveryLists({
 export default function MyDeliveries() {
   const {
     deliveryData,
+    custodyHandoffs = [],
     canRecordProof,
     canUpdateStatus = false,
     canReportIssue = false,
@@ -2256,6 +2142,7 @@ export default function MyDeliveries() {
     today = new Date().toISOString().slice(0, 10),
   } = usePage<{
     deliveryData: RiderDeliveryPageData;
+    custodyHandoffs?: CustodyHandoff[];
     canRecordProof: boolean;
     canUpdateStatus?: boolean;
     canReportIssue?: boolean;
@@ -2293,13 +2180,29 @@ export default function MyDeliveries() {
   };
   const reloadDeliveryData = (onFinish: () => void = finishAction) => {
     router.reload({
-      only: ['deliveryData'],
+      only: ['deliveryData', 'custodyHandoffs'],
       onFinish: () => {
         setLastSynced(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         onFinish();
       },
     });
   };
+  useEffect(() => {
+    const refreshIdleWork = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine || actionInFlight.current) return;
+      const editing = document.activeElement?.closest('input,textarea,select,[role="combobox"]');
+      const openDialog = document.querySelector('[role="dialog"],.swal2-container');
+      const selectedFile = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="file"]')).some(input => input.files?.length);
+      const draftNote = Array.from(document.querySelectorAll<HTMLTextAreaElement>('textarea')).some(input => input.value.trim());
+      if (editing || openDialog || selectedFile || draftNote) return;
+      actionInFlight.current = true;
+      reloadDeliveryData();
+    };
+    const interval = window.setInterval(refreshIdleWork, 15000);
+    window.addEventListener('focus', refreshIdleWork);
+    return () => { window.clearInterval(interval); window.removeEventListener('focus', refreshIdleWork); };
+  }, []);
+
   const refreshDeliveries = () => {
     if (!online || actionInFlight.current) return;
     actionInFlight.current = true;
@@ -2331,7 +2234,7 @@ export default function MyDeliveries() {
         const errors = error.response?.data?.errors;
         const message = errors
           ? Object.values(errors).flat().join(' ')
-          : error.response?.data?.message ?? 'Unable to update this delivery.';
+          : error.response?.data?.message?.trim() || 'This action is unavailable. Refresh deliveries and check the current assignment or ask dispatch.';
         const stale = error.response?.status === 409
           || (error.response?.status === 422
             && /stale|changed|no longer|not your current|refresh my deliveries/i.test(message));
@@ -2360,6 +2263,7 @@ export default function MyDeliveries() {
   return (
     <AppLayoutERP>
       <Head title="My Deliveries" />
+      <CustodyHandoffs handoffs={custodyHandoffs} />
       <div className="mx-auto w-full max-w-xl space-y-8 pb-[calc(2rem+env(safe-area-inset-bottom))] md:max-w-3xl xl:max-w-6xl xl:space-y-6 xl:pb-10">
         <header className="text-center xl:text-left">
           <h1 className="sr-only">My Deliveries</h1>

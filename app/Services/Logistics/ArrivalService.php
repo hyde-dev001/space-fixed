@@ -23,6 +23,7 @@ class ArrivalService
     ];
 
     public function __construct(
+        private LogisticsMovementEligibility $movements,
         private DeliveryEventService $events,
         private RiderActiveWorkGuard $activeWork,
     ) {}
@@ -30,10 +31,12 @@ class ArrivalService
     public function record(ShipmentLeg $leg, Authenticatable $actor, array $payload): DeliveryEvent
     {
         return DB::transaction(function () use ($leg, $actor, $payload) {
+            $this->movements->lockShopForLeg($leg);
             $leg = ShipmentLeg::query()
                 ->with('shipment.shopOwner.logisticsSetting')
                 ->lockForUpdate()
                 ->findOrFail($leg->id);
+            $this->activeWork->assertNotHeld($leg);
             $eventType = $payload['arrival_type'] === 'pickup'
                 ? 'pickup_arrived'
                 : 'dropoff_arrived';

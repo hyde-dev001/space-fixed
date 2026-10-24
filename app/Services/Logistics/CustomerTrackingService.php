@@ -2,7 +2,9 @@
 
 namespace App\Services\Logistics;
 
+use App\Models\Logistics\DeliveryIncidentStop;
 use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShipmentCustodyTransfer;
 use App\Models\Order;
 use App\Models\OrderRefund;
 use App\Models\RepairRequest;
@@ -88,6 +90,7 @@ class CustomerTrackingService
             'tracking_number' => $retailDelivery['tracking_number'],
             'tracking_url' => $retailDelivery['tracking_url'],
             'status' => $shipment->status->value,
+            'recovery' => $this->recoverySummary($shipment),
             'source_type' => $shipment->source_type,
             'source_summary' => $this->repairSourceSummary($shipment),
             'created_at' => optional($shipment->created_at)->toISOString(),
@@ -163,13 +166,38 @@ class CustomerTrackingService
 
                 return $payload;
             })->values()->all(),
-            'events' => $shipment->events->map(fn ($event) => [
+            'events' => $shipment->events->reject(fn ($event) => str_starts_with($event->event_type, 'custody_transfer_'))->map(fn ($event) => [
                 'id' => $event->id,
                 'shipment_leg_id' => $event->shipment_leg_id,
                 'event_type' => $event->event_type,
                 'message' => $event->message,
                 'created_at' => optional($event->created_at)->toISOString(),
             ])->values()->all(),
+        ];
+    }
+
+    private function recoverySummary(Shipment $shipment): ?array
+    {
+        $legIds = $shipment->legs->reject(fn ($leg) => in_array($leg->status->value, ['delivered', 'cancelled'], true))->modelKeys();
+        $stop = DeliveryIncidentStop::with('incident')
+            ->whereIn('shipment_leg_id', $legIds)->where('held', true)->latest('id')->first();
+        if (! $stop) {
+            return null;
+        }
+
+        $transferring = ShipmentCustodyTransfer::where('shipment_leg_id', $stop->shipment_leg_id)
+            ->whereIn('status', ['requested', 'released'])->exists();
+        $state = $stop->incident->resolution === 'reassign'
+            ? ($transferring ? 'awaiting_handoff' : 'preparing_continuation') : 'delayed';
+        return [
+            'state' => $state,
+            'label' => 'Delivery delayed',
+            'message' => match ($state) {
+                'awaiting_handoff' => 'The shop arranged a replacement rider. The parcel transfer must finish before delivery continues.',
+                'preparing_continuation' => 'The shop is preparing the recovery route. Delivery has not resumed yet.',
+                default => 'The shop is arranging safe recovery after a vehicle interruption.',
+            },
+            'next_step' => 'No action needed. The shop will update you when delivery continues.',
         ];
     }
 

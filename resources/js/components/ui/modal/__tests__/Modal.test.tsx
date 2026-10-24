@@ -1,6 +1,6 @@
 import React from 'react';
-import { cleanup, render } from '@testing-library/react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Modal } from '../index';
 
 afterEach(() => {
@@ -41,4 +41,26 @@ describe('Modal body scroll handling', () => {
     expect(backdrop).toBeInTheDocument();
     expect(backdrop).toHaveClass('bg-black/10', 'backdrop-blur-sm');
   });
+});
+
+
+describe('opt-in accessible modal', () => {
+  it('contains keyboard focus, makes background inert, and restores the trigger', () => {
+    const trigger=document.createElement('button');document.body.append(trigger);trigger.focus();
+    const close=vi.fn();
+    const { unmount }=render(<Modal isOpen ariaLabel="Confirm refund" onClose={close} showCloseButton={false}><button>Cancel</button><button>Confirm</button></Modal>);
+    const dialog=screen.getByRole('dialog', { name:'Confirm refund' });
+    expect(trigger).toHaveAttribute('inert');
+    expect(screen.getByRole('button',{name:'Cancel'})).toHaveFocus();
+    screen.getByRole('button',{name:'Confirm'}).focus();fireEvent.keyDown(dialog,{key:'Tab'});
+    expect(screen.getByRole('button',{name:'Cancel'})).toHaveFocus();
+    fireEvent.keyDown(dialog,{key:'Escape'});expect(close).toHaveBeenCalledOnce();
+    unmount();expect(trigger).not.toHaveAttribute('inert');expect(trigger).toHaveFocus();trigger.remove();
+  });
+});
+
+it('restores scrolling after a nested details/execution pair unmounts together', () => {
+ const {rerender,unmount}=render(<><Modal isOpen onClose={()=>undefined}><button>Details</button></Modal></>);
+ rerender(<><Modal isOpen onClose={()=>undefined}><button>Details</button></Modal><Modal isOpen onClose={()=>undefined}><button>Execution</button></Modal></>);
+ unmount();expect(document.body.style.overflow).toBe('');
 });

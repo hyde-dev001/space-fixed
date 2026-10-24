@@ -172,6 +172,8 @@ class RepairDeliveryReconciliationTest extends TestCase
         ]);
         $target = app(RepairDeliveryService::class)
             ->intakeHandoff($repair->fresh(), true)['cancellation_target'];
+        $retryRider = \App\Models\Logistics\RiderProfile::factory()->create(['shop_owner_id' => $repair->shop_owner_id]);
+        \App\Models\Logistics\DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'rider_profile_id' => $retryRider->id, 'status' => 'cancelled']);
         app(ShipmentLegService::class)->resolveRetry($leg->fresh(), 'Retry approved.');
         $shipmentStatus = $shipment->fresh()->status->value;
 
@@ -187,7 +189,7 @@ class RepairDeliveryReconciliationTest extends TestCase
             );
             $this->fail('A retry must win over a stale failed-pickup cancellation.');
         } catch (ValidationException) {
-            $this->assertSame('pending', $leg->fresh()->status->value);
+            $this->assertSame('assigned', $leg->fresh()->status->value);
             $this->assertSame($shipmentStatus, $shipment->fresh()->status->value);
             $this->assertNull($repair->fresh()->logistics_payment_reconciliation);
             $this->assertFalse($leg->events()->where('event_type', 'pickup_cancelled')->exists());

@@ -17,6 +17,7 @@ class HandoffProof extends Model
 
     protected $fillable = [
         'shipment_leg_id',
+        'delivery_assignment_id',
         'shop_owner_id',
         'proof_number',
         'replaces_proof_id',
