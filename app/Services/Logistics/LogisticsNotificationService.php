@@ -68,9 +68,9 @@ class LogisticsNotificationService
             $this->notifyRider($event, $type);
         }
 
-        if ($event->event_type === 'delivery_cancelled'
-            && $event->visibility === 'customer'
-            && $event->shipment->source_type === 'order') {
+        if ($event->shipment->source_type === 'order'
+            && (($event->event_type === 'delivery_cancelled' && $event->visibility === 'customer')
+                || (in_array($event->event_type, ['delivery_incident_reported', 'loss_confirmed'], true) && $event->visibility === 'internal'))) {
             $this->notifyOrderStaff($event, $type);
         }
 
@@ -218,11 +218,15 @@ class LogisticsNotificationService
                     'shop_id' => $event->shipment->shop_owner_id,
                     'type' => $type->value,
                     'priority' => 'high',
-                    'title' => 'Delivery Cancelled',
+                    'title' => match ($event->event_type) {
+                        'delivery_incident_reported' => 'Delivery Incident Reported',
+                        'loss_confirmed' => 'Parcel Loss Confirmed - Review Order',
+                        default => 'Delivery Cancelled',
+                    },
                     'message' => $event->message ?: 'Delivery cancelled.',
                     'data' => $this->eventData($event) + ['order_id' => $event->shipment->source_id],
                     'action_url' => '/erp/staff/job-orders',
-                    'requires_action' => true,
+                    'requires_action' => $event->event_type !== 'delivery_incident_reported',
                 ]);
             });
     }

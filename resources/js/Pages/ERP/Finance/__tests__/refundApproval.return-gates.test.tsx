@@ -87,3 +87,15 @@ describe("Finance customer refund gates", () => {
     }))).toBe("Refunded");
   });
 });
+
+it("explains a loss claim waiting for Staff without asking for physical inspection", () => {
+  const claim = request({ returnStatus: 'not_required', requiresStaffApproval: true, staffApprovalStatus: 'pending', financeStatus: 'pending' });
+  expect(canFinanceAuthorizeRefund(claim)).toBe(false);
+  expect(getFinanceApprovalNotice(claim)).toContain('Staff');
+  expect(getFinanceApprovalNotice(claim)).toContain('No physical return');
+});
+
+it("routes rejected loss decisions to owner reconsideration rather than repeating Staff waiting text", () => {
+  expect(getFinanceApprovalNotice(request({ canRequestCorrection: true, returnStatus: "not_required", requiresStaffApproval: true }))).toContain("Shop Owner");
+  expect(getFinanceApprovalNotice(request({ replacementRefundId: 72 }))).toContain("#72");
+});

@@ -65,6 +65,26 @@ const packageItem = (overrides: Partial<OwnerAttentionItem> = {}): OwnerAttentio
 });
 
 describe("OwnerApprovalDetailPanel", () => {
+  it("lets the owner send a rejected loss for correction without an Approve payment action", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ id: 12, rawStatus: 'rejected', canRequestCorrection: true,
+        rejectionReason: 'Missing investigation detail.', rejectionReviewedBy: 'Synthetic Finance', owner_projection: { owner_action_required: false } }) })
+      .mockResolvedValueOnce({ ok: true, status: 201, json: async () => ({ replacementRefundId: 13 }) });
+    vi.stubGlobal('fetch', fetchMock);
+    const complete = vi.fn();
+    render(<OwnerApprovalDetailPanel item={item({ source_type: 'order_refund', coverage_source: 'refunds' })}
+      selection={{ sourceType: 'order_refund', sourceId: 12 }} onClose={vi.fn()} onDecisionComplete={complete} />);
+    const send = await screen.findByRole('button', { name: 'Send back for correction' });
+    expect(send).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    expect(screen.getByText('Missing investigation detail.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Correction instructions'), { target: { value: 'Attach the missing investigation and review eligibility again.' } });
+    expect(screen.getByLabelText('Correction instructions')).toHaveValue('Attach the missing investigation and review eligibility again.');
+    fireEvent.click(send);
+    await waitFor(() => expect(complete).toHaveBeenCalledOnce());
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/shop-owner/refunds/12/request-correction');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual(expect.objectContaining({ reason: 'Attach the missing investigation and review eligibility again.', request_key: expect.any(String) }));
+  });
   beforeEach(() => {
     sweetAlertFire.mockReset();
     sweetAlertFire.mockResolvedValue({ isConfirmed: true });

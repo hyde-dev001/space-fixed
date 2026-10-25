@@ -17,6 +17,29 @@ class RecoveryNotificationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_staff_receive_shop_scoped_incident_and_loss_notices_once_per_occurrence(): void
+    {
+        [, $shipment, $leg] = $this->customerLeg();
+        $permission = \Spatie\Permission\Models\Permission::findOrCreate('access-staff-job-orders', 'user');
+        $staff = User::factory()->create(['shop_owner_id' => $shipment->shop_owner_id]);
+        $staff->givePermissionTo($permission);
+        $foreign = User::factory()->create();
+        $foreign->givePermissionTo($permission);
+        foreach (['delivery_incident_reported', 'loss_confirmed'] as $type) {
+            $event = app(DeliveryEventService::class)->record($shipment, $leg, ['event_type' => $type,
+                'visibility' => 'internal', 'metadata' => ['incident_id' => 42]]);
+            app(DeliveryEventService::class)->deliverNotifications($event->id);
+            app(DeliveryEventService::class)->deliverNotifications($event->id);
+        }
+        $notices = Notification::where('user_id', $staff->id)->get();
+        $this->assertCount(2, $notices);
+        $this->assertSame(0, Notification::where('user_id', $foreign->id)->count());
+        foreach ($notices as $notice) {
+            $this->assertSame('/erp/staff/job-orders', $notice->action_url);
+            $this->assertSame($shipment->source_id, $notice->data['order_id']);
+        }
+    }
+
     public function test_internal_parcel_transfers_keep_actor_notices_without_customer_action_spam(): void
     {
         [$customer, $shipment, $leg] = $this->customerLeg();

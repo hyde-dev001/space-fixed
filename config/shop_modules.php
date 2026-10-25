@@ -759,6 +759,7 @@ $routeBuckets = [
         'shop_owner.refunds.execute',
         'shop_owner.refunds.index',
         'shop_owner.refunds.reject',
+        'shop_owner.refunds.request-correction',
         'shop_owner.refunds.show',
         'shop_owner.salary-changes.approve',
         'shop_owner.salary-changes.index',
@@ -998,6 +999,7 @@ $routeBuckets = [
 
 $routeMethods = static function (string $routeName): array {
     $overrides = [
+        'shop_owner.refunds.request-correction' => ['POST'],
         'shop-owner.settings.xendit-key' => ['POST'],
         'shop-owner.settings.xendit-key.test' => ['POST'],
         'shop-owner.shell.setup-guide.progress' => ['POST'],
@@ -1890,6 +1892,7 @@ $ownerModulePageGroups = [
                 'shop_owner.refunds.index',
                 'shop_owner.refunds.approve',
                 'shop_owner.refunds.reject',
+                'shop_owner.refunds.request-correction',
                 'shop_owner.refunds.execute',
                 'shop_owner.repair-refunds.index',
                 'shop_owner.repair-refunds.approve',
@@ -2709,6 +2712,7 @@ $ownerRefundRouteBusinessTypes = [
     'shop_owner.refunds.show' => ['retail', 'both'],
     'shop_owner.refunds.approve' => ['retail', 'both'],
     'shop_owner.refunds.reject' => ['retail', 'both'],
+    'shop_owner.refunds.request-correction' => ['retail', 'both'],
     'shop_owner.refunds.execute' => ['retail', 'both'],
     'shop_owner.repair-refunds.index' => ['repair', 'both'],
     'shop_owner.repair-refunds.show' => ['repair', 'both'],

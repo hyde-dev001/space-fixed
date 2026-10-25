@@ -214,6 +214,19 @@ final class OwnerApprovalHistoryService
 
         if (in_array('refunds', $enabledCoverages, true)) {
             foreach (OrderRefund::query()->where('shop_owner_id', $owner->getKey())->get() as $refund) {
+                if ($refund->status === 'rejected' && $refund->reason_code === 'delivery_loss_confirmed'
+                    && $refund->replacement_refund_id && $refund->recovery_resolved_by_type === 'shop_owner'
+                    && (int) $refund->recovery_resolved_by_id === (int) $owner->getKey()) {
+                    $items[] = $this->item(
+                        'order_refund', (int) $refund->getKey(), 'refunds',
+                        'Rejected loss refund #'.$refund->getKey(),
+                        'Rejected claim sent for correction as refund #'.$refund->replacement_refund_id.'. No payout authorized.',
+                        'rejected', $this->dateString($refund->recovery_resolved_at), $this->dateString($refund->requested_at),
+                        $this->numericAmount($refund->amount), $this->text($refund->recovery_resolution_reason), $this->ownerDisplayName($owner),
+                    );
+                    continue;
+                }
+
                 if ($refund->requires_owner_approval === false) {
                     $review = $this->finalDirectReview(
                         $refund->finance_status,

@@ -44,7 +44,7 @@ export default function RefundApprovalDetails({ detail, item }: ApprovalDetailRe
         <DetailGrid>
           <DetailField label="Amount" value={formatCurrency(amount)} />
           <DetailField label="Status" value={<StatusBadge value={status} />} />
-          <DetailField label="Approval stage" value={formatStatus(pick(detail, "approvalStage", "approval.current_approver_role", "current_approver_role") ?? "Shop owner")} />
+          <DetailField label="Approval stage" value={detail.canRequestCorrection === true ? "Shop owner reconsideration" : formatStatus(pick(detail, "approvalStage", "approval.current_approver_role", "current_approver_role") ?? "Shop owner")} />
           <DetailField label="Record" value={item.title} />
         </DetailGrid>
       </DetailSection>
@@ -95,6 +95,15 @@ export default function RefundApprovalDetails({ detail, item }: ApprovalDetailRe
         </DetailSection>
       )}
 
+      {Boolean(detail.rejectionReason || detail.replacementRefundId) && <DetailSection title="Rejection and correction">
+        <DetailGrid>
+          <DetailField label="Rejection reason" value={stringValue(detail.rejectionReason)} />
+          <DetailField label="Rejected by" value={stringValue(detail.rejectionReviewedBy)} />
+          <DetailField label="Linked correction request" value={detail.replacementRefundId ? `#${String(detail.replacementRefundId)}` : 'Awaiting owner reconsideration'} />
+          {detail.replacementRefundId && <DetailField label="Owner correction instructions" value={stringValue(detail.correctionInstructions)} />}
+          {detail.replacementRefundId && <DetailField label="Sent for correction" value={formatDate(detail.correctionRequestedAt)} />}
+        </DetailGrid>
+      </DetailSection>}
       <DetailSection title="Workflow/history">
         <DetailGrid>
           <DetailField label="Current owner" value={formatStatus(pick(detail, "approvalStage", "approval.current_approver_role", "current_approver_role") ?? "Shop owner")} />

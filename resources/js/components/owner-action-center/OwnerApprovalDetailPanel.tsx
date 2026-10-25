@@ -11,6 +11,7 @@ import ApprovalDecisionFooter from "./ApprovalDecisionFooter";
 import { isRecord, type ApprovalDetail } from "./approvalDetails";
 import type { OwnerAttentionItem } from "../../types/ownerActionCenter";
 import { Modal } from "../ui/modal";
+import { useMaintenance } from "../../providers/MaintenanceProvider";
 import { workflowFeedback } from "../../utils/workflowFeedback";
 
 interface OwnerApprovalDetailPanelProps {
@@ -46,6 +47,7 @@ const normalizedStatus = (value: unknown): string => (
 );
 
 const isTerminal = (detail: ApprovalDetail, sourceType: string): boolean => {
+  if (sourceType === "order_refund" && detail.canRequestCorrection === true) return false;
   if (sourceType === "repair_refund" || sourceType === "order_refund") {
     if (isRecord(detail.owner_projection) && detail.owner_projection.owner_action_required === false) {
       return true;
@@ -130,6 +132,14 @@ export default function OwnerApprovalDetailPanel({
   const [submitting, setSubmitting] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [refreshToken, setRefreshToken] = useState(0);
+  const [correctionReason, setCorrectionReason] = useState("");
+  const [confirmingCorrection, setConfirmingCorrection] = useState(false);
+  const [correctionRequestKey, setCorrectionRequestKey] = useState(() => crypto.randomUUID());
+  const mutationInFlight = useRef(false);
+  const { isRouteFrozen } = useMaintenance();
+  const correctionMode = selection.sourceType === 'order_refund' && detail?.canRequestCorrection === true;
+  const correctionFrozen = isRouteFrozen('shop_owner.refunds.request-correction');
+  const closeSafely = () => { if (!submitting && !confirmingCorrection) onClose(); };
 
   useEffect(() => {
     previousFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -181,11 +191,16 @@ export default function OwnerApprovalDetailPanel({
     };
   }, [definition, selection.sourceId, selection.sourceType, refreshToken]);
 
+  useEffect(() => {
+    setCorrectionReason("");
+    setCorrectionRequestKey(crypto.randomUUID());
+  }, [selection.sourceType, selection.sourceId]);
+
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      closeSafely();
       return;
     }
 
@@ -209,13 +224,17 @@ export default function OwnerApprovalDetailPanel({
   const canDecide = item.owner_action_required && item.primary_bucket === "needs_my_decision" && detail !== null && !isTerminal(detail, item.source_type);
 
   const submitDecision = async (action: ApprovalAction, reason?: string) => {
-    if (!definition || submitting || !canDecide) return;
-    const config = definition[action];
+    if (!definition || submitting || mutationInFlight.current || !canDecide) return;
+    const config = correctionMode ? {
+      path: (id: number) => `/api/shop-owner/refunds/${id}/request-correction`,
+      body: (instructions?: string) => ({ reason: instructions ?? '', request_key: correctionRequestKey }),
+    } : definition[action];
     if (!config) return;
 
+    mutationInFlight.current = true;
     setSubmitting(true);
     setError(null);
-    setAnnouncement(`${action === "approve" ? "Approval" : "Rejection"} is being saved.`);
+    setAnnouncement(correctionMode ? "Correction request is being saved." : `${action === "approve" ? "Approval" : "Rejection"} is being saved.`);
 
     try {
       const token = csrfToken();
@@ -242,10 +261,10 @@ export default function OwnerApprovalDetailPanel({
         throw { status: response.status, payload };
       }
 
-      setAnnouncement(`${action === "approve" ? "Approval" : "Rejection"} saved.`);
+      setAnnouncement(correctionMode ? "Sent back for correction." : `${action === "approve" ? "Approval" : "Rejection"} saved.`);
       await workflowFeedback.success({
-        title: action === "approve" ? "Approval successful" : "Rejection successful",
-        text: action === "approve"
+        title: correctionMode ? "Sent back for correction" : action === "approve" ? "Approval successful" : "Rejection successful",
+        text: correctionMode ? "A linked request is now with Staff. Required approvals must be completed again; no payout was authorized." : action === "approve"
           ? "The approval was saved successfully."
           : "The rejection was saved successfully.",
         timer: 1800,
@@ -264,18 +283,19 @@ export default function OwnerApprovalDetailPanel({
       setAnnouncement("The decision could not be saved.");
       await workflowFeedback.error(
         message,
-        action === "approve" ? "Approval failed" : "Rejection failed",
+        correctionMode ? "Correction request failed" : action === "approve" ? "Approval failed" : "Rejection failed",
       );
     } finally {
+      mutationInFlight.current = false;
       setSubmitting(false);
     }
   };
 
   if (!definition) {
     return (
-      <Modal isOpen={true} onClose={onClose} showCloseButton={false} size="5xl" className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden !rounded-3xl">
+      <Modal isOpen={true} onClose={closeSafely} showCloseButton={false} size="5xl" className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden !rounded-3xl">
         <section role="dialog" aria-modal="true" aria-label="Approval details" className="max-h-[min(92dvh,60rem)] overflow-y-auto bg-white p-5 dark:bg-gray-950 sm:p-6">
-          <button type="button" onClick={onClose} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold dark:border-gray-700">Close</button>
+          <button type="button" onClick={closeSafely} className="min-h-11 rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold dark:border-gray-700">Close</button>
           <p role="alert" className="mt-4 text-sm">This record is not an owner approval decision.</p>
         </section>
       </Modal>
@@ -285,7 +305,7 @@ export default function OwnerApprovalDetailPanel({
   const Renderer = definition.renderer;
 
   return (
-    <Modal isOpen={true} onClose={onClose} showCloseButton={false} size="5xl" className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden !rounded-3xl">
+    <Modal isOpen={true} onClose={closeSafely} showCloseButton={false} size="5xl" className="m-4 max-h-[calc(100dvh-2rem)] overflow-hidden !rounded-3xl">
       <section
         role="dialog"
         aria-modal="true"
@@ -302,8 +322,9 @@ export default function OwnerApprovalDetailPanel({
         <button
           ref={closeButtonRef}
           type="button"
+          disabled={submitting || confirmingCorrection}
           aria-label="Close approval details"
-          onClick={onClose}
+          onClick={closeSafely}
           className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg border border-gray-300 px-3 text-sm font-semibold text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-700 dark:text-gray-200"
         >
           Close
@@ -336,7 +357,32 @@ export default function OwnerApprovalDetailPanel({
       {!loading && detail && (
         <section className="shrink-0 border-t border-gray-200 bg-gray-50 pb-[env(safe-area-inset-bottom)] pt-4 dark:border-gray-800 dark:bg-gray-900" aria-label="Approval decision">
           <div className="flex justify-end">
-            {canDecide ? (
+            {canDecide && correctionMode ? (
+              <form aria-label="Return rejected loss for correction" className="w-full space-y-3" onSubmit={event => {
+                event.preventDefault();
+                if (correctionFrozen || submitting || confirmingCorrection || correctionReason.trim().length < 10) return;
+                setConfirmingCorrection(true);
+                void (async () => {
+                  try {
+                    const confirmation = await workflowFeedback.confirm({ title: 'Send back for correction?',
+                      text: 'Keep the original rejection and create a linked Staff review request. All required financial approvals must be completed again; this does not authorize payment.',
+                      confirmButtonText: 'Send back for correction' });
+                    if (confirmation.isConfirmed) await submitDecision('approve', correctionReason.trim());
+                  } finally { setConfirmingCorrection(false); }
+                })();
+              }}>
+                <label htmlFor="loss-refund-correction-instructions" className="block text-sm font-semibold">Correction instructions</label>
+                  <textarea id="loss-refund-correction-instructions" minLength={10} maxLength={1000} required disabled={submitting || confirmingCorrection}
+                    value={correctionReason} onChange={event => setCorrectionReason(event.target.value)}
+                    className="mt-1 block min-h-24 w-full rounded-lg border border-gray-300 bg-white p-3 text-gray-950 dark:border-gray-600 dark:bg-gray-900 dark:text-white" />
+                <p className="text-sm text-gray-600 dark:text-gray-300">Next: Staff → Retail Job Orders → Refund. The rejected request and its reviewer remain in history.</p>
+                {correctionFrozen && <p role="status">Correction actions are paused during maintenance.</p>}
+                <button type="submit" data-critical disabled={submitting || confirmingCorrection || correctionFrozen || correctionReason.trim().length < 10}
+                  className="min-h-11 rounded-lg bg-gray-950 px-4 py-2 font-semibold text-white disabled:opacity-50">
+                  {submitting ? 'Sending…' : 'Send back for correction'}
+                </button>
+              </form>
+            ) : canDecide ? (
               <ApprovalDecisionFooter
                 definition={definition}
                 recordLabel={approvalRecordLabel(item)}

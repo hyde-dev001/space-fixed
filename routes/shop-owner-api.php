@@ -184,6 +184,7 @@ Route::prefix('api/shop-owner')->middleware(['web', 'auth:shop_owner', 'shop.iso
         Route::get('/{id}', [RefundApprovalController::class, 'shopOwnerShow'])->name('shop_owner.refunds.show');
         Route::post('/{id}/approve', [RefundApprovalController::class, 'shopOwnerApprove'])->name('shop_owner.refunds.approve');
         Route::post('/{id}/reject', [RefundApprovalController::class, 'shopOwnerReject'])->name('shop_owner.refunds.reject');
+        Route::post('/{id}/request-correction', [RefundApprovalController::class, 'requestLossCorrection'])->name('shop_owner.refunds.request-correction');
         Route::post('/{id}/execute-gateway-refund', [RefundApprovalController::class, 'shopOwnerExecuteGatewayRefund'])->name('shop_owner.refunds.execute');
     });
 

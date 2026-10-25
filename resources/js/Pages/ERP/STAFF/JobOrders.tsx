@@ -50,6 +50,7 @@ type LogisticsSummary = {
   leg_id?: number | null;
   leg_type?: string | null;
   leg_status?: string | null;
+  resolution_type?: string | null;
   carrier?: string | null;
   rider_name?: string | null;
   rider_phone?: string | null;
@@ -148,6 +149,11 @@ type Order = {
     reason_code?: string | null;
     reason_note?: string | null;
     other_reason_note?: string | null;
+    can_staff_review?: boolean;
+    correction_source_id?: number | null;
+    correction_instructions?: string | null;
+    awaiting_owner_correction?: boolean;
+    replacement_refund_id?: number | null;
     shop_owner_status: string;
     finance_status: string;
     return_status: string;
@@ -537,9 +543,13 @@ export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund">) =>
       && returnStatus === 'pending_staff_pickup');
 };
 
+export const hasConfirmedParcelLoss = (order: Pick<Order, 'logistics' | 'latest_refund'>) =>
+  order.logistics?.resolution_type === 'loss_confirmed' || order.latest_refund?.reason_code === 'delivery_loss_confirmed';
+
 export const canStaffReviewRefund = (order: Pick<Order, "latest_refund">) => {
   const refund = order.latest_refund;
   if (!refund || String(refund.flow_type || '').toLowerCase() !== 'request_approval') return false;
+  if (typeof refund.can_staff_review === 'boolean') return refund.can_staff_review;
 
   return String(refund.shop_owner_status || '').toLowerCase() === 'pending'
     && String(refund.status || '').toLowerCase() === 'requested';
@@ -962,7 +972,7 @@ export default function JobOrdersPage() {
 
       if (latestPosStatus === 'rejected' || latestPosStatus === 'failed' || latestPosStatus === 'cancelled') {
         return {
-          label: 'Refund Rejected',
+          label: latestRefund.awaiting_owner_correction ? 'Awaiting Owner Review' : 'Refund Rejected',
           className: 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-700/40',
         };
       }
@@ -1050,7 +1060,7 @@ export default function JobOrdersPage() {
 
       if (refundStatus === 'requested') {
         return {
-          label: 'Awaiting Staff Review',
+          label: canStaffReviewRefund(order) ? 'Awaiting Staff Review' : 'Awaiting Finance Review',
           className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
         };
       }
@@ -3095,10 +3105,22 @@ export default function JobOrdersPage() {
                     </div>
                   )}
                 </div>
+                {viewOrder.latest_refund?.correction_instructions && (
+                  <section aria-label="Owner correction instructions" className="rounded-lg border border-gray-200 p-4 text-sm dark:border-gray-700">
+                    <h4 className="font-semibold">Correction of rejected refund #{viewOrder.latest_refund.correction_source_id}</h4>
+                    <p className="whitespace-pre-wrap">{viewOrder.latest_refund.correction_instructions}</p>
+                    <p>Reassess the evidence and record a fresh decision. Previous rejection history remains unchanged.</p>
+                  </section>
+                )}
+                {viewOrder.latest_refund?.awaiting_owner_correction && (
+                  <p role="status" className="rounded-lg border border-gray-200 p-4 text-sm dark:border-gray-700">
+                    Refund rejected. Shop Owner must review it in Approval Center and send correction instructions before Staff can reassess. No payout is authorized.
+                  </p>
+                )}
                 {viewOrder.delivery_cancellation && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
-                    <p className="font-semibold">Delivery cancelled</p>
-                    <p>{viewOrder.delivery_cancellation.message || 'The delivery was cancelled. Coordinate with Logistics to reassign it if needed.'}</p>
+                    <p className="font-semibold">{hasConfirmedParcelLoss(viewOrder) ? 'Parcel loss confirmed' : 'Delivery cancelled'}</p>
+                    <p>{hasConfirmedParcelLoss(viewOrder) ? 'Review the loss refund below. No parcel return, inspection or stock restoration is required. Finance and any required owner approval remain separate.' : viewOrder.delivery_cancellation.message || 'The delivery was cancelled. Coordinate with Logistics to reassign it if needed.'}</p>
                   </div>
                 )}
               </div>
@@ -3133,7 +3155,7 @@ export default function JobOrdersPage() {
                     {isRetryableShopOwnedReturn(viewOrder) ? 'Retry Return Pickup' : 'Arrange Return Pickup'}
                   </button>
                 )}
-                {viewOrder.status === "shipped" && !isPosOrder(viewOrder) && viewOrder.carrierCompany !== SHOP_OWNED_LOGISTICS && !canConfirmReturnReceived(viewOrder) && (
+                {viewOrder.status === "shipped" && !hasConfirmedParcelLoss(viewOrder) && !isPosOrder(viewOrder) && viewOrder.carrierCompany !== SHOP_OWNED_LOGISTICS && !canConfirmReturnReceived(viewOrder) && (
                   <button
                     onClick={() => handleActivatePickup(viewOrder.id)}
                     disabled={isActivatingReceive || Boolean(viewOrder.pickup_enabled)}

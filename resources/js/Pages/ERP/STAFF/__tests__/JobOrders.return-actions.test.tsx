@@ -4,6 +4,7 @@ import {
   canConfirmReturnReceived,
   canSelectShopOwnedReturn,
   canStaffReviewRefund,
+  hasConfirmedParcelLoss,
   isPosOrder,
 } from "../JobOrders";
 
@@ -26,6 +27,14 @@ describe("staff failed-delivery return actions", () => {
 });
 
 describe("staff customer refund actions", () => {
+  it("shows an explicit server-authorized review for a legacy confirmed-loss claim without requesting a return", () => {
+    const order = { latest_refund: { id: 9, status: 'requested', flow_type: 'request_approval', reason_code: 'delivery_loss_confirmed',
+      shop_owner_status: 'approved', finance_status: 'pending', return_status: 'not_required', can_staff_review: true } };
+    expect(hasConfirmedParcelLoss(order)).toBe(true);
+    expect(canStaffReviewRefund(order)).toBe(true);
+    expect(canConfirmReturnReceived(order)).toBe(false);
+    expect(canArrangeReturnPickup(order)).toBe(false);
+  });
   const refund = (overrides: Record<string, unknown> = {}) => ({
     latest_refund: {
       id: 2,

@@ -323,6 +323,69 @@ class OrderRefundApprovalWorkflowTest extends TestCase
         }
     }
 
+    public function test_company_confirmed_loss_enters_staff_review_without_a_fictional_return(): void
+    {
+        [$shop, $staff] = $this->fixture();
+        $order = Order::factory()->create(['shop_owner_id' => $shop->id, 'payment_status' => 'paid', 'payment_method' => 'paymongo', 'paymongo_payment_id' => 'synthetic-loss-payment']);
+        $shipment = \App\Models\Logistics\Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order', 'source_id' => $order->id]);
+        $leg = \App\Models\Logistics\ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'cancelled', 'resolution_type' => 'loss_confirmed']);
+        $service = app(\App\Services\OrderRefundService::class);
+        $refund = $service->reserveConfirmedLossRefund($order, $leg, 'Investigated synthetic parcel loss')['refund'];
+        $this->assertSame('pending', $refund->shop_owner_status);
+        $this->assertSame('not_required', $refund->return_status);
+        $this->assertSame('invalid_state', $service->approveRequestedRefund($refund, 'finance', $staff->id)['result']);
+        $this->assertSame('approved', $service->approveRequestedRefund($refund->fresh(), 'staff', $staff->id)['result']);
+        $this->assertSame($staff->id, $refund->fresh()->staff_approved_by);
+        $this->assertSame('not_required', $refund->fresh()->return_status);
+        $this->assertSame('approved', $service->approveRequestedRefund($refund->fresh(), 'finance', $staff->id)['result']);
+        if ($refund->fresh()->requires_owner_approval) {
+            $this->assertSame('approved_initial', $refund->fresh()->finance_status);
+            $this->assertFalse($service->canExecuteApprovedRefund($refund->fresh()));
+            $this->assertSame('approved', $service->approveRequestedRefund($refund->fresh(), 'shop_owner')['result']);
+            $this->assertSame('approved', $service->approveRequestedRefund($refund->fresh(), 'finance', $staff->id)['result']);
+        }
+        $this->assertSame('not_required', $refund->fresh()->return_status);
+        $this->assertTrue($service->canExecuteApprovedRefund($refund->fresh()));
+    }
+
+    public function test_existing_system_loss_refund_can_be_reviewed_without_inventing_a_prior_staff_approval(): void
+    {
+        [$shop, $staff, $refund] = $this->fixture();
+        $shipment = \App\Models\Logistics\Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order', 'source_id' => $refund->order_id]);
+        $leg = \App\Models\Logistics\ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'cancelled', 'resolution_type' => 'loss_confirmed']);
+        $refund->update(['reason_code' => 'delivery_loss_confirmed', 'return_status' => 'not_required', 'shop_owner_status' => 'approved', 'shop_owner_approved_at' => now(), 'shop_owner_approved_by' => null,
+            'staff_approved_at' => null, 'staff_approved_by' => null, 'idempotency_key' => "delivery-loss-confirmed:{$refund->order_id}:{$leg->id}"]);
+        $this->actingAs($staff, 'user')->getJson("/api/staff/orders/{$refund->order_id}")
+            ->assertOk()->assertJsonPath('latest_refund.can_staff_review', true);
+        $this->actingAs($staff, 'user')->postJson("/api/staff/orders/{$refund->order_id}/refund/approve", ['approval_note' => 'Staff reviewed the loss claim.'])->assertOk();
+        $this->assertSame($staff->id, $refund->fresh()->staff_approved_by);
+        $this->assertSame('pending', $refund->fresh()->finance_status);
+        $this->assertSame('pending', $refund->fresh()->shop_owner_status);
+        $this->assertSame('not_required', $refund->fresh()->return_status);
+        $this->postJson("/api/staff/orders/{$refund->order_id}/refund/approve")->assertUnprocessable();
+    }
+
+    public function test_legacy_loss_review_exception_rejects_unverified_loss_identity(): void
+    {
+        [, $staff, $refund] = $this->fixture();
+        $refund->update(['reason_code' => 'delivery_loss_confirmed', 'return_status' => 'not_required', 'shop_owner_status' => 'approved',
+            'idempotency_key' => "delivery-loss-confirmed:{$refund->order_id}:999999"]);
+        $this->actingAs($staff, 'user')->postJson("/api/staff/orders/{$refund->order_id}/refund/approve")->assertUnprocessable();
+        $this->assertNull($refund->fresh()->staff_approved_by);
+        $this->assertSame('pending', $refund->fresh()->finance_status);
+    }
+
+    public function test_staff_cannot_activate_customer_receipt_for_a_confirmed_lost_parcel(): void
+    {
+        [$shop, $staff, $refund] = $this->fixture();
+        $refund->order->update(['status' => 'shipped']);
+        $shipment = \App\Models\Logistics\Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order', 'source_id' => $refund->order_id]);
+        \App\Models\Logistics\ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'cancelled', 'resolution_type' => 'loss_confirmed']);
+        $this->actingAs($staff, 'user')->postJson("/api/staff/orders/{$refund->order_id}/activate-pickup")
+            ->assertUnprocessable();
+        $this->assertFalse((bool) $refund->order->fresh()->pickup_enabled);
+    }
+
     private function fixture(): array
     {
         $shop = ShopOwner::factory()->create(['registration_type' => 'company']);

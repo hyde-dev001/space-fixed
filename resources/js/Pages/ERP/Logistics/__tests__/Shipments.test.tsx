@@ -16,7 +16,7 @@ it('shows batch interruption guidance instead of collecting new customer proof o
   mocks.props.shipments.data[0].legs[0].batch_interruption = { id: 77, revision: 0, status: 'reported', source_batch_id: 7,
     required_parcels: 1, confirmed_parcels: 0, stops: [] };
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByText('Batch interrupted')).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Submit proof' })).not.toBeInTheDocument();
 });
@@ -155,7 +155,7 @@ it('opens shipment details in an accessible modal and restores trigger focus', (
   mocks.props.canRecordProof = false;
   render(<Shipments />);
 
-  const open = screen.getByRole('button', { name: 'Open delivery' });
+  const open = screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ });
   expect(open).toHaveAttribute('aria-haspopup', 'dialog');
   expect(open).not.toHaveAttribute('aria-expanded');
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -189,7 +189,7 @@ it('keeps the delivery date calendar visible inside the shipment modal', () => {
   });
   render(<Shipments />);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   const datePicker = screen.getByRole('button', { name: 'Open delivery date picker' });
   expect(datePicker).toHaveTextContent('mm/dd/yyyy');
@@ -214,7 +214,7 @@ it('applies shop operating days and blackout dates inside the shipment date pick
   mocks.props.logisticsSchedule = { operating_days: [1, 2, 3, 4, 5], blackout_dates: ['2026-07-23'] };
   render(<Shipments />);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Open delivery date picker' }));
 
   expect(screen.getByRole('button', { name: 'Select July 22, 2026' })).toBeEnabled();
@@ -231,7 +231,7 @@ it('shows a centered rider-waiting state instead of assignment progress when pro
   });
   render(<Shipments />);
 
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.queryByText('Assignment and progress')).not.toBeInTheDocument();
   expect(screen.getByTestId('shipment-proof-preview')).toHaveTextContent('Waiting for rider');
@@ -240,7 +240,7 @@ it('shows a centered rider-waiting state instead of assignment progress when pro
 
 it('closes the selected shipment modal with Escape without changing the shipment list', () => {
   render(<Shipments />);
-  const open = screen.getByRole('button', { name: 'Open delivery' });
+  const open = screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ });
 
   fireEvent.click(open);
   expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
@@ -249,7 +249,7 @@ it('closes the selected shipment modal with Escape without changing the shipment
 
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(screen.getByRole('article')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Open delivery' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ })).toBeInTheDocument();
 });
 
 it('keeps the page scroll locked when the first of multiple shipment modals is open', () => {
@@ -280,7 +280,7 @@ it('shows dispatcher pickup and customer arrival checks with reasons', () => {
     },
   });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getByText('Pickup arrival')).toBeInTheDocument();
   expect(screen.getByText('Verified arrival')).toBeInTheDocument();
@@ -309,7 +309,7 @@ it('labels a repair pickup dropoff as shop arrival', () => {
   };
   mocks.props = props;
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getByText('Shop arrival')).toBeInTheDocument();
   expect(screen.getByText('70 m from shop')).toBeInTheDocument();
@@ -325,7 +325,7 @@ it('distinguishes low GPS accuracy from unavailable location', () => {
     },
   });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getByText('Low GPS accuracy')).toBeInTheDocument();
   expect(screen.getByText('Access restriction')).toBeInTheDocument();
@@ -398,7 +398,7 @@ it('keeps owner shipments read-only even when the server sends dispatch flags', 
   }];
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getByRole('dialog', { name: 'Shipment 1 delivery details' })).toBeInTheDocument();
   expect(screen.queryByLabelText('Choose rider for outbound leg')).not.toBeInTheDocument();
@@ -413,7 +413,7 @@ it.each(['attempt', 'incident'])('previews private %s evidence for a dispatcher 
     incidents: kind === 'incident' ? [{ id: 7, type: 'vehicle_problem', status: 'reported', evidence_urls: [url] }] : [],
   });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByRole('img', { name: 'Reported issue photo' })).toHaveAttribute('src', url);
   expect(screen.getByRole('button', { name: 'View issue photo' })).toBeInTheDocument();
   expect(screen.queryByText('Waiting for rider')).not.toBeInTheDocument();
@@ -437,7 +437,7 @@ it('does not expose owner delivery-proof review controls', () => {
   }];
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.queryByRole('button', { name: 'Confirm delivery' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Reject proof' })).not.toBeInTheDocument();
@@ -460,7 +460,7 @@ it('hides owner rider custody and proof controls even when the server sends ride
   }];
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.queryByRole('button', { name: 'Picked up' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Report issue' })).not.toBeInTheDocument();
@@ -598,7 +598,7 @@ it('shows a compact retail summary and every variant when expanded', () => {
   expect(screen.getByText(/2 variants/)).toBeInTheDocument();
   expect(screen.getByText(/\+1 more/)).toBeInTheDocument();
 
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByText(/Black.*Size 9.*Qty 2/)).toBeInTheDocument();
   expect(screen.getByText('Classic Runner')).toBeInTheDocument();
   expect(screen.getByText(/White.*Size 8.*Qty 3/)).toBeInTheDocument();
@@ -656,7 +656,7 @@ it('shows failed-attempt filter and retryable reassignment controls', () => {
   setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'pending', scheduled_delivery_date: '2026-07-20', assignments: [], proofs: [], failed_attempt_count: 1, attempts: [{ id: 7, status: 'failed', attempt_number: 1, reason_code: 'recipient_unavailable' }] });
   render(<Shipments />);
   expect(screen.getByRole('option', { name: 'Failed attempts' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByText('Failed attempt - 1/2')).toBeInTheDocument();
   expect(screen.getByText('Recipient Unavailable')).toBeInTheDocument();
   expect(screen.getByLabelText('Choose rider for outbound leg')).toBeInTheDocument();
@@ -700,7 +700,7 @@ it('lets dispatchers review and resolve failed repair pickups', async () => {
 
   render(<Shipments />);
   expect(screen.getByRole('option', { name: 'Failed pickups' })).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getAllByText('Failed pickup · Needs action')).toHaveLength(2);
   expect(screen.queryByText(/1\/2/)).not.toBeInTheDocument();
@@ -720,7 +720,7 @@ it('lets dispatchers review and resolve failed repair pickups', async () => {
     expect.objectContaining({ reason: 'Customer confirmed Monday.', delivery_date: '2026-07-30', rider_profile_id: 9 }),
   ));
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Arrange another visit' })).not.toBeInTheDocument());
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   vi.mocked(Swal.fire).mockReset().mockResolvedValue({ isConfirmed: true, isDenied: false, isDismissed: false, value: 'Customer cancelled.' });
   fireEvent.click(screen.getByRole('button', { name: 'Cancel Pickup' }));
   await waitFor(() => expect(mocks.post).toHaveBeenNthCalledWith(2,
@@ -752,7 +752,7 @@ it('shows the pickup retry count without using the delivery-attempt limit', () =
   mocks.props.shipments.data[0].source_type = 'repair_request';
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getAllByText('Pickup rescheduled')).toHaveLength(2);
   expect(screen.getByText('Failed pickup · 1 attempt')).toBeInTheDocument();
@@ -775,7 +775,7 @@ it('hides failed pickup actions without dispatcher assignment permission', () =>
   mocks.props.canAssign = false;
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.queryByRole('button', { name: 'Reschedule Pickup' })).not.toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Cancel Pickup' })).not.toBeInTheDocument();
 });
@@ -793,7 +793,7 @@ it('lets dispatcher reject pending delivery proof with a reason', async () => {
   (Swal.fire as any).mockResolvedValueOnce({ isConfirmed: true, value: 'Photo does not show the recipient.' });
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByRole('button', { name: 'View delivery proof' })).toBeInTheDocument();
   expect(screen.queryByRole('link', { name: 'Open uploaded delivery proof' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Reject proof' }));
@@ -827,7 +827,7 @@ it('shows rejected proof lineage without offering another review decision', () =
   mocks.props.canApproveProof = true;
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getByText('Delivery proof #17 · Rejected · replaces proof #11')).toBeInTheDocument();
   expect(screen.getByText('Rejection reason: Photo does not show the recipient.')).toBeInTheDocument();
@@ -848,7 +848,7 @@ it('opens a completed delivery proof in an in-page image modal and restores focu
   mocks.props.shipments.data[0].status = 'completed';
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   const view = screen.getByRole('button', { name: 'View delivery proof' });
   const preview = screen.getByAltText('Uploaded delivery proof');
@@ -892,7 +892,7 @@ it('closes only the delivery proof image with Escape', () => {
   });
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.click(screen.getByRole('button', { name: 'View delivery proof' }));
   fireEvent.keyDown(document, { key: 'Escape' });
 
@@ -903,7 +903,7 @@ it('closes only the delivery proof image with Escape', () => {
 it('shows subject for refund without reassignment at maximum attempts', () => {
   setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'needs_resolution', assignments: [], proofs: [], failed_attempt_count: 2, attempts: [{ id: 8, status: 'failed', attempt_number: 2, reason_code: 'recipient_refused' }] });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByText('Failed attempt - 2/2')).toBeInTheDocument();
   expect(screen.getByText('Resolution required')).toBeInTheDocument();
   expect(screen.queryByLabelText('Choose rider for outbound leg')).not.toBeInTheDocument();
@@ -928,7 +928,7 @@ it('lets dispatchers choose one delivery recovery path and hides it after a retu
     .mockResolvedValueOnce({ isConfirmed: true, value: 'Return to shop.' });
 
   const view = render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getByRole('radio', { name: 'Arrange another delivery attempt' })).toBeInTheDocument();
   expect(screen.getByRole('radio', { name: 'Return parcel to shop' })).toBeInTheDocument();
@@ -945,7 +945,7 @@ it('lets dispatchers choose one delivery recovery path and hides it after a retu
 
   await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Arrange another visit' })).not.toBeInTheDocument());
   fireEvent.click(screen.getByRole('button', { name: /Close delivery details for Shipment/ }));
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   vi.mocked(Swal.fire).mockReset().mockResolvedValue({ isConfirmed: true, isDenied: false, isDismissed: false, value: 'Return to shop.' });
   fireEvent.click(screen.getByRole('radio', { name: 'Return parcel to shop' }));
   fireEvent.change(screen.getByLabelText('Decision reason'), { target: { value: 'Return to shop.' } });
@@ -976,7 +976,7 @@ it('shows the dispatcher resolution selected for a delivery', () => {
     attempts: [],
   });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getByText(
     'Dispatcher scheduled another attempt: Customer requested tomorrow morning.',
@@ -985,7 +985,7 @@ it('shows the dispatcher resolution selected for a delivery', () => {
 
 it('keeps the legacy rider issue form aligned with the evidence matrix', () => {
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.click(screen.getByRole('button', { name: "Couldn't deliver" }));
 
   for (const option of ['Item damaged', 'Unsafe location']) {
@@ -1005,7 +1005,7 @@ it('keeps the legacy rider issue form aligned with the evidence matrix', () => {
 
 it('shows one delivery outcome workflow at a time and clears hidden state', () => {
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.queryByLabelText('Delivery proof photo')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Issue photo')).not.toBeInTheDocument();
 
@@ -1038,7 +1038,7 @@ it('shows one delivery outcome workflow at a time and clears hidden state', () =
 
 it('submits required issue evidence only to the failed-attempt endpoint', async () => {
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.click(screen.getByRole('button', { name: "Couldn't deliver" }));
   const reportIssue = screen.getByRole('button', { name: 'Report issue' });
   const attemptPhoto = new File(['attempt'], 'attempt.jpg', { type: 'image/jpeg' });
@@ -1064,7 +1064,7 @@ it('submits required issue evidence only to the failed-attempt endpoint', async 
 it('schedules an eligible pending leg before assigning its rider', async () => {
   setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'pending', delivery_batch_id: null, assignments: [], proofs: [], attempts: [] });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   const submit = screen.getByRole('button', { name: 'Schedule & assign rider' });
   expect(screen.getByLabelText('Delivery window')).toHaveValue('morning');
@@ -1087,7 +1087,7 @@ it('schedules an eligible pending leg before assigning its rider', async () => {
 it('saves the schedule without assigning an already assigned leg', async () => {
   setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'assigned', delivery_batch_id: null, assignments: [{ id: 3, status: 'assigned', rider_profile: { id: 9, name: 'Rider Nine' } }], proofs: [], attempts: [] });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.change(screen.getByLabelText('Delivery date'), { target: { value: '2026-07-20' } });
   fireEvent.change(screen.getByLabelText('Delivery window'), { target: { value: 'afternoon' } });
   fireEvent.click(screen.getByRole('button', { name: 'Save schedule' }));
@@ -1103,7 +1103,7 @@ it('hides scheduling controls without assign permission', () => {
   mocks.props.canAssign = false;
   mocks.props.canApproveProof = true;
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.queryByLabelText('Delivery date')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Delivery window')).not.toBeInTheDocument();
 });
@@ -1111,7 +1111,7 @@ it('hides scheduling controls without assign permission', () => {
 it('hides scheduling controls for a leg already in a delivery batch', () => {
   setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'pending', delivery_batch_id: 7, assignments: [], proofs: [], attempts: [] });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.queryByLabelText('Delivery date')).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Delivery window')).not.toBeInTheDocument();
 });
@@ -1120,7 +1120,7 @@ it('retries only assignment after scheduling succeeded and refreshed props show 
   setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'pending', delivery_batch_id: null, assignments: [], proofs: [], attempts: [] });
   mocks.post.mockResolvedValueOnce(undefined).mockRejectedValueOnce({ response: { data: { message: 'Rider unavailable.' } } });
   const view = render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.change(screen.getByLabelText('Delivery date'), { target: { value: '2026-07-20' } });
   fireEvent.change(screen.getByLabelText('Delivery window'), { target: { value: 'morning' } });
   fireEvent.change(screen.getByLabelText('Choose rider for outbound leg'), { target: { value: '9' } });
@@ -1141,7 +1141,7 @@ it('keeps scheduling locked until refreshed shipment props finish loading', asyn
   setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'pending', delivery_batch_id: null, assignments: [], proofs: [], attempts: [] });
   mocks.reload.mockImplementation(() => undefined);
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.change(screen.getByLabelText('Delivery date'), { target: { value: '2026-07-20' } });
   fireEvent.change(screen.getByLabelText('Delivery window'), { target: { value: 'morning' } });
   fireEvent.change(screen.getByLabelText('Choose rider for outbound leg'), { target: { value: '9' } });
@@ -1159,14 +1159,14 @@ it.each(['assigned', 'picked_up'])('hides failed-attempt controls while a leg is
   mocks.props = defaultProps();
   mocks.props.shipments.data[0].legs[0].status = status;
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.queryByText("Couldn't deliver")).not.toBeInTheDocument();
   expect(screen.queryByLabelText('Issue reason')).not.toBeInTheDocument();
 });
 
 it('shows failed-attempt controls for an in-transit leg', () => {
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.click(screen.getByRole('button', { name: "Couldn't deliver" }));
   expect(screen.getByLabelText('Issue reason')).toBeInTheDocument();
 });
@@ -1175,7 +1175,7 @@ it('shows failed-attempt controls for a delivery-attempted leg', () => {
   mocks.props = defaultProps();
   mocks.props.shipments.data[0].legs[0].status = 'delivery_attempted';
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByLabelText('Issue reason')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Request cancellation' })).toBeInTheDocument();
 });
@@ -1191,7 +1191,7 @@ it('uses return handoff controls instead of customer delivery outcomes', async (
     .mockResolvedValueOnce({ data: { leg: { id: 2 } } });
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.queryByText('Delivered successfully')).not.toBeInTheDocument();
   expect(screen.queryByText("Couldn't deliver")).not.toBeInTheDocument();
@@ -1219,10 +1219,28 @@ it('lets staff confirm a rider-confirmed return receipt', async () => {
   mocks.props.canApproveProof = true;
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   fireEvent.click(screen.getByRole('button', { name: 'Confirm return received' }));
   await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/logistics/legs/2/return-proofs/17/receipt', undefined, undefined));
+});
+
+it('flags unresolved incidents on the dispatcher list before opening delivery details', () => {
+  setDispatcherLeg({ ...defaultProps().shipments.data[0].legs[0], status: 'needs_resolution',
+    incidents: [{ id: 41, type: 'lost', status: 'reported' }],
+  });
+  render(<Shipments />);
+  expect(screen.getByText('Incident needs review')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Review incident' })).toBeInTheDocument();
+});
+
+it('keeps a confirmed loss visible without labelling its resolved incident as awaiting investigation', () => {
+  setDispatcherLeg({ ...defaultProps().shipments.data[0].legs[0], status: 'cancelled', resolution_type: 'loss_confirmed',
+    incidents: [{ id: 41, type: 'lost', status: 'resolved', resolution: 'loss_confirmed' }],
+  });
+  render(<Shipments />);
+  expect(screen.getByText('Parcel loss confirmed')).toBeInTheDocument();
+  expect(screen.queryByText('Incident needs review')).not.toBeInTheDocument();
 });
 
 it('shows dispatcher incident details and saves a resolution', async () => {
@@ -1240,7 +1258,7 @@ it('shows dispatcher incident details and saves a resolution', async () => {
   });
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getByText(/Incident #41/)).toBeInTheDocument();
   expect(screen.getByText('Customer disputes the handoff location.')).toBeInTheDocument();
@@ -1266,7 +1284,7 @@ it('authorizes an incident retry inline with responsibility and no duplicate rec
     incidents: [{ id: 41, type: 'vehicle_problem', status: 'reported' }],
   });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getAllByRole('region', { name: 'Resolve delivery issue' })).toHaveLength(1);
   expect(screen.queryByRole('radio', { name: 'Confirm parcel lost' })).not.toBeInTheDocument();
   expect(screen.getByLabelText('Investigated responsibility')).toHaveValue('undetermined');
@@ -1289,7 +1307,7 @@ it('requires loss evidence and prevents duplicate decisions or closing while a s
   let finish!: () => void;
   mocks.post.mockImplementationOnce(() => new Promise<void>(resolve => { finish = resolve; }));
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.click(screen.getByRole('radio', { name: 'Confirm parcel lost' }));
   fireEvent.change(screen.getByLabelText('Decision reason'), { target: { value: 'Investigation confirmed loss.' } });
   const save = screen.getByRole('button', { name: 'Confirm parcel lost' });
@@ -1325,7 +1343,7 @@ it('requires investigation before showing customer dispute resolution', async ()
   }];
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
 
   expect(screen.getByRole('button', { name: 'Start investigation' })).toBeInTheDocument();
   expect(screen.queryByRole('button', { name: 'Resolve' })).not.toBeInTheDocument();
@@ -1356,7 +1374,7 @@ it('offers only supported dispute resolutions after investigation starts', async
   mocks.post.mockResolvedValue(undefined);
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
 
   await waitFor(() => expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({
@@ -1387,7 +1405,7 @@ it('continues from a selected customer dispute resolution to the resolution note
     .mockResolvedValueOnce({ isConfirmed: true, value: 'Refund workflow required.' });
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
 
   await waitFor(() => expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({
@@ -1417,7 +1435,7 @@ it('keeps customer confirmation available for an item-not-received dispute', asy
   }];
 
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.click(screen.getByRole('button', { name: 'Resolve' }));
 
   await waitFor(() => expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({
@@ -1434,7 +1452,7 @@ it('explains a scheduling denial when the 403 response contains an empty message
   setDispatcherLeg({ id: 2, leg_type: 'outbound', status: 'pending', delivery_batch_id: null, assignments: [], proofs: [], attempts: [] });
   mocks.post.mockRejectedValueOnce({ response: { status: 403, data: { message: '' } } });
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   fireEvent.change(screen.getByLabelText('Delivery date'), { target: { value: '2026-07-20' } });
   fireEvent.change(screen.getByLabelText('Choose rider for outbound leg'), { target: { value: '9' } });
   fireEvent.click(screen.getByRole('button', { name: 'Schedule & assign rider' }));
@@ -1447,7 +1465,7 @@ it.each([null, '2026-07-22'])('keeps third-party courier tracking read-only for 
   mocks.props.shipments.data[0].order_summary.delivery_method = 'third_party';
   mocks.props.shipments.data[0].order_summary.carrier_company = 'Lalamove';
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByText(/Lalamove.*handles this delivery/)).toBeInTheDocument();
   expect(screen.getByText('Waiting for courier update')).toBeInTheDocument();
   expect(screen.queryByText('Waiting for rider')).not.toBeInTheDocument();
@@ -1465,6 +1483,6 @@ it('offers Retail Return failed-collection rescheduling without claiming a repai
   mocks.props.shipments.data[0].source_type = 'order_refund';
   mocks.props.shipments.data[0].legs[0].leg_type = 'return_to_shop';
   render(<Shipments />);
-  fireEvent.click(screen.getByRole('button', { name: 'Open delivery' }));
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByRole('button', { name: 'Reschedule Pickup' })).toBeInTheDocument();
 });
