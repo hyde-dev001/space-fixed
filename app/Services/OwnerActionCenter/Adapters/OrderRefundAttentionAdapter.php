@@ -43,6 +43,8 @@ final class OrderRefundAttentionAdapter implements OwnerAttentionAdapter
                 'order_id',
                 'status',
                 'flow_type',
+                'reason_code',
+                'rejection_reason',
                 'shop_owner_status',
                 'finance_status',
                 'amount',
@@ -84,6 +86,9 @@ final class OrderRefundAttentionAdapter implements OwnerAttentionAdapter
                         ->whereIn('finance_status', $financeStatuses);
                 });
             })
+            ->orWhere(function ($rejected) use ($owner): void {
+                $rejected->where('shop_owner_id', (int) $owner->getKey())->awaitingLossCorrection();
+            })
             ->orderByDesc('requested_at')
             ->orderByDesc('id');
 
@@ -102,8 +107,8 @@ final class OrderRefundAttentionAdapter implements OwnerAttentionAdapter
                 category: 'refund_approval',
                 primaryBucket: $this->primaryBucket(),
                 module: 'finance',
-                title: 'Order refund approval',
-                conciseSummary: 'Review the pending order refund request.',
+                title: $refund->status === 'rejected' ? 'Rejected loss refund needs review' : 'Order refund approval',
+                conciseSummary: $refund->status === 'rejected' ? 'Review the rejection and send correction instructions to Staff. No payout is authorized.' : 'Review the pending order refund request.',
                 priorityTier: 'high',
                 materialityTier: $this->materialityTier($amount),
                 comparableMonetaryExposure: strtoupper((string) $refund->currency) === 'PHP'

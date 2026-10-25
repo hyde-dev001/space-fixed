@@ -248,3 +248,9 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 - Grouped notification inboxes must retain generic shipment notices when order/repair sections also contain records. A persisted notice and a correct count do not prove a visible, keyboard-reachable destination.
 - A successful mutation response precedes Inertia's refreshed view. Browser checks should wait for the required UI transition and verify saved records; do not replace acceptance or custody actions with fixture writes to make a journey pass.
 - Test populated source-reference projections on the production database engine. An empty SQLite query can conceal a misspelled selected column; also test tenant scoping across related return/order records.
+
+
+### October 25, 2026 - rejected loss refund reconsideration
+
+- Keep rejected approval records immutable as decisions. Reconsideration creates a linked reservation under the existing order lock and captured-payment limits; it must not relabel a rejection as a failed provider payout.
+- Owner reconsideration is distinct from monetary approval. Optional monetary-approval policies must not hide rejection review or completed correction history. Keep internal correction instructions out of customer-facing refund notes.

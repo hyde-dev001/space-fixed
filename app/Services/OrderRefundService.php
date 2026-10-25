@@ -7,6 +7,8 @@ use App\Models\Logistics\ShipmentLeg;
 use App\Models\CodCollection;
 use App\Models\Order;
 use App\Models\OrderRefund;
+use App\Models\ShopOwner;
+use App\Models\AuditLog;
 use App\Enums\NotificationType;
 use App\Services\Finance\CodRefundPayoutService;
 use Illuminate\Database\QueryException;
@@ -105,6 +107,8 @@ class OrderRefundService
     public function reserveConfirmedLossRefund(Order $order, ShipmentLeg $outboundLeg, string $investigationNote): array
     {
         $isCodOrder = $this->isCodOrder($order);
+        $order->loadMissing('shopOwner');
+        $requiresStaffReview = $isCodOrder || strtolower(trim((string) $order->shopOwner?->registration_type)) === 'company';
         if (! $isCodOrder && ! $this->isEligibleForOnlineRefund($order)) {
             return [
                 'result' => 'not_required',
@@ -131,8 +135,8 @@ class OrderRefundService
             'shop_owner_id' => $order->shop_owner_id,
             'flow_type' => 'request_approval',
             'status' => 'requested',
-            'shop_owner_status' => $isCodOrder ? 'pending' : 'approved',
-            'shop_owner_approved_at' => $isCodOrder ? null : now(),
+            'shop_owner_status' => $requiresStaffReview ? 'pending' : 'approved',
+            'shop_owner_approved_at' => $requiresStaffReview ? null : now(),
             'shop_owner_approved_by' => null,
             'finance_status' => 'pending',
             'return_status' => 'not_required',
@@ -146,6 +150,87 @@ class OrderRefundService
             'idempotency_key' => "delivery-loss-confirmed:{$order->id}:{$outboundLeg->id}",
             'requested_at' => now(),
         ], $lines);
+    }
+
+    public function canReviewLegacyConfirmedLossRefund(OrderRefund $refund): bool
+    {
+        if ($refund->reason_code !== 'delivery_loss_confirmed' || $refund->flow_type !== 'request_approval'
+            || $refund->status !== 'requested' || $refund->finance_status !== 'pending'
+            || $refund->shop_owner_status !== 'approved' || $refund->return_status !== 'not_required'
+            || $refund->staff_approved_at !== null || $refund->staff_approved_by !== null
+            || $refund->shop_owner_approved_by !== null
+            || ! preg_match('/^delivery-loss-confirmed:(\d+):(\d+)$/', (string) $refund->idempotency_key, $identity)
+            || (int) $identity[1] !== (int) $refund->order_id) {
+            return false;
+        }
+        $refund->loadMissing('order.shopOwner');
+        return strtolower(trim((string) $refund->order?->shopOwner?->registration_type)) === 'company'
+            && ShipmentLeg::query()->whereKey((int) $identity[2])->where('resolution_type', 'loss_confirmed')->where('status', 'cancelled')
+                ->whereHas('shipment', fn ($query) => $query->where('shop_owner_id', $refund->shop_owner_id)
+                    ->where('source_type', 'order')->where('source_id', $refund->order_id))->exists();
+    }
+
+    public function canRequestLossCorrection(OrderRefund $refund): bool
+    {
+        return $refund->status === 'rejected' && $refund->reason_code === 'delivery_loss_confirmed'
+            && OrderRefund::query()->whereKey($refund->id)->awaitingLossCorrection()->exists();
+    }
+
+    public function requestLossCorrection(OrderRefund $refund, ShopOwner $owner, string $reason, string $requestKey): array
+    {
+        $reason = trim($reason);
+        if (mb_strlen($reason) < 10 || mb_strlen($reason) > 1000 || ! Str::isUuid($requestKey)) {
+            throw ValidationException::withMessages(['reason' => 'Provide correction instructions of 10–1000 characters and a valid request identity.']);
+        }
+        return DB::transaction(function () use ($refund, $owner, $reason, $requestKey): array {
+            $order = Order::query()->whereKey($refund->order_id)->where('shop_owner_id', $owner->id)->lockForUpdate()->firstOrFail();
+            $original = OrderRefund::query()->whereKey($refund->id)->where('shop_owner_id', $owner->id)->lockForUpdate()->firstOrFail();
+            $key = "loss-refund-correction:{$original->id}:{$requestKey}";
+            if ($original->replacement_refund_id) {
+                $replacement = $original->replacementRefund()->firstOrFail();
+                if ($replacement->idempotency_key !== $key || $original->recovery_resolution_reason !== $reason) {
+                    throw ValidationException::withMessages(['refund' => 'This rejected claim has already been sent for correction. Open the linked request.']);
+                }
+                return ['created' => false, 'refund' => $replacement];
+            }
+            if (! $this->canRequestLossCorrection($original)) {
+                throw ValidationException::withMessages(['refund' => 'This claim is not eligible for owner-authorized loss reconsideration.']);
+            }
+            $lines = $original->items()->get()->map(fn ($line) => $line->only([
+                'order_item_id', 'product_id', 'product_variant_id', 'requested_qty', 'approved_qty', 'unit_price_snapshot', 'line_amount',
+            ]) + ['inspection_disposition' => 'pending', 'inventory_action' => 'pending'])->all();
+            $reservation = $this->reserveOrderRefund($order, [
+                'customer_id' => $original->customer_id, 'shop_owner_id' => $owner->id, 'flow_type' => 'request_approval',
+                'status' => 'requested', 'shop_owner_status' => 'pending', 'finance_status' => 'pending', 'return_status' => 'not_required',
+                'requires_owner_approval' => $original->requires_owner_approval, 'amount' => $original->amount,
+                'payment_gateway' => $original->payment_gateway, 'paymongo_payment_id' => $original->paymongo_payment_id,
+                'currency' => $original->currency, 'requested_refund_method' => $original->requested_refund_method,
+                'refund_provider' => $original->refund_provider, 'reason_code' => 'delivery_loss_confirmed',
+                'reason_note' => $original->reason_note,
+                'evidence_media' => $original->evidence_media, 'idempotency_key' => $key, 'requested_at' => now(),
+            ], $lines);
+            if (! in_array($reservation['result'] ?? null, ['reserved', 'recovered'], true)) {
+                throw ValidationException::withMessages(['refund' => $reservation['message'] ?? 'The payment cannot be reserved for correction.']);
+            }
+            $replacement = $reservation['refund'];
+            // Reconsideration must not remove an owner approval required by the original claim.
+            $replacement->update(['requires_owner_approval' => (bool) ($original->requires_owner_approval ?? true) || (bool) $replacement->requires_owner_approval]);
+            $original->update(['replacement_refund_id' => $replacement->id, 'recovery_status' => 'superseded',
+                'recovery_resolved_at' => now(), 'recovery_resolved_by_type' => 'shop_owner', 'recovery_resolved_by_id' => $owner->id,
+                'recovery_resolution_outcome' => 'replacement_refund', 'recovery_resolution_reason' => $reason]);
+            AuditLog::create(['shop_owner_id' => $owner->id, 'action' => 'order_refund.correction_requested',
+                'target_type' => 'order_refund', 'target_id' => $original->id,
+                'metadata' => ['actor_type' => 'shop_owner', 'actor_id' => $owner->id, 'request_key' => $requestKey,
+                    'replacement_refund_id' => $replacement->id, 'reason' => $reason]]);
+            DB::afterCommit(function () use ($replacement): void {
+                try {
+                    $this->notifyRefundApprovalRequested($replacement->fresh());
+                } catch (\Throwable $error) {
+                    Log::warning('Loss correction saved but Staff notification failed', ['refund_id' => $replacement->id, 'exception' => $error::class]);
+                }
+            });
+            return ['created' => true, 'refund' => $replacement];
+        }, 3);
     }
 
     public function reserveOrderRefund(Order $order, array $payload, array $lines = [], ?float $capturedAmount = null): array
@@ -666,6 +751,12 @@ class OrderRefundService
         }
 
         if ($stageNormalized === 'staff') {
+            $legacyLossReview = $this->canReviewLegacyConfirmedLossRefund($refund);
+            if ($legacyLossReview) {
+                // Replace only the old system-set owner flag when an actual Staff decision is recorded.
+                $payload['shop_owner_status'] = 'pending';
+                $payload['shop_owner_approved_at'] = null;
+            }
             if (!$isCompanyCustomerRefund && !$isCodRefund && !$requiresStaffCustomerAssessment) {
                 return [
                     'result' => 'invalid_state',
@@ -674,7 +765,7 @@ class OrderRefundService
                 ];
             }
 
-            if ((string) ($refund->shop_owner_status ?? 'pending') !== 'pending'
+            if (((string) ($refund->shop_owner_status ?? 'pending') !== 'pending' && ! $legacyLossReview)
                 || $hasThirdPartyStaffApproval
                 || $hasCodStaffApproval
                 || $hasCompanyStaffApproval) {
@@ -1035,7 +1126,7 @@ class OrderRefundService
                 ];
             }
 
-            if ((string) ($refund->shop_owner_status ?? 'pending') !== 'pending'
+            if (((string) ($refund->shop_owner_status ?? 'pending') !== 'pending' && ! $this->canReviewLegacyConfirmedLossRefund($refund))
                 || $hasThirdPartyStaffApproval
                 || $hasCodStaffApproval
                 || $hasCompanyStaffApproval) {
@@ -2485,6 +2576,9 @@ class OrderRefundService
 
     private function payoutReadyMessage(OrderRefund $refund): string
     {
+        if ($refund->reason_code === 'delivery_loss_confirmed') {
+            return 'Confirmed-loss approvals are complete. No physical return or inspection is required; the authorized payout action is now available.';
+        }
         return $this->isIndividualRegistrationType(
             (string) ($refund->order?->shopOwner?->registration_type ?? '')
         )
@@ -2509,13 +2603,13 @@ class OrderRefundService
             ['delivery_attempts_exhausted', 'delivery_loss_confirmed'], true);
         $requiresStaffCustomerAssessment = ! $isSystemDeliveryRefund && $this->requiresStaffCustomerAssessment($refund, $order);
         $isCompanyCustomerRefund = strtolower(trim((string) ($order->shopOwner?->registration_type ?? ''))) === 'company'
-            && ! $isSystemDeliveryRefund;
+            && (! $isSystemDeliveryRefund || $refund->reason_code === 'delivery_loss_confirmed');
         $isIndividualOwnerRefund = $isIndividualRegistration
             && !$isCodRefund
             && (string) ($refund->flow_type ?? '') !== 'cancel_auto'
             && ! $isSystemDeliveryRefund;
 
-        if ($isCodRefund) {
+        if ($isCodRefund && ! ($isCompanyCustomerRefund && $refund->reason_code === 'delivery_loss_confirmed')) {
             return;
         }
 
@@ -2711,14 +2805,17 @@ class OrderRefundService
             );
         }
 
+        $canCorrect = $this->canRequestLossCorrection($refund);
         $this->notificationService->sendToShopOwner(
             shopOwnerId: (int) ($refund->shop_owner_id ?? 0),
             type: NotificationType::REFUND_REQUEST,
-            title: 'Refund Request Rejected',
+            title: $canCorrect ? 'Rejected loss refund needs review' : 'Refund Request Rejected',
             message: "Order #{$data['order_number']} refund request was rejected at {$stageLabel} stage.",
             data: $data,
             actionUrl: $this->notificationService->ownerApprovalActionUrl('order_refund', $refund->id),
             priority: 'medium',
+            groupKey: $canCorrect ? "loss-refund-rejected:{$refund->id}" : null,
+            requiresAction: $canCorrect,
         );
     }
 

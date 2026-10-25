@@ -257,3 +257,34 @@ On **Dispatcher → Shipments → Open delivery**, review the reported issue and
 | Confirm parcel lost | Available only for a reported lost incident. Require investigation reason and evidence; use only an actual investigated finding. Existing source-specific loss/financial rules still apply. | Existing authorized exception and financial review, as required by the source workflow. |
 
 While a decision is saving, action changes and closing the delivery details are blocked. Failed saves retain the form and display the server error. Successful saves announce the decision and refresh the existing shipment/custody data. Failed customer pickups retain their separate **Reschedule Pickup / Cancel Pickup** workflow and required arrival checks.
+
+## Confirmed parcel loss — paid Retail Delivery
+
+Use a synthetic company-shop online-paid order. This case does not require a fictional return, receipt or inspection. Normal source-specific COD collection/remittance holds remain in force; this is not permission to transfer cash responsibility or release an unsettled COD refund.
+
+| Step / current page | Action / expected result | Next page |
+| --- | --- | --- |
+| Rider → My Deliveries | **Report incident → Parcel lost**; enter the actual test facts, upload private evidence, then submit/confirm. | Dispatcher → **Shipments**. |
+| Dispatcher → Shipments list | The affected card shows **Incident needs review** and **Review incident** before opening details. | **Review incident → Resolve delivery issue**. |
+| Dispatcher → incident review | After investigation, select **Confirm parcel lost**, enter the decision reason and investigation evidence, then confirm. Loss history remains; no unvisited attempts, successful delivery or stock restoration is fabricated. | Staff → **ERP Notifications**, then **Retail Job Orders → Refund tab → View order details**. |
+| Staff → order details | New company loss claims start with **Awaiting Staff Review** and **Approve Refund Eligibility / Reject Refund** actions. Valid older system-created loss claims are reviewable without inventing a previous Staff approval. Record only a real eligibility decision. **Activate Receive must be absent**; a stale activation request must be rejected. | Finance → **Refund Approvals**. |
+| Finance → refund details | After Staff approval, **Approve** becomes available. Before Staff review, a visible legacy request explains that Staff must decide first. Follow the snapshotted owner approval and Finance finalization stages when required. | Required owner approval → Finance finalization, or **Execute Payout** when all ordinary payout requirements pass. |
+| Finance → payout-ready details | A confirmed-loss claim requires no physical return/inspection. Verify the correct amount and source; execute only through the existing authorized provider workflow in an approved payment test environment. This manual guide does not authorize a real payout. | Customer refund update and existing provider reconciliation. |
+
+Staff receive shop-scoped incident/loss notices; the initial report is informational while the dispatcher investigates. New company loss refund reservations send the Staff eligibility-review notice, and an actual Staff decision forwards the request to Finance. Replaying the same logistics occurrence must not duplicate its notice. Previously delivered historical events are not automatically replayed by this change. No bulk production repair or automatic approval is performed.
+
+
+## 15. Rejected confirmed-loss refund: owner reconsideration
+
+This path applies to a company shop's confirmed parcel-loss claim, not an already attempted provider payout. Rejecting the claim does not authorize payment or restore stock. The original rejection stays recorded; employees cannot reopen it themselves.
+
+| Step | Current actor / page | Action and expected result | Next page |
+| --- | --- | --- | --- |
+| O1 | Staff > Retail Job Orders > Refund, or Finance > Refund Approvals | Reject the loss claim with the real reason. Staff sees Awaiting Owner Review; Finance explains owner reconsideration. | Shop Owner > notification bell > Rejected loss refund needs review. |
+| O2 | Shop Owner > Approval Center (`/shop-owner/action-center`) > Pending > Refunds | Open the rejected claim. Read its original reason, reviewer, amount and evidence/notes. This review is available even when normal owner monetary approval is optional. | Same details > Correction instructions. |
+| O3 | Shop Owner > claim details | Enter 10?1000 characters explaining what Staff must reassess. Choose **Send back for correction**, then confirm. This creates one linked request and preserves the rejected one; it does not approve money. An identical retry must not duplicate it. | Staff > notification bell > Refund Eligibility Review Required > Retail Job Orders > Refund. |
+| O4 | Staff > Retail Job Orders > Refund > View order details | Read **Owner correction instructions** and the rejected predecessor number. Reassess evidence and record a new approval or rejection. Do not activate customer receipt or invent inspection/return for a lost parcel. | If approved: Finance > Refund Approvals. If rejected: Shop Owner > Approval Center for another explicit decision. |
+| O5 | Finance > Refund Approvals | Review the new claim using normal permissions and attendance. Required owner approval, captured-payment limits, COD settlement and payout controls still apply. Another rejection returns to O1; it never auto-approves or ends the correction path. | Existing owner approval / Finance payout flow, as required by the claim's policy. |
+| O6 | Shop Owner > Approval Center > History > Refunds | Open the old rejected claim. Verify correction instructions, preserved rejection/reviewer and linked correction request ID. | Follow the new request through Staff > Retail Job Orders > Refund, then Finance > Refund Approvals. |
+
+If another active refund already reserves the payment, or the old claim has provider execution evidence, correction is refused. Investigate the existing reservation/payment workflow rather than creating a second refund. Customer-facing notices must not expose the owner's internal correction instructions. See the [verification record](2026-10-25-loss-refund-reconsideration.md).

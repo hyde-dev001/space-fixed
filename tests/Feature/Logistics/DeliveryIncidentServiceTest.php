@@ -206,26 +206,35 @@ class DeliveryIncidentServiceTest extends TestCase
         $this->assertSame('not_required', $claim->return_status);
         $this->assertSame('pending', $claim->finance_status);
         $this->assertSame(1, OrderRefund::query()->where('reason_code', 'delivery_loss_confirmed')->count());
-        $claim->update(['finance_status' => 'approved']);
-        $this->assertTrue(app(\App\Services\OrderRefundService::class)->canExecuteApprovedRefund($claim->fresh()));
-
+        $refunds = app(\App\Services\OrderRefundService::class);
+        $this->assertFalse($refunds->canExecuteApprovedRefund($claim->fresh()));
         DB::commit();
+        $this->assertDatabaseHas('notifications', ['user_id' => $staff->id, 'type' => 'refund_request', 'title' => 'Refund Eligibility Review Required']);
+        $this->assertSame('invalid_state', $refunds->approveRequestedRefund($claim->fresh(), 'finance', $finance->id)['result']);
+        $this->assertSame('approved', $refunds->approveRequestedRefund($claim->fresh(), 'staff', $staff->id)['result']);
+        $this->assertSame('approved', $refunds->approveRequestedRefund($claim->fresh(), 'finance', $finance->id)['result']);
+        if ($claim->fresh()->requires_owner_approval) {
+            $this->assertSame('approved', $refunds->approveRequestedRefund($claim->fresh(), 'shop_owner')['result']);
+            $this->assertSame('approved', $refunds->approveRequestedRefund($claim->fresh(), 'finance', $finance->id)['result']);
+        }
+        $this->assertTrue($refunds->canExecuteApprovedRefund($claim->fresh()));
+        $this->assertSame('not_required', $claim->fresh()->return_status);
 
         $this->assertDatabaseHas('notifications', [
             'user_id' => $finance->id,
             'type' => 'refund_request',
-            'title' => 'New Refund Approval Request',
+            'title' => 'Refund Finance Approval Required',
             'action_url' => '/finance?section=refund-approvals',
             'requires_action' => true,
         ]);
         $notification = Notification::query()
             ->where('user_id', $finance->id)
-            ->where('type', 'refund_request')
+            ->where('type', 'refund_request')->where('title', 'Refund Finance Approval Required')
             ->latest('id')
             ->firstOrFail();
         $this->assertSame($claim->id, (int) data_get($notification->data, 'refund_id'));
-        $this->assertSame(1, Notification::query()->where('user_id', $finance->id)->where('type', 'refund_request')->count());
-        $this->assertSame(0, Notification::query()->whereIn('user_id', [$staff->id, $foreignFinance->id])
+        $this->assertSame(1, Notification::query()->where('user_id', $finance->id)->where('title', 'Refund Finance Approval Required')->count());
+        $this->assertSame(0, Notification::query()->where('user_id', $foreignFinance->id)
             ->where('type', 'refund_request')->count());
     }
 

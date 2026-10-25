@@ -109,9 +109,11 @@ class RefundApprovalController extends Controller
 
         $refund = $this->baseListQuery($request)
             ->where('shop_owner_id', (int) $shopOwner->id)
+            ->whereHas('order', fn ($order) => $order->where('shop_owner_id', $shopOwner->id))
             ->where(function ($builder) {
-                $builder->whereNull('requires_owner_approval')
-                    ->orWhere('requires_owner_approval', true);
+                $builder->whereNull('requires_owner_approval')->orWhere('requires_owner_approval', true)
+                    ->orWhere(fn ($claim) => $claim->awaitingLossCorrection())
+                    ->orWhere(fn ($history) => $history->where('status', 'rejected')->where('reason_code', 'delivery_loss_confirmed')->whereNotNull('replacement_refund_id'));
             })
             ->whereKey($id)
             ->first();
@@ -121,6 +123,17 @@ class RefundApprovalController extends Controller
         }
 
         return response()->json($this->transformRefund($refund));
+    }
+
+    public function requestLossCorrection(Request $request, int $id)
+    {
+        $owner = Auth::guard('shop_owner')->user();
+        abort_unless($owner, 401);
+        $data = $request->validate(['reason' => ['required', 'string', 'min:10', 'max:1000'], 'request_key' => ['required', 'uuid']]);
+        $refund = OrderRefund::query()->where('shop_owner_id', $owner->id)->findOrFail($id);
+        $result = $this->orderRefundService->requestLossCorrection($refund, $owner, $data['reason'], $data['request_key']);
+        return response()->json(['message' => 'Sent back to Staff for correction. Required approvals must be completed again.',
+            'replacementRefundId' => $result['refund']->id], $result['created'] ? 201 : 200);
     }
 
     public function financeApprove(Request $request, int $id)
@@ -543,7 +556,8 @@ class RefundApprovalController extends Controller
             && $refund->refund_destination !== [];
 
         $approvalStage = 'none';
-        if (($isCod || $requiresStaffApproval) && $status === 'requested' && $shopOwnerStatus === 'pending') {
+        if (($isCod || $requiresStaffApproval) && $status === 'requested'
+            && ($shopOwnerStatus === 'pending' || ($requiresStaffApproval && ! $hasStaffApproval))) {
             $approvalStage = 'staff';
         } elseif ($isIndividualRegistration && !$isCod && $requiresOwnerApproval
             && $financeStatus === 'pending' && $shopOwnerStatus === 'pending') {
@@ -607,6 +621,11 @@ class RefundApprovalController extends Controller
             'reason' => $reasonDetails,
             'status' => $uiStatus,
             'rawStatus' => $status,
+            'canRequestCorrection' => $this->orderRefundService->canRequestLossCorrection($refund),
+            'replacementRefundId' => $refund->replacement_refund_id,
+            'correctionInstructions' => $refund->replacement_refund_id ? $refund->recovery_resolution_reason : null,
+            'correctionRequestedAt' => $refund->replacement_refund_id ? $refund->recovery_resolved_at?->toISOString() : null,
+            'rejectionReviewedBy' => $refund->status === 'rejected' && $refund->processed_by ? \App\Models\User::where('shop_owner_id', $refund->shop_owner_id)->find($refund->processed_by)?->name : null,
             'shopOwnerStatus' => (string) ($refund->shop_owner_status ?? 'pending'),
             'financeStatus' => (string) ($refund->finance_status ?? 'pending'),
             'requiresOwnerApproval' => $requiresOwnerApproval,

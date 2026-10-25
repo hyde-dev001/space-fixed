@@ -332,6 +332,8 @@ interface RefundRequest {
 	refundExecutedAt?: string | null;
 	refundedAt?: string | null;
 	rejectionReason?: string;
+	canRequestCorrection?: boolean;
+	replacementRefundId?: number | null;
 	media?: string[];
 	financeExecution?: {
 		execution_channel?: string;
@@ -497,8 +499,22 @@ export const canFinanceAuthorizeRefund = (request: RefundRequest): boolean => {
 };
 
 export const getFinanceApprovalNotice = (
-	request: Pick<RefundRequest, "refundType"> & { isCod?: boolean },
-): string => {
+	request: Pick<RefundRequest, "refundType"> & Partial<Pick<RefundRequest, "isCod" | "requiresStaffApproval" | "staffApprovalStatus" | "returnStatus" | "canRequestCorrection" | "replacementRefundId">>,
+ ): string => {
+    if (request.refundType === "order" && request.replacementRefundId) {
+      return `This rejected claim was sent for correction as refund #${request.replacementRefundId}. Open the new request after Staff reassesses it; this rejection remains unchanged.`;
+    }
+    if (request.refundType === "order" && request.canRequestCorrection) {
+      return 'Refund rejected. Shop Owner can review the rejection in Approval Center and send it back to Staff for correction. No payout is authorized.';
+    }
+    if (request.refundType === "order" && request.requiresStaffApproval === true && request.staffApprovalStatus !== "approved") {
+      return request.returnStatus === 'not_required'
+        ? 'Waiting for Staff to review the confirmed-loss claim in Retail Job Orders. No physical return or inspection is required. Finance approval becomes available after Staff records its decision.'
+        : 'Waiting for Staff eligibility review in Retail Job Orders before Finance authorization.';
+    }
+    if (request.refundType === "order" && request.returnStatus === 'not_required') {
+      return 'No physical return or inspection is required. Finance and any required owner approvals, captured-payment limits and COD settlement checks still apply before payout.';
+    }
 	if (request.refundType === "order" && request.isCod === true) {
 		return "COD refunds may be reviewed now, but Xendit payout stays disabled until Finance settles the COD remittance.";
 	}
@@ -1935,6 +1951,7 @@ export default function RefundApproval() {
 							</div>
 						</div>
 
+						<p role="status" className="px-8 py-3 text-sm text-gray-700 dark:text-gray-300">{getFinanceApprovalNotice(selectedRequest)}</p>
 						<div className="px-8 py-4 border-t border-gray-200 dark:border-gray-800 flex items-center justify-end gap-3">
 							<button
 								onClick={handleCloseModal}

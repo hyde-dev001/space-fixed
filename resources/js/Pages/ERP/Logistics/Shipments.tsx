@@ -661,6 +661,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
               && leg.attempts?.[0]?.attempt_type === 'pickup');
             const pickupRescheduled = pickupAttempt && !failedPickup;
             const failed = legs.some((leg) => leg.attempts?.[0]?.status === 'failed');
+            const unresolvedIncident = legs.some(leg => leg.incidents?.some(incident => ['reported', 'under_review'].includes(incident.status)));
+            const confirmedLoss = legs.some(leg => leg.resolution_type === 'loss_confirmed');
             const awaitingProof = legs.some((leg) => leg.status === 'awaiting_proof_approval');
             const proofCorrectionRequired = legs.some((leg) => leg.status === 'proof_correction_required');
             const overdue = legs.some((leg) => Boolean(leg.scheduled_delivery_date)
@@ -709,6 +711,8 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   </span>
                   <span className="break-words">Rider: {rider}</span>
                   <div className="flex flex-wrap gap-2">
+                    {unresolvedIncident && <span className="rounded-full border border-gray-400 bg-gray-100 px-2 py-1 text-xs font-semibold text-gray-950 dark:bg-gray-800 dark:text-white">Incident needs review</span>}
+                    {confirmedLoss && <span className="rounded-full border border-gray-400 px-2 py-1 text-xs font-semibold">Parcel loss confirmed</span>}
                     {urgent && <span className="rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-700">Urgent</span>}
                     {overdue && <span className="rounded-full bg-orange-100 px-2 py-1 text-xs font-semibold text-orange-700">Overdue</span>}
                     {failedPickup
@@ -735,12 +739,12 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   )}
                   <button
                     type="button"
-                    aria-label={shipments.data.length > 1 ? `Open delivery for Shipment ${shipmentNumber}` : undefined}
+                    aria-label={shipments.data.length > 1 ? `${unresolvedIncident ? 'Review incident' : 'Open delivery'} for Shipment ${shipmentNumber}` : undefined}
                     aria-haspopup="dialog"
                     onClick={(event) => openShipment(shipment.id, event.currentTarget)}
                     className="inline-flex min-h-11 w-full flex-1 items-center justify-center gap-2 rounded-xl border border-gray-300 bg-gray-50 px-4 py-2 text-sm font-semibold text-gray-800 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-950 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700 dark:focus-visible:ring-gray-300 xl:w-auto xl:flex-none xl:shrink-0 xl:rounded-lg"
                   >
-                    Open delivery
+                    {unresolvedIncident ? 'Review incident' : 'Open delivery'}
                     <ExternalLink aria-hidden="true" size={16} />
                   </button>
                 </div>

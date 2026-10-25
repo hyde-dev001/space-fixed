@@ -2,10 +2,12 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class OrderRefund extends Model
@@ -168,6 +170,29 @@ class OrderRefund extends Model
     public function items(): HasMany
     {
         return $this->hasMany(OrderRefundItem::class);
+    }
+
+    public function scopeAwaitingLossCorrection(Builder $query): Builder
+    {
+        return $query->where('status', 'rejected')->where('flow_type', 'request_approval')
+            ->where('reason_code', 'delivery_loss_confirmed')->where('return_status', 'not_required')
+            ->whereNull('replacement_refund_id')->whereNull('paymongo_refund_id')->whereNull('provider_payout_id')
+            ->whereNull('refund_executed_at')->whereNull('refunded_at')->whereNull('payout_initiated_at')
+            ->where(fn ($q) => $q->whereNull('request_basis')->orWhere('request_basis', 'ordinary'))
+            ->where(fn ($q) => $q->whereNull('payout_status')->orWhere('payout_status', 'not_started'))
+            ->where(fn ($q) => $q->whereNull('recovery_status')->orWhereNotIn('recovery_status', ['resolved', 'superseded']))
+            ->whereHas('order', fn ($q) => $q->whereColumn('orders.shop_owner_id', 'order_refunds.shop_owner_id')
+                ->whereColumn('orders.customer_id', 'order_refunds.customer_id')
+                ->whereHas('shopOwner', fn ($shop) => $shop->where('registration_type', 'company')))
+            ->whereExists(fn ($q) => $q->selectRaw('1')->from('shipments')->join('shipment_legs', 'shipment_legs.shipment_id', '=', 'shipments.id')
+                ->where('shipments.source_type', 'order')->whereColumn('shipments.source_id', 'order_refunds.order_id')
+                ->whereColumn('shipments.shop_owner_id', 'order_refunds.shop_owner_id')
+                ->where('shipment_legs.resolution_type', 'loss_confirmed')->where('shipment_legs.status', 'cancelled'));
+    }
+
+    public function correctionSource(): HasOne
+    {
+        return $this->hasOne(self::class, 'replacement_refund_id')->where('status', 'rejected')->where('reason_code', 'delivery_loss_confirmed');
     }
 
     public function replacementRefund(): BelongsTo

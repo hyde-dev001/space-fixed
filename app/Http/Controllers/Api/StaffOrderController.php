@@ -463,14 +463,21 @@ class StaffOrderController extends Controller
     ): array
     {
         $returnDeliveryMethod = $refund->returnDeliveryMethod();
+        $correction = $refund->correctionSource()->where('shop_owner_id', $refund->shop_owner_id)->first();
 
         return [
             'id' => (int) $refund->id,
             'status' => (string) $refund->status,
+            'correction_source_id' => $correction?->id,
+            'correction_instructions' => $correction?->recovery_resolution_reason,
+            'awaiting_owner_correction' => $this->orderRefundService->canRequestLossCorrection($refund),
+            'replacement_refund_id' => $refund->replacement_refund_id,
             'reason_code' => $refund->reason_code,
             'reason_note' => $refund->reason_note,
             'other_reason_note' => $refund->other_reason_note,
             'shop_owner_status' => (string) ($refund->shop_owner_status ?? 'pending'),
+            'can_staff_review' => ($refund->flow_type === 'request_approval' && $refund->status === 'requested' && $refund->shop_owner_status === 'pending')
+                || $this->orderRefundService->canReviewLegacyConfirmedLossRefund($refund),
             'finance_status' => (string) ($refund->finance_status ?? 'pending'),
             'return_status' => (string) ($refund->return_status ?? 'awaiting_approval'),
             'return_source' => (string) ($refund->return_source ?? 'customer'),
@@ -600,6 +607,7 @@ class StaffOrderController extends Controller
             'leg_id' => $leg ? (int) $leg->id : null,
             'leg_type' => $leg?->leg_type,
             'leg_status' => $leg?->status->value,
+            'resolution_type' => $leg?->resolution_type,
             'carrier' => $leg?->shippingMethod?->name ?? $fallback['carrier'] ?? null,
             'rider_name' => $assignment?->riderProfile?->name ?? $fallback['rider_name'] ?? null,
             'rider_phone' => $assignment?->riderProfile?->phone ?? $fallback['rider_phone'] ?? null,
@@ -1165,6 +1173,15 @@ class StaffOrderController extends Controller
                     'success' => false,
                     'message' => 'Pickup can only be activated when order is shipped. Current status: '.$currentStatus,
                 ], 400);
+            }
+
+            $currentShipment = Shipment::query()->where('shop_owner_id', $shopOwnerId)
+                ->where('source_type', 'order')->where('source_id', $order->id)->latest('id')->first();
+            if ($currentShipment?->legs()->where('resolution_type', 'loss_confirmed')->exists()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Receipt confirmation cannot be activated for a confirmed lost parcel. Continue the loss-refund review instead.',
+                ], 422);
             }
 
             // Check if pickup is already enabled
