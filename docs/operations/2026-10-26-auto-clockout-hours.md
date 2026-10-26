@@ -42,3 +42,8 @@ Final hygiene: all three changed PHP files parse; Pint passes the command/test; 
 ## Separately authorized publication
 
 The user subsequently authorized committing and pushing this completed fix to `codex/failed-delivery-recovery`. A fresh pre-publication rerun passed **104 tests / 787 assertions**, exit 0 (`output/attendance-publish-tests.log`); Pint, PHP syntax, unchanged approved file hashes and diff hygiene also passed. Fetch confirmed the local/remote feature starting SHA matched `6bde8d2d398149029011fdeae2d3d8e6e9809acb`. Only this command, model, regression test, execution record and learning note are included. Local output/fixtures/databases, credentials, environment files and unrelated work are excluded. No rebase, force push, merge, deployment or production command is authorized by this publication. The earlier local/uncommitted descriptions above record the implementation checkpoint before this separate authorization.
+
+
+## Later HR-suite follow-up
+
+The 21 existing failures recorded above were subsequently resolved by correcting explicit attendance/address prerequisites in the HR test fixtures. The original authorization/tenant/validation assertions remain. The wider command now passes **178 tests / 1,200 assertions**, with no skips. See the [HR regression verification](2026-10-26-hr-regression-prerequisites.md); earlier counts remain historical evidence of the auto clock-out checkpoint.

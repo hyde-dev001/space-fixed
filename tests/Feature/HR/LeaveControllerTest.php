@@ -50,6 +50,8 @@ class LeaveControllerTest extends TestCase
             'role' => 'manager',
         ]);
         $this->managerUser->givePermissionTo('access-employee-directory');
+        $this->clockInEmployee($this->hrUser);
+        $this->clockInEmployee($this->managerUser);
 
         LeaveBalance::createForNewEmployee($this->employee->id, $this->shopOwner->id, now()->year);
     }

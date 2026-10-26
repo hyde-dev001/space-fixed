@@ -41,6 +41,7 @@ class EmployeeSuspensionWorkflowTest extends TestCase
         ]);
         $this->hr->assignRole('HR');
         $this->hr->givePermissionTo('access-employee-directory');
+        $this->clockInEmployee($this->hr);
     }
 
     #[Test]

@@ -6,6 +6,7 @@ namespace Tests\Feature\HR;
 
 use App\Mail\EmployeeInvitation;
 use App\Models\Employee;
+use App\Models\HR\AttendanceRecord;
 use App\Models\ShopOwner;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -41,6 +42,7 @@ final class EmployeeAccountRecoveryTest extends TestCase
         ]);
         $this->hr->assignRole('HR');
         $this->hr->givePermissionTo('access-employee-directory');
+        $this->clockInEmployee($this->hr);
     }
 
     #[Test]
@@ -140,6 +142,20 @@ final class EmployeeAccountRecoveryTest extends TestCase
         $this->actingAs($this->shop, 'shop_owner')
             ->postJson('/api/shop-owner/employees/' . $foreignUser->id . '/reset-password')
             ->assertNotFound();
+    }
+
+    #[Test]
+    public function hr_cannot_reset_an_employee_account_without_active_attendance(): void
+    {
+        [$employee, $linkedUser] = $this->employeeWithLinkedUser();
+        $before = $linkedUser->refresh()->getRawOriginal();
+        AttendanceRecord::query()->where('shop_owner_id', $this->shop->id)
+            ->whereHas('employee', fn ($query) => $query->where('email', $this->hr->email))->delete();
+
+        $this->actingAs($this->hr, 'user')->postJson("/api/hr/employees/{$employee->id}/reset-password")
+            ->assertStatus(423)->assertJsonPath('code', 'EMPLOYEE_NOT_CLOCKED_IN');
+        $this->assertSame($before, $linkedUser->fresh()->getRawOriginal());
+        $this->assertDatabaseMissing('audit_logs', ['shop_owner_id' => $this->shop->id, 'action' => 'employee_password_reset']);
     }
 
     /** @return array{0: Employee, 1: User} */
