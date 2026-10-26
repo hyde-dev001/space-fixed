@@ -254,3 +254,9 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 
 - Keep rejected approval records immutable as decisions. Reconsideration creates a linked reservation under the existing order lock and captured-payment limits; it must not relabel a rejection as a failed provider payout.
 - Owner reconsideration is distinct from monetary approval. Optional monetary-approval policies must not hide rejection review or completed correction history. Keep internal correction instructions out of customer-facing refund notes.
+
+
+### October 26, 2026 - automatic attendance finalization
+
+- Anchor scheduled cutoff/grace comparisons to the attendance date, including midnight rollover. A job restricted to today cannot recover a missed closing-day run.
+- Model saving hooks must not overwrite authoritative regular/overtime calculations or recompute finalized hours on notes-only saves. Historical repairs need saved schedule evidence and must not rewrite paid overtime automatically.
