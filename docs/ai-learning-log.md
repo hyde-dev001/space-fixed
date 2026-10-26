@@ -260,3 +260,9 @@ Freeze quantities and source IDs when the selected work is booked, and replace t
 
 - Anchor scheduled cutoff/grace comparisons to the attendance date, including midnight rollover. A job restricted to today cannot recover a missed closing-day run.
 - Model saving hooks must not overwrite authoritative regular/overtime calculations or recompute finalized hours on notes-only saves. Historical repairs need saved schedule evidence and must not rewrite paid overtime automatically.
+
+
+### October 26, 2026 - HR test prerequisites
+
+- Business success and permission/tenant-denial tests must first satisfy unrelated gates such as active employee attendance, using explicit local fixtures. Keep separate negative checks for those gates; do not bypass middleware or clock everyone in globally.
+- When an earlier guard masks payload validation, rerun through the complete endpoint after fixing the prerequisite. Legacy `location` maps to employee address and therefore requires its structured address fields.

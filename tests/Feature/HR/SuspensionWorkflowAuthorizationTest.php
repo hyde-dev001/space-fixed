@@ -45,6 +45,7 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
         ]);
         $this->hr->assignRole('HR');
         $this->hr->givePermissionTo('access-employee-directory');
+        $this->clockInEmployee($this->hr);
 
         $this->employee = Employee::factory()->active()->for($this->shop)->create();
     }
@@ -126,6 +127,7 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
     {
         $staff = User::factory()->for($this->shop)->create(['role' => 'Staff']);
         $staff->givePermissionTo('access-employee-directory');
+        $this->clockInEmployee($staff);
 
         $this->actingAs($staff, 'user')
             ->getJson('/api/hr/suspension-requests')
@@ -148,6 +150,7 @@ class SuspensionWorkflowAuthorizationTest extends TestCase
         ] as $permission) {
             $actor = User::factory()->for($this->shop)->create(['role' => 'Staff']);
             $actor->givePermissionTo($permission);
+            $this->clockInEmployee($actor);
             $employee = Employee::factory()->active()->for($this->shop)->create();
 
             $this->actingAs($actor, 'user')
