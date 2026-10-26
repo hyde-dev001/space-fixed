@@ -179,11 +179,18 @@ class AttendanceRecord extends Model
             return;
         }
 
-        $checkOut = \Carbon\Carbon::parse($this->check_out_time);
-        $expectedCheckOut = \Carbon\Carbon::parse($this->expected_check_out);
-        
+        $day = $this->date->copy()->startOfDay();
+        $checkOut = $day->copy()->setTimeFromTimeString($this->check_out_time->format('H:i:s'));
+        $expectedCheckOut = $day->copy()->setTimeFromTimeString($this->expected_check_out->format('H:i:s'));
+        if ($this->check_in_time && $checkOut->lt($day->copy()->setTimeFromTimeString($this->check_in_time->format('H:i:s')))) {
+            $checkOut->addDay();
+        }
+        if ($this->expected_check_in && $expectedCheckOut->lte($day->copy()->setTimeFromTimeString($this->expected_check_in->format('H:i:s')))) {
+            $expectedCheckOut->addDay();
+        }
+
         if ($checkOut->lt($expectedCheckOut)) {
-            $this->minutes_early_departure = $expectedCheckOut->diffInMinutes($checkOut);
+            $this->minutes_early_departure = (int) $checkOut->diffInMinutes($expectedCheckOut);
             $this->is_early_departure = true;
         } else {
             $this->minutes_early_departure = 0;
@@ -263,7 +270,12 @@ class AttendanceRecord extends Model
             }
 
             // Calculate working hours
-            if ($attendance->check_in_time && $attendance->check_out_time) {
+            // Preserve the finalizer's recorded-lunch and approved-overtime calculation, including zero hours.
+            if ($attendance->check_in_time && $attendance->check_out_time
+                && ($attendance->isDirty('check_in_time') || $attendance->isDirty('check_out_time')
+                    || $attendance->isDirty('lunch_break_start') || $attendance->isDirty('lunch_break_end'))
+                && ! $attendance->isDirty('working_hours') && ! $attendance->isDirty('overtime_hours')
+                && ! ($attendance->auto_clocked_out && $attendance->isDirty('auto_clocked_out'))) {
                 $attendance->working_hours = $attendance->calculateWorkingHours();
             }
         });
