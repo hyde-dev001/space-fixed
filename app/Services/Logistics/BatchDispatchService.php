@@ -189,6 +189,30 @@ class BatchDispatchService
         });
     }
 
+    public function detachIncidentStopForRecovery(ShipmentLeg $leg): ShipmentLeg
+    {
+        if (! $leg->delivery_batch_id) return $leg;
+        $batch = DeliveryBatch::query()->lockForUpdate()->findOrFail($leg->delivery_batch_id);
+        $this->activeWork->assertBatchNotHeld($batch);
+        $this->activeWork->assertNotHeld($leg);
+        if (! in_array($batch->status, ['offered', 'accepted', 'in_progress'], true)) {
+            throw ValidationException::withMessages(['batch' => 'This batch cannot release a stop for incident recovery.']);
+        }
+        $this->events->record($leg->shipment, $leg, ['event_type' => 'incident_stop_detached',
+            'message' => 'Affected stop detached for an independently accepted recovery offer.',
+            'metadata' => ['delivery_batch_id' => $batch->id, 'stop_sequence' => $leg->stop_sequence,
+                'delivery_assignment_id' => $leg->assignments()->latest('id')->value('id'),
+                'schedule_facts' => $this->starts->scheduleFacts($leg), 'stop_snapshot' => $batch->stop_snapshot]]);
+        $leg->update(['delivery_batch_id' => null, 'stop_sequence' => null]);
+        $remaining = $batch->legs()->count();
+        $batch->update(['assigned_stop_count' => $remaining, ...($remaining ? [] : [
+            'status' => 'cancelled', 'cancelled_at' => now(), 'cancellation_reason' => 'All stops moved to incident recovery.',
+        ])]);
+        app(ShipmentLegService::class)->reconcileBatchState($batch->id, 'All stops moved to incident recovery.');
+        // Retain the original snapshot and remaining stop identities as historical provenance.
+        return $leg->fresh('shipment');
+    }
+
     public function markUrgent(ShipmentLeg $leg, bool $urgent): ShipmentLeg
     {
         for ($attempt = 0; $attempt < 2; $attempt++) {
@@ -241,8 +265,11 @@ class BatchDispatchService
 
         return $this->riderTransition($batch, $rider, 'offered', function ($locked) use ($rider) {
             $this->assertBatchCanStart($locked);
-            $locked->legs()->each(fn ($leg) => $leg->assignments()->where('rider_profile_id', $rider->id)
-                ->where('status', 'assigned')->update(['status' => 'accepted', 'accepted_at' => now()]));
+            $locked->legs()->each(function ($leg) use ($rider) {
+                $leg->assignments()->where('rider_profile_id', $rider->id)->where('status', 'assigned')->update(['status' => 'accepted', 'accepted_at' => now()]);
+                $this->events->record($leg->shipment, $leg, ['event_type' => 'leg_offer_accepted', 'message' => 'Stop offer accepted with its batch.',
+                    'metadata' => ['delivery_assignment_id' => $leg->assignments()->latest('id')->value('id'), 'schedule_facts' => $this->starts->scheduleFacts($leg)]]);
+            });
             $locked->update(['status' => 'accepted', 'accepted_at' => now()]);
             $this->recordBatchEvent($locked, 'batch_accepted', 'Delivery batch accepted.');
         });
@@ -401,6 +428,7 @@ class BatchDispatchService
     {
         $shop = ShopOwner::whereKey($incident->shop_owner_id)->lockForUpdate()->firstOrFail();
         $this->movements->assertCanStart($shop);
+        $immediate = $this->starts->immediateRecovery($shop, $options['delivery_date'], $options['delivery_window'], $options);
         $this->validateBatchComposition($stops->map->leg, $shop, recovery: true);
         abort_unless((int) $actor->shop_owner_id === (int) $shop->id && $actor->can('resolve-logistics-exceptions'), 403);
         $this->assignments->assertEligibleForDate($rider, $shop, $options['delivery_date'], checkCapacity: false);
@@ -420,11 +448,14 @@ class BatchDispatchService
         $incident->forceFill(['recovery_batch_id' => $batch->id])->save();
         foreach ($stops->values() as $index => $stop) {
             $leg = $stop->leg;
+            $previousSchedule = $this->starts->scheduleFacts($leg);
             $leg->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => $index + 1,
                 'scheduled_delivery_date' => $options['delivery_date'], 'delivery_window' => $options['delivery_window']]);
             $assignment = $this->assignments->replaceInterruptedAssignment($leg, $rider, $actor, $incident);
             $this->events->record($leg->shipment, $leg, ['event_type' => 'leg_assigned', 'message' => 'Batch recovery offer assigned.',
-                'metadata' => ['delivery_batch_id' => $batch->id, 'incident_id' => $incident->id, 'delivery_assignment_id' => $assignment->id, 'rider_profile_id' => $rider->id],
+                'metadata' => ['delivery_batch_id' => $batch->id, 'incident_id' => $incident->id, 'incident_revision' => $incident->revision + 1,
+                    'delivery_assignment_id' => $assignment->id, 'rider_profile_id' => $rider->id,
+                    'previous_schedule_facts' => $previousSchedule, 'immediate_recovery' => $immediate],
                 'created_by_type' => User::class, 'created_by_id' => $actor->id]);
         }
         $this->syncStopSnapshot($batch);

@@ -130,6 +130,59 @@ class SourceShipmentService
         }
     }
 
+    public function requestRetailRedelivery(\App\Models\Logistics\DeliveryIncident $incident, \App\Models\User $actor, array $data): Shipment
+    {
+        return DB::transaction(function () use ($incident, $actor, $data) {
+            $shop = ShopOwner::whereKey($incident->shop_owner_id)->lockForUpdate()->firstOrFail();
+            abort_unless((int) $actor->shop_owner_id === (int) $shop->id && $actor->can('resolve-logistics-exceptions'), 403);
+            $this->movements->assertCanStart($shop);
+            $original = $incident->leg->fresh('shipment');
+            if (data_get($incident->recovery_context, 'source_outcome.shipment_id')) {
+                throw ValidationException::withMessages(['disposition' => 'A linked fulfillment attempt already exists. Continue or resolve that movement.']);
+            }
+            if ($original->shipment->source_type !== 'order' || $original->shipment->purpose !== 'retail_delivery'
+                || $original->status->value !== 'cancelled' || $original->resolution_type !== 'returned'
+                || $original->custody_state !== 'shop' || ! $original->custody_confirmed_at) {
+                throw ValidationException::withMessages(['disposition' => 'Original-parcel redelivery requires an evidenced terminal shop return.']);
+            }
+            $order = Order::with('items')->where('shop_owner_id', $shop->id)->lockForUpdate()->findOrFail($original->shipment->source_id);
+            if ($order->resolvedDeliveryMethod() !== 'shop_owned' || in_array($order->payment_status, ['refunded', 'failed'], true)
+                || $order->refunds()->whereNotIn('status', ['rejected', 'cancelled'])->exists()) {
+                throw ValidationException::withMessages(['disposition' => 'Resolve conflicting refund, payment or courier work before redelivery.']);
+            }
+            $inspection = data_get($incident->recovery_context, 'inspection', []);
+            $eligibility = app(DeliveryIncidentService::class)->eligibility($incident, data_get($incident->recovery_context, 'findings', []))['retry'];
+            if (! $eligibility['allowed']) throw ValidationException::withMessages(['findings' => $eligibility['reason']]);
+            $items = collect($inspection['items'] ?? []);
+            if ($order->items->isEmpty() || ($inspection['quarantined'] ?? true) || $items->count() !== $order->items->count()
+                || $order->items->contains(fn ($item) => ! $items->contains(fn ($row) => $row['reference'] === 'order-item:'.$item->id
+                    && (int) $row['quantity'] === (int) $item->quantity && $row['condition'] === 'safe'))) {
+                throw ValidationException::withMessages(['inspection' => 'Verify every original item and exact quantity as safe; discrepancies remain quarantined.']);
+            }
+            $starts = app(DeliveryStartEligibility::class);
+            $starts->validateRecoveryDate($shop, $data['delivery_date'], $data['delivery_window']);
+            $appointment = $starts->appointmentChanges($original, $data['delivery_date'], $data['delivery_window'],
+                (bool) ($data['appointment_confirmed'] ?? false), $data['appointment_agreement_note'] ?? null, $actor);
+            $attempt = (int) Shipment::where('shop_owner_id', $shop->id)->where('source_type', 'order')->where('source_id', $order->id)
+                ->where('purpose', 'retail_delivery')->lockForUpdate()->max('source_attempt') + 1;
+            $shipment = $this->shipments->requestShipment(['shop_owner_id' => $shop->id, 'source_type' => 'order', 'source_id' => $order->id,
+                'purpose' => 'retail_delivery', 'source_attempt' => $attempt, 'legs' => [[
+                    'leg_type' => 'outbound', 'origin_snapshot' => $original->origin_snapshot, 'destination_snapshot' => $original->destination_snapshot,
+                    'scheduled_delivery_date' => $data['delivery_date'], 'delivery_window' => $data['delivery_window'], 'schedule_status' => 'scheduled',
+                    'requires_pickup_proof' => false, 'requires_delivery_proof' => true,
+                ]]]);
+            $leg = $shipment->legs()->firstOrFail();
+            $leg->update([...$appointment, 'custody_state' => 'shop', 'custody_confirmed_at' => $original->custody_confirmed_at,
+                ...($appointment ? [] : ['customer_appointment_date' => $original->customer_appointment_date, 'customer_appointment_window' => $original->customer_appointment_window])]);
+            $rider = \App\Models\Logistics\RiderProfile::where('shop_owner_id', $shop->id)->findOrFail($data['rider_profile_id']);
+            app(AssignmentService::class)->assignInternalRider($leg, $rider, $shop, ['incident_id' => $incident->id, 'original_shipment_id' => $original->shipment_id,
+                'immediate_recovery' => $starts->immediateRecovery($shop, $data['delivery_date'], $data['delivery_window'], $data)], $actor);
+            app(ShipmentCustodyService::class)->request($leg->fresh(), $actor, 'rider', $rider->id, (string) \Illuminate\Support\Str::uuid());
+            // Original allocation, charges and COD/payment obligations remain authoritative on the same Order.
+            return $shipment->fresh('legs.assignments');
+        }, 3);
+    }
+
     public function ensureRefundReturnShipment(OrderRefund $refund): Shipment
     {
         return DB::transaction(function () use ($refund): Shipment {
@@ -446,6 +499,9 @@ class SourceShipmentService
                     'completed_at' => null,
                     'cancelled_at' => null,
                 ]);
+                $received = $existing->legs()->where('resolution_type', 'returned')->where('custody_state', 'shop')
+                    ->whereNotNull('custody_confirmed_at')->whereHas('incidents', fn ($query) => $query->whereNotNull('recovery_context'))->latest('id')->first();
+                if ($received) $leg->update(['custody_state' => 'shop', 'custody_confirmed_at' => $received->custody_confirmed_at]);
                 $this->events->record($existing, $leg, [
                     'event_type' => 'shipment_reactivated',
                     'message' => $sponsoredWarranty

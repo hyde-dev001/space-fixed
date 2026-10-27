@@ -59,7 +59,8 @@ class DeliveryIncidentControllerTest extends TestCase
         $this->assertStringContainsString('/api/logistics/incidents/'.$incident->id.'/evidence/0', $response->json('incident.evidence_urls.0'));
 
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
-        $leg->shipment->update(['source_type' => 'order']);
+        $order = \App\Models\Order::factory()->create(['shop_owner_id' => $shop->id, 'payment_status' => 'paid', 'delivery_method' => 'shop_owned']);
+        $leg->shipment->update(['source_type' => 'order', 'source_id' => $order->id, 'purpose' => 'retail_delivery']);
         $this->clockInEmployee($dispatcher);
         foreach (['view-logistics-shipments', 'assign-logistics-deliveries', 'resolve-logistics-exceptions'] as $permission) {
             Permission::findOrCreate($permission, 'user');
@@ -111,6 +112,8 @@ class DeliveryIncidentControllerTest extends TestCase
         $response = $this->actingAs($staff, 'user')
             ->post("/api/logistics/incidents/{$incident->id}/resolve", [
                 'resolution' => 'loss_confirmed',
+                'request_key' => (string) \Illuminate\Support\Str::uuid(), 'expected_revision' => 0,
+                'findings' => ['operational_ready' => true],
                 'note' => 'Search and investigation completed.',
                 'evidence_files' => [$this->fakeEvidenceFile('investigation.png')],
             ], ['Accept' => 'application/json'])
@@ -118,7 +121,7 @@ class DeliveryIncidentControllerTest extends TestCase
             ->assertJsonPath('incident.photo_paths', null);
 
         $updated = $incident->fresh();
-        $path = $updated->photo_paths[0];
+        $path = $updated->evidencePaths()[0];
         Storage::disk('local')->assertExists($path);
         Storage::disk('public')->assertMissing($path);
         $url = "/api/logistics/incidents/{$incident->id}/evidence/0";
@@ -155,7 +158,7 @@ class DeliveryIncidentControllerTest extends TestCase
 
     private function assignedLeg(): array
     {
-        $shop = ShopOwner::factory()->create();
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'picked_up']);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);

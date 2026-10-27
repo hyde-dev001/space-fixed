@@ -2,6 +2,9 @@ import axios from 'axios';
 import type { BatchSuggestion, CodCollectionPageData, LogisticsModule } from '@/types/logistics';
 
 export const logisticsApi = {
+  parcelRecoveries: () => axios.get<{ recoveries: import('@/types/logistics').ParcelRecovery[] }>('/api/logistics/parcel-recovery'),
+  parcelRecoveryAction: (id: number, stage: 'receipt' | 'inspection' | 'disposition' | 'close' | 'investigation', payload: FormData) =>
+    axios.post(`/api/logistics/parcel-recovery/${id}/${stage}`, payload),
   reportBatchInterruption: (id: number, payload: FormData) => axios.post(`/api/logistics/batches/${id}/incidents`, payload),
   releaseCustody: (id: number, payload: FormData) => axios.post(`/api/logistics/custody-transfers/${id}/release`, payload),
   receiveCustody: (id: number, payload: FormData) => axios.post(`/api/logistics/custody-transfers/${id}/receive`, payload),

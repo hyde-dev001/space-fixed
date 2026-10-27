@@ -284,6 +284,7 @@ class RepairWorkflowController extends Controller
                     'shopOwner',
                     'repairer',
                     'logisticsShipments.legs.proofs',
+                    'logisticsShipments.legs.incidents',
                     'logisticsShipments.events',
                 ])
                     ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
@@ -351,6 +352,7 @@ class RepairWorkflowController extends Controller
                     'shopOwner',
                     'repairer',
                     'logisticsShipments.legs.proofs',
+                    'logisticsShipments.legs.incidents',
                     'logisticsShipments.events',
                 ])
                     ->withSum(['posTransactions as pos_paid_amount' => function ($query) {
@@ -397,6 +399,7 @@ class RepairWorkflowController extends Controller
                 'services',
                 'shopOwner',
                 'logisticsShipments.legs.proofs',
+                'logisticsShipments.legs.incidents',
                 'logisticsShipments.events',
             ])
                 ->withSum(['posTransactions as pos_paid_amount' => function ($query) {

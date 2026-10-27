@@ -336,6 +336,23 @@ class ProofReviewFlowTest extends TestCase
         $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
     }
 
+    public function test_previous_assignment_proof_cannot_complete_a_new_assignment(): void
+    {
+        [$shop, , $leg] = $this->riderLeg(withArrival: true);
+        $old = $leg->assignments()->latest('id')->firstOrFail();
+        $proof = HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'delivery_assignment_id' => $old->id,
+            'handoff_type' => 'delivery', 'review_status' => 'pending']);
+        $old->update(['status' => 'cancelled']);
+        \App\Models\Logistics\DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'status' => 'accepted']);
+        $leg->update(['status' => 'awaiting_proof_approval']);
+        try {
+            app(ProofReviewService::class)->approve($proof, $shop);
+            $this->fail('Previous assignment proof completed a new execution.');
+        } catch (ValidationException $exception) { $this->assertArrayHasKey('proof', $exception->errors()); }
+        $this->assertSame('pending', $proof->fresh()->review_status);
+        $this->assertSame('awaiting_proof_approval', $leg->fresh()->status->value);
+    }
+
     private function riderLeg(bool $withArrival, bool $includeProfile = false): array
     {
         Permission::findOrCreate('record-logistics-proof', 'user');
@@ -348,7 +365,7 @@ class ProofReviewFlowTest extends TestCase
         $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
         $leg = ShipmentLeg::factory()->create([
             'shipment_id' => $shipment->id,
-            'status' => 'in_transit',
+            'status' => 'picked_up',
         ]);
         $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
         $this->clockInEmployee($rider);
@@ -364,6 +381,10 @@ class ProofReviewFlowTest extends TestCase
             'status' => 'accepted',
             'assigned_at' => now(),
         ]);
+
+        $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $profile->id, 'custody_confirmed_at' => now()]);
+        app(\App\Services\Logistics\ShipmentLegService::class)->markInTransit($leg, $profile);
+        $leg->refresh();
 
         if ($withArrival) {
             $leg->events()->create([

@@ -81,10 +81,11 @@ class FailedDeliveryRecoveryTest extends \Tests\TestCase
     public function test_dismissed_pre_pickup_incident_restores_assigned_state_and_preserves_original_notes(): void
     {
         [$shop, $rider, $leg] = $this->fixture();
-        $leg->update(['status' => 'assigned', 'picked_up_at' => null, 'requires_pickup_proof' => true]);
+        $leg->update(['status' => 'assigned', 'picked_up_at' => null, 'requires_pickup_proof' => true,
+            'custody_state' => 'shop', 'custody_rider_profile_id' => null, 'custody_confirmed_at' => now()]);
         $incidents = app(DeliveryIncidentService::class);
         $incident = $incidents->report($leg->fresh(), $rider, ['type' => 'vehicle_problem', 'notes' => 'Synthetic vehicle issue', 'photo_paths' => ['incident-evidence/audit/photo.jpg']]);
-        $incidents->resolve($incident, $shop, 'dismissed', 'Issue cleared');
+        $incidents->resolve($incident, $shop, 'dismissed', 'Issue cleared', [], null, [], null, ['obstacle_resolved' => true]);
         $this->assertSame('assigned', $leg->fresh()->status->value);
         $this->assertSame('Synthetic vehicle issue', $incident->fresh()->notes);
         $this->assertNull($leg->fresh()->picked_up_at);

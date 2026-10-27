@@ -3,6 +3,12 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JobOrdersRepair from '../JobOrdersRepair';
 
+it('shows parcel recovery separately from repair completion and payment', async () => {
+  render(<JobOrdersRepair />);
+  await waitFor(() => expect(screen.getByRole('region', { name: 'Returned parcels requiring action' })).toBeInTheDocument());
+  expect(screen.getByText(/Receipt does not complete repair, refund or delivery/)).toBeInTheDocument();
+});
+
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
@@ -86,6 +92,7 @@ beforeEach(() => {
   vi.stubGlobal('fetch', mocks.fetch);
   mocks.post.mockResolvedValue({ data: { success: true } });
   mocks.get.mockImplementation(async (url: string) => {
+    if (url === '/api/logistics/parcel-recovery') return { data: { recoveries: [] } };
     if (url === '/api/repairer/repairs') {
       return { data: { success: true, data: [mocks.repair] } };
     }

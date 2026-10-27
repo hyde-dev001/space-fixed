@@ -1,5 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
 import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
+import ParcelIncidentRecovery from '@/components/logistics/ParcelIncidentRecovery';
 import type { RetailWarrantyProjection } from '@/types/retailWarranty';
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
@@ -2064,6 +2065,7 @@ export default function JobOrdersPage() {
   return (
     <AppLayoutERP>
       <Head title="Job Orders - Solespace ERP" />
+      {!auth?.erpActor?.ownerMode && <ParcelIncidentRecovery source="retail" />}
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
       
       {loading ? (

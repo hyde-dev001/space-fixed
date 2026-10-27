@@ -216,6 +216,7 @@ export type ProofReviewSummary = {
 };
 
 export type TrackingShipmentLeg = {
+  activation_required?: boolean;
   custody_state?: string;
   custody_rider_profile_id?: number | null;
   batch_interruption?: BatchInterruption | null;
@@ -329,6 +330,9 @@ export type TrackingShipmentLeg = {
 };
 
 export type LogisticsIncident = {
+  revision?: number;
+  decided_at?: string | null;
+  eligibility?: Record<string, { allowed: boolean; conditional: boolean; label: string; reason: string | null }>;
   id: number;
   type: 'damaged' | 'lost' | 'vehicle_problem' | 'customer_dispute' | 'other' | string;
   status: 'reported' | 'under_review' | 'resolved' | string;
@@ -337,6 +341,44 @@ export type LogisticsIncident = {
   resolved_at?: string | null;
   reporting_rider_profile_id?: number | null;
   evidence_urls?: string[];
+};
+
+export type ParcelRecovery = {
+  can_reauthorize?: boolean;
+  can_investigate?: boolean;
+  can_supervise_recovery?: boolean;
+  safekeeping_pending?: boolean;
+  can_inspect?: boolean;
+  current_delivery_id?: number;
+  movement_status?: string;
+  holder_label?: string;
+  shop_action_blocker?: string | null;
+  evidence_urls?: string[];
+  retry_findings?: Record<string, unknown> | null;
+  incident_id: number;
+  revision: number;
+  type: string;
+  resolution: string;
+  operational_status: string;
+  source_type: string;
+  source_id: number;
+  shipment_id: number;
+  delivery_id: number;
+  custody: string;
+  received: boolean;
+  inspected: boolean;
+  quarantined: boolean;
+  next_action: string;
+  complete: boolean;
+  return_leg_id: number | null;
+  return_proof_id: number | null;
+  retry_context: TrackingShipmentLeg;
+  expected_items: Array<{ reference: string; label: string; expected_quantity: number }>;
+  actions: Array<{ action: string; label: string; allowed: boolean }>;
+  can_close: boolean;
+  source_outcome: { shipment_id?: number; leg_id?: number; refund_id?: number; repair_request_id?: number };
+  obligations: Array<{ type: string; id: number; status: string | null; complete: boolean; next_actor: string; note?: string }>;
+  transfers: CustodyHandoff[];
 };
 
 export type TrackingShipmentEvent = {

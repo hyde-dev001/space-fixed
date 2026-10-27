@@ -1719,6 +1719,17 @@ class OrderRefundService
             return false;
         }
 
+        if ($refund->reason_code === 'parcel_incident_recovery') {
+            return \App\Models\Logistics\DeliveryIncident::where('shop_owner_id', $refund->shop_owner_id)
+                ->where('recovery_context->source_outcome->refund_id', $refund->id)
+                ->whereHas('leg', fn ($legs) => $legs->where('custody_state', 'shop')->whereNotNull('custody_confirmed_at')
+                    ->whereHas('shipment', fn ($sources) => $sources->where('shop_owner_id', $refund->shop_owner_id)
+                        ->where('source_type', 'order')->where('source_id', $refund->order_id)->where('purpose', 'retail_delivery'))
+                    ->whereHas('returnLeg', fn ($returns) => $returns->where('status', 'delivered')
+                        ->whereHas('proofs', fn ($proofs) => $proofs->where('handoff_type', 'receive')->where('review_status', 'approved'))))
+                ->exists();
+        }
+
         $shipment = Shipment::query()
             ->where('shop_owner_id', (int) $refund->shop_owner_id)
             ->where('source_type', 'order_refund')

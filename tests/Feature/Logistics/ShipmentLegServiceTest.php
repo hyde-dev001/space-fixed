@@ -348,6 +348,7 @@ class ShipmentLegServiceTest extends TestCase
             'staff_return_carrier' => 'Shop-owned logistics',
         ]);
         $shipment = Shipment::factory()->create([
+            'shop_owner_id' => $refund->shop_owner_id,
             'source_type' => 'order_refund',
             'source_id' => $refund->id,
             'purpose' => 'refund_return',

@@ -22,6 +22,19 @@ class RepairReturnRecoveryTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_customer_shop_pickup_after_incident_still_requires_safe_inspection(): void
+    {
+        [$repair, $shop, , $original, $return, $proof] = $this->returnedRepairFixture();
+        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
+        $repair->update(['status' => 'ready_for_pickup', 'return_delivery_method' => 'walk_in']);
+        $incident = \App\Models\Logistics\DeliveryIncident::factory()->create(['shop_owner_id' => $shop->id, 'shipment_leg_id' => $original->id,
+            'type' => 'damaged', 'resolution' => 'return_required', 'status' => 'under_review', 'decided_at' => now(),
+            'recovery_context' => ['inspection' => ['quarantined' => true]]]);
+        $this->assertFalse(app(RepairDeliveryService::class)->returnHandoff($repair->fresh(), true)['can_release']);
+        $incident->forceFill(['recovery_context' => ['inspection' => ['quarantined' => false]]])->save();
+        $this->assertTrue(app(RepairDeliveryService::class)->returnHandoff($repair->fresh(), true)['can_release']);
+    }
+
     public function test_shop_receipt_enters_return_recovery_without_refund_and_replay_is_idempotent(): void
     {
         [$repair, $shop, $shipment, $original, $return, $proof] = $this->returnedRepairFixture();
@@ -277,9 +290,27 @@ class RepairReturnRecoveryTest extends TestCase
 
     public function test_redelivery_payment_charges_only_the_new_fee_and_reopens_the_same_shipment(): void
     {
+        $this->travelTo(now(config('app.shop_timezone'))->setDate(2026, 10, 27)->setTime(9, 0));
+        \Illuminate\Support\Facades\Storage::fake('local');
         [$repair, $shop, $shipment, $original, $return, $proof] = $this->returnedRepairFixture();
+        \App\Models\ShopOwnerModule::updateOrCreate(['shop_owner_id' => $shop->id, 'module_key' => 'repair_operations'], ['enabled' => true]);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        foreach (['resolve-logistics-exceptions', 'assign-logistics-deliveries', 'approve-proof-of-delivery'] as $permission) {
+            $dispatcher->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate($permission, 'user'));
+        }
+        $this->clockInEmployee($dispatcher);
+        $incident = \App\Models\Logistics\DeliveryIncident::factory()->create(['shop_owner_id' => $shop->id,
+            'shipment_leg_id' => $original->id, 'type' => 'vehicle_problem', 'resolution' => 'return_required',
+            'status' => 'under_review', 'decided_at' => now(), 'revision' => 1,
+            'recovery_context' => ['findings' => ['safe_for_transport' => true]]]);
+        $recovery = app(\App\Services\Logistics\ParcelIncidentRecoveryService::class);
+        $facts = fn (array $extra) => ['request_key' => (string) \Illuminate\Support\Str::uuid(),
+            'expected_revision' => $incident->fresh()->revision, 'notes' => 'Verified real repair recovery step', ...$extra];
+        $recovery->receive($incident, $dispatcher, $facts(['proof_id' => $proof->id, 'evidence_path' => 'incident-evidence/repair-receipt.jpg']));
+        $recovery->inspect($incident->fresh(), $dispatcher, $facts(['items' => [['reference' => 'repair_request:'.$repair->id, 'quantity' => 1, 'condition' => 'safe']]]));
+        $recovery->disposition($incident->fresh(), $dispatcher, $facts(['action' => 'verify_readiness', 'findings' => ['obstacle_resolved' => true]]));
+        $recovery->disposition($incident->fresh(), $dispatcher, $facts(['action' => 'repair_recovery']));
         $deliveryDate = now()->addDays(2)->toDateString();
-        app(ShipmentLegService::class)->confirmReturnReceipt($return, $proof, $shop);
         app(RepairDeliveryService::class)->resolveReturnRecovery(
             $repair->fresh(),
             'schedule_redelivery',
@@ -366,6 +397,40 @@ class RepairReturnRecoveryTest extends TestCase
             ->firstWhere('recovery_key', "return-to-shop:{$return->id}");
         $this->assertSame('paid', $entry['status']);
         $this->assertSame(1, $this->recoveryNotificationCount($settled, 'ready_for_dispatch'));
+        $this->assertSame('shop', $newLeg->custody_state);
+        $this->travelTo(\Illuminate\Support\Carbon::parse($deliveryDate.' 13:00', config('app.shop_timezone')));
+        $this->clockInEmployee($dispatcher);
+        $profile = \App\Models\Logistics\RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
+        $rider = User::findOrFail($profile->linked_id);
+        foreach (['update-logistics-status', 'record-logistics-proof'] as $permission) {
+            $rider->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate($permission, 'user'));
+        }
+        $this->clockInEmployee($rider);
+        app(\App\Services\Logistics\AssignmentService::class)->assignInternalRider($newLeg, $profile, $shop, [], $dispatcher);
+        app(\App\Services\Logistics\AssignmentService::class)->respondToOffer($newLeg->fresh(), $profile, true);
+        $recovery->disposition($incident->fresh(), $dispatcher, $facts(['action' => 'authorize_retry_handoff']));
+        $transfer = $newLeg->custodyTransfers()->latest('id')->firstOrFail();
+        \Illuminate\Support\Facades\Storage::disk('local')->put('logistics-proof/repair-release.jpg', 'actual release');
+        \Illuminate\Support\Facades\Storage::disk('local')->put('logistics-proof/repair-receipt.jpg', 'actual Rider receipt');
+        $custody = app(\App\Services\Logistics\ShipmentCustodyService::class);
+        $custody->release($transfer, $dispatcher, 'logistics-proof/repair-release.jpg');
+        $custody->receive($transfer->fresh(), $rider, 'logistics-proof/repair-receipt.jpg');
+        app(ShipmentLegService::class)->markPickedUp($newLeg->fresh(), $profile);
+        app(ShipmentLegService::class)->markInTransit($newLeg->fresh(), $profile);
+        $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$newLeg->id}/arrivals", [
+            'arrival_type' => 'dropoff', 'exception_reason' => 'pin_incorrect',
+        ])->assertCreated();
+        $deliveryProof = $this->post("/api/logistics/legs/{$newLeg->id}/proof", ['handoff_type' => 'delivery', 'proof_type' => 'photo',
+            'idempotency_key' => (string) \Illuminate\Support\Str::uuid(), 'proof_file' => \Illuminate\Http\UploadedFile::fake()->image('repair-delivery.jpg')],
+            ['Accept' => 'application/json'])->assertCreated()->json('proof.id');
+        $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/proofs/{$deliveryProof}/approve")->assertOk();
+        $this->actingAs(User::findOrFail($repair->user_id), 'user')->postJson("/api/customer/repairs/{$repair->id}/confirm-pickup")->assertOk();
+        $this->assertSame('picked_up', $repair->fresh()->status);
+        $this->assertSame('delivered', $newLeg->fresh()->status->value);
+        $this->assertSame($beforePaid + $fee, (float) $repair->fresh()->total_paid_amount);
+        $closed = $recovery->close($incident->fresh(), $dispatcher, $facts(['outcome' => 'delivery_completed']));
+        $this->assertSame('resolved', $closed['operational_status']);
+        $this->assertTrue($closed['complete']);
     }
 
     public function test_stale_redelivery_session_reconciles_without_dispatch(): void

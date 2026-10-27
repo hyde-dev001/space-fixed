@@ -3,6 +3,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
 import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
+import ParcelIncidentRecovery from '@/components/logistics/ParcelIncidentRecovery';
 import ErrorModal from "../../../components/common/ErrorModal";
 import axios from "axios";
 import { calculateRepairRevenue } from "../../../utils/deliveryRevenue";
@@ -2614,6 +2615,7 @@ export default function JobOrdersRepair() {
   return (
     <AppLayoutERP>
       <Head title="Repair Services - Solespace ERP" />
+      {!auth?.erpActor?.ownerMode && <ParcelIncidentRecovery source="repair" />}
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
       
       <div className="space-y-6">

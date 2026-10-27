@@ -20,10 +20,10 @@ use Spatie\Permission\Models\Role;
 
 trait BatchInterruptionFixture
 {
-    protected function interruptionFixture(string $status = 'in_progress', int $count = 3): array
+    protected function interruptionFixture(string $status = 'in_progress', int $count = 3, bool $shopLocalTime = false): array
     {
         Storage::fake('local');
-        $this->travelTo(now()->setTime(10, 0));
+        $this->travelTo(($shopLocalTime ? now(config('app.shop_timezone', 'Asia/Manila')) : now())->setTime(10, 0));
         $shop = ShopOwner::factory()->approved()->withLogistics()->create(['business_type' => 'retail', 'registration_type' => 'company']);
         LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], ['operating_days' => [1, 2, 3, 4, 5, 6, 7], 'blackout_dates' => []]);
         $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);

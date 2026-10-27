@@ -105,6 +105,12 @@ class ShipmentCustodyTransferTest extends TestCase
         $this->assertSame($b->id, $leg->fresh()->custody_rider_profile_id);
         $this->assertSame('received', $transfer->fresh()->status);
         $this->assertSame(2, $leg->proofs()->whereIn('handoff_type', ['custody_release', 'custody_receipt'])->count());
+        Storage::disk('local')->put('logistics-proof/changed.jpg', 'different parcel evidence');
+        try {
+            $service->receive($transfer, $target, 'logistics-proof/changed.jpg');
+            $this->fail('A completed handoff accepted changed evidence as an identical replay.');
+        } catch (ValidationException $exception) { $this->assertArrayHasKey('custody', $exception->errors()); }
+        $this->assertSame(2, $leg->proofs()->whereIn('handoff_type', ['custody_release', 'custody_receipt'])->count());
     }
 
     public function test_shop_mediation_requires_both_confirmed_transfers(): void

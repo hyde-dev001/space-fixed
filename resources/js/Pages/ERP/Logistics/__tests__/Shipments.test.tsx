@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Swal from 'sweetalert2';
 import Shipments from '../Shipments';
+vi.mock('@/components/logistics/ParcelIncidentRecovery', () => ({ default: () => null }));
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(() => Promise.resolve()),
@@ -1298,6 +1299,24 @@ it('authorizes an incident retry inline with responsibility and no duplicate rec
   await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/logistics/incidents/41/resolve',
     expect.objectContaining({ resolution: 'retry', responsible_party: 'third_party', rider_profile_id: 9,
       note: 'Repair completed; arrange a new visit.', handoff_route: 'direct' }), undefined));
+});
+
+it('binds an incident decision to its revision and records explicit condition findings', async () => {
+  setDispatcherLeg({ ...defaultProps().shipments.data[0].legs[0], status: 'needs_resolution',
+    incidents: [{ id: 41, type: 'vehicle_problem', status: 'reported', revision: 4,
+      eligibility: { dismissed: { allowed: false, conditional: true, label: 'Issue resolved — continue delivery', reason: 'Verify the obstacle is resolved.' } } }],
+  });
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
+  fireEvent.click(screen.getByLabelText('Vehicle or route obstacle resolved'));
+  fireEvent.click(screen.getByRole('radio', { name: 'Issue resolved — continue delivery' }));
+  fireEvent.change(screen.getByLabelText('Decision reason'), { target: { value: 'Repair verified with the actual rider' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm issue resolved' }));
+  await waitFor(() => expect(mocks.post).toHaveBeenCalled());
+  const form = mocks.post.mock.calls[0][1] as FormData;
+  expect(form.get('expected_revision')).toBe('4');
+  expect(form.get('request_key')).toMatch(/^[0-9a-f-]{36}$/);
+  expect(form.get('findings[obstacle_resolved]')).toBe('1');
 });
 
 it('requires loss evidence and prevents duplicate decisions or closing while a save is pending', async () => {

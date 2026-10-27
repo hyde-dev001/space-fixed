@@ -834,6 +834,9 @@ class RepairRequestController extends Controller
             ->update(['status' => 'pending']);
 
         $query = RepairRequest::with([
+            'logisticsShipments.legs.incidents',
+            'logisticsShipments.legs.proofs',
+            'logisticsShipments.events',
             'services',
             'shopOwner',
             'repairer',

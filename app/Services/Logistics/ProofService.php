@@ -105,6 +105,7 @@ class ProofService
             }
 
             if ($data['replaces_proof_id'] !== null) {
+                if ($rider && $data['handoff_type'] === 'delivery') app(DeliveryStartEligibility::class)->assertActivated($leg);
                 $this->assertCanReplace($leg, $data);
             } else {
                 if ($data['handoff_type'] === 'delivery'
@@ -125,6 +126,7 @@ class ProofService
                             'arrival' => 'Record your arrival at the customer location before submitting delivery proof.',
                         ]);
                     }
+                    if ($data['handoff_type'] === 'delivery') app(DeliveryStartEligibility::class)->assertActivated($leg);
                 }
 
                 if ($data['handoff_type'] === 'delivery') {
@@ -269,6 +271,7 @@ class ProofService
                 'replaces_proof_id' => 'The replacement must reference the latest rejected delivery proof.',
             ]);
         }
+        $this->assertCurrentAssignment($leg, $replaced);
 
         $latestDeliveryProof = $leg->proofs()
             ->where('handoff_type', 'delivery')
@@ -291,6 +294,15 @@ class ProofService
             throw ValidationException::withMessages([
                 'replaces_proof_id' => 'A delivery proof is already awaiting review.',
             ]);
+        }
+    }
+
+    public function assertCurrentAssignment(ShipmentLeg $leg, HandoffProof $proof): void
+    {
+        $currentId = $leg->assignments()->latest('id')->value('id');
+        if (($proof->delivery_assignment_id && (int) $proof->delivery_assignment_id !== (int) $currentId)
+            || (! $proof->delivery_assignment_id && $leg->assignments()->count() > 1)) {
+            throw ValidationException::withMessages(['proof' => 'This proof belongs to a previous or unverified assignment. Record evidence for the current execution.']);
         }
     }
 

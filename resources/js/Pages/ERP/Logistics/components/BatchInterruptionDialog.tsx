@@ -64,6 +64,9 @@ export function BatchInterruptionDialog({ batchId, incident, canAssign, today, r
   const [route, setRoute] = useState('direct');
   const [agreements, setAgreements] = useState<Record<number, string>>({});
   const [override, setOverride] = useState('');
+  const [immediate, setImmediate] = useState(false);
+  const [effectiveStart, setEffectiveStart] = useState('');
+  const [effectiveEnd, setEffectiveEnd] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -76,7 +79,8 @@ export function BatchInterruptionDialog({ batchId, incident, canAssign, today, r
     return () => { if (trigger instanceof HTMLElement) trigger.focus(); };
   }, []);
   const replacing = Boolean(incident && choice === 'reassign');
-  const valid = Boolean(note.trim() && (incident || file) && (!replacing || (Number(rider) > 0 && date)));
+  const valid = Boolean(note.trim() && (incident || file) && (!replacing || (Number(rider) > 0 && date
+    && (!immediate || (effectiveStart && effectiveEnd && effectiveEnd > effectiveStart)))));
   const close = () => { if (!inFlight.current) onClose(); };
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -89,6 +93,7 @@ export function BatchInterruptionDialog({ batchId, incident, canAssign, today, r
         const appointmentAgreements = Object.fromEntries(Object.entries(agreements).filter(([, value]) => value.trim()).map(([id, value]) => [id, value.trim()]));
         await logisticsApi.resolveIncident(incident.id, { resolution: choice, note: note.trim(), expected_revision: incident.revision, decision_key: requestKey.current,
           ...(replacing ? { rider_profile_id: Number(rider), delivery_date: date, delivery_window: window, handoff_route: route,
+            immediate_recovery: immediate, ...(immediate ? { effective_start: effectiveStart, effective_end: effectiveEnd, immediate_reason: note.trim() } : {}),
             appointment_agreements: appointmentAgreements, capacity_override_reason: override.trim() || null } : {}) });
       } else if (file) {
         const payload = new FormData();
@@ -137,6 +142,11 @@ export function BatchInterruptionDialog({ batchId, incident, canAssign, today, r
         <div className="grid gap-3 sm:grid-cols-2"><div><p className="mb-1">Recovery date</p><DeliveryDatePicker label="Recovery date" value={date} minDate={today} onChange={value => { setDate(value); resetIdentity(); }} disabled={pending} operatingDays={schedule?.operating_days} blackoutDates={schedule?.blackout_dates} insideModal /></div>
           <label>Recovery window<select aria-label="Recovery window" className={input} value={window} onChange={event => setWindow(event.target.value)} disabled={pending}><option value="morning">{logisticsWindowLabel('morning', schedule)}</option><option value="afternoon">{logisticsWindowLabel('afternoon', schedule)}</option></select></label></div>
         <label className="block">Parcel handoff route<select aria-label="Parcel handoff route" className={input} value={route} onChange={event => setRoute(event.target.value)} disabled={pending}><option value="direct">Direct rider-to-rider</option><option value="via_shop">Through the shop</option></select></label>
+        <label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={immediate} onChange={event => setImmediate(event.target.checked)} disabled={pending} />Authorize a bounded immediate recovery</label>
+        {immediate && <fieldset disabled={pending} className="grid gap-3 sm:grid-cols-2"><legend>Effective times in {schedule?.timezone ?? 'shop local time'}. Appointments and operating hours remain binding.</legend>
+          <label>Effective start<input className={input} type="datetime-local" required value={effectiveStart} onChange={event => setEffectiveStart(event.target.value)} /></label>
+          <label>Authorization expiry<input className={input} type="datetime-local" required value={effectiveEnd} onChange={event => setEffectiveEnd(event.target.value)} /></label>
+        </fieldset>}
         {incident?.stops.filter(stop => stop.customer_appointment_date).map(stop => <label key={stop.shipment_leg_id} className="block text-sm">
           Customer agreement for {stop.delivery_reference} (currently {stop.customer_appointment_date} {stop.customer_appointment_window})
           <textarea className={input} maxLength={1000} disabled={pending} value={agreements[stop.shipment_leg_id] ?? ''} onChange={event => setAgreements(current => ({ ...current, [stop.shipment_leg_id]: event.target.value }))} />

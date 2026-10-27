@@ -215,6 +215,7 @@ class ProofReviewService
 
     private function assertCurrentDeliveryProof(ShipmentLeg $leg, HandoffProof $proof): void
     {
+        app(ProofService::class)->assertCurrentAssignment($leg, $proof);
         $current = $leg->proofs()
             ->where('handoff_type', 'delivery')
             ->orderByDesc('recorded_at')

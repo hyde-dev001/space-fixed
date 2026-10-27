@@ -103,7 +103,7 @@ class DeliveryArrivalTest extends TestCase
             ->postJson("/api/logistics/legs/{$leg->id}/arrivals", $this->arrivalPayload('dropoff'))
             ->assertCreated();
 
-        $this->assertSame('Rider arrived at the shop.', $leg->events()->sole()->message);
+        $this->assertSame('Rider arrived at the shop.', $leg->events()->where('event_type', 'dropoff_arrived')->sole()->message);
     }
 
     public function test_only_the_canonical_active_batch_can_record_arrival_when_legacy_work_conflicts(): void
@@ -204,12 +204,12 @@ class DeliveryArrivalTest extends TestCase
                 ])
                 ->assertCreated();
 
-            $this->assertSame(1, $leg->events()->count(), $name);
+            $this->assertSame(1, $leg->events()->where('event_type', 'dropoff_arrived')->count(), $name);
             $this->assertSame(
                 in_array($name, ['unusable_accuracy', 'missing_gps', 'stale_gps', 'future_gps', 'missing_target'], true)
                     ? 'location_unavailable'
                     : $name,
-                $leg->events()->sole()->metadata['result'],
+                $leg->events()->where('event_type', 'dropoff_arrived')->sole()->metadata['result'],
                 $name
             );
         }
@@ -327,7 +327,10 @@ class DeliveryArrivalTest extends TestCase
         $leg = ShipmentLeg::factory()->create([
             'shipment_id' => $shipment->id,
             'delivery_batch_id' => $batch->id,
-            'status' => $status,
+            'status' => $status === 'in_transit' && $batchStatus === 'in_progress' ? 'picked_up' : $status,
+            'custody_state' => $status === 'in_transit' ? 'rider' : 'unknown',
+            'custody_rider_profile_id' => $status === 'in_transit' ? $profile->id : null,
+            'custody_confirmed_at' => $status === 'in_transit' ? now() : null,
             'origin_snapshot' => ['type' => 'shop', 'latitude' => 14.3, 'longitude' => 120.95],
             'destination_snapshot' => ['type' => 'customer', 'latitude' => 14.301, 'longitude' => 120.951],
         ]);
@@ -337,6 +340,10 @@ class DeliveryArrivalTest extends TestCase
             'status' => 'accepted',
         ]);
 
+        if ($status === 'in_transit' && $batchStatus === 'in_progress') {
+            app(\App\Services\Logistics\ShipmentLegService::class)->markOutForDelivery($leg, $profile);
+            $leg->refresh();
+        }
         return [$leg, $rider, $shop];
     }
 

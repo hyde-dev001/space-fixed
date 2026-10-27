@@ -156,11 +156,12 @@ class BatchInterruptionService
                 abort_unless($actor->can('assign-logistics-deliveries') || $actor->can('manage-logistics-batches'), 403);
                 if ($incident->recovery_batch_id) {
                     $old = DeliveryBatch::lockForUpdate()->findOrFail($incident->recovery_batch_id);
-                    if ($old->status !== 'draft' || ! $old->rejected_at) {
+                    if ((! in_array($old->status, ['offered', 'accepted'], true) && ($old->status !== 'draft' || ! $old->rejected_at))
+                        || $old->started_at || $stops->contains(fn ($stop) => $this->starts->hasActivated($stop->leg))) {
                         throw ValidationException::withMessages(['resolution' => 'Resolve the existing replacement offer and its physical handoffs first.']);
                     }
                     foreach ($stops as $stop) {
-                        if ($stop->leg->custodyTransfers()->whereIn('status', ['released', 'received'])->exists()) {
+                        if ($stop->leg->custodyTransfers()->where('status', 'released')->exists()) {
                             throw ValidationException::withMessages(['custody' => 'A physical handoff has begun. Finish receipt or investigate it before changing the rider.']);
                         }
                         foreach ($stop->leg->custodyTransfers()->where('status', 'requested')->get() as $transfer) {

@@ -98,6 +98,23 @@ class DeliveryIncidentController extends Controller
         }
         $data = $request->validate([
             'resolution' => ['required', 'string', Rule::in(DeliveryIncidentService::RESOLUTIONS)],
+            'request_key' => ['required', 'uuid'],
+            'expected_revision' => ['required', 'integer', 'min:0'],
+            'findings' => ['required', 'array:condition_verified,safe_for_delivery,safe_for_transport,recovered_verified,obstacle_resolved,dispute_resolved,operational_ready,items,customer_agreement,mitigation_plan'],
+            'findings.condition_verified' => ['sometimes', 'boolean'],
+            'findings.safe_for_delivery' => ['sometimes', 'boolean'],
+            'findings.safe_for_transport' => ['sometimes', 'boolean'],
+            'findings.recovered_verified' => ['sometimes', 'boolean'],
+            'findings.obstacle_resolved' => ['sometimes', 'boolean'],
+            'findings.dispute_resolved' => ['sometimes', 'boolean'],
+            'findings.operational_ready' => ['sometimes', 'boolean'],
+            'findings.items' => ['sometimes', 'array', 'min:1', 'max:100'],
+            'findings.items.*' => ['array:reference,quantity,condition'],
+            'findings.items.*.reference' => ['required', 'string', 'max:150'],
+            'findings.items.*.quantity' => ['required', 'integer', 'min:1'],
+            'findings.items.*.condition' => ['required', 'string', 'max:500'],
+            'findings.customer_agreement' => ['sometimes', 'string', 'max:1000'],
+            'findings.mitigation_plan' => ['sometimes', 'string', 'max:1000'],
             'note' => ['required', 'string', 'max:1000'],
             'responsible_party' => ['nullable', 'in:undetermined,customer,rider,shop,third_party'],
             'evidence_files' => [
@@ -114,8 +131,14 @@ class DeliveryIncidentController extends Controller
         $storedPaths = $this->storeEvidenceFiles($request->file('evidence_files', []), "incident-evidence/incident-{$incident->id}");
 
         try {
-            $resolved = $service->resolve($incident, $shop, $data['resolution'], $data['note'], $storedPaths, $actor, $retryOptions, $data['responsible_party'] ?? null);
-            $this->deleteUncommittedEvidence($storedPaths, $resolved->photo_paths ?? []);
+            $findings = $data['findings'];
+            foreach (['condition_verified', 'safe_for_delivery', 'safe_for_transport', 'recovered_verified', 'obstacle_resolved', 'dispute_resolved', 'operational_ready'] as $field) {
+                if (array_key_exists($field, $findings)) $findings[$field] = filter_var($findings[$field], FILTER_VALIDATE_BOOLEAN);
+            }
+            $resolved = $service->resolve($incident, $shop, $data['resolution'], $data['note'], $storedPaths, $actor, $retryOptions, $data['responsible_party'] ?? null,
+                ['request_key' => $data['request_key'], 'expected_revision' => $data['expected_revision'], 'findings' => $findings,
+                    'evidence_digests' => array_map(fn ($file) => hash_file('sha256', $file->getRealPath()), $request->file('evidence_files', []))]);
+            $this->deleteUncommittedEvidence($storedPaths, $resolved->evidencePaths());
 
             return response()->json(['incident' => $this->incidentPayload($resolved)]);
         } catch (\Throwable $exception) {
@@ -132,7 +155,7 @@ class DeliveryIncidentController extends Controller
         abort_unless($subjectShop, 404);
         abort_unless((int) $incident->shop_owner_id === (int) $subjectShop && (int) $subjectShop === (int) $shop->id, 403);
 
-        $path = $incident->photo_paths[$index] ?? null;
+        $path = $incident->evidencePaths()[$index] ?? null;
         abort_unless(is_string($path) && $this->isSafeEvidencePath($path), 404);
         $disk = Storage::disk('local');
         abort_unless($disk->exists($path), 404);
@@ -203,7 +226,8 @@ class DeliveryIncidentController extends Controller
 
     private function incidentPayload(DeliveryIncident $incident): DeliveryIncident
     {
-        $incident->setAttribute('evidence_urls', collect($incident->photo_paths ?? [])
+        $incident->setAttribute('eligibility', app(DeliveryIncidentService::class)->eligibility($incident, data_get($incident->recovery_context, 'findings', [])));
+        $incident->setAttribute('evidence_urls', collect($incident->evidencePaths())
             ->values()
             ->map(fn ($path, $index) => $this->isSafeEvidencePath($path)
                 && Storage::disk('local')->exists($path)

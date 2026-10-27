@@ -23,6 +23,21 @@ class CustomerTrackingTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_operational_closure_keeps_pending_source_work_visible_without_internal_evidence(): void
+    {
+        $customer = User::factory()->create();
+        $order = Order::factory()->create(['customer_id' => $customer->id]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $order->shop_owner_id, 'source_type' => 'order', 'source_id' => $order->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'cancelled', 'custody_state' => 'lost']);
+        \App\Models\Logistics\DeliveryIncident::factory()->create(['shop_owner_id' => $order->shop_owner_id, 'shipment_leg_id' => $leg->id,
+            'type' => 'lost', 'status' => 'resolved', 'resolution' => 'loss_confirmed', 'resolved_at' => now(), 'decided_at' => now(),
+            'recovery_context' => ['findings' => ['internal_liability' => 'private'], 'evidence_paths' => ['incident-evidence/private.jpg']]]);
+        $response = $this->actingAs($customer, 'user')->getJson('/tracking/shipments/'.$shipment->id)->assertOk();
+        $response->assertJsonPath('shipment.recovery.operational_closed', true)->assertJsonPath('shipment.recovery.linked_work_pending', true);
+        $this->assertStringNotContainsString('internal_liability', $response->getContent());
+        $this->assertStringNotContainsString('incident-evidence', $response->getContent());
+    }
+
     public function test_customer_can_only_view_own_order_tracking(): void
     {
         $customer = User::factory()->create();

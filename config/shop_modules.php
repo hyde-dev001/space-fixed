@@ -951,6 +951,13 @@ $routeBuckets = [
     ],
     'logistics' => [
         'erp.logistics.cod-collections',
+        'logistics.api.parcel-recovery.index',
+        'logistics.api.parcel-recovery.evidence',
+        'logistics.api.parcel-recovery.receive',
+        'logistics.api.parcel-recovery.inspect',
+        'logistics.api.parcel-recovery.close',
+        'logistics.api.parcel-recovery.investigate',
+        'logistics.api.parcel-recovery.disposition',
         'api.logistics.attempts.file',
         'api.logistics.delivery-disputes.evidence',
         'api.logistics.incidents.evidence',
@@ -999,6 +1006,10 @@ $routeBuckets = [
 
 $routeMethods = static function (string $routeName): array {
     $overrides = [
+        'logistics.api.parcel-recovery.inspect' => ['POST'],
+        'logistics.api.parcel-recovery.close' => ['POST'],
+        'logistics.api.parcel-recovery.investigate' => ['POST'],
+        'logistics.api.parcel-recovery.disposition' => ['POST'],
         'shop_owner.refunds.request-correction' => ['POST'],
         'shop-owner.settings.xendit-key' => ['POST'],
         'shop-owner.settings.xendit-key.test' => ['POST'],
@@ -1342,6 +1353,16 @@ foreach ([
     $routes[$routeName]['risk_tier'] = 'sensitive';
     $routes[$routeName]['domain_rule'] = 'Shop Owner TOTP security mutations remain scoped to the authenticated Shop Owner account.';
     $routes[$routeName]['supporting_routes'] = ['shop-owner.settings'];
+}
+
+// Recovery receipt/inspection belongs to its exact source even while Logistics is OFF.
+// New movement is still gated by LogisticsMovementEligibility in the domain services.
+foreach (['index', 'evidence', 'receive', 'inspect', 'close', 'investigate', 'disposition'] as $action) {
+    $name = 'logistics.api.parcel-recovery.'.$action;
+    $routes[$name]['module_keys'] = ['retail_operations', 'repair_operations'];
+    $routes[$name]['mode'] = 'any_of';
+    $routes[$name]['action'] = in_array($action, ['index', 'evidence'], true) ? 'view' : 'update';
+    $routes[$name]['domain_rule'] = 'Authenticated source-scoped employees only; no new Owner actions. Closing custody is separate from new Logistics movement.';
 }
 
 $workspaceRoute = $routeEntry(
