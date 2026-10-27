@@ -92,7 +92,10 @@ class PostWindowDeliveryProgressionTest extends TestCase
             app(ShipmentLegService::class)->markInTransit($leg->fresh(), $profile);
         }
 
+        $rider->givePermissionTo(Permission::findOrCreate('operate-logistics-deliveries', 'user'));
+        $this->assertRiderSeesActivatedDelivery($rider, $leg);
         $this->travelTo(now()->addMinutes(3));
+        $this->assertRiderSeesActivatedDelivery($rider, $leg);
         $this->actingAs($rider, 'user')->postJson("/api/logistics/legs/{$leg->id}/arrivals", [
             'arrival_type' => 'dropoff', 'exception_reason' => 'pin_incorrect',
         ])->assertCreated();
@@ -107,5 +110,18 @@ class PostWindowDeliveryProgressionTest extends TestCase
         $this->assertSame('delivered', $leg->fresh()->status->value);
         $this->assertSame(2, $leg->proofs()->where('handoff_type', 'delivery')->count());
         $this->assertSame(1, $leg->events()->where('event_type', 'dropoff_arrived')->count());
+    }
+
+    private function assertRiderSeesActivatedDelivery(User $rider, ShipmentLeg $leg): void
+    {
+        $data = $this->actingAs($rider, 'user')->get('/erp/logistics/deliveries')
+            ->assertOk()->viewData('page')['props']['deliveryData'];
+        $delivery = collect($data['current']['deliveries'])->firstWhere('id', $leg->id);
+
+        $this->assertNotNull($delivery);
+        $this->assertSame('in_transit', $delivery['status']);
+        $this->assertFalse($delivery['activation_required'], 'A recorded current-assignment start must not ask the Rider to start again.');
+        $this->assertNull($delivery['start_blocked_reason']);
+        $this->assertArrayNotHasKey('events', $delivery);
     }
 }

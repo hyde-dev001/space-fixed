@@ -88,6 +88,7 @@ vi.mock('@/utils/workflowFeedback', () => ({
 vi.mock('@/utils/geolocation', () => ({
   GPS_POSITION_OPTIONS: { enableHighAccuracy: true, timeout: 15_000, maximumAge: 0 },
   getCurrentPositionWithTimeout: mocks.getPosition,
+  getCurrentPositionWithFallback: mocks.getPosition,
 }));
 vi.mock('@/services/logisticsApi', () => ({
   logisticsApi: new Proxy({}, {
@@ -98,9 +99,34 @@ vi.mock('@/services/logisticsApi', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+  Object.defineProperty(navigator, 'geolocation', { configurable: true, value: undefined });
+  mocks.getPosition.mockResolvedValue({
+    coords: { latitude: 14.3, longitude: 120.95, accuracy: 15 },
+    timestamp: Date.now(),
+  });
 });
 
 describe('MyDeliveries GPS tracking integration', () => {
+  it('keeps arrival and incident actions available when tracking rejects a low-accuracy location', async () => {
+    mocks.props.deliveryData.current.deliveries[0].activation_required = false;
+    const position = {
+      coords: { latitude: 14.3, longitude: 120.95, accuracy: 543800 },
+      timestamp: Date.now(),
+    } as GeolocationPosition;
+    mocks.getPosition.mockImplementation(() => new Promise(() => {}));
+    Object.defineProperty(navigator, 'geolocation', { configurable: true, value: {
+      watchPosition: (success: PositionCallback) => { success(position); return 1; },
+      clearWatch: vi.fn(),
+    } });
+
+    render(<MyDeliveries />);
+
+    expect(await screen.findByText(/GPS accuracy is too low/)).toBeVisible();
+    expect(screen.getByRole('button', { name: "I've arrived" })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Report incident' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Start delivery' })).not.toBeInTheDocument();
+  });
+
   it('automatically starts the tracker for an eligible current delivery', () => {
     render(<MyDeliveries />);
 
