@@ -327,7 +327,7 @@ class ErpLogisticsController extends Controller
                 'legs.proofs',
                 'legs.incidents',
                 'legs.events' => fn ($query) => $query
-                    ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived'])
+                    ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived', 'in_transit', 'out_for_delivery'])
                     ->oldest('id'),
                 'legs.assignments' => fn ($query) => $query->where('rider_profile_id', $rider->id),
                 'legs.attempts' => fn ($query) => $query
@@ -352,7 +352,7 @@ class ErpLogisticsController extends Controller
                 'proofs',
                 'incidents',
                 'events' => fn ($query) => $query
-                    ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived'])
+                    ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived', 'in_transit', 'out_for_delivery'])
                     ->oldest('id'),
                 'assignments' => fn ($query) => $query->where('rider_profile_id', $rider->id),
                 'latestAssignment.riderProfile',

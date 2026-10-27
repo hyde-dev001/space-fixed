@@ -13,6 +13,7 @@ use App\Models\ShopOwner;
 use App\Models\User;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\PermissionRegistrar;
 use Tests\TestCase;
 
@@ -41,6 +42,32 @@ class RiderMyDeliveriesPageTest extends TestCase
             'linked_type' => User::class,
             'linked_id' => $this->user->id,
         ]);
+    }
+
+    public static function activationContexts(): array
+    {
+        return ['standalone' => [false], 'batch stop' => [true]];
+    }
+
+    #[DataProvider('activationContexts')]
+    public function test_an_old_assignments_start_does_not_activate_the_current_offer(bool $batched): void
+    {
+        [, $leg] = $batched
+            ? $this->batchWithLeg('in_progress', legAttributes: ['status' => 'in_transit'])
+            : $this->shipmentWithLeg(legAttributes: ['status' => 'in_transit']);
+        $old = $this->assign($leg, $this->rider, 'cancelled');
+        $this->assign($leg, $this->rider, 'accepted', ['accepted_at' => now()]);
+        $leg->events()->create([
+            'shipment_id' => $leg->shipment_id,
+            'event_type' => $batched ? 'out_for_delivery' : 'in_transit',
+            'visibility' => 'customer',
+            'metadata' => ['delivery_assignment_id' => $old->id],
+        ]);
+
+        $data = $this->deliveryData();
+
+        $this->assertTrue($data['current']['deliveries'][0]['activation_required']);
+        $this->assertArrayNotHasKey('events', $data['current']['deliveries'][0]);
     }
 
     public function test_it_returns_one_current_item_and_the_next_scheduled_work(): void
