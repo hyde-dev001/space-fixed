@@ -164,4 +164,9 @@ class ShipmentLeg extends Model
     {
         return $this->hasMany(ShipmentCustodyTransfer::class);
     }
+
+    public function custodyRider(): BelongsTo
+    {
+        return $this->belongsTo(RiderProfile::class, 'custody_rider_profile_id');
+    }
 }

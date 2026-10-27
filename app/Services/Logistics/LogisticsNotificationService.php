@@ -14,6 +14,7 @@ use App\Models\User;
 class LogisticsNotificationService
 {
     private const RECOVERY_EVENTS = [
+        'parcel_recovery_decided', 'parcel_recovery_received', 'parcel_recovery_inspected', 'parcel_recovery_dispositioned', 'parcel_recovery_closed', 'parcel_recovery_investigated',
         'rider_reassigned', 'pickup_attempt_failed', 'pickup_cancelled', 'pickup_rescheduled', 'delivery_retry_authorized',
         'return_to_shop_started', 'return_received', 'out_for_delivery',
         'custody_transfer_requested', 'custody_transfer_released', 'custody_transfer_received', 'custody_transfer_cancelled',
@@ -72,6 +73,9 @@ class LogisticsNotificationService
             && (($event->event_type === 'delivery_cancelled' && $event->visibility === 'customer')
                 || (in_array($event->event_type, ['delivery_incident_reported', 'loss_confirmed'], true) && $event->visibility === 'internal'))) {
             $this->notifyOrderStaff($event, $type);
+        }
+        if ($event->visibility === 'internal' && str_starts_with($event->event_type, 'parcel_recovery_')) {
+            $this->notifyRecoverySourceActors($event, $type);
         }
 
         if (str_starts_with($event->event_type, 'custody_transfer_')) {
@@ -206,6 +210,7 @@ class LogisticsNotificationService
 
     private function notifyOrderStaff(DeliveryEvent $event, NotificationType $type): void
     {
+        if (! Order::where('shop_owner_id', $event->shipment->shop_owner_id)->whereKey($event->shipment->source_id)->exists()) return;
         User::query()
             ->where('shop_owner_id', $event->shipment->shop_owner_id)
             ->each(function (User $staff) use ($event, $type) {
@@ -248,6 +253,24 @@ class LogisticsNotificationService
         ], fn ($value) => $value !== null);
     }
 
+    private function notifyRecoverySourceActors(DeliveryEvent $event, NotificationType $type): void
+    {
+        $shipment = $event->shipment;
+        $leg = $event->leg;
+        if (! $leg) return;
+        User::where('shop_owner_id', $shipment->shop_owner_id)->each(function (User $actor) use ($event, $type, $leg, $shipment) {
+            if (! app(LogisticsActorPolicy::class)->decideParcelRecovery($actor, $leg)['allowed']) return;
+            $this->createOnce($event, $actor->id, [
+                'user_id' => $actor->id, 'shop_id' => $shipment->shop_owner_id, 'type' => $type->value,
+                'priority' => 'high', 'title' => $this->titleForEvent($event, $type),
+                'message' => 'Parcel recovery was updated. Verify physical custody, inspection and any pending source obligations.',
+                'data' => $this->eventData($event), 'requires_action' => true,
+                'action_url' => $actor->can('resolve-logistics-exceptions') ? '/erp/logistics/shipments'
+                    : ($shipment->source_type === 'repair_request' ? '/erp/staff/job-orders-repair' : '/erp/staff/job-orders'),
+            ]);
+        });
+    }
+
     private function requiresAction(string $eventType): bool
     {
         return in_array($eventType, [
@@ -266,7 +289,7 @@ class LogisticsNotificationService
 
     private function createOnce(DeliveryEvent $event, int $userId, array $data): Notification
     {
-        $occurrence = str_starts_with($event->event_type, 'batch_interruption_')
+        $occurrence = (str_starts_with($event->event_type, 'batch_interruption_') || str_starts_with($event->event_type, 'parcel_recovery_'))
             ? 'incident_id='.($event->metadata['incident_id'] ?? 0).':revision='.($event->metadata['revision'] ?? 0) : null;
         foreach (['delivery_attempt_id', 'custody_transfer_id', 'proof_id', 'incident_id', 'delivery_assignment_id', 'attempt_number'] as $field) {
             if ($occurrence === null && isset($event->metadata[$field])) {
@@ -284,6 +307,7 @@ class LogisticsNotificationService
 
     private function titleForEvent(DeliveryEvent $event, NotificationType $type): string
     {
+        if (str_starts_with($event->event_type, 'parcel_recovery_')) return 'Parcel Recovery Updated';
         return match ($event->event_type) {
             'batch_interruption_reported' => 'Delivery Route Interrupted',
             'batch_interruption_decided' => 'Batch Recovery Decision',
@@ -305,6 +329,7 @@ class LogisticsNotificationService
 
     private function notificationType(string $eventType): ?NotificationType
     {
+        if (str_starts_with($eventType, 'parcel_recovery_')) return NotificationType::LOGISTICS_EXCEPTION;
         return match ($eventType) {
             'shipment_requested' => NotificationType::LOGISTICS_SHIPMENT_REQUESTED,
             'leg_assigned', 'rider_reassigned' => NotificationType::LOGISTICS_ASSIGNED,
@@ -333,9 +358,9 @@ class LogisticsNotificationService
         $shipment = $event->shipment;
 
         return match ($shipment->source_type) {
-            'order' => Order::query()->find($shipment->source_id)?->customer,
-            'order_refund' => OrderRefund::query()->find($shipment->source_id)?->customer,
-            'repair_request' => RepairRequest::query()->find($shipment->source_id)?->user,
+            'order' => Order::query()->where('shop_owner_id', $shipment->shop_owner_id)->find($shipment->source_id)?->customer,
+            'order_refund' => OrderRefund::query()->where('shop_owner_id', $shipment->shop_owner_id)->find($shipment->source_id)?->customer,
+            'repair_request' => RepairRequest::query()->where('shop_owner_id', $shipment->shop_owner_id)->find($shipment->source_id)?->user,
             default => null,
         };
     }

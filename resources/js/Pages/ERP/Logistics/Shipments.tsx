@@ -1,6 +1,7 @@
 import DeliveryIssueResolution from './components/DeliveryIssueResolution';
 import RetryResolutionDialog from './components/RetryResolutionDialog';
 import CustodyHandoffs from './components/CustodyHandoffs';
+import ParcelIncidentRecovery from '@/components/logistics/ParcelIncidentRecovery';
 import BatchInterruptionControls from './components/BatchInterruptionDialog';
 import type { CustodyHandoff } from '@/types/logistics';
 import MonochromeSelect from "@/components/form/Select";
@@ -553,6 +554,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   return (
     <AppLayoutERP>
       <Head title={riderMode ? "My Deliveries" : ownerMode ? "Shipment Monitoring" : "ERP Logistics Shipments"} />
+      {!ownerMode && !riderMode && canAssign && <ParcelIncidentRecovery source="all" riders={assignableRiders} schedule={logisticsSchedule} today={today} />}
       <CustodyHandoffs handoffs={custodyHandoffs} />
       {retryLeg && <RetryResolutionDialog key={retryLeg.id} leg={retryLeg} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}
         onClose={() => setRetryLegId(null)} onSubmit={async payload => {
@@ -931,7 +933,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           View evidence {index + 1}
                                         </a>
                                       ))}
-                                      {incident.status === 'resolved' ? (
+                                      {incident.decided_at && incident.status !== 'resolved' ? <p role="status" className="font-semibold">Recovery decision recorded. Required handoffs, source disposition and operational closure remain pending.</p> : incident.status === 'resolved' ? (
                                         <p className="font-semibold text-emerald-800 dark:text-emerald-300">Resolution: {label(incident.resolution ?? 'resolved')}</p>
                                       ) : !riderMode && canAssign && !held ? (
                                         <DeliveryIssueResolution onPendingChange={setResolutionPending} leg={leg} incident={incident} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}

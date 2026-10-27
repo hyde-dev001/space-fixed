@@ -581,6 +581,59 @@ final class LogisticsActorPolicy
         };
     }
 
+    public function decideParcelRecovery(Authenticatable $actor, ShipmentLeg $leg): array
+    {
+        $leg->loadMissing('shipment.shopOwner');
+        $shipment = $leg->shipment;
+        if (! $actor instanceof User || ! $shipment || (int) $actor->shop_owner_id !== (int) $shipment->shop_owner_id) {
+            return $this->deny('parcel_recovery', 'cross_shop');
+        }
+        $dispatcher = $actor->can('resolve-logistics-exceptions') || $actor->can('assign-logistics-deliveries');
+        if (! in_array($shipment->purpose, match ($shipment->source_type) {
+            'order' => ['retail_delivery'], 'order_refund' => ['refund_return'], 'repair_request' => ['repair_pickup', 'repair_return'], default => [],
+        }, true)) return $dispatcher ? $this->allow('parcel_recovery') : $this->deny('parcel_recovery', 'source_state_invalid');
+        if (! $shipment->relationLoaded('parcelRecoverySource')) $this->loadParcelRecoverySources(collect([$shipment]));
+        $source = $shipment->getRelation('parcelRecoverySource');
+        if (! $source) return $dispatcher ? $this->allow('parcel_recovery') : $this->deny('parcel_recovery', 'source_state_invalid');
+        $module = $shipment->source_type === 'repair_request' ? 'repair_operations' : 'retail_operations';
+        if (! app(\App\Services\ShopModuleAccessService::class)->canAccess($shipment->shopOwner, $module)) {
+            return $this->deny('parcel_recovery', 'module_unavailable');
+        }
+        $permitted = $dispatcher || ($shipment->source_type === 'repair_request'
+            ? ($actor->can('access-repair-job-orders') || (int) $source->assigned_repairer_id === (int) $actor->id)
+            : $actor->can('access-staff-job-orders'));
+        return $permitted ? $this->allow('parcel_recovery') : $this->deny('parcel_recovery', 'action_not_allowed');
+    }
+
+    public function loadParcelRecoverySources(\Illuminate\Support\Collection $shipments): void
+    {
+        foreach (['order' => \App\Models\Order::class, 'order_refund' => \App\Models\OrderRefund::class, 'repair_request' => \App\Models\RepairRequest::class] as $type => $model) {
+            foreach ($shipments->where('source_type', $type)->groupBy('shop_owner_id') as $shopId => $group) {
+                $rows = $model::where('shop_owner_id', $shopId)->whereIn('id', $group->pluck('source_id'))
+                    ->when($type === 'order', fn ($query) => $query->with(['items', 'codCollection' => fn ($cash) => $cash->where('shop_owner_id', $shopId),
+                        'refunds' => fn ($refunds) => $refunds->where('shop_owner_id', $shopId)]))
+                    ->when($type === 'order_refund', fn ($query) => $query->with('items'))
+                    ->when($type === 'repair_request', fn ($query) => $query->with(['logisticsShipments' => fn ($movements) => $movements->where('shop_owner_id', $shopId)->with(['legs.assignments', 'legs.custodyRider'])]))
+                    ->get()->keyBy('id');
+                foreach ($group as $shipment) $shipment->setRelation('parcelRecoverySource', $rows->get($shipment->source_id));
+            }
+        }
+        foreach ($shipments as $shipment) {
+            if (! $shipment->relationLoaded('parcelRecoverySource')) $shipment->setRelation('parcelRecoverySource', null);
+        }
+    }
+
+    public function assertParcelRecoveryAttendance(User $actor): void
+    {
+        $employee = \App\Models\Employee::where('shop_owner_id', $actor->shop_owner_id)
+            ->whereRaw('LOWER(email) = ?', [strtolower((string) $actor->email)])->first();
+        $clockedIn = $employee && app(\App\Services\HR\EmployeeOperationalPolicy::class)->canAuthenticate($employee)
+            && $employee->attendanceRecords()->where('shop_owner_id', $actor->shop_owner_id)
+                ->whereDate('date', now(config('app.shop_timezone', 'Asia/Manila'))->toDateString())
+                ->whereNotNull('check_in_time')->whereNull('check_out_time')->exists();
+        abort_unless($clockedIn, 423, 'Clock in with your actual employee identity before confirming parcel recovery.');
+    }
+
     /**
      * @return array{allowed: bool, action: string, reason_category: ?string}
      */

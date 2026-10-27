@@ -4,6 +4,18 @@
 
 For role-by-role testing with explicit next-page directions, use the [manual testing guide](failed-delivery-recovery-manual-testing.md).
 
+## October 27 parcel incident recovery
+
+The approved D1–D8/D10 implementation is authorized for commit/push with fresh production assets; D9 remains approved but deferred. The [plan and evidence](../superpowers/plans/2026-10-27-parcel-incident-recovery.md#approved-implementation-execution-record) distinguish implementation/publication checks from historical QA results and remaining release gates. Merge and deployment remain separately unauthorized.
+
+Incident decisions authorize work; they no longer claim its operational completion. Existing Staff/Repairer workspaces show recovery independent of refund history. Actual receipt, item inspection, Dispatcher readiness, explicit Rider acceptance and two-person custody remain separate. Original-parcel retail redelivery creates a linked source attempt without a second stock deduction or automatic fee. Existing refund, repair payment, warranty transport and customer-arrangement services retain ownership of their outcomes.
+
+Dispatcher operational closure does not settle pending refund, COD, repair/source or loss-investigation work. Those obligations remain visible after closure. Recovered confirmed loss permits supervised safekeeping receipt and investigation only; it does not reopen the source, reverse a claim or authorize property-value compensation. Unsafe/partial goods remain quarantined. Unsupported replacement or settlement requests remain actionable escalations.
+
+Only `2026_10_27_020923_add_recovery_context_to_delivery_incidents.php` is added for this extension. It adds nullable JSON and refuses destructive reversal once populated. No Owner custody migration, actor fields or physical-action surface is added. Preserve existing Owner workflows and report scenarios requiring deferred D9 as operational limitations. A later deployment and target-host verification require separate authorization; no development or production migration has been run by this task.
+
+Start eligibility is distinct from reliable current-assignment/stop continuation. Legitimately activated work may arrive, upload/correct proof and complete after window expiry, subject to every other action guard. Parent batch start, acceptance or an old assignment timestamp does not activate a stop. Material pre-start schedule changes require renewed acceptance; a post-start schedule edit alone does not revoke valid continuation.
+
 ## Batch vehicle interruptions
 
 The batch extension and its fresh verification are recorded in the [batch execution report](2026-10-23-batch-vehicle-breakdown-execution.md). Rider **My Deliveries → Report vehicle breakdown** is separate from reporting an attempted customer visit. It holds the current applicable stop and remaining unvisited work atomically; it does not create failed attempts or change completed/proof-review work.

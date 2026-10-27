@@ -27,6 +27,7 @@ class ResolveBatchInterruptionRequest extends FormRequest
             'capacity_override_reason' => ['nullable', 'string', 'max:1000'],
             'appointment_agreements' => ['sometimes', 'array', 'max:100'],
             'appointment_agreements.*' => ['string', 'min:1', 'max:1000'],
+            ...ResolveDeliveryRetryRequest::immediateRules(),
         ];
     }
 }

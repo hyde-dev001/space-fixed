@@ -112,7 +112,7 @@ class AssignmentService
                 'event_type' => 'leg_assigned',
                 'visibility' => 'internal',
                 'message' => "Assigned to {$rider->name}.",
-                'metadata' => ['rider_profile_id' => $rider->id] + $eventMetadata,
+                'metadata' => ['rider_profile_id' => $rider->id, 'delivery_assignment_id' => $assignment->id] + $eventMetadata,
                 'created_by_type' => ($operator ?? $actor)::class,
                 'created_by_id' => ($operator ?? $actor)->getAuthIdentifier(),
             ]);
@@ -248,7 +248,9 @@ class AssignmentService
                 throw ValidationException::withMessages(['shipment_leg_id' => 'This delivery offer is no longer available.']);
             }
 
-            if ($assignment->status === 'accepted') {
+            if ($assignment->status === 'accepted' && (app(DeliveryStartEligibility::class)->hasActivated($leg)
+                || ! $leg->events()->where('event_type', 'leg_offer_accepted')->where('metadata->delivery_assignment_id', $assignment->id)->exists()
+                || $leg->events()->where('event_type', 'leg_offer_accepted')->where('metadata->delivery_assignment_id', $assignment->id)->latest('id')->first()?->metadata['schedule_facts'] === app(DeliveryStartEligibility::class)->scheduleFacts($leg))) {
                 return $assignment;
             }
 
@@ -275,6 +277,8 @@ class AssignmentService
                 'visibility' => 'internal',
                 'message' => $accepted ? 'Delivery offer accepted.' : 'Delivery offer rejected.',
                 'metadata' => [
+                    'delivery_assignment_id' => $assignment->id,
+                    'schedule_facts' => app(DeliveryStartEligibility::class)->scheduleFacts($leg),
                     'rider_profile_id' => $rider->id,
                     'rejection_reason' => $accepted ? null : $reason,
                 ],

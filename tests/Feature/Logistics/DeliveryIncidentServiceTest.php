@@ -36,7 +36,8 @@ class DeliveryIncidentServiceTest extends TestCase
         $incident = $service->report($leg, $rider, ['type' => 'lost', 'notes' => 'Missing during route', 'photo_paths' => ['incident-evidence/leg-1/evidence.jpg']]);
         $resolved = $service->resolve($incident, $shop, 'loss_confirmed', 'Search and investigation completed', ['incident-evidence/incident-1/investigation.jpg']);
 
-        $this->assertSame('resolved', $resolved->status);
+        $this->assertSame('under_review', $resolved->status);
+        $this->assertNull($resolved->resolved_at);
         $this->assertSame('loss_confirmed', $leg->fresh()->resolution_type);
         $this->assertSame('cancelled', $leg->fresh()->status->value);
         $this->assertSame('cancelled', $leg->assignments()->firstOrFail()->fresh()->status);
@@ -95,7 +96,7 @@ class DeliveryIncidentServiceTest extends TestCase
         $this->assertSame(1, $leg->incidents()->count());
 
         $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
-        app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Vehicle issue resolved; retry approved.');
+        app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Vehicle issue resolved; retry approved.', [], null, [], null, ['obstacle_resolved' => true]);
 
         $this->assertSame('needs_resolution', $leg->fresh()->status->value);
         $this->assertSame('retry', $leg->fresh()->resolution_type);
@@ -121,11 +122,13 @@ class DeliveryIncidentServiceTest extends TestCase
             'photo_paths' => ['incident-evidence/leg-incident/resume.jpg'],
         ]);
 
+        $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
         app(DeliveryIncidentService::class)->resolve(
             $incident,
             $shop,
             'dismissed',
             'Issue was checked and the rider may continue.',
+            [], null, [], null, ['obstacle_resolved' => true],
         );
 
         $this->assertSame('in_transit', $leg->fresh()->status->value);
@@ -200,7 +203,7 @@ class DeliveryIncidentServiceTest extends TestCase
         ]);
 
         $service->resolve($incident, $shop, 'loss_confirmed', 'Investigation completed', ['incident-evidence/incident-loss/investigation.png']);
-        $service->resolve($incident->fresh(), $shop, 'loss_confirmed', 'Investigation completed', ['incident-evidence/incident-loss/duplicate.png']);
+        $service->resolve($incident->fresh(), $shop, 'loss_confirmed', 'Investigation completed', ['incident-evidence/incident-loss/investigation.png']);
 
         $claim = OrderRefund::query()->where('reason_code', 'delivery_loss_confirmed')->firstOrFail();
         $this->assertSame('not_required', $claim->return_status);
@@ -310,7 +313,9 @@ class DeliveryIncidentServiceTest extends TestCase
             'notes' => 'Parcel damaged',
             'photo_paths' => ['incident-evidence/leg-damaged/overwrite.png'],
         ]);
-        $service->resolve($incident, $shop, 'dismissed', 'Issue reviewed and closed.');
+        $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
+        $service->resolve($incident, $shop, 'dismissed', 'Issue reviewed and closed.', [], null, [], null,
+            ['condition_verified' => true, 'safe_for_delivery' => true, 'items' => [['reference' => 'parcel', 'quantity' => 1, 'condition' => 'safe']]]);
 
         try {
             $service->resolve($incident->fresh(), $shop, 'retry', 'Try again instead.');
@@ -331,9 +336,11 @@ class DeliveryIncidentServiceTest extends TestCase
         $service = app(DeliveryIncidentService::class);
         $incident = $service->report($leg, $rider, ['type' => 'damaged', 'notes' => 'Synthetic damaged packaging report', 'photo_paths' => ['incident-evidence/test.jpg']]);
         $actor = User::factory()->create(['shop_owner_id' => $shop->id]);
-        $resolved = $service->resolve($incident, $shop, 'dismissed', 'Packaging inspected, contents intact', [], $actor, [], 'undetermined');
+        $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
+        $resolved = $service->resolve($incident, $shop, 'dismissed', 'Packaging inspected, contents intact', [], $actor, [], 'undetermined',
+            ['condition_verified' => true, 'safe_for_delivery' => true, 'items' => [['reference' => 'parcel', 'quantity' => 1, 'condition' => 'safe']]]);
         $this->assertSame('undetermined', $resolved->responsible_party);
         $this->assertSame('Synthetic damaged packaging report', $resolved->notes);
-        $this->assertDatabaseHas('delivery_events', ['shipment_leg_id' => $leg->id, 'event_type' => 'delivery_incident_resolved', 'created_by_type' => User::class, 'created_by_id' => $actor->id]);
+        $this->assertDatabaseHas('delivery_events', ['shipment_leg_id' => $leg->id, 'event_type' => 'parcel_recovery_decided', 'created_by_type' => User::class, 'created_by_id' => $actor->id]);
     }
 }

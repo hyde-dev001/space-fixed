@@ -5,7 +5,7 @@ import { logisticsApi } from '@/services/logisticsApi';
 import type { CustodyHandoff } from '@/types/logistics';
 import DeliveryPhotoUpload from './DeliveryPhotoUpload';
 
-export default function CustodyHandoffs({ handoffs }: { handoffs: CustodyHandoff[] }) {
+export default function CustodyHandoffs({ handoffs, onConfirmed }: { handoffs: CustodyHandoff[]; onConfirmed?: () => Promise<void> }) {
   const [files, setFiles] = useState<Record<number, File | undefined>>({});
   const [reasons, setReasons] = useState<Record<number, string>>({});
   const [pending, setPending] = useState<number | null>(null);
@@ -30,6 +30,7 @@ export default function CustodyHandoffs({ handoffs }: { handoffs: CustodyHandoff
       else await logisticsApi.receiveCustody(handoff.id, payload);
       setNotice(`${handoff.delivery_reference}: ${action === 'cancel' ? 'handoff cancelled' : handoff.can_release ? 'release confirmed; waiting for the recipient to confirm receipt' : 'receipt confirmed'}.`);
       setFiles(current => ({ ...current, [handoff.id]: undefined }));
+      await onConfirmed?.();
       router.reload({ only: ['custodyHandoffs', 'deliveryData', 'shipments', 'batches'], onFinish: () => { inFlight.current = false; setPending(null); } });
     } catch (caught) {
       const data = axios.isAxiosError<{ message?: string; errors?: Record<string, string[]> }>(caught) ? caught.response?.data : undefined;

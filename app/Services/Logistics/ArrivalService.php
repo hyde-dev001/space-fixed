@@ -79,6 +79,7 @@ class ArrivalService
                 ]);
             }
 
+            if ($payload['arrival_type'] === 'dropoff') app(DeliveryStartEligibility::class)->assertActivated($leg);
             $radius = (int) ($leg->shipment->shopOwner->logisticsSetting?->arrival_radius_m ?? 100);
             $target = $payload['arrival_type'] === 'pickup'
                 ? $leg->origin_snapshot

@@ -545,6 +545,13 @@ Route::post('/api/cart/clear', [CartController::class, 'clear'])->middleware('au
 Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth:user')->name('cart.sync');
 
 Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(function () {
+    Route::get('/parcel-recovery', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'index'])->name('logistics.api.parcel-recovery.index');
+    Route::get('/parcel-recovery/{incident}/evidence/{token}', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'evidence'])->where('token', '[a-f0-9]{64}')->name('logistics.api.parcel-recovery.evidence');
+    Route::post('/parcel-recovery/{incident}/receipt', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'receive'])->name('logistics.api.parcel-recovery.receive');
+    Route::post('/parcel-recovery/{incident}/inspection', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'inspect'])->name('logistics.api.parcel-recovery.inspect');
+    Route::post('/parcel-recovery/{incident}/close', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'close'])->name('logistics.api.parcel-recovery.close');
+    Route::post('/parcel-recovery/{incident}/investigation', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'investigate'])->name('logistics.api.parcel-recovery.investigate');
+    Route::post('/parcel-recovery/{incident}/disposition', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'disposition'])->name('logistics.api.parcel-recovery.disposition');
     Route::post('/legs/{leg}/custody-transfers', [\App\Http\Controllers\Api\Logistics\ShipmentCustodyController::class, 'store']);
     Route::post('/custody-transfers/{transfer}/release', [\App\Http\Controllers\Api\Logistics\ShipmentCustodyController::class, 'release']);
     Route::post('/custody-transfers/{transfer}/receive', [\App\Http\Controllers\Api\Logistics\ShipmentCustodyController::class, 'receive']);

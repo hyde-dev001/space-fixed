@@ -79,6 +79,8 @@ class CodCollectionTest extends TestCase
             ->whereHas('shipment', fn ($query) => $query->where('source_id', $order->id))
             ->firstOrFail();
         $assignment = $leg->assignments()->firstOrFail();
+        $leg->update(['status' => 'picked_up', 'custody_state' => 'rider', 'custody_rider_profile_id' => $assignment->rider_profile_id, 'custody_confirmed_at' => now()]);
+        app(\App\Services\Logistics\ShipmentLegService::class)->markInTransit($leg->fresh(), $assignment->riderProfile);
         $leg->events()->create([
             'shipment_id' => $leg->shipment_id,
             'event_type' => 'dropoff_arrived',

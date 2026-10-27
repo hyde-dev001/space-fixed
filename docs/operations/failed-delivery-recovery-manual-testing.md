@@ -4,6 +4,19 @@ Use this guide on the QA/local application running `codex/failed-delivery-recove
 
 This is a test procedure, not a record that you performed or passed these tests. Mark each case **Pass**, **Fail** or **Blocked** and retain the observed result.
 
+## October 27 parcel incident recovery extension
+
+Use the [approved specification](../superpowers/specs/2026-10-27-parcel-incident-recovery-design.md) for all 15 case IDs and the [implementation evidence](../superpowers/plans/2026-10-27-parcel-incident-recovery.md#approved-implementation-execution-record) for actual runs. Preserve the original report statuses; a synthetic execution does not certify the missing original QA environment.
+
+1. Rider reports the actual incident. Dispatcher investigates and records the required custody, condition, obstacle/dispute and customer-arrangement findings before selecting an eligible decision.
+2. For a retained-parcel retry, Rider explicitly accepts the new offer and starts under its current schedule. Different-Rider recovery requires real release and receipt. For via-shop recovery, Staff or the eligible Repairer receives and inspects first; Dispatcher verifies readiness and stages the accepted target Rider's outbound handoff. Receipt alone must not dispatch anything, including while Logistics is OFF.
+3. For terminal return, Rider confirms the existing return proof; a distinct authorized same-shop employee records actual receipt and evidence. Open **Returned parcels requiring action** in Staff Job Orders or the assigned repair workspace even when no refund exists. Inspect exact item references, quantities and condition. Unsafe, missing or unidentified items remain quarantined with actionable escalation.
+4. Continue the supported source workflow: original-parcel retail redelivery retains its allocation and has no automatic new fee; refund review uses existing approvals/line inspection; repair arrangements and payments remain customer-owned. Shop-bound repair/refund collections continue inbound or reach actual shop receipt; do not send them out again through a via-shop retry.
+5. Verify the final operational outcome, then Dispatcher closes operational recovery. Pending refund, collected COD, repair/source and loss-investigation obligations remain visible and actionable. No verdict, receipt, inspection or operational closure may fabricate payment, stock movement or full recovery completion.
+6. Test legitimate current-assignment/stop activation before window end, then arrival, proof upload/correction, review and completion after the window. Window expiry alone must not block continuation. An unstarted expired immediate authorization needs Dispatcher reauthorization and renewed acceptance; new holds and all other action guards remain effective.
+
+D9 Individual Shop Owner receipt/release remains deferred. Use existing authorized employee workflows only. Where no existing authorized receiver can serve the scenario, retain existing behavior and record **Blocked — deferred Owner physical custody capability**; do not alter permissions, create a fake employee or substitute an unauthorized receiver. Property-value payouts, new settlement accounting, automatic financial reversals and unsupported general replacement are outside this implementation.
+
 ## 1. Prepare the environment and accounts
 
 - Ask the developer/QA administrator for the testing **BASE URL**. Do not assume an existing localhost tab serves this worktree. The earlier disposable test listeners were stopped; this document does not start a server or initialize a database.

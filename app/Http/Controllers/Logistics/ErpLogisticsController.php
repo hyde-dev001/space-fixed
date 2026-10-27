@@ -237,9 +237,11 @@ class ErpLogisticsController extends Controller
                         ->each(function (ShipmentLeg $leg): void {
                             $this->attachArrivalPayload($leg);
                             $this->attachProofPayload($leg);
-                            $leg->incidents->each(fn (DeliveryIncident $incident) => $incident->setAttribute(
-                                'evidence_urls', $this->incidentPayload($incident)['evidence_urls'],
-                            ));
+                            $leg->incidents->each(function (DeliveryIncident $incident): void {
+                                $payload = $this->incidentPayload($incident);
+                                $incident->setAttribute('evidence_urls', $payload['evidence_urls']);
+                                $incident->setAttribute('eligibility', $payload['eligibility']);
+                            });
                             $leg->attempts->each(fn (DeliveryAttempt $attempt) => $this->attachAttemptEvidencePayload($attempt));
                         });
                 }),
@@ -783,7 +785,8 @@ class ErpLogisticsController extends Controller
         $payload['status'] = $leg->status->value;
         $payload['rider_progress_state'] = $leg->rider_progress_state->value;
         $payload['failed_attempt_count'] = $leg->attempts->count();
-        $payload['start_blocked_reason'] = $this->starts->blockedReason($leg);
+        $payload['start_blocked_reason'] = $this->starts->progressionBlockedReason($leg);
+        $payload['activation_required'] = $leg->status->value === 'in_transit' && ! $this->starts->hasActivated($leg);
         if ($leg->resolution_type === 'retry' && $leg->status->value === 'needs_resolution'
             && ($leg->custody_state !== 'rider' || (int) $leg->custody_rider_profile_id !== (int) $leg->latestAssignment?->rider_profile_id
                 || $leg->custodyTransfers->contains(fn ($transfer) => in_array($transfer->status, ['requested', 'released'], true)))) {
@@ -827,7 +830,7 @@ class ErpLogisticsController extends Controller
 
     private function incidentPayload(DeliveryIncident $incident): array
     {
-        $evidenceUrls = collect($incident->getRawOriginal('photo_paths') ? $incident->photo_paths : [])
+        $evidenceUrls = collect($incident->evidencePaths())
             ->values()
             ->map(fn ($path, $index) => is_string($path)
                 && str_starts_with($path, 'incident-evidence/')
@@ -847,6 +850,8 @@ class ErpLogisticsController extends Controller
             'notes' => $incident->notes,
             'resolution' => $incident->resolution,
             'resolved_at' => $incident->resolved_at?->toISOString(),
+            'decided_at' => $incident->decided_at?->toISOString(), 'revision' => $incident->revision,
+            'eligibility' => app(\App\Services\Logistics\DeliveryIncidentService::class)->eligibility($incident, data_get($incident->recovery_context, 'findings', [])),
             'reporting_rider_profile_id' => $incident->reporting_rider_profile_id,
             'evidence_urls' => $evidenceUrls,
         ];

@@ -12,6 +12,9 @@ final class RiderActiveWorkGuard
 {
     public function assertNotHeld(ShipmentLeg $leg): void
     {
+        if ($leg->incidents()->whereIn('status', ['reported', 'under_review'])->whereNull('decided_at')->lockForUpdate()->exists()) {
+            throw ValidationException::withMessages(['incident' => 'Dispatcher investigation and a current recovery decision are required for this incident.']);
+        }
         if (\App\Models\Logistics\DeliveryIncidentStop::where('shipment_leg_id', $leg->id)->where('held', true)->lockForUpdate()->first()) {
             throw ValidationException::withMessages(['batch_interruption' => 'This batch is interrupted. Wait for dispatcher recovery and all required handoffs.']);
         }
@@ -64,7 +67,7 @@ final class RiderActiveWorkGuard
     public function assertCanAdvanceLeg(RiderProfile $rider, ShipmentLeg $leg): void
     {
         $this->assertNotHeld($leg);
-        if ($leg->customer_appointment_date && ($reason = app(DeliveryStartEligibility::class)->blockedReason($leg))) {
+        if ($leg->customer_appointment_date && ($reason = app(DeliveryStartEligibility::class)->progressionBlockedReason($leg))) {
             throw ValidationException::withMessages(['customer_appointment' => $reason]);
         }
         RiderProfile::query()->whereKey($rider->id)->lockForUpdate()->firstOrFail();

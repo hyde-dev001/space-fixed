@@ -182,7 +182,18 @@ class CustomerTrackingService
         $stop = DeliveryIncidentStop::with('incident')
             ->whereIn('shipment_leg_id', $legIds)->where('held', true)->latest('id')->first();
         if (! $stop) {
-            return null;
+            $incident = \App\Models\Logistics\DeliveryIncident::with('leg.shipment')->where('shop_owner_id', $shipment->shop_owner_id)
+                ->whereIn('shipment_leg_id', $shipment->legs->modelKeys())->whereNotNull('recovery_context')
+                ->where('resolution', '!=', 'dismissed')->latest('id')->first();
+            if (! $incident) return null;
+            $closed = $incident->status === 'resolved';
+            $pending = collect(app(ParcelIncidentRecoveryService::class)->obligations($incident))->contains(fn ($row) => ! $row['complete']);
+            return ['state' => $closed ? ($pending ? 'linked_work_pending' : 'complete') : 'recovery_pending',
+                'operational_closed' => $closed, 'linked_work_pending' => $pending,
+                'label' => $closed ? ($pending ? 'Operationally closed - follow-up pending' : 'Recovery completed') : 'Recovery in progress',
+                'message' => $closed && $pending ? 'Operational recovery is closed. Required financial or source follow-up remains pending.'
+                    : ($closed ? 'Required recovery work is complete.' : 'The shop is coordinating custody, inspection and the next eligible action.'),
+                'next_step' => $shipment->source_type === 'repair_request' ? 'Check your repair arrangement for required customer actions.' : 'The shop will update you about required next steps.'];
         }
 
         $transferring = ShipmentCustodyTransfer::where('shipment_leg_id', $stop->shipment_leg_id)

@@ -1169,7 +1169,7 @@ function DeliveryActions({
     );
   }
 
-  if (delivery.status === 'picked_up') {
+  if (delivery.status === 'picked_up' || delivery.activation_required) {
     if (!canUpdateStatus) return null;
     const key = `delivery-start:${delivery.id}`;
     const actionLabel = isReturnToShop ? 'Start return to shop' : 'Start delivery';

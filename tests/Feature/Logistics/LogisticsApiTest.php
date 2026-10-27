@@ -216,7 +216,9 @@ class LogisticsApiTest extends TestCase
         $rider->givePermissionTo(['record-logistics-proof', 'update-logistics-status']);
         $approver->givePermissionTo('approve-proof-of-delivery');
         $profile = RiderProfile::factory()->create(['shop_owner_id' => $shop->id, 'linked_type' => User::class, 'linked_id' => $rider->id]);
-        $assignment = $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'assigned', 'assigned_at' => now()]);
+        $assignment = $leg->assignments()->create(['assignment_type' => 'internal_rider', 'rider_profile_id' => $profile->id, 'status' => 'accepted', 'assigned_at' => now()]);
+        $leg->update(['status' => 'picked_up', 'custody_state' => 'rider', 'custody_rider_profile_id' => $profile->id, 'custody_confirmed_at' => now()]);
+        app(ShipmentLegService::class)->markInTransit($leg->fresh(), $profile);
         $leg->events()->create([
             'shipment_id' => $leg->shipment_id,
             'event_type' => 'dropoff_arrived',
@@ -265,6 +267,8 @@ class LogisticsApiTest extends TestCase
             'status' => 'accepted',
             'assigned_at' => now(),
         ]);
+        $leg->update(['status' => 'picked_up', 'custody_state' => 'rider', 'custody_rider_profile_id' => $profile->id, 'custody_confirmed_at' => now()]);
+        app(ShipmentLegService::class)->markInTransit($leg->fresh(), $profile);
         $leg->events()->create([
             'shipment_id' => $leg->shipment_id,
             'event_type' => 'dropoff_arrived',

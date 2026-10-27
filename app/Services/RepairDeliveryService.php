@@ -977,7 +977,9 @@ final class RepairDeliveryService
                 : ['shipped']);
         $trackingComplete = $method !== 'customer_pickup'
             || $this->hasRequiredExternalTracking($repair, 'return');
+        $conditionReady = $this->incidentConditionReady($repair, 'repair_return');
         $canRelease = in_array((string) $repair->status, $expectedStatuses, true)
+            && $conditionReady
             && $paymentSatisfied
             && (! (bool) $repair->pickup_enabled || $isAnonymousWalkIn)
             && $trackingComplete
@@ -992,6 +994,8 @@ final class RepairDeliveryService
                 : 'This repair is not ready for release.';
         } elseif (! $paymentSatisfied) {
             $blockedReason = 'Final payment must be settled before release.';
+        } elseif (! $conditionReady) {
+            $blockedReason = 'Incident inspection and any customer dispute must be resolved before release.';
         } elseif ($method === 'customer_pickup' && ! $trackingComplete) {
             $blockedReason = 'Courier tracking details are required before handoff.';
         } elseif ($method === 'shop_delivery' && ! $state['shipment']) {
@@ -1008,6 +1012,7 @@ final class RepairDeliveryService
             'method' => $method,
             'can_release' => $canRelease,
             'can_confirm_receipt' => ! $isAnonymousWalkIn
+                && $conditionReady
                 && (bool) $repair->pickup_enabled
                 && $repair->return_logistics_locked_at !== null
                 && ($method !== 'shop_delivery' || $state['approved']),
@@ -1408,11 +1413,12 @@ final class RepairDeliveryService
     private function returnRecoveryState(RepairRequest $repair): ?array
     {
         $shipment = $repair->relationLoaded('logisticsShipments')
-            ? $repair->logisticsShipments->firstWhere('purpose', 'repair_return')
+            ? $repair->logisticsShipments->where('shop_owner_id', $repair->shop_owner_id)->firstWhere('purpose', 'repair_return')
             : Shipment::query()
                 ->with('legs.proofs')
                 ->where('source_type', 'repair_request')
                 ->where('source_id', $repair->id)
+                ->where('shop_owner_id', $repair->shop_owner_id)
                 ->where('purpose', 'repair_return')
                 ->first();
         if (! $shipment) {
@@ -1529,14 +1535,28 @@ final class RepairDeliveryService
         ]));
     }
 
+    private function incidentConditionReady(RepairRequest $repair, string $purpose): bool
+    {
+        $repair->loadMissing('logisticsShipments.legs.incidents');
+        $incident = $repair->logisticsShipments->where('shop_owner_id', $repair->shop_owner_id)->where('purpose', $purpose)
+            ->flatMap->legs->flatMap->incidents->filter(fn ($incident) => $incident->recovery_context !== null
+                && in_array($incident->resolution, ['return_required', 'loss_confirmed'], true))->sortByDesc('id')->first();
+        if (! $incident) return true;
+        return $incident->resolution !== 'loss_confirmed' && data_get($incident->recovery_context, 'inspection')
+            && ! data_get($incident->recovery_context, 'inspection.quarantined', true)
+            && ($incident->type !== 'customer_dispute' || (data_get($incident->recovery_context, 'findings.dispute_resolved')
+                && filled(data_get($incident->recovery_context, 'findings.customer_agreement'))));
+    }
+
     private function handoffState(RepairRequest $repair, string $purpose): array
     {
         $shipment = $repair->relationLoaded('logisticsShipments')
-            ? $repair->logisticsShipments->firstWhere('purpose', $purpose)
+            ? $repair->logisticsShipments->where('shop_owner_id', $repair->shop_owner_id)->firstWhere('purpose', $purpose)
             : Shipment::query()
-                ->with(['legs.proofs', 'events'])
+                ->with(['legs.proofs', 'legs.incidents', 'events'])
                 ->where('source_type', 'repair_request')
                 ->where('source_id', $repair->id)
+                ->where('shop_owner_id', $repair->shop_owner_id)
                 ->where('purpose', $purpose)
                 ->first();
         $leg = $shipment?->legs
@@ -1555,13 +1575,14 @@ final class RepairDeliveryService
             })
             ->first();
 
+        $conditionReady = $this->incidentConditionReady($repair, $purpose);
         return [
             'shipment' => $shipment,
             'leg' => $leg,
             'proof' => $proof,
             'proof_review_state' => $proof?->review_status,
             'proof_correction_required' => $leg?->status?->value === 'proof_correction_required',
-            'approved' => $shipment?->status?->value === 'completed'
+            'approved' => $conditionReady && $shipment?->status?->value === 'completed'
                 && $leg?->status?->value === 'delivered'
                 && $proof?->review_status === 'approved',
             'events' => $shipment?->events

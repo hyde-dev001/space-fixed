@@ -26,6 +26,9 @@ export default function RetryResolutionDialog({ leg, riders, today, error, onClo
   const [appointment, setAppointment] = useState(Boolean(leg.customer_appointment_date));
   const [agreement, setAgreement] = useState('');
   const [override, setOverride] = useState('');
+  const [immediate, setImmediate] = useState(false);
+  const [effectiveStart, setEffectiveStart] = useState('');
+  const [effectiveEnd, setEffectiveEnd] = useState('');
   const [pending, setPending] = useState(false);
   const [requestKey] = useState(() => crypto.randomUUID());
   const formRef = useRef<HTMLFormElement>(null);
@@ -36,7 +39,9 @@ export default function RetryResolutionDialog({ leg, riders, today, error, onClo
     return () => { if (trigger instanceof HTMLElement) trigger.focus(); };
   }, [embedded]);
   const assignmentId = Math.max(0, ...(leg.assignments ?? []).map(item => item.id));
-  const valid = Boolean(date && Number(rider) > 0 && reason.trim() && (!appointment || agreement.trim()));
+  const shopBound = leg.leg_type === 'inbound' || leg.destination_snapshot?.type === 'shop';
+  const valid = Boolean(date && Number(rider) > 0 && reason.trim() && (!appointment || agreement.trim())
+    && (!immediate || (effectiveStart && effectiveEnd && effectiveEnd > effectiveStart)));
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (pending || !valid) return;
@@ -44,6 +49,7 @@ export default function RetryResolutionDialog({ leg, riders, today, error, onClo
     const saved = await onSubmit({ reason: reason.trim(), delivery_date: date, delivery_window: window,
       rider_profile_id: Number(rider), expected_assignment_id: assignmentId, request_key: requestKey, handoff_route: route,
       appointment_confirmed: appointment, appointment_agreement_note: agreement.trim() || null,
+      immediate_recovery: immediate, ...(immediate ? { effective_start: effectiveStart, effective_end: effectiveEnd, immediate_reason: reason.trim() } : {}),
       capacity_override_reason: override.trim() || null });
     if (!saved) setPending(false);
   };
@@ -64,16 +70,22 @@ export default function RetryResolutionDialog({ leg, riders, today, error, onClo
         <div><p className="mb-1">Retry date</p><DeliveryDatePicker label="Retry date" value={date} minDate={today} onChange={setDate} disabled={pending} operatingDays={schedule?.operating_days} blackoutDates={schedule?.blackout_dates} insideModal /></div>
         <label>Retry window<select aria-label="Retry window" className={inputClass} value={window} onChange={event => setWindow(event.target.value)} disabled={pending}><option value="morning">{logisticsWindowLabel('morning', schedule)}</option><option value="afternoon">{logisticsWindowLabel('afternoon', schedule)}</option></select></label>
       </div>
-      <p className="text-sm">Current parcel holder: {leg.custody_state === 'rider' ? (riders.find(item => item.id === leg.custody_rider_profile_id)?.name ?? `Rider #${leg.custody_rider_profile_id ?? 'unknown'}`) : leg.custody_state === 'shop' ? 'Shop' : 'Unconfirmed - follow dispatcher investigation'}. The chosen retry rider is a separate decision.</p>
+      <p className="text-sm">Current parcel holder: {leg.custody_state === 'rider' ? (riders.find(item => item.id === leg.custody_rider_profile_id)?.name ?? `Rider #${leg.custody_rider_profile_id ?? 'unknown'}`) : leg.custody_state === 'shop' ? 'Shop' : leg.custody_state === 'customer' ? 'Customer' : 'Unconfirmed - follow dispatcher investigation'}. The chosen retry rider is a separate decision.</p>
       <p className="text-sm">{riders.length ? 'Candidates are active and available. Attendance, work days and capacity are rechecked on save.' : 'No active available riders. Ask a rider manager to check availability, then refresh.'} Times use {schedule?.timezone ?? 'shop local time'}.</p>
       <label className="block">Retry rider<select aria-label="Retry rider" className={inputClass} required value={rider} onChange={event => setRider(event.target.value)} disabled={pending}>
         <option value="">Choose an eligible rider</option>{riders.map(item => <option key={item.id} value={item.id}>{item.name}{item.daily_capacity != null ? ` (capacity ${item.daily_capacity}/day)` : ''}</option>)}
       </select></label>
-      <label className="block">Handoff route<select aria-label="Handoff route" className={inputClass} value={route} onChange={event => setRoute(event.target.value)} disabled={pending}><option value="direct">Direct to assigned rider / same rider keeps parcel</option><option value="via_shop">Return to shop, then release to assigned rider</option></select></label>
+      <label className="block">Handoff route<select aria-label="Handoff route" className={inputClass} value={route} onChange={event => setRoute(event.target.value)} disabled={pending}><option value="direct">Direct collection / assigned rider keeps or receives parcel</option><option value="via_shop" disabled={shopBound}>Return to shop, then release to assigned rider</option></select></label>
+      {shopBound && <p className="text-sm">This parcel is already shop-bound. Continue its inbound collection directly, or arrange shop receipt without an outbound retry.</p>}
       <label className="block">Resolution reason<textarea className={inputClass} required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} disabled={pending} /></label>
       <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={appointment} onChange={event => setAppointment(event.target.checked)} disabled={pending} />Customer confirmed this date and window</label>
       {appointment && <label className="block">Customer agreement note<textarea className={inputClass} required maxLength={1000} value={agreement} onChange={event => setAgreement(event.target.value)} disabled={pending} /></label>}
       <p className="text-sm text-gray-600 dark:text-gray-300">Internal planning dates allow eligible early starts. Existing customer appointments stay binding until an agreed reschedule is recorded. Additional visits beyond the attempt limit require this explicit authorization.</p>
+      <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={immediate} onChange={event => setImmediate(event.target.checked)} disabled={pending} />Authorize a bounded immediate recovery</label>
+      {immediate && <fieldset disabled={pending} className="grid gap-3 sm:grid-cols-2"><legend className="text-sm">Effective times in {schedule?.timezone ?? 'shop local time'}. Customer appointments and operating hours still apply.</legend>
+        <label>Effective start<input type="datetime-local" className={inputClass} required value={effectiveStart} onChange={event => setEffectiveStart(event.target.value)} /></label>
+        <label>Authorization expiry<input type="datetime-local" className={inputClass} required value={effectiveEnd} onChange={event => setEffectiveEnd(event.target.value)} /></label>
+      </fieldset>}
       <details><summary className="cursor-pointer text-sm">Capacity override, when authorized</summary><label className="mt-2 block">Capacity override reason<textarea className={inputClass} maxLength={1000} value={override} onChange={event => setOverride(event.target.value)} disabled={pending} /></label></details>
       <p role="status" className="text-sm">Next: the selected rider accepts the offer and completes every required parcel receipt before starting. Assignment alone does not transfer custody.</p>
       <div className="flex flex-wrap justify-end gap-3">

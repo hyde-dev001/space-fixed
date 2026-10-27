@@ -17,6 +17,25 @@ class RecoveryNotificationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_parcel_recovery_stages_notify_staff_once_per_revision_without_leaking_evidence(): void
+    {
+        [, $shipment, $leg] = $this->customerLeg();
+        $shipment->shopOwner->update(['business_type' => 'retail']);
+        \App\Models\ShopOwnerModule::factory()->create(['shop_owner_id' => $shipment->shop_owner_id, 'module_key' => 'retail_operations', 'enabled' => true]);
+        $staff = User::factory()->create(['shop_owner_id' => $shipment->shop_owner_id]);
+        $staff->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate('access-staff-job-orders', 'user'));
+        foreach ([1, 2] as $revision) {
+            $event = app(DeliveryEventService::class)->record($shipment, $leg, ['event_type' => 'parcel_recovery_inspected',
+                'metadata' => ['incident_id' => 42, 'revision' => $revision, 'evidence_path' => 'incident-evidence/private.jpg']]);
+            app(DeliveryEventService::class)->deliverNotifications($event->id);
+            app(DeliveryEventService::class)->deliverNotifications($event->id);
+        }
+        $notices = Notification::where('user_id', $staff->id)->get();
+        $this->assertCount(2, $notices);
+        $this->assertTrue($notices->every(fn ($notice) => $notice->action_url === '/erp/staff/job-orders'));
+        $this->assertStringNotContainsString('incident-evidence', $notices->toJson());
+    }
+
     public function test_staff_receive_shop_scoped_incident_and_loss_notices_once_per_occurrence(): void
     {
         [, $shipment, $leg] = $this->customerLeg();
@@ -49,6 +68,16 @@ class RecoveryNotificationTest extends TestCase
         app(DeliveryEventService::class)->deliverNotifications($event->id);
         $this->assertSame(0, Notification::where('user_id', $customer->id)->count());
         $this->assertSame(1, Notification::where('user_id', $rider->linked_id)->count());
+    }
+
+    public function test_mismatched_legacy_source_does_not_notify_another_shops_customer(): void
+    {
+        [$customer, $shipment, $leg] = $this->customerLeg();
+        $shipment->update(['shop_owner_id' => \App\Models\ShopOwner::factory()->create()->id]);
+        $event = app(DeliveryEventService::class)->record($shipment, $leg, ['event_type' => 'parcel_recovery_decided',
+            'visibility' => 'customer', 'metadata' => ['incident_id' => 99, 'revision' => 1]]);
+        app(DeliveryEventService::class)->deliverNotifications($event->id);
+        $this->assertSame(0, Notification::where('user_id', $customer->id)->count());
     }
 
     public function test_recovery_command_is_scheduled_each_minute_with_overlap_protection(): void

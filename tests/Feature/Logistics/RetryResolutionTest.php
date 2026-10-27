@@ -115,4 +115,34 @@ class RetryResolutionTest extends TestCase
         $this->expectException(ValidationException::class);
         $service->resolveRetry($leg->fresh(), 'Another visit', [...$options, 'appointment_confirmed' => true, 'appointment_agreement_note' => 'Changed customer agreement'], $dispatcher);
     }
+
+    public function test_schedule_change_before_start_requires_renewed_acceptance(): void
+    {
+        [, $rider, $leg, $assignment] = $this->fixture();
+        $assignment->update(['status' => 'assigned', 'accepted_at' => null]);
+        app(AssignmentService::class)->respondToOffer($leg, $rider, true);
+        $leg->update(['scheduled_delivery_date' => now()->addDays(4)->toDateString()]);
+        $this->expectException(ValidationException::class);
+        $this->expectExceptionMessage('Accept the updated schedule');
+        app(ShipmentLegService::class)->markInTransit($leg->fresh(), $rider);
+    }
+
+    public function test_schedule_edit_after_activation_does_not_revoke_continuation(): void
+    {
+        [, $rider, $leg] = $this->fixture();
+        app(ShipmentLegService::class)->markInTransit($leg, $rider);
+        $leg->update(['customer_appointment_date' => now()->addDays(4)->toDateString(), 'customer_appointment_window' => 'afternoon']);
+        app(\App\Services\Logistics\RiderActiveWorkGuard::class)->assertCanAdvanceLeg($rider, $leg->fresh());
+        $this->assertTrue(app(\App\Services\Logistics\DeliveryStartEligibility::class)->hasActivated($leg->fresh()));
+    }
+
+    public function test_parent_batch_start_does_not_confer_stop_activation_after_window(): void
+    {
+        [, $rider, $leg] = $this->fixture();
+        $leg->update(['status' => 'in_transit', 'customer_appointment_date' => now()->subDay()->toDateString(), 'customer_appointment_window' => 'morning']);
+        $leg->events()->create(['shipment_id' => $leg->shipment_id, 'event_type' => 'batch_started', 'visibility' => 'internal',
+            'metadata' => ['delivery_assignment_id' => $leg->assignments()->latest('id')->value('id')]]);
+        $this->expectException(ValidationException::class);
+        app(\App\Services\Logistics\RiderActiveWorkGuard::class)->assertCanAdvanceLeg($rider, $leg->fresh());
+    }
 }
