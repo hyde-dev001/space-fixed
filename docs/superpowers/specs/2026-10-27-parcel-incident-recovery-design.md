@@ -141,7 +141,7 @@ Fresh execution, October 29: [commands, results, failures and limits](../plans/2
 | A-C1 | Eleven named MariaDB two-connection scenarios recorded in the plan, including final approval versus recovery and refund inventory versus recovery restock. Additional source/provider contention permutations remain release coverage. |
 | A-D1 | Broad 1,007-test affected backend run, then fresh 84-test controls after final corrections. No D9 fields/migration/routes/Owner custody feature, environment/dependency or public build edits. Existing D10/batch/module/source controls retained. |
 
-The full frontend run retains six proven baseline Staff shipping-coverage failures; no all-green claim. Full unrelated Composer coverage, host/provider execution and broader source/payment/mixed-batch browser combinations remain unexecuted. Local verification does not authorize publication or deployment. The user subsequently explicitly authorized commit/push of this amendment to its existing feature branch; merge, deployment, production assets and provider operations remain outside that authorization.
+The full frontend run retains six proven baseline Staff shipping-coverage failures; no all-green claim. Full unrelated Composer coverage, host/provider execution and broader source/payment/mixed-batch browser combinations remain unexecuted. Local verification does not authorize publication or deployment. The user subsequently explicitly authorized commit/push of this amendment to its existing feature branch and then requested a fresh production build. That build and manifest verification are recorded in the plan. Merge, deployment and provider operations remain outside that authorization.
 
 ### A9. Resolution of earlier design conflicts
 
