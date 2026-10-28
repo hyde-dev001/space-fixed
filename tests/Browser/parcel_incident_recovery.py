@@ -5,7 +5,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
-from playwright.sync_api import sync_playwright, expect
+from playwright.sync_api import sync_playwright, expect, Error as BrowserError
 from failed_delivery_recovery import login, navigate, PHOTO, CAMERA_ARGS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,7 +27,9 @@ def fixture(*args):
 
 def request(page, path, data=None, photo=None, method='POST'):
     page.wait_for_load_state('domcontentloaded')
-    headers = {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': page.locator('meta[name="csrf-token"]').get_attribute('content')}
+    meta = page.locator('meta[name="csrf-token"]')
+    if meta.count(): page.parcel_csrf = meta.get_attribute('content')
+    headers = {'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest', 'X-CSRF-TOKEN': page.parcel_csrf}
     options = {'method': method, 'headers': headers, 'timeout': 90000}
     if photo:
         fields = {}
@@ -86,6 +88,115 @@ def handoff(rider, staff, dispatcher, incident, outbound=False):
     ok(request(rider if outbound else staff, f'/api/logistics/custody-transfers/{transfer["id"]}/receive', {}, 'photo'))
 
 
+def amendment_journeys(rider, dispatcher, staff, state):
+    def refreshed(page, path):
+        # Keep the serial loopback PHP server free of inactive workspaces' periodic polling.
+        for other in [rider, dispatcher, staff]:
+            if other is page: continue
+            meta = other.locator('meta[name="csrf-token"]')
+            if meta.count(): other.parcel_csrf = meta.get_attribute('content')
+            other.goto('about:blank')
+        try:
+            navigate(page, path)
+        except BrowserError as error:
+            if 'net::ERR_ABORTED' not in str(error):
+                raise
+            page.wait_for_load_state('domcontentloaded')
+            navigate(page, path)
+    results = []
+    for final in [False, True]:
+        data = fixture(str(OUT / 'fixture.json'))
+        leg = data['leg_id']
+        ok(request(rider, f'/api/logistics/legs/{leg}/in-transit'))
+        incident = ok(request(rider, f'/api/logistics/legs/{leg}/incidents', {'type': 'lost', 'notes': 'Synthetic missing parcel, no photograph required'}))['incident']
+        parent = incident['id']
+        def stage(page, action, revision):
+            return ok(request(page, f'/api/logistics/incidents/{parent}/loss', {'action': action,
+                'request_key': str(uuid.uuid4()), 'expected_revision': revision, 'notes': 'Verified synthetic loss stage'}))['incident']
+        stage(dispatcher, 'acknowledge', 0)
+        refreshed(rider, '/erp/logistics/deliveries')
+        # The authorized history action must be available while the original leg remains held.
+        rider.get_by_role('button', name='History', exact=True).click()
+        results.append({'branch': 'post_final' if final else 'pre_final', 'parent': parent})
+        loss = rider.get_by_role('region', name=f'Loss incident {parent}', exact=True, include_hidden=True)
+        loss.locator('xpath=ancestor::details').locator('summary').click()
+        loss.get_by_role('button', name='Confirm Lost', exact=True).click()
+        loss.get_by_label('Reason or recovery details').fill('Verified synthetic Rider request for final loss review')
+        expect(loss.get_by_role('button', name='Submit', exact=True)).to_be_disabled()
+        loss.get_by_role('checkbox').check()
+        for width in [390, 768, 1440]:
+            rider.set_viewport_size({'width': width, 'height': 1000})
+            rider.wait_for_timeout(400)
+            assert rider.evaluate('document.documentElement.scrollWidth') <= width + 1
+            rider.screenshot(path=str(OUT / f'amendment-{final}-confirm-{width}.png'), full_page=True)
+        with rider.expect_response(lambda response: f'/incidents/{parent}/loss' in response.url and response.request.method == 'POST') as submitted:
+            loss.get_by_role('button', name='Submit', exact=True).click()
+        assert submitted.value.status == 200
+        revision = 2
+        if final:
+            approved = stage(dispatcher, 'approve', revision)
+            assert approved['status'] == 'resolved'
+            revision = 3
+        child = ok(request(rider, f'/api/logistics/incidents/{parent}/recoveries', {'request_key': str(uuid.uuid4()),
+            'expected_revision': revision, 'notes': 'Physically recovered synthetic parcel', 'condition': 'safe',
+            'custody_rider_profile_id': state['actors']['a']['rider_id']}, 'photo_files[0]'))['incident']['id']
+        review = ok(request(dispatcher, f'/api/logistics/incidents/{child}/recovery-review', {'action': 'return' if final else 'continue',
+            'request_key': str(uuid.uuid4()), 'expected_revision': 0, 'notes': 'Verified actual custody and safe transport',
+            'safe_for_transport': True, 'delivery_date': datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).date().isoformat(),
+            'delivery_window': 'morning', 'customer_agreement': 'Customer confirmed the existing delivery arrangement'}))
+        row = recovery(staff, child)
+        if final:
+            returned = row['current_delivery_id']
+            ok(request(rider, f'/api/logistics/legs/{returned}/accept'))
+            ok(request(rider, f'/api/logistics/legs/{returned}/in-transit'))
+            proof = ok(request(rider, f'/api/logistics/legs/{returned}/proof', {'handoff_type': 'receive', 'proof_type': 'photo',
+                'idempotency_key': str(uuid.uuid4())}, 'proof_file'))['proof']
+            ok(request(rider, f'/api/logistics/legs/{returned}/return-proofs/{proof["id"]}/handoff'))
+            action(staff, child, 'receipt', {'proof_id': proof['id']}, 'photo')
+            inspect(staff, child, data['item_id'])
+            staff.set_viewport_size({'width': 390, 'height': 1000})
+            refreshed(staff, '/erp/staff/job-orders')
+            expect(staff.get_by_text('Loading orders...', exact=True)).to_have_count(0, timeout=60000)
+            staff.get_by_role('button', name='All Orders', exact=False).click()
+            staff.get_by_placeholder('Search...', exact=True).fill(str(data['order_id']))
+            card = staff.get_by_role('region', name='Compact job orders').locator('article').filter(has=staff.get_by_role('heading', name=data['order_number'], exact=True))
+            card.get_by_role('button', name='View order details', exact=True).click()
+            staff.get_by_role('button', name='Apply inspected inventory disposition', exact=True).click()
+            staff.get_by_label('Recovery notes', exact=True).fill('Verified actual receipt, complete inspection and eligible inventory disposition')
+            staff.get_by_role('button', name='Save verified recovery step', exact=True).focus()
+            staff.keyboard.press('Tab')
+            expect(staff.get_by_role('button', name='Close dialog', exact=True)).to_be_focused()
+            staff.keyboard.press('Escape')
+            expect(staff.get_by_role('button', name='Apply inspected inventory disposition', exact=True)).to_be_focused()
+            staff.get_by_role('button', name='Apply inspected inventory disposition', exact=True).click()
+            staff.get_by_label('Recovery notes', exact=True).fill('Verified actual receipt, complete inspection and eligible inventory disposition')
+            for width in [390, 768, 1440]:
+                staff.set_viewport_size({'width': width, 'height': 1000})
+                staff.wait_for_timeout(400)
+                assert staff.evaluate('document.documentElement.scrollWidth') <= width + 1
+                staff.screenshot(path=str(OUT / f'amendment-disposition-{width}.png'), full_page=True)
+            with staff.expect_response(lambda response: f'/parcel-recovery/{child}/disposition' in response.url and response.request.method == 'POST') as disposed:
+                staff.get_by_role('button', name='Save verified recovery step', exact=True).click()
+            assert disposed.value.status == 200
+            assert disposed.value.json()['recovery']['operational_status'] == 'resolved'
+        else:
+            ok(request(rider, f'/api/logistics/legs/{leg}/accept'))
+            finish(rider, dispatcher, leg)
+        refreshed(dispatcher, '/erp/logistics/shipments')
+        expect(dispatcher.get_by_role('region', name='Returned parcels requiring action', exact=True)).to_have_count(0)
+        refreshed(staff, '/erp/staff/job-orders')
+        expect(staff.get_by_text('Loading orders...', exact=True)).to_have_count(0, timeout=60000)
+        expect(staff.get_by_role('region', name='Returned parcels requiring action', exact=True)).to_have_count(0)
+        for width in [390, 768, 1440]:
+            staff.set_viewport_size({'width': width, 'height': 1000})
+            staff.wait_for_timeout(400)
+            assert staff.evaluate('document.documentElement.scrollWidth') <= width + 1
+            staff.screenshot(path=str(OUT / f'amendment-{final}-staff-{width}.png'), full_page=True)
+        results[-1].update({'child': child, 'physical_outcome': 'automatically_completed', 'no_global_panels': True})
+        (OUT / 'amendment-results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
+        print('Amendment', results[-1]['branch'], 'passed', flush=True)
+
+
 if __name__ == '__main__':
     assert '--mfa' in sys.argv, 'Normal password, MFA and Time In are required for this browser run.'
     state = fixture('--setup')
@@ -99,8 +210,22 @@ if __name__ == '__main__':
             if name == 'b': continue
             print('Authenticating', name, flush=True)
             pages[name] = login(browser, actor)
-            navigate(pages[name], '/erp/staff/job-orders' if name == 'staff' else '/erp/logistics/shipments' if name == 'dispatcher' else '/erp/logistics/deliveries')
+            if '--amendment' in sys.argv:
+                pages[name].parcel_csrf = pages[name].locator('meta[name="csrf-token"]').get_attribute('content')
+                pages[name].goto('about:blank')
+            else:
+                navigate(pages[name], '/erp/staff/job-orders' if name == 'staff' else '/erp/logistics/shipments' if name == 'dispatcher' else '/erp/logistics/deliveries')
         rider, dispatcher, staff = pages['a'], pages['dispatcher'], pages['staff']
+        if '--amendment' in sys.argv:
+            try:
+                amendment_journeys(rider, dispatcher, staff, state)
+            except Exception:
+                for name, page in pages.items():
+                    page.screenshot(path=str(OUT / f'amendment-error-{name}.png'), full_page=True)
+                    (OUT / f'amendment-error-{name}.txt').write_text(page.locator('body').inner_text(), encoding='utf-8')
+                raise
+            browser.close()
+            sys.exit(0)
         for case in selected:
             data = fixture(str(OUT / 'fixture.json'))
             leg, item = data['leg_id'], data['item_id']

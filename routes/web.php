@@ -545,6 +545,9 @@ Route::post('/api/cart/clear', [CartController::class, 'clear'])->middleware('au
 Route::post('/api/cart/sync', [CartController::class, 'sync'])->middleware('auth:user')->name('cart.sync');
 
 Route::prefix('api/logistics')->middleware(['auth:user,shop_owner'])->group(function () {
+    Route::post('/incidents/{incident}/loss', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'loss'])->name('logistics.api.incidents.loss');
+    Route::post('/incidents/{incident}/recoveries', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'recovery'])->name('logistics.api.incidents.recovery');
+    Route::post('/incidents/{incident}/recovery-review', [\App\Http\Controllers\Api\Logistics\DeliveryIncidentController::class, 'reviewRecovery'])->name('logistics.api.incidents.recovery-review');
     Route::get('/parcel-recovery', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'index'])->name('logistics.api.parcel-recovery.index');
     Route::get('/parcel-recovery/{incident}/evidence/{token}', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'evidence'])->where('token', '[a-f0-9]{64}')->name('logistics.api.parcel-recovery.evidence');
     Route::post('/parcel-recovery/{incident}/receipt', [\App\Http\Controllers\Api\Logistics\ParcelIncidentRecoveryController::class, 'receive'])->name('logistics.api.parcel-recovery.receive');

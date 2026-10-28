@@ -29,6 +29,29 @@ class DeliveryIncident extends Model
     public function leg() { return $this->belongsTo(ShipmentLeg::class, 'shipment_leg_id'); }
     public function reportingRider() { return $this->belongsTo(RiderProfile::class, 'reporting_rider_profile_id'); }
 
+    public function lossWorkflow(?\App\Models\User $actor): ?array
+    {
+        $recovery = data_get($this->recovery_context, 'recovered_loss');
+        if ($this->type !== 'lost' && ! $recovery) return null;
+        $stage = data_get($this->recovery_context, 'loss.stage');
+        $sameShop = $actor && (int) $actor->shop_owner_id === (int) $this->shop_owner_id;
+        $reporter = $sameShop && $this->reportingRider?->linked_type === \App\Models\User::class
+            && (int) $this->reportingRider?->linked_id === (int) $actor->id;
+        $dispatcher = $sameShop && $actor->can('resolve-logistics-exceptions');
+        $actions = [];
+        if ($stage === 'reported' && $dispatcher) $actions[] = 'acknowledge';
+        if ($stage === 'acknowledged' && $reporter) $actions[] = 'confirm';
+        if ($stage === 'confirmation_requested' && $dispatcher) $actions[] = 'approve';
+        if ($this->type === 'lost' && $reporter && ($this->status !== 'resolved' || $this->resolution === 'loss_confirmed')) $actions[] = 'report_recovery';
+        if ($recovery && ! $this->decided_at && $dispatcher) {
+            $actions[] = 'return';
+            if (! $recovery['after_final'] && $recovery['condition'] === 'safe') $actions[] = 'continue';
+        }
+        return ['stage' => $stage ?? ($recovery ? $recovery['stage'] : 'legacy_review'), 'actions' => $actions,
+            'parent_id' => $recovery['parent_id'] ?? null, 'after_final' => (bool) ($recovery['after_final'] ?? false),
+            'reporting_rider_profile_id' => $this->reporting_rider_profile_id];
+    }
+
     public function evidencePaths(): array
     {
         $paths = $this->photo_paths ?? [];

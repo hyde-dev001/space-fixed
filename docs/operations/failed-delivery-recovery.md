@@ -4,6 +4,18 @@
 
 For role-by-role testing with explicit next-page directions, use the [manual testing guide](failed-delivery-recovery-manual-testing.md).
 
+## October 29 loss and linked recovery amendment
+
+This workflow supersedes the older loss/closure instructions below. It is implemented locally for review; it has no publication or deployment authorization. Other incident types retain their existing safeguards.
+
+1. Rider reports Lost with a written reason; photographs are optional. Dispatcher acknowledges the report. Delivery remains held and no receipt task or refund is created at acknowledgment.
+2. The reporting Rider opens **Deliveries → History → delivery details → Confirm Lost**, reads the warning and requests approval. Dispatcher final approval in incident details closes the original loss and reserves/links an eligible normal refund request. Staff/Finance/applicable Owner approval and confirmed payout remain separate. Uncollected COD does not create a cash refund.
+3. If physically recovered, the reporting Rider uses **Report Recovery** with actual custody, condition, details and photographs. Dispatcher reviews the separate linked occurrence. Before final loss, eligible continuation or return is possible; after final loss, return to the original shop is mandatory. Rider explicitly accepts the new offer; existing actual handoffs and movement/proof gates apply.
+4. Staff opens the existing **order details → Return receipt and disposition** section; Repairer retains its existing source workspace. Confirm actual receipt, inspect actual items and record a supported disposition. Physical completion is automatic; no extra Dispatcher closure is required. Unsupported partial or unsafe outcomes retain an owned escalation.
+5. Eligible unallocated resellable retail goods restock once across recovery and later refund execution. Damaged, unsafe, already-restocked and customer-property goods do not increase sellable stock. Never clear old inventory markers or change approved/refunded quantities to repeat a stock action.
+
+Finance's explicit **Refresh provider status** action reconciles an existing provider refund; it does not submit another payout. Approval, processing, partial/full success and failure are distinct. An ambiguous callback requires exact transaction reconciliation. Preserve the original loss, refund, receiver and evidence history. D9 remains deferred; no production/provider or historical-data operation is implied.
+
 ## October 27 parcel incident recovery
 
 The approved D1–D8/D10 implementation is authorized for commit/push with fresh production assets; D9 remains approved but deferred. The [plan and evidence](../superpowers/plans/2026-10-27-parcel-incident-recovery.md#approved-implementation-execution-record) distinguish implementation/publication checks from historical QA results and remaining release gates. Merge and deployment remain separately unauthorized.

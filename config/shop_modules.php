@@ -683,6 +683,7 @@ $routeBuckets = [
         'finance.price-changes.reject',
         'finance.refunds.approve',
         'finance.refunds.execute',
+        'finance.refunds.reconcile',
         'finance.refunds.index',
         'finance.refunds.reject',
         'finance.supplier-payment-attempts.cancel',
@@ -952,6 +953,9 @@ $routeBuckets = [
     'logistics' => [
         'erp.logistics.cod-collections',
         'logistics.api.parcel-recovery.index',
+        'logistics.api.incidents.loss',
+        'logistics.api.incidents.recovery',
+        'logistics.api.incidents.recovery-review',
         'logistics.api.parcel-recovery.evidence',
         'logistics.api.parcel-recovery.receive',
         'logistics.api.parcel-recovery.inspect',
@@ -1356,6 +1360,18 @@ foreach ([
 }
 
 // Recovery receipt/inspection belongs to its exact source even while Logistics is OFF.
+$routes['logistics.api.incidents.loss'] = $routes['logistics.api.parcel-recovery.inspect'];
+$routes['finance.refunds.reconcile'] = $routes['finance.refunds.execute'];
+$routes['finance.refunds.reconcile']['methods'] = ['POST'];
+$routes['finance.refunds.reconcile']['domain_rule'] = 'Same-shop Finance provider status reconciliation only; no payout submission or approval bypass.';
+$routes['logistics.api.incidents.loss']['methods'] = ['POST'];
+$routes['logistics.api.incidents.loss']['module_keys'] = ['retail_operations', 'repair_operations'];
+$routes['logistics.api.incidents.loss']['mode'] = 'any_of';
+$routes['logistics.api.incidents.loss']['domain_rule'] = 'Employee reporting Rider confirmation and Dispatcher loss review only; no Owner actor or new movement.';
+foreach (['recovery', 'recovery-review'] as $action) {
+    $routes['logistics.api.incidents.'.$action] = $routes['logistics.api.incidents.loss'];
+    $routes['logistics.api.incidents.'.$action]['domain_rule'] = 'Same-shop historical reporting Rider evidence and Dispatcher-authorized linked recovery; new movement requires current Logistics eligibility.';
+}
 // New movement is still gated by LogisticsMovementEligibility in the domain services.
 foreach (['index', 'evidence', 'receive', 'inspect', 'close', 'investigate', 'disposition'] as $action) {
     $name = 'logistics.api.parcel-recovery.'.$action;

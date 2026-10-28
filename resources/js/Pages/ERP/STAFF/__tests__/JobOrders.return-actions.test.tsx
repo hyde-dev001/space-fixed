@@ -6,9 +6,17 @@ import {
   canStaffReviewRefund,
   hasConfirmedParcelLoss,
   isPosOrder,
+  refundExecutionDisplay,
 } from "../JobOrders";
 
 describe("staff failed-delivery return actions", () => {
+  it('uses confirmed execution outcomes without treating approval as payment', () => {
+    expect(refundExecutionDisplay({ status: 'succeeded', execution_label: 'Refunded' })).toBe('Refunded');
+    expect(refundExecutionDisplay({ status: 'succeeded', execution_label: 'Partially Refunded' })).toBe('Partially Refunded');
+    expect(refundExecutionDisplay({ status: 'processing' })).toBe('Refund Processing');
+    expect(refundExecutionDisplay({ status: 'failed' })).toBe('Refund Failed');
+    expect(refundExecutionDisplay({ status: 'pending_approval' })).toBeNull();
+  });
   it("offers inspection for physically returned failed-delivery refunds", () => {
     expect(canConfirmReturnReceived({
       latest_refund: {

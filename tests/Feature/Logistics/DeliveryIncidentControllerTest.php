@@ -85,7 +85,7 @@ class DeliveryIncidentControllerTest extends TestCase
                 'photo_paths' => ['incident-evidence/leg-1/external.jpg'],
             ])
             ->assertUnprocessable()
-            ->assertJsonValidationErrors('photo_files');
+            ->assertJsonValidationErrors('photo_paths');
     }
 
     public function test_loss_resolution_uploads_private_evidence_and_only_authorized_staff_can_download_it(): void

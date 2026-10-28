@@ -32,6 +32,31 @@ const response = (data: unknown, status = 200) => Promise.resolve({
   json: async () => data,
 });
 
+it('reconciles an existing processing refund without submitting another payout', async () => {
+  const original = mocks.fetch.getMockImplementation();
+  let reconciled = false;
+  mocks.fetch.mockImplementation(async (url: string, options?: RequestInit) => {
+    if (url === '/api/finance/refunds/11/reconcile') {
+      expect(options?.method).toBe('POST');
+      reconciled = true;
+      return response({});
+    }
+    const result = await original?.(url, options);
+    if (url.startsWith('/api/finance/refunds?')) {
+      const data = await result.json();
+      data.data[0].rawStatus = reconciled ? 'succeeded' : 'processing';
+      data.data[0].status = reconciled ? 'Refunded' : 'Processing';
+      data.data[0].canExecutePayout = false;
+      return response(data);
+    }
+    return result;
+  });
+  render(<RefundApproval />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Refresh provider status' }));
+  await waitFor(() => expect(screen.getByText('Refunded')).toBeInTheDocument());
+  expect(mocks.fetch.mock.calls.some(([url]) => String(url).includes('execute-gateway-refund'))).toBe(false);
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.swal.mockResolvedValue({ isConfirmed: false });

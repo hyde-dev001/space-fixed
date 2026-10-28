@@ -16,6 +16,14 @@ const recovery = (): ParcelRecovery => ({ incident_id: 7, revision: 3, type: 've
 
 beforeEach(() => { vi.clearAllMocks(); api.parcelRecoveries.mockResolvedValue({ data: { recoveries: [recovery()] } }); api.parcelRecoveryAction.mockResolvedValue({ data: {} }); });
 
+it('scopes embedded return actions to the opened source without another recovery panel', async () => {
+  api.parcelRecoveries.mockResolvedValue({ data: { recoveries: [recovery(), { ...recovery(), incident_id: 99, source_id: 99 }] } });
+  render(<ParcelIncidentRecovery source="retail" sourceId={8} />);
+  expect(await screen.findByText(/Incident #7/)).toBeVisible();
+  expect(screen.queryByText(/Incident #99/)).not.toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Returned parcels requiring action' })).not.toBeInTheDocument();
+});
+
 it('keeps operational closure and outstanding refund work visible with a private evidence link', async () => {
   api.parcelRecoveries.mockResolvedValue({ data: { recoveries: [{ ...recovery(), operational_status: 'resolved',
     obligations: [{ type: 'refund', id: 20, status: 'requested', complete: false, next_actor: 'existing_refund_workflow' }] }] } });
@@ -49,4 +57,21 @@ it('shows a read failure as an error with a retry action', async () => {
   api.parcelRecoveries.mockResolvedValue({ data: { recoveries: [] } });
   fireEvent.click(screen.getByRole('button', { name: 'Refresh parcel recovery' }));
   expect(await screen.findByText(/No parcels requiring action/)).toBeVisible();
+});
+
+it('keeps keyboard focus in recovery details and returns it to the action on Escape', async () => {
+  render(<ParcelIncidentRecovery source="retail" />);
+  const trigger = await screen.findByRole('button', { name: 'Confirm actual shop receipt' });
+  trigger.focus();
+  fireEvent.click(trigger);
+  const dialog = screen.getByRole('dialog', { name: 'Parcel recovery incident 7' });
+  expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  const close = screen.getByRole('button', { name: 'Close dialog' });
+  close.focus();
+  fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+  expect(close).not.toHaveFocus();
+  expect(dialog).toContainElement(document.activeElement as HTMLElement);
+  fireEvent.keyDown(document, { key: 'Escape' });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
 });

@@ -690,68 +690,16 @@ class PaymongoWebhookController extends Controller
             return response()->json(['message' => 'Missing refund identifiers'], 200);
         }
 
-        $refund = OrderRefund::query()
-            ->when($refundId, fn ($query) => $query->orWhere('paymongo_refund_id', $refundId))
-            ->when($paymentId, fn ($query) => $query->orWhere('paymongo_payment_id', $paymentId))
-            ->orderByDesc('id')
-            ->first();
-
-        if (!$refund) {
-            Log::warning('Refund webhook could not map to order_refunds row', [
-                'event_type' => $eventType,
-                'refund_id' => $refundId,
-                'payment_id' => $paymentId,
-            ]);
-
-            return response()->json(['message' => 'Refund record not found'], 200);
+        $refunds = OrderRefund::query()->where('paymongo_refund_id', $refundId)->limit(2)->get();
+        if (! $refundId || $refunds->count() !== 1) {
+            Log::warning('Retail refund callback needs exact transaction reconciliation', ['event_type' => $eventType, 'refund_id' => $refundId]);
+            return response()->json(['message' => 'Refund event requires reconciliation'], 200);
         }
-
-        $order = Order::find($refund->order_id);
-
-        if (!$order) {
-            return response()->json(['message' => 'Order not found'], 200);
-        }
-
-        $settlementService = app(PaymentSettlementService::class);
-
-        if (in_array($status, ['succeeded', 'completed', 'paid'], true)) {
-            $refund->update([
-                'status' => 'succeeded',
-                'paymongo_refund_id' => $refundId ?? $refund->paymongo_refund_id,
-                'refunded_at' => $refund->refunded_at ?? now(),
-                'failure_reason' => null,
-                'failed_at' => null,
-            ]);
-
-            $settlementService->settleOrderRefunded(
-                order: $order,
-                refundId: $refundId ?? $refund->paymongo_refund_id,
-                reason: $refund->reason_code,
-                note: $refund->reason_note,
-            );
-
-            return response()->json(['message' => 'Refund settled'], 200);
-        }
-
-        if (in_array($status, ['failed', 'canceled', 'cancelled'], true)) {
-            $refund->update([
-                'status' => 'failed',
-                'paymongo_refund_id' => $refundId ?? $refund->paymongo_refund_id,
-                'failure_reason' => 'paymongo_refund_failed',
-                'failed_at' => now(),
-            ]);
-
-            $settlementService->recordOrderRefundFailure($order, 'paymongo_refund_failed');
-
-            return response()->json(['message' => 'Refund failure recorded'], 200);
-        }
-
-        $refund->update([
-            'status' => 'processing',
-            'paymongo_refund_id' => $refundId ?? $refund->paymongo_refund_id,
+        $refund = app(\App\Services\OrderRefundService::class)->applyPaymongoRefundOutcome($refunds->first(), [
+            'refund_id' => $refundId, 'payment_id' => $paymentId,
+            'status' => $status, 'amount_in_centavos' => $attributes['amount'] ?? null, 'currency' => $attributes['currency'] ?? null,
         ]);
-
-        return response()->json(['message' => 'Refund processing'], 200);
+        return response()->json(['message' => 'Refund event received', 'status' => $refund->status], 200);
     }
 
     private function resolveSubscriptionRefundAttempt(?string $refundId, ?string $paymentId): ?ShopOwnerSubscriptionRefund

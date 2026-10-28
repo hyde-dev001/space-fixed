@@ -9,9 +9,10 @@ import RetryResolutionDialog from '@/Pages/ERP/Logistics/components/RetryResolut
 
 type Item = { reference: string; quantity: number; condition: string };
 type Stage = 'receipt' | 'inspection' | 'disposition' | 'close' | 'investigation';
-type Props = { source: 'retail' | 'repair' | 'all'; riders?: LogisticsRiderOption[]; schedule?: LogisticsSchedule; today?: string };
+type Props = { source: 'retail' | 'repair' | 'all'; sourceId?: number; shipmentId?: number; riders?: LogisticsRiderOption[]; schedule?: LogisticsSchedule; today?: string };
 
-export default function ParcelIncidentRecovery({ source, riders = [], schedule, today = '' }: Props) {
+export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, riders = [], schedule, today = '' }: Props) {
+  const embedded = sourceId !== undefined || shipmentId !== undefined;
   const [rows, setRows] = useState<ParcelRecovery[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<ParcelRecovery | null>(null);
@@ -31,9 +32,10 @@ export default function ParcelIncidentRecovery({ source, riders = [], schedule, 
   const refresh = useCallback(async () => {
     try {
       const response = await logisticsApi.parcelRecoveries();
-      setRows((response.data.recoveries ?? []).filter(row => source === 'all' || (source === 'repair' ? row.source_type === 'repair_request' : row.source_type !== 'repair_request')));
+      setRows((response.data.recoveries ?? []).filter(row => (source === 'all' || (source === 'repair' ? row.source_type === 'repair_request' : row.source_type !== 'repair_request'))
+        && (sourceId === undefined || row.source_id === sourceId) && (shipmentId === undefined || row.shipment_id === shipmentId)));
     } catch { setError('Parcel recovery could not be loaded. Refresh to check pending work.'); }
-  }, [source]);
+  }, [source, sourceId, shipmentId]);
   useEffect(() => { void refresh(); }, [refresh]);
   const open = (row: ParcelRecovery, next: Stage, disposition = '') => {
     setSelected(row); setStage(next); setAction(disposition); setError(null); setNotes(''); setPhoto(null); setOutcome('');
@@ -76,8 +78,9 @@ export default function ParcelIncidentRecovery({ source, riders = [], schedule, 
     } finally { busy.current = false; setPending(false); }
   };
   const field = 'mt-1 block min-h-11 w-full rounded-lg border border-gray-300 bg-white p-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
-  return <section aria-label="Returned parcels requiring action" className="my-4 space-y-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">Returned parcels requiring action</h2>
+  if (embedded && rows?.length === 0 && !error) return null;
+  return <section aria-label={embedded ? 'Return receipt and disposition' : 'Returned parcels requiring action'} className="my-4 space-y-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+    <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{embedded ? 'Return receipt and disposition' : 'Returned parcels requiring action'}</h2>
       <button type="button" onClick={() => { setError(null); void refresh(); }} className="min-h-11 rounded-lg border px-3">Refresh parcel recovery</button></div>
     <p className="text-sm">Receipt does not complete repair, refund or delivery. Operational closure and linked financial/source work are shown separately.</p>
     {error && !selected && <p role="alert">{error}</p>}
@@ -85,7 +88,9 @@ export default function ParcelIncidentRecovery({ source, riders = [], schedule, 
     {rows?.length === 0 && <p>No parcels requiring action are currently visible to your account.</p>}
     {rows?.map(row => <article key={row.incident_id} className="space-y-2 rounded-lg border p-3 text-sm">
       <h3 className="font-semibold">Incident #{row.incident_id} · {row.source_type.replaceAll('_', ' ')} #{row.source_id} · Delivery #{row.delivery_id}</h3>
-      <p>Custody: {row.holder_label ?? row.custody}. {row.received ? 'Shop receipt confirmed.' : 'Awaiting physical receipt.'} {row.inspected ? 'Inspection recorded.' : 'Inspection pending.'}</p>
+      <p>Custody: {row.holder_label ?? row.custody}. {row.operational_status === 'resolved' && row.custody === 'lost'
+        ? 'Final missing parcel. Financial/source investigation is separate.'
+        : <>{row.received ? 'Shop receipt confirmed.' : 'Awaiting physical receipt.'} {row.inspected ? 'Inspection recorded.' : 'Inspection pending.'}</>}</p>
       {row.shop_action_blocker && <p>{row.shop_action_blocker}</p>}
       {row.current_delivery_id && row.current_delivery_id !== row.delivery_id && <p>Current delivery #{row.current_delivery_id}: {row.movement_status?.replaceAll('_', ' ')}.</p>}
       <p role="status">{row.operational_status === 'resolved' ? 'Operationally closed — financial/source work pending' : 'Operational recovery pending'}</p>
@@ -103,7 +108,7 @@ export default function ParcelIncidentRecovery({ source, riders = [], schedule, 
         {row.can_investigate && <button className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'investigation')}>Record investigation and evidence</button>}
       </div>
     </article>)}
-    {selected && <Modal isOpen onClose={() => { if (!pending) setSelected(null); }} size="lg">
+    {selected && <Modal isOpen ariaLabel={`Parcel recovery incident ${selected.incident_id}`} onClose={() => { if (!pending) setSelected(null); }} size="lg">
       <div className="space-y-4 p-5"><h2 className="text-lg font-semibold">Parcel recovery · Incident #{selected.incident_id}</h2>
         {error && <p ref={alertRef} role="alert" tabIndex={-1}>{error}</p>}
         {['redeliver_original', 'reauthorize_retry'].includes(action) ? <RetryResolutionDialog embedded leg={selected.retry_context} riders={riders} schedule={schedule} today={today}

@@ -71,7 +71,7 @@ class ParcelIncidentRecoveryController extends Controller
     public function disposition(Request $request, DeliveryIncident $incident, ParcelIncidentRecoveryService $service, LogisticsActorPolicy $policy)
     {
         $actor = $this->actor($incident, $policy);
-        $data = $request->validate([...$this->actionRules(), 'action' => ['required', 'in:verify_readiness,redeliver_original,ready_for_retry,authorize_retry_handoff,refund_review,repair_recovery,escalate'],
+        $data = $request->validate([...$this->actionRules(), 'action' => ['required', 'in:verify_readiness,redeliver_original,ready_for_retry,authorize_retry_handoff,refund_review,repair_recovery,escalate,inventory_disposition'],
             'findings' => ['required_if:action,verify_readiness', 'array:condition_verified,safe_for_delivery,recovered_verified,obstacle_resolved,dispute_resolved,operational_ready,customer_agreement'],
             'findings.condition_verified' => ['sometimes', 'boolean'], 'findings.safe_for_delivery' => ['sometimes', 'boolean'],
             'findings.recovered_verified' => ['sometimes', 'boolean'], 'findings.obstacle_resolved' => ['sometimes', 'boolean'],

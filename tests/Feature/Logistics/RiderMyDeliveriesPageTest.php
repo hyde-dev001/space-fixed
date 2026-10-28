@@ -49,6 +49,17 @@ class RiderMyDeliveriesPageTest extends TestCase
         return ['standalone' => [false], 'batch stop' => [true]];
     }
 
+    public function test_pending_loss_is_available_in_reporting_rider_history_before_final_cancellation(): void
+    {
+        [, $leg] = $this->shipmentWithLeg(legAttributes: ['status' => 'in_transit']);
+        $this->assign($leg, $this->rider, 'accepted', ['accepted_at' => now()]);
+        app(\App\Services\Logistics\DeliveryIncidentService::class)->report($leg, $this->rider,
+            ['type' => 'lost', 'notes' => 'Missing parcel after route search']);
+        $data = $this->deliveryData('?tab=history');
+        $this->assertCount(1, $data['list']['data']);
+        $this->assertSame('reported', $data['list']['data'][0]['deliveries'][0]['incidents'][0]['loss']['stage']);
+    }
+
     #[DataProvider('activationContexts')]
     public function test_an_old_assignments_start_does_not_activate_the_current_offer(bool $batched): void
     {

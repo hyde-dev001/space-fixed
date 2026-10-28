@@ -623,6 +623,19 @@ final class LogisticsActorPolicy
         }
     }
 
+    public function assertLossActor(?Authenticatable $actor, \App\Models\Logistics\DeliveryIncident $incident, bool $reportingRider): void
+    {
+        abort_unless($actor instanceof User && (int) $actor->shop_owner_id === (int) $incident->shop_owner_id, 403);
+        if ($reportingRider) {
+            $rider = $this->resolveRiderProfile($actor, $actor->shopOwner);
+            abort_unless($rider && (int) $rider->id === (int) $incident->reporting_rider_profile_id
+                && $incident->leg?->assignments()->where('rider_profile_id', $rider->id)->exists(), 403);
+        } else {
+            abort_unless($actor->can('resolve-logistics-exceptions'), 403);
+        }
+        $this->assertParcelRecoveryAttendance($actor);
+    }
+
     public function assertParcelRecoveryAttendance(User $actor): void
     {
         $employee = \App\Models\Employee::where('shop_owner_id', $actor->shop_owner_id)

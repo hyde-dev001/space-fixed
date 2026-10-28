@@ -4,6 +4,18 @@ Use this guide on the QA/local application running `codex/failed-delivery-recove
 
 This is a test procedure, not a record that you performed or passed these tests. Mark each case **Pass**, **Fail** or **Blocked** and retain the observed result.
 
+## October 29 staged loss and linked recovery checks
+
+Use disposable local synthetic sources and separate authenticated Rider/Dispatcher/Staff/Repairer sessions. Preserve the original 15 QA statuses. These steps supersede older loss-specific closure expectations below.
+
+1. Report Lost with reason and no photograph. Verify delivery stays held. Dispatcher acknowledges; verify no refund, receipt or inspection task exists yet.
+2. In Rider Delivery History, expand delivery details and choose Confirm Lost. Verify submission requires the warning acknowledgment. Wrong Rider, missing attendance, wrong shop and stale revision must fail. Dispatcher final approval closes the original loss and links only an eligible normal refund request; it does not approve payout. Retry the same request and verify no duplicate request or notice.
+3. Pre-final branch: report actual recovery with condition/custody/photos, then Dispatcher authorizes eligible continuation with customer agreement and current schedule. Accept the fresh offer, start, arrive, submit/review proof; verify automatic physical completion. An open recovery must block stale final loss approval.
+4. Post-final branch: preserve the original loss/refund snapshot; report a new linked recovery. Verify only shop return is offered. Accept, start and complete the actual shop handoff. Staff opens that order's details, records inspection and supported inventory disposition. Verify automatic physical completion and unchanged original loss/receiver/refund history.
+5. Check safe retail restock, damaged/unsafe write-off, prior write-off, prior restock, active allocation and customer-owned repair property. Replays and later successful refund execution must never repeat stock. Partial/unsupported quantities must retain actual evidence and an actionable escalation.
+6. Use signed provider fakes: exact older refund among several on the same payment, wrong payment/amount/currency, duplicate success, delayed pending/failure, unknown IDs, reconciliation and partial/full amounts. Verify Finance and Staff display the authoritative outcome and a separate pending request remains visible.
+7. Check loading/error/retry behavior and keyboard use in existing details at 390/768/1440 widths. Verify Dispatcher/Staff page-wide recovery panels are absent and Repairer/non-loss actions remain. Record which steps were clicked versus exercised through authenticated browser requests. Hosted transaction matching and real provider checks require separately supplied evidence/authorization.
+
 ## October 27 parcel incident recovery extension
 
 Use the [approved specification](../superpowers/specs/2026-10-27-parcel-incident-recovery-design.md) for all 15 case IDs and the [implementation evidence](../superpowers/plans/2026-10-27-parcel-incident-recovery.md#approved-implementation-execution-record) for actual runs. Preserve the original report statuses; a synthetic execution does not certify the missing original QA environment.
