@@ -55,7 +55,8 @@ class DeliveryIncidentController extends Controller
         $data = $request->validate([
             'type' => ['required', 'in:damaged,lost,vehicle_problem,customer_dispute,other'],
             'notes' => ['required', 'string', 'max:1000'],
-            'photo_files' => ['required', 'array', 'min:1', 'max:5'],
+            'photo_paths' => ['prohibited'],
+            'photo_files' => [Rule::requiredIf($request->input('type') !== 'lost'), 'array', 'min:1', 'max:5'],
             'photo_files.*' => $this->evidenceFileRules(),
         ]);
         $storedPaths = $this->storeEvidenceFiles($request->file('photo_files', []), "incident-evidence/leg-{$leg->id}");
@@ -72,6 +73,52 @@ class DeliveryIncidentController extends Controller
             $this->deleteUncommittedEvidence($storedPaths, []);
             throw $exception;
         }
+    }
+
+    public function recovery(Request $request, DeliveryIncident $incident, DeliveryIncidentService $service): JsonResponse
+    {
+        abort_if(Auth::guard('shop_owner')->check(), 403);
+        $actor = Auth::guard('user')->user();
+        abort_unless($actor instanceof User, 403);
+        app(LogisticsActorPolicy::class)->assertLossActor($actor, $incident, true);
+        $data = $request->validate(['request_key' => ['required', 'uuid'], 'expected_revision' => ['required', 'integer', 'min:0'],
+            'notes' => ['required', 'string', 'max:1000'], 'custody_rider_profile_id' => ['required', 'integer'],
+            'condition' => ['required', 'in:safe,damaged,unsafe,partial'], 'photo_paths' => ['prohibited'],
+            'photo_files' => ['required', 'array', 'min:1', 'max:5'], 'photo_files.*' => $this->evidenceFileRules()]);
+        $paths = $this->storeEvidenceFiles($request->file('photo_files', []), "incident-evidence/recovery-{$incident->id}");
+        try {
+            $recovery = $service->reportRecovery($incident, $actor, [...$data, 'photo_paths' => $paths,
+                'evidence_digests' => array_map(fn ($file) => hash_file('sha256', $file->getRealPath()), $request->file('photo_files'))]);
+            $this->deleteUncommittedEvidence($paths, $recovery->evidencePaths());
+            return response()->json(['incident' => $this->incidentPayload($recovery)], 201);
+        } catch (\Throwable $exception) {
+            $this->deleteUncommittedEvidence($paths, []);
+            throw $exception;
+        }
+    }
+
+    public function reviewRecovery(Request $request, DeliveryIncident $incident, DeliveryIncidentService $service): JsonResponse
+    {
+        abort_if(Auth::guard('shop_owner')->check(), 403);
+        $actor = Auth::guard('user')->user();
+        abort_unless($actor instanceof User, 403);
+        $data = $request->validate(['request_key' => ['required', 'uuid'], 'expected_revision' => ['required', 'integer', 'min:0'],
+            'notes' => ['required', 'string', 'max:1000'], 'action' => ['required', 'in:return,continue'],
+            'safe_for_transport' => ['required', 'accepted'], 'delivery_date' => ['required', 'date_format:Y-m-d'],
+            'delivery_window' => ['required', 'in:morning,afternoon'], 'customer_agreement' => ['required_if:action,continue', 'string', 'max:1000'],
+            'appointment_confirmed' => ['sometimes', 'boolean'], 'appointment_agreement_note' => ['sometimes', 'string', 'max:1000']]);
+        return response()->json(['incident' => $this->incidentPayload($service->reviewRecovery($incident, $actor, $data))]);
+    }
+
+    public function loss(Request $request, DeliveryIncident $incident, DeliveryIncidentService $service): JsonResponse
+    {
+        abort_if(Auth::guard('shop_owner')->check(), 403);
+        $actor = Auth::guard('user')->user();
+        abort_unless($actor instanceof User, 403);
+        $data = $request->validate(['action' => ['required', 'in:acknowledge,confirm,approve'],
+            'request_key' => ['required', 'uuid'], 'expected_revision' => ['required', 'integer', 'min:0'],
+            'notes' => ['required', 'string', 'max:1000']]);
+        return response()->json(['incident' => $this->incidentPayload($service->lossAction($incident, $actor, $data['action'], $data))]);
     }
 
     public function resolve(Request $request, DeliveryIncident $incident, DeliveryIncidentService $service): JsonResponse
@@ -226,6 +273,7 @@ class DeliveryIncidentController extends Controller
 
     private function incidentPayload(DeliveryIncident $incident): DeliveryIncident
     {
+        $incident->setAttribute('loss', $incident->lossWorkflow(Auth::guard('user')->user()));
         $incident->setAttribute('eligibility', app(DeliveryIncidentService::class)->eligibility($incident, data_get($incident->recovery_context, 'findings', [])));
         $incident->setAttribute('evidence_urls', collect($incident->evidencePaths())
             ->values()

@@ -1,5 +1,178 @@
 # Parcel incident recovery implementation plan
 
+## Approved documentation update - October 28, 2026
+
+> **Current instruction:** both documents were reviewed and sequential P1-P6 implementation explicitly authorized. The user subsequently authorized **commit and push** of this amendment. Publish only the scoped application/test/document changes to `origin/codex/failed-delivery-recovery`; preserve unrelated attendance changes and local output. No fresh production assets were requested. Do not author migrations without the separate integrity-gap review, merge, deploy, perform live provider operations or repair production data. No subagents.
+
+**Status:** amendment implementation authored and sequentially reviewed; local evidence and remaining coverage are recorded below. This section is the active plan for [the approved specification amendment](../specs/2026-10-27-parcel-incident-recovery-design.md#approved-amendment---october-28-2026). Historical implementation/publication authorization, checked tasks, builds and test results below apply to prior work only. They do not authorize or verify this amendment. Current audit reference: `a5542095418ff9124e3356f89dbd98237d38f46b`, branch `codex/failed-delivery-recovery`.
+
+**Goal:** simplify loss reporting/approval and linked recovery while reusing existing return, inspection, inventory and refund services; synchronize refund displays from confirmed authoritative outcomes.
+
+**Architecture/constraints:** existing `DeliveryIncident` plus context/events; separate linked recovery occurrence; existing source/custody/financial/stock ownership. No new queue/dashboard/ledger/dependency or general replacement/property compensation. No schema change is proposed; if an unavoidable integrity gap emerges, document it for review before authoring a migration. D9 remains deferred; D10 remains unchanged. Preserve unrelated work, original 15 cases/statuses and historical financial/operational evidence. Do not edit `.env`, dependencies, generated assets or historical migrations.
+
+### Approved acceptance contract
+
+- Report Lost requires a written reason, not photos. Dispatcher acknowledgment ends reporting only; movement remains held and no physical task/refund is invented.
+- Reporting Rider requests Confirm Lost from Delivery History with a warning/current revision. Dispatcher final approval (existing Manager escalation only when applicable) makes the original loss terminal and initiates/links the eligible normal refund request; no additional logistics closure.
+- Pre-final recovery permits Dispatcher-authorized continuation or return only under existing safeguards. Pending recovery and stale final loss approval cannot both execute.
+- Post-final recovery creates a separate linked occurrence, returns to original shop through normal offer/acceptance/custody, actual authorized receipt, inspection and disposition. Original final loss/refund history is preserved.
+- Physical recovery completes automatically after required supported receipt/inspection/disposition, without another Dispatcher closure. Unsupported partial/unsafe disposition remains actionable; money is independent.
+- Eligible received, unallocated resellable retail quantities restock exactly once; allocated, damaged, already-restocked and customer-property quantities never increase sellable stock. Never reset old inventory markers/refund amounts to permit another stock action.
+- Remove separate Dispatcher/Staff recovery panels; retain all necessary actions in existing history/incident/order/return/refund details and preserve Repairer/non-loss callers.
+- Exact provider transaction matching, safe callbacks and bounded reconciliation produce consistent Approved/Awaiting Payout, Refund Processing, Refunded, Partially Refunded or accurate failure/rejection. Approval/request acceptance never proves success.
+- Retain tenant/RBAC/attendance, real receiver identity, financial approvals, COD/balance/provider/Platform Fee rules, private evidence, source identity, batch integrity and D10 activation/continuation.
+
+### Dependencies and execution order
+
+| Phase | Depends on | Reviewable outcome |
+| --- | --- | --- |
+| P0 documentation review | Current user request | Finalized spec/plan only; user reviews before implementation. |
+| P1 regressions and loss stages | Review of P0 and instruction to implement | Explicit report/acknowledge/confirm/approve behavior with terminal approval and normal refund reservation. |
+| P2 linked recovery and movement | P1 | Verified pre-final options and mandatory post-final shop return through real acceptance/custody. |
+| P3 receipt, inspection and inventory | P2 | Truthful quantities, supported dispositions and exactly-once stock; automatic physical completion. |
+| P4 refund outcomes/reconciliation | P1; accounting/inspection callers audited against P3 | One authoritative outcome application path and consistent Finance/Staff projections. |
+| P5 existing-page UI and notifications | P1-P4 backend contracts | Requested actions remain discoverable; duplicate panels removed safely. |
+| P6 regression, concurrency and review | P1-P5 | Fresh evidence, resolved findings and documented remaining release limits; no publication/deployment. |
+
+Checked phases identify authored behavior and the bounded verification recorded below; they do not certify every source/browser/race permutation. For each coherent change: inspect current callers, write the relevant failing regression, read meaningful failure, implement the minimum change, run the narrow check and review its result. Do not dispatch parallel agents or concurrent PHPUnit processes.
+
+### P1. Loss stages, authorization and normal refund initiation
+
+**Files:** `app/Services/Logistics/DeliveryIncidentService.php`, `app/Http/Controllers/Api/Logistics/DeliveryIncidentController.php`, `app/Services/Logistics/LogisticsActorPolicy.php`, `app/Services/Logistics/ShipmentLegService.php`, `app/Models/Logistics/DeliveryIncident.php` only as needed, `app/Services/OrderRefundService.php`, `routes/web.php`, `config/shop_modules.php`.
+
+**Tests:** extend `tests/Feature/Logistics/DeliveryIncidentServiceTest.php`, `DeliveryIncidentControllerTest.php`, `IncidentVerdictEligibilityTest.php`, `ParcelIncidentRecoveryTest.php`, `LossRefundReconsiderationTest.php`; retain `tests/Feature/OrderRefundApprovalWorkflowTest.php` and `tests/Feature/Cod/CodRefundTest.php` controls. Coverage: A-L1-A-L3, A-C1, A-D1.
+
+- [x] Map report/resolve/close and historical Rider authorization callers; verify active worktree source because the available CodeGraph index may refer to another worktree. Verify disposable test DB and absent cached production config before running tests.
+- [x] Reproduce photo requirement, missing stages, extra closure and duplicate-action risks with desired-behavior tests; wrong actor/tenant/revision must fail for the right reason.
+- [x] Represent acknowledgment, Rider confirmation request and final approval using existing context/decision/revision/events. Enforce stage prerequisites; only reporting Rider requests confirmation and Dispatcher approves under existing policy.
+- [x] Finalize loss with existing assignment/custody/batch effects and normal eligible refund reservation/linkage. Preserve normal Staff/Finance/applicable Owner approval and COD/captured limits. No automatic payout, fake return, extra closure or permanent generic investigation.
+- [x] Define honest technical-failure/retry behavior: no success claim for failed initiation and no duplicate reservation on retry. Keep one terminal loss and business ineligibility separate from financial technical failure.
+- [x] Run focused incident and refund/COD checks, then review tenant/actor/replay and normal approval invariants before P2.
+
+### P2. Linked recovery and normal movement
+
+**Files:** `DeliveryIncidentService.php`, `DeliveryIncidentController.php`, `LogisticsActorPolicy.php`, `ShipmentLegService.php`, `ParcelIncidentRecoveryService.php`, `ParcelIncidentRecoveryController.php` under their existing Logistics directories; `app/Services/Logistics/SourceShipmentService.php` and `app/Services/RepairDeliveryService.php` only where existing source adapters require integration. Preserve `AssignmentService.php`, `ShipmentCustodyService.php`, `BatchDispatchService.php` and D10 helpers; edit only a demonstrated missing integration.
+
+**Tests:** `tests/Feature/Logistics/ParcelIncidentRecoveryTest.php`, `InboundParcelIncidentRecoveryTest.php`, `ShipmentCustodyTransferTest.php`, `RiderMyDeliveriesPageTest.php`, `RetryResolutionTest.php`, `DeliveryArrivalTest.php`, `LogisticsModuleMovementBoundaryTest.php`; existing repair-return tests. Coverage: A-R1-A-R3, A-C1, A-D1.
+
+- [x] Test recovery before/after final approval, required photos/custody/condition, parent source/tenant checks, historical Rider authority and competing final approval versus recovery.
+- [x] Create a separate linked occurrence with independent evidence/revision and server-controlled parent/source references. Lock parent/source to prevent duplicate active work; never rewrite a final loss or inherit old activation/proof.
+- [x] Before final approval, permit only currently eligible Dispatcher-authorized continuation/return; record the original pending report's outcome without falsely confirming loss. A new recovery report holds movement and invalidates stale approval facts.
+- [x] After final approval, replace the shortcut that changes original custody and creates an already-accepted assignment. Stage original-shop return through normal offer/explicit acceptance and actual custody. Preserve same-holder truth and different-holder transfers.
+- [x] Preserve cancelled original legs, original stock/financial history, mixed batch snapshots/capacity and customer-owned repair rules. Logistics OFF denies new movement but permits existing authorized closing operations.
+- [x] Run focused recovery/custody/D10 and source tests before receipt/inventory work.
+
+### P3. Actual receipt, inspection, inventory and automatic completion
+
+**Files:** `app/Services/Logistics/ParcelIncidentRecoveryService.php`, `app/Http/Controllers/Api/Logistics/ParcelIncidentRecoveryController.php`, `app/Services/RefundInventoryDispositionService.php`, `app/Services/OrderRefundService.php`; reuse `app/Services/InventoryCheckoutService.php`, `app/Services/StockMovementService.php` and existing return/custody services. Any shared helper edit must retain POS/ordinary refund callers.
+
+**Tests:** `tests/Feature/Logistics/ParcelIncidentRecoveryTest.php`, `InboundParcelIncidentRecoveryTest.php`, `ReturnToShopTest.php`, `ShipmentCustodyTransferTest.php`, `tests/Feature/OrderRefundReturnInspectionTest.php`, `RetailPosItemBasedRefundFlowTest.php`, `OrderItemBasedPartialRefundFlowTest.php`; existing repair intake/return controls. Coverage: A-R3, A-I1-A-I2, A-C1.
+
+- [x] Test actual employee receipt without Dispatcher powers, source/item/variant identity and actual quantities, including recovery after an already successful loss refund and prior write-off marker.
+- [x] Reuse actual return receipt and inspection; do not force another refund or rewrite successful refund/return history to fit normal refund state prerequisites.
+- [x] Extend existing inventory entry points for authorized later recovery. Lock occurrence/source/items/inventory, check allocation and cumulative restocks across prior attempts, and apply only eligible unprocessed received quantity. Reuse stock movements/item selection and retain audit even on product-only stock paths.
+- [x] Do not clear `inventory_applied_at`, change approved/refunded quantities, reverse money or duplicate stock. Reject active allocations, already-restocked quantities and retail treatment of repair shoes; record damaged/unsafe safe disposition without sellable increase.
+- [x] Record partial truth; apply only supported partial dispositions. If unsupported, preserve an owned actionable remainder without inventing full receipt, a new partial-refund policy or a quarantine subsystem.
+- [x] Automatically complete recovery after all required supported physical outcomes commit. No extra manual Dispatcher closure; a mere escalation allocation is insufficient. Keep financial pending work independent.
+- [x] Run receipt/inventory and ordinary POS/refund/repair controls; compare exact quantities, balances and movement counts before proceeding.
+
+### P4. Authoritative refund execution and display
+
+**Files:** `app/Http/Controllers/PaymongoWebhookController.php`, `app/Services/OrderRefundService.php`, `app/Http/Controllers/UserSide/OrderController.php`, `app/Http/Controllers/Api/RefundApprovalController.php`, `app/Http/Controllers/Api/StaffOrderController.php`, `resources/js/Pages/ERP/Finance/refundApproval.tsx`, `resources/js/Pages/ERP/Staff/JobOrders.tsx`. Inspect existing `PaymongoRefundService`, `CodRefundPayoutService`, `OrderRefundRecoveryService` and `PaymentSettlementService` callers; reuse rather than add parallel settlement code. Change these services only when the shared integration requires it.
+
+**Tests:** extend `tests/Feature/OrderRefundApprovalWorkflowTest.php`, `OrderRefundRecoveryLifecycleTest.php`, `StaffOrderRefundPayloadTest.php`, `OrderItemBasedPartialRefundFlowTest.php`, `PaymongoWebhookSignatureTest.php`, COD/repair refund controls; add `tests/Feature/PaymongoOrderRefundWebhookTest.php` for exact retail event binding/order handling. Extend Finance `__tests__/refundApproval.payout.test.tsx`, `refundApproval.return-gates.test.tsx` and Staff `__tests__/JobOrders.return-actions.test.tsx`. Coverage: A-F1-A-F2, A-C1.
+
+- [x] Reproduce Finance's retail Approved fallback/repair-only override, Staff precedence cases and multiple refunds sharing a payment. Match the hosted screenshot row to actual order/refund/provider IDs read-only if evidence is available; otherwise retain the evidence gap.
+- [x] Normalize supported provider payloads with verified signature, provider identity and exact refund/payment/source binding. Missing/ambiguous identifiers must not mutate the latest guessed row.
+- [x] Reuse one locked, idempotent result-application path from submission, callback and reconciliation. Stale/duplicate/unknown events cannot regress success or duplicate settlement; genuine reversals retain existing authorized reconciliation. Preserve provider contracts and payout idempotency.
+- [x] Move/reuse existing online reconciliation outside the customer-only caller, using bounded existing financial mechanisms or an authorized action. No provider polling per list row or live payout during testing.
+- [x] Correct backend/frontend precedence for all sources: approval versus execution distinct, truthful full/partial scope, failed/rejected status, filters/badges/actions aligned. Do not change money arithmetic or mask a separate pending request to make labels agree.
+- [x] Run provider-faked webhook/reconciliation, approval, COD, partial-refund and repair controls; assert refunds, settlements, stock and notices remain exactly once.
+
+### P5. Existing-page actions and notifications
+
+**Files:** `app/Http/Controllers/Logistics/ErpLogisticsController.php`, `app/Services/Logistics/CustomerTrackingService.php`, `LogisticsNotificationService.php`, `resources/js/Pages/ERP/Logistics/MyDeliveries.tsx`, `Shipments.tsx`, `components/DeliveryIssueResolution.tsx`, `resources/js/Pages/ERP/Staff/JobOrders.tsx`, `resources/js/components/logistics/ParcelIncidentRecovery.tsx`, `resources/js/types/logistics.ts`, `resources/js/services/logisticsApi.ts`, route/catalog changes from P1. Audit `resources/js/Pages/ERP/repairer/JobOrdersRepair.tsx` callers; preserve current Repairer behavior rather than remove shared functionality.
+
+**Tests:** existing Logistics `MyDeliveries.test.tsx`, `Shipments.test.tsx`, shared `ParcelIncidentRecovery.test.tsx`, Staff `JobOrders.return-actions.test.tsx`, Repairer `JobOrdersRepair.logistics.test.tsx`; backend `RiderMyDeliveriesPageTest.php`, `RecoveryNotificationTest.php`, `CustomerTrackingTest.php`, `DeliveryEventAfterCommitTest.php`, `LogisticsNotificationDeduplicationTest.php`. Coverage: A-U1, A-D1 and all user-facing stage cases.
+
+- [x] Expose server-authorized actions/reasons/revisions in existing history/details. Add Confirm Lost warning and Report Recovery evidence/custody fields; loss photo optional across UI/API/service.
+- [x] Remove standalone Returned Parcels Requiring Action mounts from Dispatcher Logistics and Staff Job Orders only after required actions are available in existing incident/order/return details. Preserve non-loss discoverability and Repairer callers.
+- [x] Remove false pending review/receipt/inspection demands for final missing parcels; retain financial links and correct final labels. No duplicate refund action after success.
+- [x] Route distinct acknowledgment/confirmation/approval/recovery notifications through existing after-commit deduplication. No success notice before commit and no D9 physical notices.
+- [x] Verify loading/error/retry/replay states, keyboard/modal behavior and 390/768/desktop views, plus an authenticated end-to-end journey for each pre/post-final recovery branch.
+
+### P6. Verification, sequential review and handoff
+
+**Harnesses:** extend `tests/Browser/parcel_incident_recovery.py` and `tests/Browser/parcel_incident_concurrency.php` only after checking their environment/mutation guards. Use disposable synthetic local data, isolated schemas and actual two-connection MariaDB for contention. No production/provider operations.
+
+- [x] Run narrow tests after each phase, then affected Logistics/COD/Repair/refund suites and frontend checks. Preserve meaningful failure evidence; do not weaken denial assertions or establish activation by status alone.
+- [ ] Cover competing approval/recovery, receipt/disposition/restock, refund/movement and callback/reconciliation with real two-connection locks. Assert one consistent outcome and no duplicate assignment/attempt/refund/payout/stock/notice or overwritten receiver.
+- [x] Review sequentially: simplify/reuse, repository Standards, amendment acceptance, security/data integrity, changed TS/React readability, bundle impact only where affected, D9 absence and D10 compatibility. Check unused callers/imports after panel removal. Record findings and resolutions once.
+- [x] Preserve all 15 original finding/status and QA rows; map A-L1 through A-D1 evidence independently. Existing historical 929-test and browser records do not verify the amendment.
+- [x] Update these two documents with actual future commands/results, failures and remaining coverage; update operational guides only during a subsequently authorized implementation scope. Record durable learning only if genuinely reusable; no task-specific vault entry required.
+- [x] Stop with concrete changed-file summary, test/build/browser/race evidence and remaining risks. Implementation completion does not authorize commit/push/merge/deploy, migrations against host DB, live provider calls or historical data repair.
+
+### Planned verification commands and limits
+
+These commands retain the original verification recipe; actual execution/results are recorded below. In PowerShell set `APP_ENV=testing`, `DB_CONNECTION=sqlite`, `DB_DATABASE=:memory:` in the command process and verify no cached database configuration before RefreshDatabase. Never run PHPUnit processes concurrently because the existing fake local disk fixture directory is shared.
+
+```powershell
+$env:APP_ENV = 'testing'
+$env:DB_CONNECTION = 'sqlite'
+$env:DB_DATABASE = ':memory:'
+php -d extension=gd vendor/phpunit/phpunit/phpunit tests/Feature/Logistics/DeliveryIncidentControllerTest.php tests/Feature/Logistics/DeliveryIncidentServiceTest.php tests/Feature/Logistics/ParcelIncidentRecoveryTest.php --no-progress --colors=never --do-not-cache-result
+php -d extension=gd vendor/phpunit/phpunit/phpunit tests/Feature/OrderRefundReturnInspectionTest.php tests/Feature/OrderRefundApprovalWorkflowTest.php tests/Feature/StaffOrderRefundPayloadTest.php tests/Feature/OrderItemBasedPartialRefundFlowTest.php --no-progress --colors=never --do-not-cache-result
+php -d extension=gd vendor/phpunit/phpunit/phpunit tests/Feature/PaymongoOrderRefundWebhookTest.php tests/Feature/PaymongoWebhookSignatureTest.php tests/Feature/OrderRefundRecoveryLifecycleTest.php --no-progress --colors=never --do-not-cache-result
+php -d extension=gd vendor/phpunit/phpunit/phpunit tests/Feature/Logistics tests/Feature/Cod tests/Feature/Repair tests/Feature/OrderRefundReturnInspectionTest.php --no-progress --colors=never --do-not-cache-result
+pnpm run test:frontend -- resources/js/Pages/ERP/Logistics/__tests__/MyDeliveries.test.tsx resources/js/Pages/ERP/Logistics/__tests__/Shipments.test.tsx resources/js/Pages/ERP/STAFF/__tests__/JobOrders.return-actions.test.tsx resources/js/Pages/ERP/Finance/__tests__/refundApproval.payout.test.tsx resources/js/Pages/ERP/Finance/__tests__/refundApproval.return-gates.test.tsx resources/js/components/logistics/__tests__/ParcelIncidentRecovery.test.tsx
+pnpm run test:frontend
+pnpm exec vite build --outDir output/parcel-incident-amendment-build
+git diff --check
+```
+
+Expected: focused assertions pass; full-suite failures are investigated and any proven baseline failures are reported separately. New webhook test runs only after it exists. Verify the current package scripts before executing. Prefer declared pnpm; if unavailable, disclose use of installed runners rather than installing dependencies or changing lockfiles. Build into local output during implementation; no fresh `public/build` publication is authorized by this plan. No TypeScript/lint success claim without configured tooling actually run. Full `composer test` is desirable when practical, with exact scope/limitations recorded.
+
+### Documentation review record and remaining gates
+
+The documentation-only checkpoint below preceded the user's subsequent implementation approval. Its absence-of-application-change statements apply to that checkpoint. Current application evidence is recorded separately here. Hosted refund matching and broader target-environment coverage remain open; no deployment approval is added.
+
+Documentation verification, October 28: sequential Standards/spec/risk and reuse review completed against the nine approved requirements. Both amendments agree on stage authority, finality, physical completion, inventory and financial safeguards. `git diff --check` passed; a read-only Python check verified relative links/anchors, balanced code fences and unchanged historical document bodies against HEAD. Working-tree scope contains only these two new document edits plus the three pre-existing attendance-related modifications and existing untracked output. Application tests/builds, provider checks and live transaction matching were not run. TypeScript, bundle and application dead-code checks are N/A for this documentation-only change.
+
+### Amendment execution and review evidence — October 29, 2026
+
+The user approved both amended documents and sequential implementation. No subagents were used. New behavior reuses existing incident context/events, return offers, employee receipt, inspection, stock movements and refund settlement. No new migration, dependency, queue, ledger, Owner custody feature or generated public asset was authored. Unrelated attendance changes and existing output remain untouched.
+
+Implemented changes:
+
+- P1: optional loss photographs, acknowledgment, reporting-Rider confirmation and terminal Dispatcher approval; eligible normal refund reservation remains separate from payout. A synthetic reservation failure rolls back finalization and a retry reserves only once.
+- P2: distinct linked recovery with source/parent/revision/replay guards, blocked competing final approval, fresh pre-final delivery acceptance and mandatory post-final original-shop return. Completed recoveries cannot be recreated or edited through a fresh physical-step request. Legacy non-loss and historical null-context behavior remains compatible.
+- P3: actual employee receipt, including linking that same receiver's already approved normal receipt; truthful inspection, supported retail/customer-property disposition and automatic physical completion. Cumulative restocks include previous refund lines and linked recovery. Later refund inventory processing consumes the prior recovery restock. Unsupported partial quantities remain under review with an actionable source escalation; no false full receipt or new partial-refund policy.
+- P4: exact signed PayMongo refund/payment binding, common locked result application for submission/callback/reconciliation, monotonic success and explicit Finance reconciliation without another payout. Finance and Staff use authoritative execution labels, including partial success, rather than approval or an unrelated order-level refunded flag.
+- P5: Rider history and existing Dispatcher incident/Staff order details contain the actions. Page-wide Dispatcher/Staff panels are removed; Repairer/non-loss callers remain. Customer tracking distinguishes reported/final loss. Notifications retain deduplication and clear superseded loss-stage action flags; delayed events cannot reopen completed stages. Shared Modal labeling enables its existing keyboard focus, Escape and return-focus behavior.
+
+| Verification | Fresh result and limits |
+| --- | --- |
+| Broad backend | `php -d extension=gd vendor/phpunit/phpunit/phpunit tests/Feature/Logistics tests/Feature/Cod tests/Feature/Repair tests/Feature/OrderRefundReturnInspectionTest.php tests/Feature/OrderRefundApprovalWorkflowTest.php tests/Feature/OrderRefundRecoveryLifecycleTest.php tests/Feature/OrderItemBasedPartialRefundFlowTest.php tests/Feature/StaffOrderRefundPayloadTest.php tests/Feature/PaymongoOrderRefundWebhookTest.php tests/Feature/PaymongoWebhookSignatureTest.php tests/Feature/BusinessScaling/ShopModuleRouteCoverageTest.php --no-progress --colors=never --do-not-cache-result --log-junit output/parcel-incident-amendment-backend-final.xml`: exit 0; **1,007 tests / 20,943 assertions / one skip**. Disposable SQLite `:memory:`, `APP_ENV=testing`, cached config absent. This aggregate preceded the final stock/notification corrections; their fresh controls follow. |
+| Final affected backend controls | Same environment/flags, nine files: `LostParcelLifecycleTest`, `RecoveryNotificationTest`, `DeliveryEventAfterCommitTest`, `LogisticsNotificationDeduplicationTest`, `ParcelIncidentRecoveryTest` under `tests/Feature/Logistics`, plus `OrderRefundReturnInspectionTest`, `RetailPosItemBasedRefundFlowTest`, `OrderItemBasedPartialRefundFlowTest`, `PaymongoOrderRefundWebhookTest` under `tests/Feature`: exit 0; **84 tests / 545 assertions**. JUnit/log: `output/parcel-incident-amendment-final-controls.xml` and `.log`. Includes refund initiation rollback, final-only shop return, partial escalation, prior write-off/restock, customer property and delayed notices. |
+| Meaningful failures and corrections | Initial broad run: 1,003 tests, one error/three failures in the old loss matrix; updated only loss expectations to explicit approved stages and retained all 15 IDs/denials. Late-refund regression reproduced stock **1 → 2**, then passed with one cumulative stock outcome. First cumulative correction also restricted an ordinary return fixture; bounded the new cap to sources with actual recovery disposition, preserving ordinary refund controls. Delayed acknowledgment notice regression reproduced a false action flag after final loss; corrected using current authoritative stage and superseded revisions. |
+| Changed frontend | Installed runner `node node_modules/vitest/vitest.mjs run` against MyDeliveries, Shipments, Staff return-actions, Finance payout/return-gates, shared recovery/Lost actions and Repairer tests (eight files): exit 0; **195 passed**. Report `output/parcel-incident-amendment-frontend-final.json`. `pnpm` unavailable; no installation/lockfile change. Includes keyboard boundary, Escape/focus return, warning/evidence/error behavior and embedded source filtering. |
+| Full frontend | Installed Vitest `run --reporter=json --outputFile=output/parcel-incident-amendment-frontend-all.json`: **2,109 passed / six failed**. Same six `JobOrders.shippingCoverage.test.ts` failures as the existing audited-HEAD baseline report; not an all-green claim. The subsequent added keyboard test passed in the final changed-screen run; full suite was not rerun solely for that test. |
+| Build | `node node_modules/vite/bin/vite.js build --outDir output/parcel-incident-amendment-build`: exit 0, **32.67 s**. `output/parcel-incident-amendment-build-final.log`. Existing unresolved `auth-geometric-pattern.svg` warning remains. No `public/build` publication or bundle-size improvement claim. |
+| Actual MariaDB contention | `php -d extension=gd tests/Browser/parcel_incident_concurrency.php`: exit 0. Verified worktree datadir, loopback 33317, unique guarded disposable schema. **Eleven** two-connection scenarios: verdict, receipt, inspection replay, source attempt, activation/reassignment, receipt/module OFF, loss approval, loss/recovery, restock, refund inventory/recovery stock, provider success/stale pending. One consistent domain outcome; stock race ends **8 → 9**, never 10. Evidence `output/parcel-incident-concurrency-20261028-173202-2887db/results.json`; UTC-stamped directory. Existing migration empty down/up and populated-history refusal tested only inside this disposable schema. |
+| Authenticated browser | `python tests/Browser/parcel_incident_recovery.py --mfa --amendment`: exit 0; both pre-final continuation and post-final return/receipt/inspection/disposition complete automatically. Normal password, TOTP and camera Time In in separate actor contexts. Rider Confirm Lost warning and Staff order-details disposition were clicked; remaining transitions used authenticated browser requests sharing cookies/CSRF. Final keyboard Tab boundary, Escape and focus return passed. Rider/Staff evidence at **390/768/1440**; no horizontal overflow, no global panels. `output/parcel-incident-browser/amendment-results.json` and `amendment-*.png`. Earlier serial-server navigation failures and harness filter/hidden-details errors were corrected; no passing claim from those attempts. Synthetic retail branches do not certify all source/payment/mixed-batch browser combinations. |
+
+Sequential review: simplify/reuse, Standards, amendment acceptance and risk review completed. Typed frontend boundaries, unchanged D10 activation/ordinary refund callers, private evidence, tenant/actor/attendance and exact provider identity were checked. Review found and resolved late-refund double stock, delayed action notices, generic linked-disposition bypass and missing Modal accessibility labeling. Existing helpers/components remain authoritative; only orphans created by this change were removed. No heavy dependency or speculative splitting; production performance improvement **not measured**. TypeScript compiler/lint **not run: no configured gate**. No new durable cross-project lesson warranted a vault entry.
+
+Final hygiene: `git diff --check` passed. `python output/verify-parcel-amendment.py` verified both historical document bodies byte-for-byte after the retained title/prelude, relative links/anchors and balanced fences; all original finding/status and QA rows are preserved. It also confirmed the six full-frontend failure names match the audited-HEAD baseline exactly and no migration, environment, dependency or public build diff exists. The verified task-owned PHP/Vite loopback services and worktree MariaDB were stopped after testing; normal developer services and retained output were preserved.
+
+Remaining limits: exact hosted order/refund/provider matching is unavailable; no host/provider result is inferred. Broader Repairer/warranty/payment/mixed-batch browser permutations and contention beyond the eleven named scenarios remain release coverage. Full `composer test` outside the affected domains was not run. The six proven baseline frontend failures remain unresolved. Original 15 finding/status and QA rows and historical evidence remain unchanged. No commit/push/merge/deployment, live provider call, host migration or historical-data repair occurred.
+
+Publication follow-up: the user subsequently requested “commit and push it now.” This authorizes the amendment's scoped commit and normal push to its existing feature branch. The preceding no-publication statement describes the implementation verification checkpoint. Existing evidence/limitations remain unchanged; unrelated attendance edits, local output and generated production assets are excluded. Merge, deployment and provider/production operations remain unauthorized.
+
+## Historical implementation plan and execution evidence - October 27, 2026
+
+Everything below is preserved as the earlier implementation/publication record. Its task completion, closure rules, UI proposals and authorization statements do not override the current documentation-only instruction or approved amendment above.
+
 > For agentic workers: execute sequentially in this worktree. Implementation and subsequent commit/push with a fresh public/build are authorized. Do not dispatch agents, merge or deploy without separate authorization.
 
 **Status:** Bounded implementation authored and locally verified sequentially in this worktree; release verification remains open below. D1-D10 remain the approved business-rule baseline in [the aligned specification](../specs/2026-10-27-parcel-incident-recovery-design.md). **D9 is approved but deferred; active scope is D1-D8 and D10.** The user subsequently authorized commit and push, including a fresh `public/build`. Merge, deployment, provider/live operations and production data repair remain unauthorized. Decisions are not reopened. Earlier output-local diagnostics remain historical audit evidence.

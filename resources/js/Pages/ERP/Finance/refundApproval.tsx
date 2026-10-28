@@ -304,7 +304,7 @@ interface RefundRequest {
 	refundNote?: string;
 	reasonDetails?: string;
 	reason: string;
-	status: "Pending" | "Approved" | "Processing" | "Refunded" | "Rejected";
+	status: "Pending" | "Approved" | "Processing" | "Refunded" | "Partially Refunded" | "Failed" | "Rejected";
 	rawStatus?: string;
 	shopOwnerStatus?: string;
 	financeStatus?: string;
@@ -437,12 +437,13 @@ export const resolveFinanceDisplayStatus = (item: RefundRequest): RefundRequest[
 		return "Rejected";
 	}
 
-	if (item.refundType === "repair" && rawStatus === "processing") {
+	if (rawStatus === "failed") return "Failed";
+	if (rawStatus === "processing") {
 		return "Processing";
 	}
 
-	if (item.refundType === "repair" && ["succeeded", "completed", "paid", "refunded"].includes(rawStatus)) {
-		return "Refunded";
+	if (["succeeded", "completed", "paid", "refunded"].includes(rawStatus)) {
+		return item.status === "Partially Refunded" ? "Partially Refunded" : "Refunded";
 	}
 
 	if (financeStatus === "approved") {
@@ -741,6 +742,7 @@ export default function RefundApproval() {
 	const [executeProofImages, setExecuteProofImages] = useState<File[]>([]);
 	const [existingExecutionProofUrls, setExistingExecutionProofUrls] = useState<string[]>([]);
 	const [executeError, setExecuteError] = useState("");
+	const [reconcilingId, setReconcilingId] = useState<number | null>(null);
 	const selectedExecutionProofPreviews = useMemo(
 		() => executeProofImages.map((file) => ({ name: file.name, url: URL.createObjectURL(file) })),
 		[executeProofImages],
@@ -943,6 +945,21 @@ export default function RefundApproval() {
 	const handleViewClick = (request: RefundRequest) => {
 		setSelectedRequest(request);
 		setViewModalOpen(true);
+	};
+	const reconcileProviderStatus = async (request: RefundRequest) => {
+		if (reconcilingId !== null) return;
+		setReconcilingId(request.id);
+		try {
+			const response = await fetch(`/api/finance/refunds/${request.id}/reconcile`, { method: 'POST',
+				headers: { Accept: 'application/json', 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '' } });
+			if (!response.ok) {
+				const body: { message?: string } = await response.json();
+				throw new Error(body.message || 'Provider status could not be refreshed.');
+			}
+			await fetchRefundRequests();
+		} catch (error) {
+			await Swal.fire({ icon: 'error', title: 'Status refresh failed', text: error instanceof Error ? error.message : 'Try again later.' });
+		} finally { setReconcilingId(null); }
 	};
 
 	const toggleCodRefundDestination = async (request: RefundRequest) => {
@@ -1605,6 +1622,10 @@ export default function RefundApproval() {
 								<option value="All">All Status</option>
 								<option value="Pending">Pending</option>
 								<option value="Approved">Approved</option>
+								<option value="Processing">Refund Processing</option>
+								<option value="Refunded">Refunded</option>
+								<option value="Partially Refunded">Partially Refunded</option>
+								<option value="Failed">Failed</option>
 								<option value="Rejected">Rejected</option>
 							</MonochromeSelect>
 						</div>
@@ -1639,14 +1660,14 @@ export default function RefundApproval() {
 													className={`px-2 py-1 rounded-full text-xs font-semibold ${
 														request.approvalStageLabel?.startsWith('Waiting') === true
 															? "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300"
-															: ["Approved", "Refunded"].includes(request.status)
+															: ["Approved", "Refunded", "Partially Refunded"].includes(request.status)
 															? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300"
 															: request.status === "Processing"
 															? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
 															: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300"
 													}`}
 												>
-													{request.approvalStageLabel?.startsWith('Waiting') ? request.approvalStageLabel : request.status}
+													{request.status === 'Pending' && request.approvalStageLabel?.startsWith('Waiting') ? request.approvalStageLabel : request.status === 'Processing' ? 'Refund Processing' : request.status}
 												</span>
 												{canExecuteRefundPayout(request) && (
 													<span className="px-2 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
@@ -1662,6 +1683,9 @@ export default function RefundApproval() {
 										</td>
 										<td className="py-4 text-right">
 											<div className="inline-flex items-center gap-2">
+												{request.refundType !== 'repair' && request.status === 'Processing' && <button type="button"
+													className="min-h-11 rounded-lg border px-3" disabled={reconcilingId !== null} onClick={() => void reconcileProviderStatus(request)}>
+													{reconcilingId === request.id ? 'Refreshing…' : 'Refresh provider status'}</button>}
 												<button
 													onClick={() => handleViewClick(request)}
 													className="p-2 rounded-lg text-blue-600 hover:text-blue-700 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"

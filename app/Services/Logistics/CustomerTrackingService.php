@@ -184,10 +184,18 @@ class CustomerTrackingService
         if (! $stop) {
             $incident = \App\Models\Logistics\DeliveryIncident::with('leg.shipment')->where('shop_owner_id', $shipment->shop_owner_id)
                 ->whereIn('shipment_leg_id', $shipment->legs->modelKeys())->whereNotNull('recovery_context')
-                ->where('resolution', '!=', 'dismissed')->latest('id')->first();
+                ->where(fn ($query) => $query->whereNull('resolution')->orWhere('resolution', '!=', 'dismissed'))->latest('id')->first();
             if (! $incident) return null;
             $closed = $incident->status === 'resolved';
             $pending = collect(app(ParcelIncidentRecoveryService::class)->obligations($incident))->contains(fn ($row) => ! $row['complete']);
+            if ($stage = data_get($incident->recovery_context, 'loss.stage')) {
+                return ['state' => $stage === 'confirmed' ? 'loss_confirmed' : 'loss_reported',
+                    'operational_closed' => $closed, 'linked_work_pending' => $pending,
+                    'label' => $stage === 'confirmed' ? 'Parcel loss confirmed' : 'Parcel loss reported',
+                    'message' => $stage === 'confirmed' ? 'The loss is final. Eligible financial processing follows the normal refund approval workflow.'
+                        : 'Delivery is held while the shop reviews the missing parcel. No loss refund has been confirmed.',
+                    'next_step' => 'The shop will update you about required financial or source actions.'];
+            }
             return ['state' => $closed ? ($pending ? 'linked_work_pending' : 'complete') : 'recovery_pending',
                 'operational_closed' => $closed, 'linked_work_pending' => $pending,
                 'label' => $closed ? ($pending ? 'Operationally closed - follow-up pending' : 'Recovery completed') : 'Recovery in progress',

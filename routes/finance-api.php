@@ -237,6 +237,7 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::post('/{id}/approve', [RefundApprovalController::class, 'financeApprove'])->name('finance.refunds.approve');
         Route::post('/{id}/reject', [RefundApprovalController::class, 'financeReject'])->name('finance.refunds.reject');
         Route::post('/{id}/execute-gateway-refund', [RefundApprovalController::class, 'financeExecuteGatewayRefund'])->name('finance.refunds.execute');
+        Route::post('/{id}/reconcile', [RefundApprovalController::class, 'financeReconcile'])->middleware('throttle:10,1')->name('finance.refunds.reconcile');
         Route::get('/{id}/destination/reveal', [RefundApprovalController::class, 'revealCodRefundDestination'])->name('finance.refunds.destination.reveal');
     });
 

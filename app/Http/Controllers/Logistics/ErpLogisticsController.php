@@ -155,7 +155,7 @@ class ErpLogisticsController extends Controller
                         'custodyTransfers',
                         'latestAssignment',
                         'proofs',
-                        'incidents',
+                        'incidents.reportingRider',
                         'events' => fn ($events) => $events
                             ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived']),
                         'attempts' => fn ($attempts) => $attempts
@@ -325,7 +325,7 @@ class ErpLogisticsController extends Controller
                 'legs.custodyTransfers',
                 'legs.latestAssignment',
                 'legs.proofs',
-                'legs.incidents',
+                'legs.incidents.reportingRider',
                 'legs.events' => fn ($query) => $query
                     ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived', 'in_transit', 'out_for_delivery'])
                     ->oldest('id'),
@@ -350,7 +350,7 @@ class ErpLogisticsController extends Controller
                 'shipment.shopOwner.logisticsSetting',
                 'custodyTransfers',
                 'proofs',
-                'incidents',
+                'incidents.reportingRider',
                 'events' => fn ($query) => $query
                     ->whereIn('event_type', ['pickup_arrived', 'dropoff_arrived', 'in_transit', 'out_for_delivery'])
                     ->oldest('id'),
@@ -436,7 +436,9 @@ class ErpLogisticsController extends Controller
         $source = match ($tab) {
             'upcoming' => $workItems->where('group', 'upcoming')
                 ->reject(fn (array $item) => $item['key'] === ($upNext['key'] ?? null)),
-            'history' => $workItems->where('group', 'history'),
+            'history' => $workItems->filter(fn (array $item) => $item['group'] === 'history'
+                || collect($item['deliveries'])->contains(fn (array $delivery) => collect($delivery['incidents'] ?? [])
+                    ->contains(fn (array $incident) => $incident['type'] === 'lost'))),
             'issues' => $issues,
             'all' => $workItems,
         };
@@ -853,6 +855,7 @@ class ErpLogisticsController extends Controller
             'decided_at' => $incident->decided_at?->toISOString(), 'revision' => $incident->revision,
             'eligibility' => app(\App\Services\Logistics\DeliveryIncidentService::class)->eligibility($incident, data_get($incident->recovery_context, 'findings', [])),
             'reporting_rider_profile_id' => $incident->reporting_rider_profile_id,
+            'loss' => $incident->lossWorkflow(\Illuminate\Support\Facades\Auth::guard('user')->user()),
             'evidence_urls' => $evidenceUrls,
         ];
     }

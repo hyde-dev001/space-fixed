@@ -2,6 +2,7 @@ import DeliveryIssueResolution from './components/DeliveryIssueResolution';
 import RetryResolutionDialog from './components/RetryResolutionDialog';
 import CustodyHandoffs from './components/CustodyHandoffs';
 import ParcelIncidentRecovery from '@/components/logistics/ParcelIncidentRecovery';
+import LostParcelActions from '@/components/logistics/LostParcelActions';
 import BatchInterruptionControls from './components/BatchInterruptionDialog';
 import type { CustodyHandoff } from '@/types/logistics';
 import MonochromeSelect from "@/components/form/Select";
@@ -554,7 +555,6 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   return (
     <AppLayoutERP>
       <Head title={riderMode ? "My Deliveries" : ownerMode ? "Shipment Monitoring" : "ERP Logistics Shipments"} />
-      {!ownerMode && !riderMode && canAssign && <ParcelIncidentRecovery source="all" riders={assignableRiders} schedule={logisticsSchedule} today={today} />}
       <CustodyHandoffs handoffs={custodyHandoffs} />
       {retryLeg && <RetryResolutionDialog key={retryLeg.id} leg={retryLeg} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}
         onClose={() => setRetryLegId(null)} onSubmit={async payload => {
@@ -795,6 +795,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   </header>
                   <div className="min-h-0 flex-1 overflow-y-auto border-t border-gray-100 bg-gray-50 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-700 dark:bg-gray-900/40 sm:p-6 sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
                     {shipment.source_type === 'order' && <RetailOrderSummary summary={shipment.order_summary} expanded />}
+                    {selected && !ownerMode && !riderMode && canAssign && <ParcelIncidentRecovery source="all" shipmentId={shipment.id} riders={assignableRiders} schedule={logisticsSchedule} today={today} />}
                     {shipment.customer_disputes?.map((dispute) => (
                       <section key={dispute.id} className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-100">
                         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -933,7 +934,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           View evidence {index + 1}
                                         </a>
                                       ))}
-                                      {incident.decided_at && incident.status !== 'resolved' ? <p role="status" className="font-semibold">Recovery decision recorded. Required handoffs, source disposition and operational closure remain pending.</p> : incident.status === 'resolved' ? (
+                                      {incident.loss && !ownerMode && !riderMode ? <LostParcelActions incident={incident} onChanged={() => router.reload()} /> : incident.decided_at && incident.status !== 'resolved' ? <p role="status" className="font-semibold">Recovery decision recorded. Required handoffs, source disposition and operational closure remain pending.</p> : incident.status === 'resolved' ? (
                                         <p className="font-semibold text-emerald-800 dark:text-emerald-300">Resolution: {label(incident.resolution ?? 'resolved')}</p>
                                       ) : !riderMode && canAssign && !held ? (
                                         <DeliveryIssueResolution onPendingChange={setResolutionPending} leg={leg} incident={incident} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}

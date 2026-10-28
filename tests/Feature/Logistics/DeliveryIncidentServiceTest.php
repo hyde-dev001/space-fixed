@@ -25,6 +25,21 @@ class DeliveryIncidentServiceTest extends TestCase
 {
     use RefreshDatabase;
 
+    private function approveReportedLoss($incident, $rider, $shop, string $note): array
+    {
+        $service = app(DeliveryIncidentService::class);
+        $actor = User::findOrFail($rider->linked_id);
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $dispatcher->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate('resolve-logistics-exceptions', 'user'));
+        $this->clockInEmployee($actor);
+        $this->clockInEmployee($dispatcher);
+        $facts = fn ($revision) => ['request_key' => (string) \Illuminate\Support\Str::uuid(), 'expected_revision' => $revision, 'notes' => $note];
+        $incident = $service->lossAction($incident, $dispatcher, 'acknowledge', $facts(0));
+        $incident = $service->lossAction($incident, $actor, 'confirm', $facts(1));
+        $approval = $facts(2);
+        return [$service->lossAction($incident, $dispatcher, 'approve', $approval), $dispatcher, $approval];
+    }
+
     public function test_assigned_rider_reports_and_dispatcher_confirms_loss(): void
     {
         $shop = ShopOwner::factory()->create();
@@ -34,10 +49,10 @@ class DeliveryIncidentServiceTest extends TestCase
         $service = app(DeliveryIncidentService::class);
 
         $incident = $service->report($leg, $rider, ['type' => 'lost', 'notes' => 'Missing during route', 'photo_paths' => ['incident-evidence/leg-1/evidence.jpg']]);
-        $resolved = $service->resolve($incident, $shop, 'loss_confirmed', 'Search and investigation completed', ['incident-evidence/incident-1/investigation.jpg']);
+        [$resolved] = $this->approveReportedLoss($incident, $rider, $shop, 'Search and investigation completed');
 
-        $this->assertSame('under_review', $resolved->status);
-        $this->assertNull($resolved->resolved_at);
+        $this->assertSame('resolved', $resolved->status);
+        $this->assertNotNull($resolved->resolved_at);
         $this->assertSame('loss_confirmed', $leg->fresh()->resolution_type);
         $this->assertSame('cancelled', $leg->fresh()->status->value);
         $this->assertSame('cancelled', $leg->assignments()->firstOrFail()->fresh()->status);
@@ -202,8 +217,8 @@ class DeliveryIncidentServiceTest extends TestCase
             'photo_paths' => ['incident-evidence/leg-loss/report.png'],
         ]);
 
-        $service->resolve($incident, $shop, 'loss_confirmed', 'Investigation completed', ['incident-evidence/incident-loss/investigation.png']);
-        $service->resolve($incident->fresh(), $shop, 'loss_confirmed', 'Investigation completed', ['incident-evidence/incident-loss/investigation.png']);
+        [$final, $dispatcher, $approval] = $this->approveReportedLoss($incident, $rider, $shop, 'Investigation completed');
+        $service->lossAction($final, $dispatcher, 'approve', $approval);
 
         $claim = OrderRefund::query()->where('reason_code', 'delivery_loss_confirmed')->firstOrFail();
         $this->assertSame('not_required', $claim->return_status);

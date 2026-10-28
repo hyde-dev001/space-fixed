@@ -282,6 +282,16 @@ class RefundApprovalController extends Controller
         ]);
     }
 
+    public function financeReconcile(Request $request, int $id)
+    {
+        $actor = Auth::guard('user')->user();
+        abort_unless($actor && $actor->can('access-refund-approval'), 403);
+        $refund = OrderRefund::where('shop_owner_id', $actor->shop_owner_id)->where('flow_type', 'request_approval')->findOrFail($id);
+        $refund = $this->isCodRefund($refund) ? $this->orderRefundService->reconcileCodRefundPayout($refund)
+            : $this->orderRefundService->reconcileOnlineRefund($refund);
+        return response()->json(['refund' => $this->transformRefund($refund)]);
+    }
+
     public function financeExecuteGatewayRefund(Request $request, int $id)
     {
         $user = Auth::guard('user')->user();
@@ -419,6 +429,7 @@ class RefundApprovalController extends Controller
             ->with([
                 'order:id,order_number,total_amount,shipping_fee,payment_method,vat_amount,shop_owner_id',
                 'order.shopOwner:id,registration_type',
+                'order.refunds:id,order_id,status,amount',
                 'order.deliveryDisputes:id,order_id,order_refund_id,evidence_media',
                 'order.codCollection.remittanceItem.remittance',
                 'customer:id,name',
@@ -430,7 +441,11 @@ class RefundApprovalController extends Controller
             if ($statusFilter === 'pending') {
                 $query->whereIn('status', ['requested', 'pending_approval']);
             } elseif ($statusFilter === 'approved') {
-                $query->whereIn('status', ['processing', 'succeeded']);
+                $query->where('finance_status', 'approved')->whereNotIn('status', ['processing', 'succeeded', 'failed', 'rejected']);
+            } elseif (in_array($statusFilter, ['refunded', 'partially refunded'], true)) {
+                $query->where('status', 'succeeded');
+            } elseif (in_array($statusFilter, ['processing', 'failed'], true)) {
+                $query->where('status', $statusFilter);
             } elseif ($statusFilter === 'rejected') {
                 $query->where('status', 'rejected');
             }
@@ -572,11 +587,7 @@ class RefundApprovalController extends Controller
             $approvalStage = 'approved';
         }
 
-        $uiStatus = match (true) {
-            in_array($status, ['requested', 'pending_approval'], true) => 'Pending',
-            $status === 'rejected' => 'Rejected',
-            default => 'Approved',
-        };
+        $uiStatus = $this->orderRefundService->refundExecutionLabel($refund, $order);
 
         $orderTotal = (float) ($order->total_amount ?? 0) + max(0, (float) ($order->shipping_fee ?? 0));
         if ($orderTotal <= 0) {

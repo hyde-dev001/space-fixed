@@ -47,6 +47,78 @@ class OrderRefundService
     ) {
     }
 
+    public function refundExecutionLabel(OrderRefund $refund, ?Order $order = null): string
+    {
+        if ($refund->status === 'succeeded') {
+            $order ??= $refund->order;
+            $total = round((float) $order->total_amount + max(0, (float) $order->shipping_fee), 2);
+            $succeeded = $order->relationLoaded('refunds')
+                ? $order->refunds->where('status', 'succeeded')->sum('amount')
+                : $order->refunds()->where('status', 'succeeded')->sum('amount');
+            return $total > 0 && round((float) $succeeded, 2) < $total - 0.01 ? 'Partially Refunded' : 'Refunded';
+        }
+        return match ($refund->status) {
+            'processing' => 'Processing', 'failed' => 'Failed', 'rejected' => 'Rejected',
+            'requested', 'pending_approval' => 'Pending', default => 'Approved',
+        };
+    }
+
+    public function applyPaymongoRefundOutcome(OrderRefund $refund, array $result): OrderRefund
+    {
+        return DB::transaction(function () use ($refund, $result) {
+            ShopOwner::whereKey($refund->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $order = Order::where('shop_owner_id', $refund->shop_owner_id)->lockForUpdate()->findOrFail($refund->order_id);
+            $refund = OrderRefund::where('shop_owner_id', $order->shop_owner_id)->lockForUpdate()->findOrFail($refund->id);
+            $id = trim((string) ($result['refund_id'] ?? ''));
+            $payment = (string) ($result['payment_id'] ?? $refund->paymongo_payment_id);
+            $status = strtolower((string) ($result['status'] ?? ''));
+            if (! $id || $id !== (string) $refund->paymongo_refund_id || $payment !== (string) $refund->paymongo_payment_id
+                || $payment !== (string) $order->paymongo_payment_id || $this->isCodOrder($order)
+                || ($refund->payment_gateway && $refund->payment_gateway !== 'paymongo')
+                || (isset($result['currency']) && strtoupper((string) $result['currency']) !== strtoupper((string) $refund->currency))
+                || (isset($result['amount_in_centavos']) && (int) $result['amount_in_centavos'] !== (int) round((float) $refund->amount * 100))) {
+                Log::warning('Order refund provider binding mismatch', ['refund_id' => $refund->id]);
+                return $refund;
+            }
+            $outcome = match ($status) {
+                'succeeded', 'completed', 'paid' => 'succeeded',
+                'failed', 'canceled', 'cancelled' => 'failed',
+                'pending', 'processing' => 'processing',
+                default => null,
+            };
+            if (! $outcome || $refund->status === 'succeeded' || ($outcome === 'processing' && $refund->status === 'failed')) return $refund;
+            $refund->update(['status' => $outcome,
+                'refunded_at' => $outcome === 'succeeded' ? ($refund->refunded_at ?? now()) : $refund->refunded_at,
+                'failed_at' => $outcome === 'failed' ? ($refund->failed_at ?? now()) : null,
+                'failure_reason' => $outcome === 'failed' ? 'paymongo_refund_failed' : null]);
+            if ($outcome === 'succeeded') {
+                $this->recoveryService()->recordSuccessfulExecution($refund, $refund->processed_by);
+                foreach ($refund->items()->whereIn('inspection_disposition', ['resellable', 'damaged'])->get() as $line) {
+                    app(RefundInventoryDispositionService::class)->applyOrderLine($line);
+                }
+                $this->paymentSettlementService->settleOrderRefunded($order, $id, $refund->reason_code, $refund->reason_note);
+            } elseif ($outcome === 'failed') {
+                $this->paymentSettlementService->recordOrderRefundFailure($order, 'paymongo_refund_failed');
+            }
+            return $refund->fresh();
+        }, 3);
+    }
+
+    public function reconcileOnlineRefund(OrderRefund $refund): OrderRefund
+    {
+        $refund->loadMissing('order.shopOwner');
+        if (! in_array($refund->status, ['processing', 'requested', 'pending_approval'], true)
+            || ! $refund->paymongo_refund_id || $this->isCodOrder($refund->order)
+            || (int) $refund->order?->shop_owner_id !== (int) $refund->shop_owner_id) return $refund;
+        $secret = trim((string) $refund->order->shopOwner?->paymongo_secret_key);
+        if (! $secret) return $refund;
+        $result = $this->paymongoRefundService->getRefundStatus($secret, $refund->paymongo_refund_id);
+        if (! ($result['success'] ?? false)) return $refund;
+        $attributes = data_get($result, 'raw.data.attributes', []);
+        return $this->applyPaymongoRefundOutcome($refund, [...$result, 'payment_id' => $attributes['payment_id'] ?? $refund->paymongo_payment_id,
+            'currency' => $attributes['currency'] ?? $refund->currency]);
+    }
+
     public function reserveFailedDeliveryRefund(
         Order $order,
         ShipmentLeg $outboundLeg,
@@ -2100,46 +2172,11 @@ class OrderRefundService
             ];
         }
 
-        $gatewayStatus = strtolower((string) ($gatewayResult['status'] ?? 'processing'));
-        $refundStatus = in_array($gatewayStatus, ['succeeded', 'completed', 'paid'], true)
-            ? 'succeeded'
-            : 'processing';
-
-        $refund->update([
-            'status' => $refundStatus,
-            'paymongo_refund_id' => $gatewayResult['refund_id'] ?? null,
-            'refunded_at' => $refundStatus === 'succeeded' ? now() : null,
+        $refund->newQuery()->whereKey($refund->id)->where('status', '!=', 'succeeded')->update([
+            'paymongo_refund_id' => $gatewayResult['refund_id'] ?? $refund->paymongo_refund_id,
         ]);
-
-        if ($refundStatus === 'succeeded' && $refund->exists && $refund->getKey()) {
-            $this->recoveryService()->recordSuccessfulExecution($refund, $refund->processed_by);
-        }
-
-        if ($refundStatus === 'succeeded') {
-            if (Schema::hasTable('order_refund_items')) {
-                try {
-                    $refund->loadMissing('items');
-                    /** @var RefundInventoryDispositionService $inventoryDisposition */
-                    $inventoryDisposition = app(RefundInventoryDispositionService::class);
-                    foreach ($refund->items as $itemLine) {
-                        $inventoryDisposition->applyOrderLine($itemLine);
-                    }
-                } catch (\Throwable $lineApplyError) {
-                    Log::warning('Order refund succeeded but line-level inventory disposition failed', [
-                        'refund_id' => (int) ($refund->id ?? 0),
-                        'order_id' => (int) ($order->id ?? 0),
-                        'error' => $lineApplyError->getMessage(),
-                    ]);
-                }
-            }
-
-            $this->paymentSettlementService->settleOrderRefunded(
-                order: $order,
-                refundId: $refund->paymongo_refund_id,
-                reason: $refund->reason_code,
-                note: $refund->reason_note,
-            );
-        }
+        $refund = $this->applyPaymongoRefundOutcome($refund->fresh(), $gatewayResult);
+        $refundStatus = $refund->status;
 
         return [
             'result' => $refundStatus === 'succeeded' ? 'refunded' : 'processing',

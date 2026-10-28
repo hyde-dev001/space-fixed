@@ -37,4 +37,5 @@ $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' 
     'custody_rider_profile_id' => $fixture['actors']['a']['rider_id'], 'custody_confirmed_at' => now(), 'requires_pickup_proof' => false,
     'origin_snapshot' => ['type' => 'shop', 'name' => 'Synthetic shop'], 'destination_snapshot' => ['type' => 'customer', 'name' => 'Synthetic destination']]);
 $assignment = DeliveryAssignment::factory()->create(['shipment_leg_id' => $leg->id, 'rider_profile_id' => $fixture['actors']['a']['rider_id'], 'status' => 'accepted']);
-echo json_encode(['leg_id' => $leg->id, 'assignment_id' => $assignment->id, 'item_id' => $item->id, 'order_id' => $order->id, 'stock' => $product->stock_quantity], JSON_THROW_ON_ERROR);
+echo json_encode(['leg_id' => $leg->id, 'assignment_id' => $assignment->id, 'item_id' => $item->id, 'order_id' => $order->id,
+    'order_number' => $order->order_number, 'stock' => $product->stock_quantity], JSON_THROW_ON_ERROR);

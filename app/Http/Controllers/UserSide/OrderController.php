@@ -459,62 +459,8 @@ class OrderController extends Controller
 
     private function reconcileRefundWithGateway(Order $order, ?OrderRefund $latestRefund): void
     {
-        if (!$latestRefund) {
-            return;
-        }
-
-        if ((string) ($order->payment_status ?? 'pending') === 'refunded') {
-            return;
-        }
-
-        $refundStatus = strtolower((string) ($latestRefund->status ?? ''));
-        if (!in_array($refundStatus, ['processing', 'requested', 'pending_approval'], true)) {
-            return;
-        }
-
-        $refundId = trim((string) ($latestRefund->paymongo_refund_id ?? ''));
-        if ($refundId === '') {
-            return;
-        }
-
-        $secretKey = trim((string) ($order->shopOwner?->paymongo_secret_key ?? ''));
-        if ($secretKey === '') {
-            return;
-        }
-
-        $gateway = $this->paymongoRefundService->getRefundStatus($secretKey, $refundId);
-        if (!($gateway['success'] ?? false)) {
-            return;
-        }
-
-        $status = strtolower((string) ($gateway['status'] ?? 'processing'));
-
-        if (in_array($status, ['succeeded', 'completed', 'paid'], true)) {
-            $latestRefund->update([
-                'status' => 'succeeded',
-                'refunded_at' => $latestRefund->refunded_at ?? now(),
-                'failure_reason' => null,
-                'failed_at' => null,
-            ]);
-
-            $this->paymentSettlementService->settleOrderRefunded(
-                order: $order,
-                refundId: $refundId,
-                reason: $latestRefund->reason_code,
-                note: $latestRefund->reason_note,
-            );
-
-            return;
-        }
-
-        if (in_array($status, ['failed', 'canceled', 'cancelled'], true)) {
-            $latestRefund->update([
-                'status' => 'failed',
-                'failure_reason' => 'paymongo_refund_failed',
-                'failed_at' => now(),
-            ]);
-
-            $this->paymentSettlementService->recordOrderRefundFailure($order, 'paymongo_refund_failed');
+        if ($latestRefund && (int) $latestRefund->order_id === (int) $order->id) {
+            app(\App\Services\OrderRefundService::class)->reconcileOnlineRefund($latestRefund);
         }
     }
 

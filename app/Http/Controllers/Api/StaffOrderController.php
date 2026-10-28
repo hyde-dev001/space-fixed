@@ -250,7 +250,7 @@ class StaffOrderController extends Controller
                 ),
                 'latest_refund' => $latestRefund
                     ? $this->serializeLatestRefund(
-                        $latestRefund,
+                        $latestRefund->setRelation('order', $order),
                         $latestRefundItems,
                         $refundShipments->get($latestRefund->id),
                         $refundDispute,
@@ -430,7 +430,7 @@ class StaffOrderController extends Controller
                 $this->orderLogisticsFallback($order),
             ),
             'latest_refund' => $latestRefund
-                ? $this->serializeLatestRefund($latestRefund, $latestRefundItems, $refundShipment, $refundDispute)
+                ? $this->serializeLatestRefund($latestRefund->setRelation('order', $order), $latestRefundItems, $refundShipment, $refundDispute)
                 : null,
             'created_at' => $order->created_at->toISOString(),
             'updated_at' => $order->updated_at->toISOString(),
@@ -468,6 +468,7 @@ class StaffOrderController extends Controller
         return [
             'id' => (int) $refund->id,
             'status' => (string) $refund->status,
+            'execution_label' => $this->orderRefundService->refundExecutionLabel($refund),
             'correction_source_id' => $correction?->id,
             'correction_instructions' => $correction?->recovery_resolution_reason,
             'awaiting_owner_correction' => $this->orderRefundService->canRequestLossCorrection($refund),

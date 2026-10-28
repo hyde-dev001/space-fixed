@@ -471,6 +471,17 @@ class ShipmentLegService
             ], 'delivered', 'Shipment leg delivered.');
             $this->reconcileBatchState($delivered->delivery_batch_id);
 
+            $assignmentId = $delivered->assignments()->latest('id')->value('id');
+            foreach (\App\Models\Logistics\DeliveryIncident::where('shipment_leg_id', $delivered->id)->where('status', 'under_review')
+                ->where('recovery_context->recovered_loss->action', 'continue')
+                ->where('recovery_context->execution_assignment_id', $assignmentId)->lockForUpdate()->get() as $recovery) {
+                $recovery->forceFill(['status' => 'resolved', 'resolved_at' => now(), 'recovery_context' => [...$recovery->recovery_context,
+                    'operational_outcome' => ['outcome' => 'current_delivery_completed', 'assignment_id' => $assignmentId, 'completed_at' => now()->toISOString()]]])->save();
+                $this->events->record($delivered->shipment, $delivered, ['event_type' => 'parcel_recovery_closed',
+                    'message' => 'Linked parcel recovery completed through the current verified delivery.',
+                    'metadata' => ['incident_id' => $recovery->id, 'revision' => $recovery->revision, 'delivery_assignment_id' => $assignmentId]]);
+            }
+
             return $delivered;
         }, 3);
     }
@@ -600,6 +611,8 @@ class ShipmentLegService
 
             $metadata = [
                 'resolution_reason' => $reason,
+                'operational_final' => \App\Models\Logistics\DeliveryIncident::where('shipment_leg_id', $leg->id)
+                    ->where('status', 'resolved')->whereNotNull('recovery_context->loss')->exists(),
                 'refund_result' => $recovery['result'] ?? 'not_required',
                 'refund_id' => data_get($recovery, 'refund.id'),
             ];
@@ -838,7 +851,20 @@ class ShipmentLegService
         }, 3);
     }
 
-    private function createReturnToShopLocked(ShipmentLeg $leg, DeliveryAssignment $assignment, ?Authenticatable $actor = null, ?RiderProfile $recoveredHolder = null): ShipmentLeg
+    public function returnRecoveredParcel(ShipmentLeg $leg, \App\Models\User $actor, RiderProfile $holder, array $data): ShipmentLeg
+    {
+        $shop = $this->movements->lockShopForLeg($leg);
+        abort_unless((int) $actor->shop_owner_id === (int) $shop->id && $actor->can('resolve-logistics-exceptions')
+            && (int) $holder->shop_owner_id === (int) $shop->id, 403);
+        $this->movements->assertCanStart($shop);
+        $this->starts->validateRecoveryDate($shop, $data['delivery_date'], $data['delivery_window']);
+        $this->assignments->assertEligibleForDate($holder, $shop, $data['delivery_date'], $leg->id);
+        $return = $this->createReturnToShopLocked($leg, $leg->assignments()->latest('id')->firstOrFail(), $actor, $holder, true);
+        $return->update(['scheduled_delivery_date' => $data['delivery_date'], 'delivery_window' => $data['delivery_window']]);
+        return $return;
+    }
+
+    private function createReturnToShopLocked(ShipmentLeg $leg, DeliveryAssignment $assignment, ?Authenticatable $actor = null, ?RiderProfile $recoveredHolder = null, bool $offer = false): ShipmentLeg
     {
         $existing = ShipmentLeg::query()
             ->where('return_for_leg_id', $leg->id)
@@ -862,21 +888,21 @@ class ShipmentLegService
             'destination_snapshot' => ['type' => 'shop', 'shop_owner_id' => $shop->id, 'name' => $shop->business_name,
                 'address' => $shop->business_address, 'latitude' => $shop->shop_latitude, 'longitude' => $shop->shop_longitude],
             'requires_delivery_proof' => true,
-            'custody_state' => $leg->custody_state,
-            'custody_rider_profile_id' => $leg->custody_rider_profile_id,
-            'custody_confirmed_at' => $leg->custody_confirmed_at,
+            'custody_state' => $recoveredHolder ? 'rider' : $leg->custody_state,
+            'custody_rider_profile_id' => $recoveredHolder?->id ?? $leg->custody_rider_profile_id,
+            'custody_confirmed_at' => $recoveredHolder ? now() : $leg->custody_confirmed_at,
         ]);
         $return->assignments()->create([
             'assignment_type' => 'internal_rider',
             'rider_profile_id' => $recoveredHolder?->id ?? $assignment->rider_profile_id,
             'assigned_by_type' => $actor?->getMorphClass() ?? $assignment->assigned_by_type,
             'assigned_by_id' => $actor?->getAuthIdentifier() ?? $assignment->assigned_by_id,
-            'status' => 'accepted',
+            'status' => $offer ? 'assigned' : 'accepted',
             'assigned_at' => now(),
-            'accepted_at' => now(),
+            'accepted_at' => $offer ? null : now(),
         ]);
         $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->update(['status' => 'cancelled', 'cancelled_at' => now()]);
-        if ($leg->resolution_type !== 'loss_confirmed') $this->reserveFailedDeliveryRefundForReturn($leg);
+        if (! $offer && $leg->resolution_type !== 'loss_confirmed') $this->reserveFailedDeliveryRefundForReturn($leg);
         $this->events->record($leg->shipment, $return, [
             'event_type' => 'return_to_shop_started',
             'visibility' => 'customer',
@@ -985,7 +1011,11 @@ class ShipmentLegService
             if ($isDirectRefundReturn) {
                 $this->completeDirectRefundReturn($return);
             } else {
-                $original->update([
+                $linkedFinalRecovery = $original->resolution_type === 'loss_confirmed'
+                    && \App\Models\Logistics\DeliveryIncident::where('shipment_leg_id', $original->id)
+                        ->where('recovery_context->safekeeping_return_leg_id', $return->id)
+                        ->whereNotNull('recovery_context->recovered_loss')->exists();
+                if (! $linkedFinalRecovery) $original->update([
                     'status' => 'cancelled',
                     'custody_state' => 'shop', 'custody_rider_profile_id' => null, 'custody_confirmed_at' => now(),
                     'rider_progress_state' => RiderProgressState::RIDER_RELEASED,

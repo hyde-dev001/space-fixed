@@ -1,4 +1,5 @@
 import DeliveryPhotoUpload from './components/DeliveryPhotoUpload';
+import LostParcelActions from '@/components/logistics/LostParcelActions';
 import CustodyHandoffs from './components/CustodyHandoffs';
 import BatchInterruptionControls from './components/BatchInterruptionDialog';
 import type { CustodyHandoff } from '@/types/logistics';
@@ -841,11 +842,11 @@ function DeliveryActions({
     );
   };
   const submitIncident = () => {
-    if (!canReportIssue || !incidentType || !incidentNotes.trim() || !incidentFile) return;
+    if (!canReportIssue || !incidentType || !incidentNotes.trim() || (incidentType !== 'lost' && !incidentFile)) return;
     const form = new FormData();
     form.append('type', incidentType);
     form.append('notes', incidentNotes.trim());
-    form.append('photo_files[]', incidentFile);
+    if (incidentFile) form.append('photo_files[]', incidentFile);
     runAction(
       `incident:${delivery.id}`,
       async () => {
@@ -977,12 +978,12 @@ function DeliveryActions({
           label="Evidence photo"
           file={incidentFile}
           onChange={setIncidentFile}
-          required
+          required={incidentType !== 'lost'}
           accept="image/jpeg,image/png,image/webp"
         />
         <button
           type="button"
-          disabled={mutationDisabled || !incidentType || !incidentNotes.trim() || !incidentFile}
+          disabled={mutationDisabled || !incidentType || !incidentNotes.trim() || (incidentType !== 'lost' && !incidentFile)}
           onClick={submitIncident}
           className={compactPrimaryButtonClass}
         >
@@ -1964,6 +1965,8 @@ function CompactListItem({
       </summary>
       <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
         <DeliverySequence item={item} />
+        {item.deliveries.flatMap(delivery => (delivery.incidents ?? []).filter(incident => incident.loss).map(incident =>
+          <LostParcelActions key={incident.id} incident={incident} onChanged={() => router.reload()} />))}
       </div>
     </details>
   );

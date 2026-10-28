@@ -25,6 +25,13 @@ import axios from "axios";
 const SHOP_OWNED_LOGISTICS = "Shop-owned logistics";
 const VIDEO_EVIDENCE_PATTERN = /[?&]media_kind=video(?:&|$)|\.(mp4|mov|avi|mkv|webm)(\?.*)?$/i;
 
+export const refundExecutionDisplay = (refund?: { status?: string; execution_label?: string } | null): string | null => {
+  if (refund?.status === 'succeeded') return refund.execution_label === 'Partially Refunded' ? 'Partially Refunded' : 'Refunded';
+  if (refund?.status === 'processing') return 'Refund Processing';
+  if (refund?.status === 'failed') return 'Refund Failed';
+  return null;
+};
+
 type OrderItem = {
   id: number;
   product_id: number | null;
@@ -151,6 +158,7 @@ type Order = {
     reason_note?: string | null;
     other_reason_note?: string | null;
     can_staff_review?: boolean;
+    execution_label?: string;
     correction_source_id?: number | null;
     correction_instructions?: string | null;
     awaiting_owner_correction?: boolean;
@@ -960,6 +968,11 @@ export default function JobOrdersPage() {
     const latestRefund = order.latest_refund;
     const retailPosRefund = order.retail_pos_refund;
     const orderGrandTotal = Math.max(0, parseAmount(order.grand_total));
+    const executionLabel = refundExecutionDisplay(latestRefund);
+    if (executionLabel) {
+      return { label: executionLabel + (retailPosRefund?.has_open_request ? ' · another refund pending' : ''),
+        className: latestRefund?.status === 'failed' ? 'text-rose-700' : 'text-emerald-700' };
+    }
 
     if (retailPosRefund?.has_activity) {
       const latestPosStatus = String(retailPosRefund.latest_status || '').toLowerCase();
@@ -973,7 +986,7 @@ export default function JobOrdersPage() {
 
       if (latestPosStatus === 'rejected' || latestPosStatus === 'failed' || latestPosStatus === 'cancelled') {
         return {
-          label: latestRefund.awaiting_owner_correction ? 'Awaiting Owner Review' : 'Refund Rejected',
+          label: latestRefund?.awaiting_owner_correction ? 'Awaiting Owner Review' : 'Refund Rejected',
           className: 'bg-rose-50 text-rose-700 ring-1 ring-inset ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-700/40',
         };
       }
@@ -996,26 +1009,6 @@ export default function JobOrdersPage() {
       const shopOwnerStatus = String(latestRefund.shop_owner_status || '').toLowerCase();
       const financeStatus = String(latestRefund.finance_status || '').toLowerCase();
       const returnStatus = String(latestRefund.return_status || '').toLowerCase();
-      const onlineRefundedAmount = getOnlineSucceededRefundLineAmount(order);
-      const payoutAmount = parseAmount(latestRefund.payout_amount_value);
-      const hasOnlineRefundSucceeded = refundStatus === 'succeeded' || paymentStatus === 'refunded';
-
-      if (hasOnlineRefundSucceeded) {
-        if (onlineRefundedAmount > 0 && payoutAmount > 0) {
-          const isFullyRefunded = onlineRefundedAmount >= payoutAmount - 0.01;
-          return {
-            label: isFullyRefunded ? 'Refunded' : 'Partially Refunded',
-            className: isFullyRefunded
-              ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40'
-              : 'bg-sky-50 text-sky-700 ring-1 ring-inset ring-sky-200 dark:bg-sky-900/20 dark:text-sky-300 dark:ring-sky-700/40',
-          };
-        }
-
-        return {
-          label: 'Refunded',
-          className: 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:ring-emerald-700/40',
-        };
-      }
 
       if (refundStatus === 'rejected' || shopOwnerStatus === 'rejected' || financeStatus === 'rejected') {
         return {
@@ -2065,7 +2058,6 @@ export default function JobOrdersPage() {
   return (
     <AppLayoutERP>
       <Head title="Job Orders - Solespace ERP" />
-      {!auth?.erpActor?.ownerMode && <ParcelIncidentRecovery source="retail" />}
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
       
       {loading ? (
@@ -2780,6 +2772,7 @@ export default function JobOrdersPage() {
 
               <div className="px-6 py-5 overflow-y-auto space-y-5">
                 <RetailWarrantyPanel warranty={viewOrder.product_warranty} />
+                {!auth?.erpActor?.ownerMode && <ParcelIncidentRecovery source="retail" sourceId={Number(viewOrder.id)} />}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Full Name</p>

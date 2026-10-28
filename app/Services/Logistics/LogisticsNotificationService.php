@@ -14,6 +14,7 @@ use App\Models\User;
 class LogisticsNotificationService
 {
     private const RECOVERY_EVENTS = [
+        'parcel_loss_stage', 'parcel_recovery_reported',
         'parcel_recovery_decided', 'parcel_recovery_received', 'parcel_recovery_inspected', 'parcel_recovery_dispositioned', 'parcel_recovery_closed', 'parcel_recovery_investigated',
         'rider_reassigned', 'pickup_attempt_failed', 'pickup_cancelled', 'pickup_rescheduled', 'delivery_retry_authorized',
         'return_to_shop_started', 'return_received', 'out_for_delivery',
@@ -41,6 +42,12 @@ class LogisticsNotificationService
         }
 
         $event->loadMissing('shipment');
+        if ($event->event_type === 'parcel_loss_stage' && $this->currentLossStage($event, $event->metadata['stage'] ?? '')) {
+            Notification::where('shop_id', $event->shipment->shop_owner_id)->where('data->incident_id', $event->metadata['incident_id'])
+                ->whereIn('data->event_type', ['parcel_loss_stage', 'delivery_incident_reported'])
+                ->where(fn ($query) => $query->where('data->event_type', 'delivery_incident_reported')
+                    ->orWhere('data->revision', '<', $event->metadata['revision']))->update(['requires_action' => false]);
+        }
         $type = $this->notificationType($event->event_type);
         if (!$type) {
             return;
@@ -74,7 +81,13 @@ class LogisticsNotificationService
                 || (in_array($event->event_type, ['delivery_incident_reported', 'loss_confirmed'], true) && $event->visibility === 'internal'))) {
             $this->notifyOrderStaff($event, $type);
         }
-        if ($event->visibility === 'internal' && str_starts_with($event->event_type, 'parcel_recovery_')) {
+        if ($event->event_type === 'parcel_loss_stage' && $event->visibility === 'internal') {
+            $profileId = \App\Models\Logistics\DeliveryIncident::where('shop_owner_id', $event->shipment->shop_owner_id)
+                ->whereKey($event->metadata['incident_id'] ?? null)->value('reporting_rider_profile_id');
+            if ($profileId) $this->notifyRider($event, $type, (int) $profileId);
+        }
+        if ($event->visibility === 'internal' && str_starts_with($event->event_type, 'parcel_recovery_')
+            && $event->event_type !== 'parcel_recovery_reported' && ! ($event->metadata['operational_final'] ?? false)) {
             $this->notifyRecoverySourceActors($event, $type);
         }
 
@@ -140,7 +153,7 @@ class LogisticsNotificationService
                         'pickup_attempt_failed' => 'A pickup attempt failed and needs review.',
                         'delivery_incident_reported' => 'A delivery incident requires review.',
                         'delivery_incident_resolved' => 'A delivery incident was resolved and recorded.',
-                        'loss_confirmed' => 'Parcel loss was confirmed and needs review.',
+                        'loss_confirmed' => ($event->metadata['operational_final'] ?? false) ? 'Parcel loss is final. Any refund follows the normal financial workflow.' : 'Parcel loss was confirmed and needs review.',
                         'return_required' => 'A parcel return is awaiting logistics action.',
                         'overdue_batch_offer' => 'A delivery batch offer is awaiting a response.',
                         'overdue_return_receipt' => 'A parcel return is awaiting handoff or shop receipt.',
@@ -166,7 +179,8 @@ class LogisticsNotificationService
                             ? '/erp/logistics/batches?batch='.$event->metadata['delivery_batch_id'].'&incident='.$event->metadata['incident_id']
                             : '/erp/logistics/shipments',
                     },
-                    'requires_action' => $this->requiresAction($event->event_type),
+                    'requires_action' => ! ($event->metadata['operational_final'] ?? false)
+                        && ($event->event_type === 'parcel_loss_stage' ? $this->currentLossStage($event, 'confirmation_requested') : $this->requiresAction($event->event_type)),
                 ]);
             });
     }
@@ -193,7 +207,7 @@ class LogisticsNotificationService
             'type' => $type->value,
             'priority' => 'high',
             'title' => $this->titleForEvent($event, $type),
-            'message' => (str_starts_with($event->event_type, 'custody_transfer_') || $event->event_type === 'rider_reassigned') ? ($event->message ?? 'Your parcel handoff was updated.') : ($batchOffer
+            'message' => ($event->event_type === 'parcel_loss_stage' || str_starts_with($event->event_type, 'custody_transfer_') || $event->event_type === 'rider_reassigned') ? ($event->message ?? 'Your parcel handoff was updated.') : ($batchOffer
                 ? "A delivery batch with {$stopCount} stops has been offered to you."
                 : ($proofRejected
                     ? "Delivery proof rejected: {$event->metadata['rejection_reason']} Submit a replacement proof."
@@ -203,8 +217,8 @@ class LogisticsNotificationService
                 'stop_count' => $event->metadata['stop_count'] ?? null,
                 'rejection_reason' => $event->metadata['rejection_reason'] ?? null,
             ], fn ($value) => $value !== null),
-            'action_url' => '/erp/logistics/deliveries',
-            'requires_action' => true,
+            'action_url' => '/erp/logistics/deliveries'.($event->event_type === 'parcel_loss_stage' ? '?tab=history' : ''),
+            'requires_action' => $event->event_type === 'parcel_loss_stage' ? $this->currentLossStage($event, 'acknowledged') : true,
         ]);
     }
 
@@ -231,9 +245,15 @@ class LogisticsNotificationService
                     'message' => $event->message ?: 'Delivery cancelled.',
                     'data' => $this->eventData($event) + ['order_id' => $event->shipment->source_id],
                     'action_url' => '/erp/staff/job-orders',
-                    'requires_action' => $event->event_type !== 'delivery_incident_reported',
+                    'requires_action' => $event->event_type !== 'delivery_incident_reported' && ! ($event->metadata['operational_final'] ?? false),
                 ]);
             });
+    }
+
+    private function currentLossStage(DeliveryEvent $event, string $stage): bool
+    {
+        return ($event->metadata['stage'] ?? null) === $stage && \App\Models\Logistics\DeliveryIncident::whereKey($event->metadata['incident_id'] ?? null)
+            ->where('shop_owner_id', $event->shipment->shop_owner_id)->where('recovery_context->loss->stage', $stage)->exists();
     }
 
     private function eventData(DeliveryEvent $event): array
@@ -289,7 +309,7 @@ class LogisticsNotificationService
 
     private function createOnce(DeliveryEvent $event, int $userId, array $data): Notification
     {
-        $occurrence = (str_starts_with($event->event_type, 'batch_interruption_') || str_starts_with($event->event_type, 'parcel_recovery_'))
+        $occurrence = ($event->event_type === 'parcel_loss_stage' || str_starts_with($event->event_type, 'batch_interruption_') || str_starts_with($event->event_type, 'parcel_recovery_'))
             ? 'incident_id='.($event->metadata['incident_id'] ?? 0).':revision='.($event->metadata['revision'] ?? 0) : null;
         foreach (['delivery_attempt_id', 'custody_transfer_id', 'proof_id', 'incident_id', 'delivery_assignment_id', 'attempt_number'] as $field) {
             if ($occurrence === null && isset($event->metadata[$field])) {
@@ -329,7 +349,7 @@ class LogisticsNotificationService
 
     private function notificationType(string $eventType): ?NotificationType
     {
-        if (str_starts_with($eventType, 'parcel_recovery_')) return NotificationType::LOGISTICS_EXCEPTION;
+        if ($eventType === 'parcel_loss_stage' || str_starts_with($eventType, 'parcel_recovery_')) return NotificationType::LOGISTICS_EXCEPTION;
         return match ($eventType) {
             'shipment_requested' => NotificationType::LOGISTICS_SHIPMENT_REQUESTED,
             'leg_assigned', 'rider_reassigned' => NotificationType::LOGISTICS_ASSIGNED,

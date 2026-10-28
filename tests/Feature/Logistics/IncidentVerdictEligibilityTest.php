@@ -40,7 +40,7 @@ class IncidentVerdictEligibilityTest extends TestCase
     }
 
     #[DataProvider('reportCases')]
-    public function test_report_case_decision_does_not_bypass_condition_or_close_recovery(string $type, string $verdict, bool $allowed): void
+    public function test_report_case_requires_approved_guards_and_honest_operational_state(string $type, string $verdict, bool $allowed): void
     {
         $this->travelTo(now()->setDate(2026, 10, 27)->setTime(9, 0));
         $shop = ShopOwner::factory()->approved()->withLogistics()->create(['registration_type' => 'company']);
@@ -61,7 +61,7 @@ class IncidentVerdictEligibilityTest extends TestCase
                 $service->resolve($incident, $shop, $verdict, 'Investigation note alone is insufficient', ['incident-evidence/test/finding.jpg'], null, [], null, $findings);
                 $this->fail('An unverified or unsafe decision was accepted.');
             } catch (ValidationException $exception) {
-                $this->assertArrayHasKey('eligibility', $exception->errors());
+                $this->assertArrayHasKey($type === 'lost' ? 'resolution' : 'eligibility', $exception->errors());
             }
             $this->assertSame('reported', $incident->fresh()->status);
             $this->assertNull($incident->fresh()->resolution);
@@ -70,9 +70,23 @@ class IncidentVerdictEligibilityTest extends TestCase
             return;
         }
 
-        $decided = $service->resolve($incident, $shop, $verdict, 'Verified operational decision', ['incident-evidence/test/finding.jpg'], null, [], null, $findings);
-        $this->assertSame('under_review', $decided->status);
-        $this->assertNull($decided->resolved_at);
+        if ($verdict === 'loss_confirmed') {
+            $actor = \App\Models\User::findOrFail($rider->linked_id);
+            $dispatcher = \App\Models\User::factory()->create(['shop_owner_id' => $shop->id]);
+            $dispatcher->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate('resolve-logistics-exceptions', 'user'));
+            $this->clockInEmployee($actor);
+            $this->clockInEmployee($dispatcher);
+            $facts = fn ($revision) => ['request_key' => (string) \Illuminate\Support\Str::uuid(), 'expected_revision' => $revision, 'notes' => 'Verified operational decision'];
+            $incident = $service->lossAction($incident, $dispatcher, 'acknowledge', $facts(0));
+            $incident = $service->lossAction($incident, $actor, 'confirm', $facts(1));
+            $decided = $service->lossAction($incident, $dispatcher, 'approve', $facts(2));
+            $this->assertSame('resolved', $decided->status);
+            $this->assertNotNull($decided->resolved_at);
+        } else {
+            $decided = $service->resolve($incident, $shop, $verdict, 'Verified operational decision', ['incident-evidence/test/finding.jpg'], null, [], null, $findings);
+            $this->assertSame('under_review', $decided->status);
+            $this->assertNull($decided->resolved_at);
+        }
         $this->assertNotNull($decided->decided_at);
         $this->assertSame('Actual incident report', $decided->notes);
         $this->assertSame($verdict, $decided->resolution);

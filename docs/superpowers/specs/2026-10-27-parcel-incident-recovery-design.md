@@ -1,4 +1,166 @@
-# Parcel delivery incident recovery audit and proposed design
+# Parcel delivery incident recovery design specification
+
+## Approved amendment - October 28, 2026
+
+**Status: amendment implementation authored and sequentially reviewed; bounded local evidence and remaining coverage recorded.** Application, test and documentation changes within [the implementation plan](../plans/2026-10-27-parcel-incident-recovery.md) are authorized. The user subsequently authorized scoped commit/push of this amendment to its existing feature branch. No migration may be authored without the separate integrity-gap review. Do not merge, deploy, perform live provider operations or repair production data. Earlier implementation/publication approvals below describe previous work; current publication relies on the new explicit user instruction. Execute sequentially; no subagents.
+
+**Precedence:** this amendment is the current contract for lost reporting, final loss, linked recovery, inventory disposition and refund status. It supersedes conflicting rules, diagrams, checklists and authorization statements in the historical baseline below. Unaffected D1-D8/D10 protections remain applicable; D9 stays approved but deferred. Historical findings, all 15 original case/status rows and prior verification remain evidence of their stated revisions, not acceptance of this amendment.
+
+### Purpose and reuse
+
+Use existing incident/history, delivery/return, custody, Staff inspection, refund and inventory services. Keep `DeliveryIncident` as the operational record and create a separate linked incident occurrence when goods are recovered. Owning financial records and stock movements remain authoritative. No additional dashboard, recovery queue, generic task ledger, refund table, inventory subsystem, replacement subsystem or property-value payout is authorized.
+
+Audit reference: worktree `codex/failed-delivery-recovery` at `a5542095418ff9124e3356f89dbd98237d38f46b`. These are code findings, not a certification of the hosted deployment:
+
+| Confirmed code finding | Required correction |
+| --- | --- |
+| Rider form, incident controller and service require loss photos. | Written reason is mandatory; loss photos are optional in every layer. Recovery photos remain mandatory. |
+| Loss resolution stays under review and needs separate Dispatcher closure; acknowledgment and Rider confirmation are not separate stages. | Introduce the explicit stages below; final Dispatcher approval closes the original loss. |
+| Every loss adds an incomplete investigation obligation and generic receipt/inspection messaging. | Remove invented physical tasks and unconditional investigation; retain real financial/property obligations in existing authorized workflows. |
+| Recovery changes original loss custody/context and creates an already-accepted return assignment. | Preserve final history; use a separate linked occurrence and normal offered assignment acceptance/custody. |
+| Finance API defaults retail execution states to Approved; frontend success/processing overrides are repair-specific. | Apply execution outcomes consistently across Finance and Staff, separately from approval stages. |
+| Retail PayMongo callbacks match refund ID OR payment ID/latest row and can overwrite success with processing. | Exact transaction binding, validated provider event handling, locked/idempotent outcome application and reconciliation. |
+| Online polling is in the customer order path, while Finance reconciles COD. | Reuse a shared authoritative reconciliation path; avoid provider calls per list row. |
+| Refund inventory application marks non-resellable/pending lines written off and skips lines already bearing `inventory_applied_at`. | Do not reset or replay old lines to restock recovered goods; record a separately authorized later disposition using existing inventory services. |
+| Existing refund inspection expects exact quantities/return states; stock movement recording alone does not deduplicate a business action. | Validate actual recovery quantities and allocation/history under source locks; reuse existing stock movement recording with an occurrence/action identity. |
+
+The hosted Staff row labelled Refund Processing has not been matched to the screenshot's succeeded refund. Match order/refund IDs, payment/refund/payout IDs and provider evidence before attributing that row to the same defect. Missing evidence must remain explicit; approval, an execution timestamp or request acceptance is insufficient proof of success.
+
+### A1. Initial loss report and acknowledgment
+
+1. The assigned Rider selects Report Incident > Parcel Lost and submits a mandatory written explanation. No photograph is required.
+2. Store reporting User, exact assignment, tenant/source and original reason; hold the affected delivery and notify Dispatcher after commit.
+3. Dispatcher reviews and acknowledges the exact report revision. Acknowledgment completes the reporting stage only. It is neither loss approval nor permission to move and does not initiate a loss refund.
+4. Expose the acknowledged report in the reporting Rider's Delivery History. Do not create shop receipt, inspection or return tasks for missing goods.
+
+### A2. Rider confirmation request and final loss approval
+
+1. From Delivery History, the reporting Rider selects Confirm Lost on the acknowledged report. Show an explicit warning that approval ends the original logistics incident and can initiate a refund request.
+2. Record confirmation against the exact report/revision and notify Dispatcher. This is a request, not final loss. Keep the delivery held.
+3. Dispatcher is the default final approver. Apply Manager escalation only if an existing applicable policy requires it; do not invent another approval layer or bypass a documented one. Record approval actor/time and current facts.
+4. Under consistent shop/source/incident/leg locks, recheck that no unresolved recovery conflicts, finalize the loss, cancel affected execution, reconcile batch membership without losing other stops, close affected custody transfers and initiate or link an eligible normal refund request.
+5. Set the original incident terminal: **Confirmed Lost - Final**. No additional manual Dispatcher closure, Staff inspection or logistics recovery action is needed. Refund processing remains a separate financial obligation.
+6. Rejected/deferred approval records its reason and leaves a truthful held/pending state; it must not silently restore movement. Material changes invalidate stale confirmation/approval and require the appropriate current review.
+
+Reuse `OrderRefundService::reserveConfirmedLossRefund` and its normal approvals, balance, COD and provider controls. Link an existing eligible reservation rather than creating another request. Uncollected COD is not a refundable payment. Already successful refunds remain successful; no additional refund is requested. Unsupported repair-property compensation stays an owned, actionable financial investigation with no invented valuation or payout.
+
+Business eligibility failures must be represented honestly without adding a logistics closure step. Technical failure must never be reported as successful refund initiation: preserve transactional consistency and use existing retry/reconciliation mechanisms to reach one final loss and at most one eligible reservation. No external payout occurs as part of loss approval.
+
+### A3. Separate recovery occurrence and decisions
+
+Report Recovery is available on the reporting Rider's lost-parcel history, including after assignment cancellation. Authorize through verified historical incident/assignment association and current tenant/actor rules, not a fabricated active assignment. Require details, actual physical custody, parcel condition and private photographs.
+
+Create another `DeliveryIncident` occurrence linked to the original report/final loss, with its own revision, evidence, decision and movement references. Prefer existing context and events for server-controlled links; reject cross-tenant/source parents. Do not overload customer-entered notes as identifiers. Serialize creation under the parent/source lock; an identical replay returns the existing occurrence and a conflicting duplicate cannot create parallel physical work.
+
+| Timing | Dispatcher-authorized options | Original incident |
+| --- | --- | --- |
+| Before final loss approval | Continue delivery or return to shop, only after verified condition, custody, customer arrangement, source/payment and scheduling eligibility. | Retain the report and append the authorized outcome ending/superseding the pending loss request; do not falsely mark it confirmed lost. |
+| After final loss approval | Return to the original shop for actual receipt, inspection and disposition. No direct continued delivery from this recovery. | Confirmed Lost - Final remains terminal and unchanged. |
+
+Recovery submission holds movement pending Dispatcher verification. A pending physical recovery and final loss approval cannot both win against stale facts. Rejected recovery evidence records a reason and preserves safe custody/holds; it does not erase the report. A later customer delivery requires a separately eligible source workflow, never automatic reopening of a cancelled leg.
+
+New movement uses normal offered assignment, explicit acceptance, real custody release/receipt where participants differ, Dispatcher scheduling and D10 current-assignment activation. Old acceptance, proof or activation cannot authorize a new movement. Same-holder handling must not invent a physical transfer. Logistics OFF blocks new movement while permitted existing physical closing actions remain available.
+
+### A4. Return, actual receipt, inspection and automatic completion
+
+Return to the original shop through existing return-to-shop and custody services. The actual authorized same-shop receiver confirms physical receipt through existing employee identity/evidence controls; never require Dispatcher impersonation. Receipt must commit independently of Dispatcher outbound powers. D9 remains deferred; if no existing authorized receiver can serve the case, expose the limitation without fabricating a person.
+
+Staff inspects received retail goods using exact source/item/variant identities, actual quantities, condition and evidence. Eligible Repairers use existing customer-property/repair authority. Receipt and inspection do not change refund success or imply sale/repair completion. Reuse existing forms/services within return/order/incident details; do not force a second refund or another refund approval to inspect already-refunded recovered goods.
+
+Automatically complete the linked recovery occurrence after required physical receipt, inspection and supported authorized disposition have committed. There is no final manual Dispatcher closure button for this workflow. A quarantine/partial exception can finish only after its required authorized safe disposition is recorded; allocating an escalation or merely saving a resellable finding is not completion. Financial investigation can remain independently pending without reopening a completed physical recovery or the original final loss.
+
+### A5. Inventory disposition contract
+
+| Physical/source facts | Permitted effect |
+| --- | --- |
+| Physically received resellable retail goods; allocation legitimately released; quantity not previously restocked | Add only the actual eligible quantity once through existing inventory selection/movement services. |
+| Already restocked quantity | No additional increase; preserve prior references and record the inspection/disposition outcome. |
+| Active fulfillment allocation | No restock while allocated. Do not cancel/release allocation merely because Staff selected resellable. |
+| Damaged/written-off/unsafe goods | No sellable increase; retain existing authorized non-sellable disposition, quarantine/safe custody and evidence. Do not invent a quarantine ledger or erase prior write-offs. |
+| Partial recovery | Record actual recovered/missing quantities. Apply only supported partial-disposition rules; unsupported remainder remains owned/actionable, without fabricating full receipt or expanding refund policy. |
+| Customer-owned repair shoes | Never retail stock; route to existing repair/customer-property process and customer arrangements. |
+
+A resellable finding alone never creates stock. Payout success alone never proves return receipt. Validate tenant, original item/variant, physical received quantity, allocation and cumulative prior restocks under locks across all linked recovery/refund attempts. Cap disposition to the eligible unprocessed received quantity. Prevent duplicate restock through refresh, retries, competing actors and later occurrences for the same original goods.
+
+Reuse `RefundInventoryDispositionService`, `InventoryCheckoutService` and `StockMovementService`; extend their supported entry points rather than adding an inventory workflow. A completed refund line/write-off is immutable evidence: do not clear `inventory_applied_at`, rewrite approved/refunded quantities or use a fake refund to obtain another stock action. An authorized later recovery needs its own auditable movement/disposition reference. Preserve product/variant/size/color consistency and actor audit, including existing product-only stock paths. Do not reverse refunds, restore stock automatically, reopen cancelled shipments, undo provider transactions or change Platform Fee accounting.
+
+### A6. Refund outcome and reconciliation contract
+
+| Authoritative execution state | Consistent Finance/Staff display |
+| --- | --- |
+| Required approvals pending | Existing accurate approval-stage label |
+| Approved, not submitted | Approved / Awaiting Payout |
+| Submitted or provider processing | Refund Processing |
+| Provider-confirmed successful full refund | Refunded |
+| Provider-confirmed successful partial refund | Partially Refunded, with correct amount/scope |
+| Failed/rejected | Accurate failure/rejection and existing authorized next action |
+
+Keep approval, execution, provider result and financial settlement distinct in payloads. Approval badges must not override confirmed execution outcomes. A separate pending request must remain visible without hiding a prior successful partial refund. Derive full/partial status from authoritative amounts and refund scope, not a comparison of a refund to its own payout amount. Preserve existing settlement rules; do not change money calculations merely to fix labels.
+
+Bind callbacks to the exact refund transaction and verify its owning payment/source/tenant and provider. Do not select the latest refund by payment ID when multiple transactions exist. Ambiguous/missing identifiers must not mutate a guessed row; retain an actionable reconciliation outcome. Validate signatures and supported payload shapes. Duplicate, delayed, unknown and stale pending callbacks cannot regress a verified success or duplicate settlement effects. Genuine provider reversals remain distinct, validated events handled through existing authorized reconciliation, not silently ignored or automatically reversed locally.
+
+Reuse one locked/idempotent provider-result application path for callback, submission result and reconciliation. Preserve PayMongo and Xendit-specific contracts and normal payout idempotency. Provide bounded reconciliation through existing financial mechanisms or an authorized action, not unbounded provider requests on list rendering. Customer/Finance/Staff projections consume authoritative persisted outcomes. Capture matching hosted transaction evidence read-only if available; production repair/provider execution requires separate authorization.
+
+### A7. UI, security and notification boundaries
+
+Remove standalone Returned Parcels Requiring Action sections from Dispatcher Logistics and Staff Job Orders. Put acknowledgment/approval/recovery review in existing incident details, Rider confirmation/recovery in Delivery History, receipt in existing returns/custody, and inspection/disposition in existing order/return details. Keep pending actions discoverable through existing links, badges and notifications without another dashboard or duplicate step. Preserve Repairer callers and non-loss return/refund journeys when refactoring shared components.
+
+Use real authenticated User identities, source-scoped RBAC, tenant checks, attendance where applicable, private evidence access, distinct custody participants and established maker-checker/financial controls. Do not grant Staff global dispatch permissions or introduce Owner custody actors/routes/notifications. D9 is unchanged.
+
+All stage mutations use request UUID, canonical facts, expected revision and locked replay before writing. Preserve original notes/evidence, previous keys/hashes and historical assignments/attempts. Events record actual actor/time, source, parent/occurrence and financial/movement references; notify only after commit with stage/occurrence/revision deduplication. Reporting, acknowledgment and final approval notices are distinct; recovery verification is actionable. Pending financial notices stay in existing financial workflows.
+
+### A8. Acceptance and regression matrix
+
+The implementation evidence below maps the amendment independently of the original 15 historical QA statuses. It does not certify the hosted deployment or unexecuted permutations.
+
+| ID | Required successful and prohibited behavior |
+| --- | --- |
+| A-L1 | Written loss reason required; no photo required across UI/API/service. Acknowledgment completes reporting only; no refund/receipt task or movement release. |
+| A-L2 | Only reporting Rider can request confirmation from history; warning/current revision required. Dispatcher approval alone finalizes; unauthorized/stale approval and missing prerequisites fail. |
+| A-L3 | Final approval creates/links one eligible normal request with normal approvals; repeated/concurrent actions do not duplicate refund, cancellation, payout or notice. Uncollected COD and unsupported property never invent cash. |
+| A-R1 | Pre-final recovery requires details/custody/condition/photos and Dispatcher verification. Eligible continuation and return work; unsafe, wrong source, customer/payment/schedule blockers deny movement. |
+| A-R2 | Post-final recovery is a separate linked occurrence and returns to original shop; original final loss/refund history unchanged. No direct continuation, cancelled-leg reopening or inherited acceptance/proof/activation. |
+| A-R3 | Actual receiver, two-party custody, Staff inspection and authorized disposition succeed; self-confirmation, wrong tenant/role, missing evidence and fake receipt fail. Automatic physical completion needs no extra Dispatcher closure. |
+| A-I1 | Received eligible retail quantities restock exactly once, including after successful loss refund/prior non-sellable marker; preserve audit and product/variant totals. |
+| A-I2 | Already-restocked, allocated, damaged/unsafe and repair-property quantities never increase sellable stock. Partial recovery records truth; unsupported partial action is blocked/escalated. |
+| A-F1 | Finance/Staff agree for approval, processing, full/partial success, failure and rejection; request acceptance is never success. Match reported hosted records before claiming a shared cause. |
+| A-F2 | Exact provider transaction among multiple refunds per payment; valid signed callbacks/reconciliation converge. Duplicate/out-of-order/unknown/ambiguous events cannot corrupt another refund or regress success; genuine reversal preserves existing reconciliation controls. |
+| A-U1 | Removed panels stay absent; actions remain accessible in history/details with loading/error/replay states, keyboard access and 390/768/desktop layouts; Repairer/non-loss workflows remain executable. |
+| A-C1 | Real two-connection races: acknowledgment/confirmation/approval, recovery versus approval, competing receipts/dispositions/restocks, refund versus movement, callback versus reconciliation. One consistent outcome with no duplicate effects. |
+| A-D1 | D9 remains absent; D10 current assignment/stop activation and post-window continuation, module closing boundaries, mixed batch history/capacity and financial/stock controls remain intact. |
+
+Fresh execution, October 29: [commands, results, failures and limits](../plans/2026-10-27-parcel-incident-recovery.md#amendment-execution-and-review-evidence--october-29-2026).
+
+| Acceptance | Local evidence |
+| --- | --- |
+| A-L1–A-L3 | `LostParcelLifecycleTest`, adapted incident policy/controller/service controls, refund/COD suites; actual no-photo report, history warning and separate stages in the browser. Reservation failure rolls back finalization and same-identity retry reserves once. |
+| A-R1–A-R3 | Separate pre/post-final lifecycle and actual authenticated acceptance/start/proof/receipt/inspection/disposition. Normal receipt can link only its actual employee receiver. Final loss cannot continue directly; original final loss/custody remains unchanged. Shared custody/source denial controls pass. |
+| A-I1–A-I2 | Eligible, prior write-off, prior restock, allocated, damaged/unsafe, customer property and partial quantity controls. Ordinary refund/POS/variant tests retained. Late successful refund consumes previous recovery stock. Partial remainder retains actual quantity and owned escalation. Real competing restock and refund/recovery races finish once. |
+| A-F1–A-F2 | Finance/Staff outcome tests, six exact-binding/signed callback/reconciliation controls and shared result race. Wrong payment/amount/currency/unknown IDs do not mutate a guessed row; stale pending/failure cannot regress success. Hosted row IDs remain unavailable. |
+| A-U1 | 195 changed-screen tests; two authenticated browser branches, Rider warning and Staff order-details disposition clicks, keyboard boundary/Escape/focus return, 390/768/1440 layouts. Dispatcher/Staff global panels absent; Repairer/non-loss controls retained. Other mutations exercised authenticated browser requests. |
+| A-C1 | Eleven named MariaDB two-connection scenarios recorded in the plan, including final approval versus recovery and refund inventory versus recovery restock. Additional source/provider contention permutations remain release coverage. |
+| A-D1 | Broad 1,007-test affected backend run, then fresh 84-test controls after final corrections. No D9 fields/migration/routes/Owner custody feature, environment/dependency or public build edits. Existing D10/batch/module/source controls retained. |
+
+The full frontend run retains six proven baseline Staff shipping-coverage failures; no all-green claim. Full unrelated Composer coverage, host/provider execution and broader source/payment/mixed-batch browser combinations remain unexecuted. Local verification does not authorize publication or deployment. The user subsequently explicitly authorized commit/push of this amendment to its existing feature branch; merge, deployment, production assets and provider operations remain outside that authorization.
+
+### A9. Resolution of earlier design conflicts
+
+| Baseline | Current approved resolution |
+| --- | --- |
+| D1 loss decision/evidence | Written report without mandatory photo; acknowledgment, Rider confirmation request and Dispatcher final approval are distinct. Recovery photographs required. Other verdict eligibility remains. |
+| D2 employee receipt | Preserve actual authorized source receiver; apply only when physically recovered/returned. No missing-parcel receipt or D9 workaround. |
+| D3/D4 return/redelivery/allocation | Pre-final verified continuation remains conditional; post-final recovery returns to shop. Only authorized, unallocated, not-yet-restocked goods may increase stock. No automatic fee/new deduction. |
+| D5 repair arrangements | Preserve customer ownership, consent, payment/sponsorship and warranty transport rules. |
+| D6 operational closure | Final Dispatcher loss approval itself closes original loss. Required physical disposition automatically completes linked recovery. No additional manual closure for these cases; financial completion stays independent. Other incident closure safeguards remain. |
+| D7 loss investigation | Remove unconditional pending operational investigation; preserve real authorized financial/customer-property investigation. Final loss stays immutable when recovered. |
+| D8 partial/unsafe goods | Actual quantities/evidence and safe authorized disposition, without inventing partial-refund policy or sellable stock. |
+| D9/D10 | D9 deferred with existing Owner behavior preserved; D10 scheduling/activation/continuation unchanged. |
+
+No automatic historical conversion/backfill: old decisions cannot be relabelled as new staged approvals without evidence. Preserve existing pending receipt, custody and financial work through compatible projections. Any historical correction or deployment remains separately authorized. The [implementation phases](../plans/2026-10-27-parcel-incident-recovery.md#approved-documentation-update---october-28-2026) define the authorized dependencies and review gates.
+
+## Historical baseline and evidence - October 27, 2026
+
+Everything below is retained as the earlier audit/design record. Its conflicting loss rules, UI proposal, diagrams and implementation/publication authorizations are superseded by the approved amendment above; historical test outcomes are not new-work acceptance.
 
 Date: October 27, 2026, Asia/Singapore. Worktree: `.worktrees/failed-delivery-recovery`. Branch: `codex/failed-delivery-recovery`. Audited HEAD: `c65e27782d`.
 

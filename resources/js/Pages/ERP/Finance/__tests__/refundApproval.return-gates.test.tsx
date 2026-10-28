@@ -26,6 +26,11 @@ const request = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("Finance customer refund gates", () => {
+  it.each([
+    ["processing", "Processing"], ["succeeded", "Refunded"], ["failed", "Failed"], ["rejected", "Rejected"],
+  ])("shows retail execution %s ahead of approval", (rawStatus, expected) => {
+    expect(resolveFinanceDisplayStatus(request({ rawStatus, financeStatus: "approved", shopOwnerStatus: "approved" }))).toBe(expected);
+  });
 	it("waits for Staff eligibility approval before authorization", () => {
 		expect(canFinanceAuthorizeRefund(request())).toBe(false);
 		expect(canFinanceAuthorizeRefund(request({ shopOwnerStatus: "approved" }))).toBe(true);

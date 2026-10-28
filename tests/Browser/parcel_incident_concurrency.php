@@ -52,7 +52,19 @@ if (($argv[1] ?? '') === '--worker') {
     try {
         $incident = DeliveryIncident::findOrFail($payload['incident']);
         $actor = User::findOrFail($payload['actors'][$worker - 1]);
-        if ($payload['operation'] === 'activation') {
+        if (in_array($payload['operation'], ['loss_approval', 'loss_recovery'], true)) {
+            $facts = [...$payload['facts'], 'request_key' => $payload['keys'][$worker - 1]];
+            if ($payload['operation'] === 'loss_recovery' && $worker === 2) {
+                app(DeliveryIncidentService::class)->reportRecovery($incident, $actor, $facts);
+            } else app(DeliveryIncidentService::class)->lossAction($incident, $actor, 'approve', $facts);
+        } elseif ($payload['operation'] === 'refund_stock' && $worker === 2) {
+            app(\App\Services\RefundInventoryDispositionService::class)->applyOrderLine(\App\Models\OrderRefundItem::findOrFail($payload['facts']['refund_line_id']));
+        } elseif (in_array($payload['operation'], ['restock', 'refund_stock'], true)) {
+            app(ParcelIncidentRecoveryService::class)->disposition($incident, $actor, [...$payload['facts'], 'request_key' => $payload['keys'][$worker - 1]]);
+        } elseif ($payload['operation'] === 'provider') {
+            app(\App\Services\OrderRefundService::class)->applyPaymongoRefundOutcome(\App\Models\OrderRefund::findOrFail($payload['facts']['refund_row_id']),
+                [...$payload['facts'], 'status' => $worker === 1 ? 'succeeded' : 'pending']);
+        } elseif ($payload['operation'] === 'activation') {
             if ($worker === 1) {
                 app(\App\Services\Logistics\ShipmentLegService::class)->markInTransit($incident->leg,
                     $incident->leg->assignments()->latest('id')->firstOrFail()->riderProfile);
@@ -100,7 +112,7 @@ try {
     $migration->up();
     parcelCheck(! Schema::hasColumn('shipment_custody_transfers', 'released_by_shop_owner_id'), 'Deferred Owner field exists.');
     $results = ['engine' => DB::selectOne('SELECT VERSION() AS version')->version, 'schema' => $database, 'migration_empty_down_up' => true];
-    foreach (['verdict', 'receipt', 'inspection', 'redelivery', 'activation', 'receipt_module'] as $operation) {
+    foreach (['verdict', 'receipt', 'inspection', 'redelivery', 'activation', 'receipt_module', 'loss_approval', 'loss_recovery', 'restock', 'refund_stock', 'provider'] as $operation) {
         $fixture = recoveryFixture('retail_delivery', false);
         $leg = ShipmentLeg::with('shipment')->findOrFail($fixture['leg_id']);
         $shop = $leg->shipment->shopOwner;
@@ -111,9 +123,51 @@ try {
         DB::table('attendance_records')->insert(['employee_id' => $employee->id, 'shop_owner_id' => $shop->id,
             'date' => now(config('app.shop_timezone'))->toDateString(), 'check_in_time' => '00:00:00', 'status' => 'present', 'created_at' => now(), 'updated_at' => now()]);
         $incident = app(DeliveryIncidentService::class)->report($leg, $leg->assignments()->latest('id')->first()->riderProfile,
-            ['type' => 'vehicle_problem', 'notes' => 'Concurrent synthetic recovery', 'photo_paths' => ['incident-evidence/race.jpg']]);
+            ['type' => in_array($operation, ['loss_approval', 'loss_recovery', 'restock', 'refund_stock'], true) ? 'lost' : 'vehicle_problem',
+                'notes' => 'Concurrent synthetic recovery', 'photo_paths' => ['incident-evidence/race.jpg']]);
         $facts = [];
-        if ($operation === 'activation') {
+        if (in_array($operation, ['loss_approval', 'loss_recovery', 'restock', 'refund_stock'], true)) {
+            $rider = User::findOrFail($fixture['actors']['a']['id']);
+            $employee = \App\Models\Employee::where('shop_owner_id', $shop->id)->where('email', $rider->email)->firstOrFail();
+            DB::table('attendance_records')->insert(['employee_id' => $employee->id, 'shop_owner_id' => $shop->id,
+                'date' => now(config('app.shop_timezone'))->toDateString(), 'check_in_time' => '00:00:00', 'status' => 'present', 'created_at' => now(), 'updated_at' => now()]);
+            $stageFacts = fn ($revision) => ['request_key' => (string) Str::uuid(), 'expected_revision' => $revision, 'notes' => 'Verified synthetic loss stage'];
+            $incident = app(DeliveryIncidentService::class)->lossAction($incident, $dispatcher, 'acknowledge', $stageFacts(0));
+            $incident = app(DeliveryIncidentService::class)->lossAction($incident, $rider, 'confirm', $stageFacts(1));
+            $facts = [...$stageFacts(2), 'custody_rider_profile_id' => $fixture['actors']['a']['rider_id'], 'condition' => 'safe', 'photo_paths' => ['incident-evidence/recovered.jpg']];
+            if (in_array($operation, ['restock', 'refund_stock'], true)) {
+                $incident = app(DeliveryIncidentService::class)->lossAction($incident, $dispatcher, 'approve', $stageFacts(2));
+                $product = \App\Models\Product::create(['shop_owner_id' => $shop->id, 'name' => 'Recovered original', 'slug' => 'restock-'.Str::uuid(), 'price' => 100, 'stock_quantity' => 8, 'is_active' => true]);
+                $item = \App\Models\OrderItem::create(['order_id' => $leg->shipment->source_id, 'product_id' => $product->id,
+                    'product_name' => $product->name, 'price' => 100, 'quantity' => 1, 'subtotal' => 100]);
+                $incident = app(DeliveryIncidentService::class)->reportRecovery($incident, $rider, [...$facts, ...$stageFacts(3)]);
+                $incident = app(DeliveryIncidentService::class)->reviewRecovery($incident, $dispatcher, [...$stageFacts(0), 'action' => 'return',
+                    'safe_for_transport' => true, 'delivery_date' => now(config('app.shop_timezone'))->toDateString(), 'delivery_window' => 'afternoon']);
+                $return = $leg->returnLeg()->firstOrFail();
+                app(\App\Services\Logistics\AssignmentService::class)->respondToOffer($return, $return->assignments()->first()->riderProfile, true);
+                $proof = HandoffProof::factory()->create(['shipment_leg_id' => $return->id, 'shop_owner_id' => $shop->id,
+                    'handoff_type' => 'receive', 'review_status' => 'rider_confirmed', 'confirmed_by_type' => User::class, 'confirmed_by_id' => $rider->id]);
+                app(ParcelIncidentRecoveryService::class)->receive($incident, $dispatcher, [...$stageFacts(1), 'proof_id' => $proof->id, 'evidence_path' => 'incident-evidence/receipt.jpg']);
+                app(ParcelIncidentRecoveryService::class)->inspect($incident->fresh(), $dispatcher, [...$stageFacts(2),
+                    'items' => [['reference' => 'order-item:'.$item->id, 'quantity' => 1, 'condition' => 'safe']]]);
+                $facts = [...$stageFacts(3), 'action' => 'inventory_disposition'];
+                if ($operation === 'refund_stock') {
+                    $refund = \App\Models\OrderRefund::factory()->create(['order_id' => $item->order_id, 'shop_owner_id' => $shop->id]);
+                    $line = \App\Models\OrderRefundItem::create(['order_refund_id' => $refund->id, 'order_item_id' => $item->id,
+                        'product_id' => $product->id, 'requested_qty' => 1, 'approved_qty' => 1, 'unit_price_snapshot' => 100,
+                        'line_amount' => 100, 'inspection_disposition' => 'resellable', 'inventory_action' => 'pending']);
+                    $facts['refund_line_id'] = $line->id;
+                }
+            }
+        } elseif ($operation === 'provider') {
+            $order = \App\Models\Order::findOrFail($leg->shipment->source_id);
+            $order->update(['paymongo_payment_id' => 'pay-race-'.Str::uuid()]);
+            $refund = \App\Models\OrderRefund::factory()->create(['order_id' => $order->id, 'shop_owner_id' => $shop->id,
+                'customer_id' => $order->customer_id, 'payment_gateway' => 'paymongo', 'paymongo_payment_id' => $order->paymongo_payment_id,
+                'paymongo_refund_id' => 're-race-'.Str::uuid(), 'amount' => 100]);
+            $facts = ['refund_id' => $refund->paymongo_refund_id, 'payment_id' => $order->paymongo_payment_id];
+            $facts['refund_row_id'] = $refund->id;
+        } elseif ($operation === 'activation') {
             $facts = ['delivery_date' => now(config('app.shop_timezone'))->toDateString(), 'delivery_window' => 'afternoon',
                 'rider_profile_id' => $fixture['actors']['a']['rider_id'], 'request_key' => (string) Str::uuid()];
             app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Authorize current recovery', [], $dispatcher,
@@ -144,6 +198,7 @@ try {
         $key = (string) Str::uuid();
         $payload = ['database' => $database, 'incident' => $incident->id, 'operation' => $operation, 'barrier' => $barrier,
             'actors' => [$dispatcher->id, $dispatcher->id], 'keys' => [$key, $operation === 'inspection' ? $key : (string) Str::uuid()], 'facts' => $facts];
+        if ($operation === 'loss_recovery') $payload['actors'][1] = $fixture['actors']['a']['id'];
         file_put_contents($barrier.'.json', json_encode($payload, JSON_THROW_ON_ERROR));
         $processes = [];
         foreach ([1, 2] as $worker) {
@@ -155,7 +210,12 @@ try {
         parcelCheck($exitCodes === [0, 0], 'Worker failed; inspect '.$barrier.'.');
         $outcomes = array_map(fn ($worker) => json_decode(file_get_contents($barrier.'-result-'.$worker.'.json'), true, 512, JSON_THROW_ON_ERROR), [1, 2]);
         parcelCheck($outcomes[0]['connection'] !== $outcomes[1]['connection'], 'Workers shared a connection.');
-        parcelCheck(count(array_filter($outcomes, fn ($row) => $row['ok'])) === (in_array($operation, ['inspection', 'receipt_module'], true) ? 2 : 1), 'Unexpected winner count: '.json_encode($outcomes));
+        parcelCheck(count(array_filter($outcomes, fn ($row) => $row['ok'])) === (in_array($operation, ['inspection', 'receipt_module', 'provider', 'refund_stock'], true) ? 2 : 1), 'Unexpected winner count: '.json_encode($outcomes));
+        if (in_array($operation, ['restock', 'refund_stock'], true)) parcelCheck($product->fresh()->stock_quantity === 9 && $incident->fresh()->status === 'resolved', 'Restock was duplicated or recovery did not complete.');
+        if ($operation === 'loss_approval') parcelCheck($incident->fresh()->status === 'resolved' && $leg->fresh()->custody_state === 'lost', 'Loss did not finalize exactly once.');
+        if ($operation === 'loss_recovery') parcelCheck((int) ($incident->fresh()->resolution === 'loss_confirmed')
+            + DeliveryIncident::where('recovery_context->recovered_loss->parent_id', $incident->id)->count() === 1, 'Loss and stale recovery both won.');
+        if ($operation === 'provider') parcelCheck($refund->fresh()->status === 'succeeded', 'A stale pending callback regressed success.');
         if (in_array($operation, ['receipt', 'receipt_module'], true)) parcelCheck($proof->fresh()->review_status === 'approved' && $leg->fresh()->custody_state === 'shop', 'Receipt lost custody.');
         if ($operation === 'receipt_module') {
             parcelCheck(! \App\Models\ShopOwnerModule::where('shop_owner_id', $shop->id)->where('module_key', 'logistics')->value('enabled'), 'Module toggle was lost.');

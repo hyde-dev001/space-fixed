@@ -330,6 +330,7 @@ export type TrackingShipmentLeg = {
 };
 
 export type LogisticsIncident = {
+  loss?: { stage: string; actions: string[]; parent_id: number | null; after_final: boolean; reporting_rider_profile_id: number } | null;
   revision?: number;
   decided_at?: string | null;
   eligibility?: Record<string, { allowed: boolean; conditional: boolean; label: string; reason: string | null }>;
