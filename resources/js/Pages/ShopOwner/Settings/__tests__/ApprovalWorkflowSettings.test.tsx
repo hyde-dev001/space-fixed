@@ -156,6 +156,7 @@ describe("approval workflow settings", () => {
 
     const toggle = await screen.findByRole("button", { name: "Require employee clock-in photo" });
     expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle.closest("#settings-section-payments-approvals")).not.toBeNull();
     fireEvent.click(toggle);
 
     expect(mocks.routerPut).toHaveBeenCalledWith(

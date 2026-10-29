@@ -2384,33 +2384,6 @@ const ShopSetting: React.FC = () => {
 						</div>
 					</div>
 
-					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3 xl:order-7 xl:shadow-none">
-						<div className="border-b border-gray-200 p-6">
-							<h2 className="text-xl font-semibold text-gray-900">Clock-in Photo Requirement</h2>
-							<p className="mt-1 text-sm text-gray-600">Choose whether employees must take a camera photo when clocking in.</p>
-						</div>
-						<div className="p-6">
-							<div className="flex items-center justify-between gap-4">
-								<div>
-									<p className="text-sm font-medium text-gray-900">Require employee clock-in photo</p>
-									<p className="mt-1 text-xs text-gray-500">When off, clock-ins are recorded without a photo.</p>
-								</div>
-								<ToggleSwitch
-									enabled={attendancePhotoRequired}
-									onChange={handleToggleAttendancePhotoRequired}
-									disabled={savingAttendancePhotoRequired}
-									ariaLabel="Require employee clock-in photo"
-								/>
-							</div>
-							{attendancePhotoRequiredError && <p role="alert" className="mt-3 text-xs text-red-600">{attendancePhotoRequiredError}</p>}
-							{attendancePhotoRequiredSaveSuccess && (
-								<p className="mt-3 flex items-center gap-1 text-xs font-medium text-green-700">
-									<Check size={13} /> Clock-in photo requirement saved.
-								</p>
-							)}
-						</div>
-					</div>
-
 					{hasRetailSignal && (
 						<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3 xl:order-7 xl:shadow-none">
 							<div className="border-b border-gray-200 p-6">
@@ -2997,6 +2970,26 @@ const ShopSetting: React.FC = () => {
 									</div>
 								);
 							})}
+							<div className="py-4 last:pb-0">
+								<div className="flex items-start justify-between gap-4">
+									<div>
+										<h3 className="text-base font-semibold text-gray-900">Clock-in Photo Requirement</h3>
+										<p className="mt-1 text-sm text-gray-600">Choose whether employees must take a camera photo when clocking in.</p>
+									</div>
+									<ToggleSwitch
+										enabled={attendancePhotoRequired}
+										onChange={handleToggleAttendancePhotoRequired}
+										disabled={savingAttendancePhotoRequired}
+										ariaLabel="Require employee clock-in photo"
+									/>
+								</div>
+								{attendancePhotoRequiredError && <p role="alert" className="mt-3 text-xs text-red-600">{attendancePhotoRequiredError}</p>}
+								{attendancePhotoRequiredSaveSuccess && (
+									<p className="mt-3 flex items-center gap-1 text-xs font-medium text-green-700">
+										<Check size={13} /> Clock-in photo requirement saved.
+									</p>
+								)}
+							</div>
 						</div>
 					</div>
 					)}
