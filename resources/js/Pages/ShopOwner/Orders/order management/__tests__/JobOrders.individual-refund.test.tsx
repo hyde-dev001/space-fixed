@@ -26,3 +26,32 @@ it.each([
   expect(await screen.findByText(label)).toBeInTheDocument();
   expect(screen.queryByText('Awaiting Approval')).not.toBeInTheDocument();
 });
+
+
+it.each([false, true])('opens and reopens return pickup directly from the list (warranty: %s)', async (hasWarranty) => {
+  const warranty = hasWarranty ? {
+    id: 22, reference: 'WARRANTY-OWNER-RETURN', order_number: 'OWNER-RETURN', customer_name: 'Buyer',
+    shop_name: 'Shop', issued_at: '2026-10-29T08:00:00Z', fulfilled_at: '2026-10-29T08:00:00Z',
+    timezone: 'Asia/Singapore', status: 'active', download_url: null, items: [],
+  } : null;
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [{
+    id: 2, order_number: 'OWNER-RETURN', customer_name: 'Return Buyer', customer_email: 'return@example.test',
+    total_amount: 1000, grand_total: 1000, status: 'delivered', payment_status: 'paid', items: [],
+    created_at: '2026-10-29', product_warranty: warranty, latest_refund: {
+      id: 10, status: 'requested', flow_type: 'request_approval', shop_owner_status: 'approved',
+      finance_status: 'pending', approvals_complete: true, return_status: 'pending_customer_shipment',
+      can_execute_payout: false,
+    },
+  }] }));
+  render(<JobOrders />);
+  fireEvent.click(await screen.findByRole('button', { name: /All Orders/ }));
+  fireEvent.click(await screen.findByRole('button', { name: 'Arrange return pickup' }));
+  expect(screen.getByRole('heading', { name: 'Arrange Return Pickup' })).toBeInTheDocument();
+  expect(screen.getByText('OWNER-RETURN')).toBeInTheDocument();
+  if (hasWarranty) expect(screen.getByText('WARRANTY-OWNER-RETURN')).toBeInTheDocument();
+  else expect(screen.queryByRole('region', { name: 'Product Warranty' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Close', exact: true }));
+  expect(screen.queryByRole('heading', { name: 'Arrange Return Pickup' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Arrange return pickup' }));
+  expect(screen.getByRole('heading', { name: 'Arrange Return Pickup' })).toBeInTheDocument();
+});
