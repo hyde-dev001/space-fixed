@@ -392,7 +392,9 @@ class OrderController extends Controller
                         'status' => (string) ($latestRefund->status ?? ''),
                         'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
                         'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
-                        'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
+                        'finance_approval_required' => $latestRefund->requiresFinanceApproval(),
+                        'approvals_complete' => $latestRefund->hasRequiredApprovals(),
+                        'return_status' => $latestRefund->effectiveReturnStatus(),
                         'return_source' => (string) ($latestRefund->return_source ?? 'customer'),
                         'customer_return_tracking_number' => $latestRefund->customer_return_tracking_number,
                         'customer_return_carrier' => $latestRefund->customer_return_carrier,
@@ -415,11 +417,10 @@ class OrderController extends Controller
                         'refund_destination' => $latestRefund->maskedRefundDestination(),
                         'payout_status' => $latestRefund->payout_status,
                         'awaiting_refund_destination' => $awaitingRefundDestination,
-                        'can_mark_return_shipped' => !$isCodPayment
+                        'can_mark_return_shipped' => (!$isCodPayment || ! $latestRefund->requiresFinanceApproval())
                             && strtolower((string) ($latestRefund->return_source ?? 'customer')) !== 'staff'
-                            && (string) ($latestRefund->return_status ?? 'awaiting_approval') === 'pending_customer_shipment'
-                            && (string) ($latestRefund->shop_owner_status ?? 'pending') === 'approved'
-                            && (string) ($latestRefund->finance_status ?? 'pending') === 'approved',
+                            && $latestRefund->effectiveReturnStatus() === 'pending_customer_shipment'
+                            && $latestRefund->hasRequiredApprovals(),
                         'is_refunded' => in_array(strtolower((string) ($latestRefund->status ?? '')), ['succeeded', 'refunded'], true),
                     ] : null,
                 ];

@@ -2842,6 +2842,16 @@ $platformBalanceRoute['actor_persistence'] = 'server_resolved_shop_owner';
 $platformBalanceRoute['supporting_routes'] = ['shop_owner.finance.platform-balance.index'];
 $routes['shop-owner.shell.platform-balance'] = $platformBalanceRoute;
 
+foreach ([
+    'shop_owner.finance.platform-balance.index', 'shop_owner.finance.platform-balance.payment-requests.index',
+    'shop_owner.finance.platform-balance.payment-requests.approve', 'shop_owner.finance.platform-balance.payment-requests.reject',
+    'shop_owner.finance.platform-balance.pay', 'shop_owner.finance.platform-balance.reconcile',
+    'shop_owner.finance.platform-balance.terms.accept',
+] as $routeName) {
+    $routes[$routeName] = [...$platformBalanceRoute, 'methods' => $routes[$routeName]['methods'],
+        'action' => $routes[$routeName]['action'], 'risk_tier' => 'financial'];
+}
+
 // Classify the newer named surfaces explicitly; declared route permissions and
 // controller maker/checker, payment and tenant checks remain authoritative.
 foreach ([

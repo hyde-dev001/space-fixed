@@ -3,10 +3,11 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import PlatformBalancePage from './PlatformBalance';
 
-const { apiGet, apiPost, queryRefetch, payload } = vi.hoisted(() => ({
+const { apiGet, apiPost, queryRefetch, queryState, payload } = vi.hoisted(() => ({
     apiGet: vi.fn(),
     apiPost: vi.fn(),
     queryRefetch: vi.fn(),
+    queryState: { isError: false, error: null as null | { status: number } },
     payload: {
         balance: {
             outstanding_balance: '28.00',
@@ -61,8 +62,8 @@ vi.mock('@tanstack/react-query', () => ({
     useQuery: () => ({
         data: payload,
         isLoading: false,
-        isError: false,
-        error: null,
+        isError: queryState.isError,
+        error: queryState.error,
         isFetching: false,
         refetch: queryRefetch,
     }),
@@ -85,6 +86,8 @@ vi.mock('sweetalert2', () => ({
 }));
 
 beforeEach(() => {
+    queryState.isError = false;
+    queryState.error = null;
     apiGet.mockReset();
     apiPost.mockReset();
     queryRefetch.mockReset();
@@ -132,4 +135,12 @@ it('displays the original business reference for a refund credit movement', () =
     fireEvent.click(screen.getByRole('button', { name: 'View movement history' }));
     expect(screen.getByText('REP-QA-2026-12')).toBeInTheDocument();
     expect(screen.queryByText('Order refund #12')).not.toBeInTheDocument();
+});
+
+it('does not tell a denied individual owner to obtain Finance access', () => {
+    queryState.isError = true;
+    queryState.error = { status: 403 };
+    render(<PlatformBalancePage />);
+    expect(screen.getByText('Platform Balance access unavailable')).toBeInTheDocument();
+    expect(screen.queryByText('Finance access required')).not.toBeInTheDocument();
 });

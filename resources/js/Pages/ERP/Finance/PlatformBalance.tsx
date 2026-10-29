@@ -293,7 +293,7 @@ export default function PlatformBalancePage() {
                 isRefreshing={query.isFetching || actionPending}
             >
                 {query.isLoading && <DashboardState status="loading" title="Loading Platform Balance" />}
-                {forbidden && <DashboardState status="error" title="Finance access required" message="You do not have access to the Platform Balance." />}
+                {forbidden && <DashboardState status="error" title={isOwner ? "Platform Balance access unavailable" : "Finance access required"} message="You do not have access to the Platform Balance." />}
                 {query.isError && !forbidden && <DashboardState status="error" title="Platform Balance unavailable" message="The Platform Balance is temporarily unavailable." onRetry={() => void query.refetch()} />}
                 {!query.isLoading && !query.isError && !payload && <DashboardState status="empty" title="No Platform Balance data" />}
 

@@ -117,7 +117,7 @@ class OrderController extends Controller
         $warrantyProjections = app(\App\Services\RetailWarrantyService::class)->projectOrders($orders->getCollection(), 'owner');
 
         return response()->json([
-            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $returnLegStatuses, $includeRefundItems, $canFulfillOrders, $isIndividualRegistration, $warrantyProjections) {
+            'data' => $orders->map(function($order) use ($retailPosRefundSummaries, $returnLegStatuses, $includeRefundItems, $canFulfillOrders, $isIndividualRegistration, $warrantyProjections, $shopOwner) {
                 $itemSubtotal = (float) ($order->total_amount ?? 0);
                 $shippingFee = (float) ($order->shipping_fee ?? 0);
                 $hasStoredVat = $order->vat_amount !== null;
@@ -125,7 +125,9 @@ class OrderController extends Controller
                 $vatRate = $hasStoredVat && ((float) ($order->vat_rate ?? 0)) > 0
                     ? round((float) $order->vat_rate, 2)
                     : null;
+                $order->setRelation('shopOwner', $shopOwner);
                 $latestRefund = $order->refunds->first();
+                $latestRefund?->setRelation('order', $order);
                 $thirdPartyLeg = $order->logisticsShipments
                     ->flatMap(fn ($shipment) => $shipment->legs)
                     ->first();
@@ -201,7 +203,9 @@ class OrderController extends Controller
                         'other_reason_note' => $latestRefund->other_reason_note,
                         'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
                         'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
-                        'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
+                        'finance_approval_required' => $latestRefund->requiresFinanceApproval(),
+                        'approvals_complete' => $latestRefund->hasRequiredApprovals(),
+                        'return_status' => $latestRefund->effectiveReturnStatus(),
                         'can_execute_payout' => $isIndividualRegistration
                             && $this->orderRefundService->canExecuteApprovedRefund($latestRefund),
                         'return_source' => (string) ($latestRefund->return_source ?? 'customer'),
@@ -300,7 +304,9 @@ class OrderController extends Controller
         $vatRate = $hasStoredVat && ((float) ($order->vat_rate ?? 0)) > 0
             ? round((float) $order->vat_rate, 2)
             : null;
+        $order->setRelation('shopOwner', $shopOwner);
         $latestRefund = $order->refunds->first();
+        $latestRefund?->setRelation('order', $order);
         $thirdPartyLeg = $order->logisticsShipments
             ->flatMap(fn ($shipment) => $shipment->legs)
             ->first();
@@ -382,7 +388,9 @@ class OrderController extends Controller
                 'other_reason_note' => $latestRefund->other_reason_note,
                 'shop_owner_status' => (string) ($latestRefund->shop_owner_status ?? 'pending'),
                 'finance_status' => (string) ($latestRefund->finance_status ?? 'pending'),
-                'return_status' => (string) ($latestRefund->return_status ?? 'awaiting_approval'),
+                'finance_approval_required' => $latestRefund->requiresFinanceApproval(),
+                'approvals_complete' => $latestRefund->hasRequiredApprovals(),
+                'return_status' => $latestRefund->effectiveReturnStatus(),
                 'can_execute_payout' => $isIndividualRegistration
                     && $this->orderRefundService->canExecuteApprovedRefund($latestRefund),
                 'return_source' => (string) ($latestRefund->return_source ?? 'customer'),
@@ -765,7 +773,7 @@ class OrderController extends Controller
         }
 
         $isIndividualRegistration = strtolower(trim((string) ($shopOwner->registration_type ?? ''))) === 'individual';
-        $refundReady = ((string) (($result['refund']->finance_status ?? 'pending')) === 'approved')
+        $refundReady = $result['refund']->hasRequiredApprovals()
             && ((string) (($result['refund']->return_status ?? 'pending_customer_shipment')) === 'received');
 
         return response()->json([

@@ -165,6 +165,8 @@ type Order = {
     other_reason_note?: string | null;
     shop_owner_status: string;
     finance_status: string;
+    approvals_complete?: boolean;
+    finance_approval_required?: boolean;
     return_status: string;
     return_source?: string;
     return_delivery_method?: 'shop_owned' | 'third_party' | string | null;
@@ -1407,6 +1409,7 @@ const MyOrders: React.FC = () => {
     const status = String(stage.status || '').toLowerCase();
     const shopOwnerStatus = String(stage.shop_owner_status || '').toLowerCase();
     const financeStatus = String(stage.finance_status || '').toLowerCase();
+    const approvalsComplete = stage.approvals_complete ?? (shopOwnerStatus === 'approved' && financeStatus === 'approved');
     const returnStatus = String(stage.return_status || '').toLowerCase();
     const returnSource = String(stage.return_source || 'customer').toLowerCase();
 
@@ -1414,17 +1417,17 @@ const MyOrders: React.FC = () => {
     if (status === 'rejected' || shopOwnerStatus === 'rejected' || financeStatus === 'rejected') return 'Refund Rejected';
     if (returnStatus === 'pending_staff_pickup') return 'Staff Pickup Scheduled';
     if (returnStatus === 'pending_customer_shipment') {
-      return stage.is_cod === true || returnSource === 'staff'
+      return (stage.is_cod === true && stage.finance_approval_required !== false) || returnSource === 'staff'
         ? 'Awaiting Staff Pickup'
         : 'Ship Defective Product';
     }
     if (returnStatus === 'in_transit' && returnSource === 'staff') return 'Picked Up by Staff Rider';
-    if (['in_transit', 'received'].includes(returnStatus) && shopOwnerStatus === 'approved' && financeStatus === 'approved') {
-      return 'Awaiting Finance Refund Release';
+    if (returnStatus === 'received' && approvalsComplete) {
+      return stage.finance_approval_required === false ? 'Awaiting Shop Refund Release' : 'Awaiting Finance Refund Release';
     }
     if (returnStatus === 'in_transit') return 'Return In Transit';
     if (returnStatus === 'received') return 'Returned Item Received';
-    if (shopOwnerStatus !== 'approved' || financeStatus !== 'approved') return 'Pending Approval';
+    if (!approvalsComplete) return 'Pending Approval';
     if (status === 'processing') return 'Refund Processing';
     return 'Refund Processing';
   };

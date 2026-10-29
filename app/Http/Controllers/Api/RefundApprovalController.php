@@ -81,11 +81,12 @@ class RefundApprovalController extends Controller
             $financeStatuses = $isIndividualRegistration
                 ? ['pending', 'approved_initial']
                 : ['approved_initial'];
-            $query->where(function ($builder) use ($financeStatuses) {
-                $builder->where(function ($codQuery) {
+            $query->where(function ($builder) use ($financeStatuses, $isIndividualRegistration) {
+                $builder->where(function ($codQuery) use ($financeStatuses, $isIndividualRegistration) {
                     $codQuery->whereHas('order', function ($orderQuery) {
                         $orderQuery->whereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash']);
-                    })->where('status', 'pending_approval')->where('finance_status', 'approved_initial');
+                    })->whereIn('status', $isIndividualRegistration ? ['requested', 'pending_approval'] : ['pending_approval'])
+                        ->whereIn('finance_status', $financeStatuses);
                 })->orWhere(function ($nonCodQuery) use ($financeStatuses) {
                     $nonCodQuery->whereDoesntHave('order', function ($orderQuery) {
                         $orderQuery->whereIn('payment_method', ['cod', 'cash_on_delivery', 'cash on delivery', 'cash']);
@@ -537,7 +538,6 @@ class RefundApprovalController extends Controller
             && str_contains($cleanReasonNote, OrderRefundService::FINANCE_SHIPPING_DECISION_MARKER);
 
         $requiresOwnerApproval = (bool) ($refund->requires_owner_approval ?? true);
-        $isIndividualRegistration = strtolower(trim((string) ($order?->shopOwner?->registration_type ?? ''))) === 'individual';
         $paymentMethod = strtolower(trim((string) ($order?->payment_method ?? '')));
         $isCod = in_array($paymentMethod, ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'], true);
         $isThirdPartyCustomerRefund = $this->orderRefundService->isThirdPartyCustomerRefund(
@@ -571,12 +571,11 @@ class RefundApprovalController extends Controller
             && $refund->refund_destination !== [];
 
         $approvalStage = 'none';
-        if (($isCod || $requiresStaffApproval) && $status === 'requested'
+        if (! $refund->requiresFinanceApproval()) {
+            $approvalStage = $refund->hasRequiredApprovals() ? 'approved' : 'shop_owner';
+        } elseif (($isCod || $requiresStaffApproval) && $status === 'requested'
             && ($shopOwnerStatus === 'pending' || ($requiresStaffApproval && ! $hasStaffApproval))) {
             $approvalStage = 'staff';
-        } elseif ($isIndividualRegistration && !$isCod && $requiresOwnerApproval
-            && $financeStatus === 'pending' && $shopOwnerStatus === 'pending') {
-            $approvalStage = 'shop_owner';
         } elseif ($financeStatus === 'pending') {
             $approvalStage = 'finance_initial';
         } elseif ($financeStatus === 'approved_initial' && $shopOwnerStatus === 'pending') {
@@ -639,11 +638,13 @@ class RefundApprovalController extends Controller
             'rejectionReviewedBy' => $refund->status === 'rejected' && $refund->processed_by ? \App\Models\User::where('shop_owner_id', $refund->shop_owner_id)->find($refund->processed_by)?->name : null,
             'shopOwnerStatus' => (string) ($refund->shop_owner_status ?? 'pending'),
             'financeStatus' => (string) ($refund->finance_status ?? 'pending'),
+            'financeApprovalRequired' => $refund->requiresFinanceApproval(),
+            'approvalsComplete' => $refund->hasRequiredApprovals(),
             'requiresOwnerApproval' => $requiresOwnerApproval,
             'requiresStaffApproval' => $requiresStaffApproval,
             'staffApprovalStatus' => $staffApprovalStatus,
             'approvalStage' => $approvalStage,
-            'returnStatus' => (string) ($refund->return_status ?? 'awaiting_approval'),
+            'returnStatus' => $refund->effectiveReturnStatus(),
             'canExecutePayout' => $canExecutePayout,
             'payoutBlockingReason' => $isCod && ! $canExecutePayout
                 ? (! $codHasCollectedCash

@@ -166,6 +166,17 @@ class PlatformBalanceApiTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page->component('ERP/Finance/PlatformBalance', false));
     }
+
+    #[Test]
+    public function an_individual_owner_can_load_balance_without_the_finance_module(): void
+    {
+        config()->set('shop_modules.enforcement_enabled', true);
+        $owner = ShopOwner::factory()->approved()->create(['registration_type' => 'individual', 'business_type' => 'retail']);
+        $this->actingAs($owner, 'shop_owner')->getJson('/api/shop-owner/finance/platform-balance')
+            ->assertOk()->assertJsonPath('balance.shop_type', 'individual');
+        $this->getJson('/api/shop-owner/finance/platform-balance/payment-requests')->assertOk();
+        $this->getJson('/api/finance/platform-balance')->assertForbidden();
+    }
     private function chargeSource(ShopOwner $shop, string $type, string $reference): \App\Models\PlatformFeeCharge
     {
         config()->set('platform_fee.defaults.platform_fee_rate', '5');

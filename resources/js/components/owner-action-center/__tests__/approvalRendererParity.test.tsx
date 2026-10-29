@@ -45,10 +45,12 @@ describe("owner approval renderer parity", () => {
           refundNote: "Wrong color variant delivered",
           rawStatus: "pending_approval",
           approvalStage: "shop_owner",
+          financeApprovalRequired: false,
         }}
       />,
     );
 
+    expect(screen.getByText("Not required")).toBeInTheDocument();
     expect(screen.getByText("SO-2026-0012")).toBeInTheDocument();
     expect(screen.getByText("Jane Customer")).toBeInTheDocument();
     expect(screen.getByText("GCash")).toBeInTheDocument();

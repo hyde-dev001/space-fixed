@@ -157,6 +157,34 @@ class OrderRefund extends Model
         return $this->belongsTo(User::class, 'customer_id');
     }
 
+    public function requiresFinanceApproval(): bool
+    {
+        $owner = $this->relationLoaded('order') ? $this->order?->shopOwner : $this->shopOwner;
+        return ! $owner?->isIndividual();
+    }
+
+    public function hasRequiredApprovals(): bool
+    {
+        $financeRequired = $this->requiresFinanceApproval();
+        $ownerApproved = $this->shop_owner_status === 'approved'
+            || (! $financeRequired && $this->requires_owner_approval === false);
+
+        return $ownerApproved && $this->shop_owner_status !== 'rejected' && $this->finance_status !== 'rejected'
+            && (! $financeRequired || $this->finance_status === 'approved');
+    }
+
+    public function effectiveReturnStatus(): string
+    {
+        // Existing individual requests can continue without rewriting approval history.
+        if ($this->return_status === 'awaiting_approval' && $this->flow_type === 'request_approval'
+            && ! $this->requiresFinanceApproval() && $this->hasRequiredApprovals()
+            && ! in_array($this->status, ['rejected', 'failed', 'succeeded'], true)) {
+            return 'pending_customer_shipment';
+        }
+
+        return (string) ($this->return_status ?? 'awaiting_approval');
+    }
+
     public function shopOwner(): BelongsTo
     {
         return $this->belongsTo(ShopOwner::class, 'shop_owner_id');
