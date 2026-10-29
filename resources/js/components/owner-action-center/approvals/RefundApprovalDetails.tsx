@@ -107,7 +107,7 @@ export default function RefundApprovalDetails({ detail, item }: ApprovalDetailRe
       <DetailSection title="Workflow/history">
         <DetailGrid>
           <DetailField label="Current owner" value={formatStatus(pick(detail, "approvalStage", "approval.current_approver_role", "current_approver_role") ?? "Shop owner")} />
-          <DetailField label="Finance status" value={formatStatus(pick(detail, "financeStatus", "approval.previous_status", "previous_status", "workflow_stage"))} />
+          <DetailField label="Finance status" value={detail.financeApprovalRequired === false ? "Not required" : formatStatus(pick(detail, "financeStatus", "approval.previous_status", "previous_status", "workflow_stage"))} />
           <DetailField label="Owner status" value={formatStatus(pick(detail, "shopOwnerStatus"))} />
           <DetailField label="Return status" value={formatStatus(pick(detail, "returnStatus"))} />
           <DetailField label="Approved by" value={stringValue(pick(detail, "approved_by.name", "approved_by"))} />

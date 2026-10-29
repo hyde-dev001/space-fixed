@@ -50,6 +50,39 @@ class OrderRefundApprovalWorkflowTest extends TestCase
         ]);
     }
 
+    public function test_individual_owner_approval_needs_no_finance_employee_and_preserves_return_gate(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual', 'business_type' => 'retail']);
+        config()->set('shop_modules.enforcement_enabled', true);
+        $this->setRefundApproval($shop, true);
+        $refund = $this->reserveRefund($shop, User::factory()->create(), 'owner-only');
+        $this->actingAs($shop, 'shop_owner')->postJson("/api/shop-owner/refunds/{$refund->id}/approve")
+            ->assertOk();
+        $this->assertSame('pending_customer_shipment', $refund->fresh()->return_status);
+        $service = app(\App\Services\OrderRefundService::class);
+        $this->assertFalse($service->canExecuteApprovedRefund($refund->fresh()));
+        $refund->update(['return_status' => 'received']);
+        $this->assertTrue($service->canExecuteApprovedRefund($refund->fresh()));
+        $this->assertNull($refund->fresh()->finance_approved_by);
+    }
+
+    public function test_already_owner_approved_individual_refund_is_executable_without_finance_backfill(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual', 'business_type' => 'retail']);
+        $refund = $this->reserveRefund($shop, User::factory()->create(), 'owner-already-approved');
+        $refund->update(['shop_owner_status' => 'approved', 'shop_owner_approved_at' => now(),
+            'finance_status' => 'pending', 'return_status' => 'received']);
+        $this->assertTrue(app(\App\Services\OrderRefundService::class)->canExecuteApprovedRefund($refund->fresh()));
+        $this->assertSame('pending', $refund->fresh()->finance_status, 'A read must not fabricate a Finance decision');
+        $this->assertNull($refund->fresh()->finance_approved_by);
+        $this->actingAs($shop, 'shop_owner')->getJson('/api/shop-owner/orders')
+            ->assertOk()->assertJsonPath('data.0.latest_refund.approvals_complete', true)
+            ->assertJsonPath('data.0.latest_refund.finance_approval_required', false)
+            ->assertJsonPath('data.0.latest_refund.can_execute_payout', true);
+        $refund->update(['finance_status' => 'rejected']);
+        $this->assertFalse(app(\App\Services\OrderRefundService::class)->canExecuteApprovedRefund($refund->fresh()));
+    }
+
     public function test_staff_can_reject_a_pending_refund(): void
     {
         [, $staff, $refund] = $this->fixture();
@@ -139,7 +172,7 @@ class OrderRefundApprovalWorkflowTest extends TestCase
 
     public function test_new_order_refunds_snapshot_the_setting_at_reservation(): void
     {
-        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual']);
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual', 'business_type' => 'retail']);
         $customer = User::factory()->create();
 
         $this->setRefundApproval($shop, false);
@@ -155,82 +188,77 @@ class OrderRefundApprovalWorkflowTest extends TestCase
 
     public function test_individual_paymongo_refund_setting_controls_only_the_owner_stage(): void
     {
-        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual']);
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual', 'business_type' => 'retail']);
         $customer = User::factory()->create();
-        $finance = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'Finance']);
-        $finance->givePermissionTo(Permission::findOrCreate('access-refund-approval', 'user'));
-        $this->clockInEmployee($finance);
         $service = app(\App\Services\OrderRefundService::class);
+        foreach ([false, true] as $enabled) {
+            $this->setRefundApproval($shop, $enabled);
+            $refund = $this->reserveRefund($shop, $customer, 'individual-policy-'.(int) $enabled);
+            if ($enabled) {
+                $this->assertFalse($refund->hasRequiredApprovals());
+                $this->actingAs($shop, 'shop_owner')->postJson("/api/shop-owner/refunds/{$refund->id}/approve")
+                    ->assertOk()->assertJsonPath('refund.approvalStage', 'approved');
+            } else {
+                $this->actingAs($shop, 'shop_owner')->postJson("/api/shop-owner/refunds/{$refund->id}/approve")
+                    ->assertUnprocessable();
+            }
+            $refund->refresh();
+            $this->assertTrue($refund->hasRequiredApprovals());
+            $this->assertSame('pending_customer_shipment', $refund->effectiveReturnStatus());
+            $this->assertFalse($service->canExecuteApprovedRefund($refund));
+            $this->assertSame('pending', $refund->finance_status);
+            $this->assertNull($refund->finance_approved_by);
+        }
+    }
 
-        $this->setRefundApproval($shop, false);
-        $offRefund = $this->reserveRefund($shop, $customer, 'individual-off-flow');
-        $this->actingAs($shop, 'shop_owner')
-            ->getJson('/api/shop-owner/refunds?status=pending')
-            ->assertOk()
-            ->assertJsonCount(0, 'data');
-        $this->actingAs($shop, 'shop_owner')
-            ->postJson("/api/shop-owner/refunds/{$offRefund->id}/approve")
-            ->assertUnprocessable()
-            ->assertJsonPath('message', 'Shop owner approval is not required by policy for this refund request.');
+    public function test_existing_individual_approval_allows_real_return_without_backfill(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual', 'business_type' => 'retail']);
+        $refund = $this->reserveRefund($shop, User::factory()->create(), 'legacy-approved-return');
+        $refund->update(['shop_owner_status' => 'approved']);
+        $this->assertSame('pending_customer_shipment', $refund->effectiveReturnStatus());
+        $this->assertSame('awaiting_approval', $refund->fresh()->return_status);
+        $result = app(\App\Services\OrderRefundService::class)->markCustomerReturnShipped($refund, ['tracking_number' => 'REAL-RETURN']);
+        $this->assertSame('in_transit', $result['refund']->return_status);
+        $this->assertSame('pending', $refund->fresh()->finance_status);
+    }
 
-        $financeRows = $this->actingAs($finance, 'user')
-            ->getJson('/api/finance/refunds?status=pending')
-            ->assertOk()
-            ->json('data');
-        $this->assertContains($offRefund->id, collect($financeRows)->pluck('id')->all());
+    public function test_individual_owner_executes_received_refund_once_without_finance(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual', 'business_type' => 'retail', 'paymongo_secret_key' => 'sk_test_fake']);
+        $refund = $this->reserveRefund($shop, User::factory()->create(), 'owner-payout');
+        config()->set('shop_modules.enforcement_enabled', true);
+        $refund->order->update(['paymongo_payment_id' => 'pay_owner_only', 'shipping_fee' => 0]);
+        $refund->update(['shop_owner_status' => 'approved', 'return_status' => 'received']);
+        $gateway = $this->mock(\App\Services\PaymongoRefundService::class);
+        $gateway->shouldReceive('getPaymentAmountInCentavos')->once()->andReturn(null);
+        $gateway->shouldReceive('createRefund')->once()->andReturn(['success' => true, 'status' => 'succeeded', 'refund_id' => 're_owner_only']);
+        $otherShop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual', 'business_type' => 'retail']);
+        $this->actingAs($otherShop, 'shop_owner')->postJson("/api/shop-owner/refunds/{$refund->id}/execute-gateway-refund")->assertNotFound();
+        $refund->update(['return_status' => 'pending_customer_shipment']);
+        $this->actingAs($shop, 'shop_owner')->postJson("/api/shop-owner/refunds/{$refund->id}/execute-gateway-refund")->assertUnprocessable();
+        $refund->update(['return_status' => 'received']);
+        $this->actingAs($shop, 'shop_owner')->postJson("/api/shop-owner/refunds/{$refund->id}/execute-gateway-refund")
+            ->assertOk()->assertJsonPath('refund.rawStatus', 'succeeded');
+        $this->postJson("/api/shop-owner/refunds/{$refund->id}/execute-gateway-refund")->assertConflict();
+        $this->assertSame('pending', $refund->fresh()->finance_status);
+        $this->assertNull($refund->fresh()->finance_approved_by);
+    }
 
-        $this->actingAs($finance, 'user')
-            ->postJson("/api/finance/refunds/{$offRefund->id}/approve")
-            ->assertOk()
-            ->assertJsonPath('refund.financeStatus', 'approved');
-        $this->assertDatabaseHas('order_refunds', [
-            'id' => $offRefund->id,
-            'requires_owner_approval' => 0,
-            'finance_status' => 'approved',
-            'shop_owner_status' => 'approved',
-            'shop_owner_approved_by' => null,
-            'return_status' => 'pending_customer_shipment',
-        ]);
-        $this->assertFalse($service->canExecuteApprovedRefund($offRefund->fresh()));
-
+    public function test_individual_cod_request_is_discoverable_without_finance_but_cash_guards_remain(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual', 'business_type' => 'retail']);
         $this->setRefundApproval($shop, true);
-        $onRefund = $this->reserveRefund($shop, $customer, 'individual-on-flow');
-        $ownerRows = $this->actingAs($shop, 'shop_owner')
-            ->getJson('/api/shop-owner/refunds?status=pending')
-            ->assertOk()
-            ->json('data');
-        $this->assertContains($onRefund->id, collect($ownerRows)->pluck('id')->all());
-
-        $this->actingAs($shop, 'shop_owner')
-            ->postJson("/api/shop-owner/refunds/{$onRefund->id}/approve")
-            ->assertOk()
-            ->assertJsonPath('refund.shopOwnerStatus', 'approved')
-            ->assertJsonPath('refund.financeStatus', 'pending');
-        $this->assertDatabaseHas('order_refunds', [
-            'id' => $onRefund->id,
-            'requires_owner_approval' => 1,
-            'shop_owner_status' => 'approved',
-            'finance_status' => 'pending',
-            'return_status' => 'awaiting_approval',
-        ]);
-
-        $financeRows = $this->actingAs($finance, 'user')
-            ->getJson('/api/finance/refunds?status=pending')
-            ->assertOk()
-            ->json('data');
-        $this->assertContains($onRefund->id, collect($financeRows)->pluck('id')->all());
-
-        $this->actingAs($finance, 'user')
-            ->postJson("/api/finance/refunds/{$onRefund->id}/approve")
-            ->assertOk()
-            ->assertJsonPath('refund.financeStatus', 'approved');
-        $this->assertDatabaseHas('order_refunds', [
-            'id' => $onRefund->id,
-            'finance_status' => 'approved',
-            'shop_owner_status' => 'approved',
-            'return_status' => 'pending_customer_shipment',
-        ]);
-        $this->assertFalse($service->canExecuteApprovedRefund($onRefund->fresh()));
+        $refund = $this->reserveRefund($shop, User::factory()->create(), 'individual-cod');
+        $refund->order->update(['payment_method' => 'cod']);
+        $this->actingAs($shop, 'shop_owner')->getJson('/api/shop-owner/refunds?status=pending')
+            ->assertOk()->assertJsonPath('data.0.id', $refund->id)->assertJsonPath('data.0.approvalStage', 'shop_owner');
+        $this->postJson("/api/shop-owner/refunds/{$refund->id}/approve")->assertOk();
+        $refund->update(['return_status' => 'received']);
+        $service = app(\App\Services\OrderRefundService::class);
+        $this->assertTrue($refund->fresh()->hasRequiredApprovals());
+        $this->assertFalse($service->canExecuteApprovedRefund($refund->fresh()));
+        $this->assertFalse($service->canAcceptCodRefundDestination($refund->fresh()));
     }
 
     public function test_company_paymongo_refunds_keep_staff_finance_and_owner_stages_separate(): void

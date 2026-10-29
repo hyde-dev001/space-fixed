@@ -143,6 +143,7 @@ class PlatformFeePaymentWorkflowTest extends TestCase
     #[Test]
     public function an_individual_owner_can_start_one_full_balance_payment_without_finance_approval(): void
     {
+        config()->set('shop_modules.enforcement_enabled', true);
         $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'individual']);
         $this->createMarketplaceOrder($shop, 1000);
 

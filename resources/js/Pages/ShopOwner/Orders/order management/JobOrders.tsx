@@ -103,6 +103,7 @@ type Order = {
     other_reason_note?: string | null;
     shop_owner_status: string;
     finance_status: string;
+    approvals_complete?: boolean;
     return_status: string;
     can_execute_payout?: boolean;
     return_source?: string;
@@ -679,6 +680,7 @@ export default function JobOrdersPage() {
       const refundStatus = String(latestRefund.status || '').toLowerCase();
       const shopOwnerStatus = String(latestRefund.shop_owner_status || '').toLowerCase();
       const financeStatus = String(latestRefund.finance_status || '').toLowerCase();
+      const approvalsComplete = latestRefund.approvals_complete ?? (shopOwnerStatus === 'approved' && financeStatus === 'approved');
       const returnStatus = String(latestRefund.return_status || '').toLowerCase();
       const onlineRefundedAmount = getOnlineSucceededRefundLineAmount(order);
       const hasOnlineRefundSucceeded = refundStatus === 'succeeded' || paymentStatus === 'refunded';
@@ -748,7 +750,7 @@ export default function JobOrdersPage() {
         };
       }
 
-      if (returnStatus === 'received' && financeStatus === 'approved') {
+      if (returnStatus === 'received' && approvalsComplete) {
         return {
           label: isIndividualRegistration ? 'Ready for Refund Payout' : 'Ready for Finance Refund',
           className: 'bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:ring-indigo-700/40',
@@ -762,7 +764,7 @@ export default function JobOrdersPage() {
         };
       }
 
-      if (shopOwnerStatus !== 'approved' || financeStatus !== 'approved') {
+      if (!approvalsComplete) {
         return {
           label: 'Awaiting Approval',
           className: 'bg-orange-50 text-orange-700 ring-1 ring-inset ring-orange-200 dark:bg-orange-900/20 dark:text-orange-300 dark:ring-orange-700/40',
