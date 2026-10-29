@@ -299,6 +299,8 @@ export default function TimeIn() {
             return;
         }
 
+        context.translate(canvas.width, 0);
+        context.scale(-1, 1);
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         canvas.toBlob((blob) => {
             if (!blob) {
@@ -1457,7 +1459,7 @@ export default function TimeIn() {
                             {clockInPhotoPreview ? (
                                 <img src={clockInPhotoPreview} alt="Clock-in photo preview" className="max-h-72 w-full object-contain" />
                             ) : clockInCameraStream ? (
-                                <video ref={cameraVideoRef} autoPlay playsInline muted className="max-h-72 w-full object-contain" aria-label="Live camera preview" />
+                                <video ref={cameraVideoRef} autoPlay playsInline muted className="max-h-72 w-full object-contain -scale-x-100" aria-label="Live camera preview" />
                             ) : (
                                 <p className="px-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                     {isOpeningClockInCamera ? 'Opening camera…' : 'Open the camera to take your required clock-in photo.'}
