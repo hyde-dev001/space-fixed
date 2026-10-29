@@ -553,8 +553,11 @@ class AttendanceController extends Controller
             return response()->json(['error' => 'Unauthenticated'], 401);
         }
 
-        $validated = $request->validate([
-            'photo' => ['required', 'image', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
+        $shopOwner = ShopOwner::find($user->shop_owner_id);
+        $photoRequired = (bool) ($shopOwner?->attendance_photo_required ?? true);
+
+        $request->validate([
+            'photo' => [$photoRequired ? 'required' : 'nullable', 'image', 'mimes:jpeg,jpg,png,webp', 'max:5120'],
         ]);
 
         // Use shop timezone for all date/time operations
@@ -627,7 +630,6 @@ class AttendanceController extends Controller
         $isSecondShift = false;
 
         // Get shop hours (needed for status determination)
-        $shopOwner = \App\Models\ShopOwner::find($user->shop_owner_id);
 
         // ── GEOFENCE CHECK ──────────────────────────────────────────────
         if ($shopOwner && $shopOwner->attendance_geofence_enabled && $shopOwner->shop_latitude) {
@@ -747,12 +749,11 @@ class AttendanceController extends Controller
             ? 'late'
             : 'present';
 
-        $photoPath = $request->file('photo')->store(
-            "attendance/{$user->shop_owner_id}/{$employee->id}/{$today}",
-            'local',
-        );
+        $photoPath = $photoRequired
+            ? $request->file('photo')->store("attendance/{$user->shop_owner_id}/{$employee->id}/{$today}", 'local')
+            : null;
 
-        if (!$photoPath) {
+        if ($photoRequired && !$photoPath) {
             return response()->json(['error' => 'Unable to save the clock-in photo. Please try again.'], 500);
         }
 
@@ -771,7 +772,6 @@ class AttendanceController extends Controller
                 $locationData,
                 $photoPath,
                 $now,
-                $validated,
             ) {
                 $recordData = array_merge([
                     'check_in_time' => $checkInTime,
@@ -781,7 +781,7 @@ class AttendanceController extends Controller
                     'expected_check_in' => $expectedCheckIn,
                     'late_grace_period_minutes' => (int) ($shopOwner->late_grace_period_minutes ?? 0),
                     'check_in_photo_path' => $photoPath,
-                    'check_in_photo_captured_at' => $now,
+                    'check_in_photo_captured_at' => $photoPath ? $now : null,
                 ], $locationData);
 
                 if ($existingRecord) {
@@ -798,7 +798,9 @@ class AttendanceController extends Controller
                 return $attendance;
             });
         } catch (\Throwable $exception) {
-            Storage::disk('local')->delete($photoPath);
+            if ($photoPath) {
+                Storage::disk('local')->delete($photoPath);
+            }
             throw $exception;
         }
 
@@ -1395,6 +1397,7 @@ class AttendanceController extends Controller
             'close' => $closeTime ? substr($closeTime, 0, 5) : null,
             'geofence_enabled' => (bool) ($shopOwner->attendance_geofence_enabled ?? false),
             'geofence_radius'  => $shopOwner->shop_geofence_radius ?? 100,
+            'attendance_photo_required' => (bool) ($shopOwner->attendance_photo_required ?? true),
         ]);
     }
 

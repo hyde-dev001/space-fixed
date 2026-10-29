@@ -42,6 +42,31 @@ class AttendanceClockInEvidenceTest extends TestCase
         ]);
     }
 
+    public function test_shop_can_disable_clock_in_photos_and_staff_check_in_without_storing_one(): void
+    {
+        Storage::fake('local');
+        [$shop, $user] = $this->makeClockInAccount(['attendance_photo_required' => false]);
+
+        $this->actingAs($user, 'user')
+            ->getJson('/api/staff/shop-hours/today')
+            ->assertOk()
+            ->assertJsonPath('attendance_photo_required', false);
+
+        $this->actingAs($user, 'user')
+            ->postJson('/api/staff/attendance/check-in', [])
+            ->assertOk()
+            ->assertJsonPath('message', 'Checked in successfully');
+
+        $employee = Employee::where('shop_owner_id', $shop->id)
+            ->where('email', $user->email)
+            ->firstOrFail();
+        $attendance = AttendanceRecord::where('employee_id', $employee->id)->firstOrFail();
+
+        $this->assertNull($attendance->check_in_photo_path);
+        $this->assertNull($attendance->check_in_photo_captured_at);
+        $this->assertSame([], Storage::disk('local')->allFiles('attendance'));
+    }
+
     public function test_self_check_in_stores_private_photo_without_prompt_preference(): void
     {
         Storage::fake('local');

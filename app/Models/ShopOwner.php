@@ -90,6 +90,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'warranty_enabled', // Toggle warranty claim filing for this shop
         'order_refund_deadline_days', // Refund/cancellation eligibility window for product orders
         'late_grace_period_minutes', // Attendance lateness grace period in minutes
+        'attendance_photo_required', // Require a camera photo for employee clock-in
         'cod_enabled', // Allow Cash on Delivery for retail orders
         'cod_order_threshold', // Maximum discounted merchandise amount eligible for COD
         'two_factor_email_enabled', // Require OTP code on login
@@ -117,6 +118,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
 
     protected $attributes = [
         'repair_warranty_duration_unit' => 'days',
+        'attendance_photo_required' => true,
     ];
 
     /**
@@ -164,6 +166,7 @@ class ShopOwner extends Authenticatable implements MustVerifyEmail
         'shop_longitude' => 'decimal:8',
         'shop_geofence_radius' => 'integer',
         'attendance_geofence_enabled' => 'boolean',
+        'attendance_photo_required' => 'boolean',
         'established_year' => 'integer',
         'registration_terms_accepted_at' => 'datetime',
         'repair_warranty_days' => 'integer',

@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -102,6 +102,7 @@ beforeEach(() => {
       repair_payment_policy: "deposit_50",
       repair_workload_limit: 20,
       order_refund_deadline_days: 7,
+      attendance_photo_required: true,
       totp_enabled: false,
       has_paymongo_key: false,
       attendance_geofence_enabled: false,
@@ -148,5 +149,19 @@ describe("approval workflow settings", () => {
         "Changes apply to newly submitted requests. In-progress approvals keep their current workflow.",
       )).toBeInTheDocument();
     });
+  });
+
+  it("saves the clock-in photo requirement toggle", async () => {
+    render(<ShopSetting />);
+
+    const toggle = await screen.findByRole("button", { name: "Require employee clock-in photo" });
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(toggle);
+
+    expect(mocks.routerPut).toHaveBeenCalledWith(
+      "/shop-owner/settings",
+      { attendance_photo_required: false },
+      expect.objectContaining({ preserveScroll: true }),
+    );
   });
 });
