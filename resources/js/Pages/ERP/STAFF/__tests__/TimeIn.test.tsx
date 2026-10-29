@@ -391,12 +391,12 @@ it('requires a camera photo and submits it with the clock-in request', async () 
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Camera' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Take Photo' })).toBeInTheDocument());
-    expect(screen.getByLabelText('Live camera preview')).not.toHaveClass('-scale-x-100');
+    expect(screen.getByLabelText('Live camera preview')).toHaveClass('-scale-x-100');
     fireEvent.click(screen.getByRole('button', { name: 'Take Photo' }));
     await waitFor(() => expect(screen.getByRole('img', { name: 'Clock-in photo preview' })).toBeInTheDocument());
     expect(track.stop).toHaveBeenCalledOnce();
-    expect(context.translate).not.toHaveBeenCalled();
-    expect(context.scale).not.toHaveBeenCalled();
+    expect(context.translate).toHaveBeenCalledWith(640, 0);
+    expect(context.scale).toHaveBeenCalledWith(-1, 1);
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Photo required to clock in' })).getByRole('button', { name: 'Clock In' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
