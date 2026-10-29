@@ -70,6 +70,7 @@ interface ShopHours {
     day?: string;
     geofence_enabled?: boolean;
     geofence_radius?: number;
+    attendance_photo_required?: boolean;
 }
 
 const normalizeAttendanceStatus = (status?: string | null, hasCheckOut?: boolean) => {
@@ -751,11 +752,15 @@ export default function TimeIn() {
     const handleClockIn = () => {
         setClockInPhoto(null);
         setClockInCameraError('');
+        if (shopHours?.attendance_photo_required === false) {
+            void submitClockIn();
+            return;
+        }
         setShowClockInCamera(true);
     };
 
     const submitClockIn = async () => {
-        if (!clockInPhoto) {
+        if (shopHours?.attendance_photo_required !== false && !clockInPhoto) {
             setClockInCameraError('A check-in photo is required. Open the camera and take a photo to continue.');
             return;
         }
@@ -830,7 +835,9 @@ export default function TimeIn() {
         setIsLoading(true);
         try {
             const formData = new FormData();
-            formData.append('photo', clockInPhoto);
+            if (shopHours?.attendance_photo_required !== false && clockInPhoto) {
+                formData.append('photo', clockInPhoto);
+            }
             if (locationPayload.latitude !== undefined && locationPayload.longitude !== undefined) {
                 formData.append('latitude', String(locationPayload.latitude));
                 formData.append('longitude', String(locationPayload.longitude));

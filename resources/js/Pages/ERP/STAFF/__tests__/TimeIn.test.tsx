@@ -11,13 +11,13 @@ const overrideDescriptor = (target: object, property: PropertyKey, descriptor: P
     Object.defineProperty(target, property, descriptor);
 };
 
-const setupAttendanceApi = (checkInSucceeds = true) => {
+const setupAttendanceApi = (checkInSucceeds = true, attendancePhotoRequired = true) => {
     fetchMock.mockImplementation(async (url: string) => {
         if (url === '/api/staff/attendance/status') {
             return { ok: true, json: async () => ({}) };
         }
         if (url === '/api/staff/shop-hours/today') {
-            return { ok: true, json: async () => ({ open: '00:00', close: '23:59', is_open: true }) };
+            return { ok: true, json: async () => ({ open: '00:00', close: '23:59', is_open: true, attendance_photo_required: attendancePhotoRequired }) };
         }
         if (url === '/api/staff/attendance/check-in') {
             if (!checkInSucceeds) {
@@ -36,10 +36,11 @@ const setupCamera = () => {
     const track = { stop: vi.fn() };
     const stream = { getTracks: () => [track] } as unknown as MediaStream;
     const getUserMedia = vi.fn().mockResolvedValue(stream);
+    const context = { drawImage: vi.fn(), translate: vi.fn(), scale: vi.fn() };
     overrideDescriptor(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia } });
     overrideDescriptor(HTMLCanvasElement.prototype, 'getContext', {
         configurable: true,
-        value: () => ({ drawImage: vi.fn() }),
+        value: () => context,
     });
     overrideDescriptor(HTMLCanvasElement.prototype, 'toBlob', {
         configurable: true,
@@ -56,7 +57,7 @@ const setupCamera = () => {
     overrideDescriptor(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:clock-in-photo') });
     overrideDescriptor(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 
-    return { getUserMedia, track };
+    return { getUserMedia, track, context };
 };
 
 vi.mock('@inertiajs/react', () => ({
@@ -381,7 +382,7 @@ it('lets an employee close the first required-photo prompt without sending a che
 
 it('requires a camera photo and submits it with the clock-in request', async () => {
     setupAttendanceApi();
-    const { getUserMedia, track } = setupCamera();
+    const { getUserMedia, track, context } = setupCamera();
     render(<TimeIn />);
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
@@ -390,9 +391,12 @@ it('requires a camera photo and submits it with the clock-in request', async () 
 
     fireEvent.click(screen.getByRole('button', { name: 'Open Camera' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Take Photo' })).toBeInTheDocument());
+    expect(screen.getByLabelText('Live camera preview')).not.toHaveClass('-scale-x-100');
     fireEvent.click(screen.getByRole('button', { name: 'Take Photo' }));
     await waitFor(() => expect(screen.getByRole('img', { name: 'Clock-in photo preview' })).toBeInTheDocument());
     expect(track.stop).toHaveBeenCalledOnce();
+    expect(context.translate).not.toHaveBeenCalled();
+    expect(context.scale).not.toHaveBeenCalled();
     fireEvent.click(within(screen.getByRole('dialog', { name: 'Photo required to clock in' })).getByRole('button', { name: 'Clock In' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
@@ -404,6 +408,25 @@ it('requires a camera photo and submits it with the clock-in request', async () 
     const formData = request?.[1]?.body as FormData;
     expect(formData.get('photo')).toBeInstanceOf(File);
     expect(formData.has('dismiss_camera_prompt')).toBe(false);
+    expect(screen.queryByRole('dialog', { name: 'Photo required to clock in' })).not.toBeInTheDocument();
+});
+
+it('checks in without opening the camera when the shop disables clock-in photos', async () => {
+    setupAttendanceApi(true, false);
+    const { getUserMedia } = setupCamera();
+    render(<TimeIn />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    fireEvent.click(screen.getByRole('button', { name: /clock in/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+        '/api/staff/attendance/check-in',
+        expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+    ));
+
+    const request = fetchMock.mock.calls.find(([url]) => url === '/api/staff/attendance/check-in');
+    expect((request?.[1]?.body as FormData).has('photo')).toBe(false);
+    expect(getUserMedia).not.toHaveBeenCalled();
     expect(screen.queryByRole('dialog', { name: 'Photo required to clock in' })).not.toBeInTheDocument();
 });
 

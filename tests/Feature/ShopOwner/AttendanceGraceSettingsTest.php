@@ -61,4 +61,29 @@ class AttendanceGraceSettingsTest extends TestCase
             ]);
         }
     }
+
+    public function test_attendance_photo_requirement_defaults_to_enabled_and_can_be_toggled(): void
+    {
+        $owner = ShopOwner::factory()->approved()->create();
+
+        $this->actingAs($owner, 'shop_owner')
+            ->get('/shop-owner/settings')
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('ShopOwner/Settings/shopSetting')
+                ->where('shop_settings.attendance_photo_required', true));
+
+        foreach ([false, true] as $required) {
+            $this->actingAs($owner, 'shop_owner')
+                ->putJson('/shop-owner/settings', [
+                    'attendance_photo_required' => $required,
+                ])
+                ->assertRedirect();
+
+            $this->assertDatabaseHas('shop_owners', [
+                'id' => $owner->id,
+                'attendance_photo_required' => (int) $required,
+            ]);
+        }
+    }
 }

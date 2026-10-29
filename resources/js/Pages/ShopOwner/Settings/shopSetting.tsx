@@ -61,6 +61,7 @@ type ShopSettingsPayload = {
 	repair_warranty_duration_unit: 'days' | 'weeks' | 'months';
 	order_refund_deadline_days: number;
 	late_grace_period_minutes: number;
+	attendance_photo_required: boolean;
 	cod_enabled: boolean;
 	cod_order_threshold: number;
 	cod_can_enable: boolean;
@@ -154,6 +155,7 @@ const ToggleSwitch: React.FC<{
 			onClick={() => onChange(!enabled)}
 			disabled={disabled}
 			aria-label={ariaLabel}
+			aria-pressed={enabled}
 			title={ariaLabel}
 			className={`relative inline-flex h-6 w-11 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:ring-offset-2 dark:focus:ring-gray-300 ${
 				enabled ? 'bg-gray-900 dark:bg-white' : 'bg-gray-300 dark:bg-gray-600'
@@ -437,6 +439,10 @@ const ShopSetting: React.FC = () => {
 	const [lateGracePeriodInputValue, setLateGracePeriodInputValue] = useState<string>(String(shop_settings.late_grace_period_minutes ?? 0));
 	const [lateGracePeriodInputError, setLateGracePeriodInputError] = useState<string | null>(null);
 	const [lateGracePeriodSaveSuccess, setLateGracePeriodSaveSuccess] = useState(false);
+	const [attendancePhotoRequired, setAttendancePhotoRequired] = useState<boolean>(shop_settings.attendance_photo_required ?? true);
+	const [savingAttendancePhotoRequired, setSavingAttendancePhotoRequired] = useState(false);
+	const [attendancePhotoRequiredError, setAttendancePhotoRequiredError] = useState<string | null>(null);
+	const [attendancePhotoRequiredSaveSuccess, setAttendancePhotoRequiredSaveSuccess] = useState(false);
 	const [codEnabled, setCodEnabled] = useState<boolean>(Boolean(shop_settings.cod_enabled ?? false));
 	const codCanEnable = Boolean(shop_settings.cod_can_enable ?? false);
 	const [codThresholdInputValue, setCodThresholdInputValue] = useState<string>(String(shop_settings.cod_order_threshold ?? 5000));
@@ -1391,6 +1397,27 @@ const ShopSetting: React.FC = () => {
 					pageValidationErrors.late_grace_period_minutes || 'Failed to save the grace period. Please try again.',
 				);
 			},
+		});
+	};
+
+	const handleToggleAttendancePhotoRequired = (enabled: boolean) => {
+		setSavingAttendancePhotoRequired(true);
+		setAttendancePhotoRequiredError(null);
+		setAttendancePhotoRequiredSaveSuccess(false);
+		router.put('/shop-owner/settings', { attendance_photo_required: enabled }, {
+			preserveScroll: true,
+			onSuccess: () => {
+				setAttendancePhotoRequired(enabled);
+				setAttendancePhotoRequiredSaveSuccess(true);
+				window.setTimeout(() => setAttendancePhotoRequiredSaveSuccess(false), 2200);
+			},
+			onError: (pageErrors) => {
+				const pageValidationErrors = pageErrors as Record<string, string | undefined>;
+				setAttendancePhotoRequiredError(
+					pageValidationErrors.attendance_photo_required || 'Failed to save the clock-in photo requirement. Please try again.',
+				);
+			},
+			onFinish: () => setSavingAttendancePhotoRequired(false),
 		});
 	};
 
@@ -2354,6 +2381,33 @@ const ShopSetting: React.FC = () => {
 							<p className="mt-3 text-xs text-gray-500">
 								Current grace period: <span className="font-semibold text-gray-700">{lateGracePeriodInputValue}</span> minute(s).
 							</p>
+						</div>
+					</div>
+
+					<div className="rounded-2xl border border-gray-200 bg-white shadow-sm lg:col-span-12 lg:order-3 xl:order-7 xl:shadow-none">
+						<div className="border-b border-gray-200 p-6">
+							<h2 className="text-xl font-semibold text-gray-900">Clock-in Photo Requirement</h2>
+							<p className="mt-1 text-sm text-gray-600">Choose whether employees must take a camera photo when clocking in.</p>
+						</div>
+						<div className="p-6">
+							<div className="flex items-center justify-between gap-4">
+								<div>
+									<p className="text-sm font-medium text-gray-900">Require employee clock-in photo</p>
+									<p className="mt-1 text-xs text-gray-500">When off, clock-ins are recorded without a photo.</p>
+								</div>
+								<ToggleSwitch
+									enabled={attendancePhotoRequired}
+									onChange={handleToggleAttendancePhotoRequired}
+									disabled={savingAttendancePhotoRequired}
+									ariaLabel="Require employee clock-in photo"
+								/>
+							</div>
+							{attendancePhotoRequiredError && <p role="alert" className="mt-3 text-xs text-red-600">{attendancePhotoRequiredError}</p>}
+							{attendancePhotoRequiredSaveSuccess && (
+								<p className="mt-3 flex items-center gap-1 text-xs font-medium text-green-700">
+									<Check size={13} /> Clock-in photo requirement saved.
+								</p>
+							)}
 						</div>
 					</div>
 
