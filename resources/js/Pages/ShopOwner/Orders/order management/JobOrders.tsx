@@ -2313,7 +2313,7 @@ export default function JobOrdersPage() {
               </div>
 
               <div className="px-6 py-4 overflow-y-auto flex-1 space-y-4">
-                <RetailWarrantyPanel warranty={viewOrder.product_warranty} />
+                <RetailWarrantyPanel warranty={returnPickupOrder.product_warranty} />
                 <div className="rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-4">
                   <p className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-3">Order Context</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
