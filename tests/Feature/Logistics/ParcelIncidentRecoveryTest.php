@@ -97,6 +97,63 @@ class ParcelIncidentRecoveryTest extends TestCase
         $this->assertSame(9, $product->fresh()->stock_quantity);
     }
 
+    public static function staffReturnReviews(): array
+    {
+        return ['allocated' => ['resellable', 1, false, 8, 'under_review', true], 'resellable' => ['resellable', 1, false, 9, 'resolved'], 'damaged' => ['damaged', 1, false, 8, 'resolved'],
+            'partial' => ['missing', 0, false, 8, 'under_review'], 'unsafe' => ['unsafe', 1, false, 8, 'under_review'],
+            'paid return' => ['resellable', 1, true, 9, 'resolved']];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('staffReturnReviews')]
+    public function test_staff_uses_the_normal_return_review_to_receive_inspect_and_handle_rider_returns_once(string $condition, int $quantity, bool $paid, int $stock, string $status, bool $allocated = false): void
+    {
+        [$shop, $order, $leg, $incident, $dispatcher] = $this->fixture();
+        if ($paid) $order->update(['payment_method' => 'paymongo_card', 'payment_status' => 'paid', 'paymongo_payment_id' => 'pay_local_staff_return']);
+        $product = \App\Models\Product::create(['shop_owner_id' => $shop->id, 'stock_quantity' => 8,
+            'name' => 'Staff reviewed goods', 'slug' => 'staff-reviewed-goods', 'price' => 100, 'is_active' => true]);
+        $item = \App\Models\OrderItem::create(['order_id' => $order->id, 'product_id' => $product->id,
+            'product_name' => $product->name, 'price' => 100, 'quantity' => 1, 'subtotal' => 100]);
+        app(DeliveryIncidentService::class)->resolve($incident, $shop, 'return_required', 'Return to the shop', [], $dispatcher);
+        $return = $leg->returnLeg()->firstOrFail();
+        \App\Models\Logistics\HandoffProof::factory()->create(['shipment_leg_id' => $return->id, 'handoff_type' => 'receive', 'review_status' => 'rider_confirmed']);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $staff->givePermissionTo(Permission::findOrCreate('access-staff-job-orders', 'user'));
+        $this->clockInEmployee($staff);
+        $payload = ['incident_id' => $incident->id, 'request_key' => (string) Str::uuid(), 'expected_revision' => 1,
+            'return_notes' => 'Actual item received and reviewed by Staff',
+            'photo' => \Illuminate\Http\UploadedFile::fake()->image('staff-return.jpg'),
+            'line_dispositions' => [['order_item_id' => $item->id, 'approved_qty' => $quantity, 'inspection_disposition' => $condition]]];
+        if ($allocated) {
+            $active = Shipment::factory()->create(['shop_owner_id' => $shop->id, 'source_type' => 'order', 'source_id' => $order->id, 'purpose' => 'retail_delivery', 'source_attempt' => 2]);
+            ShipmentLeg::factory()->create(['shipment_id' => $active->id, 'status' => 'pending']);
+        }
+        $url = "/api/staff/orders/{$order->id}/confirm-return-received";
+        $other = Order::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->actingAs($staff, 'user')->post("/api/staff/orders/{$other->id}/confirm-return-received", $payload, ['Accept' => 'application/json'])->assertNotFound();
+        $this->post($url, [...$payload, 'expected_revision' => 0], ['Accept' => 'application/json'])->assertUnprocessable();
+        $this->assertSame('rider', $return->fresh()->custody_state);
+        $this->post($url, $payload, ['Accept' => 'application/json'])->assertOk();
+        $this->assertSame($status, $incident->fresh()->status);
+        $this->assertSame($staff->id, data_get($incident->fresh()->recovery_context, 'receipt.actor_id'));
+        $this->assertSame($stock, $product->fresh()->stock_quantity);
+        $this->assertSame($paid ? 1 : 0, $order->refunds()->count(), 'Only an eligible paid return creates the normal refund request.');
+        if ($paid) {
+            $refund = $order->refunds()->firstOrFail();
+            $this->assertSame('received', $refund->return_status);
+            $this->assertNotSame('succeeded', $refund->status);
+            $this->assertNotSame('approved', $refund->finance_status);
+        }
+        $this->post($url, $payload, ['Accept' => 'application/json'])->assertOk();
+        $this->assertSame($stock, $product->fresh()->stock_quantity);
+        $this->post($url, [...$payload, 'line_dispositions' => [['order_item_id' => $item->id, 'approved_qty' => 1, 'inspection_disposition' => $condition === 'damaged' ? 'resellable' : 'damaged']]], ['Accept' => 'application/json'])->assertUnprocessable();
+        if ($status === 'resolved') {
+            $response = $this->getJson("/api/staff/orders/{$order->id}")->assertOk();
+            if ($paid) $response->assertJsonPath('parcel_returns.0.staff_review_required', false);
+            else $response->assertJsonCount(0, 'parcel_returns');
+        }
+        else $this->assertSame('escalate', data_get($incident->fresh()->recovery_context, 'disposition.action'));
+    }
+
     public function test_return_already_at_shop_does_not_invent_another_rider_trip_or_receipt(): void
     {
         [$shop, , $leg, $incident, $dispatcher] = $this->fixture();
@@ -220,7 +277,10 @@ class ParcelIncidentRecoveryTest extends TestCase
         ])->assertForbidden();
     }
 
-    public function test_staff_shop_transfer_receipt_does_not_need_dispatcher_transfer_creation(): void
+    public static function viaShopModes(): array { return ['enabled' => [false], 'closing while disabled' => [true], 'Rider temporarily unavailable' => [false, true]]; }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('viaShopModes')]
+    public function test_staff_shop_transfer_receipt_does_not_need_dispatcher_transfer_creation(bool $disabled, bool $unavailable = false): void
     {
         [$shop, , $leg, $incident, $dispatcher] = $this->fixture();
         \App\Models\Logistics\LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], ['operating_days' => range(1, 7)]);
@@ -250,6 +310,34 @@ class ParcelIncidentRecoveryTest extends TestCase
         } catch (\Illuminate\Validation\ValidationException $exception) {
             $this->assertArrayHasKey('inspection', $exception->errors());
         }
+        $product = \App\Models\Product::create(['shop_owner_id' => $shop->id, 'stock_quantity' => 8, 'name' => 'Retry goods', 'slug' => 'retry-goods', 'price' => 100, 'is_active' => true]);
+        $item = \App\Models\OrderItem::create(['order_id' => $leg->shipment->source_id, 'product_id' => $product->id, 'product_name' => $product->name, 'price' => 100, 'quantity' => 1, 'subtotal' => 100]);
+        if ($disabled) \App\Models\ShopOwnerModule::where('shop_owner_id', $shop->id)->where('module_key', 'logistics')->update(['enabled' => false]);
+        $availableStatus = $profile->availability_status;
+        if ($unavailable) $profile->update(['availability_status' => 'inactive']);
+        $payload = [
+            'incident_id' => $incident->id, 'expected_revision' => $incident->fresh()->revision, 'request_key' => (string) Str::uuid(),
+            'return_notes' => 'Actual goods safely received and reviewed for the authorized Rider', 'photo' => \Illuminate\Http\UploadedFile::fake()->image('retry-receipt.jpg'),
+            'line_dispositions' => [['order_item_id' => $item->id, 'approved_qty' => 1, 'inspection_disposition' => 'resellable']],
+        ];
+        $url = "/api/staff/orders/{$item->order_id}/confirm-return-received";
+        $this->actingAs($staff, 'user')->post($url, $payload, ['Accept' => 'application/json'])->assertOk();
+        if ($disabled || $unavailable) {
+            $this->assertSame('shop', $leg->fresh()->custody_state);
+            $this->assertSame(0, $leg->custodyTransfers()->where('to_type', 'rider')->count());
+            $this->assertTrue(app(\App\Services\Logistics\ParcelIncidentRecoveryService::class)->project($incident->fresh(), $staff)['staff_review_required']);
+            \App\Models\ShopOwnerModule::where('shop_owner_id', $shop->id)->where('module_key', 'logistics')->update(['enabled' => true]);
+            if ($unavailable) $profile->update(['availability_status' => $availableStatus]);
+            $this->post($url, [...$payload, 'request_key' => (string) Str::uuid(), 'expected_revision' => $incident->fresh()->revision], ['Accept' => 'application/json'])->assertOk();
+        }
+        $outbound = $leg->custodyTransfers()->where('to_type', 'rider')->where('status', 'requested')->first();
+        $this->assertNotNull($outbound, 'Staff review must stage the already authorized Rider handoff without another Dispatcher action.');
+        $this->assertSame($staff->id, $outbound->requested_by_user_id, 'Retain the real Staff identity; do not impersonate Dispatcher.');
+        $this->assertSame(8, $product->fresh()->stock_quantity, 'Retry goods stay allocated and are not restocked.');
+        $custody->release($outbound, $staff, 'logistics-proof/receipt.jpg');
+        $custody->receive($outbound->fresh(), $holder, 'logistics-proof/release.jpg');
+        $this->clockInEmployee($holder);
+        $this->assertSame('in_transit', app(ShipmentLegService::class)->markInTransit($leg->fresh(), $profile)->status->value);
         $this->expectException(\Illuminate\Auth\Access\AuthorizationException::class);
         $custody->request($leg->fresh(), $staff, 'rider', $profile->id, (string) Str::uuid());
     }
@@ -301,11 +389,7 @@ class ParcelIncidentRecoveryTest extends TestCase
         $rider = RiderProfile::factory()->create(['shop_owner_id' => $shop->id]);
         \App\Models\Logistics\LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], ['operating_days' => range(1, 7)]);
         $before = $order->fresh()->only(['total_amount', 'shipping_fee', 'payment_status']);
-        $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/parcel-recovery/{$incident->id}/disposition", [
-            'request_key' => (string) Str::uuid(), 'expected_revision' => 3, 'notes' => 'Vehicle repaired and inspected original goods safe',
-            'action' => 'verify_readiness', 'findings' => ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true],
-        ])->assertOk();
-        $data = ['request_key' => (string) Str::uuid(), 'expected_revision' => 4, 'notes' => 'Authorized original-parcel redelivery',
+        $data = ['request_key' => (string) Str::uuid(), 'expected_revision' => 3, 'notes' => 'Vehicle repaired; original goods inspected and customer delivery authorized',
             'action' => 'redeliver_original', 'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning', 'rider_profile_id' => $rider->id];
         $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/parcel-recovery/{$incident->id}/disposition", $data)->assertOk();
         $this->postJson("/api/logistics/parcel-recovery/{$incident->id}/disposition", $data)->assertOk();
@@ -332,7 +416,20 @@ class ParcelIncidentRecoveryTest extends TestCase
         $this->assertSame('rider', $projection['custody']);
         $this->assertTrue($projection['received']);
         $this->assertFalse($projection['can_inspect']);
-        $this->postJson("/api/logistics/parcel-recovery/{$incident->id}/inspection", ['request_key' => (string) Str::uuid(),
+        $order->update(['payment_method' => 'paymongo_card', 'payment_status' => 'paid']);
+        $recipient->givePermissionTo(Permission::findOrCreate('record-logistics-proof', 'user'));
+        $dispatcher->givePermissionTo(Permission::findOrCreate('approve-proof-of-delivery', 'user'));
+        $this->clockInEmployee($recipient);
+        app(ShipmentLegService::class)->markPickedUp($newLeg->fresh(), $rider);
+        app(ShipmentLegService::class)->markInTransit($newLeg->fresh(), $rider);
+        $this->actingAs($recipient, 'user')->postJson("/api/logistics/legs/{$newLeg->id}/arrivals", ['arrival_type' => 'dropoff', 'exception_reason' => 'pin_incorrect'])->assertCreated();
+        $deliveryProof = $this->post("/api/logistics/legs/{$newLeg->id}/proof", ['handoff_type' => 'delivery', 'proof_type' => 'photo',
+            'idempotency_key' => (string) Str::uuid(), 'proof_file' => \Illuminate\Http\UploadedFile::fake()->image('delivered.jpg')], ['Accept' => 'application/json'])->assertCreated()->json('proof.id');
+        $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/proofs/{$deliveryProof}/approve")->assertOk();
+        $this->assertSame('delivered', $newLeg->fresh()->status->value);
+        $this->assertSame('resolved', $incident->fresh()->status, 'Approved delivery completes the incident without manual Dispatcher closure.');
+        $this->assertSame(8, $product->fresh()->stock_quantity);
+        $this->actingAs($staff, 'user')->postJson("/api/logistics/parcel-recovery/{$incident->id}/inspection", ['request_key' => (string) Str::uuid(),
             'expected_revision' => $incident->fresh()->revision, 'notes' => 'Cannot inspect goods held by Rider',
             'items' => [['reference' => 'order-item:'.$item->id, 'quantity' => 1, 'condition' => 'safe']],
         ])->assertUnprocessable();

@@ -57,6 +57,8 @@ if (($argv[1] ?? '') === '--worker') {
             if ($payload['operation'] === 'loss_recovery' && $worker === 2) {
                 app(DeliveryIncidentService::class)->reportRecovery($incident, $actor, $facts);
             } else app(DeliveryIncidentService::class)->lossAction($incident, $actor, 'approve', $facts);
+        } elseif ($payload['operation'] === 'staff_review') {
+            app(ParcelIncidentRecoveryService::class)->reviewStaffReturn($incident, $actor, [...$payload['facts'], 'request_key' => $payload['keys'][$worker - 1]]);
         } elseif ($payload['operation'] === 'refund_stock' && $worker === 2) {
             app(\App\Services\RefundInventoryDispositionService::class)->applyOrderLine(\App\Models\OrderRefundItem::findOrFail($payload['facts']['refund_line_id']));
         } elseif (in_array($payload['operation'], ['restock', 'refund_stock'], true)) {
@@ -112,7 +114,7 @@ try {
     $migration->up();
     parcelCheck(! Schema::hasColumn('shipment_custody_transfers', 'released_by_shop_owner_id'), 'Deferred Owner field exists.');
     $results = ['engine' => DB::selectOne('SELECT VERSION() AS version')->version, 'schema' => $database, 'migration_empty_down_up' => true];
-    foreach (['verdict', 'receipt', 'inspection', 'redelivery', 'activation', 'receipt_module', 'loss_approval', 'loss_recovery', 'restock', 'refund_stock', 'provider'] as $operation) {
+    foreach (['verdict', 'receipt', 'inspection', 'redelivery', 'activation', 'receipt_module', 'loss_approval', 'loss_recovery', 'restock', 'refund_stock', 'provider', 'staff_review'] as $operation) {
         $fixture = recoveryFixture('retail_delivery', false);
         $leg = ShipmentLeg::with('shipment')->findOrFail($fixture['leg_id']);
         $shop = $leg->shipment->shopOwner;
@@ -179,18 +181,24 @@ try {
             $proof = HandoffProof::factory()->create(['shipment_leg_id' => $return->id, 'handoff_type' => 'receive', 'review_status' => 'rider_confirmed',
                 'confirmed_by_type' => User::class, 'confirmed_by_id' => $fixture['actors']['a']['id']]);
             $facts = ['expected_revision' => 1, 'proof_id' => $proof->id, 'evidence_path' => 'incident-evidence/receipt.jpg', 'notes' => 'Actual synthetic shop receipt'];
-            if (! in_array($operation, ['receipt', 'receipt_module'], true)) app(ParcelIncidentRecoveryService::class)->receive($incident->fresh(), $dispatcher, [...$facts, 'request_key' => (string) Str::uuid()]);
+            if (! in_array($operation, ['receipt', 'receipt_module', 'staff_review'], true)) app(ParcelIncidentRecoveryService::class)->receive($incident->fresh(), $dispatcher, [...$facts, 'request_key' => (string) Str::uuid()]);
             if (in_array($operation, ['inspection', 'redelivery'], true)) {
                 $product = \App\Models\Product::create(['shop_owner_id' => $shop->id, 'name' => 'Original parcel', 'slug' => 'race-'.Str::uuid(), 'price' => 100, 'stock_quantity' => 8, 'is_active' => true]);
                 $item = \App\Models\OrderItem::create(['order_id' => $leg->shipment->source_id, 'product_id' => $product->id,
                     'product_name' => $product->name, 'price' => 100, 'quantity' => 1, 'subtotal' => 100]);
                 $facts = ['expected_revision' => 2, 'notes' => 'Verified exact original parcel', 'items' => [['reference' => 'order-item:'.$item->id, 'quantity' => 1, 'condition' => 'safe']]];
             }
+            if ($operation === 'staff_review') {
+                $dispatcher->givePermissionTo(\Spatie\Permission\Models\Permission::findOrCreate('access-staff-job-orders', 'user'));
+                $product = \App\Models\Product::create(['shop_owner_id' => $shop->id, 'name' => 'Staff reviewed parcel', 'slug' => 'staff-race-'.Str::uuid(), 'price' => 100, 'stock_quantity' => 8, 'is_active' => true]);
+                $item = \App\Models\OrderItem::create(['order_id' => $leg->shipment->source_id, 'product_id' => $product->id,
+                    'product_name' => $product->name, 'price' => 100, 'quantity' => 1, 'subtotal' => 100]);
+                $facts['line_dispositions'] = [['order_item_id' => $item->id, 'approved_qty' => 1, 'inspection_disposition' => 'resellable']];
+                unset($facts['proof_id']);
+            }
             if ($operation === 'redelivery') {
                 app(ParcelIncidentRecoveryService::class)->inspect($incident->fresh(), $dispatcher, [...$facts, 'request_key' => (string) Str::uuid()]);
-                app(ParcelIncidentRecoveryService::class)->disposition($incident->fresh(), $dispatcher, ['request_key' => (string) Str::uuid(), 'expected_revision' => 3,
-                    'notes' => 'Vehicle restored and customer arrangement verified', 'action' => 'verify_readiness', 'findings' => ['mitigation_plan' => 'Vehicle repaired and route available', 'obstacle_resolved' => true]]);
-                $facts = ['expected_revision' => 4, 'notes' => 'Authorized original parcel movement', 'action' => 'redeliver_original',
+                $facts = ['expected_revision' => 3, 'notes' => 'Vehicle repaired; authorize inspected original parcel movement', 'action' => 'redeliver_original',
                     'delivery_date' => now(config('app.shop_timezone'))->toDateString(), 'delivery_window' => 'afternoon', 'rider_profile_id' => $fixture['actors']['b']['rider_id']];
             }
         }
@@ -211,6 +219,7 @@ try {
         $outcomes = array_map(fn ($worker) => json_decode(file_get_contents($barrier.'-result-'.$worker.'.json'), true, 512, JSON_THROW_ON_ERROR), [1, 2]);
         parcelCheck($outcomes[0]['connection'] !== $outcomes[1]['connection'], 'Workers shared a connection.');
         parcelCheck(count(array_filter($outcomes, fn ($row) => $row['ok'])) === (in_array($operation, ['inspection', 'receipt_module', 'provider', 'refund_stock'], true) ? 2 : 1), 'Unexpected winner count: '.json_encode($outcomes));
+        if ($operation === 'staff_review') parcelCheck($product->fresh()->stock_quantity === 9 && $incident->fresh()->status === 'resolved' && (int) data_get($incident->fresh()->recovery_context, 'receipt.actor_id') === (int) $dispatcher->id, 'Unified Staff review duplicated stock or replaced the receiver.');
         if (in_array($operation, ['restock', 'refund_stock'], true)) parcelCheck($product->fresh()->stock_quantity === 9 && $incident->fresh()->status === 'resolved', 'Restock was duplicated or recovery did not complete.');
         if ($operation === 'loss_approval') parcelCheck($incident->fresh()->status === 'resolved' && $leg->fresh()->custody_state === 'lost', 'Loss did not finalize exactly once.');
         if ($operation === 'loss_recovery') parcelCheck((int) ($incident->fresh()->resolution === 'loss_confirmed')

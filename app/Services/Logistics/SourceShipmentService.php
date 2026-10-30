@@ -151,7 +151,9 @@ class SourceShipmentService
                 throw ValidationException::withMessages(['disposition' => 'Resolve conflicting refund, payment or courier work before redelivery.']);
             }
             $inspection = data_get($incident->recovery_context, 'inspection', []);
-            $eligibility = app(DeliveryIncidentService::class)->eligibility($incident, data_get($incident->recovery_context, 'findings', []))['retry'];
+            $findings = [...data_get($incident->recovery_context, 'findings', []), ...($data['findings'] ?? []),
+                'mitigation_plan' => $data['findings']['mitigation_plan'] ?? $data['notes']];
+            $eligibility = app(DeliveryIncidentService::class)->eligibility($incident, $findings)['retry'];
             if (! $eligibility['allowed']) throw ValidationException::withMessages(['findings' => $eligibility['reason']]);
             $items = collect($inspection['items'] ?? []);
             if ($order->items->isEmpty() || ($inspection['quarantined'] ?? true) || $items->count() !== $order->items->count()
@@ -159,6 +161,9 @@ class SourceShipmentService
                     && (int) $row['quantity'] === (int) $item->quantity && $row['condition'] === 'safe'))) {
                 throw ValidationException::withMessages(['inspection' => 'Verify every original item and exact quantity as safe; discrepancies remain quarantined.']);
             }
+            // This dispatch decision authorizes the inspected revision; no separate readiness approval.
+            $incident->forceFill(['recovery_context' => [...($incident->recovery_context ?? []), 'findings' => $findings,
+                'readiness' => ['inspected_revision' => $inspection['revision'], 'actor_id' => $actor->id, 'ready_at' => now()->toISOString()]]])->save();
             $starts = app(DeliveryStartEligibility::class);
             $starts->validateRecoveryDate($shop, $data['delivery_date'], $data['delivery_window']);
             $appointment = $starts->appointmentChanges($original, $data['delivery_date'], $data['delivery_window'],

@@ -251,6 +251,8 @@ class ErpLogisticsController extends Controller
                             $leg->attempts->each(fn (DeliveryAttempt $attempt) => $this->attachAttemptEvidencePayload($attempt));
                         });
                 }),
+            'returnRecoveries' => ! $ownerMode && ! $riderMode && $user?->can('resolve-logistics-exceptions')
+                ? app(\App\Services\Logistics\ParcelIncidentRecoveryService::class)->pendingFor($user) : [],
             'filters' => [
                 'status' => $status,
                 'purpose' => $purpose,

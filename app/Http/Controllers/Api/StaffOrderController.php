@@ -844,10 +844,13 @@ class StaffOrderController extends Controller
     {
         $validated = $request->validate([
             'return_notes' => 'nullable|string|max:1000',
+            'incident_id' => 'nullable|integer|min:1', 'request_key' => 'required_with:incident_id|uuid',
+            'expected_revision' => 'required_with:incident_id|integer|min:0',
+            'photo' => 'nullable|file|image|mimes:jpg,jpeg,png,webp|max:10240',
             'line_dispositions' => 'required|array|min:1',
             'line_dispositions.*.order_item_id' => 'required|integer|min:1',
-            'line_dispositions.*.approved_qty' => 'required|integer|min:1',
-            'line_dispositions.*.inspection_disposition' => 'required|string|in:resellable,damaged',
+            'line_dispositions.*.approved_qty' => $request->filled('incident_id') ? 'required|integer|min:0' : 'required|integer|min:1',
+            'line_dispositions.*.inspection_disposition' => $request->filled('incident_id') ? 'required|string|in:resellable,damaged,missing,unsafe' : 'required|string|in:resellable,damaged',
         ]);
 
         $user = Auth::guard('user')->user();
@@ -869,6 +872,27 @@ class StaffOrderController extends Controller
 
         if (! $order) {
             return response()->json(['error' => 'Order not found'], 404);
+        }
+
+        if (! empty($validated['incident_id'])) {
+            $incident = \App\Models\Logistics\DeliveryIncident::where('shop_owner_id', $shopOwnerId)
+                ->whereHas('leg.shipment', fn ($query) => $query->where('shop_owner_id', $shopOwnerId)->where('source_type', 'order')->where('source_id', $order->id)->where('purpose', 'retail_delivery'))
+                ->findOrFail($validated['incident_id']);
+            $facts = [...$validated, 'notes' => $validated['return_notes'] ?? 'Staff return review'];
+            unset($facts['photo'], $facts['return_notes']);
+            $path = null;
+            if ($file = $request->file('photo')) {
+                $path = $file->store('incident-evidence/recovery-'.$incident->id, 'local');
+                abort_unless(is_string($path) && $path !== '', 500);
+                $facts['evidence_path'] = $path;
+                $facts['evidence_digest'] = hash_file('sha256', $file->getRealPath());
+            }
+            try {
+                $result = app(\App\Services\Logistics\ParcelIncidentRecoveryService::class)->reviewStaffReturn($incident, $user, $facts);
+                return response()->json(['success' => true, 'message' => $result['operational_status'] === 'resolved' ? 'Return review saved.' : 'Return review saved. The recorded exception remains under investigation.', 'recovery' => $result]);
+            } finally {
+                if ($path && ! $incident->leg->events()->where('metadata->evidence_path', $path)->exists()) Storage::disk('local')->delete($path);
+            }
         }
 
         $refund = OrderRefund::query()

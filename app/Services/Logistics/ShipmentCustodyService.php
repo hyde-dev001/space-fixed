@@ -24,12 +24,22 @@ class ShipmentCustodyService
         private LogisticsActorPolicy $policy,
     ) {}
 
-    public function request(ShipmentLeg $leg, User $actor, string $toType, ?int $toRiderId, string $key): ShipmentCustodyTransfer
+    public function request(ShipmentLeg $leg, User $actor, string $toType, ?int $toRiderId, string $key, ?\App\Models\Logistics\DeliveryIncident $authorization = null): ShipmentCustodyTransfer
     {
-        return DB::transaction(function () use ($leg, $actor, $toType, $toRiderId, $key) {
+        return DB::transaction(function () use ($leg, $actor, $toType, $toRiderId, $key, $authorization) {
             $shop = $this->movements->lockShopForLeg($leg);
             $leg = ShipmentLeg::with('shipment')->lockForUpdate()->findOrFail($leg->id);
-            $this->authorizeShopActor($leg, $actor);
+            if ($authorization) {
+                $authorization = \App\Models\Logistics\DeliveryIncident::where('shop_owner_id', $shop->id)->where('shipment_leg_id', $leg->id)
+                    ->where('resolution', 'retry')->where('status', 'under_review')->whereNotNull('decided_at')->whereNotNull('decided_by_user_id')
+                    ->lockForUpdate()->findOrFail($authorization->id);
+                $authorizedAssignment = $leg->assignments()->whereKey(data_get($authorization->recovery_context, 'execution_assignment_id'))
+                    ->where('rider_profile_id', $toRiderId)->whereIn('status', ['assigned', 'accepted'])->lockForUpdate()->first();
+                if (! $actor->can('access-staff-job-orders') || $toType !== 'rider' || ! $authorizedAssignment || $leg->custody_state !== 'shop') {
+                    throw new AuthorizationException('The recorded Dispatcher decision must authorize this exact Rider handoff.');
+                }
+            }
+            $this->authorizeShopActor($leg, $actor, physical: $authorization !== null);
             $this->movements->assertInternalLeg($leg);
             if (! in_array($toType, ['rider', 'shop'], true) || ! Str::isUuid($key)
                 || ($toType === 'shop' && $toRiderId !== null)) {
@@ -83,7 +93,7 @@ class ShipmentCustodyService
                 'from_type' => $leg->custody_state, 'from_rider_profile_id' => $leg->custody_rider_profile_id,
                 'to_type' => $toType, 'to_rider_profile_id' => $toRiderId, 'requested_by_user_id' => $actor->id,
             ]);
-            $this->event($leg, $transfer, $actor, 'custody_transfer_requested');
+            $this->event($leg, $transfer, $actor, 'custody_transfer_requested', $authorization ? ['incident_id' => $authorization->id, 'authorized_by_user_id' => $authorization->decided_by_user_id, 'authorized_revision' => $authorization->revision] : []);
             return $transfer;
         }, 3);
     }
@@ -315,7 +325,7 @@ class ShipmentCustodyService
             || (int) $authorizedInspection !== (int) ($inspection['revision'] ?? 0)) {
             throw ValidationException::withMessages(['inspection' => 'Inspect the goods and obtain current readiness/Dispatcher authorization before outbound handoff.']);
         }
-        if ($incident->type === 'customer_dispute' && ! data_get($incident->recovery_context, 'findings.dispute_resolved')) {
+        if ($incident->type === 'customer_dispute' && ! filled(data_get($incident->recovery_context, 'findings.customer_agreement'))) {
             throw ValidationException::withMessages(['inspection' => 'An unresolved customer dispute prevents outbound release.']);
         }
     }
@@ -326,12 +336,12 @@ class ShipmentCustodyService
         return hash_file('sha256', Storage::disk('local')->path($path)) ?: null;
     }
 
-    private function event(ShipmentLeg $leg, ShipmentCustodyTransfer $transfer, User $actor, string $type): void
+    private function event(ShipmentLeg $leg, ShipmentCustodyTransfer $transfer, User $actor, string $type, array $authorization = []): void
     {
         $this->events->record($leg->shipment, $leg, [
             'event_type' => $type, 'visibility' => 'customer', 'message' => 'Parcel handoff '.str_replace('custody_transfer_', '', $type).'.',
             'created_by_type' => User::class, 'created_by_id' => $actor->id,
-            'metadata' => ['custody_transfer_id' => $transfer->id, 'from_rider_profile_id' => $transfer->from_rider_profile_id, 'rider_profile_id' => $transfer->to_rider_profile_id],
+            'metadata' => [...$authorization, 'custody_transfer_id' => $transfer->id, 'from_rider_profile_id' => $transfer->from_rider_profile_id, 'rider_profile_id' => $transfer->to_rider_profile_id],
         ]);
     }
 }

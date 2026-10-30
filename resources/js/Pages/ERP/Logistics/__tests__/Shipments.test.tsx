@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Swal from 'sweetalert2';
 import Shipments from '../Shipments';
-vi.mock('@/components/logistics/ParcelIncidentRecovery', () => ({ default: ({ dispatcher }: { dispatcher?: boolean }) => dispatcher ? null : <p>Return receipt and disposition</p> }));
+vi.mock('@/components/logistics/ParcelIncidentRecovery', () => ({ default: () => <p>Unnecessary Dispatcher follow-up</p> }));
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(() => Promise.resolve()),
@@ -1513,5 +1513,26 @@ it('does not mount the generic return handling panel for a dispatcher', () => {
   setDispatcherLeg({ ...defaultProps().shipments.data[0].legs[0] });
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
-  expect(screen.queryByText('Return receipt and disposition')).not.toBeInTheDocument();
+  expect(screen.queryByText('Unnecessary Dispatcher follow-up')).not.toBeInTheDocument();
+});
+
+
+it('authorizes a returned parcel through the normal retry form without follow-up or closure controls', async () => {
+ setDispatcherLeg({ ...defaultProps().shipments.data[0].legs[0], status: 'cancelled', incidents: [{ id: 16,
+   type: 'vehicle_problem', status: 'under_review', notes: 'Vehicle problem', decided_at: '2026-10-30', revision: 3 }] });
+ mocks.props.returnRecoveries = [{ incident_id: 16, revision: 3, can_close: true,
+   retry_context: { id: 2, leg_type: 'outbound', status: 'cancelled', custody_state: 'shop', assignments: [] },
+   actions: [{ action: 'redeliver_original', allowed: true }] }];
+ render(<Shipments />);
+ fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
+ expect(screen.queryByText(/Dispatcher follow-up/)).not.toBeInTheDocument();
+ expect(screen.queryByRole('button', { name: 'Verify operational closure' })).not.toBeInTheDocument();
+ expect(screen.queryByRole('button', { name: 'Verify resolved condition and customer arrangement' })).not.toBeInTheDocument();
+ fireEvent.click(screen.getByRole('button', { name: 'Arrange another delivery' }));
+ expect(screen.getByRole('dialog', { name: 'Arrange another visit' })).toBeInTheDocument();
+ fireEvent.change(screen.getByLabelText('Retry rider'), { target: { value: '9' } });
+ fireEvent.change(screen.getByLabelText('Resolution reason'), { target: { value: 'Vehicle repaired and customer arrangement confirmed' } });
+ fireEvent.click(screen.getByRole('button', { name: 'Authorize retry' }));
+ await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/logistics/parcel-recovery/16/disposition', expect.objectContaining({ action: 'redeliver_original', expected_revision: 3 })));
+ expect(mocks.reload).toHaveBeenCalledWith({ only: ['shipments', 'custodyHandoffs', 'returnRecoveries'] });
 });

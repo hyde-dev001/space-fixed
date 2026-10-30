@@ -9,9 +9,9 @@ import RetryResolutionDialog from '@/Pages/ERP/Logistics/components/RetryResolut
 
 type Item = { reference: string; quantity: number; condition: string };
 type Stage = 'receipt' | 'inspection' | 'disposition' | 'close' | 'investigation';
-type Props = { source: 'retail' | 'repair' | 'all'; sourceId?: number; shipmentId?: number; dispatcher?: boolean; riders?: LogisticsRiderOption[]; schedule?: LogisticsSchedule; today?: string };
+type Props = { source: 'retail' | 'repair' | 'all'; sourceId?: number; shipmentId?: number; riders?: LogisticsRiderOption[]; schedule?: LogisticsSchedule; today?: string };
 
-export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, dispatcher = false, riders = [], schedule, today = '' }: Props) {
+export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, riders = [], schedule, today = '' }: Props) {
   const embedded = sourceId !== undefined || shipmentId !== undefined;
   const [rows, setRows] = useState<ParcelRecovery[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,23 +94,6 @@ export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, d
         </>}
       </div>
     </Modal>;
-  const dispatcherActions = (row: ParcelRecovery) => row.actions.filter(option => option.allowed
-    && ['verify_readiness', 'authorize_retry_handoff', 'redeliver_original', 'escalate'].includes(option.action));
-  if (dispatcher) return <>
-    {error && !selected && <p role="alert">{error}<button type="button" className="ml-2 min-h-11 underline" onClick={() => { setError(null); void refresh(); }}>Retry Dispatcher follow-up</button></p>}
-    {rows === null && !error && <p role="status">Loading Dispatcher follow-up...</p>}
-    {rows?.filter(row => dispatcherActions(row).length || row.can_reauthorize || row.can_close || row.can_investigate).map(row =>
-      <details key={row.incident_id} className="my-3 rounded-lg border p-3 text-sm">
-        <summary className="cursor-pointer font-medium">Dispatcher follow-up - Incident #{row.incident_id}</summary>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {dispatcherActions(row).map(option => <button key={option.action} type="button" className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'disposition', option.action)}>{option.label}</button>)}
-          {row.can_reauthorize && <button type="button" className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'disposition', 'reauthorize_retry')}>Reauthorize unstarted recovery</button>}
-          {row.can_close && <button type="button" className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'close')}>Verify operational closure</button>}
-          {row.can_investigate && <button type="button" className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'investigation')}>Record investigation and evidence</button>}
-        </div>
-      </details>)}
-    {form}
-  </>;
   return <section aria-label={embedded ? 'Return receipt and disposition' : 'Returned parcels requiring action'} className="my-4 space-y-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{embedded ? 'Return receipt and disposition' : 'Returned parcels requiring action'}</h2>
       <button type="button" onClick={() => { setError(null); void refresh(); }} className="min-h-11 rounded-lg border px-3">Refresh parcel recovery</button></div>
