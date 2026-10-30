@@ -49,6 +49,22 @@ class RiderMyDeliveriesPageTest extends TestCase
         return ['standalone' => [false], 'batch stop' => [true]];
     }
 
+    public function test_accepted_pickup_with_changed_future_schedule_has_no_date_block(): void
+    {
+        [, $leg] = $this->shipmentWithLeg(legAttributes: ['status' => 'assigned',
+            'scheduled_delivery_date' => now()->addDay()->toDateString(), 'delivery_window' => 'morning',
+            'customer_appointment_date' => now()->addDay()->toDateString(), 'customer_appointment_window' => 'morning']);
+        $assignment = $this->assign($leg, $this->rider, 'accepted', ['accepted_at' => now()]);
+        $leg->events()->create(['shipment_id' => $leg->shipment_id, 'event_type' => 'leg_offer_accepted',
+            'visibility' => 'internal', 'message' => 'Accepted.', 'metadata' => [
+                'delivery_assignment_id' => $assignment->id, 'schedule_facts' => ['delivery_date' => now()->toDateString()],
+            ]]);
+
+        $data = $this->deliveryData();
+        $this->assertSame($leg->id, $data['up_next']['deliveries'][0]['id']);
+        $this->assertNull($data['up_next']['deliveries'][0]['start_blocked_reason']);
+    }
+
     public function test_pending_loss_is_available_in_reporting_rider_history_before_final_cancellation(): void
     {
         [, $leg] = $this->shipmentWithLeg(legAttributes: ['status' => 'in_transit']);

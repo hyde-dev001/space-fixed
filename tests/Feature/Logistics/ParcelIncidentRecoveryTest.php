@@ -506,12 +506,6 @@ class ParcelIncidentRecoveryTest extends TestCase
         $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/incidents/{$incident->id}/resolve", $payload)->assertOk();
         app(\App\Services\Logistics\AssignmentService::class)->respondToOffer($leg->fresh(), $profile, true);
         $this->travelTo(now()->addMinutes(5));
-        try {
-            app(ShipmentLegService::class)->markInTransit($leg->fresh(), $profile);
-            $this->fail('Expired immediate authority started delivery.');
-        } catch (\Illuminate\Validation\ValidationException $exception) {
-            $this->assertStringContainsString('Immediate recovery authorization', $exception->getMessage());
-        }
         $this->postJson("/api/logistics/incidents/{$incident->id}/resolve", [...$payload,
             'request_key' => (string) Str::uuid(), 'expected_revision' => 1, 'expected_assignment_id' => $leg->assignments()->latest('id')->value('id'),
             'effective_start' => now()->toISOString(), 'effective_end' => now()->addMinutes(10)->toISOString(),

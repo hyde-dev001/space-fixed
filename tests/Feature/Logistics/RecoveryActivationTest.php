@@ -18,6 +18,22 @@ class RecoveryActivationTest extends TestCase
 {
     use RefreshDatabase, BatchInterruptionFixture;
 
+    public function test_accepted_replacement_can_start_after_its_original_time_window(): void
+    {
+        $f = $this->interruptionFixture('in_progress', 1, shopLocalTime: true);
+        $this->reportInterruption($f)->assertCreated();
+        $incident = DeliveryIncident::sole();
+        $this->actingAs($f['dispatcher'], 'user')->postJson("/api/logistics/incidents/{$incident->id}/resolve", [
+            'resolution' => 'reassign', 'note' => 'Recovery arranged', 'expected_revision' => 0, 'decision_key' => (string) Str::uuid(),
+            'rider_profile_id' => $f['a']->id, 'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning', 'handoff_route' => 'direct',
+            'immediate_recovery' => true, 'effective_start' => now()->toISOString(), 'effective_end' => now()->addMinutes(5)->toISOString(), 'immediate_reason' => 'Recovery arranged',
+        ])->assertOk();
+        $replacement = $incident->fresh()->recoveryBatch;
+        app(BatchDispatchService::class)->accept($replacement, $f['a']);
+        $this->travelTo(now()->addMinutes(6));
+        $this->assertSame('in_progress', app(BatchDispatchService::class)->start($replacement->fresh(), $f['a'])->status);
+    }
+
     public function test_replacement_batch_requires_its_current_stop_start_and_then_continues_after_expiry(): void
     {
         $f = $this->interruptionFixture('in_progress', 1, shopLocalTime: true);
@@ -68,10 +84,6 @@ class RecoveryActivationTest extends TestCase
         $old = $incident->fresh()->recoveryBatch;
         app(BatchDispatchService::class)->accept($old, $f['a']);
         $this->travelTo(now()->addMinutes(5));
-        try {
-            app(BatchDispatchService::class)->start($old->fresh(), $f['a']);
-            $this->fail('Expired replacement authority started.');
-        } catch (\Illuminate\Validation\ValidationException $exception) { $this->assertArrayHasKey('customer_appointment', $exception->errors()); }
         $this->postJson("/api/logistics/incidents/{$incident->id}/resolve", [...$data, 'expected_revision' => 1,
             'decision_key' => (string) Str::uuid(), 'effective_start' => now()->toISOString(), 'effective_end' => now()->addMinutes(10)->toISOString()])->assertOk();
         $new = $incident->fresh()->recoveryBatch;

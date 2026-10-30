@@ -22,6 +22,29 @@ class DeliveryExecutionTest extends TestCase
 {
     use RefreshDatabase;
 
+    #[\PHPUnit\Framework\Attributes\DataProvider('pickupScheduleDates')]
+    public function test_rider_can_pick_up_and_start_when_schedule_changed_outside_the_appointment(string $date): void
+    {
+        $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-30 18:00', 'Asia/Manila'));
+        [$leg, $rider, , $assignment] = $this->fixture();
+        $leg->events()->create([
+            'shipment_id' => $leg->shipment_id, 'event_type' => 'leg_offer_accepted',
+            'visibility' => 'internal', 'message' => 'Accepted.',
+            'metadata' => ['delivery_assignment_id' => $assignment->id, 'schedule_facts' => ['delivery_date' => '2026-10-30']],
+        ]);
+        $leg->update(['delivery_batch_id' => null, 'stop_sequence' => null, 'scheduled_delivery_date' => $date, 'delivery_window' => 'morning',
+            'customer_appointment_date' => $date, 'customer_appointment_window' => 'morning']);
+        $proof = HandoffProof::factory()->create(['shipment_leg_id' => $leg->id, 'handoff_type' => 'pickup', 'proof_type' => 'photo']);
+
+        $pickedUp = app(ShipmentLegService::class)->confirmPickup($leg->fresh(), $proof, $rider);
+        $this->assertSame('in_transit', app(ShipmentLegService::class)->markInTransit($pickedUp->fresh(), $rider)->status->value);
+    }
+
+    public static function pickupScheduleDates(): array
+    {
+        return ['early' => ['2026-10-31'], 'late' => ['2026-10-29']];
+    }
+
     public function test_rider_confirms_pickup_without_shop_arrival_or_location_logging(): void
     {
         [$leg, $rider] = $this->fixture();
@@ -363,7 +386,7 @@ class DeliveryExecutionTest extends TestCase
         }
     }
 
-    public function test_staged_delivery_retry_respects_customer_appointment_and_assigned_rider(): void
+    public function test_staged_delivery_retry_allows_early_start_but_requires_assigned_rider(): void
     {
         $this->travelTo(\Carbon\CarbonImmutable::parse('2026-10-23 09:00', 'Asia/Manila'));
         [$leg, $rider] = $this->fixture();
@@ -375,15 +398,6 @@ class DeliveryExecutionTest extends TestCase
             'customer_appointment_date' => now(config('app.shop_timezone', 'Asia/Manila'))->addDay()->toDateString(),
             'scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->addDay()->toDateString(),
         ]);
-
-        try {
-            app(ShipmentLegService::class)->markInTransit($leg->fresh(), $rider);
-            $this->fail('A staged retry started before its scheduled date.');
-        } catch (ValidationException $exception) {
-            $this->assertArrayHasKey('customer_appointment', $exception->errors());
-        }
-
-        $leg->update(['customer_appointment_date' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(), 'scheduled_delivery_date' => now(config('app.shop_timezone', 'Asia/Manila'))->toDateString()]);
 
         try {
             app(ShipmentLegService::class)->markInTransit($leg->fresh());
