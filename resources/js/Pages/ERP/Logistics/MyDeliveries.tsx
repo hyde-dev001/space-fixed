@@ -1132,6 +1132,8 @@ function DeliveryActions({
           className={buttonClass}>I've arrived for pickup</button>}
         {canUpdateStatus && delivery.requires_pickup_proof && !pickupProof && canRecordProof && <DeliveryPhotoUpload
           inputId={`pickup-proof-${delivery.id}`} inputLabel="Pickup evidence" label="Pickup evidence" file={proofFile} onChange={setProofFile} required disabled={mutationDisabled} />}
+        {delivery.start_blocked_reason && <p role="status" className="text-sm font-semibold">{delivery.start_blocked_reason}</p>}
+        {delivery.requires_pickup_proof && !pickupProof && !canRecordProof && <p role="status" className="text-sm font-semibold">Pickup evidence is required. Ask your manager to enable your proof permission.</p>}
         {canUpdateStatus && (
           <button
             type="button"
