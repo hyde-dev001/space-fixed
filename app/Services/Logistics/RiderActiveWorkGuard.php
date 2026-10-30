@@ -67,9 +67,6 @@ final class RiderActiveWorkGuard
     public function assertCanAdvanceLeg(RiderProfile $rider, ShipmentLeg $leg): void
     {
         $this->assertNotHeld($leg);
-        if ($leg->customer_appointment_date && ($reason = app(DeliveryStartEligibility::class)->progressionBlockedReason($leg))) {
-            throw ValidationException::withMessages(['customer_appointment' => $reason]);
-        }
         RiderProfile::query()->whereKey($rider->id)->lockForUpdate()->firstOrFail();
 
         if ($leg->rider_progress_state !== RiderProgressState::ACTIVE

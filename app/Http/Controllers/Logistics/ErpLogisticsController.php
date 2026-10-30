@@ -805,7 +805,7 @@ class ErpLogisticsController extends Controller
         }
 
         $payload['failed_attempt_count'] = $leg->attempts->count();
-        $payload['start_blocked_reason'] = $this->starts->progressionBlockedReason($leg);
+        $payload['start_blocked_reason'] = null;
         $payload['activation_required'] = $leg->status->value === 'in_transit' && ! $this->starts->hasActivated($leg);
         if ($leg->resolution_type === 'retry' && $leg->status->value === 'needs_resolution'
             && ($leg->custody_state !== 'rider' || (int) $leg->custody_rider_profile_id !== (int) $leg->latestAssignment?->rider_profile_id

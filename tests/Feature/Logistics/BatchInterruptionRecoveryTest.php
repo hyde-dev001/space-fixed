@@ -183,7 +183,7 @@ class BatchInterruptionRecoveryTest extends TestCase
         $this->assertSame(1, DeliveryIncident::sole()->recoveryBatch->assigned_stop_count);
     }
 
-    public function test_resumed_in_transit_stop_cannot_arrive_outside_customer_appointment(): void
+    public function test_resumed_stop_requires_activation_but_can_arrive_before_appointment(): void
     {
         $f = $this->interruptionFixture();
         $f['legs'][0]->update(['customer_appointment_date' => now()->addDay()->toDateString(), 'customer_appointment_window' => 'morning']);
@@ -191,8 +191,11 @@ class BatchInterruptionRecoveryTest extends TestCase
         $this->decide($f, 'resume')->assertOk();
         try {
             app(\App\Services\Logistics\ArrivalService::class)->record($f['legs'][0]->fresh(), User::findOrFail($f['a']->linked_id), ['arrival_type' => 'dropoff']);
-            $this->fail('The confirmed appointment was bypassed.');
-        } catch (ValidationException $exception) { $this->assertArrayHasKey('customer_appointment', $exception->errors()); }
+            $this->fail('Arrival without current-assignment activation was allowed.');
+        } catch (ValidationException $exception) { $this->assertArrayHasKey('activation', $exception->errors()); }
+        app(\App\Services\Logistics\ShipmentLegService::class)->markOutForDelivery($f['legs'][0]->fresh(), $f['a']);
+        $arrival = app(\App\Services\Logistics\ArrivalService::class)->record($f['legs'][0]->fresh(), User::findOrFail($f['a']->linked_id), ['arrival_type' => 'dropoff', 'exception_reason' => 'pin_incorrect']);
+        $this->assertSame('dropoff_arrived', $arrival->event_type);
     }
 
     public function test_off_mode_blocks_resume_but_allows_safe_reporting_of_started_work(): void

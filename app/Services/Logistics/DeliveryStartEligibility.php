@@ -10,48 +10,9 @@ class DeliveryStartEligibility
 {
     public function __construct(private AssignmentService $assignments) {}
 
-    public function blockedReason(ShipmentLeg $leg): ?string
-    {
-        $assignment = $leg->assignments()->latest('id')->first();
-        if ($assignment && ! $this->hasActivated($leg)) {
-            $accepted = $leg->events()->where('event_type', 'leg_offer_accepted')
-                ->where('metadata->delivery_assignment_id', $assignment->id)->latest('id')->first();
-            if ($accepted && data_get($accepted->metadata, 'schedule_facts') !== $this->scheduleFacts($leg)) {
-                return 'Accept the updated schedule before starting this delivery.';
-            }
-            $offer = $leg->events()->where('event_type', 'leg_assigned')
-                ->where('metadata->delivery_assignment_id', $assignment->id)->latest('id')->first();
-            if ($bounds = data_get($offer?->metadata, 'immediate_recovery')) {
-                $now = CarbonImmutable::now();
-                if ($now->lessThan(CarbonImmutable::parse($bounds['effective_start'])) || $now->greaterThanOrEqualTo(CarbonImmutable::parse($bounds['effective_end']))) {
-                    return 'Immediate recovery authorization is not effective. Ask dispatch to reauthorize or reschedule.';
-                }
-            }
-        }
-        if (! $leg->customer_appointment_date) {
-            return null;
-        }
-        if (! in_array($leg->customer_appointment_window, ['morning', 'afternoon'], true)) {
-            return 'Confirm the customer appointment window before starting.';
-        }
-        $timezone = config('app.shop_timezone', 'Asia/Manila');
-        $settings = $leg->shipment->shopOwner->logisticsSetting;
-        $window = $leg->customer_appointment_window;
-        $defaults = ['morning_start' => '08:00', 'morning_end' => '12:00', 'afternoon_start' => '13:00', 'afternoon_end' => '18:00'];
-        $day = $leg->customer_appointment_date->toDateString();
-        $start = CarbonImmutable::parse($day.' '.($settings?->{$window.'_start'} ?? $defaults[$window.'_start']), $timezone);
-        $end = CarbonImmutable::parse($day.' '.($settings?->{$window.'_end'} ?? $defaults[$window.'_end']), $timezone);
-        $now = CarbonImmutable::now($timezone);
-        return $now->lessThan($start) || $now->greaterThanOrEqualTo($end)
-            ? 'Start during the customer-confirmed appointment, or ask dispatch to record an agreed reschedule.' : null;
-    }
-
     public function assertCanStart(ShipmentLeg $leg, ?\App\Models\Logistics\RiderProfile $rider = null): void
     {
         if ($rider) $this->assignments->assertEligibleForDate($rider, $leg->shipment->shopOwner, now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(), $leg->id, checkCapacity: false);
-        if ($reason = $this->blockedReason($leg)) {
-            throw ValidationException::withMessages(['customer_appointment' => $reason]);
-        }
     }
 
     public function hasActivated(ShipmentLeg $leg): bool
@@ -96,11 +57,6 @@ class DeliveryStartEligibility
         }
         return ['effective_start' => $start->toISOString(), 'effective_end' => $end->toISOString(),
             'timezone' => $zone, 'delivery_date' => $date, 'delivery_window' => $window, 'reason' => $options['immediate_reason']];
-    }
-
-    public function progressionBlockedReason(ShipmentLeg $leg): ?string
-    {
-        return $this->hasActivated($leg) ? null : $this->blockedReason($leg);
     }
 
     public function assertActivated(ShipmentLeg $leg): void

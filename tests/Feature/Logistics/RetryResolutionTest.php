@@ -67,13 +67,12 @@ class RetryResolutionTest extends TestCase
         app(AssignmentService::class)->assignInternalRider($leg->fresh(), $rider->fresh(), $shop);
     }
 
-    public function test_customer_confirmed_appointment_blocks_a_normal_early_start(): void
+    public function test_customer_confirmed_appointment_allows_a_normal_early_start(): void
     {
         [, $rider, $leg] = $this->fixture();
         $leg->update(['status' => 'picked_up', 'resolution_type' => null,
             'customer_appointment_date' => now()->addDays(3)->toDateString(), 'customer_appointment_window' => 'afternoon', 'appointment_agreed_at' => now()]);
-        $this->expectException(ValidationException::class);
-        app(ShipmentLegService::class)->markInTransit($leg->fresh(), $rider);
+        $this->assertSame('in_transit', app(ShipmentLegService::class)->markInTransit($leg->fresh(), $rider)->status->value);
     }
 
     public function test_declining_a_retry_keeps_resolution_and_physical_custody_explicit(): void
@@ -116,15 +115,13 @@ class RetryResolutionTest extends TestCase
         $service->resolveRetry($leg->fresh(), 'Another visit', [...$options, 'appointment_confirmed' => true, 'appointment_agreement_note' => 'Changed customer agreement'], $dispatcher);
     }
 
-    public function test_schedule_change_before_start_requires_renewed_acceptance(): void
+    public function test_schedule_change_before_start_keeps_the_accepted_assignment_actionable(): void
     {
         [, $rider, $leg, $assignment] = $this->fixture();
         $assignment->update(['status' => 'assigned', 'accepted_at' => null]);
         app(AssignmentService::class)->respondToOffer($leg, $rider, true);
         $leg->update(['scheduled_delivery_date' => now()->addDays(4)->toDateString()]);
-        $this->expectException(ValidationException::class);
-        $this->expectExceptionMessage('Accept the updated schedule');
-        app(ShipmentLegService::class)->markInTransit($leg->fresh(), $rider);
+        $this->assertSame('in_transit', app(ShipmentLegService::class)->markInTransit($leg->fresh(), $rider)->status->value);
     }
 
     public function test_schedule_edit_after_activation_does_not_revoke_continuation(): void
@@ -143,6 +140,6 @@ class RetryResolutionTest extends TestCase
         $leg->events()->create(['shipment_id' => $leg->shipment_id, 'event_type' => 'batch_started', 'visibility' => 'internal',
             'metadata' => ['delivery_assignment_id' => $leg->assignments()->latest('id')->value('id')]]);
         $this->expectException(ValidationException::class);
-        app(\App\Services\Logistics\RiderActiveWorkGuard::class)->assertCanAdvanceLeg($rider, $leg->fresh());
+        app(\App\Services\Logistics\DeliveryStartEligibility::class)->assertActivated($leg->fresh());
     }
 }
