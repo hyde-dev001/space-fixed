@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import Swal from 'sweetalert2';
 import Shipments from '../Shipments';
-vi.mock('@/components/logistics/ParcelIncidentRecovery', () => ({ default: () => null }));
+vi.mock('@/components/logistics/ParcelIncidentRecovery', () => ({ default: ({ dispatcher }: { dispatcher?: boolean }) => dispatcher ? null : <p>Return receipt and disposition</p> }));
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(() => Promise.resolve()),
@@ -1506,4 +1506,12 @@ it('offers Retail Return failed-collection rescheduling without claiming a repai
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
   expect(screen.getByRole('button', { name: 'Reschedule Pickup' })).toBeInTheDocument();
+});
+
+
+it('does not mount the generic return handling panel for a dispatcher', () => {
+  setDispatcherLeg({ ...defaultProps().shipments.data[0].legs[0] });
+  render(<Shipments />);
+  fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
+  expect(screen.queryByText('Return receipt and disposition')).not.toBeInTheDocument();
 });
