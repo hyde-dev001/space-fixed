@@ -1,6 +1,6 @@
 import MonochromeSelect from "@/components/form/Select";
 import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
-import OrderReturnActions from '@/components/logistics/OrderReturnActions';
+import CustodyHandoffs from '@/Pages/ERP/Logistics/components/CustodyHandoffs';
 import type { ParcelRecovery } from '@/types/logistics';
 import type { RetailWarrantyProjection } from '@/types/retailWarranty';
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -530,7 +530,13 @@ export const canSelectShopOwnedReturn = (
   logisticsEnabled = true,
 ) => logisticsEnabled && coverage?.available === true;
 
-export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund">) => {
+export const staffParcelReturn = (order: Pick<Order, 'parcel_returns'>) => {
+  const pending = (order.parcel_returns ?? []).filter(row => row.staff_review_required === true);
+  return pending.length === 1 ? pending[0] : undefined;
+};
+
+export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund" | "parcel_returns">) => {
+  if (staffParcelReturn(order)) return true;
   const latestRefund = order.latest_refund;
   if (!latestRefund) return false;
   if (latestRefund.reason_code === 'delivery_attempts_exhausted') return latestRefund.return_status === 'in_transit';
@@ -1525,6 +1531,8 @@ export default function JobOrdersPage() {
 
   const handleConfirmReturnReceived = async (order: Order) => {
     if (isConfirmingReturn) return;
+    const parcelReturn = staffParcelReturn(order);
+    const requestKey = crypto.randomUUID();
     const latestRefund = order.latest_refund;
     const returnMethod = getReturnDeliveryMethod(latestRefund);
     const returnSource = String(latestRefund?.return_source || '').toLowerCase();
@@ -1567,7 +1575,10 @@ export default function JobOrdersPage() {
           .filter((line) => line.order_item_id > 0 && line.approved_qty > 0)
       : [];
 
-    const refundLines = refundLineOptionsFromRefund.length > 0
+    const refundLines = parcelReturn
+      ? parcelReturn.expected_items.map(item => ({ order_item_id: Number(item.reference.split(':')[1]), product_name: item.label,
+          approved_qty: item.expected_quantity, inspection_disposition: 'pending' }))
+      : refundLineOptionsFromRefund.length > 0
       ? refundLineOptionsFromRefund
       : (String(order.latest_refund?.flow_type || '').toLowerCase() === 'request_approval'
           ? (order.items || [])
@@ -1581,18 +1592,19 @@ export default function JobOrdersPage() {
           : []);
 
     const result = await Swal.fire({
-      title: 'Inspect Returned Items',
+      title: 'Review return',
       html: `
         <div style="text-align: left; margin-top: 0.75rem; line-height: 1.55;">
-          <p><strong>Order:</strong> ${order.order_number}</p>
-          <p style="margin-top: 0.5rem;"><strong>Carrier:</strong> ${returnCarrier}</p>
-          <p><strong>Rider Name:</strong> ${returnRiderName}</p>
-          <p><strong>Rider Number:</strong> ${returnRiderPhone}</p>
-          <p><strong>Tracking Number:</strong> ${returnTrackingNumber}</p>
-          <p><strong>Tracking Link:</strong> ${returnTrackingLink}</p>
+          <p><strong>Order:</strong> ${escapeHtml(order.order_number)}</p>
+          <p style="margin-top: 0.5rem;"><strong>Carrier:</strong> ${escapeHtml(returnCarrier)}</p>
+          <p><strong>Rider Name:</strong> ${escapeHtml(returnRiderName)}</p>
+          <p><strong>Rider Number:</strong> ${escapeHtml(returnRiderPhone)}</p>
+          <p><strong>Tracking Number:</strong> ${escapeHtml(returnTrackingNumber)}</p>
+          <p><strong>Tracking Link:</strong> ${escapeHtml(returnTrackingLink)}</p>
           <p><strong>Return Transport Started At:</strong> ${returnShippedAt}</p>
           <p style="margin-top: 0.75rem; color: #6b7280;">Record the condition only after physical inspection. Resellable items add the inspected quantity to stock. Damaged items are written off and do not add stock. This does not approve or pay a refund.</p>
         </div>
+        ${parcelReturn ? `<label for="return-review-notes">Return notes</label><textarea id="return-review-notes" maxlength="1000" style="width:100%;border:1px solid #cbd5e1;padding:8px;"></textarea>${!parcelReturn.receipt_recorded ? '<label for="return-review-photo">Return photograph</label><input id="return-review-photo" type="file" accept="image/jpeg,image/png,image/webp" />' : ''}` : ''}
         ${refundLines.length > 0 ? `
           <div style="text-align:left; display:flex; flex-direction:column; gap:10px; max-height:260px; overflow:auto; padding-right:4px; margin-top:12px; border-top:1px solid #e5e7eb; padding-top:12px;">
             ${refundLines.map((line, index) => {
@@ -1603,12 +1615,14 @@ export default function JobOrdersPage() {
               return `
                 <div style="border:1px solid #e2e8f0; border-radius:10px; padding:10px;">
                   <div style="font-weight:600; margin-bottom:4px;">${escapeHtml(line.product_name)}</div>
-                  <div style="font-size:12px; color:#64748b; margin-bottom:8px;">Returned Qty: ${line.approved_qty}</div>
+                  <div style="font-size:12px; color:#64748b; margin-bottom:8px;">Expected quantity: ${line.approved_qty}</div>
+                  ${parcelReturn ? `<label for="return-qty-${index}">Actual quantity</label><input id="return-qty-${index}" type="number" min="0" max="${line.approved_qty}" value="0" style="width:100%;padding:8px;border:1px solid #cbd5e1;" />` : ''}
                   <label for="return-disp-${index}" style="display:block; font-size:12px; color:#475569; margin-bottom:4px;">Inspection Disposition</label>
                   <select id="return-disp-${index}" style="width:100%; border:1px solid #cbd5e1; border-radius:8px; padding:8px;">
                     <option value="" ${selectedPending}>Select disposition</option>
                     <option value="resellable" ${selectedResellable}>Resellable (restock)</option>
                     <option value="damaged" ${selectedDamaged}>Damaged (write-off)</option>
+                    ${parcelReturn ? '<option value="missing">Missing</option><option value="unsafe">Unsafe</option>' : ''}
                   </select>
                 </div>
               `;
@@ -1618,7 +1632,7 @@ export default function JobOrdersPage() {
       `,
       icon: 'question',
       showCancelButton: true,
-      confirmButtonText: 'Save inspection and confirm return',
+      confirmButtonText: 'Save return review',
       cancelButtonText: 'Cancel',
       confirmButtonColor: '#2563eb',
       focusConfirm: false,
@@ -1627,26 +1641,33 @@ export default function JobOrdersPage() {
           return { line_dispositions: [] };
         }
 
-        const lineDispositions: Array<{ order_item_id: number; approved_qty: number; inspection_disposition: 'resellable' | 'damaged' }> = [];
+        const lineDispositions: Array<{ order_item_id: number; approved_qty: number; inspection_disposition: string }> = [];
 
         for (let index = 0; index < refundLines.length; index += 1) {
           const line = refundLines[index];
           const dispositionInput = document.getElementById(`return-disp-${index}`) as HTMLSelectElement | null;
           const disposition = String(dispositionInput?.value || '');
 
-          if (disposition !== 'resellable' && disposition !== 'damaged') {
+          if (!(parcelReturn ? ['resellable', 'damaged', 'missing', 'unsafe'] : ['resellable', 'damaged']).includes(disposition)) {
             Swal.showValidationMessage('Please select resellable or damaged for each returned item.');
             return null;
           }
 
           lineDispositions.push({
             order_item_id: line.order_item_id,
-            approved_qty: Number(line.approved_qty ?? line.requested_qty ?? 0),
+            approved_qty: parcelReturn ? Number((document.getElementById(`return-qty-${index}`) as HTMLInputElement | null)?.value) : Number(line.approved_qty),
             inspection_disposition: disposition,
           });
         }
 
-        return { line_dispositions: lineDispositions };
+        const notes = (document.getElementById('return-review-notes') as HTMLTextAreaElement | null)?.value.trim() ?? '';
+        const photo = (document.getElementById('return-review-photo') as HTMLInputElement | null)?.files?.[0];
+        if (parcelReturn && (!notes || (!parcelReturn.receipt_recorded && !photo)
+          || lineDispositions.some((line, index) => !Number.isInteger(line.approved_qty) || line.approved_qty < 0 || line.approved_qty > refundLines[index].approved_qty))) {
+          Swal.showValidationMessage('Record actual quantities, return notes and a photograph when receiving the parcel.');
+          return null;
+        }
+        return { line_dispositions: lineDispositions, notes, photo };
       },
     });
 
@@ -1665,19 +1686,25 @@ export default function JobOrdersPage() {
       const csrfData = await csrfResponse.json();
       const csrfToken = csrfData.csrf_token;
 
+      let returnBody: FormData | string;
+      if (parcelReturn) {
+        const form = new FormData();
+        form.append('incident_id', String(parcelReturn.incident_id)); form.append('expected_revision', String(parcelReturn.revision));
+        form.append('request_key', requestKey); form.append('return_notes', String(result.value?.notes ?? ''));
+        if (result.value?.photo instanceof File) form.append('photo', result.value.photo);
+        lineDispositionsPayload.forEach((line: { order_item_id: number; approved_qty: number; inspection_disposition: string }, index: number) =>
+          Object.entries(line).forEach(([key, value]) => form.append(`line_dispositions[${index}][${key}]`, String(value))));
+        returnBody = form;
+      } else returnBody = JSON.stringify(lineDispositionsPayload.length > 0 ? { line_dispositions: lineDispositionsPayload } : {});
       const response = await fetch(`/api/staff/orders/${order.id}/confirm-return-received`, {
         method: 'POST',
         credentials: 'include',
         headers: {
-          'Content-Type': 'application/json',
+          ...(!parcelReturn ? { 'Content-Type': 'application/json' } : {}),
           Accept: 'application/json',
           'X-CSRF-TOKEN': csrfToken,
         },
-        body: JSON.stringify(
-          lineDispositionsPayload.length > 0
-            ? { line_dispositions: lineDispositionsPayload }
-            : {},
-        ),
+        body: returnBody,
       });
 
       const data = await response.json();
@@ -2242,8 +2269,7 @@ export default function JobOrdersPage() {
               {Boolean(order.latest_refund?.items?.length) && <div className="rounded-lg bg-gray-50 p-3 text-sm dark:bg-gray-800"><p className="font-semibold">Returned quantities</p><ul className="mt-1 space-y-1">{order.latest_refund?.items?.map(line => <li key={line.order_item_id}>{line.product_name}: {line.approved_qty}</li>)}</ul></div>}
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => handleViewOrder(order)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 dark:border-gray-600">View order details</button>
-                {!auth?.erpActor?.ownerMode && <OrderReturnActions returns={order.parcel_returns ?? []} onChanged={() => refreshOrders(true)} />}
-                {canConfirmReturnReceived(order) && <button type="button" onClick={() => handleConfirmReturnReceived(order)} className="min-h-11 rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 dark:bg-white dark:text-gray-950">Inspect returned items</button>}
+                {canConfirmReturnReceived(order) && <button type="button" onClick={() => handleConfirmReturnReceived(order)} className="min-h-11 rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 dark:bg-white dark:text-gray-950">Review return</button>}
                 {canArrangeReturnPickup(order) && <button type="button" onClick={() => handleArrangeReturnPickup(order)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold dark:border-gray-600">{isRetryableShopOwnedReturn(order) ? 'Retry return pickup' : 'Arrange return pickup'}</button>}
                 {order.availableActions?.includes('shipped') && <button type="button" onClick={() => handleShipOrder(order)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold dark:border-gray-600">Mark as shipped</button>}
                 {order.availableActions?.includes('processing') && <label className="flex min-h-11 items-center gap-2 text-sm"><input type="checkbox" checked={selectedOrders.includes(order.id)} onChange={() => handleSelectOrder(order.id)} />Select for processing</label>}
@@ -2450,14 +2476,13 @@ export default function JobOrdersPage() {
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
-                          {!auth?.erpActor?.ownerMode && <OrderReturnActions returns={order.parcel_returns ?? []} onChanged={() => refreshOrders(true)} />}
                           {canConfirmReturnReceived(order) && (
                             <button
                               type="button"
                               onClick={() => handleConfirmReturnReceived(order)}
                               className="inline-flex h-9 w-9 items-center justify-center rounded-lg p-0 text-indigo-600 transition-colors hover:bg-indigo-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-indigo-400 dark:hover:bg-indigo-900/20"
-                              title="Confirm returned item received"
-                              aria-label="Confirm returned item received"
+                              title="Review return"
+                              aria-label="Review return"
                             >
                               <CheckCircleIcon className="size-5" />
                             </button>
@@ -2779,7 +2804,7 @@ export default function JobOrdersPage() {
 
               <div className="px-6 py-5 overflow-y-auto space-y-5">
                 <RetailWarrantyPanel warranty={viewOrder.product_warranty} />
-                {!auth?.erpActor?.ownerMode && <OrderReturnActions returns={viewOrder.parcel_returns ?? []} onChanged={() => refreshOrders(true)} />}
+                {!auth?.erpActor?.ownerMode && <CustodyHandoffs handoffs={(viewOrder.parcel_returns ?? []).flatMap(row => row.transfers)} onConfirmed={() => refreshOrders(true)} />}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Full Name</p>
@@ -3122,7 +3147,7 @@ export default function JobOrdersPage() {
                 {viewOrder.delivery_cancellation && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
                     <p className="font-semibold">{hasConfirmedParcelLoss(viewOrder) ? 'Parcel loss confirmed' : 'Delivery cancelled'}</p>
-                    <p>{hasConfirmedParcelLoss(viewOrder) ? ((viewOrder.parcel_returns?.length ?? 0) > 0 ? 'The original loss and refund remain unchanged. Complete linked recovered-parcel handling using the order actions. Required financial approvals remain separate.' : 'Review the loss refund below. No parcel return, inspection or stock restoration is required. Required financial approvals remain separate.') : viewOrder.delivery_cancellation.message || 'The delivery was cancelled. Coordinate with Logistics to reassign it if needed.'}</p>
+                    <p>{hasConfirmedParcelLoss(viewOrder) ? ((viewOrder.parcel_returns?.length ?? 0) > 0 ? 'The original loss and refund remain unchanged. Use the normal Staff return review for the recovered parcel. Required financial approvals remain separate.' : 'Review the loss refund below. No parcel return, inspection or stock restoration is required. Required financial approvals remain separate.') : viewOrder.delivery_cancellation.message || 'The delivery was cancelled. Coordinate with Logistics to reassign it if needed.'}</p>
                   </div>
                 )}
               </div>
@@ -3143,9 +3168,9 @@ export default function JobOrdersPage() {
                     onClick={() => handleConfirmReturnReceived(viewOrder)}
                     disabled={isConfirmingReturn}
                     className="px-4 py-2 border border-indigo-600 bg-indigo-600 hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60 text-white rounded-lg font-medium transition-colors"
-                    title="Confirm returned item received"
+                    title="Review return"
                   >
-                    {isConfirmingReturn ? 'Confirming...' : 'Confirm Return Received'}
+                    {isConfirmingReturn ? 'Saving...' : 'Review return'}
                   </button>
                 )}
                 {canArrangeReturnPickup(viewOrder) && (

@@ -75,38 +75,3 @@ it('keeps keyboard focus in recovery details and returns it to the action on Esc
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();
 });
-
-
-it('shows only incident-specific dispatcher decisions without a return handling panel', async () => {
-  api.parcelRecoveries.mockResolvedValue({ data: { recoveries: [{ ...recovery(), can_inspect: true, can_close: true,
-    actions: [
-      { action: 'verify_readiness', label: 'Verify resolved condition and customer arrangement', allowed: true },
-      { action: 'refund_review', label: 'Submit refund eligibility review', allowed: true },
-      { action: 'inventory_disposition', label: 'Complete inspected item handling', allowed: true },
-    ] }] } });
-  render(<ParcelIncidentRecovery source="all" shipmentId={9} dispatcher />);
-  const menu = await screen.findByText('Dispatcher follow-up - Incident #7');
-  expect(menu.closest('details')).not.toHaveAttribute('open');
-  expect(screen.queryByText('Return receipt and disposition')).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Confirm actual shop receipt' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Record item inspection' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Submit refund eligibility review' })).not.toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Complete inspected item handling' })).not.toBeInTheDocument();
-  fireEvent.click(menu);
-  expect(screen.getByText('Verify resolved condition and customer arrangement')).toBeInTheDocument();
-  expect(screen.getByText('Verify operational closure')).toBeInTheDocument();
-  fireEvent.click(screen.getByText('Verify resolved condition and customer arrangement'));
-  fireEvent.change(screen.getByLabelText('Recovery notes'), { target: { value: 'Transport issue resolved after inspection' } });
-  fireEvent.click(screen.getByRole('button', { name: 'Save verified recovery step' }));
-  await waitFor(() => expect(api.parcelRecoveryAction).toHaveBeenCalledOnce());
-  const [id, stage, payload] = api.parcelRecoveryAction.mock.calls[0];
-  expect([id, stage, payload.get('action'), payload.get('expected_revision')]).toEqual([7, 'disposition', 'verify_readiness', '3']);
-});
-
-it('hides dispatcher follow-up when only Staff return work is pending', async () => {
-  render(<ParcelIncidentRecovery source="all" shipmentId={9} dispatcher />);
-  await waitFor(() => expect(api.parcelRecoveries).toHaveBeenCalledOnce());
-  await waitFor(() => expect(screen.queryByText(/Loading/)).not.toBeInTheDocument());
-  expect(screen.queryByText(/Dispatcher follow-up/)).not.toBeInTheDocument();
-  expect(screen.queryByText('Return receipt and disposition')).not.toBeInTheDocument();
-});

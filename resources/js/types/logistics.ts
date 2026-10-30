@@ -346,6 +346,7 @@ export type LogisticsIncident = {
 };
 
 export type ParcelRecovery = {
+  staff_review_required?: boolean;
   can_receive?: boolean;
   receipt_recorded?: boolean;
   can_reauthorize?: boolean;

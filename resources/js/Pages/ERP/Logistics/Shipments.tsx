@@ -1,10 +1,9 @@
 import DeliveryIssueResolution from './components/DeliveryIssueResolution';
 import RetryResolutionDialog from './components/RetryResolutionDialog';
 import CustodyHandoffs from './components/CustodyHandoffs';
-import ParcelIncidentRecovery from '@/components/logistics/ParcelIncidentRecovery';
 import LostParcelActions from '@/components/logistics/LostParcelActions';
 import BatchInterruptionControls from './components/BatchInterruptionDialog';
-import type { CustodyHandoff } from '@/types/logistics';
+import type { CustodyHandoff, ParcelRecovery } from '@/types/logistics';
 import MonochromeSelect from "@/components/form/Select";
 import React, { useEffect, useRef, useState } from 'react';
 import { Head, Link, router, usePage } from '@inertiajs/react';
@@ -128,8 +127,9 @@ const toast = (icon: 'success' | 'error' | 'warning', title: string) => Swal.fir
 });
 
 export default function Shipments({ children }: React.PropsWithChildren) {
-  const { shipments, custodyHandoffs = [], filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes = false, canReportIssue: serverCanReportIssue = false, canViewShipments = false, liveTrackingEnabled = false, liveTrackingIntervalSeconds = 5, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, logisticsSchedule, auth, erpCapabilities } = usePage<{
+  const { shipments, returnRecoveries = [], custodyHandoffs = [], filters, assignableRiders, canAssign: serverCanAssign, canUpdateStatus: serverCanUpdateStatus, canRecordProof: serverCanRecordProof, canApproveProof: serverCanApproveProof, canResolveDisputes: serverCanResolveDisputes = false, canReportIssue: serverCanReportIssue = false, canViewShipments = false, liveTrackingEnabled = false, liveTrackingIntervalSeconds = 5, riderMode, maxDeliveryAttempts = 2, availableModules = [], showModuleFilter = false, today, logisticsSchedule, auth, erpCapabilities } = usePage<{
     shipments: PaginatedResponse<LogisticsShipment>;
+    returnRecoveries?: ParcelRecovery[];
     custodyHandoffs?: CustodyHandoff[];
     filters: ShipmentFilters;
     assignableRiders: Array<{ id: number; name: string; phone?: string | null }>;
@@ -161,8 +161,10 @@ export default function Shipments({ children }: React.PropsWithChildren) {
   const { isRouteFrozen } = useMaintenance();
   const scheduleFrozen = isRouteFrozen('logistics.api.legs.schedule');
   const scheduleFreezeMessage = 'Critical logistics scheduling is paused during maintenance.';
+  const [returnedRetry, setReturnedRetry] = useState<ParcelRecovery | null>(null);
   const [retryLegId, setRetryLegId] = useState<number | null>(null);
   const retryLeg = shipments.data.flatMap(shipment => shipment.legs ?? []).find(leg => leg.id === retryLegId);
+  const retryTargetLeg = returnedRetry?.retry_context ?? retryLeg;
   const [resolutionPending, setResolutionPending] = useState(false);
   const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
   const [selectedTrackingShipmentId, setSelectedTrackingShipmentId] = useState<number | null>(null);
@@ -311,7 +313,7 @@ export default function Shipments({ children }: React.PropsWithChildren) {
         ? axios.post(target, body, body instanceof FormData ? { headers: { 'Content-Type': 'multipart/form-data' } } : undefined)
         : target());
       toast(issue ? 'warning' : 'success', issue ? 'Delivery issue reported.' : 'Delivery updated.');
-      router.reload({ only: issue && riderMode ? ['shipments', 'batches', 'custodyHandoffs'] : ['shipments', 'custodyHandoffs'] });
+      router.reload({ only: issue && riderMode ? ['shipments', 'batches', 'custodyHandoffs'] : ['shipments', 'custodyHandoffs', 'returnRecoveries'] });
       return true;
     } catch (error: any) {
       const errors = error.response?.data?.errors;
@@ -556,10 +558,14 @@ export default function Shipments({ children }: React.PropsWithChildren) {
     <AppLayoutERP>
       <Head title={riderMode ? "My Deliveries" : ownerMode ? "Shipment Monitoring" : "ERP Logistics Shipments"} />
       <CustodyHandoffs handoffs={custodyHandoffs} />
-      {retryLeg && <RetryResolutionDialog key={retryLeg.id} leg={retryLeg} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}
-        onClose={() => setRetryLegId(null)} onSubmit={async payload => {
-          const saved = await act(() => logisticsApi.retryDelivery(retryLeg.id, payload));
-          if (saved) setRetryLegId(null);
+      {retryTargetLeg && <RetryResolutionDialog key={returnedRetry?.incident_id ?? retryTargetLeg.id} leg={retryTargetLeg} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}
+        onClose={() => { setRetryLegId(null); setReturnedRetry(null); }} onSubmit={async payload => {
+          const saved = await act(() => returnedRetry
+            ? returnedRetry.can_reauthorize
+              ? logisticsApi.resolveIncident(returnedRetry.incident_id, { ...payload, resolution: 'retry', note: payload.reason, expected_revision: returnedRetry.revision, findings: { mitigation_plan: payload.reason, customer_agreement: payload.reason } })
+              : logisticsApi.parcelRecoveryAction(returnedRetry.incident_id, 'disposition', { ...payload, action: 'redeliver_original', notes: payload.reason, expected_revision: returnedRetry.revision, findings: { mitigation_plan: payload.reason, customer_agreement: payload.reason } })
+            : logisticsApi.retryDelivery(retryTargetLeg.id, payload));
+          if (saved) { setRetryLegId(null); setReturnedRetry(null); }
           return saved;
         }} />}
 
@@ -795,7 +801,6 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                   </header>
                   <div className="min-h-0 flex-1 overflow-y-auto border-t border-gray-100 bg-gray-50 p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] dark:border-gray-700 dark:bg-gray-900/40 sm:p-6 sm:pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
                     {shipment.source_type === 'order' && <RetailOrderSummary summary={shipment.order_summary} expanded />}
-                    {selected && !ownerMode && !riderMode && canAssign && <ParcelIncidentRecovery dispatcher source="all" shipmentId={shipment.id} riders={assignableRiders} schedule={logisticsSchedule} today={today} />}
                     {shipment.customer_disputes?.map((dispute) => (
                       <section key={dispute.id} className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-100">
                         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -934,13 +939,16 @@ export default function Shipments({ children }: React.PropsWithChildren) {
                                           View evidence {index + 1}
                                         </a>
                                       ))}
-                                      {incident.loss && !ownerMode && !riderMode ? <LostParcelActions incident={incident} onChanged={() => router.reload()} /> : incident.decided_at && incident.status !== 'resolved' ? <p role="status" className="font-semibold">Recovery decision recorded. Required handoffs, source disposition and operational closure remain pending.</p> : incident.status === 'resolved' ? (
+                                      {incident.loss && !ownerMode && !riderMode ? <LostParcelActions incident={incident} onChanged={() => router.reload()} /> : incident.decided_at && incident.status !== 'resolved' ? <p role="status" className="font-semibold">Decision recorded. Follow the normal Rider delivery or Staff return process.</p> : incident.status === 'resolved' ? (
                                         <p className="font-semibold text-emerald-800 dark:text-emerald-300">Resolution: {label(incident.resolution ?? 'resolved')}</p>
                                       ) : !riderMode && canAssign && !held ? (
                                         <DeliveryIssueResolution onPendingChange={setResolutionPending} leg={leg} incident={incident} riders={assignableRiders} schedule={logisticsSchedule} today={today} error={actionError}
                                           onRetry={payload => act(() => logisticsApi.resolveIncident(incident.id, { ...payload, resolution: 'retry', note: payload.reason }))}
                                           onResolve={form => act(() => logisticsApi.resolveIncident(incident.id, form))} />
                                       ) : null}
+                                      {!ownerMode && !riderMode && canAssign && returnRecoveries.filter(row => row.incident_id === (incident.loss?.action_incident_id ?? incident.id))
+                                        .filter(row => row.can_reauthorize || row.actions.some(option => option.allowed && option.action === 'redeliver_original')).map(row =>
+                                          <button key={row.incident_id} type="button" className="min-h-11 rounded-lg border px-3" onClick={() => { setReturnedRetry(row); setSelectedShipmentId(null); setActionError(null); }}>{row.can_reauthorize ? 'Reschedule delivery' : 'Arrange another delivery'}</button>)}
                                     </div>
                                   ))}
                                   {!riderMode && latestAttempt?.status === 'failed' && (

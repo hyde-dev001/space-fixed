@@ -94,27 +94,29 @@ def amendment_journeys(rider, dispatcher, staff, state):
             assert page.evaluate('document.documentElement.scrollWidth') <= width + 1, name
             page.screenshot(path=str(OUT / f'dead-ends-{name}-{width}.png'), full_page=True)
 
-    def staff_action(label, endpoint, fill):
-        button = staff.get_by_role('button', name=label, exact=True)
-        button.first.click()
-        dialog = staff.get_by_role('dialog', name=label, exact=True)
-        close = dialog.get_by_role('button', name='Close dialog', exact=True)
-        close.focus()
-        staff.keyboard.press('Shift+Tab')
-        expect(dialog.get_by_role('button', name='Cancel', exact=True)).to_be_focused()
-        staff.keyboard.press('Tab')
-        expect(close).to_be_focused()
+    def review_staff_return(order):
+        button = staff.get_by_role('button', name='Review return', exact=True).first
+        button.click()
+        dialog = staff.get_by_role('dialog', name='Review return', exact=True)
+        dialog.get_by_role('button', name='Cancel', exact=True).focus()
         staff.keyboard.press('Escape')
         expect(dialog).to_have_count(0)
-        expect(button.first).to_be_focused()
-        button.first.click()
-        dialog.get_by_label('Handling notes').fill('Synthetic actual receipt, quantity and supported handling')
-        fill(dialog)
-        with staff.expect_response(lambda response: endpoint in response.url and response.request.method == 'POST') as saved:
-            dialog.get_by_role('button', name='Save', exact=True).click()
+        expect(button).to_be_focused()
+        button.click()
+        dialog.get_by_label('Return notes', exact=True).fill('Synthetic actual receipt and normal Staff return review')
+        dialog.get_by_label('Return photograph', exact=True).set_input_files(str(PHOTO))
+        for field in dialog.locator('input[id^="return-qty-"]').all(): field.fill('1')
+        for field in dialog.locator('select[id^="return-disp-"]').all(): field.select_option('resellable')
+        with staff.expect_response(lambda response: f'/api/staff/orders/{order}/confirm-return-received' in response.url and response.request.method == 'POST') as saved:
+            dialog.get_by_role('button', name='Save return review', exact=True).click()
         assert saved.value.status == 200, saved.value.text()
-        expect(dialog).to_have_count(0, timeout=30000)
-        return saved.value.json()['recovery']
+        result = saved.value.json()['recovery']
+        staff.get_by_role('button', name='OK', exact=True).click()
+        expect(staff.locator('.swal2-container')).to_have_count(0)
+        expect(staff.get_by_role('button', name='Review return', exact=True)).to_have_count(0, timeout=30000)
+        for label in ['Returned items inspected', 'Physical return handled; linked work remains', 'Complete inspected item handling', 'Submit refund eligibility review']:
+            expect(staff.get_by_text(label, exact=True)).to_have_count(0)
+        return result
 
     results = []
     for branch in ['pre_final_continue', 'post_final_return', 'ordinary_return']:
@@ -189,27 +191,23 @@ def amendment_journeys(rider, dispatcher, staff, state):
             staff.set_viewport_size({'width': 390, 'height': 1000})
             expect(staff.get_by_role('region', name='Return receipt and disposition')).to_have_count(0)
             expect(staff.get_by_text('Refresh parcel recovery', exact=True)).to_have_count(0)
-            staff_action('Confirm Parcel Received', f'/parcel-recovery/{child}/receipt', lambda dialog: dialog.get_by_label('Return evidence', exact=True).set_input_files(str(PHOTO)))
-            def inspect_items(dialog):
-                dialog.get_by_label('Actual quantity', exact=True).fill('1')
-                dialog.get_by_label('Item condition', exact=True).select_option('safe')
-            staff_action('Inspect Returned Items', f'/parcel-recovery/{child}/inspection', inspect_items)
-            label = 'Apply inspected inventory disposition' if branch == 'post_final_return' else 'Complete inspected item handling'
-            result = staff_action(label, f'/parcel-recovery/{child}/disposition', lambda dialog: None)
+            result = review_staff_return(data['order_id'])
             assert result['operational_status'] == 'resolved'
             for width in [390, 768, 1440]:
                 staff.set_viewport_size({'width': width, 'height': 1000})
                 assert staff.evaluate('document.documentElement.scrollWidth') <= width + 1
                 staff.screenshot(path=str(OUT / f'dead-ends-{branch}-{width}.png'), full_page=True)
             if ordinary:
-                followup = staff_action('Submit refund eligibility review', f'/parcel-recovery/{child}/disposition', lambda dialog: None)
-                assert followup['source_outcome']['refund_id']
+                assert result['source_outcome']['refund_id']
         results.append({'branch': branch, 'parent': parent, 'recovery': child, 'outcome': 'verified', 'no_obsolete_controls': True, 'keyboard_receipt_forms': branch != 'pre_final_continue'})
         (OUT / 'dead-end-results.json').write_text(json.dumps(results, indent=2), encoding='utf-8')
         print('Dead-end journey passed:', branch, flush=True)
 
 
 if __name__ == '__main__':
+    if '--help' in sys.argv:
+        print('Usage: python tests/Browser/parcel_incident_recovery.py --mfa --amendment (guarded disposable loopback only)')
+        raise SystemExit(0)
     assert '--amendment' in sys.argv, 'Use --mfa --amendment for the current workflow; the historical 15-case results are retained separately.'
     assert '--mfa' in sys.argv, 'Normal password, MFA and Time In are required for this browser run.'
     state = fixture('--setup')

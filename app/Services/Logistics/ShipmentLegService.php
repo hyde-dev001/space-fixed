@@ -472,9 +472,15 @@ class ShipmentLegService
             $this->reconcileBatchState($delivered->delivery_batch_id);
 
             $assignmentId = $delivered->assignments()->latest('id')->value('id');
-            foreach (\App\Models\Logistics\DeliveryIncident::where('shipment_leg_id', $delivered->id)->where('status', 'under_review')
-                ->where('recovery_context->recovered_loss->action', 'continue')
-                ->where('recovery_context->execution_assignment_id', $assignmentId)->lockForUpdate()->get() as $recovery) {
+            foreach (\App\Models\Logistics\DeliveryIncident::with('leg.shipment')->where('shop_owner_id', $delivered->shipment->shop_owner_id)
+                ->where('status', 'under_review')->whereNotNull('decided_at')
+                ->where(fn ($query) => $query->where(fn ($same) => $same->where('shipment_leg_id', $delivered->id)
+                    ->where('recovery_context->execution_assignment_id', $assignmentId)
+                    ->where(fn ($authorized) => $authorized->where('resolution', 'retry')->orWhere('recovery_context->recovered_loss->action', 'continue')))
+                    ->orWhere('recovery_context->source_outcome->leg_id', $delivered->id))->lockForUpdate()->get() as $recovery) {
+                $source = $recovery->leg->shipment;
+                if ($source->source_type !== $delivered->shipment->source_type || (int) $source->source_id !== (int) $delivered->shipment->source_id
+                    || $source->purpose !== $delivered->shipment->purpose) continue;
                 $recovery->forceFill(['status' => 'resolved', 'resolved_at' => now(), 'recovery_context' => [...$recovery->recovery_context,
                     'operational_outcome' => ['outcome' => 'current_delivery_completed', 'assignment_id' => $assignmentId, 'completed_at' => now()->toISOString()]]])->save();
                 $this->events->record($delivered->shipment, $delivered, ['event_type' => 'parcel_recovery_closed',

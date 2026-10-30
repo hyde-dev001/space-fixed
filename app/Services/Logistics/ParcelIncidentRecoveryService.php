@@ -22,11 +22,11 @@ class ParcelIncidentRecoveryService
 
     public function pendingFor(User $actor): array
     {
-        $incidents = DeliveryIncident::with(['leg.shipment.shopOwner.modules', 'leg.custodyRider', 'leg.returnLeg.proofs', 'leg.proofs', 'leg.custodyTransfers', 'leg.assignments', 'leg.events'])
+        $incidents = DeliveryIncident::with(['leg.shipment.shopOwner.modules', 'leg.custodyRider', 'leg.returnLeg.proofs', 'leg.returnLeg.custodyTransfers', 'leg.returnLeg.assignments', 'leg.proofs', 'leg.custodyTransfers', 'leg.assignments', 'leg.events'])
             ->where('shop_owner_id', $actor->shop_owner_id)->whereNotNull('shipment_leg_id')
             ->whereNotNull('recovery_context')->where('resolution', '!=', 'dismissed')->orderBy('id')->get();
         $this->policy->loadParcelRecoverySources($incidents->pluck('leg.shipment'));
-        $movements = \App\Models\Logistics\Shipment::with(['legs.assignments', 'legs.custodyRider'])->where('shop_owner_id', $actor->shop_owner_id)
+        $movements = \App\Models\Logistics\Shipment::with(['legs.assignments', 'legs.custodyRider', 'legs.custodyTransfers', 'legs.proofs'])->where('shop_owner_id', $actor->shop_owner_id)
             ->whereIn('id', $incidents->map(fn ($incident) => data_get($incident->recovery_context, 'source_outcome.shipment_id'))->filter())->get()->keyBy('id');
         $transfers = $this->custody->pendingFor($actor);
         return $incidents->filter(fn ($incident) => (data_get($incident->recovery_context, 'loss.stage') !== 'confirmed'
@@ -58,6 +58,8 @@ class ParcelIncidentRecoveryService
             && $this->supportedSource($source) && ! data_get($context, 'execution_superseded_by_incident_id') && ! app(DeliveryStartEligibility::class)->hasActivated($leg);
         $handoffs = $transfers ?? $this->custody->pendingFor($actor);
         $assignment = $physicalLeg->assignments->sortByDesc('id')->first();
+        $outboundRecorded = $physicalLeg->custodyTransfers->contains(fn ($transfer) => $transfer->to_type === 'rider'
+            && (int) $transfer->delivery_assignment_id === (int) $assignment?->id && in_array($transfer->status, ['requested', 'released', 'received'], true));
         $blocker = match (true) {
             ! $this->supportedSource($source) => 'Retain source identity and evidence; Dispatcher must own the unsupported-source investigation.',
             ! $atShop => 'Shop actions require actual shop custody. Continue the current movement or evidenced handoff.',
@@ -118,6 +120,9 @@ class ParcelIncidentRecoveryService
             'source_outcome' => array_intersect_key($context['source_outcome'] ?? [], array_flip(['shipment_id', 'leg_id', 'refund_id', 'repair_request_id'])),
             'can_receive' => ! data_get($context, 'receipt') && (($atShop && $received) || (bool) $leg->returnLeg?->proofs->where('handoff_type', 'receive')->where('review_status', 'rider_confirmed')->count()),
             'receipt_recorded' => (bool) data_get($context, 'receipt'),
+            'staff_review_required' => ! $closed && ! data_get($context, 'source_outcome.shipment_id') && $source->source_type === 'order'
+                && ($incident->resolution !== 'retry' || ! data_get($context, 'readiness.inspected_revision') || ! $outboundRecorded || data_get($context, 'disposition.action') === 'escalate') && ($atShop || (bool) $leg->returnLeg?->proofs->where('handoff_type', 'receive')->where('review_status', 'rider_confirmed')->count()
+                || collect($handoffs)->contains(fn ($transfer) => in_array((int) $transfer['shipment_leg_id'], [(int) $leg->id, (int) $physicalLeg->id], true) && $transfer['to_type'] === 'shop' && $transfer['status'] === 'released')),
             'return_proof_id' => $leg->returnLeg?->proofs->where('handoff_type', 'receive')->whereIn('review_status', ['rider_confirmed', 'approved'])->sortByDesc('id')->first()?->id,
             'transfers' => array_values(array_filter($handoffs, fn ($transfer) => in_array((int) $transfer['shipment_leg_id'], [(int) $leg->id, (int) $physicalLeg->id], true))),
         ];
@@ -201,7 +206,7 @@ class ParcelIncidentRecoveryService
         $source = $original->shipment;
         if ($id = data_get($incident->recovery_context, 'source_outcome.leg_id')) {
             $movement = $incident->relationLoaded('recoveryMovement') ? $incident->getRelation('recoveryMovement')
-                : \App\Models\Logistics\Shipment::with(['legs.assignments', 'legs.custodyRider'])->where('shop_owner_id', $source->shop_owner_id)
+                : \App\Models\Logistics\Shipment::with(['legs.assignments', 'legs.custodyRider', 'legs.custodyTransfers', 'legs.proofs'])->where('shop_owner_id', $source->shop_owner_id)
                     ->where('source_type', $source->source_type)->where('source_id', $source->source_id)->where('purpose', $source->purpose)
                     ->find(data_get($incident->recovery_context, 'source_outcome.shipment_id'));
             abort_unless($movement && $movement->source_type === $source->source_type && (int) $movement->source_id === (int) $source->source_id
@@ -223,6 +228,77 @@ class ParcelIncidentRecoveryService
         $returned = $incident->leg->returnLeg?->proofs->filter(fn ($proof) => (int) $proof->shop_owner_id === (int) $incident->shop_owner_id
             && $proof->handoff_type === 'receive')->pluck('file_path') ?? collect();
         return array_values(array_unique([...$incident->evidencePaths(), ...$custody->filter()->all(), ...$returned->filter()->all()]));
+    }
+
+    public function reviewStaffReturn(DeliveryIncident $incident, User $actor, array $data): array
+    {
+        abort_unless($actor->can('access-staff-job-orders'), 403);
+        return $this->mutate($incident, $actor, 'staff_return_reviewed', $data, function ($locked) use ($actor, $data) {
+            $source = $locked->leg->shipment;
+            abort_unless($source->source_type === 'order' && $source->purpose === 'retail_delivery', 422);
+            $submitted = collect($data['line_dispositions'])->keyBy(fn ($line) => 'order-item:'.$line['order_item_id']);
+            $expected = collect($this->expectedItems($source));
+            if ($submitted->count() !== count($data['line_dispositions']) || $submitted->keys()->sort()->values()->all() !== $expected->pluck('reference')->sort()->values()->all()) {
+                throw ValidationException::withMessages(['line_dispositions' => 'Review each original item exactly once.']);
+            }
+            $step = fn ($name) => [...$data, 'request_key' => $data['request_key'].':'.$name, 'expected_revision' => $locked->fresh()->revision];
+            if (! data_get($locked->recovery_context, 'receipt')) {
+                if (empty($data['evidence_path'])) throw ValidationException::withMessages(['photo' => 'Photograph the actual returned parcel before confirming receipt.']);
+                $projection = $this->project($locked, $actor);
+                if (! $projection['return_proof_id']) {
+                    $transfer = $this->currentMovementLeg($locked)->custodyTransfers()->where('to_type', 'shop')->where('status', 'released')->lockForUpdate()->first();
+                    if ($transfer) $this->custody->receive($transfer, $actor, $data['evidence_path']);
+                }
+                $this->receive($locked, $actor, [...$step('receipt'), 'proof_id' => $projection['return_proof_id']]);
+            }
+            $items = $expected->map(function ($item) use ($submitted) {
+                $line = $submitted[$item['reference']];
+                if ((int) $line['approved_qty'] > (int) $item['expected_quantity']) throw ValidationException::withMessages(['line_dispositions' => 'Actual quantity cannot exceed the original item quantity.']);
+                return ['reference' => $item['reference'], 'quantity' => (int) $line['approved_qty'],
+                    'condition' => ['resellable' => 'safe', 'damaged' => 'damaged', 'missing' => 'missing', 'unsafe' => 'unsafe'][$line['inspection_disposition']]];
+            })->all();
+            $this->inspect($locked->fresh(), $actor, [...$step('inspection'), 'items' => $items]);
+            $complete = $expected->every(fn ($item) => (int) $submitted[$item['reference']]['approved_qty'] === (int) $item['expected_quantity']
+                && in_array($submitted[$item['reference']]['inspection_disposition'], ['resellable', 'damaged'], true));
+            if (! $complete) {
+                $this->disposition($locked->fresh(), $actor, [...$step('investigation'), 'action' => 'escalate']);
+            } elseif ($locked->resolution === 'retry' && ! data_get($locked->recovery_context, 'recovered_loss')) {
+                $safe = collect($items)->every(fn ($item) => $item['condition'] === 'safe');
+                $this->disposition($locked->fresh(), $actor, [...$step('retry'), 'action' => $safe ? 'ready_for_retry' : 'escalate']);
+                $movement = $this->currentMovementLeg($locked->fresh());
+                $assignment = $movement->assignments()->whereIn('status', ['assigned', 'accepted'])->latest('id')->first();
+                if ($safe && $assignment && $locked->decided_by_user_id && app(LogisticsMovementEligibility::class)->canStart($movement->shipment->shopOwner, lockState: true)
+                    && ! $movement->custodyTransfers()->whereIn('status', ['requested', 'released'])->exists()) {
+                    try {
+                        $this->custody->request($movement, $actor, 'rider', $assignment->rider_profile_id, (string) \Illuminate\Support\Str::uuid(), $locked->fresh());
+                    } catch (ValidationException|\Illuminate\Auth\Access\AuthorizationException $exception) {
+                        $this->disposition($locked->fresh(), $actor, [...$step('handoff_review'), 'action' => 'escalate',
+                            'notes' => $data['notes'].' Authorized handoff remains pending: '.$exception->getMessage()]);
+                    }
+                }
+            } else {
+                try {
+                    $this->disposition($locked->fresh(), $actor, [...$step('handling'), 'action' => 'inventory_disposition']);
+                } catch (ValidationException $exception) {
+                    $this->disposition($locked->fresh(), $actor, [...$step('investigation'), 'action' => 'escalate',
+                        'notes' => $data['notes'].' Stock handling requires source review: '.$exception->getMessage()]);
+                    $locked->refresh();
+                    return [];
+                }
+                $order = \App\Models\Order::where('shop_owner_id', $locked->shop_owner_id)->findOrFail($source->source_id);
+                $refund = $order->refunds()->whereNotIn('status', ['rejected', 'cancelled'])->latest('id')->first();
+                if (! data_get($locked->fresh()->recovery_context, 'recovered_loss') && ($refund || (in_array($order->payment_status, ['paid', 'completed'], true) && $order->paymongo_payment_id))) {
+                    $result = $this->disposition($locked->fresh(), $actor, [...$step('refund'), 'action' => 'refund_review']);
+                    $refund = OrderRefund::where('shop_owner_id', $locked->shop_owner_id)->findOrFail($result['source_outcome']['refund_id']);
+                    if (in_array($refund->return_status, ['in_transit', 'pending_staff_pickup'], true)) {
+                        $receipt = app(\App\Services\OrderRefundService::class)->confirmReturnReceived($refund, $actor->id, $data['notes'], $data['line_dispositions']);
+                        if (($receipt['result'] ?? null) === 'invalid_state') throw ValidationException::withMessages(['return' => $receipt['message']]);
+                    }
+                }
+            }
+            $locked->refresh();
+            return [];
+        });
     }
 
     public function receive(DeliveryIncident $incident, User $actor, array $data): array

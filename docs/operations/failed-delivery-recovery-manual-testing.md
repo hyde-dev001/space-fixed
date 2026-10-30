@@ -6,6 +6,7 @@ This is a test procedure, not a record that you performed or passed these tests.
 
 ## October 30 current checks
 
+Current simplification: there is no Dispatcher follow-up, separate readiness approval or manual physical closure. Use the normal incident decision / Arrange another delivery form, then real Rider acceptance, handoff, start and proof. Staff uses the same **Review return** form and endpoint for customer and Rider returns. Saving records actual receipt, quantity/condition and supported item handling together; no OrderReturnActions cluster, separate handling action or inspection-status prose appears in the action column. Partial, unsafe or allocated goods remain owned investigation; financial approvals and payout are independent.
 Use the [current operations flow](failed-delivery-recovery.md#october-30-current-incident-and-return-flow) and [execution record](../superpowers/plans/2026-10-30-parcel-workflow-dead-ends.md). Earlier recipes below are historical where they mention custody selection, verification checkboxes, a generic Staff return panel or required manual physical closure.
 
 1. Sign in normally with separate Rider, Dispatcher and Staff sessions, MFA and attendance. Report loss without photos; verify hold and no invented receipt/refund at acknowledgement.
