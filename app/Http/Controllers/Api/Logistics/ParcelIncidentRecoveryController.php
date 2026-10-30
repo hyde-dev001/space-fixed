@@ -31,7 +31,7 @@ class ParcelIncidentRecoveryController extends Controller
     public function receive(Request $request, DeliveryIncident $incident, ParcelIncidentRecoveryService $service, LogisticsActorPolicy $policy)
     {
         $actor = $this->actor($incident, $policy);
-        $data = $request->validate([...$this->actionRules(), 'proof_id' => ['required', 'integer'],
+        $data = $request->validate([...$this->actionRules(), 'proof_id' => ['nullable', 'integer'],
             'photo' => ['required', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:10240']]);
         return $this->withEvidence($request, $incident, $data, fn ($facts) => $service->receive($incident, $actor, $facts));
     }
@@ -72,18 +72,19 @@ class ParcelIncidentRecoveryController extends Controller
     {
         $actor = $this->actor($incident, $policy);
         $data = $request->validate([...$this->actionRules(), 'action' => ['required', 'in:verify_readiness,redeliver_original,ready_for_retry,authorize_retry_handoff,refund_review,repair_recovery,escalate,inventory_disposition'],
-            'findings' => ['required_if:action,verify_readiness', 'array:condition_verified,safe_for_delivery,recovered_verified,obstacle_resolved,dispute_resolved,operational_ready,customer_agreement'],
+            'findings' => ['sometimes', 'array:condition_verified,safe_for_delivery,recovered_verified,obstacle_resolved,dispute_resolved,operational_ready,customer_agreement,mitigation_plan'],
             'findings.condition_verified' => ['sometimes', 'boolean'], 'findings.safe_for_delivery' => ['sometimes', 'boolean'],
             'findings.recovered_verified' => ['sometimes', 'boolean'], 'findings.obstacle_resolved' => ['sometimes', 'boolean'],
             'findings.dispute_resolved' => ['sometimes', 'boolean'], 'findings.operational_ready' => ['sometimes', 'boolean'],
             'findings.customer_agreement' => ['sometimes', 'string', 'max:1000'],
+            'findings.mitigation_plan' => ['sometimes', 'string', 'max:1000'],
             'delivery_date' => ['required_if:action,redeliver_original', 'date_format:Y-m-d'],
             'delivery_window' => ['required_if:action,redeliver_original', 'in:morning,afternoon'],
             'rider_profile_id' => ['required_if:action,redeliver_original', 'integer'],
             ...\App\Http\Requests\Logistics\ResolveDeliveryRetryRequest::immediateRules(),
             'appointment_confirmed' => ['sometimes', 'boolean'], 'appointment_agreement_note' => ['sometimes', 'string', 'max:1000']]);
         foreach ($data['findings'] ?? [] as $field => $value) {
-            if ($field !== 'customer_agreement') $data['findings'][$field] = filter_var($value, FILTER_VALIDATE_BOOLEAN);
+            if (! in_array($field, ['customer_agreement', 'mitigation_plan'], true)) $data['findings'][$field] = filter_var($value, FILTER_VALIDATE_BOOLEAN);
         }
         return response()->json(['recovery' => $service->disposition($incident, $actor, $data)]);
     }

@@ -579,9 +579,9 @@ function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
                 </p>
                 <StatusChip
                   status={delivery.status}
-                  label={delivery.rider_progress_state
+                  label={delivery.operational_label ?? (delivery.rider_progress_state
                     ? riderProgressLabel(delivery.rider_progress_state)
-                    : undefined}
+                    : undefined)}
                 />
               </div>
               <ResolutionNotice delivery={delivery} />
@@ -1130,17 +1130,26 @@ function DeliveryActions({
           disabled={mutationDisabled || pendingAction === arrivalKey}
           onClick={() => runAction(arrivalKey, () => logisticsApi.arrive(delivery.id, { arrival_type: 'pickup' }))}
           className={buttonClass}>I've arrived for pickup</button>}
+        {canUpdateStatus && delivery.requires_pickup_proof && !pickupProof && canRecordProof && <DeliveryPhotoUpload
+          inputId={`pickup-proof-${delivery.id}`} inputLabel="Pickup evidence" label="Pickup evidence" file={proofFile} onChange={setProofFile} required disabled={mutationDisabled} />}
         {canUpdateStatus && (
           <button
             type="button"
-            disabled={mutationDisabled || Boolean(delivery.start_blocked_reason) || pendingAction === key}
+            disabled={mutationDisabled || Boolean(delivery.start_blocked_reason) || pendingAction === key || Boolean(delivery.requires_pickup_proof && !pickupProof && (!canRecordProof || !proofFile))}
             onClick={() =>
               runAction(
                 key,
-                () =>
-                  pickupProof
-                    ? logisticsApi.confirmPickup(delivery.id, pickupProof.id)
-                    : logisticsApi.markPickedUp(delivery.id),
+                async () => {
+                  let proofId = pickupProof?.id;
+                  if (!proofId && delivery.requires_pickup_proof) {
+                    if (!proofFile) return;
+                    const form = new FormData();
+                    form.append('handoff_type', 'pickup'); form.append('proof_type', 'photo');
+                    form.append('proof_file', proofFile); form.append('idempotency_key', proofIdempotencyKey('pickup'));
+                    proofId = (await logisticsApi.recordProof(delivery.id, form)).data.proof.id;
+                  }
+                  return proofId ? logisticsApi.confirmPickup(delivery.id, proofId) : logisticsApi.markPickedUp(delivery.id);
+                },
                 {
                   title: `Confirm pickup for ${deliveryReference}?`,
                   text: 'This confirms that the parcel is now in your custody.',

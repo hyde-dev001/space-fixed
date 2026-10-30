@@ -4,6 +4,19 @@
 
 For role-by-role testing with explicit next-page directions, use the [manual testing guide](failed-delivery-recovery-manual-testing.md).
 
+## October 30 current incident and return flow
+
+This section supersedes the older checkbox, custody-dropdown, generic Staff panel and manual physical-closure instructions below. See the [root causes, workflow map and verification record](../superpowers/plans/2026-10-30-parcel-workflow-dead-ends.md).
+
+- Dispatcher opens the original incident in Logistics. Recovery evidence and current confirmation/actions are linked there. Supply the decision reason and only the relevant customer arrangement, resolved-obstacle plan or unsafe transport arrangements; no verified-findings checkbox establishes custody or inspection.
+- Reporting Rider uses Delivery History to report recovery with details, condition, required photo and confirmation. There is no custody dropdown. Legacy evidence missing confirmation has a real Confirm Recovery action. A final loss remains final; recovery follows a separate linked shop return.
+- Accept a fresh recovery return offer. When pickup is required, upload the normal pickup proof and explicitly confirm pickup before starting. Return handoff proof does not itself mean Staff received the parcel.
+- Staff uses that order's **Confirm Parcel Received**, **Inspect Returned Items** and permitted item/source actions in the existing order workflow. The generic Return receipt and disposition panel is removed, including order details. Record real quantities and conditions; never assume expected quantity was received. Supported handling completes physical return automatically. Refund review remains reachable afterward; physical completion does not approve or pay money.
+- A verified parcel already at the shop needs no extra Rider trip. Link the existing actual receiver's receipt record. Ambiguous historical identity/links remain Dispatcher review; do not invent a receiver or confirmation. Repair property follows existing assigned Repairer/customer arrangements and never increases retail sellable stock.
+- For a read-only historical inventory, an authorized operator may run `php artisan logistics:preview-parcel-recovery --shop=ID` in the intended environment. It emits IDs/reasons, has no apply mode and does not repair records. Review ambiguous rows before separately authorized correction.
+
+No new Owner physical-receipt authority, migration or payment policy is introduced. Owner operational labels are read-only; Finance/provider outcomes remain independent.
+
 ## October 29 loss and linked recovery amendment
 
 This workflow supersedes the older loss/closure instructions below. It is implemented locally for review; it has no publication or deployment authorization. Other incident types retain their existing safeguards.

@@ -14,6 +14,23 @@ use Tests\TestCase;
 final class OrderOwnerProjectionTest extends TestCase
 {
     #[Test]
+    public function owner_sees_authoritative_return_progress_without_physical_actions(): void
+    {
+        $order = $this->order('shipped');
+        $incident = new \App\Models\Logistics\DeliveryIncident(['id' => 22, 'type' => 'other', 'resolution' => 'return_required', 'status' => 'under_review']);
+        $incident->forceFill(['recovery_context' => ['receipt' => ['actor_id' => 7]]]);
+        $leg = new \App\Models\Logistics\ShipmentLeg();
+        $leg->setRelation('incidents', collect([$incident]));
+        $shipment = new \App\Models\Logistics\Shipment();
+        $shipment->setRelation('legs', collect([$leg]));
+        $order->setRelation('logisticsShipments', collect([$shipment]));
+        $result = (new OrderOwnerProjection())->project($order);
+        $this->assertSame('Returned parcel received; item handling pending', $result['parcel_recovery_label']);
+        $this->assertSame('shipped', $result['fulfillment_status']);
+        $this->assertArrayNotHasKey('actions', $result);
+    }
+
+    #[Test]
     public function delivered_and_completed_orders_are_closed_without_authoritative_blockers(): void
     {
         $projection = new OrderOwnerProjection();

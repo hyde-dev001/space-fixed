@@ -64,7 +64,7 @@ class OrderController extends Controller
                 'items.product',
                 'retailWarrantyIssuance.warranties',
                 'customer',
-                'logisticsShipments.legs',
+                'logisticsShipments.legs.incidents',
                 'codCollection.riderUser:id,name',
                 'codCollection.remittanceItem.remittance',
                 'refunds' => function ($refundQuery) use ($includeRefundItems) {
@@ -280,7 +280,7 @@ class OrderController extends Controller
             ->with([
                 'items.product',
                 'customer',
-                'logisticsShipments.legs',
+                'logisticsShipments.legs.incidents',
                 'codCollection.riderUser:id,name',
                 'codCollection.remittanceItem.remittance',
                 'refunds' => function ($refundQuery) use ($includeRefundItems) {

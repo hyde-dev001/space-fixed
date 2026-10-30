@@ -23,6 +23,25 @@ class CustomerTrackingTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_customer_distinguishes_completed_continuation_from_a_received_shop_return(): void
+    {
+        foreach ([true, false] as $continued) {
+            $order = Order::factory()->create();
+            $shipment = Shipment::factory()->create(['shop_owner_id' => $order->shop_owner_id,
+                'source_type' => 'order', 'source_id' => $order->id, 'purpose' => 'retail_delivery']);
+            $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id]);
+            \App\Models\Logistics\DeliveryIncident::factory()->create(['shop_owner_id' => $order->shop_owner_id,
+                'shipment_leg_id' => $leg->id, 'resolution' => $continued ? 'retry' : 'return_required',
+                'status' => $continued ? 'resolved' : 'under_review',
+                'recovery_context' => $continued ? ['recovered_loss' => ['action' => 'continue']]
+                    : ['receipt' => ['actor_id' => 7]]]);
+            $summary = app(CustomerTrackingService::class)->payload($shipment)['recovery'];
+            $this->assertSame($continued ? 'delivery_recovery_completed' : 'shop_received', $summary['state']);
+            $this->assertSame($continued ? 'Recovery delivery completed' : 'Recovered parcel received by shop', $summary['label']);
+            if ($continued) $this->assertSame('Physical handling is complete. Any financial or source follow-up remains separate.', $summary['next_step']);
+        }
+    }
+
     public function test_operational_closure_keeps_pending_source_work_visible_without_internal_evidence(): void
     {
         $customer = User::factory()->create();

@@ -72,7 +72,7 @@ class InboundParcelIncidentRecoveryTest extends TestCase
         try {
             $service->resolve($incident, $shop, 'retry', 'Cannot route inbound goods out of shop again', [], $dispatcher,
                 ['request_key' => (string) \Illuminate\Support\Str::uuid(), 'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning',
-                    'rider_profile_id' => $rider->id, 'handoff_route' => 'via_shop'], null, ['obstacle_resolved' => true]);
+                    'rider_profile_id' => $rider->id, 'handoff_route' => 'via_shop'], null, ['mitigation_plan' => 'Vehicle repaired and the operational obstacle cleared']);
             $this->fail('An inbound collection created an outbound via-shop retry.');
         } catch (\Illuminate\Validation\ValidationException $exception) {
             $this->assertArrayHasKey('handoff_route', $exception->errors());
@@ -81,7 +81,7 @@ class InboundParcelIncidentRecoveryTest extends TestCase
         $this->assertNull($incident->fresh()->decided_at);
         $service->resolve($incident, $shop, 'retry', 'Reschedule real customer collection', [], $dispatcher,
             ['request_key' => (string) \Illuminate\Support\Str::uuid(), 'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning', 'rider_profile_id' => $rider->id],
-            null, ['obstacle_resolved' => true]);
+            null, ['mitigation_plan' => 'Vehicle repaired and the operational obstacle cleared']);
         $this->assertSame('assigned', $leg->fresh()->status->value);
         $this->assertSame('customer', $leg->fresh()->custody_state);
         $this->assertNull($leg->fresh()->picked_up_at);

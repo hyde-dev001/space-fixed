@@ -27,7 +27,7 @@ class CodDisputeRefundWorkflowTest extends TestCase
 
     public function test_dispatcher_can_create_a_cod_refund_before_collection_and_finance_notifies_the_customer(): void
     {
-        [$shop, $dispatcher, $finance, $customer, $order] = $this->makeContext();
+        [$shop, $dispatcher, $finance, $customer, $order] = $this->makeContext(registrationType: 'company');
         $dispute = DeliveryDispute::query()->create([
             'shop_owner_id' => $shop->id,
             'order_id' => $order->id,
@@ -199,7 +199,7 @@ class CodDisputeRefundWorkflowTest extends TestCase
 
     public function test_cod_refund_waits_for_staff_acceptance_before_finance_visibility(): void
     {
-        [$shop, $dispatcher, $finance, $customer, $order] = $this->makeContext();
+        [$shop, $dispatcher, $finance, $customer, $order] = $this->makeContext(registrationType: 'company');
         $staff = $this->makeStaff($shop);
 
         $dispute = DeliveryDispute::query()->create([
@@ -730,10 +730,10 @@ class CodDisputeRefundWorkflowTest extends TestCase
         ]);
     }
 
-    private function makeContext(bool $refundApprovalEnabled = true): array
+    private function makeContext(bool $refundApprovalEnabled = true, string $registrationType = 'individual'): array
     {
         $shop = ShopOwner::factory()->create([
-            'registration_type' => 'individual',
+            'registration_type' => $registrationType,
         ]);
         ProcurementSettings::query()->create([
             'shop_owner_id' => $shop->id,

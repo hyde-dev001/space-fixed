@@ -188,6 +188,16 @@ class CustomerTrackingService
             if (! $incident) return null;
             $closed = $incident->status === 'resolved';
             $pending = collect(app(ParcelIncidentRecoveryService::class)->obligations($incident))->contains(fn ($row) => ! $row['complete']);
+            if (data_get($incident->recovery_context, 'recovered_loss') || $incident->resolution === 'return_required') {
+                $continued = data_get($incident->recovery_context, 'recovered_loss.action') === 'continue';
+                $received = (bool) data_get($incident->recovery_context, 'receipt');
+                return ['state' => $closed ? ($continued ? 'delivery_recovery_completed' : 'physical_return_completed') : ($received ? 'shop_received' : ($incident->decided_at ? 'recovery_authorized' : 'recovery_reported')),
+                    'operational_closed' => $closed, 'linked_work_pending' => $pending,
+                    'label' => $closed ? ($continued ? 'Recovery delivery completed' : 'Physical recovery completed') : ($received ? 'Recovered parcel received by shop' : ($incident->decided_at ? 'Recovery movement authorized' : 'Parcel recovery reported')),
+                    'message' => 'The recovery is linked to the original incident. Physical handling and financial or source processing are separate.',
+                    'next_step' => $closed ? 'Physical handling is complete. Any financial or source follow-up remains separate.'
+                        : ($received ? 'The shop will complete item handling and any required source follow-up.' : 'The shop is coordinating the recorded recovery and required handoffs.')];
+            }
             if ($stage = data_get($incident->recovery_context, 'loss.stage')) {
                 return ['state' => $stage === 'confirmed' ? 'loss_confirmed' : 'loss_reported',
                     'operational_closed' => $closed, 'linked_work_pending' => $pending,

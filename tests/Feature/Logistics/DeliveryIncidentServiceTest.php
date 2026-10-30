@@ -111,7 +111,7 @@ class DeliveryIncidentServiceTest extends TestCase
         $this->assertSame(1, $leg->incidents()->count());
 
         $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
-        app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Vehicle issue resolved; retry approved.', [], null, [], null, ['obstacle_resolved' => true]);
+        app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Vehicle issue resolved; retry approved.', [], null, [], null, ['mitigation_plan' => 'Vehicle repaired and the operational obstacle cleared']);
 
         $this->assertSame('needs_resolution', $leg->fresh()->status->value);
         $this->assertSame('retry', $leg->fresh()->resolution_type);
@@ -143,7 +143,7 @@ class DeliveryIncidentServiceTest extends TestCase
             $shop,
             'dismissed',
             'Issue was checked and the rider may continue.',
-            [], null, [], null, ['obstacle_resolved' => true],
+            [], null, [], null, ['mitigation_plan' => 'Vehicle repaired and the operational obstacle cleared'],
         );
 
         $this->assertSame('in_transit', $leg->fresh()->status->value);
@@ -329,6 +329,7 @@ class DeliveryIncidentServiceTest extends TestCase
             'photo_paths' => ['incident-evidence/leg-damaged/overwrite.png'],
         ]);
         $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
+        $incident->forceFill(['recovery_context' => ['inspection' => ['quarantined' => false, 'actor_id' => $shop->id, 'items' => [['reference' => 'parcel', 'quantity' => 1, 'condition' => 'safe']]]]])->save();
         $service->resolve($incident, $shop, 'dismissed', 'Issue reviewed and closed.', [], null, [], null,
             ['condition_verified' => true, 'safe_for_delivery' => true, 'items' => [['reference' => 'parcel', 'quantity' => 1, 'condition' => 'safe']]]);
 
@@ -352,6 +353,7 @@ class DeliveryIncidentServiceTest extends TestCase
         $incident = $service->report($leg, $rider, ['type' => 'damaged', 'notes' => 'Synthetic damaged packaging report', 'photo_paths' => ['incident-evidence/test.jpg']]);
         $actor = User::factory()->create(['shop_owner_id' => $shop->id]);
         $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $rider->id, 'custody_confirmed_at' => now()]);
+        $incident->forceFill(['recovery_context' => ['inspection' => ['quarantined' => false, 'actor_id' => $actor->id, 'items' => [['reference' => 'parcel', 'quantity' => 1, 'condition' => 'safe']]]]])->save();
         $resolved = $service->resolve($incident, $shop, 'dismissed', 'Packaging inspected, contents intact', [], $actor, [], 'undetermined',
             ['condition_verified' => true, 'safe_for_delivery' => true, 'items' => [['reference' => 'parcel', 'quantity' => 1, 'condition' => 'safe']]]);
         $this->assertSame('undetermined', $resolved->responsible_party);

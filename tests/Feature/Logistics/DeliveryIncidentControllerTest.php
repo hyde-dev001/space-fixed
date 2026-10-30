@@ -88,7 +88,7 @@ class DeliveryIncidentControllerTest extends TestCase
             ->assertJsonValidationErrors('photo_paths');
     }
 
-    public function test_loss_resolution_uploads_private_evidence_and_only_authorized_staff_can_download_it(): void
+    public function test_loss_investigation_uploads_private_evidence_and_only_authorized_staff_can_download_it(): void
     {
         Storage::fake('local');
         Storage::fake('public');
@@ -109,16 +109,18 @@ class DeliveryIncidentControllerTest extends TestCase
         $staff->givePermissionTo('resolve-logistics-exceptions');
         $otherStaff->givePermissionTo('resolve-logistics-exceptions');
 
+        foreach ([['acknowledge', $staff], ['confirm', $rider], ['approve', $staff]] as $revision => [$action, $actor]) {
+            $this->actingAs($actor, 'user')->postJson("/api/logistics/incidents/{$incident->id}/loss", [
+                'action' => $action, 'notes' => 'Actual authorized loss review stage',
+                'request_key' => (string) \Illuminate\Support\Str::uuid(), 'expected_revision' => $revision,
+            ])->assertOk();
+        }
         $response = $this->actingAs($staff, 'user')
-            ->post("/api/logistics/incidents/{$incident->id}/resolve", [
-                'resolution' => 'loss_confirmed',
-                'request_key' => (string) \Illuminate\Support\Str::uuid(), 'expected_revision' => 0,
-                'findings' => ['operational_ready' => true],
-                'note' => 'Search and investigation completed.',
-                'evidence_files' => [$this->fakeEvidenceFile('investigation.png')],
-            ], ['Accept' => 'application/json'])
-            ->assertOk()
-            ->assertJsonPath('incident.photo_paths', null);
+            ->post("/api/logistics/parcel-recovery/{$incident->id}/investigation", [
+                'request_key' => (string) \Illuminate\Support\Str::uuid(), 'expected_revision' => 3,
+                'notes' => 'Private evidence appended to the confirmed loss investigation.',
+                'photo' => $this->fakeEvidenceFile('investigation.png'),
+            ], ['Accept' => 'application/json'])->assertOk()->assertJsonMissingPath('recovery.evidence_path');
 
         $updated = $incident->fresh();
         $path = $updated->evidencePaths()[0];
@@ -129,7 +131,7 @@ class DeliveryIncidentControllerTest extends TestCase
             Storage::disk('local')->get($path),
         );
         $this->actingAs($otherStaff, 'user')->get($url)->assertForbidden();
-        $this->assertStringContainsString('/api/logistics/incidents/'.$incident->id.'/evidence/0', $response->json('incident.evidence_urls.0'));
+        $this->assertStringContainsString('/api/logistics/parcel-recovery/'.$incident->id.'/evidence/', $response->json('recovery.evidence_urls.0'));
     }
 
     public function test_unknown_incident_resolution_is_rejected_by_the_api(): void

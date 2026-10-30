@@ -216,6 +216,7 @@ export type ProofReviewSummary = {
 };
 
 export type TrackingShipmentLeg = {
+  operational_label?: string | null;
   activation_required?: boolean;
   custody_state?: string;
   custody_rider_profile_id?: number | null;
@@ -330,7 +331,7 @@ export type TrackingShipmentLeg = {
 };
 
 export type LogisticsIncident = {
-  loss?: { stage: string; actions: string[]; parent_id: number | null; after_final: boolean; reporting_rider_profile_id: number } | null;
+  loss?: { review_reason?: string | null; action_incident_id?: number; action_revision?: number; recovery?: { parent_id: number; condition: string; notes: string; reported_at: string | null; confirmed: boolean; status: string } | null; stage: string; actions: string[]; parent_id: number | null; after_final: boolean; reporting_rider_profile_id: number } | null;
   revision?: number;
   decided_at?: string | null;
   eligibility?: Record<string, { allowed: boolean; conditional: boolean; label: string; reason: string | null }>;
@@ -345,6 +346,8 @@ export type LogisticsIncident = {
 };
 
 export type ParcelRecovery = {
+  can_receive?: boolean;
+  receipt_recorded?: boolean;
   can_reauthorize?: boolean;
   can_investigate?: boolean;
   can_supervise_recovery?: boolean;

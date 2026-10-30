@@ -133,6 +133,9 @@ class ProofService
                     $this->assertNoPendingDeliveryProof($leg);
                 }
 
+                if ($leg->leg_type === 'return_to_shop' && $data['handoff_type'] === 'pickup' && $assignment?->status !== 'accepted') {
+                    throw ValidationException::withMessages(['assignment' => 'Accept this return offer before recording pickup evidence.']);
+                }
                 $this->assertCanRecord($leg, $data['handoff_type']);
                 if (! $rider && ! in_array($data['proof_type'], self::NON_CUSTODY_PROOF_TYPES, true)) {
                     throw ValidationException::withMessages([
@@ -227,7 +230,8 @@ class ProofService
             throw ValidationException::withMessages(['status' => 'Proof cannot be changed after delivery or cancellation.']);
         }
 
-        if ($leg->leg_type === 'return_to_shop' && $handoffType !== 'receive') {
+        if ($leg->leg_type === 'return_to_shop' && $handoffType !== 'receive'
+            && ! ($handoffType === 'pickup' && $leg->requires_pickup_proof)) {
             throw ValidationException::withMessages(['handoff_type' => 'Return-to-shop legs require return handoff proof.']);
         }
 

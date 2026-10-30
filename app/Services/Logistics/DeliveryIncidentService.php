@@ -100,7 +100,7 @@ class DeliveryIncidentService
             }
             $expectedStage = ['acknowledge' => 'reported', 'confirm' => 'acknowledged', 'approve' => 'confirmation_requested'][$action];
             if ((int) $incident->revision !== (int) $data['expected_revision'] || $incident->status === 'resolved'
-                || data_get($incident->recovery_context, 'loss.stage') !== $expectedStage) {
+                || $incident->lossStage() !== $expectedStage) {
                 throw ValidationException::withMessages(['incident' => 'The loss stage changed. Refresh before continuing.']);
             }
             if ($action === 'approve') {
@@ -132,7 +132,7 @@ class DeliveryIncidentService
         app(LogisticsActorPolicy::class)->assertLossActor($actor, $parent, true);
         validator($data, ['request_key' => ['required', 'uuid'], 'expected_revision' => ['required', 'integer', 'min:0'],
             'notes' => ['required', 'string', 'max:1000'], 'condition' => ['required', 'in:safe,damaged,unsafe,partial'],
-            'custody_rider_profile_id' => ['required', 'integer'], 'photo_paths' => ['required', 'array', 'min:1', 'max:5']])->validate();
+            'confirmed' => ['required', 'accepted'], 'photo_paths' => ['required', 'array', 'min:1', 'max:5']])->validate();
         if (count(array_filter($data['photo_paths'], fn ($path) => $this->isSafeEvidencePath($path))) !== count($data['photo_paths'])) {
             throw ValidationException::withMessages(['photos' => 'Recovery photographs must use private incident evidence.']);
         }
@@ -140,7 +140,7 @@ class DeliveryIncidentService
             ShopOwner::whereKey($parent->shop_owner_id)->lockForUpdate()->firstOrFail();
             $parent = DeliveryIncident::with('leg.shipment')->lockForUpdate()->findOrFail($parent->id);
             abort_unless($parent->type === 'lost' && $parent->leg && (int) $parent->leg->shipment->shop_owner_id === (int) $parent->shop_owner_id, 422);
-            $hash = $this->factsHash([$actor->id, $data['notes'], $data['condition'], $data['custody_rider_profile_id'],
+            $hash = $this->factsHash([$actor->id, $data['notes'], $data['condition'], (bool) $data['confirmed'],
                 $data['expected_revision'], $data['evidence_digests'] ?? $data['photo_paths']]);
             $old = DeliveryIncident::where('shop_owner_id', $parent->shop_owner_id)
                 ->where('recovery_context->recovered_loss->parent_id', $parent->id)->where('request_key', $data['request_key'])->first();
@@ -154,17 +154,58 @@ class DeliveryIncidentService
                     ->where('recovery_context->recovered_loss->parent_id', $parent->id)->exists()) {
                 throw ValidationException::withMessages(['incident' => 'The loss or its recovery changed. Refresh before reporting.']);
             }
-            $holder = RiderProfile::where('shop_owner_id', $parent->shop_owner_id)->where('active', true)->findOrFail($data['custody_rider_profile_id']);
+            $holder = RiderProfile::where('shop_owner_id', $parent->shop_owner_id)->where('active', true)
+                ->where('linked_type', $actor::class)->where('linked_id', $actor->id)->findOrFail($parent->reporting_rider_profile_id);
             $recovery = new DeliveryIncident(['shop_owner_id' => $parent->shop_owner_id, 'shipment_leg_id' => $parent->shipment_leg_id,
                 'reporting_rider_profile_id' => $parent->reporting_rider_profile_id, 'type' => 'other', 'notes' => $data['notes'],
                 'photo_paths' => $data['photo_paths'], 'interrupted_state' => $parent->interrupted_state]);
             $recovery->forceFill(['request_key' => $data['request_key'], 'request_facts_hash' => $hash,
                 'recovery_context' => ['recovered_loss' => ['parent_id' => $parent->id, 'after_final' => $parent->resolution === 'loss_confirmed',
-                    'holder_id' => $holder->id, 'condition' => $data['condition'], 'stage' => 'reported']]])->save();
+                    'holder_id' => $holder->id, 'condition' => $data['condition'], 'stage' => 'reported',
+                    'reported_by_user_id' => $actor->id, 'reported_at' => now()->toISOString(), 'confirmed' => true]]])->save();
             $this->events->record($parent->leg->shipment, $parent->leg, ['event_type' => 'parcel_recovery_reported',
                 'message' => 'Recovered parcel reported; Dispatcher verification is required.', 'created_by_type' => $actor::class, 'created_by_id' => $actor->id,
                 'metadata' => ['incident_id' => $recovery->id, 'parent_incident_id' => $parent->id, 'action_key' => $data['request_key']]]);
             return $recovery;
+        }, 3);
+    }
+
+    public function confirmRecoveryReport(DeliveryIncident $incident, \App\Models\User $actor, array $data): DeliveryIncident
+    {
+        app(LogisticsActorPolicy::class)->assertLossActor($actor, $incident, true);
+        validator($data, ['request_key' => ['required', 'uuid'], 'expected_revision' => ['required', 'integer', 'min:0'],
+            'confirmed' => ['required', 'accepted'], 'notes' => ['required', 'string', 'max:1000']])->validate();
+        return DB::transaction(function () use ($incident, $actor, $data) {
+            ShopOwner::whereKey($incident->shop_owner_id)->lockForUpdate()->firstOrFail();
+            $incident = DeliveryIncident::with('leg.shipment')->lockForUpdate()->findOrFail($incident->id);
+            $context = data_get($incident->recovery_context, 'recovered_loss');
+            abort_unless($context && $incident->evidencePaths(), 422);
+            $parent = DeliveryIncident::where('shop_owner_id', $incident->shop_owner_id)
+                ->where('shipment_leg_id', $incident->shipment_leg_id)->where('type', 'lost')->lockForUpdate()->find($context['parent_id']);
+            if (! $parent || DeliveryIncident::where('shop_owner_id', $incident->shop_owner_id)
+                ->where('recovery_context->recovered_loss->parent_id', $parent->id)->where('status', '!=', 'resolved')->count() !== 1) {
+                throw ValidationException::withMessages(['incident' => 'Historical recovery links require Dispatcher review before confirmation.']);
+            }
+
+            $hash = $this->factsHash([$actor->id, $data]);
+            $prior = $incident->leg->events()->where('event_type', 'parcel_recovery_confirmed')
+                ->where('metadata->incident_id', $incident->id)->where('metadata->action_key', $data['request_key'])->first();
+            if ($prior) {
+                if (data_get($prior->metadata, 'facts_hash') === $hash) return $incident;
+                throw ValidationException::withMessages(['request_key' => 'This confirmation has different facts.']);
+            }
+            if ($incident->decided_at || ($context['confirmed'] ?? false) || (int) $incident->revision !== (int) $data['expected_revision']) {
+                throw ValidationException::withMessages(['incident' => 'The recovery confirmation changed. Refresh before acting.']);
+            }
+            $incident->forceFill(['revision' => $incident->revision + 1,
+                'recovery_context' => [...$incident->recovery_context, 'recovered_loss' => [...$context, 'confirmed' => true,
+                    'confirmed_by_user_id' => $actor->id, 'confirmed_at' => now()->toISOString(), 'confirmation_notes' => $data['notes']]]])->save();
+            $this->events->record($incident->leg->shipment, $incident->leg, ['event_type' => 'parcel_recovery_confirmed',
+                'message' => 'Reporting Rider confirmed the recovery evidence. Dispatcher review is available; custody is unchanged.',
+                'created_by_type' => $actor::class, 'created_by_id' => $actor->id,
+                'metadata' => ['incident_id' => $incident->id, 'parent_incident_id' => $context['parent_id'],
+                    'action_key' => $data['request_key'], 'facts_hash' => $hash, 'revision' => $incident->revision]]);
+            return $incident->fresh();
         }, 3);
     }
 
@@ -173,7 +214,7 @@ class DeliveryIncidentService
         app(LogisticsActorPolicy::class)->assertLossActor($actor, $incident, false);
         validator($data, ['request_key' => ['required', 'uuid'], 'expected_revision' => ['required', 'integer', 'min:0'],
             'notes' => ['required', 'string', 'max:1000'], 'action' => ['required', 'in:return,continue'],
-            'safe_for_transport' => ['required', 'accepted'], 'delivery_date' => ['required', 'date_format:Y-m-d'],
+            'transport_notes' => ['sometimes', 'string', 'max:1000'], 'delivery_date' => ['required', 'date_format:Y-m-d'],
             'delivery_window' => ['required', 'in:morning,afternoon'],
             'customer_agreement' => ['required_if:action,continue', 'nullable', 'string', 'max:1000']])->validate();
         return DB::transaction(function () use ($incident, $actor, $data) {
@@ -181,6 +222,12 @@ class DeliveryIncidentService
             $incident = DeliveryIncident::with('leg.shipment')->lockForUpdate()->findOrFail($incident->id);
             $context = data_get($incident->recovery_context, 'recovered_loss');
             abort_unless($context, 422);
+            if (! ($context['confirmed'] ?? false)) {
+                throw ValidationException::withMessages(['confirmation' => 'The reporting Rider must use Confirm Recovery in Delivery History. No acknowledgement or custody is inferred.']);
+            }
+            if ($data['action'] === 'return' && $context['condition'] === 'unsafe' && ! filled($data['transport_notes'] ?? null)) {
+                throw ValidationException::withMessages(['transport_notes' => 'Record safe handling and transport arrangements for the unsafe parcel.']);
+            }
             $hash = $this->factsHash([$actor->id, $data]);
             if ($incident->decided_at) {
                 if ($incident->decision_key === $data['request_key'] && data_get($incident->recovery_context, 'review_facts_hash') === $hash) return $incident;
@@ -189,6 +236,9 @@ class DeliveryIncidentService
             if ((int) $incident->revision !== (int) $data['expected_revision']) throw ValidationException::withMessages(['expected_revision' => 'Refresh the recovery.']);
             $parent = DeliveryIncident::where('shop_owner_id', $shop->id)->lockForUpdate()->findOrFail($context['parent_id']);
             abort_unless($parent->type === 'lost' && (int) $parent->shipment_leg_id === (int) $incident->shipment_leg_id, 422);
+            if (DeliveryIncident::where('shop_owner_id', $shop->id)->where('recovery_context->recovered_loss->parent_id', $parent->id)->where('status', '!=', 'resolved')->count() > 1) {
+                throw ValidationException::withMessages(['recovery' => 'Multiple active historical recoveries require Dispatcher reconciliation review.']);
+            }
             if ($data['action'] === 'continue') {
                 if ($parent->resolution === 'loss_confirmed' || $context['condition'] !== 'safe') {
                     throw ValidationException::withMessages(['action' => 'Final loss recovery and unsafe goods must return to the original shop.']);
@@ -209,16 +259,21 @@ class DeliveryIncidentService
                 $incident = $this->resolve($incident, $shop, 'retry', $data['notes'], [], $actor,
                     [...$data, 'rider_profile_id' => $context['holder_id'], 'handoff_route' => 'direct'], null,
                     ['linked_recovery_review' => true, 'request_key' => $data['request_key'], 'expected_revision' => $incident->revision,
-                        'findings' => ['condition_verified' => true, 'safe_for_delivery' => true, 'recovered_verified' => true,
-                            'obstacle_resolved' => true, 'operational_ready' => true, 'customer_agreement' => $data['customer_agreement'] ?? null]]);
+                        'findings' => ['customer_agreement' => $data['customer_agreement'] ?? null]]);
             } else {
                 $return = $this->legs->returnRecoveredParcel($incident->leg, $actor, RiderProfile::findOrFail($context['holder_id']), $data);
                 $incident->forceFill(['status' => 'under_review', 'resolution' => 'return_required', 'decided_at' => now(),
-                    'decided_by_user_id' => $actor->id, 'decision_key' => $data['request_key'], 'revision' => $incident->revision + 1,
+                    'decided_by_user_id' => $actor->id, 'resolution_note' => $data['notes'], 'decision_key' => $data['request_key'], 'revision' => $incident->revision + 1,
                     'recovery_context' => [...$incident->recovery_context, 'safekeeping_return_leg_id' => $return->id]])->save();
             }
             $incident->forceFill(['recovery_context' => [...$incident->recovery_context, 'review_facts_hash' => $hash,
-                'recovered_loss' => [...$context, 'stage' => 'authorized', 'action' => $data['action']]]])->save();
+                'recovered_loss' => [...$context, 'stage' => 'authorized', 'action' => $data['action'],
+                    'reviewed_by_user_id' => $actor->id, 'reviewed_at' => now()->toISOString(), 'transport_notes' => $data['transport_notes'] ?? null]]])->save();
+            $this->events->record($incident->leg->shipment, $incident->leg, ['event_type' => 'parcel_recovery_authorized',
+                'message' => 'Linked recovery movement authorized. Rider handoff, actual shop receipt and item handling remain separate.',
+                'created_by_type' => $actor::class, 'created_by_id' => $actor->id,
+                'metadata' => ['incident_id' => $incident->id, 'parent_incident_id' => $parent->id, 'revision' => $incident->revision,
+                    'action_key' => $data['request_key'], 'resolution' => $incident->resolution]]);
             return $incident->fresh();
         }, 3);
     }
@@ -270,11 +325,11 @@ class DeliveryIncidentService
             if (isset($decision['expected_revision']) && (int) $decision['expected_revision'] !== (int) $incident->revision) {
                 throw ValidationException::withMessages(['expected_revision' => 'The incident changed. Refresh before deciding.']);
             }
-            $stagedLoss = $resolution === 'loss_confirmed' && data_get($incident->recovery_context, 'loss.stage') !== null;
+            $stagedLoss = $resolution === 'loss_confirmed' && $incident->lossStage() !== null;
             if (data_get($incident->recovery_context, 'recovered_loss') && empty($decision['linked_recovery_review'])) {
                 throw ValidationException::withMessages(['resolution' => 'Use the linked recovery review with current custody and source safeguards.']);
             }
-            if (data_get($incident->recovery_context, 'loss.stage') && $resolution !== 'loss_confirmed') {
+            if ($incident->lossStage() && $resolution !== 'loss_confirmed') {
                 throw ValidationException::withMessages(['resolution' => 'Report a separate physical recovery before authorizing movement for a missing parcel.']);
             }
             if ($stagedLoss && (data_get($incident->recovery_context, 'loss.stage') !== 'confirmation_requested' || empty($decision['loss_stage_approval']))) {
@@ -345,17 +400,19 @@ class DeliveryIncidentService
         $present = $leg && in_array($leg->custody_state, ['rider', 'shop', 'customer'], true) && $leg->custody_confirmed_at;
         $recovered = $incident->type !== 'lost' || (($findings['recovered_verified'] ?? false) === true && $present);
         $priorLoss = $leg?->incidents()->where('resolution', 'loss_confirmed')->exists();
-        $safe = $incident->type !== 'damaged' || (($findings['condition_verified'] ?? false) === true
-            && ($findings['safe_for_delivery'] ?? false) === true && ! empty($findings['items']));
+        $inspection = data_get($incident->recovery_context, 'inspection');
+        $safe = $incident->type !== 'damaged' || ($inspection && ! ($inspection['quarantined'] ?? true));
+        $linkedCondition = data_get($incident->recovery_context, 'recovered_loss.condition');
         $ready = match ($incident->type) {
-            'vehicle_problem' => ($findings['obstacle_resolved'] ?? false) === true,
-            'customer_dispute' => ($findings['dispute_resolved'] ?? false) === true && filled($findings['customer_agreement'] ?? null),
-            'other' => ($findings['operational_ready'] ?? false) === true,
+            'vehicle_problem' => filled($findings['mitigation_plan'] ?? null),
+            'customer_dispute' => filled($findings['customer_agreement'] ?? null),
+            'other' => $linkedCondition === 'safe' || filled($findings['mitigation_plan'] ?? null),
             default => true,
         };
         $canDeliver = $present && $recovered && ! $priorLoss && $safe && $ready;
+        $unsafe = $linkedCondition === 'unsafe' || collect($inspection['items'] ?? [])->contains(fn ($item) => ($item['condition'] ?? null) === 'unsafe');
         $canReturn = $present && in_array($leg->custody_state, ['rider', 'shop'], true)
-            && $recovered && ! $priorLoss && ($findings['safe_for_transport'] ?? false) === true;
+            && $recovered && ! $priorLoss && (! $unsafe || filled($findings['transport_notes'] ?? null));
         $result = [];
         foreach (self::RESOLUTIONS as $resolution) {
             $allowed = match ($resolution) {
@@ -369,7 +426,7 @@ class DeliveryIncidentService
             $conditional = $resolution !== 'loss_confirmed' && $present && ! $priorLoss
                 && ($incident->type !== 'lost' || $recovered);
             $result[$resolution] = ['allowed' => (bool) $allowed, 'conditional' => (bool) $conditional, 'label' => $labels[$resolution], 'reason' => $allowed ? null
-                : 'Verify actual custody, parcel condition, resolved obstacle/dispute and required customer agreement. A confirmed loss requires supervised reconciliation.'];
+                : 'Use confirmed custody, actual shop inspection for damaged goods, and document the resolved obstacle or customer arrangement. Unsafe returns require a safe handling plan; final loss uses its linked recovery.'];
         }
         return $result;
     }

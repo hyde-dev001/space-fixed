@@ -48,8 +48,8 @@ class ParcelIncidentRecoveryService
         $closed = $incident->status === 'resolved';
         $inspected = data_get($context, 'inspection') !== null;
         $atShop = $physicalLeg->custody_state === 'shop' && $physicalLeg->custody_confirmed_at;
-        $received = $atShop || data_get($context, 'receipt') || $leg->returnLeg?->status->value === 'delivered'
-            || $leg->custodyTransfers->contains(fn ($transfer) => $transfer->to_type === 'shop' && $transfer->status === 'received');
+        $received = (bool) data_get($context, 'receipt') || ($atShop && ($physicalLeg->proofs->contains(fn ($proof) => $proof->handoff_type === 'receive' && $proof->review_status === 'approved' && $proof->reviewed_by_type === User::class && $proof->reviewed_by_id)
+            || $physicalLeg->custodyTransfers->contains(fn ($transfer) => $transfer->to_type === 'shop' && $transfer->status === 'received' && $transfer->received_by_user_id)));
         $source = $leg->shipment;
         if (! $source->relationLoaded('parcelRecoverySource')) $this->policy->loadParcelRecoverySources(collect([$source]));
         $expectedItems = $this->expectedItems($source);
@@ -68,17 +68,21 @@ class ParcelIncidentRecoveryService
         $actions = [
             ['action' => 'verify_readiness', 'label' => 'Verify resolved condition and customer arrangement', 'allowed' => $available && $actor->can('resolve-logistics-exceptions')],
             ['action' => 'ready_for_retry', 'label' => 'Submit retry readiness to Dispatcher', 'allowed' => $available && $incident->resolution === 'retry' && ! data_get($context, 'inspection.quarantined', true)],
-            ['action' => 'authorize_retry_handoff', 'label' => 'Arrange inspected outbound handoff', 'allowed' => $available
+            ['action' => 'authorize_retry_handoff', 'label' => 'Arrange inspected outbound handoff', 'allowed' => ($available || ($closed && $atShop && $inspected && $source->source_type === 'repair_request' && $physicalLeg->id !== $leg->id))
                 && ($incident->resolution === 'retry' || $physicalLeg->id !== $leg->id) && $assignment
                 && $assignment->status === 'accepted' && $physicalLeg->scheduled_delivery_date
                 && $actor->can('resolve-logistics-exceptions') && (bool) data_get($context, 'readiness.inspected_revision')
                 && ! collect($handoffs)->contains(fn ($transfer) => (int) $transfer['shipment_leg_id'] === (int) $physicalLeg->id)],
             ['action' => 'redeliver_original', 'label' => 'Authorize original-parcel redelivery', 'allowed' => $available && $source->source_type === 'order'
                 && $actor->can('resolve-logistics-exceptions') && ! data_get($context, 'inspection.quarantined', true) && ! data_get($context, 'source_outcome.shipment_id')],
-            ['action' => 'refund_review', 'label' => 'Submit refund eligibility review', 'allowed' => $available && in_array($source->source_type, ['order', 'order_refund'], true) && ! data_get($context, 'source_outcome.shipment_id')],
+            ['action' => 'refund_review', 'label' => 'Submit refund eligibility review', 'allowed' => ($available || ($closed && $atShop && $inspected && $incident->resolution === 'return_required')) && in_array($source->source_type, ['order', 'order_refund'], true) && ! data_get($context, 'source_outcome.shipment_id')],
             ['action' => 'repair_recovery', 'label' => 'Continue existing repair/customer arrangement', 'allowed' => $available && $source->source_type === 'repair_request'],
             ['action' => 'escalate', 'label' => 'Escalate for source investigation', 'allowed' => ! $closed],
         ];
+        if ($incident->resolution === 'return_required' && $source->source_type === 'order' && ! data_get($context, 'recovered_loss')) {
+            $actions[] = ['action' => 'inventory_disposition', 'label' => 'Complete inspected item handling',
+                'allowed' => $available && (bool) data_get($context, 'receipt')];
+        }
         if (data_get($context, 'recovered_loss')) {
             $actions = [['action' => $source->source_type === 'repair_request' ? 'repair_recovery' : 'inventory_disposition',
                 'label' => $source->source_type === 'repair_request' ? 'Record customer-property disposition' : 'Apply inspected inventory disposition',
@@ -89,14 +93,13 @@ class ParcelIncidentRecoveryService
             'evidence_urls' => array_map(fn ($path) => route('logistics.api.parcel-recovery.evidence', [$incident, hash('sha256', $path)]), $this->evidencePaths($incident)),
             'can_reauthorize' => $canReauthorize, 'retry_findings' => $canReauthorize ? ($context['findings'] ?? []) : null,
             'can_investigate' => $incident->resolution === 'loss_confirmed' || data_get($context, 'disposition.action') === 'escalate',
-            'can_supervise_recovery' => $incident->resolution === 'loss_confirmed' && ! data_get($context, 'loss.stage')
-                && $leg->custody_state === 'lost' && $actor->can('resolve-logistics-exceptions'),
+            'can_supervise_recovery' => false,
             'safekeeping_pending' => (bool) data_get($context, 'safekeeping_return_leg_id') && ! $received,
             'resolution' => $incident->resolution, 'operational_status' => $incident->status,
             'source_type' => $leg->shipment->source_type, 'source_id' => $leg->shipment->source_id,
             'shipment_id' => $leg->shipment_id, 'delivery_id' => $leg->id,
             'current_delivery_id' => $physicalLeg->id, 'movement_status' => $physicalLeg->status->value,
-            'can_inspect' => (bool) $atShop && (! $closed || (! data_get($context, 'recovered_loss') && (bool) data_get($context, 'safekeeping_return_leg_id'))),
+            'can_inspect' => (bool) $atShop && (bool) $received && (! $closed || (! data_get($context, 'recovered_loss') && (bool) data_get($context, 'safekeeping_return_leg_id'))),
             'custody' => $physicalLeg->custody_state, 'received' => (bool) $received, 'inspected' => $inspected,
             'holder_label' => $physicalLeg->custody_state === 'rider'
                 ? ((int) $physicalLeg->custodyRider?->shop_owner_id === (int) $incident->shop_owner_id ? $physicalLeg->custodyRider->name : 'Unverified Rider custody')
@@ -113,7 +116,9 @@ class ParcelIncidentRecoveryService
                 'label' => 'Unidentified source parcel - retain actual quantities and escalate', 'expected_quantity' => 0]],
             'actions' => $actions, 'can_close' => ! $closed && ! data_get($context, 'recovered_loss') && $actor->can('resolve-logistics-exceptions'),
             'source_outcome' => array_intersect_key($context['source_outcome'] ?? [], array_flip(['shipment_id', 'leg_id', 'refund_id', 'repair_request_id'])),
-            'return_proof_id' => $leg->returnLeg?->proofs->where('handoff_type', 'receive')->where('review_status', 'rider_confirmed')->sortByDesc('id')->first()?->id,
+            'can_receive' => ! data_get($context, 'receipt') && (($atShop && $received) || (bool) $leg->returnLeg?->proofs->where('handoff_type', 'receive')->where('review_status', 'rider_confirmed')->count()),
+            'receipt_recorded' => (bool) data_get($context, 'receipt'),
+            'return_proof_id' => $leg->returnLeg?->proofs->where('handoff_type', 'receive')->whereIn('review_status', ['rider_confirmed', 'approved'])->sortByDesc('id')->first()?->id,
             'transfers' => array_values(array_filter($handoffs, fn ($transfer) => in_array((int) $transfer['shipment_leg_id'], [(int) $leg->id, (int) $physicalLeg->id], true))),
         ];
     }
@@ -153,6 +158,11 @@ class ParcelIncidentRecoveryService
                 : \App\Models\Logistics\Shipment::where('shop_owner_id', $shipment->shop_owner_id)->find($shipmentId);
             $rows[] = ['type' => 'redelivery', 'id' => $shipmentId, 'status' => $movement?->status?->value,
                 'complete' => $movement?->status?->value === 'completed', 'next_actor' => 'dispatcher_and_current_rider'];
+        }
+        if ($incident->resolution === 'return_required' && $shipment->source_type === 'order'
+            && $source?->payment_status === 'paid' && $refunds->isEmpty() && ! data_get($incident->recovery_context, 'source_outcome.shipment_id')) {
+            $rows[] = ['type' => 'return_financial_review', 'id' => $shipment->source_id, 'status' => 'review_required',
+                'complete' => false, 'next_actor' => 'staff_and_existing_refund_workflow'];
         }
         if (($incident->resolution === 'loss_confirmed' && (data_get($incident->recovery_context, 'loss.stage') !== 'confirmed' || $shipment->source_type !== 'order'))
             || data_get($incident->recovery_context, 'disposition.action') === 'escalate') {
@@ -219,6 +229,21 @@ class ParcelIncidentRecoveryService
     {
         return $this->mutate($incident, $actor, 'received', $data, function ($locked) use ($actor, $data) {
             $leg = $locked->leg;
+            if (! ($data['proof_id'] ?? null)) {
+                $movement = $this->currentMovementLeg($locked);
+                $transfer = $movement->custodyTransfers()->where('to_type', 'shop')->where('status', 'received')
+                    ->where('received_by_user_id', $actor->id)->latest('id')->lockForUpdate()->first();
+                if (! $transfer || $movement->custody_state !== 'shop' || ! $movement->custody_confirmed_at) {
+                    throw ValidationException::withMessages(['receipt' => 'Complete the actual employee handoff or Rider return proof before confirming receipt.']);
+                }
+                if (data_get($locked->recovery_context, 'receipt')) {
+                    throw ValidationException::withMessages(['receipt' => 'Shop receipt is already recorded.']);
+                }
+                if (! data_get($locked->recovery_context, 'recovered_loss.after_final')) $this->legs->completeIncidentShopReceipt($movement);
+                return ['receipt' => ['return_leg_id' => $movement->id, 'transfer_id' => $transfer->id,
+                    'actor_id' => $actor->id, 'received_at' => $transfer->received_at->toISOString(),
+                    'evidence_path' => $data['evidence_path'], 'notes' => $data['notes']]];
+            }
             $return = $leg->returnLeg()->firstOrFail();
             $proof = HandoffProof::where('shipment_leg_id', $return->id)->findOrFail($data['proof_id'] ?? null);
             if (data_get($locked->recovery_context, 'receipt')) {
@@ -241,7 +266,7 @@ class ParcelIncidentRecoveryService
     {
         return $this->mutate($incident, $actor, 'inspected', $data, function ($locked) use ($actor, $data) {
             $physicalLeg = $this->currentMovementLeg($locked);
-            if ($physicalLeg->custody_state !== 'shop' || ! $physicalLeg->custody_confirmed_at) {
+            if ($physicalLeg->custody_state !== 'shop' || ! $physicalLeg->custody_confirmed_at || ! $this->project($locked, $actor)['received']) {
                 throw ValidationException::withMessages(['receipt' => 'Confirm actual shop receipt before inspecting.']);
             }
             $quarantined = collect($data['items'])->contains(fn ($item) => $item['condition'] !== 'safe');
@@ -271,17 +296,10 @@ class ParcelIncidentRecoveryService
     {
         return $this->mutate($incident, $actor, 'investigated', $data, function ($locked) use ($actor, $data) {
             if ($locked->resolution !== 'loss_confirmed' && data_get($locked->recovery_context, 'disposition.action') !== 'escalate') abort(422);
-            $changes = [];
             if (! empty($data['recovered_rider_profile_id'])) {
-                abort_unless($actor->can('resolve-logistics-exceptions') && $locked->resolution === 'loss_confirmed', 403);
-                if (empty($data['evidence_path']) || ! ($data['safe_for_transport'] ?? false)) {
-                    throw ValidationException::withMessages(['evidence' => 'Verify actual recovery, holder and safe transport with private evidence.']);
-                }
-                $holder = \App\Models\Logistics\RiderProfile::where('shop_owner_id', $locked->shop_owner_id)->findOrFail($data['recovered_rider_profile_id']);
-                $return = $this->legs->recoverConfirmedLossToShop($locked->leg, $actor, $holder);
-                $changes['safekeeping_return_leg_id'] = $return->id;
+                throw ValidationException::withMessages(['recovery' => 'The reporting Rider must use Report Recovery on the original incident. Dispatcher review then authorizes normal acceptance, pickup and shop receipt.']);
             }
-            return [...$changes, 'investigation' => ['notes' => $data['notes'], 'actor_id' => $actor->id, 'recorded_at' => now()->toISOString(),
+            return ['investigation' => ['notes' => $data['notes'], 'actor_id' => $actor->id, 'recorded_at' => now()->toISOString(),
                 'evidence_path' => $data['evidence_path'] ?? null, 'next_actor' => 'dispatcher_and_source_owner']];
         });
     }
@@ -307,15 +325,16 @@ class ParcelIncidentRecoveryService
             }
             $outcome = [];
             if ($action === 'inventory_disposition') {
-                if (! data_get($locked->recovery_context, 'recovered_loss') || ! data_get($locked->recovery_context, 'receipt')) {
-                    throw ValidationException::withMessages(['receipt' => 'A linked recovered parcel and actual shop receipt are required.']);
+                if ((! data_get($locked->recovery_context, 'recovered_loss') && $locked->resolution !== 'return_required') || ! data_get($locked->recovery_context, 'receipt')) {
+                    throw ValidationException::withMessages(['receipt' => 'An authorized returned parcel and actual shop receipt are required.']);
                 }
                 $inventory = app(\App\Services\RefundInventoryDispositionService::class)->applyRecoveredParcel($locked, $actor);
                 $outcome = ['inventory_disposition' => $inventory];
                 $locked->forceFill(['status' => 'resolved', 'resolved_at' => now()])->save();
             } elseif ($action === 'verify_readiness') {
                 abort_unless($actor->can('resolve-logistics-exceptions'), 403);
-                $findings = [...data_get($locked->recovery_context, 'findings', []), ...($data['findings'] ?? []), 'items' => $inspection['items']];
+                $findings = [...data_get($locked->recovery_context, 'findings', []), ...($data['findings'] ?? []),
+                    'mitigation_plan' => $data['findings']['mitigation_plan'] ?? $data['notes'], 'items' => $inspection['items']];
                 $eligible = $this->incidents->eligibility($locked, $findings)['retry'];
                 if (($inspection['quarantined'] ?? true) || ! $eligible['allowed']) {
                     throw ValidationException::withMessages(['findings' => $eligible['reason'] ?? 'Goods remain quarantined. Verify actual condition and customer arrangement.']);
@@ -365,7 +384,7 @@ class ParcelIncidentRecoveryService
                 $outcome = ['source_outcome' => ['refund_id' => $refund->id, 'next_actor' => 'existing_refund_workflow']];
             } elseif ($action === 'repair_recovery') {
                 if ($locked->leg->shipment->source_type !== 'repair_request') abort(422);
-                if (data_get($locked->recovery_context, 'recovered_loss')) {
+                if (data_get($locked->recovery_context, 'recovered_loss') || $locked->resolution === 'return_required') {
                     $items = collect($inspection['items'] ?? []);
                     $reference = 'repair_request:'.$locked->leg->shipment->source_id;
                     if (! data_get($locked->recovery_context, 'receipt') || $items->count() !== 1
@@ -417,7 +436,11 @@ class ParcelIncidentRecoveryService
             }
             $closingSafekeeping = ! data_get($locked->recovery_context, 'recovered_loss')
                 && data_get($locked->recovery_context, 'safekeeping_return_leg_id') && in_array($stage, ['received', 'inspected'], true);
-            if ((int) $locked->revision !== (int) $data['expected_revision'] || ! $locked->decided_at || ($locked->status === 'resolved' && $stage !== 'investigated' && ! $closingSafekeeping)) {
+            $repairHandoff = $stage === 'dispositioned' && ($data['action'] ?? null) === 'authorize_retry_handoff'
+                && $locked->resolution === 'return_required' && $locked->leg->shipment->source_type === 'repair_request'
+                && $this->currentMovementLeg($locked)->id !== $locked->leg->id;
+            $financialFollowup = $stage === 'dispositioned' && ($data['action'] ?? null) === 'refund_review' && $locked->resolution === 'return_required';
+            if ((int) $locked->revision !== (int) $data['expected_revision'] || ! $locked->decided_at || ($locked->status === 'resolved' && $stage !== 'investigated' && ! $closingSafekeeping && ! $financialFollowup && ! $repairHandoff)) {
                 throw ValidationException::withMessages(['expected_revision' => 'The recovery changed or is closed. Refresh before acting.']);
             }
             $changes = $operation($locked);

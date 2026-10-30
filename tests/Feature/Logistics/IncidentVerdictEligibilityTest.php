@@ -55,6 +55,7 @@ class IncidentVerdictEligibilityTest extends TestCase
         $service = app(DeliveryIncidentService::class);
         $incident = $service->report($leg, $rider, ['type' => $type, 'notes' => 'Actual incident report', 'photo_paths' => ['incident-evidence/test/report.jpg']]);
         $findings = ['safe_for_transport' => true, 'obstacle_resolved' => $allowed];
+        if ($allowed && $type === 'vehicle_problem') $findings['mitigation_plan'] = 'Vehicle repaired and route arrangement verified';
 
         if (! $allowed) {
             try {

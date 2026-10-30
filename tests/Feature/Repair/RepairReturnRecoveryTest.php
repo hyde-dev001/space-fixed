@@ -309,7 +309,9 @@ class RepairReturnRecoveryTest extends TestCase
         $recovery->receive($incident, $dispatcher, $facts(['proof_id' => $proof->id, 'evidence_path' => 'incident-evidence/repair-receipt.jpg']));
         $recovery->inspect($incident->fresh(), $dispatcher, $facts(['items' => [['reference' => 'repair_request:'.$repair->id, 'quantity' => 1, 'condition' => 'safe']]]));
         $recovery->disposition($incident->fresh(), $dispatcher, $facts(['action' => 'verify_readiness', 'findings' => ['obstacle_resolved' => true]]));
-        $recovery->disposition($incident->fresh(), $dispatcher, $facts(['action' => 'repair_recovery']));
+        $physical = $recovery->disposition($incident->fresh(), $dispatcher, $facts(['action' => 'repair_recovery']));
+        $this->assertSame('resolved', $physical['operational_status']);
+        $this->assertFalse($physical['complete']);
         $deliveryDate = now()->addDays(2)->toDateString();
         app(RepairDeliveryService::class)->resolveReturnRecovery(
             $repair->fresh(),
@@ -428,7 +430,7 @@ class RepairReturnRecoveryTest extends TestCase
         $this->assertSame('picked_up', $repair->fresh()->status);
         $this->assertSame('delivered', $newLeg->fresh()->status->value);
         $this->assertSame($beforePaid + $fee, (float) $repair->fresh()->total_paid_amount);
-        $closed = $recovery->close($incident->fresh(), $dispatcher, $facts(['outcome' => 'delivery_completed']));
+        $closed = $recovery->project($incident->fresh(), $dispatcher);
         $this->assertSame('resolved', $closed['operational_status']);
         $this->assertTrue($closed['complete']);
     }

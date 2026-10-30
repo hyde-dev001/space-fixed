@@ -23,12 +23,13 @@ class RefundInventoryDispositionService
             $context = $incident->recovery_context ?? [];
             if ($prior = $context['inventory_disposition'] ?? null) return $prior;
             $shipment = $incident->leg->shipment;
-            if (! data_get($context, 'recovered_loss') || ! data_get($context, 'receipt') || ! data_get($context, 'inspection.items')
+            if ((! data_get($context, 'recovered_loss') && $incident->resolution !== 'return_required') || ! data_get($context, 'receipt') || ! data_get($context, 'inspection.items')
                 || $shipment->source_type !== 'order' || $shipment->purpose !== 'retail_delivery') {
                 throw \Illuminate\Validation\ValidationException::withMessages(['inventory' => 'Only physically received and inspected retail goods can enter inventory disposition.']);
             }
             $return = \App\Models\Logistics\ShipmentLeg::where('shipment_id', $shipment->id)
-                ->where('return_for_leg_id', $incident->shipment_leg_id)->lockForUpdate()->findOrFail($context['receipt']['return_leg_id']);
+                ->where(fn ($q) => $q->where('return_for_leg_id', $incident->shipment_leg_id)->orWhere('id', $incident->shipment_leg_id))
+                ->lockForUpdate()->findOrFail($context['receipt']['return_leg_id']);
             if ($return->custody_state !== 'shop' || ! $return->custody_confirmed_at) {
                 throw \Illuminate\Validation\ValidationException::withMessages(['receipt' => 'Actual shop custody is required.']);
             }

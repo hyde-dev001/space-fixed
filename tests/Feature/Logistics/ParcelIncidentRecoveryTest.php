@@ -3,6 +3,7 @@
 namespace Tests\Feature\Logistics;
 
 use App\Models\Logistics\DeliveryAssignment;
+use App\Models\Logistics\DeliveryIncident;
 use App\Models\Logistics\RiderProfile;
 use App\Models\Logistics\Shipment;
 use App\Models\Logistics\ShipmentLeg;
@@ -40,11 +41,94 @@ class ParcelIncidentRecoveryTest extends TestCase
         return [$shop, $order, $leg, $incident, $dispatcher];
     }
 
+    private function historicalLoss(ShipmentLeg $leg, DeliveryIncident $incident, string $note): void
+    {
+        app(\App\Services\Logistics\ShipmentLegService::class)->confirmLoss($leg, $note);
+        $incident->forceFill(['type' => 'lost', 'resolution' => 'loss_confirmed', 'status' => 'under_review',
+            'decided_at' => now(), 'revision' => 1, 'resolution_note' => $note, 'recovery_context' => []])->save();
+    }
+
+    public function test_return_authorization_uses_real_custody_without_verified_findings_checkboxes(): void
+    {
+        [, , $leg, $incident, $dispatcher] = $this->fixture();
+        $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/incidents/{$incident->id}/resolve", [
+            'resolution' => 'return_required', 'note' => 'Bring the parcel to the original shop for inspection',
+            'request_key' => (string) Str::uuid(), 'expected_revision' => 0,
+        ])->assertOk();
+        $this->assertSame('return_required', $incident->fresh()->resolution);
+        $this->assertNull($incident->fresh()->resolved_at);
+        $this->assertSame('rider', $leg->returnLeg()->firstOrFail()->custody_state);
+        $this->assertSame('shop', $leg->returnLeg->destination_snapshot['type']);
+    }
+
+    public function test_returned_retail_goods_complete_physical_handling_once_and_leave_financial_review_actionable(): void
+    {
+        [$shop, $order, $leg, $incident, $dispatcher] = $this->fixture();
+        $order->update(['payment_method' => 'paymongo_card', 'payment_status' => 'paid', 'paymongo_payment_id' => 'pay_synthetic_return']);
+        $product = \App\Models\Product::create(['shop_owner_id' => $shop->id, 'stock_quantity' => 8,
+            'name' => 'Returned goods', 'slug' => 'returned-goods', 'price' => 100, 'is_active' => true]);
+        $item = \App\Models\OrderItem::create(['order_id' => $order->id, 'product_id' => $product->id,
+            'product_name' => 'Returned goods', 'price' => 100, 'quantity' => 1, 'subtotal' => 100]);
+        app(DeliveryIncidentService::class)->resolve($incident, $shop, 'return_required', 'Return for actual receipt', [], $dispatcher);
+        $return = $leg->returnLeg()->firstOrFail();
+        $proof = \App\Models\Logistics\HandoffProof::factory()->create(['shipment_leg_id' => $return->id, 'handoff_type' => 'receive', 'review_status' => 'rider_confirmed']);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $staff->givePermissionTo(Permission::findOrCreate('access-staff-job-orders', 'user'));
+        $this->clockInEmployee($staff);
+        $service = app(\App\Services\Logistics\ParcelIncidentRecoveryService::class);
+        $facts = fn ($revision) => ['request_key' => (string) Str::uuid(), 'expected_revision' => $revision, 'notes' => 'Actual returned goods inspected'];
+        $service->receive($incident, $staff, [...$facts(1), 'proof_id' => $proof->id, 'evidence_path' => 'incident-evidence/receipt.jpg']);
+        $service->inspect($incident->fresh(), $staff, [...$facts(2), 'items' => [['reference' => 'order-item:'.$item->id, 'quantity' => 1, 'condition' => 'safe']]]);
+        $data = [...$facts(3), 'action' => 'inventory_disposition'];
+        $result = $service->disposition($incident->fresh(), $staff, $data);
+        $this->assertSame('resolved', $result['operational_status']);
+        $this->assertSame(9, $product->fresh()->stock_quantity);
+        $service->disposition($incident->fresh(), $staff, $data);
+        $this->assertSame(9, $product->fresh()->stock_quantity);
+        $this->actingAs($staff, 'user')->getJson('/api/staff/orders')->assertOk()
+            ->assertJsonPath('0.parcel_returns.0.incident_id', $incident->id)
+            ->assertJsonPath('0.parcel_returns.0.operational_status', 'resolved');
+        $this->assertFalse($result['complete']);
+        $this->assertTrue(collect($result['actions'])->firstWhere('action', 'refund_review')['allowed']);
+        $review = $service->disposition($incident->fresh(), $staff, [...$facts(4), 'action' => 'refund_review']);
+        $this->assertSame('resolved', $incident->fresh()->status);
+        $this->assertNotEmpty($review['source_outcome']['refund_id']);
+        $this->assertNotSame('succeeded', $order->refunds()->firstOrFail()->status);
+        $this->assertSame(9, $product->fresh()->stock_quantity);
+    }
+
+    public function test_return_already_at_shop_does_not_invent_another_rider_trip_or_receipt(): void
+    {
+        [$shop, , $leg, $incident, $dispatcher] = $this->fixture();
+        $leg->update(['custody_state' => 'shop', 'custody_rider_profile_id' => null, 'custody_confirmed_at' => now()]);
+        $before = $leg->assignments()->count();
+        app(DeliveryIncidentService::class)->resolve($incident, $shop, 'return_required', 'Already at shop; receiving record needs review', [], $dispatcher);
+        $this->assertFalse($leg->returnLeg()->exists());
+        $this->assertSame($before, $leg->assignments()->count());
+        $projection = app(\App\Services\Logistics\ParcelIncidentRecoveryService::class)->project($incident->fresh('leg.shipment'), $dispatcher);
+        $this->assertFalse($projection['received']);
+        $this->assertFalse($projection['can_inspect']);
+        $transfer = \App\Models\Logistics\ShipmentCustodyTransfer::create([
+            'shop_owner_id' => $shop->id, 'shipment_leg_id' => $leg->id,
+            'request_key' => (string) Str::uuid(), 'from_type' => 'rider',
+            'requested_by_user_id' => $dispatcher->id, 'to_type' => 'shop', 'status' => 'received',
+            'received_by_user_id' => $dispatcher->id, 'received_at' => now(),
+        ]);
+        $received = app(\App\Services\Logistics\ParcelIncidentRecoveryService::class)->receive($incident->fresh(), $dispatcher, [
+            'request_key' => (string) Str::uuid(), 'expected_revision' => 1, 'notes' => 'Link my actual recorded shop receipt',
+            'evidence_path' => 'incident-evidence/actual-receiver.jpg',
+        ]);
+        $this->assertTrue($received['receipt_recorded']);
+        $this->assertSame($dispatcher->id, data_get($incident->fresh()->recovery_context, 'receipt.actor_id'));
+        $this->assertSame($transfer->id, data_get($incident->fresh()->recovery_context, 'receipt.transfer_id'));
+
+    }
+
     public function test_decision_replay_requires_identical_facts_and_preserves_report(): void
     {
         [, , $leg, $incident, $dispatcher] = $this->fixture();
         $payload = ['resolution' => 'dismissed', 'note' => 'Vehicle repaired', 'request_key' => (string) Str::uuid(),
-            'expected_revision' => 0, 'findings' => ['obstacle_resolved' => true]];
+            'expected_revision' => 0, 'findings' => ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true]];
         $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/incidents/{$incident->id}/resolve", $payload)->assertOk();
         $events = $leg->events()->count();
         $this->postJson("/api/logistics/incidents/{$incident->id}/resolve", $payload)->assertOk();
@@ -58,7 +142,7 @@ class ParcelIncidentRecoveryTest extends TestCase
     {
         [, , , $incident, $dispatcher] = $this->fixture();
         $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/incidents/{$incident->id}/resolve", [
-            'resolution' => 'dismissed', 'note' => 'Vehicle repaired', 'findings' => ['obstacle_resolved' => true],
+            'resolution' => 'dismissed', 'note' => 'Vehicle repaired', 'findings' => ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true],
         ])->assertUnprocessable()->assertJsonValidationErrors(['request_key', 'expected_revision']);
         $this->assertSame('reported', $incident->fresh()->status);
     }
@@ -72,7 +156,7 @@ class ParcelIncidentRecoveryTest extends TestCase
         $leg->update(['delivery_batch_id' => $batch->id, 'stop_sequence' => 1]);
         $other = ShipmentLeg::factory()->create(['shipment_id' => $leg->shipment_id, 'delivery_batch_id' => $batch->id, 'stop_sequence' => 2]);
         $data = ['resolution' => 'retry', 'note' => 'Vehicle fixed', 'reason' => 'Vehicle fixed',
-            'request_key' => (string) Str::uuid(), 'expected_revision' => 0, 'findings' => ['obstacle_resolved' => true],
+            'request_key' => (string) Str::uuid(), 'expected_revision' => 0, 'findings' => ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true],
             'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning', 'expected_assignment_id' => $old->id,
             'rider_profile_id' => $old->rider_profile_id, 'handoff_route' => 'direct'];
         \App\Models\Logistics\LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], ['operating_days' => range(1, 7)]);
@@ -145,7 +229,7 @@ class ParcelIncidentRecoveryTest extends TestCase
         $holder->givePermissionTo(Permission::findOrCreate('update-logistics-status', 'user'));
         app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Via shop inspection', [], $dispatcher,
             ['delivery_date' => now()->toDateString(), 'delivery_window' => 'morning', 'rider_profile_id' => $profile->id,
-                'request_key' => (string) Str::uuid(), 'handoff_route' => 'via_shop'], null, ['obstacle_resolved' => true]);
+                'request_key' => (string) Str::uuid(), 'handoff_route' => 'via_shop'], null, ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true]);
         app(\App\Services\Logistics\AssignmentService::class)->respondToOffer($leg->fresh(), $profile, true);
         $transfer = $leg->custodyTransfers()->latest('id')->firstOrFail();
         Storage::disk('local')->put('logistics-proof/release.jpg', 'release');
@@ -174,7 +258,7 @@ class ParcelIncidentRecoveryTest extends TestCase
     {
         [$shop, $order, $leg, $incident, $dispatcher] = $this->fixture();
         $incident->update(['type' => 'lost']);
-        app(DeliveryIncidentService::class)->resolve($incident->fresh(), $shop, 'loss_confirmed', 'Search documented', ['incident-evidence/search.jpg']);
+        $this->historicalLoss($leg, $incident, 'Search documented');
         $key = (string) Str::uuid();
         $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/parcel-recovery/{$incident->id}/close", [
             'request_key' => $key, 'expected_revision' => 1, 'notes' => 'Operational loss verified; source investigation remains assigned',
@@ -219,7 +303,7 @@ class ParcelIncidentRecoveryTest extends TestCase
         $before = $order->fresh()->only(['total_amount', 'shipping_fee', 'payment_status']);
         $this->actingAs($dispatcher, 'user')->postJson("/api/logistics/parcel-recovery/{$incident->id}/disposition", [
             'request_key' => (string) Str::uuid(), 'expected_revision' => 3, 'notes' => 'Vehicle repaired and inspected original goods safe',
-            'action' => 'verify_readiness', 'findings' => ['obstacle_resolved' => true],
+            'action' => 'verify_readiness', 'findings' => ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true],
         ])->assertOk();
         $data = ['request_key' => (string) Str::uuid(), 'expected_revision' => 4, 'notes' => 'Authorized original-parcel redelivery',
             'action' => 'redeliver_original', 'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning', 'rider_profile_id' => $rider->id];
@@ -294,7 +378,7 @@ class ParcelIncidentRecoveryTest extends TestCase
         $options = ['request_key' => (string) Str::uuid(), 'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning',
             'rider_profile_id' => $profile->id, 'handoff_route' => 'direct'];
         $service = app(DeliveryIncidentService::class);
-        $service->resolve($first, $shop, 'retry', 'First recovery', [], $dispatcher, $options, null, ['obstacle_resolved' => true]);
+        $service->resolve($first, $shop, 'retry', 'First recovery', [], $dispatcher, $options, null, ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true]);
         app(\App\Services\Logistics\AssignmentService::class)->respondToOffer($leg->fresh(), $profile, true);
         app(\App\Services\Logistics\ShipmentLegService::class)->markInTransit($leg->fresh(), $profile);
         $second = $service->report($leg->fresh(), $profile, ['type' => 'vehicle_problem', 'notes' => 'Second actual occurrence', 'photo_paths' => ['incident-evidence/second.jpg']]);
@@ -306,7 +390,7 @@ class ParcelIncidentRecoveryTest extends TestCase
             $this->assertArrayHasKey('incident', $exception->errors());
         }
         $service->resolve($second, $shop, 'retry', 'Second authorized recovery', [], $dispatcher,
-            [...$options, 'request_key' => (string) Str::uuid()], null, ['obstacle_resolved' => true]);
+            [...$options, 'request_key' => (string) Str::uuid()], null, ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true]);
         $this->assertSame(3, $leg->assignments()->count());
         $this->assertSame(2, $leg->incidents()->count());
         $this->assertSame('Second actual occurrence', $second->fresh()->notes);
@@ -318,7 +402,7 @@ class ParcelIncidentRecoveryTest extends TestCase
         \App\Models\Logistics\LogisticsSetting::updateOrCreate(['shop_owner_id' => $shop->id], ['operating_days' => range(1, 7), 'morning_start' => '08:00', 'morning_end' => '12:00']);
         $profile = $leg->assignments()->latest('id')->firstOrFail()->riderProfile;
         $payload = ['resolution' => 'retry', 'note' => 'Dispatcher authorized bounded immediate recovery', 'reason' => 'Dispatcher authorized bounded immediate recovery',
-            'request_key' => (string) Str::uuid(), 'expected_revision' => 0, 'findings' => ['obstacle_resolved' => true],
+            'request_key' => (string) Str::uuid(), 'expected_revision' => 0, 'findings' => ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true],
             'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning', 'expected_assignment_id' => $leg->assignments()->latest('id')->value('id'),
             'rider_profile_id' => $profile->id, 'handoff_route' => 'direct', 'immediate_recovery' => true,
             'effective_start' => now()->toISOString(), 'effective_end' => now()->addMinutes(5)->toISOString(), 'immediate_reason' => 'Customer and rider ready now'];
@@ -391,39 +475,33 @@ class ParcelIncidentRecoveryTest extends TestCase
         $this->assertLessThanOrEqual($one + 1, $many, "Queue queries grew from {$one} to {$many}.");
     }
 
-    public function test_recovered_confirmed_loss_uses_supervised_safekeeping_without_reopening_sale_or_claim(): void
+    public function test_historical_confirmed_loss_uses_original_rider_recovery_without_reopening_sale_or_claim(): void
     {
         [$shop, $order, $leg, $incident, $dispatcher] = $this->fixture();
         $incident->update(['type' => 'lost']);
         $holder = $leg->assignments()->latest('id')->firstOrFail()->riderProfile;
-        app(DeliveryIncidentService::class)->resolve($incident->fresh(), $shop, 'loss_confirmed', 'Original loss investigation', ['incident-evidence/search.jpg']);
+        $this->historicalLoss($leg, $incident, 'Original loss investigation');
         $this->actingAs($dispatcher, 'user')->post("/api/logistics/parcel-recovery/{$incident->id}/investigation", [
-            'request_key' => (string) Str::uuid(), 'expected_revision' => 1, 'notes' => 'Parcel physically recovered; holder and safe containment verified',
-            'recovered_rider_profile_id' => $holder->id, 'safe_for_transport' => true, 'photo' => \Illuminate\Http\UploadedFile::fake()->image('recovered.jpg'),
-        ], ['Accept' => 'application/json'])->assertOk();
-        $return = $leg->returnLeg()->firstOrFail();
-        $this->assertSame('rider', $return->custody_state);
-        $this->assertSame($holder->id, $return->custody_rider_profile_id);
-        $this->assertSame('loss_confirmed', $leg->fresh()->resolution_type);
+            'request_key' => (string) Str::uuid(), 'expected_revision' => 1, 'notes' => 'Found historical parcel; actual Rider report required',
+            'recovered_rider_profile_id' => $holder->id, 'photo' => \Illuminate\Http\UploadedFile::fake()->image('found.jpg'),
+        ], ['Accept' => 'application/json'])->assertUnprocessable()->assertJsonValidationErrors('recovery');
+        $this->assertFalse($leg->returnLeg()->exists());
+        $this->assertSame('lost', $leg->fresh()->custody_state);
+        $reporter = User::findOrFail($holder->linked_id);
+        $this->clockInEmployee($reporter);
+        $service = app(DeliveryIncidentService::class);
+        $child = $service->reportRecovery($incident->fresh(), $reporter, ['request_key' => (string) Str::uuid(),
+            'expected_revision' => 1, 'notes' => 'Actual reporting Rider recovered historical parcel', 'confirmed' => true,
+            'condition' => 'safe', 'photo_paths' => ['incident-evidence/found.jpg']]);
+        $service->reviewRecovery($child, $dispatcher, ['request_key' => (string) Str::uuid(), 'expected_revision' => 0,
+            'notes' => 'Return the recovered parcel through a real pickup and employee receipt', 'action' => 'return',
+            'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning']);
+        $this->assertSame('unknown', $leg->returnLeg()->firstOrFail()->custody_state);
+        $this->assertSame('assigned', $leg->returnLeg->assignments()->firstOrFail()->status);
+        $this->assertSame('lost', $leg->fresh()->custody_state);
         $this->assertSame('loss_confirmed', $incident->fresh()->resolution);
-        $proof = \App\Models\Logistics\HandoffProof::factory()->create(['shipment_leg_id' => $return->id, 'handoff_type' => 'receive', 'review_status' => 'rider_confirmed',
-            'confirmed_by_type' => User::class, 'confirmed_by_id' => $holder->linked_id]);
-        $this->post("/api/logistics/parcel-recovery/{$incident->id}/receipt", [
-            'request_key' => (string) Str::uuid(), 'expected_revision' => 2, 'notes' => 'Recovered parcel received for safekeeping and reconciliation',
-            'proof_id' => $proof->id, 'photo' => \Illuminate\Http\UploadedFile::fake()->image('receipt.jpg'),
-        ], ['Accept' => 'application/json'])->assertOk();
-        $this->assertSame('cancelled', $leg->fresh()->status->value);
-        $this->assertSame('loss_confirmed', $leg->fresh()->resolution_type);
-        $this->assertSame('cancelled', $leg->shipment->fresh()->status->value);
-        $this->assertSame('shop', $leg->fresh()->custody_state);
         $this->assertSame('unpaid', $order->fresh()->payment_status);
         $this->assertSame(0, $order->refunds()->count());
-        $this->postJson("/api/logistics/parcel-recovery/{$incident->id}/inspection", ['request_key' => (string) Str::uuid(), 'expected_revision' => 3,
-            'notes' => 'Recovered property inspected; source investigation remains open', 'items' => [['reference' => 'parcel', 'quantity' => 1, 'condition' => 'unidentified']],
-        ])->assertOk();
-        $this->postJson("/api/logistics/parcel-recovery/{$incident->id}/close", ['request_key' => (string) Str::uuid(), 'expected_revision' => 4,
-            'notes' => 'Verified safe shop custody and completed physical return; reconciliation remains pending', 'outcome' => 'safekeeping_received',
-        ])->assertOk()->assertJsonPath('recovery.operational_status', 'resolved')->assertJsonPath('recovery.complete', false);
     }
 
     public function test_pending_cod_remittance_prevents_aggregate_completion_after_operational_closure(): void
@@ -453,7 +531,7 @@ class ParcelIncidentRecoveryTest extends TestCase
         $completed = ShipmentLeg::factory()->create(['shipment_id' => $leg->shipment_id, 'delivery_batch_id' => $batch->id, 'stop_sequence' => 1, 'status' => 'delivered']);
         app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Recover only unfinished stop', [], $dispatcher,
             ['request_key' => (string) Str::uuid(), 'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning', 'rider_profile_id' => $assignment->rider_profile_id],
-            null, ['obstacle_resolved' => true]);
+            null, ['mitigation_plan' => 'Vehicle repaired and the operational route is available', 'obstacle_resolved' => true]);
         $this->assertSame('completed', $batch->fresh()->status);
         $this->assertSame('delivered', $completed->fresh()->status->value);
         $this->assertSame($batch->id, $completed->fresh()->delivery_batch_id);
@@ -465,7 +543,7 @@ class ParcelIncidentRecoveryTest extends TestCase
         $foreign = Order::factory()->create(['payment_status' => 'paid', 'payment_method' => 'paymongo_card', 'paymongo_payment_id' => 'synthetic-foreign-capture']);
         $leg->shipment->update(['source_id' => $foreign->id]);
         $incident->update(['type' => 'lost']);
-        app(DeliveryIncidentService::class)->resolve($incident->fresh(), $shop, 'loss_confirmed', 'Source mismatch requires investigation', ['incident-evidence/source.jpg']);
+        $this->historicalLoss($leg, $incident, 'Source mismatch requires investigation');
         $this->assertSame(0, $foreign->refunds()->count());
         $this->assertSame('paid', $foreign->fresh()->payment_status);
         $this->actingAs($dispatcher, 'user')->getJson('/api/logistics/parcel-recovery')->assertOk()

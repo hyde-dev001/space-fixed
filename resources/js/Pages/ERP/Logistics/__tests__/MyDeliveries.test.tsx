@@ -1527,3 +1527,16 @@ it('refreshes cross-actor work while idle and preserves notes, selected evidence
   act(()=>vi.advanceTimersByTime(15000));expect(mocks.reload).not.toHaveBeenCalled();
  } finally {vi.useRealTimers()}
 });
+
+
+it('provides required pickup evidence for an accepted recovered-parcel return before confirming custody', async () => {
+  mocks.props.deliveryData.current = workItem('single', 'assigned', [{ ...leg(92, 1, 'assigned'), leg_type: 'return_to_shop',
+    requires_pickup_proof: true, custody_state: 'unknown', assignments: [{ id: 19, status: 'accepted', rider_profile_id: 3 }] }]);
+  render(<MyDeliveries />);
+  expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeDisabled();
+  fireEvent.change(screen.getByLabelText('Pickup evidence'), { target: { files: [new File(['photo'], 'pickup.jpg', { type: 'image/jpeg' })] } });
+  fireEvent.click(screen.getByRole('button', { name: 'Confirm pickup' }));
+  await waitFor(() => expect(mocks.recordProof).toHaveBeenCalled());
+  expect(mocks.recordProof.mock.calls[0][1].get('handoff_type')).toBe('pickup');
+  await waitFor(() => expect(mocks.confirmPickup).toHaveBeenCalledWith(92, 17));
+});

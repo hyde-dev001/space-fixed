@@ -71,7 +71,7 @@ if (($argv[1] ?? '') === '--worker') {
             } else {
                 app(DeliveryIncidentService::class)->resolve($incident, $incident->leg->shipment->shopOwner, 'retry', 'Reauthorize unstarted offer', [], $actor,
                     [...$payload['facts'], 'request_key' => $payload['keys'][1]], null,
-                    ['request_key' => $payload['keys'][1], 'expected_revision' => 1, 'findings' => ['obstacle_resolved' => true]]);
+                    ['request_key' => $payload['keys'][1], 'expected_revision' => 1, 'findings' => ['mitigation_plan' => 'Vehicle repaired and route available', 'obstacle_resolved' => true]]);
             }
         } elseif ($payload['operation'] === 'receipt_module' && $worker === 2) {
             DB::transaction(function () use ($incident) {
@@ -80,7 +80,7 @@ if (($argv[1] ?? '') === '--worker') {
             });
         } elseif ($payload['operation'] === 'verdict') {
             app(DeliveryIncidentService::class)->resolve($incident, $incident->leg->shipment->shopOwner, 'dismissed', 'Verified obstacle cleared', [], $actor,
-                [], null, ['request_key' => $payload['keys'][$worker - 1], 'expected_revision' => 0, 'findings' => ['obstacle_resolved' => true]]);
+                [], null, ['request_key' => $payload['keys'][$worker - 1], 'expected_revision' => 0, 'findings' => ['mitigation_plan' => 'Vehicle repaired and route available', 'obstacle_resolved' => true]]);
         } elseif (in_array($payload['operation'], ['receipt', 'receipt_module'], true)) {
             app(ParcelIncidentRecoveryService::class)->receive($incident, $actor, [...$payload['facts'], 'request_key' => $payload['keys'][$worker - 1]]);
         } elseif ($payload['operation'] === 'inspection') {
@@ -134,7 +134,7 @@ try {
             $stageFacts = fn ($revision) => ['request_key' => (string) Str::uuid(), 'expected_revision' => $revision, 'notes' => 'Verified synthetic loss stage'];
             $incident = app(DeliveryIncidentService::class)->lossAction($incident, $dispatcher, 'acknowledge', $stageFacts(0));
             $incident = app(DeliveryIncidentService::class)->lossAction($incident, $rider, 'confirm', $stageFacts(1));
-            $facts = [...$stageFacts(2), 'custody_rider_profile_id' => $fixture['actors']['a']['rider_id'], 'condition' => 'safe', 'photo_paths' => ['incident-evidence/recovered.jpg']];
+            $facts = [...$stageFacts(2), 'confirmed' => true, 'condition' => 'safe', 'photo_paths' => ['incident-evidence/recovered.jpg']];
             if (in_array($operation, ['restock', 'refund_stock'], true)) {
                 $incident = app(DeliveryIncidentService::class)->lossAction($incident, $dispatcher, 'approve', $stageFacts(2));
                 $product = \App\Models\Product::create(['shop_owner_id' => $shop->id, 'name' => 'Recovered original', 'slug' => 'restock-'.Str::uuid(), 'price' => 100, 'stock_quantity' => 8, 'is_active' => true]);
@@ -171,7 +171,7 @@ try {
             $facts = ['delivery_date' => now(config('app.shop_timezone'))->toDateString(), 'delivery_window' => 'afternoon',
                 'rider_profile_id' => $fixture['actors']['a']['rider_id'], 'request_key' => (string) Str::uuid()];
             app(DeliveryIncidentService::class)->resolve($incident, $shop, 'retry', 'Authorize current recovery', [], $dispatcher,
-                $facts, null, ['obstacle_resolved' => true]);
+                $facts, null, ['mitigation_plan' => 'Vehicle repaired and route available', 'obstacle_resolved' => true]);
             app(\App\Services\Logistics\AssignmentService::class)->respondToOffer($leg->fresh(), $leg->assignments()->latest('id')->firstOrFail()->riderProfile, true);
         } elseif ($operation !== 'verdict') {
             app(DeliveryIncidentService::class)->resolve($incident, $shop, 'return_required', 'Safe return', [], $dispatcher, [], null, ['safe_for_transport' => true]);
@@ -189,7 +189,7 @@ try {
             if ($operation === 'redelivery') {
                 app(ParcelIncidentRecoveryService::class)->inspect($incident->fresh(), $dispatcher, [...$facts, 'request_key' => (string) Str::uuid()]);
                 app(ParcelIncidentRecoveryService::class)->disposition($incident->fresh(), $dispatcher, ['request_key' => (string) Str::uuid(), 'expected_revision' => 3,
-                    'notes' => 'Vehicle restored and customer arrangement verified', 'action' => 'verify_readiness', 'findings' => ['obstacle_resolved' => true]]);
+                    'notes' => 'Vehicle restored and customer arrangement verified', 'action' => 'verify_readiness', 'findings' => ['mitigation_plan' => 'Vehicle repaired and route available', 'obstacle_resolved' => true]]);
                 $facts = ['expected_revision' => 4, 'notes' => 'Authorized original parcel movement', 'action' => 'redeliver_original',
                     'delivery_date' => now(config('app.shop_timezone'))->toDateString(), 'delivery_window' => 'afternoon', 'rider_profile_id' => $fixture['actors']['b']['rider_id']];
             }

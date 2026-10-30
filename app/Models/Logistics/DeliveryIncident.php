@@ -29,32 +29,74 @@ class DeliveryIncident extends Model
     public function leg() { return $this->belongsTo(ShipmentLeg::class, 'shipment_leg_id'); }
     public function reportingRider() { return $this->belongsTo(RiderProfile::class, 'reporting_rider_profile_id'); }
 
+    public function linkedRecovery(): ?self
+    {
+        if ($this->type !== 'lost') return null;
+        if ($this->leg?->relationLoaded('incidents')) {
+            return $this->leg->incidents->filter(fn ($row) => (int) data_get($row->recovery_context, 'recovered_loss.parent_id') === (int) $this->id)
+                ->sortBy(fn ($row) => $row->status === 'resolved')->first();
+        }
+        return self::where('shop_owner_id', $this->shop_owner_id)->where('shipment_leg_id', $this->shipment_leg_id)
+            ->where('recovery_context->recovered_loss->parent_id', $this->id)->orderByRaw("CASE WHEN status = 'resolved' THEN 1 ELSE 0 END")->orderBy('id')->first();
+    }
+
+    public function lossStage(): ?string
+    {
+        return data_get($this->recovery_context, 'loss.stage')
+            ?? ($this->type === 'lost' && ! $this->decided_at && $this->status !== 'resolved' ? 'reported' : null);
+    }
+
     public function lossWorkflow(?\App\Models\User $actor): ?array
     {
-        $recovery = data_get($this->recovery_context, 'recovered_loss');
+        $child = $this->linkedRecovery();
+        $subject = $child ?? $this;
+        $recovery = data_get($subject->recovery_context, 'recovered_loss');
         if ($this->type !== 'lost' && ! $recovery) return null;
-        $stage = data_get($this->recovery_context, 'loss.stage');
+        $stage = $recovery ? $recovery['stage'] : $this->lossStage();
         $sameShop = $actor && (int) $actor->shop_owner_id === (int) $this->shop_owner_id;
         $reporter = $sameShop && $this->reportingRider?->linked_type === \App\Models\User::class
             && (int) $this->reportingRider?->linked_id === (int) $actor->id;
         $dispatcher = $sameShop && $actor->can('resolve-logistics-exceptions');
         $actions = [];
-        if ($stage === 'reported' && $dispatcher) $actions[] = 'acknowledge';
-        if ($stage === 'acknowledged' && $reporter) $actions[] = 'confirm';
-        if ($stage === 'confirmation_requested' && $dispatcher) $actions[] = 'approve';
-        if ($this->type === 'lost' && $reporter && ($this->status !== 'resolved' || $this->resolution === 'loss_confirmed')) $actions[] = 'report_recovery';
-        if ($recovery && ! $this->decided_at && $dispatcher) {
+        if (! $recovery) {
+            if ($stage === 'reported' && $dispatcher) $actions[] = 'acknowledge';
+            if ($stage === 'acknowledged' && $reporter) $actions[] = 'confirm';
+            if ($stage === 'confirmation_requested' && $dispatcher) $actions[] = 'approve';
+            if ($this->type === 'lost' && $reporter && ($this->status !== 'resolved' || $this->resolution === 'loss_confirmed')) $actions[] = 'report_recovery';
+        } elseif (! $subject->decided_at && ! ($recovery['confirmed'] ?? false)) {
+            $stage = 'awaiting_rider_confirmation';
+            if ($reporter) $actions[] = 'confirm_recovery';
+        } elseif (! $subject->decided_at && $dispatcher) {
             $actions[] = 'return';
             if (! $recovery['after_final'] && $recovery['condition'] === 'safe') $actions[] = 'continue';
         }
-        return ['stage' => $stage ?? ($recovery ? $recovery['stage'] : 'legacy_review'), 'actions' => $actions,
+        $reviewReason = null;
+        if ($recovery) {
+            $siblings = $this->leg?->relationLoaded('incidents') ? $this->leg->incidents
+                : self::where('shop_owner_id', $this->shop_owner_id)->where('shipment_leg_id', $this->shipment_leg_id)->get();
+            $parentId = (int) $recovery['parent_id'];
+            if (! $siblings->contains(fn ($row) => (int) $row->id === $parentId && $row->type === 'lost')
+                || $siblings->filter(fn ($row) => (int) data_get($row->recovery_context, 'recovered_loss.parent_id') === $parentId && $row->status !== 'resolved')->count() > 1) {
+                $stage = 'manual_review'; $actions = []; $reviewReason = 'Historical recovery links are ambiguous. Dispatcher review is required; no acknowledgement or receipt is inferred.';
+            }
+        }
+        return ['stage' => $stage ?? 'legacy_review', 'actions' => $actions, 'review_reason' => $reviewReason,
             'parent_id' => $recovery['parent_id'] ?? null, 'after_final' => (bool) ($recovery['after_final'] ?? false),
+            'action_incident_id' => $subject->id, 'action_revision' => $subject->revision,
+            'recovery' => $recovery ? ['parent_id' => $recovery['parent_id'], 'condition' => $recovery['condition'],
+                'notes' => $subject->notes, 'reported_at' => $recovery['reported_at'] ?? null,
+                'confirmed' => (bool) ($recovery['confirmed'] ?? false), 'status' => $subject->status] : null,
             'reporting_rider_profile_id' => $this->reporting_rider_profile_id];
     }
 
     public function evidencePaths(): array
     {
         $paths = $this->photo_paths ?? [];
+        if ($child = $this->linkedRecovery()) {
+            $child->setRelation('leg', $this->leg);
+            $paths = [...$paths, ...$child->evidencePaths()];
+            $child->unsetRelation('leg');
+        }
         $events = $this->leg?->events ?? collect();
         foreach ($events->where('metadata.incident_id', $this->id)->sortBy('id') as $event) {
             $paths = [...$paths, ...($event->metadata['evidence_paths'] ?? [])];

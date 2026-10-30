@@ -55,3 +55,16 @@ it.each([false, true])('opens and reopens return pickup directly from the list (
   fireEvent.click(screen.getByRole('button', { name: 'Arrange return pickup' }));
   expect(screen.getByRole('heading', { name: 'Arrange Return Pickup' })).toBeInTheDocument();
 });
+
+it('shows backend return progress separately from fulfillment', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [{
+    id: 4, order_number: 'RETURN-4', customer_name: 'Buyer', total_amount: 100, grand_total: 100,
+    status: 'shipped', payment_status: 'paid', items: [], created_at: '2026-10-30',
+    owner_projection: { fulfillment_status: 'shipped', business_closed: false, blockers: ['fulfillment'],
+      parcel_recovery_label: 'Returned parcel received; item handling pending' },
+  }] }));
+  render(<JobOrders />);
+  fireEvent.click(await screen.findByRole('button', { name: /All Orders/ }));
+  expect(await screen.findByText('Returned parcel received; item handling pending')).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Confirm Parcel Received' })).not.toBeInTheDocument();
+});
