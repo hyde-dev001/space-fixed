@@ -9,9 +9,9 @@ import RetryResolutionDialog from '@/Pages/ERP/Logistics/components/RetryResolut
 
 type Item = { reference: string; quantity: number; condition: string };
 type Stage = 'receipt' | 'inspection' | 'disposition' | 'close' | 'investigation';
-type Props = { source: 'retail' | 'repair' | 'all'; sourceId?: number; shipmentId?: number; riders?: LogisticsRiderOption[]; schedule?: LogisticsSchedule; today?: string };
+type Props = { source: 'retail' | 'repair' | 'all'; sourceId?: number; shipmentId?: number; dispatcher?: boolean; riders?: LogisticsRiderOption[]; schedule?: LogisticsSchedule; today?: string };
 
-export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, riders = [], schedule, today = '' }: Props) {
+export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, dispatcher = false, riders = [], schedule, today = '' }: Props) {
   const embedded = sourceId !== undefined || shipmentId !== undefined;
   const [rows, setRows] = useState<ParcelRecovery[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -69,6 +69,48 @@ export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, r
   };
   const field = 'mt-1 block min-h-11 w-full rounded-lg border border-gray-300 bg-white p-2 text-sm text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white';
   if (embedded && rows?.length === 0 && !error) return null;
+  const form = selected && <Modal isOpen ariaLabel={`Parcel recovery incident ${selected.incident_id}`} onClose={() => { if (!pending) setSelected(null); }} size="lg">
+      <div className="space-y-4 p-5"><h2 className="text-lg font-semibold">Parcel recovery · Incident #{selected.incident_id}</h2>
+        {error && <p ref={alertRef} role="alert" tabIndex={-1}>{error}</p>}
+        {['redeliver_original', 'reauthorize_retry'].includes(action) ? <RetryResolutionDialog embedded leg={selected.retry_context} riders={riders} schedule={schedule} today={today}
+          error={null} onClose={() => setSelected(null)} onSubmit={submit} /> : <>
+          <label className="block">Recovery notes<textarea className={field} maxLength={1000} disabled={pending} value={notes} onChange={event => setNotes(event.target.value)} /></label>
+          {action === 'verify_readiness' && <fieldset disabled={pending} className="space-y-3"><legend>Dispatcher readiness verification</legend>
+            <p>Recorded receipt and item inspection remain authoritative. Describe the resolved obstacle in the notes.</p>
+            <label className="block">Customer agreement or resolved-dispute arrangement<textarea className={field} maxLength={1000} value={agreement} onChange={event => setAgreement(event.target.value)} /></label>
+          </fieldset>}
+          {stage === 'inspection' && items.map((item, index) => <fieldset key={item.reference} disabled={pending} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-2">
+            <legend>{selected.expected_items[index]?.label} · {item.reference} · Expected quantity: {selected.expected_items[index]?.expected_quantity}</legend>
+            <label>Actual quantity<input className={field} type="number" min={0} value={item.quantity} onChange={event => setItems(current => current.map((row, i) => i === index ? { ...row, quantity: Number(event.target.value) } : row))} /></label>
+            <label>Actual condition<select className={field} value={item.condition} onChange={event => setItems(current => current.map((row, i) => i === index ? { ...row, condition: event.target.value } : row))}>
+              {['unidentified', 'safe', 'damaged', 'missing', 'unsafe'].map(value => <option key={value}>{value}</option>)}</select></label>
+          </fieldset>)}
+          {stage === 'close' && <label className="block">Verified operational outcome<select className={field} value={outcome} onChange={event => setOutcome(event.target.value)}>
+            <option value="">Select an evidenced outcome</option><option value="confirmed_loss">Investigated confirmed loss</option><option value="delivery_completed">Approved delivery completed</option><option value="shop_received">Shop receipt and source disposition verified</option><option value="safekeeping_received">Recovered property safely received; reconciliation remains separate</option></select></label>}
+          {['receipt', 'inspection', 'investigation'].includes(stage) && <DeliveryPhotoUpload inputId="recovery-photo" inputLabel="Parcel recovery evidence" label="Parcel recovery evidence" file={photo}
+            onChange={setPhoto} disabled={pending} required={stage === 'receipt'} hint="Photograph the actual parcel/condition. Private JPG, PNG or WEBP, up to 10 MB." />}
+          <div className="flex flex-wrap justify-end gap-2"><button className="min-h-11 rounded-lg border px-4" disabled={pending} onClick={() => setSelected(null)}>Cancel</button>
+            <button className="min-h-11 rounded-lg bg-gray-950 px-4 text-white disabled:opacity-50" disabled={pending || !notes.trim() || (stage === 'receipt' && !photo) || (stage === 'close' && !outcome)} onClick={() => void submit()}>{pending ? 'Saving…' : 'Save verified recovery step'}</button></div>
+        </>}
+      </div>
+    </Modal>;
+  const dispatcherActions = (row: ParcelRecovery) => row.actions.filter(option => option.allowed
+    && ['verify_readiness', 'authorize_retry_handoff', 'redeliver_original', 'escalate'].includes(option.action));
+  if (dispatcher) return <>
+    {error && !selected && <p role="alert">{error}<button type="button" className="ml-2 min-h-11 underline" onClick={() => { setError(null); void refresh(); }}>Retry Dispatcher follow-up</button></p>}
+    {rows === null && !error && <p role="status">Loading Dispatcher follow-up...</p>}
+    {rows?.filter(row => dispatcherActions(row).length || row.can_reauthorize || row.can_close || row.can_investigate).map(row =>
+      <details key={row.incident_id} className="my-3 rounded-lg border p-3 text-sm">
+        <summary className="cursor-pointer font-medium">Dispatcher follow-up - Incident #{row.incident_id}</summary>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {dispatcherActions(row).map(option => <button key={option.action} type="button" className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'disposition', option.action)}>{option.label}</button>)}
+          {row.can_reauthorize && <button type="button" className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'disposition', 'reauthorize_retry')}>Reauthorize unstarted recovery</button>}
+          {row.can_close && <button type="button" className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'close')}>Verify operational closure</button>}
+          {row.can_investigate && <button type="button" className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'investigation')}>Record investigation and evidence</button>}
+        </div>
+      </details>)}
+    {form}
+  </>;
   return <section aria-label={embedded ? 'Return receipt and disposition' : 'Returned parcels requiring action'} className="my-4 space-y-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
     <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">{embedded ? 'Return receipt and disposition' : 'Returned parcels requiring action'}</h2>
       <button type="button" onClick={() => { setError(null); void refresh(); }} className="min-h-11 rounded-lg border px-3">Refresh parcel recovery</button></div>
@@ -98,30 +140,6 @@ export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, r
         {row.can_investigate && <button className="min-h-11 rounded-lg border px-3" onClick={() => open(row, 'investigation')}>Record investigation and evidence</button>}
       </div>
     </article>)}
-    {selected && <Modal isOpen ariaLabel={`Parcel recovery incident ${selected.incident_id}`} onClose={() => { if (!pending) setSelected(null); }} size="lg">
-      <div className="space-y-4 p-5"><h2 className="text-lg font-semibold">Parcel recovery · Incident #{selected.incident_id}</h2>
-        {error && <p ref={alertRef} role="alert" tabIndex={-1}>{error}</p>}
-        {['redeliver_original', 'reauthorize_retry'].includes(action) ? <RetryResolutionDialog embedded leg={selected.retry_context} riders={riders} schedule={schedule} today={today}
-          error={null} onClose={() => setSelected(null)} onSubmit={submit} /> : <>
-          <label className="block">Recovery notes<textarea className={field} maxLength={1000} disabled={pending} value={notes} onChange={event => setNotes(event.target.value)} /></label>
-          {action === 'verify_readiness' && <fieldset disabled={pending} className="space-y-3"><legend>Dispatcher readiness verification</legend>
-            <p>Recorded receipt and item inspection remain authoritative. Describe the resolved obstacle in the notes.</p>
-            <label className="block">Customer agreement or resolved-dispute arrangement<textarea className={field} maxLength={1000} value={agreement} onChange={event => setAgreement(event.target.value)} /></label>
-          </fieldset>}
-          {stage === 'inspection' && items.map((item, index) => <fieldset key={item.reference} disabled={pending} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-2">
-            <legend>{selected.expected_items[index]?.label} · {item.reference} · Expected quantity: {selected.expected_items[index]?.expected_quantity}</legend>
-            <label>Actual quantity<input className={field} type="number" min={0} value={item.quantity} onChange={event => setItems(current => current.map((row, i) => i === index ? { ...row, quantity: Number(event.target.value) } : row))} /></label>
-            <label>Actual condition<select className={field} value={item.condition} onChange={event => setItems(current => current.map((row, i) => i === index ? { ...row, condition: event.target.value } : row))}>
-              {['unidentified', 'safe', 'damaged', 'missing', 'unsafe'].map(value => <option key={value}>{value}</option>)}</select></label>
-          </fieldset>)}
-          {stage === 'close' && <label className="block">Verified operational outcome<select className={field} value={outcome} onChange={event => setOutcome(event.target.value)}>
-            <option value="">Select an evidenced outcome</option><option value="confirmed_loss">Investigated confirmed loss</option><option value="delivery_completed">Approved delivery completed</option><option value="shop_received">Shop receipt and source disposition verified</option><option value="safekeeping_received">Recovered property safely received; reconciliation remains separate</option></select></label>}
-          {['receipt', 'inspection', 'investigation'].includes(stage) && <DeliveryPhotoUpload inputId="recovery-photo" inputLabel="Parcel recovery evidence" label="Parcel recovery evidence" file={photo}
-            onChange={setPhoto} disabled={pending} required={stage === 'receipt'} hint="Photograph the actual parcel/condition. Private JPG, PNG or WEBP, up to 10 MB." />}
-          <div className="flex flex-wrap justify-end gap-2"><button className="min-h-11 rounded-lg border px-4" disabled={pending} onClick={() => setSelected(null)}>Cancel</button>
-            <button className="min-h-11 rounded-lg bg-gray-950 px-4 text-white disabled:opacity-50" disabled={pending || !notes.trim() || (stage === 'receipt' && !photo) || (stage === 'close' && !outcome)} onClick={() => void submit()}>{pending ? 'Saving…' : 'Save verified recovery step'}</button></div>
-        </>}
-      </div>
-    </Modal>}
+    {form}
   </section>;
 }
