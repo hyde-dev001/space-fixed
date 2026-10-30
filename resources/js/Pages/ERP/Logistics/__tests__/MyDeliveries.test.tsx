@@ -525,6 +525,14 @@ describe('MyDeliveries task-first hierarchy', () => {
 });
 
 describe('MyDeliveries rider interactions', () => {
+  it('explains why an assigned pickup is blocked', () => {
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
+      ...leg(62, null, 'assigned'), start_blocked_reason: 'Start during the customer-confirmed appointment, or ask dispatch to record an agreed reschedule.',
+    }], { group: 'upcoming' });
+    render(<MyDeliveries />);
+    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeDisabled();
+    expect(screen.getByText('Start during the customer-confirmed appointment, or ask dispatch to record an agreed reschedule.')).toBeVisible();
+  });
   it('allows an early retry for an internal planning date when the server reports no blocker', () => {
     mocks.props.deliveryData.current = workItem('single', 'needs_resolution', [{
       ...leg(18, null, 'needs_resolution'), resolution_type: 'retry', scheduled_delivery_date: '2026-07-30', start_blocked_reason: null,
