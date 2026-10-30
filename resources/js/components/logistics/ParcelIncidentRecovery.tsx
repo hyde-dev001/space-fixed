@@ -22,9 +22,7 @@ export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, r
   const [photo, setPhoto] = useState<File | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [outcome, setOutcome] = useState('');
-  const [verified, setVerified] = useState(false);
   const [agreement, setAgreement] = useState('');
-  const [recoveredHolder, setRecoveredHolder] = useState('');
   const [pending, setPending] = useState(false);
   const key = useRef('');
   const busy = useRef(false);
@@ -39,8 +37,7 @@ export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, r
   useEffect(() => { void refresh(); }, [refresh]);
   const open = (row: ParcelRecovery, next: Stage, disposition = '') => {
     setSelected(row); setStage(next); setAction(disposition); setError(null); setNotes(''); setPhoto(null); setOutcome('');
-    setVerified(false); setAgreement('');
-    setRecoveredHolder('');
+    setAgreement('');
     setItems(row.expected_items.map(item => ({ reference: item.reference, quantity: 0, condition: 'unidentified' })));
     key.current = crypto.randomUUID();
   };
@@ -52,23 +49,16 @@ export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, r
       ...(stage === 'disposition' ? { action } : {}), ...(stage === 'close' ? { outcome } : {}) };
     Object.entries(facts).forEach(([field, value]) => { if (value != null) payload.append(field, typeof value === 'boolean' ? (value ? '1' : '0') : String(value)); });
     if (photo) payload.append('photo', photo);
-    if (stage === 'investigation' && recoveredHolder) {
-      payload.append('recovered_rider_profile_id', recoveredHolder);
-      payload.append('safe_for_transport', verified ? '1' : '0');
-    }
     if (stage === 'receipt' && selected.return_proof_id) payload.append('proof_id', String(selected.return_proof_id));
     if (stage === 'inspection') items.forEach((item, index) => Object.entries(item).forEach(([field, value]) => payload.append(`items[${index}][${field}]`, String(value))));
     if (action === 'verify_readiness') {
-      const fields: Record<string, string> = { vehicle_problem: 'obstacle_resolved', damaged: 'safe_for_delivery', lost: 'recovered_verified', customer_dispute: 'dispute_resolved' };
-      const field = fields[selected.type] ?? 'operational_ready';
-      payload.append(`findings[${field}]`, verified ? '1' : '0');
-      if (selected.type === 'damaged') payload.append('findings[condition_verified]', verified ? '1' : '0');
+      payload.append('findings[mitigation_plan]', notes.trim());
       if (agreement.trim()) payload.append('findings[customer_agreement]', agreement.trim());
     }
     try {
       if (action === 'reauthorize_retry') {
         await logisticsApi.resolveIncident(selected.incident_id, { ...extra, request_key: key.current,
-          expected_revision: selected.revision, resolution: 'retry', note: String(extra.reason), findings: selected.retry_findings });
+          expected_revision: selected.revision, resolution: 'retry', note: String(extra.reason), findings: { ...selected.retry_findings, mitigation_plan: String(extra.reason) } });
       } else await logisticsApi.parcelRecoveryAction(selected.incident_id, stage, payload);
       setSelected(null); await refresh(); return true;
     } catch (caught) {
@@ -114,15 +104,8 @@ export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, r
         {['redeliver_original', 'reauthorize_retry'].includes(action) ? <RetryResolutionDialog embedded leg={selected.retry_context} riders={riders} schedule={schedule} today={today}
           error={null} onClose={() => setSelected(null)} onSubmit={submit} /> : <>
           <label className="block">Recovery notes<textarea className={field} maxLength={1000} disabled={pending} value={notes} onChange={event => setNotes(event.target.value)} /></label>
-          {stage === 'investigation' && selected.can_supervise_recovery && <fieldset disabled={pending} className="space-y-3"><legend>Recovered property: supervised safekeeping only</legend>
-            <label className="block">Verified actual Rider holding the recovered parcel<select className={field} value={recoveredHolder} onChange={event => setRecoveredHolder(event.target.value)}>
-              <option value="">Record investigation only</option>{riders.map(rider => <option key={rider.id} value={rider.id}>{rider.name}</option>)}
-            </select></label>
-            {recoveredHolder && <label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={verified} onChange={event => setVerified(event.target.checked)} />Physical recovery, actual holder and safe transport verified</label>}
-            <p className="text-sm">This stages an evidenced shop return. The original loss and all financial obligations remain; no order reopening, payout or reversal is authorized.</p>
-          </fieldset>}
           {action === 'verify_readiness' && <fieldset disabled={pending} className="space-y-3"><legend>Dispatcher readiness verification</legend>
-            <label className="flex min-h-11 items-center gap-2"><input type="checkbox" checked={verified} onChange={event => setVerified(event.target.checked)} />The reported condition is resolved, goods are verified safe, and required arrangements are satisfied</label>
+            <p>Recorded receipt and item inspection remain authoritative. Describe the resolved obstacle in the notes.</p>
             <label className="block">Customer agreement or resolved-dispute arrangement<textarea className={field} maxLength={1000} value={agreement} onChange={event => setAgreement(event.target.value)} /></label>
           </fieldset>}
           {stage === 'inspection' && items.map((item, index) => <fieldset key={item.reference} disabled={pending} className="grid gap-2 rounded-lg border p-3 sm:grid-cols-2">
@@ -136,7 +119,7 @@ export default function ParcelIncidentRecovery({ source, sourceId, shipmentId, r
           {['receipt', 'inspection', 'investigation'].includes(stage) && <DeliveryPhotoUpload inputId="recovery-photo" inputLabel="Parcel recovery evidence" label="Parcel recovery evidence" file={photo}
             onChange={setPhoto} disabled={pending} required={stage === 'receipt'} hint="Photograph the actual parcel/condition. Private JPG, PNG or WEBP, up to 10 MB." />}
           <div className="flex flex-wrap justify-end gap-2"><button className="min-h-11 rounded-lg border px-4" disabled={pending} onClick={() => setSelected(null)}>Cancel</button>
-            <button className="min-h-11 rounded-lg bg-gray-950 px-4 text-white disabled:opacity-50" disabled={pending || !notes.trim() || (stage === 'receipt' && !photo) || (stage === 'close' && !outcome) || (stage === 'investigation' && Boolean(recoveredHolder) && (!verified || !photo))} onClick={() => void submit()}>{pending ? 'Saving…' : 'Save verified recovery step'}</button></div>
+            <button className="min-h-11 rounded-lg bg-gray-950 px-4 text-white disabled:opacity-50" disabled={pending || !notes.trim() || (stage === 'receipt' && !photo) || (stage === 'close' && !outcome)} onClick={() => void submit()}>{pending ? 'Saving…' : 'Save verified recovery step'}</button></div>
         </>}
       </div>
     </Modal>}

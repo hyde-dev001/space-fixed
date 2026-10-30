@@ -1,6 +1,7 @@
 import MonochromeSelect from "@/components/form/Select";
 import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
-import ParcelIncidentRecovery from '@/components/logistics/ParcelIncidentRecovery';
+import OrderReturnActions from '@/components/logistics/OrderReturnActions';
+import type { ParcelRecovery } from '@/types/logistics';
 import type { RetailWarrantyProjection } from '@/types/retailWarranty';
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Swal from "sweetalert2";
@@ -68,6 +69,7 @@ type LogisticsSummary = {
 };
 
 type Order = {
+  parcel_returns?: ParcelRecovery[];
   product_warranty?: RetailWarrantyProjection | null;
   id: number;
   order_number: string;
@@ -711,27 +713,30 @@ export default function JobOrdersPage() {
       product_warranty: order.product_warranty ?? null,
       retail_pos_refund: order.retail_pos_refund || null,
       latest_refund: order.latest_refund || null,
+      parcel_returns: order.parcel_returns || [],
     };
   };
 
   const [orders, setOrders] = useState<Order[]>(() =>
     Array.isArray(initialOrders) ? initialOrders.map(mapApiOrder) : []
   );
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const itemsPerPage = 10;
 
-  const refreshOrders = async () => {
+  const refreshOrders = async (throwOnError = false) => {
     try {
-      setLoading(true);
       const response = await fetch('/api/staff/orders', {
         credentials: 'include',
         headers: { 'Accept': 'application/json' }
       });
       if (!response.ok) throw new Error('Failed to fetch orders');
       const data = await response.json();
-      setOrders(data.map(mapApiOrder));
+      const mapped = data.map(mapApiOrder);
+      setOrders(mapped);
+      setViewOrder(current => current ? mapped.find((order: Order) => order.id === current.id) ?? current : null);
     } catch (error) {
       console.error('Error fetching orders:', error);
+      if (throwOnError) throw error;
     } finally {
       setLoading(false);
     }
@@ -2237,6 +2242,7 @@ export default function JobOrdersPage() {
               {Boolean(order.latest_refund?.items?.length) && <div className="rounded-lg bg-gray-50 p-3 text-sm dark:bg-gray-800"><p className="font-semibold">Returned quantities</p><ul className="mt-1 space-y-1">{order.latest_refund?.items?.map(line => <li key={line.order_item_id}>{line.product_name}: {line.approved_qty}</li>)}</ul></div>}
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={() => handleViewOrder(order)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 dark:border-gray-600">View order details</button>
+                {!auth?.erpActor?.ownerMode && <OrderReturnActions returns={order.parcel_returns ?? []} onChanged={() => refreshOrders(true)} />}
                 {canConfirmReturnReceived(order) && <button type="button" onClick={() => handleConfirmReturnReceived(order)} className="min-h-11 rounded-lg bg-gray-950 px-3 py-2 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 dark:bg-white dark:text-gray-950">Inspect returned items</button>}
                 {canArrangeReturnPickup(order) && <button type="button" onClick={() => handleArrangeReturnPickup(order)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold dark:border-gray-600">{isRetryableShopOwnedReturn(order) ? 'Retry return pickup' : 'Arrange return pickup'}</button>}
                 {order.availableActions?.includes('shipped') && <button type="button" onClick={() => handleShipOrder(order)} className="min-h-11 rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold dark:border-gray-600">Mark as shipped</button>}
@@ -2444,6 +2450,7 @@ export default function JobOrdersPage() {
                               <CheckCircleIcon className="size-5" />
                             </button>
                           )}
+                          {!auth?.erpActor?.ownerMode && <OrderReturnActions returns={order.parcel_returns ?? []} onChanged={() => refreshOrders(true)} />}
                           {canConfirmReturnReceived(order) && (
                             <button
                               type="button"
@@ -2772,7 +2779,7 @@ export default function JobOrdersPage() {
 
               <div className="px-6 py-5 overflow-y-auto space-y-5">
                 <RetailWarrantyPanel warranty={viewOrder.product_warranty} />
-                {!auth?.erpActor?.ownerMode && <ParcelIncidentRecovery source="retail" sourceId={Number(viewOrder.id)} />}
+                {!auth?.erpActor?.ownerMode && <OrderReturnActions returns={viewOrder.parcel_returns ?? []} onChanged={() => refreshOrders(true)} />}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <p className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1">Full Name</p>
@@ -3115,7 +3122,7 @@ export default function JobOrdersPage() {
                 {viewOrder.delivery_cancellation && (
                   <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-200">
                     <p className="font-semibold">{hasConfirmedParcelLoss(viewOrder) ? 'Parcel loss confirmed' : 'Delivery cancelled'}</p>
-                    <p>{hasConfirmedParcelLoss(viewOrder) ? 'Review the loss refund below. No parcel return, inspection or stock restoration is required. Finance and any required owner approval remain separate.' : viewOrder.delivery_cancellation.message || 'The delivery was cancelled. Coordinate with Logistics to reassign it if needed.'}</p>
+                    <p>{hasConfirmedParcelLoss(viewOrder) ? ((viewOrder.parcel_returns?.length ?? 0) > 0 ? 'The original loss and refund remain unchanged. Complete linked recovered-parcel handling using the order actions. Required financial approvals remain separate.' : 'Review the loss refund below. No parcel return, inspection or stock restoration is required. Required financial approvals remain separate.') : viewOrder.delivery_cancellation.message || 'The delivery was cancelled. Coordinate with Logistics to reassign it if needed.'}</p>
                   </div>
                 )}
               </div>

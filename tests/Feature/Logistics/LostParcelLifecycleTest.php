@@ -43,6 +43,81 @@ class LostParcelLifecycleTest extends TestCase
         return ['request_key' => (string) Str::uuid(), 'expected_revision' => $revision, 'notes' => $notes];
     }
 
+    public function test_recovery_confirmation_is_attached_to_original_incident_and_needs_no_custody_dropdown(): void
+    {
+        [, , $rider, $actor, $dispatcher, $leg] = $this->fixture();
+        $service = app(DeliveryIncidentService::class);
+        $parent = $service->report($leg, $rider, ['type' => 'lost', 'notes' => 'Missing parcel']);
+        $data = [...$this->action(0), 'confirmed' => true, 'condition' => 'safe', 'photo_paths' => ['incident-evidence/recovery.jpg']];
+        $recovery = $service->reportRecovery($parent, $actor, $data);
+        $this->assertSame($rider->id, data_get($recovery->recovery_context, 'recovered_loss.holder_id'));
+        $this->assertSame($actor->id, data_get($recovery->recovery_context, 'recovered_loss.reported_by_user_id'));
+        $workflow = $parent->fresh()->lossWorkflow($dispatcher);
+        $this->assertSame(['return', 'continue'], $workflow['actions']);
+        $this->assertSame($recovery->id, $workflow['action_incident_id']);
+        $this->assertSame($parent->id, $workflow['recovery']['parent_id']);
+        $this->assertSame($recovery->id, $service->reportRecovery($parent, $actor, $data)->id);
+        $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+        $this->assertSame('rider', $leg->fresh()->custody_state, 'Recovery evidence must not change physical custody');
+    }
+
+    public function test_legacy_unresolved_loss_has_an_accessible_acknowledgement_without_invented_confirmation(): void
+    {
+        [, , $rider, , $dispatcher, $leg] = $this->fixture();
+        $service = app(DeliveryIncidentService::class);
+        $incident = $service->report($leg, $rider, ['type' => 'lost', 'notes' => 'Historical report']);
+        $incident->forceFill(['recovery_context' => null])->save();
+        $this->assertContains('acknowledge', $incident->lossWorkflow($dispatcher)['actions']);
+        try {
+            $service->resolve($incident, $leg->shipment->shopOwner, 'loss_confirmed', 'Historical loss review',
+                ['incident-evidence/history.jpg'], $dispatcher);
+            $this->fail('Historical loss skipped actual acknowledgement and Rider confirmation');
+        } catch (ValidationException $error) {
+            $this->assertStringContainsString('Acknowledge', $error->errors()['resolution'][0]);
+        }
+
+        $ack = $service->lossAction($incident, $dispatcher, 'acknowledge', $this->action(0));
+        $this->assertSame('acknowledged', data_get($ack->recovery_context, 'loss.stage'));
+        $this->assertNull(data_get($ack->recovery_context, 'loss.confirm'));
+    }
+
+    public function test_historical_recovery_has_a_real_reporting_rider_confirmation_action(): void
+    {
+        [, , $rider, $actor, $dispatcher, $leg] = $this->fixture();
+        $service = app(DeliveryIncidentService::class);
+        $parent = $service->report($leg, $rider, ['type' => 'lost', 'notes' => 'Missing parcel']);
+        $child = $service->reportRecovery($parent, $actor, [...$this->action(0), 'confirmed' => true,
+            'condition' => 'safe', 'photo_paths' => ['incident-evidence/recovered.jpg']]);
+        $context = $child->recovery_context;
+        unset($context['recovered_loss']['confirmed']);
+        $child->forceFill(['recovery_context' => $context])->save();
+        $this->assertContains('confirm_recovery', $parent->fresh()->lossWorkflow($actor)['actions']);
+        $this->assertSame([], $parent->fresh()->lossWorkflow($dispatcher)['actions']);
+        $this->actingAs($actor, 'user')->postJson("/api/logistics/incidents/{$child->id}/recovery-review", [
+            ...$this->action(0), 'action' => 'confirm_report', 'confirmed' => true,
+        ])->assertOk();
+        $this->assertSame(['return', 'continue'], $parent->fresh()->lossWorkflow($dispatcher)['actions']);
+        $this->assertSame('rider', $leg->fresh()->custody_state);
+    }
+
+    public function test_dispatcher_page_contains_one_original_incident_with_linked_recovery_controls(): void
+    {
+        [, , $rider, $actor, $dispatcher, $leg] = $this->fixture();
+        $dispatcher->givePermissionTo(Permission::findOrCreate('view-logistics-shipments', 'user'));
+        $dispatcher->givePermissionTo(Permission::findOrCreate('assign-logistics-deliveries', 'user'));
+        $leg->shipment->source_id && \App\Models\Order::findOrFail($leg->shipment->source_id)->update(['delivery_method' => 'shop_owned']);
+        $service = app(DeliveryIncidentService::class);
+        $parent = $service->report($leg, $rider, ['type' => 'lost', 'notes' => 'Missing parcel']);
+        $child = $service->reportRecovery($parent, $actor, [...$this->action(0), 'confirmed' => true,
+            'condition' => 'safe', 'photo_paths' => ['incident-evidence/recovery.jpg']]);
+        $this->actingAs($dispatcher, 'user')->get('/erp/logistics/shipments')->assertOk()
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+                ->has('shipments.data.0.legs.0.incidents', 1)
+                ->where('shipments.data.0.legs.0.incidents.0.id', $parent->id)
+                ->where('shipments.data.0.legs.0.incidents.0.loss.actions', ['return', 'continue'])
+                ->where('shipments.data.0.legs.0.incidents.0.loss.action_incident_id', $child->id));
+    }
+
     public function test_photo_free_loss_has_three_separate_stages_and_final_approval_needs_no_extra_closure(): void
     {
         [, $order, $rider, $actor, $dispatcher, $leg] = $this->fixture();
@@ -131,6 +206,26 @@ class LostParcelLifecycleTest extends TestCase
         app(DeliveryIncidentService::class)->report($leg, $rider, ['type' => 'damaged', 'notes' => 'Shoe box torn']);
     }
 
+    public function test_recovery_notice_requires_dispatcher_review_only_until_actual_authorization(): void
+    {
+        [, , $rider, $actor, $dispatcher, $leg] = $this->fixture();
+        $dispatcher->assignRole(\Spatie\Permission\Models\Role::findOrCreate('Logistics Dispatcher', 'user'));
+        $service = app(DeliveryIncidentService::class);
+        $parent = $service->report($leg, $rider, ['type' => 'lost', 'notes' => 'Missing parcel']);
+        $child = $service->reportRecovery($parent, $actor, [...$this->action(0), 'confirmed' => true,
+            'condition' => 'safe', 'photo_paths' => ['incident-evidence/found.jpg']]);
+        $reported = $leg->events()->where('event_type', 'parcel_recovery_reported')->firstOrFail();
+        $notifier = app(\App\Services\Logistics\LogisticsNotificationService::class);
+        $notifier->notifyForEvent($reported);
+        $notice = \App\Models\Notification::where('user_id', $dispatcher->id)->where('data->event_type', 'parcel_recovery_reported')->firstOrFail();
+        $this->assertTrue((bool) $notice->requires_action);
+        $service->reviewRecovery($child, $dispatcher, [...$this->action(0), 'action' => 'return',
+            'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning']);
+        $notifier->notifyForEvent($leg->events()->where('event_type', 'parcel_recovery_authorized')->firstOrFail());
+        $notifier->notifyForEvent($reported);
+        $this->assertFalse((bool) $notice->fresh()->requires_action);
+    }
+
     public function test_stage_notifications_are_deduplicated_and_final_loss_requires_no_rider_action(): void
     {
         [, , $rider, $actor, $dispatcher, $leg] = $this->fixture();
@@ -176,7 +271,7 @@ class LostParcelLifecycleTest extends TestCase
         $incident = $service->report($leg, $rider, ['type' => 'lost', 'notes' => 'Missing parcel']);
         $incident = $service->lossAction($incident, $dispatcher, 'acknowledge', $this->action(0));
         $incident = $service->lossAction($incident, $actor, 'confirm', $this->action(1));
-        $data = [...$this->action(2), 'custody_rider_profile_id' => $rider->id, 'condition' => 'safe',
+        $data = [...$this->action(2), 'confirmed' => true, 'condition' => 'safe',
             'photo_paths' => ['incident-evidence/recovered.jpg']];
         $recovery = $service->reportRecovery($incident, $actor, $data);
         $this->assertNotSame($incident->id, $recovery->id);
@@ -196,7 +291,7 @@ class LostParcelLifecycleTest extends TestCase
         $incident = $service->lossAction($incident, $actor, 'confirm', $this->action(1));
         $incident = $service->lossAction($incident, $dispatcher, 'approve', $this->action(2));
         $snapshot = $incident->getRawOriginal();
-        $recovery = $service->reportRecovery($incident, $actor, [...$this->action(3), 'custody_rider_profile_id' => $rider->id,
+        $recovery = $service->reportRecovery($incident, $actor, [...$this->action(3), 'confirmed' => true,
             'condition' => 'safe', 'photo_paths' => ['incident-evidence/recovered.jpg']]);
         try {
             $service->reviewRecovery($recovery, $dispatcher, [...$this->action(0), 'action' => 'continue',
@@ -214,7 +309,20 @@ class LostParcelLifecycleTest extends TestCase
         $this->assertSame('shop', $return->destination_snapshot['type']);
         $this->assertSame('assigned', $return->assignments()->firstOrFail()->status);
         $this->assertNull($return->assignments()->firstOrFail()->accepted_at);
-        $this->assertSame($rider->id, $return->custody_rider_profile_id);
+        $this->assertSame('unknown', $return->custody_state);
+        $this->assertNull($return->custody_rider_profile_id);
+        $this->assertNull($return->custody_confirmed_at);
+        $this->assertTrue((bool) $return->requires_pickup_proof);
+        app(\App\Services\Logistics\AssignmentService::class)->respondToOffer($return, $rider, true);
+        $pickup = app(\App\Services\Logistics\ProofService::class)->recordProof($return->fresh(), [
+            'handoff_type' => 'pickup', 'proof_type' => 'photo', 'file_path' => 'logistics-proof/actual-pickup.jpg',
+            'idempotency_key' => (string) Str::uuid(),
+        ], $rider);
+        $this->assertSame('unknown', $return->fresh()->custody_state, 'Upload alone cannot confirm pickup');
+        app(\App\Services\Logistics\ShipmentLegService::class)->confirmPickup($return->fresh(), $pickup, $rider);
+        $this->assertSame('rider', $return->fresh()->custody_state);
+        $this->assertSame($rider->id, $return->fresh()->custody_rider_profile_id);
+
     }
 
     public function test_pre_final_recovery_continues_through_fresh_acceptance_arrival_proof_and_automatic_completion(): void
@@ -224,7 +332,7 @@ class LostParcelLifecycleTest extends TestCase
         $leg->update(['destination_snapshot' => ['latitude' => 14.5, 'longitude' => 120.9]]);
         $service = app(DeliveryIncidentService::class);
         $incident = $service->report($leg, $rider, ['type' => 'lost', 'notes' => 'Missing parcel']);
-        $recovery = $service->reportRecovery($incident, $actor, [...$this->action(0), 'custody_rider_profile_id' => $rider->id,
+        $recovery = $service->reportRecovery($incident, $actor, [...$this->action(0), 'confirmed' => true,
             'condition' => 'safe', 'photo_paths' => ['incident-evidence/recovered.jpg']]);
         $recovery = $service->reviewRecovery($recovery, $dispatcher, [...$this->action(0), 'action' => 'continue',
             'safe_for_transport' => true, 'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning',
@@ -285,7 +393,7 @@ class LostParcelLifecycleTest extends TestCase
         $incident = $service->lossAction($incident, $dispatcher, 'acknowledge', $this->action(0));
         $incident = $service->lossAction($incident, $actor, 'confirm', $this->action(1));
         $incident = $service->lossAction($incident, $dispatcher, 'approve', $this->action(2));
-        $recovery = $service->reportRecovery($incident, $actor, [...$this->action(3), 'custody_rider_profile_id' => $rider->id,
+        $recovery = $service->reportRecovery($incident, $actor, [...$this->action(3), 'confirmed' => true,
             'condition' => 'safe', 'photo_paths' => ['incident-evidence/recovered.jpg']]);
         $recovery = $service->reviewRecovery($recovery, $dispatcher, [...$this->action(0), 'action' => 'return',
             'safe_for_transport' => true, 'delivery_date' => now()->toDateString(), 'delivery_window' => 'morning']);
@@ -355,7 +463,7 @@ class LostParcelLifecycleTest extends TestCase
         $this->assertSame('confirmed', data_get($incident->fresh()->recovery_context, 'loss.stage'));
         $this->assertSame('lost', $leg->fresh()->custody_state);
         try {
-            $service->reportRecovery($incident->fresh(), $actor, [...$this->action(3), 'custody_rider_profile_id' => $rider->id,
+            $service->reportRecovery($incident->fresh(), $actor, [...$this->action(3), 'confirmed' => true,
                 'condition' => 'safe', 'photo_paths' => ['incident-evidence/repeated.jpg']]);
             $this->fail('A completed physical recovery was recreated');
         } catch (ValidationException $error) {

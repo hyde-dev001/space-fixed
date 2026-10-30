@@ -58,6 +58,7 @@ type Order = {
   availableActions?: OrderAction[];
   ownerProjection?: {
     fulfillment_status: OrderStatus;
+    parcel_recovery_label?: string | null;
     business_closed: boolean;
     blockers: string[];
   };
@@ -1077,6 +1078,7 @@ export default function JobOrdersPage() {
             trackingNumber: item.tracking_number || undefined,
             trackingLink: item.tracking_link || undefined,
             deliveryMethod: item.delivery_method || undefined,
+            ownerProjection: item.owner_projection || undefined,
             thirdPartyDeliveryStatus: item.third_party_delivery_status || null,
             thirdPartyProviderStatus: item.third_party_provider_status || null,
             eta: item.eta || undefined,
@@ -1303,6 +1305,7 @@ export default function JobOrdersPage() {
               trackingNumber: item.tracking_number || undefined,
               trackingLink: item.tracking_link || undefined,
               deliveryMethod: item.delivery_method || undefined,
+              ownerProjection: item.owner_projection || undefined,
               thirdPartyDeliveryStatus: item.third_party_delivery_status || null,
               thirdPartyProviderStatus: item.third_party_provider_status || null,
               eta: item.eta || undefined,
@@ -1647,6 +1650,7 @@ export default function JobOrdersPage() {
               trackingNumber: order.tracking_number || undefined,
               trackingLink: order.tracking_link || undefined,
               deliveryMethod: order.delivery_method || undefined,
+              ownerProjection: order.owner_projection || undefined,
               thirdPartyDeliveryStatus: order.third_party_delivery_status || null,
               thirdPartyProviderStatus: order.third_party_provider_status || null,
               eta: order.eta || undefined,
@@ -2122,6 +2126,7 @@ export default function JobOrdersPage() {
                           <span className="inline-flex items-center text-xs font-semibold whitespace-nowrap text-gray-900 dark:text-gray-100">
                             {getOrderStatusPresentation(order.status).label}
                           </span>
+                          {order.ownerProjection?.parcel_recovery_label && <span className="text-xs text-gray-600 dark:text-gray-300">{order.ownerProjection.parcel_recovery_label}</span>}
                         </div>
                       </td>
                       <td className="box-border px-4 py-4 align-top">
@@ -2928,6 +2933,7 @@ export default function JobOrdersPage() {
               </div>
 
               <div className="mt-6 px-6 py-4 border-t border-gray-200 dark:border-gray-700 flex gap-3 flex-shrink-0">
+                {viewOrder.ownerProjection?.parcel_recovery_label && <p role="status" className="text-sm text-gray-600 dark:text-gray-300">{viewOrder.ownerProjection.parcel_recovery_label}</p>}
                 {isIndividualRegistration && viewOrder.status === "pending" && (
                   <button
                     type="button"

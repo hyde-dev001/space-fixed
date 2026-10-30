@@ -67,7 +67,7 @@ class PostWindowDeliveryProgressionTest extends TestCase
                 $leg->update(['delivery_batch_id' => $original->id, 'stop_sequence' => 1]);
                 $incidents = app(\App\Services\Logistics\DeliveryIncidentService::class);
                 $incident = $incidents->report($leg->fresh(), $profile, ['type' => 'vehicle_problem', 'notes' => 'Affected stop recovery', 'photo_paths' => ['incident-evidence/stop.jpg']]);
-                $incidents->resolve($incident, $shop, 'retry', 'Authorized next visit', [], $dispatcher, $options, null, ['obstacle_resolved' => true]);
+                $incidents->resolve($incident, $shop, 'retry', 'Authorized next visit', [], $dispatcher, $options, null, ['mitigation_plan' => 'Vehicle repaired and the operational obstacle cleared']);
                 $this->assertNull($leg->fresh()->delivery_batch_id);
             } else app(ShipmentLegService::class)->resolveRetry($leg->fresh(), 'Authorized next visit', $options, $dispatcher);
             app(AssignmentService::class)->respondToOffer($leg->fresh(), $target, true);

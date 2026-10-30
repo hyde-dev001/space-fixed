@@ -28,7 +28,7 @@ describe('Lost parcel actions in existing history and incident details', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Report Recovery' }));
     fireEvent.change(screen.getByLabelText('Reason or recovery details'), { target: { value: 'Found under the route bag' } });
     expect(screen.getByRole('button', { name: 'Submit' })).toBeDisabled();
-    expect(screen.getByLabelText('Actual custody')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Actual custody')).not.toBeInTheDocument();
   });
 
   it('keeps failed submissions actionable with an error message', async () => {

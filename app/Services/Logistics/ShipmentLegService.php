@@ -787,6 +787,16 @@ class ShipmentLegService
                 return $leg->fresh();
             }
 
+            if ($leg->custody_state === 'shop' && $leg->custody_confirmed_at) {
+                $leg->update(['status' => 'cancelled', 'resolution_type' => 'returned', 'resolution_reason' => $reason,
+                    'rider_progress_state' => RiderProgressState::RIDER_RELEASED]);
+                $leg->assignments()->whereIn('status', ['assigned', 'accepted'])->update(['status' => 'cancelled', 'cancelled_at' => now()]);
+                $this->events->record($leg->shipment, $leg, ['event_type' => 'return_required',
+                    'message' => 'Parcel already in shop custody. Staff receipt records and handling remain separate.',
+                    'created_by_type' => ($actor ?? $shop)::class, 'created_by_id' => ($actor ?? $shop)->getAuthIdentifier()]);
+                return $leg->fresh();
+            }
+
             $assignment = $leg->assignments()
                 ->when($leg->custody_state === 'rider' && $leg->custody_confirmed_at,
                     fn ($query) => $query->where('rider_profile_id', $leg->custody_rider_profile_id),
@@ -836,21 +846,6 @@ class ShipmentLegService
         }, 3);
     }
 
-    public function recoverConfirmedLossToShop(ShipmentLeg $leg, \App\Models\User $actor, RiderProfile $holder): ShipmentLeg
-    {
-        return DB::transaction(function () use ($leg, $actor, $holder) {
-            $shop = $this->movements->lockShopForLeg($leg);
-            $leg = ShipmentLeg::with('shipment')->lockForUpdate()->findOrFail($leg->id);
-            abort_unless((int) $actor->shop_owner_id === (int) $shop->id && $actor->can('resolve-logistics-exceptions'), 403);
-            if ($leg->status->value !== 'cancelled' || $leg->resolution_type !== 'loss_confirmed' || $leg->custody_state !== 'lost' || $leg->returnLeg()->exists()) {
-                throw ValidationException::withMessages(['custody' => 'Only an evidenced recovered loss without an existing return can enter supervised safekeeping.']);
-            }
-            $this->assignments->assertEligibleForDate($holder, $shop, now(config('app.shop_timezone', 'Asia/Manila'))->toDateString(), $leg->id);
-            $leg->update(['custody_state' => 'rider', 'custody_rider_profile_id' => $holder->id, 'custody_confirmed_at' => now()]);
-            return $this->createReturnToShopLocked($leg, $leg->assignments()->latest('id')->firstOrFail(), $actor, $holder);
-        }, 3);
-    }
-
     public function returnRecoveredParcel(ShipmentLeg $leg, \App\Models\User $actor, RiderProfile $holder, array $data): ShipmentLeg
     {
         $shop = $this->movements->lockShopForLeg($leg);
@@ -860,7 +855,8 @@ class ShipmentLegService
         $this->starts->validateRecoveryDate($shop, $data['delivery_date'], $data['delivery_window']);
         $this->assignments->assertEligibleForDate($holder, $shop, $data['delivery_date'], $leg->id);
         $return = $this->createReturnToShopLocked($leg, $leg->assignments()->latest('id')->firstOrFail(), $actor, $holder, true);
-        $return->update(['scheduled_delivery_date' => $data['delivery_date'], 'delivery_window' => $data['delivery_window']]);
+        $return->update(['scheduled_delivery_date' => $data['delivery_date'], 'delivery_window' => $data['delivery_window'],
+            'resolution_reason' => trim($data['notes'].' '.($data['transport_notes'] ?? ''))]);
         return $return;
     }
 
@@ -877,20 +873,22 @@ class ShipmentLegService
         $shop = ShopOwner::query()->whereKey($leg->shipment->shop_owner_id)->lockForUpdate()->firstOrFail();
         $this->movements->assertCanStart($shop);
 
+        $needsRecoveryPickup = $recoveredHolder && ($leg->custody_state !== 'rider'
+            || ! $leg->custody_confirmed_at || (int) $leg->custody_rider_profile_id !== (int) $recoveredHolder->id);
         $return = $leg->shipment->legs()->create([
             'sequence' => $leg->shipment->legs()->max('sequence') + 1,
             'shop_owner_id' => $leg->shipment->shop_owner_id,
             'delivery_number' => ShipmentLeg::nextDeliveryNumber((int) $leg->shipment->shop_owner_id),
             'leg_type' => 'return_to_shop',
-            'status' => 'picked_up',
+            'status' => $needsRecoveryPickup ? 'assigned' : 'picked_up',
             'return_for_leg_id' => $leg->id,
             'origin_snapshot' => in_array($leg->shipment->purpose, ['repair_pickup', 'refund_return'], true) ? $leg->origin_snapshot : $leg->destination_snapshot,
             'destination_snapshot' => ['type' => 'shop', 'shop_owner_id' => $shop->id, 'name' => $shop->business_name,
                 'address' => $shop->business_address, 'latitude' => $shop->shop_latitude, 'longitude' => $shop->shop_longitude],
-            'requires_delivery_proof' => true,
-            'custody_state' => $recoveredHolder ? 'rider' : $leg->custody_state,
-            'custody_rider_profile_id' => $recoveredHolder?->id ?? $leg->custody_rider_profile_id,
-            'custody_confirmed_at' => $recoveredHolder ? now() : $leg->custody_confirmed_at,
+            'requires_delivery_proof' => true, 'requires_pickup_proof' => (bool) $needsRecoveryPickup,
+            'custody_state' => $needsRecoveryPickup ? 'unknown' : $leg->custody_state,
+            'custody_rider_profile_id' => $needsRecoveryPickup ? null : $leg->custody_rider_profile_id,
+            'custody_confirmed_at' => $needsRecoveryPickup ? null : $leg->custody_confirmed_at,
         ]);
         $return->assignments()->create([
             'assignment_type' => 'internal_rider',
@@ -906,7 +904,7 @@ class ShipmentLegService
         $this->events->record($leg->shipment, $return, [
             'event_type' => 'return_to_shop_started',
             'visibility' => 'customer',
-            'message' => 'The parcel is being returned to the shop.',
+            'message' => $needsRecoveryPickup ? 'A return to shop is authorized. Rider pickup and shop receipt remain pending.' : 'The parcel is being returned to the shop.',
             'created_by_type' => $actor?->getMorphClass() ?? $assignment->assigned_by_type, 'created_by_id' => $actor?->getAuthIdentifier() ?? $assignment->assigned_by_id,
             'metadata' => ['rider_profile_id' => $recoveredHolder?->id ?? $assignment->rider_profile_id, 'delivery_assignment_id' => $return->assignments()->value('id')],
         ]);
@@ -988,8 +986,7 @@ class ShipmentLegService
                     $this->completeDirectRefundReturn($return);
                 } elseif ($original->resolution_type !== 'loss_confirmed') {
                     $this->stageFailedDeliveryReturnInspection($return, $original);
-                    $this->completeRepairReturnRecovery($return);
-                    $this->completeInboundIncidentReceipt($return);
+                    $this->completeIncidentShopReceipt($return);
                 }
 
                 return $return->fresh();
@@ -1024,8 +1021,7 @@ class ShipmentLegService
                 if ($original->resolution_type !== 'loss_confirmed') {
                     $this->stageFailedDeliveryReturnInspection($return, $original);
                     $return->shipment->update(['status' => 'cancelled', 'cancelled_at' => now()]);
-                    $this->completeRepairReturnRecovery($return);
-                    $this->completeInboundIncidentReceipt($return);
+                    $this->completeIncidentShopReceipt($return);
                 }
             }
             $this->events->record($return->shipment, $return, ['event_type' => 'return_received', 'visibility' => 'customer', 'message' => 'The returned parcel was received by the shop.', 'created_by_type' => ($actor ?? $shop)::class, 'created_by_id' => ($actor ?? $shop)->getAuthIdentifier(), 'metadata' => ['proof_id' => $proof->id]]);
@@ -1068,11 +1064,15 @@ class ShipmentLegService
         );
     }
 
-    private function completeInboundIncidentReceipt(ShipmentLeg $return): void
+    public function completeIncidentShopReceipt(ShipmentLeg $return): void
     {
         $source = $return->shipment;
-        if (($source->source_type === 'repair_request' && $source->purpose === 'repair_pickup')
-            || ($source->source_type === 'order_refund' && $source->purpose === 'refund_return')) {
+        $inbound = ($source->source_type === 'repair_request' && $source->purpose === 'repair_pickup')
+            || ($source->source_type === 'order_refund' && $source->purpose === 'refund_return');
+        if (! $inbound && ! ($source->source_type === 'repair_request' && $source->purpose === 'repair_return')) return;
+        abort_unless($return->custody_state === 'shop' && $return->custody_confirmed_at, 422);
+        $this->completeRepairReturnRecovery($return);
+        if ($inbound) {
             $source->update(['status' => 'completed', 'completed_at' => now(), 'cancelled_at' => null]);
             $this->completeShopOwnedReturn($source);
         }

@@ -4,6 +4,18 @@ Use this guide on the QA/local application running `codex/failed-delivery-recove
 
 This is a test procedure, not a record that you performed or passed these tests. Mark each case **Pass**, **Fail** or **Blocked** and retain the observed result.
 
+## October 30 current checks
+
+Use the [current operations flow](failed-delivery-recovery.md#october-30-current-incident-and-return-flow) and [execution record](../superpowers/plans/2026-10-30-parcel-workflow-dead-ends.md). Earlier recipes below are historical where they mention custody selection, verification checkboxes, a generic Staff return panel or required manual physical closure.
+
+1. Sign in normally with separate Rider, Dispatcher and Staff sessions, MFA and attendance. Report loss without photos; verify hold and no invented receipt/refund at acknowledgement.
+2. Before final loss, Rider reports recovery with condition/photo/confirmation. Verify one original incident on Dispatcher, linked evidence/current revision and executable continuation. Accept the fresh offer and finish actual arrival/proof/review. Repeat the request and submit a stale final-loss approval; neither may duplicate effects.
+3. Confirm loss through actual Dispatcher acknowledgement, reporting Rider confirmation and final approval. Verify eligible normal financial review without payout success. Report later recovery; authorize only shop return, accept, upload required pickup evidence, explicitly confirm pickup, start and hand over to shop.
+4. Staff locates the original order, confirms real receipt, inspects actual quantities/condition and performs supported handling. Verify the obsolete panel is absent from both list and details, physical completion is automatic, and a paid ordinary return can still request eligible refund review. Preserve exact stock counts across replay and later refund execution.
+5. Exercise ordinary return, retry with same/replacement Rider, source-specific repair/refund intake, Logistics OFF closing operations, unauthorized/foreign actors, expired unstarted offers versus legitimate continued movement, damaged/partial and allocated goods. Unsupported dispositions remain owned; customer repair property is not sellable stock.
+6. Refresh/reopen all affected role views, including Owner read-only awareness and customer tracking. Check 390/768/1440 widths, keyboard/Escape/focus, duplicate submit, actionable errors and background refresh without losing an open form.
+7. Preview historical null stages, missing confirmation, orphan/multiple links and absent real receiver evidence. Verify no rows change and ambiguous cases are explicitly flagged. Preserve original QA IDs/statuses; do not infer original host/provider results from synthetic checks.
+
 ## October 29 staged loss and linked recovery checks
 
 Use disposable local synthetic sources and separate authenticated Rider/Dispatcher/Staff/Repairer sessions. Preserve the original 15 QA statuses. These steps supersede older loss-specific closure expectations below.

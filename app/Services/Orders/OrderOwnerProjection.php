@@ -37,7 +37,7 @@ final class OrderOwnerProjection
     }
 
     /**
-     * @return array{fulfillment_status: string, business_closed: bool, blockers: list<string>}
+     * @return array{fulfillment_status: string, parcel_recovery_label?: ?string, business_closed: bool, blockers: list<string>}
      */
     public function project(Order $order): array
     {
@@ -70,9 +70,31 @@ final class OrderOwnerProjection
 
         return [
             'fulfillment_status' => $fulfillmentStatus,
+            ...(($label = $this->parcelRecoveryLabel($order)) ? ['parcel_recovery_label' => $label] : []),
             'business_closed' => $blockers === [],
             'blockers' => $blockers,
         ];
+    }
+
+    private function parcelRecoveryLabel(Order $order): ?string
+    {
+        if (! $order->relationLoaded('logisticsShipments')) return null;
+        $incident = $order->logisticsShipments->flatMap(fn ($shipment) => $shipment->legs)
+            ->flatMap(fn ($leg) => $leg->incidents)->sortByDesc('id')->first();
+        if (! $incident) return null;
+        $context = $incident->recovery_context ?? [];
+        return match (true) {
+            (bool) data_get($context, 'recovered_loss') && ! $incident->decided_at => 'Parcel recovery reported; Dispatcher review pending',
+            $incident->resolution === 'return_required' && $incident->status === 'resolved' => 'Physical return completed; source and financial work remain separate',
+            $incident->resolution === 'return_required' && (bool) data_get($context, 'receipt') => 'Returned parcel received; item handling pending',
+            $incident->resolution === 'return_required' => 'Return to shop authorized; physical receipt pending',
+            $incident->resolution === 'loss_confirmed' => 'Parcel loss confirmed; financial processing remains separate',
+            $incident->type === 'lost' => 'Parcel loss reported; delivery held',
+            $incident->resolution === 'retry' && $incident->status === 'resolved' => 'Recovery delivery completed',
+            $incident->resolution === 'retry' => 'Recovery delivery scheduled',
+            $incident->resolution === 'dismissed' => 'Delivery continuation authorized',
+            default => 'Delivery incident awaiting Dispatcher action',
+        };
     }
 
     /** @return iterable<OrderRefund> */

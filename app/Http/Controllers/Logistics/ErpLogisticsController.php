@@ -237,11 +237,17 @@ class ErpLogisticsController extends Controller
                         ->each(function (ShipmentLeg $leg): void {
                             $this->attachArrivalPayload($leg);
                             $this->attachProofPayload($leg);
-                            $leg->incidents->each(function (DeliveryIncident $incident): void {
+                            $records = $leg->incidents;
+                            $records->each(function (DeliveryIncident $incident) use ($leg): void {
+                                $incident->setRelation('leg', $leg);
                                 $payload = $this->incidentPayload($incident);
+                                $incident->unsetRelation('leg');
                                 $incident->setAttribute('evidence_urls', $payload['evidence_urls']);
                                 $incident->setAttribute('eligibility', $payload['eligibility']);
+                                $incident->setAttribute('loss', $payload['loss']);
                             });
+                            $leg->setRelation('incidents', $records->reject(fn ($row) => $records->contains(fn ($parent) =>
+                                $parent->type === 'lost' && (int) $parent->id === (int) data_get($row->recovery_context, 'recovered_loss.parent_id')))->values());
                             $leg->attempts->each(fn (DeliveryAttempt $attempt) => $this->attachAttemptEvidencePayload($attempt));
                         });
                 }),
@@ -786,6 +792,16 @@ class ErpLogisticsController extends Controller
         $payload['delivery_label'] = $deliveryType['delivery_label'];
         $payload['status'] = $leg->status->value;
         $payload['rider_progress_state'] = $leg->rider_progress_state->value;
+        $payload['operational_label'] = null;
+        if ($leg->status->value === 'needs_resolution') {
+            $linked = $leg->incidents->last(fn ($row) => data_get($row->recovery_context, 'recovered_loss'));
+            $lost = $leg->incidents->last(fn ($row) => $row->type === 'lost' && $row->status !== 'resolved');
+            $payload['operational_label'] = $linked ? 'Recovery reported - Dispatcher review or movement pending'
+                : ($lost ? 'Loss reported - delivery held' : 'Awaiting incident resolution');
+        } elseif ($leg->leg_type === 'return_to_shop' && $leg->status->value !== 'delivered') {
+            $payload['operational_label'] = $leg->status->value === 'assigned' ? 'Return to shop - Rider acceptance or pickup pending' : 'Returning to shop';
+        }
+
         $payload['failed_attempt_count'] = $leg->attempts->count();
         $payload['start_blocked_reason'] = $this->starts->progressionBlockedReason($leg);
         $payload['activation_required'] = $leg->status->value === 'in_transit' && ! $this->starts->hasActivated($leg);
@@ -824,7 +840,8 @@ class ErpLogisticsController extends Controller
                 && $replacementAllowed,
         ] : null;
         $payload['incidents'] = $leg->relationLoaded('incidents')
-            ? $leg->incidents->map(fn (DeliveryIncident $incident) => $this->incidentPayload($incident))->values()->all()
+            ? $leg->incidents->reject(fn (DeliveryIncident $incident) => $leg->incidents->contains(fn ($parent) => $parent->type === 'lost' && (int) $parent->id === (int) data_get($incident->recovery_context, 'recovered_loss.parent_id')))
+                ->map(fn (DeliveryIncident $incident) => $this->incidentPayload($incident->setRelation('leg', $leg)))->values()->all()
             : [];
 
         return $payload;

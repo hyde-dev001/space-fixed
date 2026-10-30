@@ -82,7 +82,7 @@ class DeliveryIncidentController extends Controller
         abort_unless($actor instanceof User, 403);
         app(LogisticsActorPolicy::class)->assertLossActor($actor, $incident, true);
         $data = $request->validate(['request_key' => ['required', 'uuid'], 'expected_revision' => ['required', 'integer', 'min:0'],
-            'notes' => ['required', 'string', 'max:1000'], 'custody_rider_profile_id' => ['required', 'integer'],
+            'notes' => ['required', 'string', 'max:1000'], 'custody_rider_profile_id' => ['prohibited'], 'confirmed' => ['required', 'accepted'],
             'condition' => ['required', 'in:safe,damaged,unsafe,partial'], 'photo_paths' => ['prohibited'],
             'photo_files' => ['required', 'array', 'min:1', 'max:5'], 'photo_files.*' => $this->evidenceFileRules()]);
         $paths = $this->storeEvidenceFiles($request->file('photo_files', []), "incident-evidence/recovery-{$incident->id}");
@@ -102,9 +102,14 @@ class DeliveryIncidentController extends Controller
         abort_if(Auth::guard('shop_owner')->check(), 403);
         $actor = Auth::guard('user')->user();
         abort_unless($actor instanceof User, 403);
+        if ($request->input('action') === 'confirm_report') {
+            $facts = $request->validate(['request_key' => ['required', 'uuid'], 'expected_revision' => ['required', 'integer', 'min:0'],
+                'confirmed' => ['required', 'accepted'], 'notes' => ['required', 'string', 'max:1000']]);
+            return response()->json(['incident' => $this->incidentPayload($service->confirmRecoveryReport($incident, $actor, $facts))]);
+        }
         $data = $request->validate(['request_key' => ['required', 'uuid'], 'expected_revision' => ['required', 'integer', 'min:0'],
             'notes' => ['required', 'string', 'max:1000'], 'action' => ['required', 'in:return,continue'],
-            'safe_for_transport' => ['required', 'accepted'], 'delivery_date' => ['required', 'date_format:Y-m-d'],
+            'transport_notes' => ['sometimes', 'string', 'max:1000'], 'delivery_date' => ['required', 'date_format:Y-m-d'],
             'delivery_window' => ['required', 'in:morning,afternoon'], 'customer_agreement' => ['required_if:action,continue', 'string', 'max:1000'],
             'appointment_confirmed' => ['sometimes', 'boolean'], 'appointment_agreement_note' => ['sometimes', 'string', 'max:1000']]);
         return response()->json(['incident' => $this->incidentPayload($service->reviewRecovery($incident, $actor, $data))]);
@@ -147,7 +152,7 @@ class DeliveryIncidentController extends Controller
             'resolution' => ['required', 'string', Rule::in(DeliveryIncidentService::RESOLUTIONS)],
             'request_key' => ['required', 'uuid'],
             'expected_revision' => ['required', 'integer', 'min:0'],
-            'findings' => ['required', 'array:condition_verified,safe_for_delivery,safe_for_transport,recovered_verified,obstacle_resolved,dispute_resolved,operational_ready,items,customer_agreement,mitigation_plan'],
+            'findings' => ['sometimes', 'array:condition_verified,safe_for_delivery,safe_for_transport,recovered_verified,obstacle_resolved,dispute_resolved,operational_ready,items,customer_agreement,mitigation_plan,transport_notes'],
             'findings.condition_verified' => ['sometimes', 'boolean'],
             'findings.safe_for_delivery' => ['sometimes', 'boolean'],
             'findings.safe_for_transport' => ['sometimes', 'boolean'],
@@ -162,6 +167,7 @@ class DeliveryIncidentController extends Controller
             'findings.items.*.condition' => ['required', 'string', 'max:500'],
             'findings.customer_agreement' => ['sometimes', 'string', 'max:1000'],
             'findings.mitigation_plan' => ['sometimes', 'string', 'max:1000'],
+            'findings.transport_notes' => ['sometimes', 'string', 'max:1000'],
             'note' => ['required', 'string', 'max:1000'],
             'responsible_party' => ['nullable', 'in:undetermined,customer,rider,shop,third_party'],
             'evidence_files' => [
@@ -178,7 +184,7 @@ class DeliveryIncidentController extends Controller
         $storedPaths = $this->storeEvidenceFiles($request->file('evidence_files', []), "incident-evidence/incident-{$incident->id}");
 
         try {
-            $findings = $data['findings'];
+            $findings = $data['findings'] ?? [];
             foreach (['condition_verified', 'safe_for_delivery', 'safe_for_transport', 'recovered_verified', 'obstacle_resolved', 'dispute_resolved', 'operational_ready'] as $field) {
                 if (array_key_exists($field, $findings)) $findings[$field] = filter_var($findings[$field], FILTER_VALIDATE_BOOLEAN);
             }

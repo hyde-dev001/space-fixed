@@ -1308,15 +1308,17 @@ it('binds an incident decision to its revision and records explicit condition fi
   });
   render(<Shipments />);
   fireEvent.click(screen.getByRole('button', { name: /^(Open delivery|Review incident)$/ }));
-  fireEvent.click(screen.getByLabelText('Vehicle or route obstacle resolved'));
+  expect(screen.queryByText('Verified investigation findings')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('radio', { name: 'Issue resolved — continue delivery' }));
   fireEvent.change(screen.getByLabelText('Decision reason'), { target: { value: 'Repair verified with the actual rider' } });
+  fireEvent.change(screen.getByLabelText('Resolved obstacle or operational arrangement'), { target: { value: 'Vehicle repaired and route available' } });
   fireEvent.click(screen.getByRole('button', { name: 'Confirm issue resolved' }));
   await waitFor(() => expect(mocks.post).toHaveBeenCalled());
   const form = mocks.post.mock.calls[0][1] as FormData;
   expect(form.get('expected_revision')).toBe('4');
   expect(form.get('request_key')).toMatch(/^[0-9a-f-]{36}$/);
-  expect(form.get('findings[obstacle_resolved]')).toBe('1');
+  expect(form.get('findings[obstacle_resolved]')).toBeNull();
+  expect(form.get('findings[mitigation_plan]')).toBe('Vehicle repaired and route available');
 });
 
 it('requires loss evidence and prevents duplicate decisions or closing while a save is pending', async () => {

@@ -14,7 +14,7 @@ use App\Models\User;
 class LogisticsNotificationService
 {
     private const RECOVERY_EVENTS = [
-        'parcel_loss_stage', 'parcel_recovery_reported',
+        'parcel_loss_stage', 'parcel_recovery_reported', 'parcel_recovery_confirmed', 'parcel_recovery_authorized',
         'parcel_recovery_decided', 'parcel_recovery_received', 'parcel_recovery_inspected', 'parcel_recovery_dispositioned', 'parcel_recovery_closed', 'parcel_recovery_investigated',
         'rider_reassigned', 'pickup_attempt_failed', 'pickup_cancelled', 'pickup_rescheduled', 'delivery_retry_authorized',
         'return_to_shop_started', 'return_received', 'out_for_delivery',
@@ -47,6 +47,14 @@ class LogisticsNotificationService
                 ->whereIn('data->event_type', ['parcel_loss_stage', 'delivery_incident_reported'])
                 ->where(fn ($query) => $query->where('data->event_type', 'delivery_incident_reported')
                     ->orWhere('data->revision', '<', $event->metadata['revision']))->update(['requires_action' => false]);
+        }
+        if ($event->event_type === 'parcel_recovery_reported' && ($parentId = $event->metadata['parent_incident_id'] ?? null)) {
+            Notification::where('shop_id', $event->shipment->shop_owner_id)->where('data->incident_id', $parentId)
+                ->whereIn('data->event_type', ['parcel_loss_stage', 'delivery_incident_reported'])->update(['requires_action' => false]);
+        }
+        if (in_array($event->event_type, ['parcel_recovery_authorized', 'parcel_recovery_closed'], true)) {
+            Notification::where('shop_id', $event->shipment->shop_owner_id)->where('data->incident_id', $event->metadata['incident_id'] ?? null)
+                ->whereIn('data->event_type', ['parcel_recovery_reported', 'parcel_recovery_confirmed'])->update(['requires_action' => false]);
         }
         $type = $this->notificationType($event->event_type);
         if (!$type) {
@@ -87,7 +95,7 @@ class LogisticsNotificationService
             if ($profileId) $this->notifyRider($event, $type, (int) $profileId);
         }
         if ($event->visibility === 'internal' && str_starts_with($event->event_type, 'parcel_recovery_')
-            && $event->event_type !== 'parcel_recovery_reported' && ! ($event->metadata['operational_final'] ?? false)) {
+            && ! in_array($event->event_type, ['parcel_recovery_reported', 'parcel_recovery_confirmed'], true) && ! ($event->metadata['operational_final'] ?? false)) {
             $this->notifyRecoverySourceActors($event, $type);
         }
 
@@ -180,7 +188,8 @@ class LogisticsNotificationService
                             : '/erp/logistics/shipments',
                     },
                     'requires_action' => ! ($event->metadata['operational_final'] ?? false)
-                        && ($event->event_type === 'parcel_loss_stage' ? $this->currentLossStage($event, 'confirmation_requested') : $this->requiresAction($event->event_type)),
+                        && ($event->event_type === 'parcel_loss_stage' ? $this->currentLossStage($event, 'confirmation_requested')
+                            : (in_array($event->event_type, ['parcel_recovery_reported', 'parcel_recovery_confirmed'], true) ? $this->currentRecoveryReview($event) : $this->requiresAction($event->event_type))),
                 ]);
             });
     }
@@ -250,10 +259,20 @@ class LogisticsNotificationService
             });
     }
 
+    private function currentRecoveryReview(DeliveryEvent $event): bool
+    {
+        $incident = \App\Models\Logistics\DeliveryIncident::where('shop_owner_id', $event->shipment->shop_owner_id)
+            ->where('shipment_leg_id', $event->shipment_leg_id)->find($event->metadata['incident_id'] ?? null);
+        return $incident && ! $incident->decided_at && $incident->status !== 'resolved'
+            && (bool) data_get($incident->recovery_context, 'recovered_loss.confirmed');
+    }
+
     private function currentLossStage(DeliveryEvent $event, string $stage): bool
     {
-        return ($event->metadata['stage'] ?? null) === $stage && \App\Models\Logistics\DeliveryIncident::whereKey($event->metadata['incident_id'] ?? null)
-            ->where('shop_owner_id', $event->shipment->shop_owner_id)->where('recovery_context->loss->stage', $stage)->exists();
+        if (($event->metadata['stage'] ?? null) !== $stage) return false;
+        $incident = \App\Models\Logistics\DeliveryIncident::whereKey($event->metadata['incident_id'] ?? null)
+            ->where('shop_owner_id', $event->shipment->shop_owner_id)->first();
+        return $incident && data_get($incident->recovery_context, 'loss.stage') === $stage && ! $incident->linkedRecovery();
     }
 
     private function eventData(DeliveryEvent $event): array

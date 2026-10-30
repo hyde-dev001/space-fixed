@@ -159,7 +159,9 @@ class StaffOrderController extends Controller
             ->map(fn ($shipments) => $shipments->first());
 
         $warrantyProjections = $this->warrantyProjections($orders);
-        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $posOrderLookup, $includeRefundItems, $deliveryCancellations, $orderShipments, $refundShipments, $warrantyProjections) {
+        $parcelReturns = collect(app(\App\Services\Logistics\ParcelIncidentRecoveryService::class)->pendingFor($user))
+            ->where('source_type', 'order')->groupBy('source_id');
+        $orders = $orders->map(function ($order) use ($retailPosRefundSummaries, $posOrderLookup, $includeRefundItems, $deliveryCancellations, $orderShipments, $refundShipments, $warrantyProjections, $parcelReturns) {
             $itemSubtotal = (float) ($order->total_amount ?? 0);
             $shippingFee = (float) ($order->shipping_fee ?? 0);
             $hasStoredVat = $order->vat_amount !== null;
@@ -248,6 +250,7 @@ class StaffOrderController extends Controller
                     ['outbound'],
                     $this->orderLogisticsFallback($order),
                 ),
+                'parcel_returns' => $parcelReturns->get($order->id, collect())->values()->all(),
                 'latest_refund' => $latestRefund
                     ? $this->serializeLatestRefund(
                         $latestRefund->setRelation('order', $order),
@@ -429,6 +432,8 @@ class StaffOrderController extends Controller
                 ['outbound'],
                 $this->orderLogisticsFallback($order),
             ),
+            'parcel_returns' => collect(app(\App\Services\Logistics\ParcelIncidentRecoveryService::class)->pendingFor($user))
+                ->where('source_type', 'order')->where('source_id', $order->id)->values()->all(),
             'latest_refund' => $latestRefund
                 ? $this->serializeLatestRefund($latestRefund->setRelation('order', $order), $latestRefundItems, $refundShipment, $refundDispute)
                 : null,
