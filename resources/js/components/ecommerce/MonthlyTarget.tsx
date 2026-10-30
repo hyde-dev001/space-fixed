@@ -58,7 +58,7 @@ export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyT
         track: {
           background: "#E4E7EC",
           strokeWidth: "100%",
-          margin: 5, // margin is in pixels
+          margin: 5,
         },
         dataLabels: {
           name: {
@@ -164,7 +164,7 @@ export default function MonthlyTarget({ thisMonth = 0, lastMonth = 0 }: MonthlyT
                     <button
                       type="button"
                       onClick={handleSaveTarget}
-                      className="rounded-md bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-700"
+                      className="rounded-md bg-gray-950 px-3 py-1.5 text-xs font-semibold text-white hover:bg-black dark:bg-gray-950 dark:hover:bg-black"
                     >
                       Save Target
                     </button>

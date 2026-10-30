@@ -1,6 +1,7 @@
 // HR Module API Service
 
 import axios from 'axios';
+import { showEmployeeClockInFeedback } from '../utils/employeeClockInFeedback';
 import { 
   Employee, 
   AttendanceRecord, 
@@ -19,6 +20,11 @@ const axiosInstance = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json',
   },
+});
+
+axiosInstance.interceptors.response.use(response => response, error => {
+  showEmployeeClockInFeedback(error.response);
+  return Promise.reject(error);
 });
 
 // Add auth token to requests

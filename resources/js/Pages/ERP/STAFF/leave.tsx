@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import React, { useState, useEffect } from 'react';
 import { Head, usePage } from '@inertiajs/react';
 import AppLayoutERP from '../../../layout/AppLayout_ERP';
@@ -273,16 +274,11 @@ const LeaveManagement: React.FC = () => {
       <Head title="Leave - Solespace ERP" />
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Leave Management</h1>
-            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              Request and manage your leave applications
-            </p>
-          </div>
+        <div className="flex items-center justify-end">
+          <h1 className="sr-only">Leave Management</h1>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 bg-gray-950 text-white rounded-lg hover:bg-black dark:bg-gray-950 dark:hover:bg-black transition-colors"
           >
             <PlusIcon className="size-5" />
             New Leave Request
@@ -321,7 +317,7 @@ const LeaveManagement: React.FC = () => {
               onClick={() => setSelectedTab(tab)}
               className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${
                 selectedTab === tab
-                  ? 'text-blue-600 dark:text-blue-400 border-b-2 border-blue-600 dark:border-blue-400'
+                  ? 'text-gray-950 dark:text-white border-b-2 border-gray-950 dark:border-gray-300'
                   : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
               }`}
             >
@@ -405,7 +401,7 @@ const LeaveManagement: React.FC = () => {
                             text: leave.rejection_reason,
                             icon: 'info',
                           })}
-                          className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300"
+                          className="text-sm text-gray-700 hover:text-gray-950 dark:text-gray-300 dark:hover:text-white"
                         >
                           View Reason
                         </button>
@@ -422,6 +418,7 @@ const LeaveManagement: React.FC = () => {
                 </p>
                 <div className="flex gap-2">
                   <button
+                    aria-label="Previous page"
                     onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
                     className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -429,6 +426,7 @@ const LeaveManagement: React.FC = () => {
                     Previous
                   </button>
                   <button
+                    aria-label="Next page"
                     onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
                     className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -445,7 +443,7 @@ const LeaveManagement: React.FC = () => {
 
       {/* Create Leave Request Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-800 rounded-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">
               New Leave Request
@@ -456,11 +454,11 @@ const LeaveManagement: React.FC = () => {
                 <label htmlFor="leave-type" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Leave Type
                 </label>
-                <select
+                <MonochromeSelect
                   id="leave-type"
                   value={formData.leave_type}
                   onChange={(e) => setFormData({ ...formData, leave_type: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-950"
                   required
                 >
                   <option value="vacation">Vacation</option>
@@ -469,7 +467,7 @@ const LeaveManagement: React.FC = () => {
                   <option value="maternity">Maternity Leave</option>
                   <option value="paternity">Paternity Leave</option>
                   <option value="unpaid">Unpaid Leave</option>
-                </select>
+                </MonochromeSelect>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -483,7 +481,7 @@ const LeaveManagement: React.FC = () => {
                     value={formData.start_date}
                     onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
                     min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-950"
                     required
                   />
                 </div>
@@ -498,7 +496,7 @@ const LeaveManagement: React.FC = () => {
                     value={formData.end_date}
                     onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
                     min={formData.start_date || new Date().toISOString().split('T')[0]}
-                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-950"
                     required
                   />
                 </div>
@@ -512,7 +510,7 @@ const LeaveManagement: React.FC = () => {
                   value={formData.reason}
                   onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
                   rows={4}
-                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-gray-950"
                   placeholder="Please provide a reason for your leave request..."
                   required
                 />
@@ -521,7 +519,7 @@ const LeaveManagement: React.FC = () => {
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  className="flex-1 px-4 py-2 bg-gray-950 text-white rounded-lg hover:bg-black dark:bg-gray-950 dark:hover:bg-black transition-colors"
                 >
                   Submit Request
                 </button>

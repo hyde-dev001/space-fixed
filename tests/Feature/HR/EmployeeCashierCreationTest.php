@@ -31,6 +31,7 @@ class EmployeeCashierCreationTest extends TestCase
             'shop_owner_id' => $shopOwner->id,
         ]);
         $hrUser->givePermissionTo('access-employee-directory');
+        $this->clockInEmployee($hrUser);
 
         return $hrUser;
     }
@@ -48,6 +49,7 @@ class EmployeeCashierCreationTest extends TestCase
         $payload = [
             'firstName' => 'Casey',
             'lastName' => 'Cashier',
+            'age' => 30,
             'email' => 'casey.cashier@example.com',
             'phone' => '09171234567',
             'position' => 'Cashier',
@@ -56,6 +58,9 @@ class EmployeeCashierCreationTest extends TestCase
             'salary' => 500,
             'hireDate' => now()->toDateString(),
             'location' => 'Main Branch',
+            'province' => 'Cavite',
+            'city_municipality' => 'Dasmarinas',
+            'postal_code' => '4114',
         ];
 
         $response = $this->actingAs($hrUser, 'user')->postJson('/api/hr/employees', $payload);
@@ -85,6 +90,7 @@ class EmployeeCashierCreationTest extends TestCase
         $payload = [
             'firstName' => 'Ivy',
             'lastName' => 'Inventory',
+            'age' => 31,
             'email' => 'ivy.inventory@example.com',
             'phone' => '09179990001',
             'position' => 'Inventory Controller',
@@ -93,6 +99,9 @@ class EmployeeCashierCreationTest extends TestCase
             'salary' => 600,
             'hireDate' => now()->toDateString(),
             'location' => 'Repair Hub',
+            'province' => 'Cavite',
+            'city_municipality' => 'Dasmarinas',
+            'postal_code' => '4114',
         ];
 
         $response = $this->actingAs($hrUser, 'user')->postJson('/api/hr/employees', $payload);
@@ -118,6 +127,7 @@ class EmployeeCashierCreationTest extends TestCase
         $payload = [
             'firstName' => 'Paolo',
             'lastName' => 'Procurement',
+            'age' => 32,
             'email' => 'paolo.procurement@example.com',
             'phone' => '09179990002',
             'position' => 'Procurement Officer',
@@ -126,6 +136,9 @@ class EmployeeCashierCreationTest extends TestCase
             'salary' => 650,
             'hireDate' => now()->toDateString(),
             'location' => 'Repair Hub',
+            'province' => 'Cavite',
+            'city_municipality' => 'Dasmarinas',
+            'postal_code' => '4114',
         ];
 
         $response = $this->actingAs($hrUser, 'user')->postJson('/api/hr/employees', $payload);
@@ -134,5 +147,19 @@ class EmployeeCashierCreationTest extends TestCase
         $createdUser = User::where('email', 'paolo.procurement@example.com')->firstOrFail();
         $this->assertSame('STAFF', $createdUser->role);
         $this->assertTrue($createdUser->hasRole('Procurement'));
+    }
+
+    public function test_employee_creation_still_rejects_an_incomplete_address_after_hr_clocks_in(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company', 'business_type' => 'retail']);
+        $hr = $this->createHrUserForShop($shop);
+        $this->actingAs($hr, 'user')->postJson('/api/hr/employees', [
+            'firstName' => 'Synthetic', 'lastName' => 'Cashier', 'age' => 30,
+            'email' => 'incomplete-address@example.test', 'phone' => '09171234567',
+            'position' => 'Cashier', 'department' => 'Cashier', 'role' => 'Cashier',
+            'salary' => 500, 'hireDate' => now()->toDateString(), 'location' => 'Test branch',
+        ])->assertUnprocessable()->assertJsonValidationErrors(['province', 'city_municipality', 'postal_code']);
+        $this->assertDatabaseMissing('users', ['email' => 'incomplete-address@example.test']);
+        $this->assertDatabaseMissing('employees', ['email' => 'incomplete-address@example.test']);
     }
 }

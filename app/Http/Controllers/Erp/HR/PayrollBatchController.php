@@ -4,7 +4,6 @@ namespace App\Http\Controllers\ERP\HR;
 
 use App\Http\Controllers\Controller;
 use App\Models\HR\Payroll;
-use App\Models\HR\PayrollComponent;
 use App\Models\Employee;
 use App\Models\HR\AttendanceRecord;
 use App\Models\HR\HolidayCalendar;
@@ -12,11 +11,14 @@ use App\Models\HR\LeaveRequest;
 use App\Models\HR\AuditLog;
 use App\Models\ShopOwner;
 use App\Services\HR\PayrollService;
+use App\Services\HR\EmployeeOperationalPolicy;
+use App\Services\PayslipApprovalService;
 use App\Traits\HR\LogsHRActivity;
 use App\Notifications\HR\PayslipGenerated;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Carbon\Carbon;
 
@@ -36,10 +38,18 @@ class PayrollBatchController extends Controller
     use LogsHRActivity;
 
     protected PayrollService $payrollService;
+    protected EmployeeOperationalPolicy $employeePolicy;
+    protected PayslipApprovalService $payslipApprovalService;
 
-    public function __construct(PayrollService $payrollService)
+    public function __construct(
+        PayrollService $payrollService,
+        EmployeeOperationalPolicy $employeePolicy,
+        PayslipApprovalService $payslipApprovalService
+    )
     {
         $this->payrollService = $payrollService;
+        $this->employeePolicy = $employeePolicy;
+        $this->payslipApprovalService = $payslipApprovalService;
     }
 
     // ============================================================
@@ -48,6 +58,11 @@ class PayrollBatchController extends Controller
 
     private function authorizeUser(): ?\Illuminate\Contracts\Auth\Authenticatable
     {
+        $shopOwner = Auth::guard('shop_owner')->user();
+        if ($shopOwner) {
+            return $shopOwner;
+        }
+
         $user = Auth::guard('user')->user();
 
         if (! $user) {
@@ -65,6 +80,13 @@ class PayrollBatchController extends Controller
         }
 
         return $user;
+    }
+
+    private function shopOwnerId(\Illuminate\Contracts\Auth\Authenticatable $actor): int
+    {
+        return $actor instanceof ShopOwner
+            ? (int) $actor->getKey()
+            : (int) ($actor->shop_owner_id ?? 0);
     }
 
     // ============================================================
@@ -101,9 +123,19 @@ class PayrollBatchController extends Controller
 
         foreach ($employeeIds as $employeeId) {
             try {
-                $employee = Employee::forShopOwner($user->shop_owner_id)
-                    ->where('status', 'active')
+                $employee = Employee::forShopOwner($this->shopOwnerId($user))
                     ->findOrFail($employeeId);
+
+                if (! $this->employeePolicy->isEligibleForRoutinePayroll($employee)) {
+                    $errors[] = [
+                        'employee_id' => $employeeId,
+                        'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                        'message' => 'Employee is not eligible for routine payroll.',
+                        'error_code' => 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL',
+                        'severity' => 'error',
+                    ];
+                    continue;
+                }
 
                 // Already generated for this period?
                 $existingPayroll = Payroll::forEmployee($employeeId)
@@ -227,9 +259,18 @@ class PayrollBatchController extends Controller
 
         foreach ($employeeIds as $employeeId) {
             try {
-                $employee = Employee::forShopOwner($user->shop_owner_id)
-                    ->where('status', 'active')
+                $employee = Employee::forShopOwner($this->shopOwnerId($user))
                     ->findOrFail($employeeId);
+
+                if (! $this->employeePolicy->isEligibleForRoutinePayroll($employee)) {
+                    $errors[] = [
+                        'employee_id' => $employeeId,
+                        'employee_name' => $employee->first_name . ' ' . $employee->last_name,
+                        'error' => 'Employee is not eligible for routine payroll.',
+                        'error_code' => 'EMPLOYEE_NOT_ELIGIBLE_FOR_ROUTINE_PAYROLL',
+                    ];
+                    continue;
+                }
 
                 $existingPayroll = Payroll::forEmployee($employeeId)
                     ->forPeriod($payrollPeriod)
@@ -293,6 +334,10 @@ class PayrollBatchController extends Controller
                     'disbursed_by' => null,
                     'disbursed_at' => null,
                 ]);
+
+                if ($user instanceof \App\Models\User) {
+                    $this->payslipApprovalService->createGeneratedPayrollApproval($payroll, $user);
+                }
 
                 $createdPayrolls[] = $payroll->load('employee', 'components');
 
@@ -392,18 +437,8 @@ class PayrollBatchController extends Controller
      */
     public function exportBatch(Request $request): mixed
     {
-        $user = Auth::guard('user')->user();
-
-        if (
-            ! $user
-            || (
-                ! $user->hasRole('Shop Owner')
-                && ! $user->can('access-payslip-generation')
-                && ! $user->can('access-view-payslip')
-                && ! $user->can('access-payslip-approval')
-                && ! $user->can('access-approval-workflow')
-            )
-        ) {
+        $user = $this->authorizeUser();
+        if (! $user) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -416,7 +451,7 @@ class PayrollBatchController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $payrolls = Payroll::forShopOwner($user->shop_owner_id)
+        $payrolls = Payroll::forShopOwner($this->shopOwnerId($user))
             ->forPeriod($request->payrollPeriod)
             ->with(['employee', 'components'])
             ->get();
@@ -465,12 +500,15 @@ class PayrollBatchController extends Controller
         $shopOwner = $shopOwnerId ? ShopOwner::find($shopOwnerId) : null;
 
         $records = AttendanceRecord::where('employee_id', $employeeId)
-            ->whereBetween('date', [$startDate, $endDate])
+            ->where('shop_owner_id', $shopOwnerId)
+            ->whereDate('date', '>=', $startDate)
+            ->whereDate('date', '<=', $endDate)
             ->get();
 
         // Load approved leave requests for the period (keyed by date string for O(1) lookups)
         $leaveRequestsByDate = [];
         $approvedLeaves = LeaveRequest::where('employee_id', $employeeId)
+            ->where('shop_owner_id', $shopOwnerId)
             ->where('status', 'approved')
             ->where(function ($query) use ($startDate, $endDate) {
                 $query->whereBetween('start_date', [$startDate, $endDate])
@@ -498,7 +536,8 @@ class PayrollBatchController extends Controller
         $holidays = $shopOwnerId
             ? HolidayCalendar::where('shop_owner_id', $shopOwnerId)
                 ->where('is_active', true)
-                ->whereBetween('holiday_date', [$startDate, $endDate])
+                ->whereDate('holiday_date', '>=', $startDate)
+                ->whereDate('holiday_date', '<=', $endDate)
                 ->get()
                 ->keyBy(fn ($h) => $h->holiday_date->toDateString())
             : collect();
@@ -509,14 +548,18 @@ class PayrollBatchController extends Controller
         $totalAbsentDays         = 0;
         $totalLeaveDays          = 0;
         $totalLateDays           = 0;
+        $totalLateHours          = 0;
         $totalPresentDays        = 0;
+        $totalHalfDayDays        = 0;
         $specialHolidayHours     = 0;
         $regularHolidayHours     = 0;
 
         foreach ($records as $record) {
             $dateStr = $record->date->toDateString();
 
-            if ($record->status !== 'present') {
+            $isWorkedStatus = in_array($record->status, ['present', 'late', 'half_day', 'half-day'], true);
+
+            if (! $isWorkedStatus) {
                 // Check if this absent/late day is covered by an approved leave
                 if (isset($leaveRequestsByDate[$dateStr])) {
                     $totalLeaveDays++;
@@ -527,11 +570,17 @@ class PayrollBatchController extends Controller
             }
 
             $totalPresentDays++;
-            $workedHours      = (float) ($record->working_hours ?? 8);
+            if (in_array($record->status, ['half_day', 'half-day'], true)) {
+                $totalHalfDayDays++;
+            }
+            $workedHours = $record->working_hours !== null
+                ? (float) $record->working_hours
+                : (in_array($record->status, ['half_day', 'half-day'], true) ? 4.0 : 8.0);
             $totalOvertimeHours  += (float) ($record->overtime_hours ?? 0);
+            $totalLateHours += max((float) ($record->minutes_late ?? 0), 0.0) / 60;
             $minutesEarlyDeparture = max((float) ($record->minutes_early_departure ?? 0), 0.0);
             $totalUndertimeHours += (float) ($minutesEarlyDeparture / 60);
-            if ($record->is_late) {
+            if ($record->is_late || $record->status === 'late') {
                 $totalLateDays++;
             }
 
@@ -562,7 +611,9 @@ class PayrollBatchController extends Controller
             'total_absent_days'        => $totalAbsentDays,
             'total_leave_days'         => $totalLeaveDays,
             'total_late_days'          => $totalLateDays,
+            'total_late_hours'         => round($totalLateHours, 2),
             'total_present_days'       => $totalPresentDays,
+            'total_half_day_days'      => $totalHalfDayDays,
             'special_holiday_hours'    => round($specialHolidayHours, 2),
             'regular_holiday_hours'    => round($regularHolidayHours, 2),
             'working_days'             => $workingDays,
@@ -600,10 +651,12 @@ class PayrollBatchController extends Controller
             $extraEarnings['components'],
             [
                 'attendance_days' => (float) ($attendanceData['total_present_days'] ?? 0),
+                'half_day_days' => (float) ($attendanceData['total_half_day_days'] ?? 0),
                 'absent_days' => (float) ($attendanceData['total_absent_days'] ?? 0),
                 'leave_days' => (float) ($attendanceData['total_leave_days'] ?? 0),
                 'overtime_hours' => (float) ($attendanceData['total_overtime_hours'] ?? 0),
                 'undertime_hours' => (float) ($attendanceData['total_undertime_hours'] ?? 0),
+                'late_hours' => (float) ($attendanceData['total_late_hours'] ?? 0),
                 'special_holiday_hours' => (float) ($attendanceData['special_holiday_hours'] ?? 0),
                 'regular_holiday_hours' => (float) ($attendanceData['regular_holiday_hours'] ?? 0),
             ],
@@ -628,6 +681,7 @@ class PayrollBatchController extends Controller
         $withholdingTax = (float) ($statutory['withholding_tax'] ?? 0);
         $absentDeductions = (float) ($breakdown['absent_deductions'] ?? 0);
         $undertimeDeductions = (float) ($breakdown['undertime_deductions'] ?? 0);
+        $lateDeductions = (float) ($breakdown['late_deductions'] ?? 0);
         $totalDeductions = (float) ($calculation['total_deductions'] ?? 0);
         $netSalary = (float) ($calculation['net_salary'] ?? 0);
 
@@ -652,8 +706,9 @@ class PayrollBatchController extends Controller
             'pagibig_contribution'   => round($pagibig, 2),
             'absent_deductions'      => round($absentDeductions, 2),
             'undertime_deductions'   => round($undertimeDeductions, 2),
+            'late_deductions'        => round($lateDeductions, 2),
             'loan_deductions'        => 0,
-            'other_deductions'       => round($absentDeductions + $undertimeDeductions, 2),
+            'other_deductions'       => round($absentDeductions + $undertimeDeductions + $lateDeductions, 2),
             'total_deductions'       => round($totalDeductions, 2),
             'net_salary'             => round($netSalary, 2),
             'attendance_summary'     => $attendanceData,
@@ -665,114 +720,15 @@ class PayrollBatchController extends Controller
         return [
             'payment_method' => $paymentMethod,
             'attendance_days' => (int) ($attendanceData['total_present_days'] ?? 0),
+            'half_day_days' => (int) ($attendanceData['total_half_day_days'] ?? 0),
             'absent_days' => (int) ($attendanceData['total_absent_days'] ?? 0),
             'leave_days' => (int) ($attendanceData['total_leave_days'] ?? 0),
             'overtime_hours' => (float) ($attendanceData['total_overtime_hours'] ?? 0),
             'undertime_hours' => (float) ($attendanceData['total_undertime_hours'] ?? 0),
+            'late_hours' => (float) ($attendanceData['total_late_hours'] ?? 0),
             'special_holiday_hours' => (float) ($attendanceData['special_holiday_hours'] ?? 0),
             'regular_holiday_hours' => (float) ($attendanceData['regular_holiday_hours'] ?? 0),
         ];
-    }
-
-    /**
-     * Persist PayrollComponent rows from a calculation array.
-     */
-    protected function createPayrollComponents(Payroll $payroll, array $calc): void
-    {
-        $earningsMap = [
-            'Basic Pay'     => $calc['basic_pay'],
-            'Overtime Pay'  => $calc['overtime_pay'],
-            'Allowances'    => $calc['other_allowances'],
-        ];
-
-        foreach ($earningsMap as $name => $amount) {
-            if ($amount > 0) {
-                PayrollComponent::create([
-                    'payroll_id'     => $payroll->id,
-                    'component_type' => PayrollComponent::TYPE_EARNING,
-                    'component_name' => $name,
-                    'amount'         => $amount,
-                ]);
-            }
-        }
-
-        $deductionMap = [
-            'Withholding Tax'       => $calc['withholding_tax'],
-            'SSS Contribution'      => $calc['sss_contribution'],
-            'PhilHealth Contribution' => $calc['philhealth_contribution'],
-            'Pag-IBIG Contribution' => $calc['pagibig_contribution'],
-            'Absent Deductions'     => $calc['absent_deductions'],
-            'Undertime Deductions'  => $calc['undertime_deductions'],
-        ];
-
-        foreach ($deductionMap as $name => $amount) {
-            if ($amount > 0) {
-                PayrollComponent::create([
-                    'payroll_id'     => $payroll->id,
-                    'component_type' => PayrollComponent::TYPE_DEDUCTION,
-                    'component_name' => $name,
-                    'amount'         => $amount,
-                ]);
-            }
-        }
-    }
-
-    // ============================================================
-    // STATUTORY CONTRIBUTION HELPERS (batch pipeline)
-    // ============================================================
-
-    protected function calculateSSS(float $salary): float
-    {
-        $table = [
-            4250  => 180,    4750 => 202.50, 5250 => 225,    5750 => 247.50,
-            6250  => 270,    6750 => 292.50, 7250 => 315,    7750 => 337.50,
-            8250  => 360,    8750 => 382.50, 9250 => 405,    9750 => 427.50,
-            10250 => 450,   10750 => 472.50, 11250 => 495,  11750 => 517.50,
-            12250 => 540,   12750 => 562.50, 13250 => 585,  13750 => 607.50,
-            14250 => 630,   14750 => 652.50, 15250 => 675,  15750 => 697.50,
-            16250 => 720,   16750 => 742.50, 17250 => 765,  17750 => 787.50,
-            18250 => 810,   18750 => 832.50, 19250 => 855,  19750 => 877.50,
-        ];
-
-        if ($salary >= 30000) return 1350;
-
-        foreach ($table as $ceiling => $contribution) {
-            if ($salary < $ceiling) return $contribution;
-        }
-
-        return 900;
-    }
-
-    protected function calculatePhilHealth(float $salary): float
-    {
-        return round(min(max($salary, 10000), 100000) * 0.025, 2);
-    }
-
-    protected function calculatePagIbig(float $salary): float
-    {
-        return $salary <= 1500
-            ? round($salary * 0.01, 2)
-            : min(round($salary * 0.02, 2), 100);
-    }
-
-    /**
-     * Annualise monthly gross, apply BIR progressive tax, return monthly share.
-     */
-    protected function calculateWithholdingTaxMonthly(float $monthlyGross, float $monthlyStatutory): float
-    {
-        $annual     = ($monthlyGross - $monthlyStatutory) * 12;
-        $annualTax  = $this->calculateAnnualTax($annual);
-        return round($annualTax / 12, 2);
-    }
-
-    protected function calculateAnnualTax(float $taxableIncome): float
-    {
-        if ($taxableIncome <= 250000)   return 0;
-        if ($taxableIncome <= 400000)   return ($taxableIncome - 250000) * 0.15;
-        if ($taxableIncome <= 800000)   return 22500 + ($taxableIncome - 400000) * 0.20;
-        if ($taxableIncome <= 2000000)  return 102500 + ($taxableIncome - 800000) * 0.25;
-        if ($taxableIncome <= 8000000)  return 402500 + ($taxableIncome - 2000000) * 0.30;
-        return 2202500 + ($taxableIncome - 8000000) * 0.35;
     }
 
     // ============================================================

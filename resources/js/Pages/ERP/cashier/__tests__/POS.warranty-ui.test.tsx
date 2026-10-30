@@ -52,6 +52,7 @@ const buildRepairHistoryRow = (overrides: Record<string, unknown> = {}) => ({
   total_amount: 500,
   payment_lines: [{ tender_type: "cash" }],
   refunds: [],
+  repair_request: { status: "picked_up" },
   receipt: {
     receipt_no: "RCP-TEST-001",
     issued_at: "2026-04-12T10:00:00.000Z",
@@ -68,6 +69,27 @@ const buildRepairHistoryRow = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("Cashier POS warranty UI", () => {
+  it('submits a retail Product Warranty assessment with item context without approving or executing it', async () => {
+    usePageMock.mockReturnValue({ props: { auth: { user: { shop_owner: { business_type: 'retail' } } } } });
+    const coverage = { id: 1, reference: 'WRNTY-2026-TEST', order_number: 'RPOS-1', customer_name: 'Buyer', shop_name: 'Shop',
+      issued_at: '2026-10-07T00:00:00Z', fulfilled_at: '2026-10-07T00:00:00Z', timezone: 'Asia/Manila', status: 'active', download_url: '/private-certificate',
+      items: [{ id: 123, order_item_id: 77, product_name: 'Shoe', covered_quantity: 2, remaining_quantity: 2, available_quantity: 2, reserved_quantity: 0,
+        status: 'active', can_assess: true, start_date: '2026-10-07T00:00:00Z', expiration_date: '2027-10-07T00:00:00Z', policy: { title: 'Product Warranty', duration_value: 1, duration_unit: 'years', terms: 'Original terms' } }] };
+    const row = buildRepairHistoryRow({ module_type: 'retail', product_warranty: coverage,
+      source_order: { items: [{ id: 77, product_name: 'Shoe', quantity: 2, price: 250, subtotal: 500 }] } });
+    axiosGetMock.mockImplementation((url: string) => Promise.resolve(url === '/api/retail-pos/transactions' ? { data: { data: { data: [row] } } } : { data: { data: [] } }));
+    axiosPostMock.mockResolvedValue({ data: { refund_id: 991, data: { status: 'requested' } } });
+    swalFireMock.mockImplementation((options: { title?: string }) => Promise.resolve(options.title === 'Product Warranty Assessment'
+      ? { isConfirmed: true, value: { refund_lines: [{ order_item_id: 77, requested_qty: 1, inspection_disposition: 'damaged' }], requested_amount: 250, request_type: 'partial' } }
+      : { isConfirmed: false }));
+    render(<CashierPOS />);
+    fireEvent.click(screen.getByRole('button', { name: /history/i }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Warranty Assessment' }));
+    await waitFor(() => expect(axiosPostMock).toHaveBeenCalledWith('/api/retail-pos/refunds', expect.objectContaining({ request_basis: 'warranty',
+      refund_lines: [expect.objectContaining({ order_item_id: 77, retail_warranty_id: 123, requested_qty: 1, inspection_disposition: 'damaged' })] }), expect.anything()));
+    expect(axiosPostMock.mock.calls.some(([url]) => String(url).endsWith('/approve') || String(url).endsWith('/execute'))).toBe(false);
+  });
+
   beforeEach(() => {
     usePageMock.mockReset();
     axiosGetMock.mockReset();
@@ -140,8 +162,58 @@ describe("Cashier POS warranty UI", () => {
     expect(screen.queryByRole("button", { name: "Warranty" })).not.toBeInTheDocument();
   });
 
-  it("validates warranty modal and requires at least one evidence image", async () => {
+  it("offers a manual POS refund for a rejected no-account repair", async () => {
+    historyRows = [
+      buildRepairHistoryRow({
+        repair_request: { status: "rejected" },
+      }),
+    ];
+    swalFireMock.mockImplementation(async (config: any) => {
+      if (config?.title === "Confirm Manual POS Refund") {
+        return { isConfirmed: true };
+      }
+
+      return { isConfirmed: false };
+    });
+    axiosPostMock.mockImplementation((url: string) => {
+      if (url === "/api/repair-pos/refunds/manual-rejected-no-account") {
+        return Promise.resolve({
+          data: {
+            success: true,
+            refund_id: 77,
+            data: {
+              status: "succeeded",
+              approved_amount: 500,
+            },
+          },
+        });
+      }
+
+      return Promise.resolve({ data: {} });
+    });
+
+    render(<CashierPOS />);
+
+    fireEvent.click(screen.getByRole("button", { name: /history/i }));
+
+    const refundButton = await screen.findByRole("button", { name: "Manual POS Refund" });
+    fireEvent.click(refundButton);
+
+    await waitFor(() => {
+      expect(axiosPostMock).toHaveBeenCalledWith(
+        "/api/repair-pos/refunds/manual-rejected-no-account",
+        {
+          source_transaction_id: 10,
+          receipt_no: "RCP-TEST-001",
+        },
+        { withCredentials: true },
+      );
+    });
+  });
+
+  it("does not ask POS warranty claims for evidence images", async () => {
     historyRows = [buildRepairHistoryRow()];
+    let preConfirmValue: unknown;
 
     swalFireMock.mockImplementation(async (config: any) => {
       if (config?.title === "File Warranty Claim" && typeof config.preConfirm === "function") {
@@ -155,21 +227,10 @@ describe("Cashier POS warranty UI", () => {
         const reasonDetails = document.createElement("textarea");
         reasonDetails.id = "pos_warranty_reason_details";
 
-        const returnMethod = document.createElement("select");
-        returnMethod.id = "pos_warranty_return_method";
-        const methodOption = document.createElement("option");
-        methodOption.value = "walk_in";
-        methodOption.selected = true;
-        returnMethod.appendChild(methodOption);
+        document.body.append(reasonCode, reasonDetails);
 
-        const images = document.createElement("input");
-        images.id = "pos_warranty_images";
-        images.type = "file";
-
-        document.body.append(reasonCode, reasonDetails, returnMethod, images);
-
-        await config.preConfirm();
-        return { isConfirmed: false };
+        preConfirmValue = await config.preConfirm();
+        return { isConfirmed: false, value: preConfirmValue };
       }
 
       return { isConfirmed: false };
@@ -182,8 +243,19 @@ describe("Cashier POS warranty UI", () => {
     const warrantyButton = await screen.findByRole("button", { name: "Warranty" });
     fireEvent.click(warrantyButton);
 
-    await waitFor(() => {
-      expect(swalShowValidationMessageMock).toHaveBeenCalledWith("Please upload at least one image.");
-    });
+    await waitFor(() => expect(preConfirmValue).toEqual({
+      reasonCode: "issue_returned",
+      reasonDetails: "",
+    }));
+
+    expect(swalShowValidationMessageMock).not.toHaveBeenCalled();
+
+    const warrantyConfig = swalFireMock.mock.calls.find(
+      ([config]) => config?.title === "File Warranty Claim",
+    )?.[0];
+    expect(warrantyConfig?.html).not.toContain("Evidence Images");
+    expect(warrantyConfig?.html).not.toContain("pos_warranty_images");
+    expect(warrantyConfig?.html).not.toContain("Preferred Return Method");
+    expect(warrantyConfig?.html).not.toContain("pos_warranty_return_method");
   });
 });

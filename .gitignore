@@ -14,10 +14,12 @@
 /auth.json
 /node_modules
 /public/hot
+# Commit the matching OCR runtime with public/build for Git-based deployments.
 /public/storage
 /storage/*.key
 /storage/pail
 /storage/framework/sessions/*
+/storage/framework/cache/
 /vendor
 Homestead.json
 Homestead.yaml
@@ -25,3 +27,6 @@ Thumbs.db
 /superpowers
 /plan
 /miguel
+/.worktrees
+/output/failed-delivery-recovery/
+/tests/Browser/__pycache__/

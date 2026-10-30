@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\HR\Payroll;
 use App\Models\HR\PayrollComponent;
 use App\Services\HR\PayrollService;
+use App\Support\PayrollMoney;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -102,6 +103,10 @@ class PayrollComponentController extends Controller
             return response()->json(['error' => 'Cannot add components to non-pending payroll'], 422);
         }
 
+        if ($payroll->financialMutationLocked()) {
+            return response()->json(['error' => 'Payroll financial values are locked after approval starts'], 422);
+        }
+
         $validator = Validator::make($request->all(), [
             'component_type' => 'required|in:' . implode(',', [
                 PayrollComponent::TYPE_EARNING,
@@ -109,7 +114,7 @@ class PayrollComponentController extends Controller
                 PayrollComponent::TYPE_BENEFIT,
             ]),
             'component_name' => 'required|string|max:100',
-            'amount'         => 'required|numeric',
+            'amount'         => 'required|numeric|min:0',
             'is_taxable'     => 'sometimes|boolean',
             'description'    => 'nullable|string|max:500',
         ]);
@@ -123,7 +128,9 @@ class PayrollComponentController extends Controller
             'shop_owner_id'    => $user->shop_owner_id,
             'component_type'   => $request->component_type,
             'component_name'   => $request->component_name,
-            'amount'           => $request->amount,
+            'amount'           => PayrollMoney::round($request->amount),
+            'base_amount'      => PayrollMoney::round($request->amount),
+            'calculated_amount' => PayrollMoney::round($request->amount),
             'calculation_method' => PayrollComponent::CALC_FIXED,
             'is_taxable'       => $request->get('is_taxable', false),
             'description'      => $request->description,
@@ -155,12 +162,16 @@ class PayrollComponentController extends Controller
             return response()->json(['error' => 'Cannot update components of non-pending payroll'], 422);
         }
 
+        if ($payroll->financialMutationLocked()) {
+            return response()->json(['error' => 'Payroll financial values are locked after approval starts'], 422);
+        }
+
         $component = PayrollComponent::where('payroll_id', $payrollId)
             ->where('shop_owner_id', $user->shop_owner_id)
             ->findOrFail($componentId);
 
         $validator = Validator::make($request->all(), [
-            'amount'      => 'sometimes|required|numeric',
+            'amount'      => 'sometimes|required|numeric|min:0',
             'is_taxable'  => 'sometimes|boolean',
             'description' => 'nullable|string|max:500',
         ]);
@@ -170,8 +181,9 @@ class PayrollComponentController extends Controller
         }
 
         if ($request->has('amount')) {
-            $component->base_amount       = $request->amount;
-            $component->calculated_amount = $request->amount;
+            $component->amount            = PayrollMoney::round($request->amount);
+            $component->base_amount       = PayrollMoney::round($request->amount);
+            $component->calculated_amount = PayrollMoney::round($request->amount);
         }
 
         if ($request->has('is_taxable')) {
@@ -210,6 +222,10 @@ class PayrollComponentController extends Controller
             return response()->json(['error' => 'Cannot delete components from non-pending payroll'], 422);
         }
 
+        if ($payroll->financialMutationLocked()) {
+            return response()->json(['error' => 'Payroll financial values are locked after approval starts'], 422);
+        }
+
         $component = PayrollComponent::where('payroll_id', $payrollId)
             ->where('shop_owner_id', $user->shop_owner_id)
             ->findOrFail($componentId);
@@ -240,44 +256,122 @@ class PayrollComponentController extends Controller
         $payroll->load('components');
         $components = $payroll->components;
 
-        $earnings   = $components->where('component_type', PayrollComponent::TYPE_EARNING)->sum('calculated_amount');
-        $deductions = $components->where('component_type', PayrollComponent::TYPE_DEDUCTION)->sum('calculated_amount');
-        $benefits   = $components->where('component_type', PayrollComponent::TYPE_BENEFIT)->sum('calculated_amount');
+        $earnings = PayrollMoney::add(...$components
+            ->where('component_type', PayrollComponent::TYPE_EARNING)
+            ->filter(fn ($component): bool => (bool) ($component->affects_gross ?? true))
+            ->map(fn ($component): mixed => $component->calculated_amount ?? $component->amount ?? 0)
+            ->all());
+        $statutoryComponentNames = [
+            'Income Tax',
+            'Withholding Tax',
+            'SSS Contribution',
+            'PhilHealth Contribution',
+            'Pag-IBIG Contribution',
+            'Pagibig Contribution',
+        ];
+        $deductions = PayrollMoney::add(...$components
+            ->where('component_type', PayrollComponent::TYPE_DEDUCTION)
+            ->reject(fn ($component): bool => in_array(
+                (string) $component->component_name,
+                $statutoryComponentNames,
+                true
+            ))
+            ->map(fn ($component): mixed => $component->calculated_amount ?? $component->amount ?? 0)
+            ->all());
+        $benefits = PayrollMoney::add(...$components
+            ->where('component_type', PayrollComponent::TYPE_BENEFIT)
+            ->filter(fn ($component): bool => (bool) ($component->affects_gross ?? true))
+            ->map(fn ($component): mixed => $component->calculated_amount ?? $component->amount ?? 0)
+            ->all());
 
-        $grossPay     = $earnings + $benefits;
-        $taxableAmount = $components->where('is_taxable', true)->sum('calculated_amount');
+        $grossPay = PayrollMoney::add($earnings, $benefits);
+        $taxableAmount = PayrollMoney::add(...$components
+            ->where('is_taxable', true)
+            ->filter(fn ($component): bool => (bool) ($component->affects_gross ?? true))
+            ->map(fn ($component): mixed => $component->calculated_amount ?? $component->amount ?? 0)
+            ->all());
 
+        $snapshot = is_array($payroll->calculation_snapshot) ? $payroll->calculation_snapshot : [];
+        $statutoryBases = [
+            'sss' => $grossPay,
+            'philhealth' => data_get($snapshot, 'statutory_bases.philhealth', $payroll->basic_salary ?? $grossPay),
+            'pagibig' => $grossPay,
+        ];
         $statutory = $this->payrollService->calculateStatutoryDeductions(
             (int) $payroll->shop_owner_id,
-            (float) $taxableAmount,
-            $payroll->pay_period_end
+            $taxableAmount,
+            $payroll->pay_period_end,
+            $statutoryBases
         );
 
-        $taxAmount = (float) ($statutory['withholding_tax'] ?? 0);
-        $sss = (float) ($statutory['sss_contribution'] ?? 0);
-        $philhealth = (float) ($statutory['philhealth_contribution'] ?? 0);
-        $pagibig = (float) ($statutory['pagibig_contribution'] ?? 0);
+        $taxAmount = PayrollMoney::round($statutory['withholding_tax'] ?? 0);
+        $sss = PayrollMoney::round($statutory['sss_contribution'] ?? 0);
+        $philhealth = PayrollMoney::round($statutory['philhealth_contribution'] ?? 0);
+        $pagibig = PayrollMoney::round($statutory['pagibig_contribution'] ?? 0);
+        $taxComponent = $components->firstWhere('component_name', 'Income Tax');
+        $taxComponent ??= $components->firstWhere('component_name', 'Withholding Tax');
+        $sssComponent = $components->firstWhere('component_name', 'SSS Contribution');
+        $philhealthComponent = $components->firstWhere('component_name', 'PhilHealth Contribution');
+        $pagibigComponent = $components->first(
+            fn (PayrollComponent $component): bool => in_array(
+                (string) $component->component_name,
+                ['Pag-IBIG Contribution', 'Pagibig Contribution'],
+                true
+            )
+        );
+        $totalDeductions = PayrollMoney::add(
+            $deductions,
+            $taxAmount,
+            $sss,
+            $philhealth,
+            $pagibig,
+        );
 
-        $netPay = $grossPay - $deductions - $taxAmount - $sss - $philhealth - $pagibig;
-        $legacyDeductions = $deductions + $taxAmount + $sss + $philhealth + $pagibig;
+        $netPay = PayrollMoney::subtract($grossPay, $totalDeductions);
+
+        $snapshot['statutory_bases'] = array_map(
+            static fn (mixed $amount): string => PayrollMoney::round($amount),
+            $statutoryBases
+        );
+        $snapshot['statutory'] = $statutory;
+        $snapshot['employer_contributions'] = $statutory['employer_contributions'] ?? [];
+        $snapshot['totals'] = [
+            'gross_salary' => $grossPay,
+            'total_deductions' => $totalDeductions,
+            'net_salary' => PayrollMoney::maxZero($netPay),
+        ];
 
         $payroll->update([
             'gross_salary'    => $grossPay,
-            'deductions'      => round($legacyDeductions, 2),
-            'total_deductions' => $deductions,
+            'deductions'      => $totalDeductions,
+            'total_deductions' => $totalDeductions,
             'tax_amount'      => $taxAmount,
             'tax_deductions'  => $taxAmount,
-            'sss_contributions' => round($sss, 2),
-            'philhealth'      => round($philhealth, 2),
-            'pag_ibig'        => round($pagibig, 2),
-            'net_salary'      => round($netPay, 2),
+            'sss_contributions' => $sss,
+            'philhealth'      => $philhealth,
+            'pag_ibig'        => $pagibig,
+            'net_salary'      => PayrollMoney::maxZero($netPay),
+            'calculation_snapshot' => $snapshot,
         ]);
 
-        // Keep the Income Tax component in sync
-        $taxComponent = $components->firstWhere('component_name', 'Income Tax');
-        if ($taxComponent) {
-            $taxComponent->update(['calculated_amount' => $taxAmount]);
-        } elseif ($taxAmount > 0) {
+        // Keep any explicitly named statutory components in sync without
+        // counting them a second time beside the canonical payroll columns.
+        foreach ([
+            [$taxComponent, $taxAmount],
+            [$sssComponent, $sss],
+            [$philhealthComponent, $philhealth],
+            [$pagibigComponent, $pagibig],
+        ] as [$statutoryComponent, $amount]) {
+            if ($statutoryComponent) {
+                $statutoryComponent->update([
+                    'amount' => $amount,
+                    'base_amount' => $amount,
+                    'calculated_amount' => $amount,
+                ]);
+            }
+        }
+
+        if (! $taxComponent && PayrollMoney::compare($taxAmount, 0) > 0) {
             PayrollComponent::create([
                 'payroll_id'         => $payroll->id,
                 'shop_owner_id'      => $payroll->shop_owner_id,

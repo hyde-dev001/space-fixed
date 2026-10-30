@@ -243,5 +243,22 @@ class CustomerSeeder extends Seeder
                 'valid_id_path' => 'valid_ids/frequent_buyer_id.jpg',
             ]
         );
+
+        User::query()
+            ->whereIn('email', [
+                'miguel.rosa@example.com',
+                'maria.santos@example.com',
+                'john.tan@example.com',
+                'roberto.cruz@example.com',
+                'patricia.reyes@example.com',
+                'carlos.mendoza@example.com',
+                'anna.garcia@example.com',
+                'eduardo.lopez@example.com',
+                'suspended.customer@example.com',
+                'inactive.customer@example.com',
+                'newbie.customer@example.com',
+                'frequent.customer@example.com',
+            ])
+            ->update(['identity_verification_status' => User::IDENTITY_APPROVED]);
     }
 }

@@ -5,8 +5,11 @@
 
 export interface InventoryItem {
     id: number;
+    /** Identifies whether this read-only row came from inventory or the product catalog. */
+    source_type?: 'inventory' | 'product';
+    source_id?: number;
     shop_owner_id: number;
-    product_id?: number;
+    product_id?: number | null;
     name: string;
     sku: string;
     category: 'shoes' | 'accessories' | 'care_products' | 'cleaning_materials' | 'packaging' | 'repair_materials';
@@ -19,6 +22,7 @@ export interface InventoryItem {
     total_quantity: number;
     reorder_level: number;
     reorder_quantity: number;
+    auto_stock_request_enabled: boolean;
     price?: number;
     cost_price?: number;
     weight?: number;
@@ -40,6 +44,9 @@ export interface InventorySize {
     size: string;
     size_system?: 'US' | 'UK' | 'EU' | 'AU' | 'CN';
     quantity: number;
+    auto_stock_request_enabled?: boolean | null;
+    reorder_level?: number | null;
+    reorder_quantity?: number | null;
     created_at?: string;
     updated_at?: string;
 }
@@ -50,6 +57,9 @@ export interface InventoryColorVariant {
     color_name: string;
     color_code?: string;
     quantity: number;
+    auto_stock_request_enabled?: boolean | null;
+    reorder_level?: number | null;
+    reorder_quantity?: number | null;
     sku_suffix?: string;
     images: InventoryImage[];
     sizes?: InventorySize[];
@@ -152,6 +162,8 @@ export interface SupplierOrderItem {
 export interface InventoryAlert {
     id: number;
     inventory_item_id: number;
+    inventory_color_variant_id?: number | null;
+    inventory_size_id?: number | null;
     inventory_item?: InventoryItem;
     alert_type: 'low_stock' | 'out_of_stock' | 'overstock' | 'expiring_soon';
     threshold_value?: number;
@@ -218,6 +230,7 @@ export interface CreateInventoryItemData {
     reserved_quantity?: number;
     reorder_level: number;
     reorder_quantity: number;
+    auto_stock_request_enabled?: boolean;
     price?: number;
     cost_price?: number;
     weight?: number;
@@ -291,6 +304,20 @@ export interface ApiResponse<T> {
     data: T;
     message?: string;
     errors?: Record<string, string[]>;
+}
+
+export type InventoryReplenishmentTargetType = 'item' | 'color' | 'size';
+
+export interface InventoryReplenishmentTargetInput {
+    type: InventoryReplenishmentTargetType;
+    id: number;
+    auto_stock_request_enabled: boolean;
+    reorder_level: number;
+    reorder_quantity: number;
+}
+
+export interface UpdateInventoryReplenishmentSettingsData {
+    targets: InventoryReplenishmentTargetInput[];
 }
 
 // Filter Interfaces

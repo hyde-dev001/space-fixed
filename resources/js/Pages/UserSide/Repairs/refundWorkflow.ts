@@ -17,6 +17,7 @@ export const refundStageLabel = (refund: RefundSnapshot): string => {
   if (overallStatus === 'failed') return 'Refund Failed';
   if (overallStatus === 'rejected') return 'Rejected';
   if (repairerStatus === 'pending') return 'Under Repairer Review';
+  if (financeStatus === 'approved_initial' && ownerStatus === 'pending') return 'Under Owner Review';
   if (financeStatus === 'pending' || financeStatus === 'approved_initial') return 'Under Finance Review';
   if (ownerStatus === 'pending') return 'Under Owner Review';
   if (overallStatus === 'approved_final' || overallStatus === 'approved') return 'Approved for Refund Execution';

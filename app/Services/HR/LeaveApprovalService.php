@@ -65,41 +65,74 @@ class LeaveApprovalService
         }
     }
 
-    public function approveLeaveRequest(LeaveRequest $leaveRequest, User $approver): LeaveRequest
+    public function approveLeaveRequest(LeaveRequest $leaveRequest, User $approver, ?string $reason = null): LeaveRequest
     {
-        if ((string) $leaveRequest->status !== 'pending') {
-            throw new \RuntimeException('Leave request is not pending');
-        }
+        $leaveRequestId = (int) $leaveRequest->id;
+        $shopOwnerId = (int) $leaveRequest->shop_owner_id;
 
-        DB::beginTransaction();
+        DB::transaction(function () use ($leaveRequestId, $shopOwnerId, $approver, $reason): void {
+            $lockedLeaveRequest = LeaveRequest::query()
+                ->whereKey($leaveRequestId)
+                ->where('shop_owner_id', $shopOwnerId)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        try {
-            $leaveRequest->update([
-                'status' => 'approved',
-                'approved_by' => $approver->id,
-                'approval_date' => now(),
-            ]);
+            if ((string) $lockedLeaveRequest->status !== 'pending') {
+                throw new \RuntimeException('Leave request has already been decided.', 409);
+            }
 
-            $leaveBalance = LeaveBalance::forEmployee((int) $leaveRequest->employee_id)
-                ->forYear((int) optional($leaveRequest->start_date)->year)
-                ->forShopOwner((int) $leaveRequest->shop_owner_id)
+            $year = (int) optional($lockedLeaveRequest->start_date)->year ?: (int) now()->year;
+            $leaveBalance = LeaveBalance::forEmployee((int) $lockedLeaveRequest->employee_id)
+                ->forYear($year)
+                ->forShopOwner($shopOwnerId)
+                ->lockForUpdate()
                 ->first();
 
             if (! $leaveBalance) {
                 $leaveBalance = LeaveBalance::createForNewEmployee(
-                    (int) $leaveRequest->employee_id,
-                    (int) $leaveRequest->shop_owner_id,
-                    (int) optional($leaveRequest->start_date)->year
+                    (int) $lockedLeaveRequest->employee_id,
+                    $shopOwnerId,
+                    $year,
                 );
             }
 
-            $leaveBalance->deductForType((string) $leaveRequest->leave_type, (float) ($leaveRequest->no_of_days ?? 0));
+            $days = (float) ($lockedLeaveRequest->no_of_days ?? 0);
+            if (! $leaveBalance->hasSufficientBalance((string) $lockedLeaveRequest->leave_type, $days)) {
+                throw new \RuntimeException('Insufficient leave balance for this approval.', 422);
+            }
 
-            DB::commit();
-        } catch (\Throwable $e) {
-            DB::rollBack();
-            throw $e;
-        }
+            $approvalDate = now();
+            $lockedLeaveRequest->forceFill([
+                'status' => 'approved',
+                'approved_by' => $approver->id,
+                'approver_id' => $approver->id,
+                'approval_date' => $approvalDate,
+                'approver_comments' => $reason,
+            ])->save();
+
+            $leaveBalance->deductForType((string) $lockedLeaveRequest->leave_type, $days);
+
+            AuditLog::createLog([
+                'shop_owner_id' => $shopOwnerId,
+                'user_id' => $approver->id,
+                'employee_id' => $lockedLeaveRequest->employee_id,
+                'module' => AuditLog::MODULE_LEAVE,
+                'action' => AuditLog::ACTION_APPROVED,
+                'entity_type' => LeaveRequest::class,
+                'entity_id' => $lockedLeaveRequest->id,
+                'description' => 'Leave request approved by '.$approver->name,
+                'old_values' => ['status' => 'pending'],
+                'new_values' => [
+                    'status' => 'approved',
+                    'approved_by' => $approver->id,
+                    'approval_date' => $approvalDate->toIso8601String(),
+                    'reason' => $reason,
+                    'reference_id' => 'leave:' . $lockedLeaveRequest->id,
+                ],
+                'severity' => AuditLog::SEVERITY_WARNING,
+                'tags' => ['leave', 'approval', 'workflow'],
+            ]);
+        });
 
         $freshLeaveRequest = $leaveRequest->fresh(['employee', 'approver']);
         $this->dispatchLeaveApprovedNotifications($freshLeaveRequest, $approver);
@@ -109,14 +142,53 @@ class LeaveApprovalService
 
     public function rejectLeaveRequest(LeaveRequest $leaveRequest, User $rejector, string $reason): LeaveRequest
     {
-        if ((string) $leaveRequest->status !== 'pending') {
-            throw new \RuntimeException('Leave request is not pending');
+        $reason = trim($reason);
+        if ($reason === '') {
+            throw new \RuntimeException('A rejection reason is required.', 422);
         }
 
-        $leaveRequest->update([
-            'status' => 'rejected',
-            'rejection_reason' => $reason,
-        ]);
+        $leaveRequestId = (int) $leaveRequest->id;
+        $shopOwnerId = (int) $leaveRequest->shop_owner_id;
+
+        DB::transaction(function () use ($leaveRequestId, $shopOwnerId, $rejector, $reason): void {
+            $lockedLeaveRequest = LeaveRequest::query()
+                ->whereKey($leaveRequestId)
+                ->where('shop_owner_id', $shopOwnerId)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ((string) $lockedLeaveRequest->status !== 'pending') {
+                throw new \RuntimeException('Leave request has already been decided.', 409);
+            }
+
+            $lockedLeaveRequest->forceFill([
+                'status' => 'rejected',
+                'approved_by' => $rejector->id,
+                'approver_id' => $rejector->id,
+                'approval_date' => now(),
+                'rejection_reason' => $reason,
+            ])->save();
+
+            AuditLog::createLog([
+                'shop_owner_id' => $shopOwnerId,
+                'user_id' => $rejector->id,
+                'employee_id' => $lockedLeaveRequest->employee_id,
+                'module' => AuditLog::MODULE_LEAVE,
+                'action' => AuditLog::ACTION_REJECTED,
+                'entity_type' => LeaveRequest::class,
+                'entity_id' => $lockedLeaveRequest->id,
+                'description' => 'Leave request rejected by '.$rejector->name,
+                'old_values' => ['status' => 'pending'],
+                'new_values' => [
+                    'status' => 'rejected',
+                    'rejected_by' => $rejector->id,
+                    'rejection_reason' => $reason,
+                    'reference_id' => 'leave:' . $lockedLeaveRequest->id,
+                ],
+                'severity' => AuditLog::SEVERITY_WARNING,
+                'tags' => ['leave', 'rejection', 'workflow'],
+            ]);
+        });
 
         Log::info('Leave request rejected', [
             'rejector_id' => $rejector->id,

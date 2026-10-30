@@ -44,7 +44,7 @@ class OvertimeRequestApproved extends Notification implements ShouldQueue
             ->line('Hours: ' . $this->overtimeRequest->hours . ' hour(s)')
             ->line('Reason: ' . $this->overtimeRequest->reason)
             ->line('Approved by: ' . $this->approver->name)
-            ->action('View Attendance', url('/erp/hr/self-service/attendance'))
+            ->action('View Attendance', url('/erp/time-in?overtime=' . $this->overtimeRequest->id))
             ->line('Your overtime hours will be reflected in your attendance records.');
     }
 
@@ -62,7 +62,7 @@ class OvertimeRequestApproved extends Notification implements ShouldQueue
             'hours' => $this->overtimeRequest->hours,
             'reason' => $this->overtimeRequest->reason,
             'approved_by' => $this->approver->name,
-            'action_url' => '/erp/hr/self-service/attendance',
+            'action_url' => '/erp/time-in?overtime=' . $this->overtimeRequest->id,
             'priority' => 'medium',
         ];
     }

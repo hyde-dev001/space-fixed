@@ -8,6 +8,9 @@ interface ActivityLogLike {
   event: string;
   subject_type: string | null;
   subject_label?: string;
+  subject_type_label?: string;
+  event_label?: string;
+  display_description?: string;
   properties: Record<string, any>;
   changes: Record<string, ActivityLogChange>;
   causer?: {
@@ -15,6 +18,13 @@ interface ActivityLogLike {
     role?: string;
   };
 }
+
+const humanizeFieldName = (field: string): string => {
+  return field
+    .replace(/[_.-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .trim();
+};
 
 const FRIENDLY_SUBJECT_NAMES: Record<string, string> = {
   Product: "Product",
@@ -26,6 +36,9 @@ const FRIENDLY_SUBJECT_NAMES: Record<string, string> = {
   Customer: "Customer",
   RepairService: "Repair Service",
   RepairRequest: "Repair Request",
+  ShopOwnerSubscription: "Subscription",
+  ShopOwnerSubscriptionPayment: "Subscription Payment",
+  ShopOwnerSubscriptionRefund: "Subscription Refund",
   LeaveRequest: "Leave Request",
   AttendanceRecord: "Attendance Record",
   Attendance: "Attendance",
@@ -62,7 +75,7 @@ const humanizeKey = (raw: unknown): string => {
   }
 
   return normalized
-    .replace(/_/g, " ")
+    .replace(/[_.-]+/g, " ")
     .replace(/\b\w/g, (letter) => letter.toUpperCase())
     .trim();
 };
@@ -86,11 +99,16 @@ export function useActivityLogFormatters() {
       .replace(/'/g, "&#39;");
   };
 
-  const formatSubjectType = (type: string | null): string => {
-    if (!type) return "N/A";
+  const formatSubjectType = (type: string | null, displayType?: string | null): string => {
+    if (displayType?.trim()) return displayType.trim();
+    if (!type) return "Record";
     const parts = type.split("\\");
     const typeName = parts[parts.length - 1];
-    return FRIENDLY_SUBJECT_NAMES[typeName] || typeName;
+    return FRIENDLY_SUBJECT_NAMES[typeName] || humanizeKey(typeName) || "Record";
+  };
+
+  const formatActivityLabel = (event: string | null | undefined): string => {
+    return humanizeKey(event) || "Activity";
   };
 
   const formatValue = (value: any, fieldName = ""): string => {
@@ -115,7 +133,15 @@ export function useActivityLogFormatters() {
     }
 
     const text = String(value);
-    if (text.includes("_")) {
+    if (text.includes("App\\Models\\")) {
+      return "Record";
+    }
+
+    if (/^[A-Za-z]{2,10}-\d{2,}$/.test(text) || /^\d{4}-\d{2}-\d{2}/.test(text)) {
+      return text;
+    }
+
+    if (/[_.-]/.test(text)) {
       return humanizeKey(text).toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase());
     }
 
@@ -147,7 +173,7 @@ export function useActivityLogFormatters() {
   };
 
   const getModalSubjectReference = (log: ActivityLogLike): string => {
-    const subjectType = formatSubjectType(log.subject_type);
+    const subjectType = formatSubjectType(log.subject_type, log.subject_type_label);
 
     const fallbackLabel =
       log.subject_label ||
@@ -157,7 +183,7 @@ export function useActivityLogFormatters() {
       "";
 
     const label = String(fallbackLabel).trim();
-    if (!label || isCodeLikeSubjectLabel(label)) {
+    if (!label || label.toLowerCase() === "record" || isCodeLikeSubjectLabel(label)) {
       return subjectType;
     }
 
@@ -256,8 +282,10 @@ export function useActivityLogFormatters() {
   return {
     escapeHtml,
     formatSubjectType,
+    humanizeFieldName,
     formatValue,
     humanizeValue,
+    formatActivityLabel,
     parseUserAgent,
     getModalSubjectReference,
     formatDetailedDescription,

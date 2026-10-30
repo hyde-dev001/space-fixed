@@ -4,7 +4,6 @@ namespace Tests\Feature\Reports;
 
 use App\Mail\ShopReportWarningMail;
 use App\Mail\SuspensionNoticeMail;
-use App\Models\AuditLog;
 use App\Models\Order;
 use App\Models\RepairRequest;
 use App\Models\RepairReview;
@@ -12,15 +11,25 @@ use App\Models\ReviewReport;
 use App\Models\ShopReview;
 use App\Models\ShopOwner;
 use App\Models\ShopReport;
+use App\Models\ShopReportModerationAction;
 use App\Models\SuperAdmin;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Mail;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
 use Tests\TestCase;
 
 class ShopAndCustomerReportFlowTest extends TestCase
 {
+    use AuthenticatesPrivilegedUsers;
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        SuperAdmin::factory()->superAdmin()->create();
+    }
 
     private function extractInertiaPageData(string $html): array
     {
@@ -266,7 +275,10 @@ class ShopAndCustomerReportFlowTest extends TestCase
 
     public function test_authenticated_shop_owner_can_submit_customer_review_report(): void
     {
-        $shopOwner = ShopOwner::factory()->approved()->create();
+        $shopOwner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'repair',
+        ]);
         $customer = User::factory()->create();
 
         $repairRequest = RepairRequest::factory()->create([
@@ -302,6 +314,46 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'user_id' => $customer->id,
             'reason' => 'spam',
             'status' => 'pending_review',
+        ]);
+    }
+
+    public function test_shop_owner_can_report_repair_review_when_shop_is_resolved_from_the_repair_request(): void
+    {
+        $shopOwner = ShopOwner::factory()->approved()->create();
+        $legacyShopOwner = ShopOwner::factory()->approved()->create();
+        $customer = User::factory()->create();
+        $repairRequest = RepairRequest::factory()->create([
+            'shop_owner_id' => $shopOwner->id,
+            'user_id' => $customer->id,
+            'status' => 'completed',
+        ]);
+        $review = RepairReview::create([
+            'repair_request_id' => $repairRequest->id,
+            'user_id' => $customer->id,
+            'shop_owner_id' => $legacyShopOwner->id,
+            'rating' => 1,
+            'review_text' => 'This review needs moderation.',
+            'is_verified' => true,
+            'is_visible' => true,
+        ]);
+
+        $this->actingAs($shopOwner, 'shop_owner')
+            ->postJson('/api/shop-owner/reviews/report', [
+                'review_id' => 'repair_' . $review->id,
+                'reason' => 'inappropriate_content',
+                'notes' => 'Report this review for moderation.',
+            ])
+            ->assertOk();
+
+        $this->assertDatabaseHas('review_reports', [
+            'review_type' => 'repair',
+            'review_id' => $review->id,
+            'shop_owner_id' => $shopOwner->id,
+            'status' => 'pending_review',
+        ]);
+        $this->assertDatabaseHas('repair_reviews', [
+            'id' => $review->id,
+            'is_visible' => true,
         ]);
     }
 
@@ -379,7 +431,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
             ])
             ->assertOk();
 
-        $this->actingAs($superAdmin, 'super_admin');
+        $this->actingAsCompletedPrivileged($superAdmin);
 
         $shopReportsPage = $this->get('/admin/shop-reports');
         $shopReportsPage->assertOk();
@@ -387,7 +439,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
         $shopReportsPayload = $this->extractInertiaPageData($shopReportsPage->getContent());
         $this->assertSame('superAdmin/Shops/ShopReports', $shopReportsPayload['component'] ?? null);
 
-        $shopGroups = collect($shopReportsPayload['props']['shopGroups'] ?? []);
+        $shopGroups = collect($shopReportsPayload['props']['shopGroups']['data'] ?? []);
         $this->assertTrue(
             $shopGroups->contains(fn ($group) => (int) ($group['shop_owner_id'] ?? 0) === $shopOwner->id),
             'Expected submitted shop report to be visible in super admin shop reports page.'
@@ -395,6 +447,11 @@ class ShopAndCustomerReportFlowTest extends TestCase
 
         $this->postWithCsrf("/admin/shop-reports/{$shopOwner->id}/action", [
             'action' => 'warn',
+            'report_ids' => ShopReport::query()
+                ->where('shop_owner_id', $shopOwner->id)
+                ->whereIn('status', ['submitted', 'under_review'])
+                ->pluck('id')
+                ->all(),
             'admin_notes' => 'Reviewed and warned the shop owner based on submitted evidence.',
         ])->assertRedirect();
 
@@ -409,13 +466,13 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'reviewed_by' => $superAdmin->id,
         ]);
 
-        $flaggedPage = $this->get('/superAdmin/flagged-accounts');
+        $flaggedPage = $this->get('/admin/flagged-accounts');
         $flaggedPage->assertOk();
 
         $flaggedPayload = $this->extractInertiaPageData($flaggedPage->getContent());
         $this->assertSame('superAdmin/Users/FlaggedAccounts', $flaggedPayload['component'] ?? null);
 
-        $flaggedAccounts = collect($flaggedPayload['props']['flaggedAccounts'] ?? []);
+        $flaggedAccounts = collect($flaggedPayload['props']['flaggedAccounts']['data'] ?? []);
         $reviewReport = ReviewReport::query()->firstOrFail();
 
         $this->assertTrue(
@@ -423,11 +480,11 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'Expected reported customer review to be visible in flagged accounts page.'
         );
 
-        $this->postWithCsrf("/superAdmin/flagged-accounts/{$reviewReport->id}/mark-reviewed")
+        $this->postWithCsrf("/admin/flagged-accounts/{$reviewReport->id}/mark-reviewed")
             ->assertOk()
             ->assertJson(['status' => 'under_investigation']);
 
-        $this->postWithCsrf("/superAdmin/flagged-accounts/{$reviewReport->id}/dismiss", [
+        $this->postWithCsrf("/admin/flagged-accounts/{$reviewReport->id}/dismiss", [
             'admin_notes' => 'Reviewed and dismissed after investigation.',
         ])->assertOk()->assertJson(['status' => 'dismissed']);
 
@@ -446,14 +503,15 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'email' => 'three-warn-shop@example.com',
         ]);
 
-        $this->actingAs($superAdmin, 'super_admin');
+        $this->actingAsCompletedPrivileged($superAdmin);
 
         for ($strike = 1; $strike <= 3; $strike++) {
             $customer = $this->createEligibleCustomer();
-            $this->createSubmittedShopReport($shopOwner, $customer);
+            $report = $this->createSubmittedShopReport($shopOwner, $customer);
 
             $this->postWithCsrf("/admin/shop-reports/{$shopOwner->id}/action", [
                 'action' => 'warn',
+                'report_ids' => [$report->id],
                 'admin_notes' => "Warning strike {$strike}",
             ])->assertRedirect();
         }
@@ -463,16 +521,14 @@ class ShopAndCustomerReportFlowTest extends TestCase
             'status' => 'suspended',
         ]);
 
-        $this->assertSame(2, AuditLog::query()
-            ->where('target_type', 'ShopOwner')
-            ->where('target_id', $shopOwner->id)
-            ->where('action', 'shop_report_warn')
+        $this->assertSame(2, ShopReportModerationAction::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->where('applied_action', 'warn')
             ->count());
 
-        $this->assertSame(1, AuditLog::query()
-            ->where('target_type', 'ShopOwner')
-            ->where('target_id', $shopOwner->id)
-            ->where('action', 'shop_report_suspend')
+        $this->assertSame(1, ShopReportModerationAction::query()
+            ->where('shop_owner_id', $shopOwner->id)
+            ->where('applied_action', 'suspend')
             ->count());
 
         Mail::assertSent(ShopReportWarningMail::class, function (ShopReportWarningMail $mail) use ($shopOwner) {
@@ -491,14 +547,15 @@ class ShopAndCustomerReportFlowTest extends TestCase
         $superAdmin = SuperAdmin::query()->firstOrFail();
         $shopOwner = ShopOwner::factory()->approved()->create();
 
-        $this->actingAs($superAdmin, 'super_admin');
+        $this->actingAsCompletedPrivileged($superAdmin);
 
         for ($strike = 1; $strike <= 2; $strike++) {
             $customer = $this->createEligibleCustomer();
-            $this->createSubmittedShopReport($shopOwner, $customer);
+            $report = $this->createSubmittedShopReport($shopOwner, $customer);
 
             $this->postWithCsrf("/admin/shop-reports/{$shopOwner->id}/action", [
                 'action' => 'warn',
+                'report_ids' => [$report->id],
                 'admin_notes' => "Warning strike {$strike}",
             ])->assertRedirect();
         }
@@ -507,7 +564,7 @@ class ShopAndCustomerReportFlowTest extends TestCase
         $shopReportsPage->assertOk();
 
         $shopReportsPayload = $this->extractInertiaPageData($shopReportsPage->getContent());
-        $shopGroups = collect($shopReportsPayload['props']['shopGroups'] ?? []);
+        $shopGroups = collect($shopReportsPayload['props']['shopGroups']['data'] ?? []);
         $targetGroup = $shopGroups->first(fn ($group) => (int) ($group['shop_owner_id'] ?? 0) === $shopOwner->id);
 
         $this->assertIsArray($targetGroup);

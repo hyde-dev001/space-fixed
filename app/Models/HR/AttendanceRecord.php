@@ -23,11 +23,14 @@ class AttendanceRecord extends Model
         'date',
         'check_in_time',
         'check_out_time',
+        'auto_clocked_out',
+        'auto_clockout_reason',
         'expected_check_in',
         'expected_check_out',
         'minutes_late',
         'minutes_early_departure',
         'is_late',
+        'late_grace_period_minutes',
         'is_early_departure',
         'lateness_reason',
         'status',
@@ -39,6 +42,8 @@ class AttendanceRecord extends Model
         'lunch_break_end',
         'check_in_latitude',
         'check_in_longitude',
+        'check_in_photo_path',
+        'check_in_photo_captured_at',
         'distance_from_shop',
         'has_approved_overtime',
         'overtime_end_time',
@@ -48,6 +53,7 @@ class AttendanceRecord extends Model
         'date' => 'date',
         'check_in_time' => 'datetime:H:i',
         'check_out_time' => 'datetime:H:i',
+        'auto_clocked_out' => 'boolean',
         'lunch_break_start' => 'datetime:H:i',
         'lunch_break_end' => 'datetime:H:i',
         'expected_check_in' => 'datetime:H:i',
@@ -57,12 +63,23 @@ class AttendanceRecord extends Model
         'minutes_late' => 'integer',
         'minutes_early_departure' => 'integer',
         'is_late' => 'boolean',
+        'late_grace_period_minutes' => 'integer',
         'is_early_departure' => 'boolean',
         'check_in_latitude' => 'decimal:8',
         'check_in_longitude' => 'decimal:8',
         'distance_from_shop' => 'integer',
+        'check_in_photo_captured_at' => 'datetime',
         'has_approved_overtime' => 'boolean',
     ];
+
+    protected $hidden = [
+        'check_in_photo_path',
+    ];
+
+    public function getHasCheckInPhotoAttribute(): bool
+    {
+        return filled($this->check_in_photo_path);
+    }
 
     /**
      * Get the employee this attendance record belongs to
@@ -131,20 +148,24 @@ class AttendanceRecord extends Model
             return;
         }
 
-        $checkIn = \Carbon\Carbon::parse($this->check_in_time);
-        $expectedCheckIn = \Carbon\Carbon::parse($this->expected_check_in);
+        $checkIn = \Carbon\Carbon::parse($this->check_in_time)->startOfMinute();
+        $expectedCheckIn = \Carbon\Carbon::parse($this->expected_check_in)->startOfMinute();
         
-        if ($checkIn->gt($expectedCheckIn)) {
-            $this->minutes_late = $checkIn->diffInMinutes($expectedCheckIn);
-            $this->is_late = true;
-            // Auto-update status to 'late' if more than 15 minutes
-            if ($this->minutes_late > 15 && $this->status !== 'absent') {
-                $this->status = 'late';
-            }
-        } else {
+        $minutesLate = $checkIn->gt($expectedCheckIn)
+            ? (int) $expectedCheckIn->diffInMinutes($checkIn)
+            : 0;
+        $gracePeriod = max((int) ($this->late_grace_period_minutes ?? 0), 0);
+
+        if ($minutesLate <= $gracePeriod) {
             $this->minutes_late = 0;
             $this->is_late = false;
+            $this->status = 'present';
+            return;
         }
+
+        $this->minutes_late = $minutesLate;
+        $this->is_late = true;
+        $this->status = 'late';
     }
 
     /**
@@ -158,11 +179,18 @@ class AttendanceRecord extends Model
             return;
         }
 
-        $checkOut = \Carbon\Carbon::parse($this->check_out_time);
-        $expectedCheckOut = \Carbon\Carbon::parse($this->expected_check_out);
-        
+        $day = $this->date->copy()->startOfDay();
+        $checkOut = $day->copy()->setTimeFromTimeString($this->check_out_time->format('H:i:s'));
+        $expectedCheckOut = $day->copy()->setTimeFromTimeString($this->expected_check_out->format('H:i:s'));
+        if ($this->check_in_time && $checkOut->lt($day->copy()->setTimeFromTimeString($this->check_in_time->format('H:i:s')))) {
+            $checkOut->addDay();
+        }
+        if ($this->expected_check_in && $expectedCheckOut->lte($day->copy()->setTimeFromTimeString($this->expected_check_in->format('H:i:s')))) {
+            $expectedCheckOut->addDay();
+        }
+
         if ($checkOut->lt($expectedCheckOut)) {
-            $this->minutes_early_departure = $expectedCheckOut->diffInMinutes($checkOut);
+            $this->minutes_early_departure = (int) $checkOut->diffInMinutes($expectedCheckOut);
             $this->is_early_departure = true;
         } else {
             $this->minutes_early_departure = 0;
@@ -218,6 +246,14 @@ class AttendanceRecord extends Model
         parent::boot();
 
         static::saving(function ($attendance) {
+            if (
+                $attendance->check_in_time
+                && $attendance->isDirty('check_in_time')
+                && $attendance->late_grace_period_minutes === null
+            ) {
+                $attendance->late_grace_period_minutes = $attendance->shopOwner?->late_grace_period_minutes ?? 0;
+            }
+
             // Set expected times from shop operating hours if not already set
             if (!$attendance->expected_check_in || !$attendance->expected_check_out) {
                 $attendance->setExpectedTimesFromShopHours();
@@ -234,7 +270,12 @@ class AttendanceRecord extends Model
             }
 
             // Calculate working hours
-            if ($attendance->check_in_time && $attendance->check_out_time) {
+            // Preserve the finalizer's recorded-lunch and approved-overtime calculation, including zero hours.
+            if ($attendance->check_in_time && $attendance->check_out_time
+                && ($attendance->isDirty('check_in_time') || $attendance->isDirty('check_out_time')
+                    || $attendance->isDirty('lunch_break_start') || $attendance->isDirty('lunch_break_end'))
+                && ! $attendance->isDirty('working_hours') && ! $attendance->isDirty('overtime_hours')
+                && ! ($attendance->auto_clocked_out && $attendance->isDirty('auto_clocked_out'))) {
                 $attendance->working_hours = $attendance->calculateWorkingHours();
             }
         });

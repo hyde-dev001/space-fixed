@@ -1,3 +1,4 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import Swal from "sweetalert2";
@@ -12,8 +13,9 @@ type Service = {
   category: string;
   price: string;
   duration: string;
-  description: string;
+  description: string | null;
   status: "Active" | "Inactive" | "Pending";
+  image_url?: string | null;
   material_templates?: MaterialTemplateLine[];
 };
 
@@ -33,8 +35,6 @@ type RepairMaterialOption = {
 type MetricCardProps = {
   title: string;
   value: number | string;
-  change?: number;
-  changeType?: "increase" | "decrease";
   description?: string;
   color?: "success" | "error" | "warning" | "info";
   icon: React.FC<{ className?: string }>;
@@ -94,24 +94,66 @@ const ClockIcon: React.FC<{ className?: string }> = ({ className }) => (
   </svg>
 );
 
-const ArrowUpIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
+type ServiceImageFieldProps = {
+  inputId: string;
+  preview: string;
+  onChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onRemove: () => void;
+};
 
-const ArrowDownIcon: React.FC<{ className?: string }> = ({ className }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
+const ServiceImageField: React.FC<ServiceImageFieldProps> = ({ inputId, preview, onChange, onRemove }) => (
+  <div>
+    <label htmlFor={inputId} className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+      Service image (optional)
+    </label>
+    <div className="relative overflow-hidden rounded-xl border border-dashed border-gray-300 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60">
+      <input
+        id={inputId}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        onChange={onChange}
+        className="sr-only"
+      />
+      {preview ? (
+        <div className="relative aspect-video min-h-40 bg-gray-900">
+          <img src={preview} alt="Selected service image preview" className="h-full w-full object-cover" />
+          <div className="absolute inset-x-3 bottom-3 flex justify-end gap-2">
+            <label
+              htmlFor={inputId}
+              className="cursor-pointer rounded-lg border border-white/70 bg-black/80 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-black"
+            >
+              Replace
+            </label>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="rounded-lg border border-white/70 bg-white px-3 py-2 text-xs font-semibold text-black transition-colors hover:bg-gray-100"
+            >
+              Remove image
+            </button>
+          </div>
+        </div>
+      ) : (
+        <label
+          htmlFor={inputId}
+          className="flex min-h-40 cursor-pointer flex-col items-center justify-center px-5 py-8 text-center outline-none transition-colors hover:border-gray-900 hover:bg-white focus-within:ring-2 focus-within:ring-black dark:hover:bg-gray-900"
+        >
+          <UploadIcon className="mb-3 h-10 w-10 text-gray-400" />
+          <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">Drop image here or browse</span>
+          <span className="mt-1 text-xs text-gray-500 dark:text-gray-400">Use one clear photo that represents this service.</span>
+        </label>
+      )}
+    </div>
+    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+      JPG, PNG, or WEBP / Maximum 5 MB / Recommended ratio 16:9
+    </p>
+  </div>
 );
 
 // Professional Metric Card Component
 const MetricCard: React.FC<MetricCardProps> = ({
   title,
   value,
-  change,
-  changeType,
   icon: Icon,
   color,
   description,
@@ -130,20 +172,10 @@ const MetricCard: React.FC<MetricCardProps> = ({
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/[0.03] dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-gradient-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-gradient-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
           </div>
-          {change !== undefined && (
-            <div className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}>
-              {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-              {Math.abs(change)}%
-            </div>
-          )}
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{title}</p>
@@ -172,6 +204,9 @@ export default function UploadService() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<"services" | "packages">("services");
   const [showArchivedServices, setShowArchivedServices] = useState(false);
+  const [selectedImageFile, setSelectedImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [removeExistingImage, setRemoveExistingImage] = useState(false);
 
   // Form state
   const [formData, setFormData] = useState({
@@ -190,6 +225,14 @@ export default function UploadService() {
       default_quantity: string;
     }>,
   });
+
+  useEffect(() => {
+    return () => {
+      if (imagePreview.startsWith('blob:') && typeof URL.revokeObjectURL === 'function') {
+        URL.revokeObjectURL(imagePreview);
+      }
+    };
+  }, [imagePreview]);
 
   // Fetch services from backend
   const fetchServices = async (archived = showArchivedServices) => {
@@ -358,6 +401,38 @@ export default function UploadService() {
     return `${fromValue} ${formatUnit(fromValue)}`;
   };
 
+  const buildServiceFormData = (
+    method: 'POST' | 'PUT',
+    effectiveCategory: string,
+    durationValue: string,
+    priceValue?: string,
+  ): FormData => {
+    const payload = new FormData();
+    payload.append('_method', method);
+    payload.append('name', formData.name);
+    payload.append('category', effectiveCategory);
+    payload.append('duration', durationValue);
+    payload.append('description', formData.description);
+    payload.append('status', method === 'POST' ? 'Active' : formData.status);
+
+    if (method === 'POST') {
+      payload.append('price', priceValue ?? '');
+    }
+
+    formData.material_templates.forEach((line, index) => {
+      payload.append(`material_templates[${index}][inventory_item_id]`, String(line.inventory_item_id));
+      payload.append(`material_templates[${index}][default_quantity]`, String(Number(line.default_quantity)));
+    });
+
+    if (selectedImageFile) {
+      payload.append('image', selectedImageFile);
+    } else if (method === 'PUT' && removeExistingImage) {
+      payload.append('remove_image', '1');
+    }
+
+    return payload;
+  };
+
   const serviceCategoryOptions = ["Care", "Repair", "Restoration"];
 
   const getEffectiveCategory = () => (
@@ -365,6 +440,52 @@ export default function UploadService() {
       ? formData.categoryCustom.trim()
       : formData.category
   );
+
+  const handleServiceImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+
+    if (!file) {
+      return;
+    }
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      event.target.value = '';
+      Swal.fire({
+        icon: 'error',
+        title: 'Invalid image',
+        text: 'Choose a JPG, PNG, or WEBP image.',
+      });
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      event.target.value = '';
+      Swal.fire({
+        icon: 'error',
+        title: 'Image is too large',
+        text: 'The service image must be 5 MB or smaller.',
+      });
+      return;
+    }
+
+    setSelectedImageFile(file);
+    setRemoveExistingImage(false);
+
+    if (typeof URL.createObjectURL === 'function') {
+      setImagePreview(URL.createObjectURL(file));
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => setImagePreview(typeof reader.result === 'string' ? reader.result : '');
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveServiceImage = () => {
+    setSelectedImageFile(null);
+    setImagePreview('');
+    setRemoveExistingImage(true);
+  };
 
   const normalizePriceInput = (value: string): string => {
     const cleaned = value.replace(/[^\d.]/g, "");
@@ -455,18 +576,10 @@ export default function UploadService() {
       // Remove peso sign and parse price
       const priceValue = formData.price.replace(/[₱,]/g, '');
       
-      const response = await axios.post('/api/repair-services', {
-        name: formData.name,
-        category: effectiveCategory,
-        price: priceValue,
-        duration: durationValue,
-        description: formData.description,
-        status: 'Active', // New services are always Active, no approval needed
-        material_templates: formData.material_templates.map((line) => ({
-          inventory_item_id: Number(line.inventory_item_id),
-          default_quantity: Number(line.default_quantity),
-        })),
-      });
+      const response = await axios.post(
+        '/api/repair-services',
+        buildServiceFormData('POST', effectiveCategory, durationValue, priceValue),
+      );
 
       if (response.data.success) {
         setIsAddModalOpen(false);
@@ -535,18 +648,10 @@ export default function UploadService() {
     }
 
     try {
-      const response = await axios.put(`/api/repair-services/${selectedService.id}`, {
-        name: formData.name,
-        category: effectiveCategory,
-        // Price is not sent - can only be changed via pricing approval workflow
-        duration: durationValue,
-        description: formData.description,
-        status: formData.status,
-        material_templates: formData.material_templates.map((line) => ({
-          inventory_item_id: Number(line.inventory_item_id),
-          default_quantity: Number(line.default_quantity),
-        })),
-      });
+      const response = await axios.post(
+        `/api/repair-services/${selectedService.id}`,
+        buildServiceFormData('PUT', effectiveCategory, durationValue),
+      );
 
       if (response.data.success) {
         setIsEditModalOpen(false);
@@ -648,6 +753,9 @@ export default function UploadService() {
     const parsedDuration = parseDurationValue(service.duration);
 
     setSelectedService(service);
+    setSelectedImageFile(null);
+    setImagePreview(service.image_url ?? '');
+    setRemoveExistingImage(false);
     setFormData({
       name: service.name,
       category: serviceCategoryOptions.includes(service.category) ? service.category : "Others",
@@ -657,7 +765,7 @@ export default function UploadService() {
       durationFrom: parsedDuration.durationFrom,
       durationTo: parsedDuration.durationTo,
       durationUnit: parsedDuration.durationUnit,
-      description: service.description,
+      description: service.description ?? "",
       status: service.status,
       material_templates: (service.material_templates || []).map((line) => ({
         inventory_item_id: Number(line.inventory_item_id),
@@ -668,6 +776,9 @@ export default function UploadService() {
   };
 
   const resetForm = () => {
+    setSelectedImageFile(null);
+    setImagePreview('');
+    setRemoveExistingImage(false);
     setFormData({
       name: "",
       category: "",
@@ -756,27 +867,45 @@ export default function UploadService() {
 
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Upload Services</h1>
-            <p className="mt-2 text-gray-600 dark:text-gray-400">
-              {activeTab === "services"
-                ? "Manage and upload repair services for your shop"
-                : "Create and manage bundled repair packages for your shop"}
-            </p>
+        <h1 className="sr-only">Upload Services</h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex w-full rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-white/[0.03] md:w-auto">
+            <button
+              type="button"
+              onClick={() => setActiveTab("services")}
+              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
+                activeTab === "services"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
+              }`}
+            >
+              Services
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("packages")}
+              className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
+                activeTab === "packages"
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
+              }`}
+            >
+              Packages
+            </button>
           </div>
+
           {activeTab === "services" && (
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowArchivedServices((prev) => !prev)}
-                className={`inline-flex items-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition-colors ${
+                className={`inline-flex h-10 items-center gap-2 rounded-lg border px-4 text-sm font-medium transition-colors ${
                   showArchivedServices
                     ? "border-purple-300 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300"
                     : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300 dark:hover:bg-gray-800"
                 }`}
               >
-                {showArchivedServices ? <ArchiveRestoreIcon className="w-5 h-5" /> : <ArchiveBoxIcon className="w-5 h-5" />}
+                {showArchivedServices ? <ArchiveRestoreIcon className="size-4" /> : <ArchiveBoxIcon className="size-4" />}
                 {showArchivedServices ? "Show Active" : "Show Archived"}
               </button>
 
@@ -786,39 +915,14 @@ export default function UploadService() {
                     resetForm();
                     setIsAddModalOpen(true);
                   }}
-                  className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+                  className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#111111] bg-[#111111] px-4 text-sm font-medium text-white shadow-sm transition-colors hover:bg-gray-800"
                 >
-                  <PlusIcon className="w-5 h-5" />
+                  <PlusIcon className="size-4" />
                   Add Service
                 </button>
               )}
             </div>
           )}
-        </div>
-
-        <div className="inline-flex w-full rounded-xl border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-white/[0.03] md:w-auto">
-          <button
-            type="button"
-            onClick={() => setActiveTab("services")}
-            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
-              activeTab === "services"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
-            }`}
-          >
-            Services
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab("packages")}
-            className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition-colors md:flex-none ${
-              activeTab === "packages"
-                ? "bg-blue-600 text-white shadow-sm"
-                : "text-gray-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800"
-            }`}
-          >
-            Packages
-          </button>
         </div>
 
         {activeTab === "services" ? (
@@ -828,8 +932,6 @@ export default function UploadService() {
           <MetricCard
             title="Total Services"
             value={services.length}
-            change={8}
-            changeType="increase"
             icon={TagIcon}
             color="info"
             description="All service offerings"
@@ -837,8 +939,6 @@ export default function UploadService() {
           <MetricCard
             title="Active Services"
             value={services.filter((s) => s.status === "Active").length}
-            change={12}
-            changeType="increase"
             icon={CheckCircleIcon}
             color="success"
             description="Currently available"
@@ -872,7 +972,7 @@ export default function UploadService() {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Category
               </label>
-              <select
+              <MonochromeSelect
                 title="Filter by category"
                 value={filterCategory}
                 onChange={(e) => setFilterCategory(e.target.value)}
@@ -884,14 +984,14 @@ export default function UploadService() {
                     {cat}
                   </option>
                 ))}
-              </select>
+              </MonochromeSelect>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Status
               </label>
-              <select
+              <MonochromeSelect
                 title="Filter by status"
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
@@ -901,7 +1001,7 @@ export default function UploadService() {
                 <option value="Active">Active</option>
                 <option value="Inactive">Inactive</option>
                 <option value="Pending">Pending</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
         </div>
@@ -951,7 +1051,7 @@ export default function UploadService() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                        <span className="font-medium text-gray-900 dark:text-white">
                           {service.category}
                         </span>
                       </td>
@@ -1045,7 +1145,7 @@ export default function UploadService() {
 
       {/* Add Service Modal */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 dark:border-gray-800">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Add New Service</h2>
@@ -1070,7 +1170,7 @@ export default function UploadService() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Category *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service category"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value, categoryCustom: e.target.value === "Others" ? formData.categoryCustom : "" })}
@@ -1083,14 +1183,14 @@ export default function UploadService() {
                       </option>
                     ))}
                     <option value="Others">Others</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service status"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as "Active" | "Inactive" | "Pending" })}
@@ -1099,7 +1199,7 @@ export default function UploadService() {
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                     <option value="Pending">Pending</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
               </div>
 
@@ -1161,7 +1261,7 @@ export default function UploadService() {
                       />
                     </div>
                     <div>
-                      <select
+                      <MonochromeSelect
                         title="Select duration unit"
                         value={formData.durationUnit}
                         onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "minutes" | "hours" | "days" })}
@@ -1170,7 +1270,7 @@ export default function UploadService() {
                         <option value="minutes">Minutes</option>
                         <option value="hours">Hours</option>
                         <option value="days">Days</option>
-                      </select>
+                      </MonochromeSelect>
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1219,6 +1319,13 @@ export default function UploadService() {
                 )}
               </div>
 
+              <ServiceImageField
+                inputId="add-service-image"
+                preview={imagePreview}
+                onChange={handleServiceImageChange}
+                onRemove={handleRemoveServiceImage}
+              />
+
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates (Required)</h3>
@@ -1245,7 +1352,7 @@ export default function UploadService() {
                       <div key={`add-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
-                          <select
+                          <MonochromeSelect
                             title="Select inventory material"
                             value={line.inventory_item_id || ""}
                             onChange={(e) => updateMaterialTemplateLine(index, 'inventory_item_id', Number(e.target.value || 0))}
@@ -1257,7 +1364,7 @@ export default function UploadService() {
                                 {material.name} (Available: {material.available_quantity})
                               </option>
                             ))}
-                          </select>
+                          </MonochromeSelect>
                         </div>
 
                         <div className="md:col-span-2">
@@ -1313,7 +1420,7 @@ export default function UploadService() {
 
       {/* Edit Service Modal */}
       {isEditModalOpen && selectedService && (
-        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[999999] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
           <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6 border-b border-gray-200 dark:border-gray-800">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Edit Service</h2>
@@ -1338,7 +1445,7 @@ export default function UploadService() {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Category *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service category"
                     value={formData.category}
                     onChange={(e) => setFormData({ ...formData, category: e.target.value })}
@@ -1348,14 +1455,14 @@ export default function UploadService() {
                     <option value="Care">Care</option>
                     <option value="Repair">Repair</option>
                     <option value="Restoration">Restoration</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Status *
                   </label>
-                  <select
+                  <MonochromeSelect
                     title="Select service status"
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value as "Active" | "Inactive" | "Pending" })}
@@ -1364,7 +1471,7 @@ export default function UploadService() {
                     <option value="Active">Active</option>
                     <option value="Inactive">Inactive</option>
                     <option value="Pending">Pending</option>
-                  </select>
+                  </MonochromeSelect>
                 </div>
               </div>
 
@@ -1409,7 +1516,7 @@ export default function UploadService() {
                       />
                     </div>
                     <div>
-                      <select
+                      <MonochromeSelect
                         title="Select duration unit"
                         value={formData.durationUnit}
                         onChange={(e) => setFormData({ ...formData, durationUnit: e.target.value as "minutes" | "hours" | "days" })}
@@ -1418,7 +1525,7 @@ export default function UploadService() {
                         <option value="minutes">Minutes</option>
                         <option value="hours">Hours</option>
                         <option value="days">Days</option>
-                      </select>
+                      </MonochromeSelect>
                     </div>
                   </div>
                   <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -1467,6 +1574,13 @@ export default function UploadService() {
                 )}
               </div>
 
+              <ServiceImageField
+                inputId="edit-service-image"
+                preview={imagePreview}
+                onChange={handleServiceImageChange}
+                onRemove={handleRemoveServiceImage}
+              />
+
               <div className="rounded-lg border border-gray-200 dark:border-gray-700 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Predefined Material Templates (Required)</h3>
@@ -1493,7 +1607,7 @@ export default function UploadService() {
                       <div key={`edit-service-material-${index}`} className="rounded-lg border border-gray-200 dark:border-gray-700 p-3 grid grid-cols-1 md:grid-cols-8 gap-2 items-end">
                         <div className="md:col-span-5">
                           <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-300 mb-1">Inventory Material</label>
-                          <select
+                          <MonochromeSelect
                             title="Select inventory material"
                             value={line.inventory_item_id || ""}
                             onChange={(e) => updateMaterialTemplateLine(index, 'inventory_item_id', Number(e.target.value || 0))}
@@ -1505,7 +1619,7 @@ export default function UploadService() {
                                 {material.name} (Available: {material.available_quantity})
                               </option>
                             ))}
-                          </select>
+                          </MonochromeSelect>
                         </div>
 
                         <div className="md:col-span-2">

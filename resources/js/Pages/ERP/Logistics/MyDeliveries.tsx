@@ -1,0 +1,2367 @@
+import DeliveryPhotoUpload from './components/DeliveryPhotoUpload';
+import LostParcelActions from '@/components/logistics/LostParcelActions';
+import CustodyHandoffs from './components/CustodyHandoffs';
+import BatchInterruptionControls from './components/BatchInterruptionDialog';
+import type { CustodyHandoff } from '@/types/logistics';
+import MonochromeSelect from "@/components/form/Select";
+import AppLayoutERP from '@/layout/AppLayout_ERP';
+import { logisticsApi } from '@/services/logisticsApi';
+import RiderGpsTracker from '@/components/logistics/RiderGpsTracker';
+import type {
+  RiderDeliveryIssue,
+  RiderDeliveryPageData,
+  RiderDeliveryTab,
+  RiderDeliveryWorkItem,
+  TrackingShipmentLeg,
+} from '@/types/logistics';
+import { logisticsDeliveryLabel } from '@/types/logistics';
+import { workflowFeedback } from '@/utils/workflowFeedback';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithTimeout } from '@/utils/geolocation';
+import { Head, router, usePage } from '@inertiajs/react';
+import axios from 'axios';
+import { FormEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import {
+  arrivalStatusText,
+  completedProgress,
+  deliveryContact,
+  deliveryStatusLabel,
+  nextActionableDelivery,
+  orderedDeliveries,
+  riderProgressLabel,
+  riderResolutionInstruction,
+} from './riderDeliveryPresentation';
+
+type ActionConfirmation = Parameters<typeof workflowFeedback.confirm>[0];
+type ActionRunner = (
+  key: string,
+  action: () => Promise<unknown>,
+  confirmation?: ActionConfirmation,
+  onError?: (error: unknown) => boolean,
+) => void;
+
+const isRepairPickupBeforeHandoff = (delivery?: TrackingShipmentLeg | null): boolean =>
+  delivery?.shipment?.source_type === 'repair_request'
+  && delivery.shipment.purpose === 'repair_pickup'
+  && delivery.leg_type === 'inbound'
+  && !delivery.picked_up_at
+  && ['assigned', 'pickup_scheduled'].includes(delivery.status)
+  && delivery.origin_snapshot?.type === 'customer';
+
+const isRepairPickupTrackingLeg = (delivery?: TrackingShipmentLeg | null): boolean =>
+  isRepairPickupBeforeHandoff(delivery)
+  || (
+    delivery?.shipment?.source_type === 'repair_request'
+    && delivery.shipment.purpose === 'repair_pickup'
+    && delivery.leg_type === 'inbound'
+    && Boolean(delivery.picked_up_at)
+    && delivery.status === 'in_transit'
+    && delivery.destination_snapshot?.type === 'shop'
+  );
+
+const isRetailRefundReturnBeforeHandoff = (delivery?: TrackingShipmentLeg | null): boolean =>
+  delivery?.shipment?.source_type === 'order_refund'
+  && delivery.shipment.purpose === 'refund_return'
+  && delivery.leg_type === 'return_to_shop'
+  && !delivery.picked_up_at
+  && ['assigned', 'pickup_scheduled'].includes(delivery.status)
+  && delivery.origin_snapshot?.type === 'customer';
+
+const isRetailRefundReturnTrackingLeg = (delivery?: TrackingShipmentLeg | null): boolean =>
+  isRetailRefundReturnBeforeHandoff(delivery)
+  || (
+    delivery?.shipment?.source_type === 'order_refund'
+    && delivery.shipment.purpose === 'refund_return'
+    && delivery.leg_type === 'return_to_shop'
+    && Boolean(delivery.picked_up_at)
+    && delivery.status === 'in_transit'
+    && delivery.destination_snapshot?.type === 'shop'
+  );
+
+const canRiderTrack = (delivery?: TrackingShipmentLeg | null): boolean =>
+  isRepairPickupTrackingLeg(delivery)
+  || isRetailRefundReturnTrackingLeg(delivery)
+  || (delivery?.status === 'in_transit' && delivery.destination_snapshot?.type === 'customer');
+
+const riderTrackingTarget = (delivery: TrackingShipmentLeg) =>
+  (isRepairPickupBeforeHandoff(delivery) || isRetailRefundReturnBeforeHandoff(delivery))
+    ? delivery.origin_snapshot
+    : delivery.destination_snapshot;
+
+const riderTrackingDestinationLabel = (delivery: TrackingShipmentLeg) =>
+  delivery.shipment?.source_type === 'order_refund'
+  && delivery.shipment.purpose === 'refund_return'
+  && delivery.leg_type === 'return_to_shop'
+    ? 'shop'
+    : undefined;
+
+const arrivalReasons = [
+  ['gps_inaccurate', 'GPS location is inaccurate'],
+  ['pin_incorrect', 'Shop or customer pin is incorrect'],
+  ['alternate_meeting_point', 'Met at another location'],
+  ['access_restriction', 'Road or access restriction'],
+  ['safety_concern', 'Safety concern'],
+  ['other', 'Other'],
+] as const;
+
+const arrivalResultLabel = (value: unknown): string | null => ({
+  outside_geofence: 'Outside geofence',
+  low_accuracy: 'Low GPS accuracy',
+  location_unavailable: 'Location unavailable',
+}[String(value ?? '')] ?? null);
+
+const isCompactViewport = () =>
+  typeof window !== 'undefined' && window.innerWidth < 1280;
+
+const isCodPaymentMethod = (value?: string | null): boolean =>
+  ['cod', 'cash_on_delivery', 'cash on delivery', 'cash'].includes(String(value ?? '').trim().toLowerCase());
+
+const formatCodAmount = (value: string | number): string =>
+  Number(value).toLocaleString('en-PH', { style: 'currency', currency: 'PHP' });
+
+type PickerOption = readonly [string, string];
+
+function CompactModalPicker({
+  pickerId,
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  className = '',
+}: {
+  pickerId: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: readonly PickerOption[];
+  placeholder: string;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const compact = isCompactViewport();
+  const modalIsOpen = isOpen && compact;
+  const listboxId = `${pickerId}-options`;
+  const dialogId = `${pickerId}-dialog`;
+  const pickerOptions: readonly PickerOption[] = [['', placeholder] as const, ...options];
+  const selectedLabel = pickerOptions.find(([option]) => option === value)?.[1] ?? placeholder;
+
+  useEffect(() => {
+    if (!modalIsOpen) return;
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    const closeOnResize = () => {
+      if (!isCompactViewport()) setIsOpen(false);
+    };
+
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', closeOnResize);
+    document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', closeOnResize);
+      document.body.style.overflow = previousOverflow;
+      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
+    };
+  }, [modalIsOpen]);
+
+  const choose = (nextValue: string) => {
+    setIsOpen(false);
+    onChange(nextValue);
+  };
+
+  return (
+    <div className="relative mt-1">
+      {compact ? (
+        <button
+          type="button"
+          id={pickerId}
+          aria-label={label}
+          value={value}
+          aria-haspopup="listbox"
+          aria-controls={modalIsOpen ? dialogId : undefined}
+          aria-expanded={modalIsOpen}
+          onClick={() => setIsOpen(true)}
+          className={`flex min-h-12 w-full items-center justify-between rounded-2xl border border-slate-300 bg-white px-4 text-left text-base text-slate-950 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-gray-800 ${className}`}
+        >
+          <span>{selectedLabel}</span>
+          <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none">
+            <path d="m5 7.5 5 5 5-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      ) : (
+        <MonochromeSelect
+          id={pickerId}
+          aria-label={label}
+          value={value}
+          onChange={(event) => choose(event.target.value)}
+          className={`min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-950 transition-colors hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-gray-800 ${className}`}
+        >
+          {pickerOptions.map(([option, optionLabel]) => (
+            <option key={option || 'empty'} value={option}>{optionLabel}</option>
+          ))}
+        </MonochromeSelect>
+      )}
+      {modalIsOpen && (
+        <div
+          className="fixed inset-0 z-[100001] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px] erp-modal-backdrop"
+        >
+          <div
+            id={dialogId}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={`${dialogId}-title`}
+            className="flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-950 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          >
+            <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-700">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                  Choose one
+                </p>
+                <h2 id={`${dialogId}-title`} className="mt-1 text-lg font-extrabold tracking-tight">
+                  {label}
+                </h2>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+                  {selectedLabel === placeholder ? 'Select an option to continue.' : `Selected: ${selectedLabel}`}
+                </p>
+              </div>
+              <button
+                ref={closeButtonRef}
+                type="button"
+                aria-label={`Close ${label} picker`}
+                onClick={() => setIsOpen(false)}
+                className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-full border border-slate-300 text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:text-white dark:hover:bg-slate-900"
+              >
+                <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 20 20" fill="none">
+                  <path d="m5 5 10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                </svg>
+              </button>
+            </header>
+            <div className="min-h-0 overflow-y-auto p-3">
+              <div
+                id={listboxId}
+                role="listbox"
+                aria-label={`${label} options`}
+                className="space-y-1"
+              >
+                {pickerOptions.map(([option, optionLabel]) => (
+                  <button
+                    key={option || 'empty-option'}
+                    type="button"
+                    role="option"
+                    aria-selected={value === option}
+                    onClick={() => choose(option)}
+                    className={`min-h-12 w-full touch-manipulation rounded-2xl border px-4 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-inset dark:focus:ring-gray-300 ${
+                      value === option
+                        ? 'border-slate-950 bg-slate-950 text-white hover:bg-black dark:border-slate-950 dark:bg-slate-950 dark:text-white dark:hover:bg-black'
+                        : 'border-slate-200 bg-white text-slate-950 hover:bg-gray-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-gray-800'
+                    }`}
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span>{optionLabel}</span>
+                      {value === option && (
+                        <svg aria-hidden="true" className="h-4 w-4 shrink-0" viewBox="0 0 20 20" fill="none">
+                          <path d="m4 10 4 4 8-8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      )}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DeliveryActionModal({
+  modalId,
+  open,
+  title,
+  description,
+  onClose,
+  children,
+}: {
+  modalId: string;
+  open: boolean;
+  title: string;
+  description: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onCloseRef.current();
+    };
+
+    document.addEventListener('keydown', closeOnEscape);
+    document.body.style.overflow = 'hidden';
+    closeButtonRef.current?.focus();
+
+    return () => {
+      document.removeEventListener('keydown', closeOnEscape);
+      document.body.style.overflow = previousOverflow;
+      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
+    };
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[100000] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-[2px] sm:p-6 erp-modal-backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`${modalId}-title`}
+        aria-describedby={`${modalId}-description`}
+        className="flex max-h-[calc(100dvh-2rem)] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white text-slate-950 shadow-2xl dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:max-h-[calc(100dvh-3rem)]"
+      >
+        <header className="flex items-start justify-between gap-4 border-b border-slate-200 p-5 dark:border-slate-700 sm:p-6">
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+              Delivery action
+            </p>
+            <h2 id={`${modalId}-title`} className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">
+              {title}
+            </h2>
+            <p id={`${modalId}-description`} className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+              {description}
+            </p>
+          </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            aria-label={`Close ${title}`}
+            onClick={onClose}
+            className="inline-flex min-h-11 min-w-11 shrink-0 touch-manipulation items-center justify-center rounded-2xl border border-slate-300 text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:text-white dark:hover:bg-slate-900"
+          >
+            <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 20 20" fill="none">
+              <path d="m5 5 10 10M15 5 5 15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            </svg>
+          </button>
+        </header>
+        <div className="min-h-0 overflow-y-auto p-4 sm:p-6">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const photoIssueReasons = new Set([
+  'recipient_unavailable',
+  'wrong_or_incomplete_address',
+  'recipient_refused',
+  'item_damaged',
+]);
+
+const noteIssueReasons = new Set([
+  'unsafe_location',
+  'vehicle_or_delivery_problem',
+  'other',
+]);
+
+const deliveryIssueReasons = [
+  ['recipient_unavailable', 'Recipient unavailable'],
+  ['wrong_or_incomplete_address', 'Wrong or incomplete address'],
+  ['recipient_refused', 'Recipient refused'],
+  ['item_damaged', 'Item damaged'],
+  ['unsafe_location', 'Unsafe location'],
+  ['vehicle_or_delivery_problem', 'Vehicle or delivery problem'],
+  ['other', 'Other'],
+] as const;
+
+const pickupIssueReasons = [
+  ['customer_unavailable', 'Customer unavailable / not home'],
+  ['customer_requested_reschedule', 'Customer requested reschedule'],
+  ['customer_refused_pickup', 'Customer refused pickup'],
+  ['item_not_ready', 'Item not ready or unavailable'],
+  ['wrong_address_or_pin', 'Wrong address or map pin'],
+  ['unsafe_or_inaccessible_location', 'Unsafe or inaccessible location'],
+  ['vehicle_or_rider_problem', 'Vehicle or rider problem'],
+  ['other', 'Other'],
+] as const;
+
+const incidentTypes = [
+  ['damaged', 'Parcel damaged'],
+  ['lost', 'Parcel lost'],
+  ['vehicle_problem', 'Vehicle or route problem'],
+  ['customer_dispute', 'Customer dispute'],
+  ['other', 'Other incident'],
+] as const;
+
+const declineReasons = [
+  'Schedule conflict',
+  'Too far from my current location',
+  'Vehicle or equipment problem',
+  'Safety concern',
+  'Already handling another delivery',
+] as const;
+
+const currentPosition = () => {
+  if (!navigator.geolocation) {
+    return Promise.reject(new Error('Location is unavailable on this device.'));
+  }
+  return getCurrentPositionWithTimeout({ ...GPS_POSITION_OPTIONS, timeout: 10_000 });
+};
+
+const needsArrivalReason = (error: unknown) => {
+  const response = (error as {
+    response?: { status?: number; data?: { errors?: Record<string, string[]> } };
+  })?.response;
+
+  return Boolean(
+    (response?.status === 422 && response.data?.errors?.exception_reason) ||
+    (typeof error === 'object' && error !== null && 'code' in error) ||
+    (error instanceof Error && [
+      'Location is unavailable on this device.',
+      'Location request timed out.',
+    ].includes(error.message)),
+  );
+};
+
+const tabLabels: Record<RiderDeliveryTab, string> = {
+  upcoming: 'Upcoming',
+  history: 'History',
+  issues: 'Issues',
+  all: 'All',
+};
+
+const deliveryNumber = (delivery?: TrackingShipmentLeg | null) =>
+  delivery?.delivery_number ?? delivery?.shipment?.shipment_number ?? delivery?.id ?? '-';
+
+const itemTitle = (item: RiderDeliveryWorkItem) =>
+  item.kind === 'batch' ? `Batch #${item.id}` : `Single delivery #${deliveryNumber(item.deliveries[0])}`;
+
+const deliveryCount = (item: RiderDeliveryWorkItem) =>
+  `${item.deliveries.length} ${item.deliveries.length === 1 ? 'delivery' : 'deliveries'}`;
+
+const scheduleText = (item: RiderDeliveryWorkItem) => {
+  const date = item.delivery_date ? String(item.delivery_date).split('T')[0] : 'Not scheduled';
+  const window = item.delivery_window
+    ? item.delivery_window.replace(/\b\w/g, (letter) => letter.toUpperCase())
+    : null;
+
+  return window ? `${date} · ${window}` : date;
+};
+
+const retryDateText = (value?: string | null) => value
+  ? new Intl.DateTimeFormat('en-PH', { dateStyle: 'medium', timeZone: 'UTC' }).format(
+      new Date(`${value.slice(0, 10)}T00:00:00Z`),
+    )
+  : 'Not scheduled';
+
+function StatusChip({ status, label }: { status: string; label?: string }) {
+  const symbol = ['delivered', 'completed'].includes(status)
+    ? '✓'
+    : ['cancelled', 'declined', 'delivery_attempted', 'proof_action_required', 'proof_correction_required'].includes(status)
+      ? '!'
+      : '•';
+
+  return (
+    <span className="inline-flex min-h-7 items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-100">
+      <span aria-hidden="true">{symbol}</span>
+      {label ?? deliveryStatusLabel(status)}
+    </span>
+  );
+}
+
+function ResolutionNotice({ delivery }: { delivery: TrackingShipmentLeg }) {
+  const instruction = riderResolutionInstruction(delivery);
+  if (!instruction) return null;
+
+  return (
+    <p
+      role="status"
+      className="mt-2 rounded-xl border border-slate-200 bg-white p-3 text-sm font-semibold text-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+    >
+      <span aria-hidden="true">!</span> {instruction}
+    </p>
+  );
+}
+
+function DeliveryContact({ delivery }: { delivery: TrackingShipmentLeg }) {
+  const contact = deliveryContact(delivery);
+  const textPhone = contact.phone.replace(/[^\d+]/g, '');
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <p className="text-base font-bold text-slate-950 dark:text-white">
+          {contact.name || 'Customer details unavailable'}
+        </p>
+        <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+          {contact.address || 'Address not provided'}
+        </p>
+        {contact.instructions && (
+          <p className="mt-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-800 dark:bg-slate-800 dark:text-slate-100">
+            <strong>Instruction:</strong> {contact.instructions}
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 xl:gap-2">
+        {contact.phone ? (
+          <a
+            href={`tel:${contact.phone}`}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:text-slate-100 xl:min-h-11"
+          >
+            Call
+          </a>
+        ) : (
+          <span className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400 xl:min-h-11">
+            No phone
+          </span>
+        )}
+        {contact.phone ? (
+          <a
+            href={`sms:${textPhone}`}
+            className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-300 px-3 text-sm font-semibold text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:text-white dark:hover:bg-slate-800 dark:focus:ring-gray-300 xl:min-h-11"
+          >
+            Text
+          </a>
+        ) : (
+          <span className="inline-flex min-h-12 items-center justify-center rounded-xl border border-slate-200 px-3 text-sm text-slate-400 xl:min-h-11">
+            No phone
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DeliverySequence({ item }: { item: RiderDeliveryWorkItem }) {
+  return (
+    <ol data-testid="delivery-sequence" className="mt-4 space-y-2 border-t border-slate-200 pt-4 dark:border-slate-700">
+      {orderedDeliveries(item.deliveries).map((delivery, index) => {
+        const contact = deliveryContact(delivery);
+        const sequence = index + 1;
+        const symbol = delivery.status === 'delivered'
+          ? '✓'
+          : ['delivery_attempted', 'proof_correction_required'].includes(delivery.status)
+            || delivery.rider_progress_state === 'proof_action_required'
+            ? '!'
+            : delivery.rider_progress_state === 'proof_submitted'
+              ? '•'
+              : sequence;
+
+        return (
+          <li key={delivery.id} className="flex gap-3 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white text-sm font-bold text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-100 dark:ring-slate-700">
+              {symbol}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold text-slate-950 dark:text-white">
+                  Delivery #{deliveryNumber(delivery)} · Stop {sequence}
+                </p>
+                <StatusChip
+                  status={delivery.status}
+                  label={delivery.operational_label ?? (delivery.rider_progress_state
+                    ? riderProgressLabel(delivery.rider_progress_state)
+                    : undefined)}
+                />
+              </div>
+              <ResolutionNotice delivery={delivery} />
+              <p className="mt-1 truncate text-sm text-slate-600 dark:text-slate-300">
+                {contact.name || 'Customer'} · {contact.address || 'Address unavailable'}
+              </p>
+            </div>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function DeliveryActions({
+  item,
+  delivery,
+  locked,
+  online,
+  pendingAction,
+  canRecordProof,
+  canUpdateStatus,
+  canReportIssue,
+  today,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem;
+  delivery?: TrackingShipmentLeg;
+  locked: boolean;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  canUpdateStatus: boolean;
+  canReportIssue: boolean;
+  today: string;
+  runAction: ActionRunner;
+}) {
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const [showIssue, setShowIssue] = useState(false);
+  const [issueReason, setIssueReason] = useState('');
+  const [issueNotes, setIssueNotes] = useState('');
+  const [issueFile, setIssueFile] = useState<File | null>(null);
+  const [showIncident, setShowIncident] = useState(false);
+  const [incidentType, setIncidentType] = useState('');
+  const [incidentNotes, setIncidentNotes] = useState('');
+  const [incidentFile, setIncidentFile] = useState<File | null>(null);
+  const [showArrivalReason, setShowArrivalReason] = useState(false);
+  const [arrivalResult, setArrivalResult] = useState<string | null>(null);
+  const [arrivalReason, setArrivalReason] = useState('');
+  const [arrivalNotes, setArrivalNotes] = useState('');
+  const arrivalEvidence = useRef<Record<string, unknown> | null>(null);
+  const issueKeys = useRef<Record<string, string>>({});
+ const proofKeys = useRef<Record<string, string>>({});
+  const cashCollectionKeys = useRef<Record<number, string>>({});
+ const mutationDisabled = locked || !online || pendingAction !== null;
+  const buttonClass =
+    'min-h-12 w-full touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11';
+  const compactPrimaryButtonClass =
+    'min-h-12 w-full touch-manipulation rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-white dark:hover:bg-black xl:min-h-11 xl:rounded-xl';
+  const compactSecondaryButtonClass =
+    'min-h-12 w-full touch-manipulation rounded-2xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white xl:min-h-11 xl:rounded-xl';
+
+  if (canUpdateStatus && item.kind === 'batch' && item.status === 'accepted') {
+    const key = `batch-start:${item.id}`;
+    const incident = item.interruption;
+    const custodyReady = !incident || incident.status === 'resolved' || (incident.recovery_batch_id === item.id && incident.resolution === 'reassign'
+      && incident.confirmed_parcels === incident.required_parcels && !incident.stops.some(stop => stop.transfer_status));
+
+    return (
+      <div className="space-y-2">
+      {item.start_blocked_reason && <p role="status" className="text-sm font-semibold">{item.start_blocked_reason}</p>}
+      {!custodyReady && <p role="status" className="text-sm font-semibold">Waiting for {Math.max(0, (incident?.required_parcels ?? 0) - (incident?.confirmed_parcels ?? 0))} more parcel handoff(s). <a href="#package-handoffs" className="underline">Check package handoffs</a>.</p>}
+      <button
+        type="button"
+         disabled={mutationDisabled || !canUpdateStatus || !custodyReady || Boolean(item.start_blocked_reason) || pendingAction === key}
+        onClick={() =>
+          runAction(key, () => logisticsApi.startBatch(item.id), {
+            title: `Start batch #${item.id}?`,
+            text: 'This will begin the batch and make its first stop active.',
+            confirmButtonText: 'Start batch',
+          })
+        }
+        className={buttonClass}
+      >
+        Start batch
+      </button>
+      </div>
+    );
+  }
+
+  if (item.interruption && item.interruption.status !== 'resolved') return null;
+  if (!delivery) return null;
+  const isReturnToShop = delivery.leg_type === 'return_to_shop';
+  const isStagedRetry = delivery.status === 'needs_resolution' && delivery.resolution_type === 'retry';
+  const isCustomerCollection = (delivery.shipment?.purpose === 'repair_pickup' || delivery.shipment?.purpose === 'refund_return')
+    && ['assigned', 'pickup_scheduled'].includes(delivery.status);
+  const requiresIssuePhoto = isCustomerCollection || photoIssueReasons.has(issueReason);
+  const requiresIssueNotes = isCustomerCollection
+    ? issueReason === 'other'
+    : noteIssueReasons.has(issueReason);
+  const assignment = delivery.assignments?.find(({ status }) =>
+    ['assigned', 'accepted'].includes(status),
+  );
+  const rejectedProofId = delivery.proofs
+    .filter(({ review_status }) => review_status === 'rejected')
+    .at(-1)?.id ?? 'initial';
+  const proofIdempotencyKey = (handoffType: string) => {
+    const requestKey = `${handoffType}:${delivery.id}:${assignment?.id ?? 'none'}:${rejectedProofId}`;
+
+    return proofKeys.current[requestKey]
+      ?? (proofKeys.current[requestKey] = crypto.randomUUID());
+  };
+  const issueKey = `${isCustomerCollection ? 'pickup-issue' : 'issue'}:${delivery.id}`;
+  const issueRequestKey = `${isCustomerCollection ? 'pickup' : 'delivery'}:${delivery.id}:${assignment?.id ?? 'none'}`;
+  const issueOptions = isCustomerCollection ? pickupIssueReasons : deliveryIssueReasons;
+ const deliveryReference =
+   item.kind === 'batch'
+     ? `stop ${delivery.stop_sequence ?? delivery.id} in batch #${item.id}`
+     : `delivery #${deliveryNumber(delivery)}`;
+  const codSummary = delivery.shipment?.source_type === 'order'
+    && isCodPaymentMethod(delivery.shipment.order_summary?.payment_method)
+    ? delivery.shipment.order_summary
+    : null;
+  const codOrderId = codSummary?.order_id ?? null;
+  const codAmount = codSummary?.cod_expected_amount ?? null;
+  const codCollectionStatus = codSummary?.cod_collection_status ?? null;
+  const codCashCollected = ['cash_collected', 'settled'].includes(codCollectionStatus ?? '');
+  const codCollectionRequired = Boolean(codSummary && !codCashCollected);
+  const cashCollectionKey = codOrderId ? `cash-collected:${codOrderId}` : null;
+  const cashCollectionIdempotencyKey = codOrderId
+    ? (cashCollectionKeys.current[codOrderId] ??= crypto.randomUUID())
+    : null;
+  const codIsPending = Boolean(codCollectionRequired && codAmount && codOrderId && canUpdateStatus);
+  const codCollectionEligible = ['in_transit', 'delivery_attempted', 'awaiting_proof_approval', 'proof_correction_required']
+    .includes(delivery.status);
+ const recordCashCollected = () => {
+    if (!codSummary || !codAmount || !codOrderId || !codCollectionEligible || !canUpdateStatus
+      || !cashCollectionKey || !cashCollectionIdempotencyKey
+    ) return;
+
+    runAction(cashCollectionKey, () => logisticsApi.cashCollected(
+      codOrderId,
+      codAmount,
+      cashCollectionIdempotencyKey,
+    ), {
+      title: `Record ${formatCodAmount(codAmount)} cash collected?`,
+      text: 'Confirm that you received the exact cash amount from the customer. Finance will settle it after physical cash is verified.',
+      confirmButtonText: 'Cash collected',
+    });
+  };
+  const cashCollectionPanel = codCollectionEligible && codSummary && codAmount ? (
+    <div className='space-y-3 rounded-2xl border border-amber-300 bg-amber-50 p-4 text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-50'>
+      <div className='flex flex-wrap items-start justify-between gap-3'>
+        <div>
+          <p className='text-xs font-bold uppercase tracking-[0.14em] text-amber-800 dark:text-amber-200'>Cash on delivery</p>
+          <p className='mt-1 text-sm font-semibold'>Collect the exact amount before handing over the order.</p>
+        </div>
+        <p className='text-xl font-extrabold tabular-nums'>{formatCodAmount(codAmount)}</p>
+      </div>
+      {codIsPending ? (
+        <button
+          type='button'
+          disabled={mutationDisabled || pendingAction === cashCollectionKey}
+          onClick={recordCashCollected}
+          className='min-h-12 w-full touch-manipulation rounded-xl bg-amber-900 px-4 text-sm font-bold text-white transition-colors hover:bg-amber-800 focus:outline-none focus:ring-2 focus:ring-amber-900 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-amber-200 dark:text-amber-950 dark:hover:bg-amber-100 xl:min-h-11'
+        >
+          {pendingAction === cashCollectionKey ? 'Recording cash collection…' : 'Cash collected'}
+        </button>
+      ) : (
+        <p role='status' className='rounded-xl bg-white/70 p-3 text-sm font-semibold dark:bg-black/20'>
+          Cash collected · waiting for remittance settlement
+        </p>
+      )}
+    </div>
+  ) : null;
+
+  if (isStagedRetry) {
+    const scheduledDate = delivery.scheduled_delivery_date?.slice(0, 10) ?? null;
+    const retryDue = !delivery.start_blocked_reason;
+    const key = `delivery-retry:${delivery.id}`;
+
+    return (
+      <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+        <p className="text-sm font-semibold text-slate-950 dark:text-white">
+          Retry scheduled for {retryDateText(scheduledDate)}
+        </p>
+        <button
+          type="button"
+          disabled={mutationDisabled || !canUpdateStatus || !retryDue || pendingAction === key}
+          onClick={() => runAction(key, () => logisticsApi.markInTransit(delivery.id), {
+            title: `Start retry for ${deliveryReference}?`,
+            text: 'This starts the scheduled delivery retry without recording another pickup.',
+            confirmButtonText: 'Start retry',
+          })}
+          className={buttonClass}
+        >
+          Start retry
+        </button>
+        {!retryDue && (
+          <p role="status" className="text-center text-xs font-semibold text-slate-700 dark:text-slate-300">
+            {delivery.start_blocked_reason}
+          </p>
+        )}
+      </div>
+    );
+  }
+  const isCustodyHold = delivery.status === 'needs_resolution' && delivery.resolution_type === null;
+  if (isCustodyHold) {
+    return (
+      <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+        <p className="text-sm font-semibold text-slate-950 dark:text-white">
+          Delivery attempt limit reached
+        </p>
+        <p className="text-sm text-slate-700 dark:text-slate-300">
+          Keep the parcel secured. A dispatcher must choose the next resolution before you can start other work.
+        </p>
+      </div>
+    );
+  }
+  const submitIssue = () => {
+    if (
+      !canReportIssue ||
+      !issueReason ||
+      !assignment ||
+      (requiresIssuePhoto && !issueFile) ||
+      (requiresIssueNotes && !issueNotes.trim())
+    ) return;
+    const form = new FormData();
+    const idempotencyKey = issueKeys.current[issueRequestKey]
+      ?? (issueKeys.current[issueRequestKey] = crypto.randomUUID());
+    form.append('attempt_type', isCustomerCollection ? 'pickup' : 'delivery');
+    form.append('delivery_assignment_id', String(assignment.id));
+    form.append('idempotency_key', idempotencyKey);
+    form.append('reason_code', issueReason);
+    if (issueNotes.trim()) form.append('notes', issueNotes.trim());
+    if (issueFile) form.append('proof_file', issueFile);
+    runAction(
+      issueKey,
+      async () => {
+        const response = await logisticsApi.reportIssue(delivery.id, form);
+        await workflowFeedback.success({
+          title: isCustomerCollection ? 'Failed pickup submitted successfully' : 'Issue submitted successfully',
+          text: 'The dispatcher will review this report.',
+          timer: 1800,
+          showConfirmButton: false,
+        });
+        return response;
+      },
+      {
+        title: isCustomerCollection
+          ? `Submit failed pickup for ${deliveryReference}?`
+          : `Submit issue for ${deliveryReference}?`,
+        text: isCustomerCollection
+          ? 'The dispatcher will choose whether to reschedule or cancel this pickup.'
+          : 'This records a failed delivery attempt for dispatcher review.',
+        confirmButtonText: isCustomerCollection ? 'Submit failed pickup' : 'Submit issue',
+      },
+    );
+  };
+  const submitIncident = () => {
+    if (!canReportIssue || !incidentType || !incidentNotes.trim() || (incidentType !== 'lost' && !incidentFile)) return;
+    const form = new FormData();
+    form.append('type', incidentType);
+    form.append('notes', incidentNotes.trim());
+    if (incidentFile) form.append('photo_files[]', incidentFile);
+    runAction(
+      `incident:${delivery.id}`,
+      async () => {
+        const response = await logisticsApi.reportIncident(delivery.id, form);
+        await workflowFeedback.success({
+          title: 'Incident submitted successfully',
+          text: 'The dispatcher will review it and choose the next resolution.',
+          timer: 1800,
+          showConfirmButton: false,
+        });
+        return response;
+      },
+      {
+        title: `Report incident for ${deliveryReference}?`,
+        text: 'The dispatcher will review this incident and choose the next resolution.',
+        confirmButtonText: 'Report incident',
+      },
+    );
+  };
+  const issuePanel = (
+    <DeliveryActionModal
+      modalId={`delivery-issue-${delivery.id}`}
+      open={showIssue}
+      title={isCustomerCollection ? 'Failed pickup' : 'Report issue'}
+      description={isCustomerCollection
+        ? 'Record why the pickup could not be completed.'
+        : 'Share the delivery issue for dispatcher review.'}
+      onClose={() => setShowIssue(false)}
+    >
+      <div
+        aria-label={isCustomerCollection ? 'Failed pickup details' : 'Delivery issue details'}
+        className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:p-5"
+      >
+        <div className="block text-sm font-semibold">
+          <label
+            className="block"
+            htmlFor={`${isCustomerCollection ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
+          >
+            {isCustomerCollection ? 'Failed pickup reason' : 'Issue reason'}
+          </label>
+          <CompactModalPicker
+            pickerId={`${isCustomerCollection ? 'failed-pickup' : 'delivery-issue'}-reason-${delivery.id}`}
+            label={isCustomerCollection ? 'Failed pickup reason' : 'Issue reason'}
+            value={issueReason}
+            onChange={setIssueReason}
+            options={issueOptions}
+            placeholder="Choose a reason"
+          />
+        </div>
+        <label className="block text-sm font-semibold">
+          {isCustomerCollection ? 'Failed pickup notes' : 'Notes'} {requiresIssueNotes ? '(required)' : '(optional)'}
+          <textarea
+            aria-label={isCustomerCollection ? 'Failed pickup notes' : 'Issue notes'}
+            required={requiresIssueNotes}
+            value={issueNotes}
+            onChange={(event) => setIssueNotes(event.target.value)}
+            className="mt-2 min-h-24 w-full rounded-2xl border border-slate-300 bg-white p-4 text-base text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          />
+        </label>
+        <DeliveryPhotoUpload
+          inputId={`${isCustomerCollection ? 'failed-pickup' : 'delivery-issue'}-photo-${delivery.id}`}
+          inputLabel={isCustomerCollection ? 'Failed pickup photo' : 'Issue photo'}
+          label={isCustomerCollection ? 'Failed pickup photo' : 'Issue photo'}
+          file={issueFile}
+          onChange={setIssueFile}
+          required={requiresIssuePhoto}
+          capture={isCustomerCollection ? 'environment' : undefined}
+        />
+        {!online && (
+          <p role="status" className="text-center text-sm font-semibold text-slate-700 dark:text-slate-300">
+            Retry after reconnect
+          </p>
+        )}
+        <button
+          type="button"
+          disabled={
+            mutationDisabled ||
+            !assignment ||
+            !issueReason ||
+            (requiresIssuePhoto && !issueFile) ||
+            (requiresIssueNotes && !issueNotes.trim()) ||
+            pendingAction === issueKey
+          }
+          onClick={submitIssue}
+          className={compactPrimaryButtonClass}
+        >
+          {isCustomerCollection ? 'Submit failed pickup' : 'Submit issue'}
+        </button>
+      </div>
+    </DeliveryActionModal>
+  );
+  const incidentPanel = (
+    <DeliveryActionModal
+      modalId={`delivery-incident-${delivery.id}`}
+      open={showIncident}
+      title="Report incident"
+      description="Add the details and evidence the dispatcher needs to review this incident."
+      onClose={() => setShowIncident(false)}
+    >
+      <div
+        aria-label="Delivery incident details"
+        className="space-y-4 rounded-2xl border border-slate-200 bg-white p-4 text-slate-950 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:p-5"
+      >
+        <div className="block text-sm font-semibold">
+          <label className="block" htmlFor={`delivery-incident-type-${delivery.id}`}>
+            Incident type
+          </label>
+          <CompactModalPicker
+            pickerId={`delivery-incident-type-${delivery.id}`}
+            label="Incident type"
+            value={incidentType}
+            onChange={setIncidentType}
+            options={incidentTypes}
+            placeholder="Choose an incident"
+          />
+        </div>
+        <label className="block text-sm font-semibold">
+          What happened?
+          <textarea
+            aria-label="Incident notes"
+            value={incidentNotes}
+            onChange={(event) => setIncidentNotes(event.target.value)}
+            className="mt-2 min-h-24 w-full rounded-2xl border border-slate-300 bg-white p-4 text-base text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          />
+        </label>
+        <DeliveryPhotoUpload
+          inputId={`delivery-incident-photo-${delivery.id}`}
+          inputLabel="Incident evidence photo"
+          label="Evidence photo"
+          file={incidentFile}
+          onChange={setIncidentFile}
+          required={incidentType !== 'lost'}
+          accept="image/jpeg,image/png,image/webp"
+        />
+        <button
+          type="button"
+          disabled={mutationDisabled || !incidentType || !incidentNotes.trim() || (incidentType !== 'lost' && !incidentFile)}
+          onClick={submitIncident}
+          className={compactPrimaryButtonClass}
+        >
+          Submit incident
+        </button>
+      </div>
+    </DeliveryActionModal>
+  );
+  const arrivalPhase = ['assigned', 'pickup_scheduled'].includes(delivery.status)
+    ? 'pickup'
+    : delivery.status === 'in_transit'
+      ? 'dropoff'
+      : null;
+  const arrival = arrivalPhase ? delivery.arrivals?.[arrivalPhase] : undefined;
+  const arrivalKey = `arrival:${delivery.id}`;
+  const recordArrival = () => {
+    if (!canUpdateStatus || arrivalPhase !== 'dropoff') return;
+    setArrivalResult(null);
+    runAction(
+      arrivalKey,
+      async () => {
+        const position = await currentPosition();
+        const payload = {
+          arrival_type: 'dropoff',
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy_m: position.coords.accuracy,
+          captured_at: new Date(position.timestamp).toISOString(),
+        };
+        arrivalEvidence.current = payload;
+
+        return logisticsApi.arrive(delivery.id, payload);
+      },
+      undefined,
+      (error) => {
+        if (!needsArrivalReason(error)) return false;
+        const response = (error as {
+          response?: { data?: { errors?: Record<string, string[]> } };
+        })?.response;
+        setArrivalResult(arrivalResultLabel(response?.data?.errors?.arrival_result?.[0]));
+        setShowArrivalReason(true);
+        return true;
+      },
+    );
+  };
+  const submitArrivalReason = () => {
+    if (!canUpdateStatus || arrivalPhase !== 'dropoff' || !arrivalReason || (arrivalReason === 'other' && !arrivalNotes.trim())) {
+      return;
+    }
+    runAction(arrivalKey, () => logisticsApi.arrive(delivery.id, {
+      ...(arrivalEvidence.current ?? {
+        arrival_type: 'dropoff',
+        latitude: null,
+        longitude: null,
+        accuracy_m: null,
+        captured_at: null,
+      }),
+      exception_reason: arrivalReason,
+      exception_notes: arrivalNotes.trim() || null,
+    }));
+  };
+  const arrivalControl = canUpdateStatus && arrivalPhase === 'dropoff' && !arrival ? (
+    <div className="space-y-3">
+      <button
+        type="button"
+        disabled={mutationDisabled || pendingAction === arrivalKey}
+        onClick={recordArrival}
+        className={buttonClass}
+      >
+        I've arrived
+      </button>
+      {!online && (
+        <p role="status" className="text-center text-sm font-semibold text-slate-700 dark:text-slate-300">
+          Retry after reconnect
+        </p>
+      )}
+      {showArrivalReason && (
+        <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+          <p className="text-sm text-slate-700 dark:text-slate-300">
+            {arrivalResult
+              ? `${arrivalResult}. Choose a reason to continue.`
+              : 'Location could not be verified. Choose a reason to continue.'}
+          </p>
+          <div className="block text-sm font-semibold">
+            <label className="block" htmlFor={`arrival-reason-${delivery.id}`}>
+              Arrival reason
+            </label>
+            <CompactModalPicker
+              pickerId={`arrival-reason-${delivery.id}`}
+              label="Arrival reason"
+              value={arrivalReason}
+              onChange={setArrivalReason}
+              options={arrivalReasons}
+              placeholder="Choose a reason"
+              className="xl:border-slate-300 xl:focus:ring-slate-950 xl:dark:border-slate-700 xl:dark:bg-slate-950"
+            />
+          </div>
+          <label className="block text-sm font-semibold">
+            Arrival notes {arrivalReason === 'other' ? '(required)' : '(optional)'}
+            <textarea
+              aria-label="Arrival notes"
+              value={arrivalNotes}
+              onChange={(event) => setArrivalNotes(event.target.value)}
+              className="mt-1 min-h-20 w-full rounded-xl border border-slate-300 bg-white p-3 dark:border-slate-700 dark:bg-slate-900"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={
+              mutationDisabled ||
+              !arrivalReason ||
+              (arrivalReason === 'other' && !arrivalNotes.trim())
+            }
+            onClick={submitArrivalReason}
+            className={buttonClass}
+          >
+            Continue with reason
+          </button>
+        </div>
+      )}
+    </div>
+  ) : null;
+  const arrivalSummary = arrival ? (
+    <p
+      role="status"
+      aria-live="polite"
+      className="rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-100"
+    >
+      <span aria-hidden="true">{arrival.result === 'verified' ? '✓' : '!'}</span>{' '}
+      {arrivalStatusText(arrival)}
+    </p>
+  ) : null;
+
+  if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
+    if (!canUpdateStatus && !(canReportIssue && isCustomerCollection)) return null;
+    const key = `pickup:${delivery.id}`;
+    const pickupProof = delivery.proofs
+      ?.filter(({ handoff_type }) => handoff_type === 'pickup')
+      .at(-1);
+
+    return (
+      <div className="space-y-3">
+        {canUpdateStatus && isCustomerCollection && !arrival && <button type="button"
+          disabled={mutationDisabled || pendingAction === arrivalKey}
+          onClick={() => runAction(arrivalKey, () => logisticsApi.arrive(delivery.id, { arrival_type: 'pickup' }))}
+          className={buttonClass}>I've arrived for pickup</button>}
+        {canUpdateStatus && delivery.requires_pickup_proof && !pickupProof && canRecordProof && <DeliveryPhotoUpload
+          inputId={`pickup-proof-${delivery.id}`} inputLabel="Pickup evidence" label="Pickup evidence" file={proofFile} onChange={setProofFile} required disabled={mutationDisabled} />}
+        {delivery.start_blocked_reason && <p role="status" className="text-sm font-semibold">{delivery.start_blocked_reason}</p>}
+        {delivery.requires_pickup_proof && !pickupProof && !canRecordProof && <p role="status" className="text-sm font-semibold">Pickup evidence is required. Ask your manager to enable your proof permission.</p>}
+        {canUpdateStatus && (
+          <button
+            type="button"
+            disabled={mutationDisabled || Boolean(delivery.start_blocked_reason) || pendingAction === key || Boolean(delivery.requires_pickup_proof && !pickupProof && (!canRecordProof || !proofFile))}
+            onClick={() =>
+              runAction(
+                key,
+                async () => {
+                  let proofId = pickupProof?.id;
+                  if (!proofId && delivery.requires_pickup_proof) {
+                    if (!proofFile) return;
+                    const form = new FormData();
+                    form.append('handoff_type', 'pickup'); form.append('proof_type', 'photo');
+                    form.append('proof_file', proofFile); form.append('idempotency_key', proofIdempotencyKey('pickup'));
+                    proofId = (await logisticsApi.recordProof(delivery.id, form)).data.proof.id;
+                  }
+                  return proofId ? logisticsApi.confirmPickup(delivery.id, proofId) : logisticsApi.markPickedUp(delivery.id);
+                },
+                {
+                  title: `Confirm pickup for ${deliveryReference}?`,
+                  text: 'This confirms that the parcel is now in your custody.',
+                  confirmButtonText: 'Confirm pickup',
+                },
+              )
+            }
+            className={buttonClass}
+          >
+            Confirm pickup
+          </button>
+        )}
+        {canReportIssue && isCustomerCollection && (
+          <>
+            <button
+              type="button"
+              disabled={mutationDisabled}
+              onClick={() => setShowIssue((current) => !current)}
+              className={compactSecondaryButtonClass}
+            >
+              Failed pickup
+            </button>
+            {issuePanel}
+          </>
+        )}
+      </div>
+    );
+  }
+
+  if (delivery.status === 'picked_up' || delivery.activation_required) {
+    if (!canUpdateStatus) return null;
+    const key = `delivery-start:${delivery.id}`;
+    const actionLabel = isReturnToShop ? 'Start return to shop' : 'Start delivery';
+
+    return (
+      <button
+        type="button"
+        disabled={mutationDisabled || Boolean(delivery.start_blocked_reason) || pendingAction === key}
+        onClick={() =>
+          runAction(
+            key,
+            () =>
+              item.kind === 'batch'
+                ? logisticsApi.outForDelivery(delivery.id)
+                : logisticsApi.markInTransit(delivery.id),
+            {
+              title: `${actionLabel} for ${deliveryReference}?`,
+              text: isReturnToShop
+                ? 'This marks the parcel as on the way back to the shop.'
+                : 'This marks the parcel as on the way to its destination.',
+              confirmButtonText: actionLabel,
+            },
+          )
+        }
+        className={buttonClass}
+      >
+        {actionLabel}
+      </button>
+    );
+  }
+
+  if (isReturnToShop && delivery.status === 'in_transit') {
+    if (!canUpdateStatus && !canRecordProof) return null;
+    const returnProof = delivery.proofs
+      ?.filter(({ handoff_type }) => handoff_type === 'receive')
+      .at(-1);
+    if (returnProof?.review_status === 'rider_confirmed') {
+      return (
+        <p role="status" className="rounded-xl bg-slate-50 p-3 text-sm font-semibold text-slate-800 dark:bg-slate-800 dark:text-slate-100">
+          Return handed to shop · waiting for dispatcher confirmation
+        </p>
+      );
+    }
+
+    const key = `return-handoff:${delivery.id}`;
+    const submitReturnHandoff = () => {
+      if (!proofFile && !returnProof) return;
+      runAction(
+        key,
+        async () => {
+          let proofId = returnProof?.id;
+          if (!proofId) {
+            const form = new FormData();
+            form.append('handoff_type', 'receive');
+            form.append('proof_type', 'photo');
+            form.append('proof_file', proofFile!);
+            form.append('idempotency_key', proofIdempotencyKey('receive'));
+            proofId = (await logisticsApi.recordProof(delivery.id, form)).data.proof.id;
+          }
+
+          return logisticsApi.confirmReturnHandoff(delivery.id, proofId);
+        },
+        {
+          title: `Confirm return handoff for ${deliveryReference}?`,
+          text: returnProof
+            ? 'Confirm that the parcel was handed to shop staff.'
+            : `${proofFile?.name} will be attached to the shop handoff.`,
+          confirmButtonText: 'Confirm return handoff',
+        },
+      );
+    };
+
+    return (
+      <div className="space-y-3 rounded-xl bg-blue-50 p-3 dark:bg-blue-950/30">
+        <div>
+          <p className="text-sm font-semibold text-blue-950 dark:text-blue-100">Return handoff</p>
+          <p className="text-xs text-blue-700 dark:text-blue-300">
+            At the shop, upload a clear photo of the parcel handoff. The dispatcher will confirm receipt.
+          </p>
+        </div>
+        {canRecordProof && !returnProof && (
+          <DeliveryPhotoUpload
+            inputId={`return-handoff-photo-${delivery.id}`}
+            inputLabel="Return handoff photo"
+            label="Handoff photo"
+            file={proofFile}
+            onChange={setProofFile}
+          />
+        )}
+        {canUpdateStatus && (
+          <button
+            type="button"
+            disabled={mutationDisabled || (!proofFile && !returnProof) || pendingAction === key}
+            onClick={submitReturnHandoff}
+            className={buttonClass}
+          >
+            Confirm return handoff
+          </button>
+        )}
+      </div>
+    );
+  }
+
+ if (delivery.status !== 'in_transit') {
+   return cashCollectionPanel ? <div className='space-y-3'>{cashCollectionPanel}</div> : null;
+ }
+ if (!arrival) {
+    if (!canUpdateStatus && !canReportIssue) return null;
+    return (
+      <div className="space-y-3">
+        {arrivalControl}
+        {canReportIssue && (
+          <button
+            type="button"
+            disabled={mutationDisabled}
+            onClick={() => setShowIncident((current) => !current)}
+            className={compactSecondaryButtonClass}
+          >
+            Report incident
+          </button>
+        )}
+        {incidentPanel}
+      </div>
+    );
+  }
+
+  const proofKey = `proof:${delivery.id}`;
+
+  const submitProof = () => {
+    if (!proofFile) return;
+    const form = new FormData();
+    form.append('handoff_type', 'delivery');
+    form.append('proof_type', 'photo');
+    form.append('proof_file', proofFile);
+    form.append('idempotency_key', proofIdempotencyKey('delivery'));
+    runAction(
+      proofKey,
+      () =>
+        axios.post(`/api/logistics/legs/${delivery.id}/proof`, form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        }),
+      {
+        title: `Submit proof for ${deliveryReference}?`,
+        text: `${proofFile.name} will be attached to this delivery.`,
+        confirmButtonText: 'Submit proof',
+      },
+    );
+  };
+
+  return (
+   <div className="space-y-3">
+     {arrivalSummary}
+      {cashCollectionPanel}
+     {codCollectionRequired && (
+       <p role='status' className='rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:bg-amber-950/30 dark:text-amber-100'>
+         Record the COD cash collection before submitting delivery proof.
+       </p>
+     )}
+     {canRecordProof && !codCollectionRequired && (
+        <div className="space-y-2 rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+          <DeliveryPhotoUpload
+            inputId={`delivery-proof-photo-${delivery.id}`}
+            inputLabel="Delivery proof"
+            label="Delivery proof"
+            file={proofFile}
+            onChange={setProofFile}
+          />
+          <button
+            type="button"
+            disabled={mutationDisabled || !proofFile || pendingAction === proofKey}
+            onClick={submitProof}
+            className={buttonClass}
+          >
+            Submit delivery proof
+          </button>
+        </div>
+      )}
+
+      {canReportIssue && (
+        <>
+          <button
+            type="button"
+            disabled={mutationDisabled}
+            onClick={() => setShowIssue((current) => !current)}
+            className={compactSecondaryButtonClass}
+          >
+            Report issue
+          </button>
+
+          <button
+            type="button"
+            disabled={mutationDisabled}
+            onClick={() => setShowIncident((current) => !current)}
+            className={compactSecondaryButtonClass}
+          >
+            Report incident
+          </button>
+        </>
+      )}
+
+      {issuePanel}
+      {incidentPanel}
+    </div>
+  );
+}
+
+function ProofCorrectionAction({
+  issue,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  issue: RiderDeliveryIssue;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
+  const [proofFile, setProofFile] = useState<File | null>(null);
+  const idempotencyKey = useRef<string | null>(null);
+  const proofId = issue.proof_id ?? issue.id;
+  const key = `proof-replacement:${issue.delivery_id}:${proofId}`;
+
+  const submitReplacement = () => {
+    if (!proofFile || !issue.replacement_allowed || !proofId) return;
+
+    const form = new FormData();
+    form.append('handoff_type', 'delivery');
+    form.append('proof_type', 'photo');
+    form.append('proof_file', proofFile);
+    form.append('idempotency_key', idempotencyKey.current ?? (idempotencyKey.current = crypto.randomUUID()));
+    form.append('replaces_proof_id', String(proofId));
+    runAction(key, () => logisticsApi.recordProof(issue.delivery_id, form), {
+      title: `Replace proof for delivery #${issue.delivery_number ?? issue.delivery_id}?`,
+      text: 'This creates a new proof record linked to the rejected submission.',
+      confirmButtonText: 'Submit replacement',
+    });
+  };
+
+  return (
+    <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-950">
+      <p className="text-sm font-bold text-slate-950 dark:text-white">Replace delivery proof</p>
+      {issue.reason && (
+        <p className="text-sm text-slate-700 dark:text-slate-300">
+          Dispatcher note: {issue.reason}
+        </p>
+      )}
+      {canRecordProof && issue.replacement_allowed ? (
+        <>
+          <DeliveryPhotoUpload
+            inputId={`replacement-proof-photo-${issue.delivery_id}-${proofId}`}
+            inputLabel="Replacement delivery proof"
+            label="Replacement proof"
+            file={proofFile}
+            onChange={(file) => {
+              idempotencyKey.current = null;
+              setProofFile(file);
+            }}
+          />
+          <button
+            type="button"
+            disabled={!online || !proofFile || pendingAction !== null}
+            onClick={submitReplacement}
+            className="min-h-12 w-full touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 xl:min-h-11"
+          >
+            Submit replacement proof
+          </button>
+          {!online && (
+            <p role="status" className="text-center text-xs font-semibold text-slate-700 dark:text-slate-300">
+              Retry after reconnect
+            </p>
+          )}
+        </>
+      ) : (
+        <p role="status" className="text-sm text-slate-700 dark:text-slate-300">
+          {issue.replacement_allowed === false
+            ? 'This delivery is no longer assigned for correction. Contact dispatch.'
+            : 'This proof is awaiting dispatcher review.'}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CurrentDeliveryCard({
+  item,
+  showSequence,
+  onToggleSequence,
+  locked,
+  online,
+  pendingAction,
+  canRecordProof,
+  canUpdateStatus,
+  canReportIssue,
+  liveTrackingEnabled,
+  liveTrackingMovingIntervalSeconds,
+  liveTrackingStationaryIntervalSeconds,
+  liveTrackingHiddenIntervalSeconds,
+  today,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem | null;
+  showSequence: boolean;
+  onToggleSequence: () => void;
+  locked: boolean;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  canUpdateStatus: boolean;
+  canReportIssue: boolean;
+  liveTrackingEnabled: boolean;
+  liveTrackingMovingIntervalSeconds: number;
+  liveTrackingStationaryIntervalSeconds: number;
+  liveTrackingHiddenIntervalSeconds: number;
+  today: string;
+  runAction: ActionRunner;
+}) {
+  if (!item) {
+    return (
+      <section aria-labelledby="current-delivery-heading">
+        <h2 id="current-delivery-heading" className="mb-4 text-center text-lg font-bold text-slate-950 dark:text-white xl:mb-3 xl:text-left">
+          Current delivery
+        </h2>
+        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-5 text-center dark:border-slate-700 dark:bg-slate-900">
+          <p className="font-semibold text-slate-800 dark:text-slate-100">No delivery in progress</p>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Your next scheduled assignment appears below.</p>
+        </div>
+      </section>
+    );
+  }
+
+  const sourceStops = item.interruption?.source_batch_id === item.id ? item.interruption.stops : [];
+  const progress = completedProgress([...item.deliveries, ...sourceStops.filter(stop =>
+    !item.deliveries.some(delivery => delivery.id === stop.shipment_leg_id))]);
+  const ordered = orderedDeliveries(item.deliveries);
+  const actionable = nextActionableDelivery(ordered);
+  const actionableSequence = actionable
+    ? ordered.findIndex(({ id }) => id === actionable.id) + 1
+    : null;
+  const isReturnToShop = actionable?.leg_type === 'return_to_shop';
+  const deliveryLabel = logisticsDeliveryLabel(actionable ?? item);
+
+  return (
+    <section aria-labelledby="current-delivery-heading">
+      <h2 id="current-delivery-heading" className="mb-4 text-center text-lg font-bold text-slate-950 dark:text-white xl:mb-3 xl:text-left">
+        Current delivery
+      </h2>
+      <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+        <header className="space-y-4 border-b border-slate-200 p-5 dark:border-slate-700 xl:p-4">
+          <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+                {deliveryLabel}
+              </p>
+              <h3 className="mt-1 text-xl font-extrabold text-slate-950 dark:text-white">
+                {isReturnToShop ? `${deliveryLabel} #${deliveryNumber(actionable)}` : itemTitle(item)}
+              </h3>
+            </div>
+            <StatusChip status={item.status} label={isReturnToShop ? deliveryLabel : undefined} />
+          </div>
+
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-3 text-sm">
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {progress.completed} of {progress.total} completed
+              </span>
+              <span className="text-slate-500 dark:text-slate-400">{progress.percent}%</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-label={`${item.kind === 'batch' ? 'Batch' : 'Delivery'} progress: ${progress.completed} of ${progress.total} delivered`}
+              aria-valuenow={progress.percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700"
+            >
+              <div className="h-full rounded-full bg-blue-600" style={{ width: `${progress.percent}%` }} />
+            </div>
+          </div>
+        </header>
+
+        <div className="p-5 xl:p-4">
+          {item.kind === 'batch' && <BatchInterruptionControls batchId={item.id} incident={item.interruption} today={today}
+            canReport={canReportIssue && canUpdateStatus && ['accepted', 'in_progress'].includes(item.status)} disabled={!online || pendingAction !== null} />}
+          {actionable ? (
+            <>
+              <p className="mb-3 text-sm font-bold text-blue-700 dark:text-blue-300">
+                Current delivery · {actionableSequence} of {item.deliveries.length}
+              </p>
+              <ResolutionNotice delivery={actionable} />
+              <DeliveryContact delivery={actionable} />
+              {liveTrackingEnabled
+                && (!item.interruption || item.interruption.status === 'resolved')
+                && canUpdateStatus
+                && canRiderTrack(actionable)
+                && (
+                  <div className="mt-4">
+                    <RiderGpsTracker
+                      legId={actionable.id}
+                      destination={riderTrackingTarget(actionable)}
+                      destinationLabel={riderTrackingDestinationLabel(actionable)}
+                      enabled
+                      online={online}
+                      movingIntervalSeconds={liveTrackingMovingIntervalSeconds}
+                      stationaryIntervalSeconds={liveTrackingStationaryIntervalSeconds}
+                      hiddenIntervalSeconds={liveTrackingHiddenIntervalSeconds}
+                    />
+                  </div>
+                )}
+              <div className="mt-4">
+                <DeliveryActions
+                  key={actionable.id}
+                  item={item}
+                  delivery={actionable}
+                  locked={locked}
+                  online={online}
+                  pendingAction={pendingAction}
+                  canRecordProof={canRecordProof}
+                  canUpdateStatus={canUpdateStatus}
+                  canReportIssue={canReportIssue}
+                  today={today}
+                  runAction={runAction}
+                />
+              </div>
+            </>
+          ) : (
+            <div className="rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
+              {item.deliveries.some(({ rider_progress_state }) => rider_progress_state === 'proof_action_required') ? (
+                <p className="font-semibold text-slate-900 dark:text-white">Proof correction required</p>
+              ) : item.deliveries.some(({ rider_progress_state, status }) =>
+                rider_progress_state === 'proof_submitted'
+                || (rider_progress_state === undefined && status === 'awaiting_proof_approval')) ? (
+                <p className="font-semibold text-slate-900 dark:text-white">Delivery submitted successfully</p>
+              ) : (
+                <p className="font-semibold text-slate-900 dark:text-white">{item.interruption && item.interruption.status !== 'resolved' ? 'Recovery handoffs are in progress' : 'No rider action needed right now'}</p>
+              )}
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                {item.deliveries.some(({ rider_progress_state }) => rider_progress_state === 'proof_action_required')
+                  ? 'Upload replacement proof from the Issues tab. This does not start a redelivery.'
+                  : item.deliveries.some(({ rider_progress_state, status }) =>
+                    rider_progress_state === 'proof_submitted'
+                    || (rider_progress_state === undefined && status === 'awaiting_proof_approval'))
+                    ? 'Proof is awaiting dispatcher review. You can continue with other eligible deliveries.'
+                    : item.interruption && item.interruption.status !== 'resolved' ? 'Check Package handoffs above for your release or receipt. If no action is available, wait for the named participant.' : 'Updates refresh automatically while you are not editing. You can also use Refresh deliveries.'}
+              </p>
+            </div>
+          )}
+
+          {item.kind === 'batch' && item.deliveries.length > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={onToggleSequence}
+                className="mt-5 min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-4 text-sm font-bold text-slate-800 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-600 dark:text-slate-100 xl:mt-4 xl:min-h-11"
+              >
+                {showSequence ? 'Hide delivery sequence' : `View all ${item.deliveries.length} deliveries`}
+              </button>
+              {showSequence && <DeliverySequence item={item} />}
+            </>
+          )}
+        </div>
+      </article>
+    </section>
+  );
+}
+
+function UpNextCard({
+  item,
+  locked,
+  online,
+  pendingAction,
+  canRecordProof,
+  canUpdateStatus,
+  canReportIssue,
+  liveTrackingEnabled,
+  liveTrackingMovingIntervalSeconds,
+  liveTrackingStationaryIntervalSeconds,
+  liveTrackingHiddenIntervalSeconds,
+  today,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem | null;
+  locked: boolean;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  canUpdateStatus: boolean;
+  canReportIssue: boolean;
+  liveTrackingEnabled: boolean;
+  liveTrackingMovingIntervalSeconds: number;
+  liveTrackingStationaryIntervalSeconds: number;
+  liveTrackingHiddenIntervalSeconds: number;
+  today: string;
+  runAction: ActionRunner;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  if (!item) return null;
+  const actionable = nextActionableDelivery(item.deliveries);
+
+  return (
+    <section aria-label="Up next">
+      <h2 className="mb-4 text-center text-lg font-bold text-slate-950 dark:text-white xl:mb-3 xl:text-left">Up next</h2>
+      <article className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900 xl:p-4">
+        <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{logisticsDeliveryLabel(item)}</p>
+            <h3 className="mt-1 font-bold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              {scheduleText(item)} · {deliveryCount(item)}
+            </p>
+          </div>
+          <StatusChip status={item.status} label={item.interruption && item.interruption.status !== 'resolved' ? 'Awaiting recovery steps' : item.start_blocked_reason ? 'Start unavailable' : undefined} />
+        </div>
+        <div className="mt-5 xl:mt-4">
+          {item.kind === 'batch' && <BatchInterruptionControls batchId={item.id} incident={item.interruption} today={today}
+            canReport={canReportIssue && canUpdateStatus && ['accepted', 'in_progress'].includes(item.status)} disabled={!online || pendingAction !== null} />}
+          <DeliveryActions
+            key={`${item.key}:${actionable?.id ?? 'none'}`}
+            item={item}
+            delivery={actionable}
+            locked={locked}
+            online={online}
+            pendingAction={pendingAction}
+            canRecordProof={canRecordProof}
+            canUpdateStatus={canUpdateStatus}
+            canReportIssue={canReportIssue}
+            today={today}
+            runAction={runAction}
+          />
+        </div>
+        {!locked
+          && item.kind === 'single'
+          && liveTrackingEnabled
+          && canUpdateStatus
+          && actionable
+          && canRiderTrack(actionable)
+          && (
+            <div className='mt-4'>
+              <RiderGpsTracker
+                legId={actionable.id}
+                destination={riderTrackingTarget(actionable)}
+                destinationLabel={riderTrackingDestinationLabel(actionable)}
+                enabled
+                online={online}
+                movingIntervalSeconds={liveTrackingMovingIntervalSeconds}
+                stationaryIntervalSeconds={liveTrackingStationaryIntervalSeconds}
+                hiddenIntervalSeconds={liveTrackingHiddenIntervalSeconds}
+              />
+            </div>
+          )}
+        <button
+          type="button"
+          onClick={() => setShowDetails((current) => !current)}
+          className="mt-5 min-h-12 w-full touch-manipulation rounded-xl border border-slate-950 px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-white dark:text-white xl:mt-4 xl:min-h-11"
+        >
+          {showDetails ? 'Hide details' : 'View details'}
+        </button>
+        {showDetails && actionable && (
+          <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-700">
+            <DeliveryContact delivery={actionable} />
+          </div>
+        )}
+      </article>
+    </section>
+  );
+}
+
+function OfferCard({
+  item,
+  online,
+  pendingAction,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem;
+  online: boolean;
+  pendingAction: string | null;
+  runAction: ActionRunner;
+}) {
+  const [declining, setDeclining] = useState(false);
+  const [reason, setReason] = useState('');
+  const isBatch = item.kind === 'batch';
+  const offerLabel = isBatch ? 'batch' : 'delivery';
+  const acceptKey = `offer-accept:${item.key}`;
+  const declineKey = `offer-decline:${item.key}`;
+  const openDeclineModal = () => {
+    setReason('');
+    setDeclining(true);
+  };
+  const declineAction = () => isBatch
+    ? logisticsApi.rejectBatch(item.id, reason.trim())
+    : logisticsApi.rejectLeg(item.id, reason.trim());
+  const declineCancelClass = 'min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 bg-white px-4 text-sm font-bold text-slate-950 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-white sm:w-auto';
+  const declineSubmitClass = 'min-h-12 w-full touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-black focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-950 dark:text-white dark:hover:bg-black dark:focus:ring-gray-300 sm:w-auto';
+
+  return (
+    <>
+    <article className="rounded-2xl border border-slate-950 bg-white p-5 text-slate-950 dark:border-white dark:bg-slate-950 dark:text-white xl:p-4">
+      <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-950 dark:text-white">New assignment</p>
+          <p className="text-xs font-bold uppercase tracking-wide text-slate-950 dark:text-white">{logisticsDeliveryLabel(item)}</p>
+          <h3 className="mt-1 font-bold text-slate-950 dark:text-white">{itemTitle(item)}</h3>
+          <p className="mt-1 text-sm text-slate-950 dark:text-white">
+            {scheduleText(item)} · {deliveryCount(item)}
+          </p>
+        </div>
+        <StatusChip status={item.status} label={`New ${offerLabel} offer`} />
+      </div>
+      <div className="mt-5 grid gap-3 xl:mt-4 xl:grid-cols-2 xl:gap-2">
+        <button
+          type="button"
+          disabled={!online || pendingAction !== null}
+          onClick={() =>
+            runAction(acceptKey, () => isBatch
+              ? logisticsApi.acceptBatch(item.id)
+              : logisticsApi.acceptLeg(item.id), {
+              title: `Accept ${offerLabel} #${item.id}?`,
+              text: 'This assignment will be added to your delivery work.',
+              confirmButtonText: `Accept ${offerLabel}`,
+            })
+          }
+          className="min-h-12 touch-manipulation rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:opacity-50 xl:min-h-11"
+        >
+          Accept {offerLabel}
+        </button>
+        <button
+          type="button"
+          disabled={!online}
+          onClick={openDeclineModal}
+          className="min-h-12 touch-manipulation rounded-xl border border-slate-950 bg-white px-4 text-sm font-bold text-slate-950 transition-colors hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-600 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900 dark:focus:ring-gray-300 xl:min-h-11"
+        >
+          Decline {offerLabel}
+        </button>
+      </div>
+    </article>
+    <DeliveryActionModal
+      modalId={`decline-${item.key}`}
+      open={declining}
+      title={`Decline ${offerLabel}`}
+      description={`Tell dispatch why you cannot take this ${offerLabel}.`}
+      onClose={() => setDeclining(false)}
+    >
+      <div className="space-y-5">
+        <fieldset>
+          <legend className="text-sm font-bold text-slate-950 dark:text-white">Common reasons</legend>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {declineReasons.map((option) => (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={reason === option}
+                onClick={() => setReason(option)}
+                className={`min-h-12 rounded-xl border px-3 text-left text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:focus:ring-gray-300 ${
+                  reason === option
+                    ? 'border-slate-950 bg-slate-950 text-white dark:border-slate-950 dark:bg-slate-950 dark:text-white'
+                    : 'border-slate-300 bg-white text-slate-950 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-white dark:hover:bg-slate-900'
+                }`}
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <label htmlFor={`decline-reason-${item.key}`} className="block text-sm font-semibold text-slate-950 dark:text-white">
+          Decline reason
+          <textarea
+            id={`decline-reason-${item.key}`}
+            aria-label="Decline reason"
+            rows={4}
+            maxLength={1000}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Choose a common reason or enter your own."
+            className="mt-2 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-3 text-sm text-slate-950 focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+          />
+          <span className="mt-1 block text-xs font-normal text-slate-500 dark:text-slate-400">
+            {reason.length}/1000 characters
+          </span>
+        </label>
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+          <button type="button" onClick={() => setDeclining(false)} className={declineCancelClass}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={!online || !reason.trim() || pendingAction !== null}
+            onClick={() => runAction(declineKey, declineAction)}
+            className={declineSubmitClass}
+          >
+            Confirm decline
+          </button>
+        </div>
+      </div>
+    </DeliveryActionModal>
+    </>
+  );
+}
+
+function OfferRegion({
+  offers,
+  online,
+  pendingAction,
+  runAction,
+}: {
+  offers: RiderDeliveryWorkItem[];
+  online: boolean;
+  pendingAction: string | null;
+  runAction: ActionRunner;
+}) {
+  if (!offers.length) return null;
+
+  return (
+    <section aria-label="New assignment offers" className="space-y-4 xl:space-y-3">
+      <OfferCard item={offers[0]} online={online} pendingAction={pendingAction} runAction={runAction} />
+      {offers.length > 1 && (
+        <details className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900 xl:p-3">
+          <summary className="min-h-11 cursor-pointer py-2 text-sm font-bold text-slate-800 dark:text-slate-100">
+            {offers.length - 1} more {offers.length === 2 ? 'offer' : 'offers'}
+          </summary>
+          <div className="mt-3 space-y-3">
+            {offers.slice(1).map((offer) => (
+              <OfferCard
+                key={offer.key}
+                item={offer}
+                online={online}
+                pendingAction={pendingAction}
+                runAction={runAction}
+              />
+            ))}
+          </div>
+        </details>
+      )}
+    </section>
+  );
+}
+
+function CompactListItem({
+  item,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  item: RiderDeliveryWorkItem | RiderDeliveryIssue;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
+  if (item.item_type === 'issue') {
+    const correction = item.issue_type === 'proof_correction';
+
+    return (
+      <article className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 xl:p-4">
+        <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
+          <div>
+            <p className="font-bold text-slate-950 dark:text-white">
+              {correction ? 'Proof correction' : 'Issue'} · Delivery #{item.delivery_number ?? item.delivery_id}
+            </p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{item.delivery_label ?? 'Delivery issue'}</p>
+          </div>
+          <StatusChip status={correction ? 'proof_action_required' : 'delivery_attempted'} />
+        </div>
+        {correction ? (
+          <ProofCorrectionAction
+            issue={item}
+            online={online}
+            pendingAction={pendingAction}
+            canRecordProof={canRecordProof}
+            runAction={runAction}
+          />
+        ) : null}
+      </article>
+    );
+  }
+
+  return (
+    <details className="rounded-xl border border-slate-200 bg-white p-5 dark:border-slate-700 dark:bg-slate-900 xl:p-4">
+      <summary className="min-h-12 cursor-pointer list-none xl:min-h-11">
+        <div className="flex flex-col items-start gap-3 xl:flex-row xl:justify-between">
+          <div>
+            <p className="font-bold text-slate-950 dark:text-white">{itemTitle(item)}</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              {logisticsDeliveryLabel(item)} · {scheduleText(item)} · {deliveryCount(item)}
+            </p>
+          </div>
+          <StatusChip status={item.status} label={item.interruption && item.interruption.status !== 'resolved' ? 'Awaiting recovery steps' : item.start_blocked_reason ? 'Start unavailable' : undefined} />
+        </div>
+      </summary>
+      <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+        <DeliverySequence item={item} />
+        {item.deliveries.flatMap(delivery => (delivery.incidents ?? []).filter(incident => incident.loss).map(incident =>
+          <LostParcelActions key={incident.id} incident={incident} onChanged={() => router.reload()} />))}
+      </div>
+    </details>
+  );
+}
+
+function DeliveryLists({
+  deliveryData,
+  navigate,
+  online,
+  pendingAction,
+  canRecordProof,
+  runAction,
+}: {
+  deliveryData: RiderDeliveryPageData;
+  navigate: (patch: Partial<RiderDeliveryPageData['filters']>, page?: number) => void;
+  online: boolean;
+  pendingAction: string | null;
+  canRecordProof: boolean;
+  runAction: ActionRunner;
+}) {
+  const [search, setSearch] = useState(deliveryData.filters.search);
+  useEffect(() => setSearch(deliveryData.filters.search), [deliveryData.filters.search]);
+
+  const emptyMessage = {
+    upcoming: 'No upcoming deliveries',
+    history: 'No delivery history',
+    issues: 'No unresolved delivery issues',
+    all: 'No deliveries found',
+  }[deliveryData.filters.tab];
+
+  return (
+    <section aria-labelledby="delivery-list-heading" className="space-y-5 xl:space-y-4">
+      <h2 id="delivery-list-heading" className="text-center text-lg font-bold text-slate-950 dark:text-white xl:text-left">
+        Deliveries
+      </h2>
+      <div className="-mx-1 flex touch-pan-x justify-center gap-2 overflow-x-auto px-1 pb-2 xl:justify-start xl:gap-1 xl:pb-1" aria-label="Delivery lists">
+        {(Object.keys(tabLabels) as RiderDeliveryTab[]).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            aria-current={deliveryData.filters.tab === tab ? 'page' : undefined}
+            onClick={() => navigate({ tab })}
+            className={`min-h-12 shrink-0 touch-manipulation rounded-full border px-4 text-sm font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 xl:min-h-11 xl:rounded-xl ${
+              deliveryData.filters.tab === tab
+                ? 'border-slate-300 bg-slate-100 text-slate-950 dark:border-slate-600 dark:bg-slate-800 dark:text-white'
+                : 'border-slate-200 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'
+            }`}
+          >
+            {tabLabels[tab]}
+          </button>
+        ))}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-3 xl:gap-3">
+        <MonochromeSelect
+            label="Business type"
+            aria-label="Business type"
+            value={deliveryData.filters.business}
+            onChange={(event) =>
+              navigate({
+                business: event.target.value as RiderDeliveryPageData['filters']['business'],
+              })
+            }
+            className="min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:min-h-11 xl:px-3 xl:text-sm"
+          >
+            <option value="all">All businesses</option>
+            <option value="retail">Retail</option>
+            <option value="repair">Repair</option>
+        </MonochromeSelect>
+        <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Time
+          <MonochromeSelect
+            aria-label="Delivery time"
+            value={deliveryData.filters.window}
+            onChange={(event) =>
+              navigate({
+                window: event.target.value as RiderDeliveryPageData['filters']['window'],
+              })
+            }
+            className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:mt-1 xl:min-h-11 xl:px-3 xl:text-sm"
+          >
+            <option value="all">All time</option>
+            <option value="today">Today</option>
+            <option value="week">This week</option>
+          </MonochromeSelect>
+        </label>
+        <form
+          role="search"
+          onSubmit={(event: FormEvent) => {
+            event.preventDefault();
+            navigate({ search });
+          }}
+          className="space-y-2"
+        >
+          <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            Search
+            <input
+              type="search"
+              aria-label="Search deliveries"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Delivery, customer, address"
+              className="mt-2 min-h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-base transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:bg-slate-900 xl:mt-1 xl:min-h-11 xl:px-3 xl:text-sm"
+            />
+          </label>
+          <button type="submit" className="sr-only">Search deliveries</button>
+        </form>
+      </div>
+
+      <button
+        type="button"
+        onClick={() =>
+          navigate({ tab: 'upcoming', business: 'all', window: 'all', search: '' })
+        }
+        className="min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-4 text-sm font-semibold text-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 dark:text-slate-200 xl:min-h-11 xl:w-auto"
+      >
+        Clear filters
+      </button>
+
+      <div className="space-y-4 xl:space-y-3">
+        {deliveryData.list.data.length ? (
+          deliveryData.list.data.map((item) => (
+            <CompactListItem
+              key={item.key}
+              item={item}
+              online={online}
+              pendingAction={pendingAction}
+              canRecordProof={canRecordProof}
+              runAction={runAction}
+            />
+          ))
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white p-5 text-center text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400">
+            {emptyMessage}
+          </div>
+        )}
+      </div>
+
+      {deliveryData.list.links.some(({ url }) => url) && (
+        <nav aria-label="Delivery pages" className="flex flex-wrap justify-center gap-3 xl:gap-2">
+          {deliveryData.list.links.map((link) => {
+            if (!link.url) return null;
+            const label = link.label.replace(/&laquo;|&raquo;/g, '').trim();
+            const page = Number(new URL(link.url, window.location.origin).searchParams.get('page') ?? 1);
+
+            return (
+              <button
+                key={`${link.label}:${page}`}
+                type="button"
+                aria-label={`Page ${label}`}
+                aria-current={link.active ? 'page' : undefined}
+                onClick={() => navigate({}, page)}
+                className="min-h-12 min-w-12 touch-manipulation rounded-full border border-slate-300 px-3 text-sm font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 dark:border-slate-700 xl:min-h-11 xl:min-w-11 xl:rounded-xl"
+              >
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+      )}
+    </section>
+  );
+}
+
+export default function MyDeliveries() {
+  const {
+    deliveryData,
+    custodyHandoffs = [],
+    canRecordProof,
+    canUpdateStatus = false,
+    canReportIssue = false,
+    liveTrackingEnabled = false,
+    liveTrackingMovingIntervalSeconds = 5,
+    liveTrackingStationaryIntervalSeconds = 30,
+    liveTrackingHiddenIntervalSeconds = 60,
+    today = new Date().toISOString().slice(0, 10),
+  } = usePage<{
+    deliveryData: RiderDeliveryPageData;
+    custodyHandoffs?: CustodyHandoff[];
+    canRecordProof: boolean;
+    canUpdateStatus?: boolean;
+    canReportIssue?: boolean;
+    liveTrackingEnabled?: boolean;
+    liveTrackingMovingIntervalSeconds?: number;
+    liveTrackingStationaryIntervalSeconds?: number;
+    liveTrackingHiddenIntervalSeconds?: number;
+    maxDeliveryAttempts: number;
+    today?: string;
+  }>().props;
+  const [showSequence, setShowSequence] = useState(false);
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const actionInFlight = useRef(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [lastSynced, setLastSynced] = useState(() =>
+    new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+  );
+
+  useEffect(() => {
+    const connected = () => setOnline(true);
+    const disconnected = () => setOnline(false);
+    window.addEventListener('online', connected);
+    window.addEventListener('offline', disconnected);
+
+    return () => {
+      window.removeEventListener('online', connected);
+      window.removeEventListener('offline', disconnected);
+    };
+  }, []);
+
+  const finishAction = () => {
+    actionInFlight.current = false;
+    setPendingAction(null);
+  };
+  const reloadDeliveryData = (onFinish: () => void = finishAction) => {
+    router.reload({
+      only: ['deliveryData', 'custodyHandoffs'],
+      onFinish: () => {
+        setLastSynced(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        onFinish();
+      },
+    });
+  };
+  useEffect(() => {
+    const refreshIdleWork = () => {
+      if (document.visibilityState !== 'visible' || !navigator.onLine || actionInFlight.current) return;
+      const editing = document.activeElement?.closest('input,textarea,select,[role="combobox"]');
+      const openDialog = document.querySelector('[role="dialog"],.swal2-container');
+      const selectedFile = Array.from(document.querySelectorAll<HTMLInputElement>('input[type="file"]')).some(input => input.files?.length);
+      const draftNote = Array.from(document.querySelectorAll<HTMLTextAreaElement>('textarea')).some(input => input.value.trim());
+      if (editing || openDialog || selectedFile || draftNote) return;
+      actionInFlight.current = true;
+      reloadDeliveryData();
+    };
+    const interval = window.setInterval(refreshIdleWork, 15000);
+    window.addEventListener('focus', refreshIdleWork);
+    return () => { window.clearInterval(interval); window.removeEventListener('focus', refreshIdleWork); };
+  }, []);
+
+  const refreshDeliveries = () => {
+    if (!online || actionInFlight.current) return;
+    actionInFlight.current = true;
+    setPendingAction('refresh');
+    setActionError(null);
+    reloadDeliveryData();
+  };
+
+  const runAction: ActionRunner = (key, action, confirmation, onError) => {
+    if (!online || actionInFlight.current) return;
+    actionInFlight.current = true;
+    setPendingAction(key);
+    setActionError(null);
+
+    void (async () => {
+      try {
+        if (confirmation && !(await workflowFeedback.confirm(confirmation)).isConfirmed) {
+          finishAction();
+          return;
+        }
+
+        await action();
+        reloadDeliveryData();
+      } catch (error: any) {
+        if (onError?.(error)) {
+          finishAction();
+          return;
+        }
+        const errors = error.response?.data?.errors;
+        const message = errors
+          ? Object.values(errors).flat().join(' ')
+          : error.response?.data?.message?.trim() || 'This action is unavailable. Refresh deliveries and check the current assignment or ask dispatch.';
+        const stale = error.response?.status === 409
+          || (error.response?.status === 422
+            && /stale|changed|no longer|not your current|refresh my deliveries/i.test(message));
+        if (stale) {
+          setActionError(`${message} Delivery list refreshed.`);
+          reloadDeliveryData();
+          return;
+        }
+        setActionError(message);
+        finishAction();
+      }
+    })();
+  };
+
+  const navigate = (
+    patch: Partial<RiderDeliveryPageData['filters']>,
+    page = 1,
+  ) => {
+    router.get(
+      '/erp/logistics/deliveries',
+      { ...deliveryData.filters, ...patch, page },
+      { preserveScroll: true, preserveState: true },
+    );
+  };
+
+  return (
+    <AppLayoutERP>
+      <Head title="My Deliveries" />
+      <CustodyHandoffs handoffs={custodyHandoffs} />
+      <div className="mx-auto w-full max-w-xl space-y-8 pb-[calc(2rem+env(safe-area-inset-bottom))] md:max-w-3xl xl:max-w-6xl xl:space-y-6 xl:pb-10">
+        <header className="text-center xl:text-left">
+          <h1 className="sr-only">My Deliveries</h1>
+          <div className="mt-4 flex flex-col items-center gap-3 xl:mt-2 xl:flex-row xl:items-center xl:justify-between xl:gap-2">
+            <p
+              role="status"
+              aria-live="polite"
+              className={`text-xs font-semibold ${
+                online ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300'
+              }`}
+            >
+              <span aria-hidden="true">{online ? '●' : '!'}</span>{' '}
+              {online ? 'Online' : 'Offline'} · Last sync {lastSynced}
+            </p>
+            <button
+              type="button"
+              disabled={!online || pendingAction !== null}
+              onClick={refreshDeliveries}
+              className="min-h-12 w-full touch-manipulation rounded-xl border border-slate-300 px-3 text-xs font-bold text-slate-700 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-950 focus:ring-offset-2 disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 xl:min-h-11 xl:w-auto"
+            >
+              Refresh deliveries
+            </button>
+          </div>
+        </header>
+
+        {deliveryData.has_active_conflict && (
+          <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-5 text-sm text-red-900 dark:border-red-800 dark:bg-red-950/40 dark:text-red-100 xl:p-4">
+            <strong>More than one active delivery was found.</strong>{' '}
+            Continue only the Current delivery shown below. Conflicting assignments are blocked until dispatch resolves them.
+          </div>
+        )}
+
+        <CurrentDeliveryCard
+          item={deliveryData.current}
+          showSequence={showSequence}
+          onToggleSequence={() => setShowSequence((current) => !current)}
+          locked={false}
+          online={online}
+          pendingAction={pendingAction}
+          canRecordProof={canRecordProof}
+          canUpdateStatus={canUpdateStatus}
+          canReportIssue={canReportIssue}
+          liveTrackingEnabled={liveTrackingEnabled}
+          liveTrackingMovingIntervalSeconds={liveTrackingMovingIntervalSeconds}
+          liveTrackingStationaryIntervalSeconds={liveTrackingStationaryIntervalSeconds}
+          liveTrackingHiddenIntervalSeconds={liveTrackingHiddenIntervalSeconds}
+          today={today}
+          runAction={runAction}
+        />
+        <OfferRegion
+          offers={deliveryData.offers}
+          online={online}
+          pendingAction={pendingAction}
+          runAction={runAction}
+        />
+        <UpNextCard
+          item={deliveryData.up_next}
+          locked={deliveryData.has_active_conflict || Boolean(deliveryData.current)}
+          online={online}
+          pendingAction={pendingAction}
+          canRecordProof={canRecordProof}
+          canUpdateStatus={canUpdateStatus}
+          canReportIssue={canReportIssue}
+          liveTrackingEnabled={liveTrackingEnabled}
+          liveTrackingMovingIntervalSeconds={liveTrackingMovingIntervalSeconds}
+          liveTrackingStationaryIntervalSeconds={liveTrackingStationaryIntervalSeconds}
+          liveTrackingHiddenIntervalSeconds={liveTrackingHiddenIntervalSeconds}
+          today={today}
+          runAction={runAction}
+        />
+        {actionError && (
+          <div role="alert" className="rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900">
+            {actionError}
+          </div>
+        )}
+        <DeliveryLists
+          deliveryData={deliveryData}
+          navigate={navigate}
+          online={online}
+          pendingAction={pendingAction}
+          canRecordProof={canRecordProof}
+          runAction={runAction}
+        />
+      </div>
+    </AppLayoutERP>
+  );
+}

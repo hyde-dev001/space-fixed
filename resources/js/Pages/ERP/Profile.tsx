@@ -3,8 +3,29 @@ import { Head, useForm, usePage } from "@inertiajs/react";
 import { router } from "@inertiajs/react";
 import Swal from "sweetalert2";
 import AppLayoutERP from "../../layout/AppLayout_ERP";
+import EmployeeTotpSecurity from "../../components/UserProfile/EmployeeTotpSecurity";
+import PasswordRequirements from "../../components/auth/PasswordRequirements";
+
+interface SecurityActivity {
+    action: string;
+    description: string;
+    label: string;
+    created_at?: string | null;
+}
+
+interface ActiveSession {
+    device: string;
+    last_active_at: string;
+    current: boolean;
+}
 
 interface PageProps {
+    security?: {
+        is_employee: boolean;
+        totp_enabled: boolean;
+        activity?: SecurityActivity[];
+        active_sessions?: ActiveSession[];
+    };
     user: {
         id: number;
         name: string;
@@ -12,6 +33,7 @@ interface PageProps {
         role: string;
         first_name?: string;
         last_name?: string;
+        suffix?: string;
         phone?: string;
         // bio removed
         job_title?: string;
@@ -23,7 +45,7 @@ interface PageProps {
     requiresPasswordChange: boolean;
 }
 
-export default function Profile({ user, requiresPasswordChange }: PageProps) {
+export default function Profile({ user, requiresPasswordChange, security }: PageProps) {
     const { flash } = usePage().props as any;
     
     const { data, setData, post, processing, errors, reset } = useForm({
@@ -40,6 +62,7 @@ export default function Profile({ user, requiresPasswordChange }: PageProps) {
     } = useForm({
         first_name: user.first_name || user.name?.split(' ')[0] || "",
         last_name: user.last_name || user.name?.split(' ').slice(1).join(' ') || "",
+        suffix: user.suffix || "",
         email: user.email || "",
         phone: user.phone || "",
         // bio removed
@@ -49,7 +72,7 @@ export default function Profile({ user, requiresPasswordChange }: PageProps) {
     // Password strength validation
     const validatePassword = (pwd: string) => {
         return {
-            hasMinLength: pwd.length >= 8,
+            hasMinLength: pwd.length >= 12,
             hasUppercase: /[A-Z]/.test(pwd),
             hasLowercase: /[a-z]/.test(pwd),
             hasNumber: /[0-9]/.test(pwd),
@@ -140,7 +163,7 @@ export default function Profile({ user, requiresPasswordChange }: PageProps) {
                             </div>
                             <div>
                                 <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                                    {personalData.first_name} {personalData.last_name}
+                                    {personalData.first_name} {personalData.last_name}{personalData.suffix ? ` ${personalData.suffix}` : ""}
                                 </h2>
                                 <p className="text-gray-600 dark:text-gray-400 mb-1">
                                     {personalData.job_title}
@@ -171,6 +194,10 @@ export default function Profile({ user, requiresPasswordChange }: PageProps) {
                             <div>
                                 <label className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Last Name</label>
                                 <p className="text-gray-900 dark:text-white font-medium mt-1">{personalData.last_name}</p>
+                            </div>
+                            <div>
+                                <label className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Suffix</label>
+                                <p className="text-gray-900 dark:text-white font-medium mt-1">{personalData.suffix || "N/A"}</p>
                             </div>
                             <div>
                                 <label className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Email address</label>
@@ -232,6 +259,7 @@ export default function Profile({ user, requiresPasswordChange }: PageProps) {
                                 </label>
                                 <input
                                     type="password"
+                                    minLength={12}
                                     value={data.password}
                                     onChange={(e) =>
                                         setData("password", e.target.value)
@@ -248,6 +276,7 @@ export default function Profile({ user, requiresPasswordChange }: PageProps) {
                                         {errors.password}
                                     </p>
                                 )}
+                                <PasswordRequirements password={data.password} />
                             </div>
 
                             <div>
@@ -277,6 +306,17 @@ export default function Profile({ user, requiresPasswordChange }: PageProps) {
                         </form>
                     </div>
                 </div>
+
+                {security?.is_employee && (
+                    <div className="mt-8">
+                        <EmployeeTotpSecurity
+                            enabled={security.totp_enabled}
+                            activity={security.activity}
+                            active_sessions={security.active_sessions}
+                            showSessions={false}
+                        />
+                    </div>
+                )}
             </div>
         </AppLayoutERP>
     );

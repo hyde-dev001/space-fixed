@@ -1,0 +1,191 @@
+<?php
+
+namespace Tests\Feature\Logistics;
+
+use App\Models\Logistics\DeliveryIncident;
+use App\Models\Logistics\RiderProfile;
+use App\Models\Logistics\Shipment;
+use App\Models\Logistics\ShipmentLeg;
+use App\Models\ShopOwner;
+use App\Models\ShopOwnerModule;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Spatie\Permission\Models\Permission;
+use Tests\TestCase;
+
+class DeliveryIncidentControllerTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        ShopOwner::creating(function (ShopOwner $shop): void {
+            $shop->forceFill(['registration_type' => 'company']);
+        });
+        ShopOwner::created(function (ShopOwner $shop): void {
+            ShopOwnerModule::factory()->create([
+                'shop_owner_id' => $shop->id,
+                'module_key' => 'logistics',
+                'enabled' => true,
+            ]);
+        });
+    }
+
+    public function test_rider_reports_incident_with_validated_private_uploads_and_no_raw_paths(): void
+    {
+        Storage::fake('local');
+        Storage::fake('public');
+        [$shop, $leg, $rider] = $this->assignedLeg();
+
+        $response = $this->actingAs($rider, 'user')
+            ->post("/api/logistics/legs/{$leg->id}/incidents", [
+                'type' => 'damaged',
+                'notes' => 'Parcel was damaged during transport.',
+                'photo_files' => [$this->fakeEvidenceFile('damage.png')],
+            ], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('incident.photo_paths', null);
+
+        $incident = DeliveryIncident::query()->findOrFail($response->json('incident.id'));
+        $this->assertSame('needs_resolution', $leg->fresh()->status->value);
+        $path = $incident->photo_paths[0];
+        $this->assertStringStartsWith('incident-evidence/leg-', $path);
+        Storage::disk('local')->assertExists($path);
+        Storage::disk('public')->assertMissing($path);
+        $this->assertStringContainsString('/api/logistics/incidents/'.$incident->id.'/evidence/0', $response->json('incident.evidence_urls.0'));
+
+        $dispatcher = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $order = \App\Models\Order::factory()->create(['shop_owner_id' => $shop->id, 'payment_status' => 'paid', 'delivery_method' => 'shop_owned']);
+        $leg->shipment->update(['source_type' => 'order', 'source_id' => $order->id, 'purpose' => 'retail_delivery']);
+        $this->clockInEmployee($dispatcher);
+        foreach (['view-logistics-shipments', 'assign-logistics-deliveries', 'resolve-logistics-exceptions'] as $permission) {
+            Permission::findOrCreate($permission, 'user');
+            $dispatcher->givePermissionTo($permission);
+        }
+        $props = $this->actingAs($dispatcher, 'user')->get('/erp/logistics/shipments')
+            ->assertOk()->viewData('page')['props'];
+        $payload = $props['shipments']['data'][0]['legs'][0]['incidents'][0];
+        $this->assertStringContainsString('/api/logistics/incidents/'.$incident->id.'/evidence/0', $payload['evidence_urls'][0] ?? '');
+        $this->assertArrayNotHasKey('photo_paths', $payload);
+        $this->actingAs($dispatcher, 'user')->get($payload['evidence_urls'][0])->assertOk();
+    }
+
+    public function test_client_supplied_incident_paths_are_rejected(): void
+    {
+        [$shop, $leg, $rider] = $this->assignedLeg();
+
+        $this->actingAs($rider, 'user')
+            ->postJson("/api/logistics/legs/{$leg->id}/incidents", [
+                'type' => 'lost',
+                'notes' => 'Parcel is missing.',
+                'photo_paths' => ['incident-evidence/leg-1/external.jpg'],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('photo_paths');
+    }
+
+    public function test_loss_investigation_uploads_private_evidence_and_only_authorized_staff_can_download_it(): void
+    {
+        Storage::fake('local');
+        Storage::fake('public');
+        [$shop, $leg, $rider] = $this->assignedLeg();
+        $incident = DeliveryIncident::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'shipment_leg_id' => $leg->id,
+            'reporting_rider_profile_id' => $leg->assignments()->value('rider_profile_id'),
+            'type' => 'lost',
+            'status' => 'reported',
+            'photo_paths' => [],
+        ]);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($staff);
+        $otherShop = ShopOwner::factory()->create();
+        $otherStaff = User::factory()->create(['shop_owner_id' => $otherShop->id]);
+        Permission::findOrCreate('resolve-logistics-exceptions', 'user');
+        $staff->givePermissionTo('resolve-logistics-exceptions');
+        $otherStaff->givePermissionTo('resolve-logistics-exceptions');
+
+        foreach ([['acknowledge', $staff], ['confirm', $rider], ['approve', $staff]] as $revision => [$action, $actor]) {
+            $this->actingAs($actor, 'user')->postJson("/api/logistics/incidents/{$incident->id}/loss", [
+                'action' => $action, 'notes' => 'Actual authorized loss review stage',
+                'request_key' => (string) \Illuminate\Support\Str::uuid(), 'expected_revision' => $revision,
+            ])->assertOk();
+        }
+        $response = $this->actingAs($staff, 'user')
+            ->post("/api/logistics/parcel-recovery/{$incident->id}/investigation", [
+                'request_key' => (string) \Illuminate\Support\Str::uuid(), 'expected_revision' => 3,
+                'notes' => 'Private evidence appended to the confirmed loss investigation.',
+                'photo' => $this->fakeEvidenceFile('investigation.png'),
+            ], ['Accept' => 'application/json'])->assertOk()->assertJsonMissingPath('recovery.evidence_path');
+
+        $updated = $incident->fresh();
+        $path = $updated->evidencePaths()[0];
+        Storage::disk('local')->assertExists($path);
+        Storage::disk('public')->assertMissing($path);
+        $url = "/api/logistics/incidents/{$incident->id}/evidence/0";
+        $this->actingAs($staff, 'user')->get($url)->assertOk()->assertStreamedContent(
+            Storage::disk('local')->get($path),
+        );
+        $this->actingAs($otherStaff, 'user')->get($url)->assertForbidden();
+        $this->assertStringContainsString('/api/logistics/parcel-recovery/'.$incident->id.'/evidence/', $response->json('recovery.evidence_urls.0'));
+    }
+
+    public function test_unknown_incident_resolution_is_rejected_by_the_api(): void
+    {
+        [$shop, $leg] = $this->assignedLeg();
+        $incident = DeliveryIncident::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'shipment_leg_id' => $leg->id,
+            'reporting_rider_profile_id' => $leg->assignments()->value('rider_profile_id'),
+            'type' => 'damaged',
+            'status' => 'reported',
+        ]);
+        $staff = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($staff);
+        Permission::findOrCreate('resolve-logistics-exceptions', 'user');
+        $staff->givePermissionTo('resolve-logistics-exceptions');
+
+        $this->actingAs($staff, 'user')
+            ->postJson("/api/logistics/incidents/{$incident->id}/resolve", [
+                'resolution' => 'invented_resolution',
+                'note' => 'Not supported.',
+            ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('resolution');
+    }
+
+    private function assignedLeg(): array
+    {
+        $shop = ShopOwner::factory()->create(['business_type' => 'retail']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $shop->id]);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'status' => 'picked_up']);
+        $rider = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($rider);
+        $profile = RiderProfile::factory()->create([
+            'shop_owner_id' => $shop->id,
+            'linked_type' => User::class,
+            'linked_id' => $rider->id,
+        ]);
+        $leg->assignments()->create([
+            'assignment_type' => 'internal_rider',
+            'rider_profile_id' => $profile->id,
+            'status' => 'accepted',
+            'assigned_at' => now(),
+            'accepted_at' => now(),
+        ]);
+
+        return [$shop, $leg, $rider];
+    }
+
+    private function fakeEvidenceFile(string $name): UploadedFile
+    {
+        return UploadedFile::fake()->createWithContent(
+            $name,
+            base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='),
+        );
+    }
+}

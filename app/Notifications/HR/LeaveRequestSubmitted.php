@@ -65,7 +65,7 @@ class LeaveRequestSubmitted extends Notification implements ShouldQueue
                     ->when($delegationNote, function ($mail) use ($delegationNote) {
                         return $mail->line($delegationNote);
                     })
-                    ->action('Review Leave Request', url('/erp/hr/leave-requests/' . $this->leaveRequest->id))
+                    ->action('Review Leave Request', url($this->actionPath($notifiable)))
                     ->line('Please review and take appropriate action on this request.')
                     ->line('Thank you for your attention to this matter.');
     }
@@ -89,7 +89,7 @@ class LeaveRequestSubmitted extends Notification implements ShouldQueue
             'reason' => $this->leaveRequest->reason,
             'approval_level' => $this->approverInfo['approval_level'],
             'is_delegated' => $this->approverInfo['is_delegated'],
-            'action_url' => url('/erp/hr/leave-requests/' . $this->leaveRequest->id),
+            'action_url' => $this->actionPath($notifiable),
             'created_at' => now()->toIso8601String(),
         ];
     }
@@ -100,5 +100,15 @@ class LeaveRequestSubmitted extends Notification implements ShouldQueue
     public function toDatabase(object $notifiable): array
     {
         return $this->toArray($notifiable);
+    }
+
+    private function actionPath(object $notifiable): string
+    {
+        $isManager = (method_exists($notifiable, 'hasRole') && $notifiable->hasRole('Manager'))
+            || (method_exists($notifiable, 'can') && $notifiable->can('access-manager-leave-approvals'));
+
+        return $isManager
+            ? '/erp/manager/leave-approvals?request=' . $this->leaveRequest->id
+            : '/erp/hr?section=leaves&request=' . $this->leaveRequest->id;
     }
 }

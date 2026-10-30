@@ -4,7 +4,6 @@ export function buildRepairRefundExecutionPayload(input: {
   executionMode: "manual" | "gateway";
   executionChannel?: RepairExecutionChannel;
   executionReference?: string;
-  executionAmount?: number;
   executionProofUrls?: string[];
 }) {
   if (input.executionMode === "manual") {
@@ -21,7 +20,6 @@ export function buildRepairRefundExecutionPayload(input: {
     execution_mode: input.executionMode,
     execution_channel: input.executionChannel ?? null,
     execution_reference: input.executionReference ?? null,
-    execution_amount: input.executionAmount ?? null,
     execution_proof_urls: input.executionProofUrls ?? null,
   };
 }
