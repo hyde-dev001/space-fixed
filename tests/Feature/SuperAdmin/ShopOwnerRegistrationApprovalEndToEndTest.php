@@ -112,6 +112,55 @@ final class ShopOwnerRegistrationApprovalEndToEndTest extends TestCase
         );
     }
 
+    public function test_third_actual_resubmission_with_replaced_supporting_document_can_be_approved(): void
+    {
+        $email = 'third-resubmission@solespaceph.com';
+        $this->markRegistrationEmailVerified($email);
+        $oldKey = '11111111-1111-4111-8111-111111111111';
+        $newKey = '22222222-2222-4222-8222-222222222222';
+        $initial = $this->registrationPayload($email);
+        $initial['other_documents'] = [$oldKey => UploadedFile::fake()->image('old-support.png')];
+        $initial['other_document_metadata'] = [$oldKey => $this->documentMetadata()];
+        $this->postJson('/shop-owner/register', $initial)->assertCreated();
+        $owner = ShopOwner::query()->where('email', $email)->firstOrFail();
+        $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, AdminPage::SHOP_MANAGEMENT);
+
+        foreach ([1, 2, 3] as $attempt) {
+            $this->actingAsCompletedPrivileged($admin)->postJson(route('admin.registrations.reject', $owner), [
+                'rejection_reason' => 'Correct the documents for attempt '.$attempt,
+            ])->assertOk();
+            $payload = $this->registrationPayload($email);
+            if ($attempt === 3) {
+                $payload['other_documents'] = [$newKey => UploadedFile::fake()->image('new-support.png')];
+                $payload['other_document_metadata'] = [$newKey => $this->documentMetadata()];
+            }
+            $url = \Illuminate\Support\Facades\URL::temporarySignedRoute('shop-owner.resubmission.submit', now()->addHour(), ['shopOwner' => $owner->id]);
+            $this->postJson($url, $payload)->assertOk()->assertJsonPath('applied', true);
+        }
+
+        $documents = [];
+        $this->actingAsCompletedPrivileged($admin)->get(route('admin.registrations.index'))->assertOk()
+            ->assertInertia(function (\Inertia\Testing\AssertableInertia $page) use ($owner, &$documents): void {
+                $page->where('registrations', function ($registrations) use ($owner, &$documents): bool {
+                    $registration = collect($registrations['data'] ?? [])->firstWhere('id', $owner->id);
+                    $documents = $registration['documents'] ?? [];
+                    return count($documents) === 5 && collect($documents)->every(fn ($document) => $document['status'] === 'pending');
+                });
+            });
+        $review = collect($documents)->map(static fn (array $document): array => [
+            'id' => $document['id'], 'document_type' => $document['documentType'], 'logical_slot' => $document['logicalSlot'],
+            'version_number' => $document['versionNumber'], 'issued_on' => $document['issuedOn'],
+            'expiration_mode' => $document['expirationMode'], 'expires_on' => $document['expiresOn'], 'viewed' => true,
+        ])->all();
+        $this->actingAsCompletedPrivileged($admin)->postJson(route('admin.registrations.approve', $owner), ['documents' => $review])
+            ->assertOk()->assertJsonPath('applied', true);
+        $this->assertSame('approved', $owner->fresh()->status->value);
+        $this->assertSame(5, $owner->documents()->currentApproved()->count());
+        $this->assertDatabaseHas('shop_documents', ['shop_owner_id' => $owner->id,
+            'logical_slot' => 'supporting_document:'.$oldKey, 'status' => 'rejected']);
+    }
+
     /** @return array<string, mixed> */
     private function registrationPayload(string $email): array
     {

@@ -397,6 +397,49 @@ final class RegistrationDecisionWorkflowTest extends TestCase
         $this->assertSame(8, $owner->documents()->count());
     }
 
+    public function test_third_resubmission_with_new_supporting_document_excludes_old_rejected_supporting_document_from_review_and_approval(): void
+    {
+        $admin = SuperAdmin::factory()->admin()->create();
+        AdminPagePermission::grant($admin, 'shop_management');
+        $owner = $this->resubmittedRegistrationWithDocuments();
+        Storage::disk('local')->put('registration/old-support.png', 'old');
+        $oldSupport = $owner->documents()->create([
+            'document_type' => 'supporting_document', 'logical_slot' => 'supporting_document:11111111-1111-4111-8111-111111111111',
+            'version_number' => 1, 'disk' => 'local', 'file_path' => 'registration/old-support.png',
+            'status' => 'rejected', 'is_current' => null, 'expiration_mode' => 'none',
+        ]);
+        foreach ([2, 3] as $attempt) {
+            $previous = $owner->documents()->pending()->get();
+            $owner->documents()->pending()->update(['status' => 'rejected']);
+            $owner->forceFill(['resubmission_count' => $attempt])->save();
+            $entries = $previous->map(static fn (ShopDocument $document): array => [
+                'metadata' => ['document_type' => $document->document_type, 'logical_slot' => $document->logical_slot,
+                    'issued_on' => $document->issued_on?->toDateString(), 'expiration_mode' => $document->expiration_mode,
+                    'expires_on' => $document->expires_on?->toDateString()],
+                'file' => UploadedFile::fake()->create('resubmit.png', 10, 'image/png'), 'predecessor' => $document,
+            ])->all();
+            if ($attempt === 3) $entries[] = [
+                'metadata' => ['document_type' => 'supporting_document', 'logical_slot' => 'supporting_document:22222222-2222-4222-8222-222222222222', 'expiration_mode' => 'none'],
+                'file' => UploadedFile::fake()->create('support.png', 10, 'image/png'),
+            ];
+            app(ShopDocumentLifecycleService::class)->createPendingVersions($owner, $entries, true);
+        }
+        $pendingIds = $owner->documents()->pending()->orderBy('id')->pluck('id')->all();
+        $this->assertCount(5, $pendingIds);
+        $this->actingAsCompletedPrivileged($admin)->get(route('admin.registrations.index'))->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('registrations', function ($registrations) use ($owner, $pendingIds): bool {
+                $registration = collect($registrations['data'] ?? [])->firstWhere('id', $owner->id);
+                return collect($registration['documents'] ?? [])->pluck('id')->sort()->values()->all() === $pendingIds;
+            }));
+        $payload = $this->approvalPayload($owner);
+        $payload['documents'] = array_values(array_filter($payload['documents'], static fn (array $document): bool => in_array($document['id'], $pendingIds, true)));
+        $this->actingAsCompletedPrivileged($admin)->postJson(route('admin.registrations.approve', $owner), $payload)
+            ->assertOk()->assertJsonPath('applied', true);
+        $this->assertSame('approved', $owner->fresh()->status->value);
+        $this->assertSame('rejected', $oldSupport->fresh()->status);
+        $this->assertSame(5, $owner->documents()->currentApproved()->count());
+    }
+
     public function test_resubmitted_registration_approval_preserves_rejected_history(): void
     {
         $admin = SuperAdmin::factory()->admin()->create();

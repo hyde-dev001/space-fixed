@@ -135,7 +135,7 @@ export const canDecideRegistration = (status: Registration['status']): boolean =
 export const getRegistrationDecisionErrorMessage = (errors: unknown): string => {
   if (errors && typeof errors === 'object') {
     const errorBag = errors as Record<string, unknown>;
-    for (const key of ['message', 'registration', 'rejection_reason', 'status']) {
+    for (const key of ['message', 'registration', 'rejection_reason', 'status', ...Object.keys(errorBag)]) {
       const value = errorBag[key];
       if (Array.isArray(value) && typeof value[0] === 'string' && value[0].trim()) {
         return value[0];
@@ -492,6 +492,8 @@ export default function ShopOwnerRegistrationView({
     const documents = documentsForRegistration(registration);
 
     setSelectedRegistration(registration);
+    setViewedDocuments((current) => ({ ...current, [registration.id]: new Set() }));
+    setExpandedDocuments(new Set());
     setReviewMetadata(initialReviewMetadata(documents));
     setIsViewModalOpen(true);
   };
