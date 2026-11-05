@@ -164,8 +164,10 @@ class OrderController extends Controller
 
                 return [(int) $shipment->source_id => [
                     'id' => (int) $shipment->id,
+                    'shop_owner_id' => (int) $shipment->shop_owner_id,
                     'status' => $currentLeg?->status?->value ?? $shipment->status->value,
                     'tracking_number' => $currentLeg?->tracking_number,
+                    'outbound_tracking_url' => $shipment->legs->last(fn ($leg) => $leg->leg_type === 'outbound')?->tracking_url,
                     'delivery_has_failed_attempt' => (bool) ($latestAttempt
                         && !in_array($currentLeg->status->value, ['awaiting_proof_approval', 'proof_correction_required', 'delivered'], true)),
                     'delivery_scheduled_date' => optional($currentLeg?->scheduled_delivery_date)->toDateString(),
@@ -345,7 +347,9 @@ class OrderController extends Controller
                     'tracking_number' => $order->tracking_number,
                     'carrier_company' => $order->carrier_company,
                     'carrier_name' => $order->carrier_name,
-                    'tracking_link' => $this->customerSafeExternalTrackingLink($order->tracking_link),
+                    'tracking_link' => $this->customerSafeExternalTrackingLink($order->tracking_link)
+                        ?? ($order->resolvedDeliveryMethod() === 'third_party' && (int) ($shipment['shop_owner_id'] ?? 0) === (int) $order->shop_owner_id
+                            ? $this->customerSafeExternalTrackingLink($shipment['outbound_tracking_url'] ?? null) : null),
                     'logistics_shipment_id' => $shipment['id'] ?? null,
                     'is_shop_owned_delivery' => $isShopOwnedDelivery,
                     'delivery_status' => $shipment['status'] ?? null,

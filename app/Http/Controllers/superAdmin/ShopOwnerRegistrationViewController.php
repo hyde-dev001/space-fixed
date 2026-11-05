@@ -151,6 +151,9 @@ class ShopOwnerRegistrationViewController extends Controller
         $registrationStatus = $shopOwner->status instanceof \BackedEnum
             ? $shopOwner->status->value
             : (string) $shopOwner->status;
+        $displayDocuments = $registrationStatus === 'pending'
+            ? $shopOwner->documents->filter(fn (ShopDocument $document): bool => (string) $document->status === 'pending' && ! (bool) $document->is_current)
+            : $shopOwner->documents;
         $screeningCandidates = $this->screeningCandidates($shopOwner->documents, $registrationStatus);
         $candidateIds = $screeningCandidates->map(static fn (ShopDocument $document): int => (int) $document->getKey());
         $screenings = $shopOwner->documents->mapWithKeys(function (ShopDocument $document) use ($shopOwner, $candidateIds, $registrationStatus): array {
@@ -178,7 +181,7 @@ class ShopOwnerRegistrationViewController extends Controller
         $summary = $this->documentScreening->summarizeScores($scores);
         $summary['historical'] = $registrationStatus !== 'pending';
 
-        $documents = $shopOwner->documents->map(function (ShopDocument $document) use ($shopOwner, $screenings): array {
+        $documents = $displayDocuments->map(function (ShopDocument $document) use ($shopOwner, $screenings): array {
             return [
                 'id' => (int) $document->getKey(),
                 'url' => route('admin.shop-documents.show', [

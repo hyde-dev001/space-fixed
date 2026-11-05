@@ -58,6 +58,10 @@ describe('registration decision guards', () => {
       rejection_reason: ['A rejection reason is required.'],
     })).toBe('A rejection reason is required.');
     expect(getRegistrationDecisionErrorMessage({})).toContain('server did not apply');
+    expect(getRegistrationDecisionErrorMessage({ documents: ['Submit reviewer metadata for every pending document candidate.'] }))
+      .toBe('Submit reviewer metadata for every pending document candidate.');
+    expect(getRegistrationDecisionErrorMessage({ 'supporting_document:abc': ['This document needs review.'] }))
+      .toBe('This document needs review.');
   });
 
   it('builds reviewer metadata from the server candidate and corrections', () => {
@@ -145,6 +149,31 @@ describe('registration decision guards', () => {
 });
 
 describe('registration queue pagination UI', () => {
+  it('submits the current documents including a supporting document for a resubmitted registration', async () => {
+    const types = ['dti_registration', 'mayors_permit', 'bir_certificate', 'valid_id', 'supporting_document'];
+    const slots = ['business_registration', 'mayors_permit', 'bir_certificate', 'valid_id', 'supporting_document:22222222-2222-4222-8222-222222222222'];
+    const documents = types.map((type, index) => ({ id: index + 20, url: `/admin/shop-owners/1/documents/${index + 20}`,
+      type, documentType: type, logicalSlot: slots[index], versionNumber: 4, status: 'pending',
+      expirationMode: index === 1 ? 'dated' : 'none', expiresOn: index === 1 ? '2027-01-01' : null }));
+    swalFireMock.mockResolvedValue({ isConfirmed: true });
+    render(React.createElement(ShopOwnerRegistrationView, { registrations: [{ id: 1, firstName: 'Test', lastName: 'Owner',
+      email: 'owner@example.test', phone: '09170000000', businessName: 'Test Shop', businessAddress: 'Cavite',
+      businessType: 'retail', serviceType: 'retail', operatingHours: [], documents, documentUrls: [],
+      status: 'pending', createdAt: '2026-08-12 12:00:00' }] } as never));
+    fireEvent.click(screen.getByTitle('View Details'));
+    for (let index = 0; index < 5; index++) fireEvent.click(screen.getAllByRole('button', { name: 'View' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Close modal' }));
+    fireEvent.click(screen.getByTitle('View Details'));
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+    for (let index = 0; index < 5; index++) fireEvent.click(screen.getAllByRole('button', { name: 'View' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(postMock).toHaveBeenCalledWith('/admin/registrations/1/approve',
+      expect.objectContaining({ documents: expect.arrayContaining([
+        expect.objectContaining({ id: 24, document_type: 'supporting_document', logical_slot: slots[4], viewed: true }),
+      ]) }), expect.any(Object)));
+    expect(postMock.mock.calls[0][1].documents).toHaveLength(5);
+  });
+
   it('sends search through the server paginator and keeps both addresses visible', async () => {
     render(
       React.createElement(ShopOwnerRegistrationView, {

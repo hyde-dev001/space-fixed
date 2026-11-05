@@ -80,6 +80,7 @@ describe('MyOrders delivery tracking', () => {
       refund_stage: null,
       review_submitted: false,
       carrier_company: 'Shop-owned logistics',
+      tracking_link: null,
       is_shop_owned_delivery: true,
       delivery_has_failed_attempt: false,
       delivery_scheduled_date: '2026-07-18',
@@ -315,6 +316,14 @@ describe('MyOrders delivery tracking', () => {
       '/tracking/shipments/5',
       expect.anything(),
     );
+  });
+
+  it('shows the courier tracking link on a delivered third-party order', () => {
+    Object.assign(order, { status: 'delivered', carrier_company: 'Lalamove', is_shop_owned_delivery: false,
+      tracking_link: 'https://tracking.example/parcel/123' });
+    render(<MyOrders />);
+    expect(screen.getByRole('link', { name: 'https://tracking.example/parcel/123' }))
+      .toHaveAttribute('href', 'https://tracking.example/parcel/123');
   });
 
   it('does not render unsafe third-party return tracking links', () => {
