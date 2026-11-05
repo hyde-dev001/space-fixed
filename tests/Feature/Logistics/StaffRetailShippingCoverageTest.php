@@ -249,6 +249,23 @@ class StaffRetailShippingCoverageTest extends TestCase
             ->where('orders.0.status', 'delivered')->where('orders.0.tracking_link', $url));
     }
 
+    public function test_customer_can_open_saved_tracking_domains_without_a_scheme(): void
+    {
+        $this->order->forceFill(['tracking_link' => 'solespace.com'])->save();
+        OrderRefund::factory()->create([
+            'order_id' => $this->order->id,
+            'customer_id' => $this->order->customer_id,
+            'shop_owner_id' => $this->shop->id,
+            'return_source' => 'staff',
+            'staff_return_tracking_link' => 'solespace.com/returns/123',
+        ]);
+
+        $this->actingAs(User::findOrFail($this->order->customer_id), 'user')
+            ->get('/my-orders')->assertOk()->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+                ->where('orders.0.tracking_link', 'https://solespace.com')
+                ->where('orders.0.refund_stage.staff_return_tracking_link', 'https://solespace.com/returns/123'));
+    }
+
     public function test_disabled_logistics_blocks_new_shop_owned_shipping_but_keeps_third_party_shipping_available(): void
     {
         $this->setLogisticsEnabled(false);
@@ -414,6 +431,10 @@ class StaffRetailShippingCoverageTest extends TestCase
             'source_id' => $refund->id,
             'purpose' => 'refund_return',
         ]);
+
+        $this->actingAs(User::findOrFail($this->order->customer_id), 'user')
+            ->get('/my-orders')->assertOk()->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+                ->where('orders.0.refund_stage.staff_return_tracking_link', 'https://example.test/returns/JT-RETURN-002'));
     }
 
     public function test_shipping_rechecks_coverage_after_radius_changes(): void
