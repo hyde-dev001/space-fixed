@@ -86,6 +86,8 @@ describe('MyOrders delivery tracking', () => {
       delivery_scheduled_date: '2026-07-18',
       delivery_window: 'morning',
       eta: null,
+      product_warranty: null,
+      active_delivery_dispute: null,
     });
     fetchMock.mockResolvedValue({
       ok: true,
@@ -121,6 +123,29 @@ describe('MyOrders delivery tracking', () => {
       }),
     );
     expect(screen.getByText(/July 18, 2026.*Morning/)).toBeInTheDocument();
+  });
+
+  it('hides warranty details while keeping the assessment request available', () => {
+    order.product_warranty = {
+      reference: 'WRNTY-TEST', issued_at: '2026-10-07T00:00:00Z', timezone: 'Asia/Manila', status: 'active',
+      download_url: '/warranty/certificate', items: [{
+        id: 10, order_item_id: 1, product_name: 'Urban Kicks Test Runner', covered_quantity: 1,
+        remaining_quantity: 1, reserved_quantity: 0, available_quantity: 1, can_assess: true, status: 'active',
+        start_date: '2026-10-07T00:00:00Z', expiration_date: '2027-10-07T00:00:00Z',
+        policy: { duration_value: 1, duration_unit: 'years', terms: '', description: '', exclusions: '', instructions: '' },
+      }],
+    };
+
+    const view = render(<MyOrders />);
+    expect(screen.queryByRole('region', { name: 'Product Warranty' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Request Warranty Assessment/i }));
+    expect(screen.getByRole('heading', { name: 'Warranty Assessment' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Refund quantity for Urban Kicks Test Runner' }), { target: { value: '1' } });
+    expect(screen.getByRole('spinbutton', { name: 'Refund quantity for Urban Kicks Test Runner' })).toHaveValue(1);
+    view.unmount();
+    order.active_delivery_dispute = { status: 'open' };
+    render(<MyOrders />);
+    expect(screen.getByRole('button', { name: /Request Warranty Assessment/i })).toBeDisabled();
   });
 
   it('keeps the selected tab after a reload while preserving unrelated URL parameters', async () => {
