@@ -4,7 +4,6 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import RefundEligibilityTooltip from '@/components/common/RefundEligibilityTooltip';
-import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
 import type { RetailWarrantyProjection } from '@/types/retailWarranty';
   import ShipmentTrackingModal from '@/components/logistics/ShipmentTrackingModal';
   import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
@@ -200,6 +199,8 @@ const parseRefundAmount = (value: unknown): number => {
   const parsed = Number.parseFloat(String(value ?? 0).replace(/[^0-9.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+const roundCurrency = (value: number): number => Math.round(Math.max(0, value) * 100) / 100;
 
 export const resolveRefundableOrderTotal = (
   order: Pick<Order, 'total_amount' | 'shipping_fee' | 'vat_amount' | 'grand_total'>,
@@ -2778,15 +2779,22 @@ const MyOrders: React.FC = () => {
                         );
                       })()}
 
-                      {order.product_warranty ? <div className="px-4 pb-4 sm:px-6"><RetailWarrantyPanel warranty={order.product_warranty}
-                        shopAssisted={order.is_pos_order} disabled={refundFrozen || Boolean(order.active_delivery_dispute) || ['requested', 'pending_approval', 'approved', 'processing'].includes(String(order.refund_stage?.status))}
-                        onAssess={() => {
-                          setRefundOrderId(order.id); setRefundBasis('warranty'); setRefundStep(1); setRefundReason(''); setRefundMedia([]);
-                          setRefundRequestType('partial'); initializeRefundLineQty(order.items || []); setRefundNote(''); setRefundOtherReasonNote('');
-                          setRefundDestinationType('gcash'); setRefundAccountName(''); setRefundAccountNumber(''); setRefundBankChannel(''); setShowRefundModal(true);
-                        }} /></div> : null}
                       {/* Order Actions */}
                       <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:pt-6 sm:gap-3">
+                        {!order.is_pos_order && order.product_warranty?.items.some(item => item.can_assess) && (
+                          <button
+                            type="button"
+                            disabled={refundFrozen || Boolean(order.active_delivery_dispute) || ['requested', 'pending_approval', 'approved', 'processing'].includes(String(order.refund_stage?.status))}
+                            onClick={() => {
+                              setRefundOrderId(order.id); setRefundBasis('warranty'); setRefundStep(1); setRefundReason(''); setRefundMedia([]);
+                              setRefundRequestType('partial'); initializeRefundLineQty(order.items || []); setRefundNote(''); setRefundOtherReasonNote('');
+                              setRefundDestinationType('gcash'); setRefundAccountName(''); setRefundAccountNumber(''); setRefundBankChannel(''); setShowRefundModal(true);
+                            }}
+                            className={`${actionButtonBaseClass} ${actionButtonPrimaryClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                          >
+                            Request Warranty Assessment
+                          </button>
+                        )}
                         {order.refund_stage?.awaiting_refund_destination === true && (
                           <div className="flex w-full flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                             <div>
