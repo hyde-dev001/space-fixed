@@ -23,6 +23,42 @@ class CustomerTrackingTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_my_orders_shows_third_party_tracking_saved_on_outbound_shipment(): void
+    {
+        $customer = User::factory()->create();
+        $order = Order::factory()->create(['customer_id' => $customer->id, 'carrier_company' => 'Lalamove', 'delivery_method' => 'third_party', 'tracking_link' => null]);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $order->shop_owner_id, 'source_type' => 'order', 'source_id' => $order->id, 'purpose' => 'retail_delivery']);
+        ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'leg_type' => 'outbound', 'tracking_url' => 'https://tracking.example/parcel/123']);
+
+        $this->actingAs($customer, 'user')->get('/my-orders')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('orders.0.tracking_link', 'https://tracking.example/parcel/123'));
+    }
+
+    public function test_outbound_tracking_fallback_preserves_order_link_and_rejects_unsafe_or_foreign_links(): void
+    {
+        $customer = User::factory()->create();
+        $order = Order::factory()->create(['customer_id' => $customer->id, 'carrier_company' => 'Lalamove', 'delivery_method' => 'third_party', 'tracking_link' => 'https://courier.example/current']);
+        $shipment = Shipment::factory()->create(['shop_owner_id' => $order->shop_owner_id, 'source_type' => 'order', 'source_id' => $order->id, 'purpose' => 'retail_delivery']);
+        $leg = ShipmentLeg::factory()->create(['shipment_id' => $shipment->id, 'leg_type' => 'outbound', 'tracking_url' => 'https://courier.example/older']);
+        $show = fn ($expected) => $this->actingAs($customer, 'user')->get('/my-orders')->assertOk()
+            ->assertInertia(fn (Assert $page) => $page->where('orders.0.tracking_link', $expected));
+        $show('https://courier.example/current');
+        $order->forceFill(['tracking_link' => null])->save();
+        $leg->update(['tracking_url' => 'javascript:alert(1)']);
+        $show(null);
+        $leg->update(['tracking_url' => 'https://solespace.shop/erp/staff/job-orders']);
+        $show(null);
+        $leg->update(['tracking_url' => 'https://courier.example/older']);
+        $shipment->update(['shop_owner_id' => \App\Models\ShopOwner::factory()->create()->id]);
+        $show(null);
+        $shipment->update(['shop_owner_id' => $order->shop_owner_id]);
+        $leg->update(['leg_type' => 'return_to_shop']);
+        $show(null);
+        $leg->update(['leg_type' => 'outbound']);
+        $order->forceFill(['delivery_method' => 'shop_owned', 'carrier_company' => 'Shop-owned logistics'])->save();
+        $show(null);
+    }
+
     public function test_customer_distinguishes_completed_continuation_from_a_received_shop_return(): void
     {
         foreach ([true, false] as $continued) {

@@ -27,6 +27,7 @@ class SourceModuleShipmentRequestTest extends TestCase
 
     public function test_individual_owner_can_progress_third_party_retail_delivery_and_customer_sees_provider(): void
     {
+        $customer = User::factory()->create();
         $shop = ShopOwner::factory()->create([
             'business_type' => 'retail',
             'registration_type' => 'individual',
@@ -34,6 +35,7 @@ class SourceModuleShipmentRequestTest extends TestCase
         ]);
         $order = Order::factory()->create([
             'shop_owner_id' => $shop->id,
+            'customer_id' => $customer->id,
             'status' => 'processing',
             'delivery_method' => 'third_party',
             'carrier_company' => 'Lalamove',
@@ -84,6 +86,10 @@ class SourceModuleShipmentRequestTest extends TestCase
 
         $this->assertSame('delivered', $order->fresh()->status->value);
         $this->assertSame('completed', $shipment->fresh()->status->value);
+        $order->forceFill(['tracking_link' => null])->save();
+        $this->actingAs($customer, 'user')->get('/my-orders')->assertOk()
+            ->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+                ->where('orders.0.tracking_link', 'https://example.test/track/LAM-123'));
     }
 
     public function test_cod_third_party_delivery_cannot_complete_before_cash_collection(): void
