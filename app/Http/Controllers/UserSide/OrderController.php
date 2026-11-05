@@ -438,6 +438,9 @@ class OrderController extends Controller
     private function customerSafeExternalTrackingLink(?string $value): ?string
     {
         $normalized = trim((string) $value);
+        if (preg_match('~^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}(?::[0-9]+)?(?:[/?#]|$)~i', $normalized)) {
+            $normalized = 'https://' . $normalized;
+        }
         if ($normalized === '' || filter_var($normalized, FILTER_VALIDATE_URL) === false) {
             return null;
         }
