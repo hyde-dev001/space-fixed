@@ -234,6 +234,21 @@ class StaffRetailShippingCoverageTest extends TestCase
         ]);
     }
 
+    public function test_customer_keeps_staff_entered_tracking_link_after_confirming_third_party_delivery(): void
+    {
+        $url = 'https://courier.example/track/123';
+        $this->actingAs($this->staff, 'user')->patchJson("/api/staff/orders/{$this->order->id}/status", [
+            'status' => 'shipped', 'carrier_company' => 'Lalamove', 'carrier_name' => 'Rider',
+            'carrier_phone' => '09170000000', 'tracking_number' => '123', 'tracking_link' => $url,
+        ])->assertOk();
+
+        $this->assertSame($url, $this->order->fresh()->tracking_link);
+        $this->actingAs(User::findOrFail($this->order->customer_id), 'user')
+            ->postJson('/orders/confirm-delivery', ['order_id' => $this->order->id])->assertOk();
+        $this->get('/my-orders')->assertOk()->assertInertia(fn (\Inertia\Testing\AssertableInertia $page) => $page
+            ->where('orders.0.status', 'delivered')->where('orders.0.tracking_link', $url));
+    }
+
     public function test_disabled_logistics_blocks_new_shop_owned_shipping_but_keeps_third_party_shipping_available(): void
     {
         $this->setLogisticsEnabled(false);
