@@ -40,7 +40,7 @@ class SourceModuleShipmentRequestTest extends TestCase
             'delivery_method' => 'third_party',
             'carrier_company' => 'Lalamove',
             'tracking_number' => 'LAM-123',
-            'tracking_link' => 'https://example.test/track/LAM-123',
+            'tracking_link' => null,
         ]);
 
         $this->actingAs($shop, 'shop_owner')
@@ -61,7 +61,9 @@ class SourceModuleShipmentRequestTest extends TestCase
         $leg = $shipment->legs()->firstOrFail();
 
         $this->assertSame('third_party', $order->fresh()->resolvedDeliveryMethod());
+        $this->assertSame('https://example.test/track/LAM-123', $order->fresh()->tracking_link);
         $this->assertSame('LAM-123', $leg->tracking_number);
+        $this->assertSame('https://example.test/track/LAM-123', $leg->tracking_url);
         $this->assertFalse((bool) $leg->requires_delivery_proof);
         $this->assertSame('handoff_pending', $leg->provider_status);
 
