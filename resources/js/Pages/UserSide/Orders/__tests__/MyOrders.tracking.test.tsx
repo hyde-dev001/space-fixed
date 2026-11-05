@@ -205,6 +205,25 @@ describe('MyOrders delivery tracking', () => {
     );
   });
 
+  it('explains when shop-owned return pickup is unavailable', async () => {
+    order.status = 'delivered';
+    order.refund_stage = { id: 5, status: 'processing', can_mark_return_shipped: true };
+    swalFireMock
+      .mockResolvedValueOnce({ isConfirmed: true, value: 'shop_owned' })
+      .mockResolvedValueOnce({ isConfirmed: true, value: '' });
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      json: () => Promise.resolve({ message: 'Staff and Finance approvals are required before arranging a return shipment.' }),
+    });
+
+    render(<MyOrders />);
+    fireEvent.click(screen.getByRole('button', { name: 'SHIP RETURNED ITEM' }));
+    await waitFor(() => expect(swalFireMock).toHaveBeenLastCalledWith(expect.objectContaining({
+      icon: 'error',
+      text: 'Sorry, shop-owned logistics is currently unavailable for this return. Please choose another return method if available, or contact the shop for assistance.',
+    })));
+  });
+
   it('submits a shop-owned return request without asking the customer for tracking details', async () => {
     order.status = 'delivered';
     order.refund_stage = {

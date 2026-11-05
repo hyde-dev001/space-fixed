@@ -845,7 +845,12 @@ const MyOrders: React.FC = () => {
         body: JSON.stringify(returnPayload),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Unable to update the return shipment.');
+      if (!response.ok) {
+        const message = isShopOwnedReturn && data.message === 'Staff and Finance approvals are required before arranging a return shipment.'
+          ? 'Sorry, shop-owned logistics is currently unavailable for this return. Please choose another return method if available, or contact the shop for assistance.'
+          : data.message || 'Unable to update the return shipment.';
+        throw new Error(message);
+      }
 
       setOrders((prev) => prev.map((currentOrder) => currentOrder.id === order.id ? {
         ...currentOrder,
