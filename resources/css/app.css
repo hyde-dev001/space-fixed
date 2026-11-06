@@ -1866,6 +1866,12 @@ html.userside-dark #app .userside-auth-ghost:hover {
   animation: userSwalPopupIn 0.24s ease-out;
 }
 
+.swal2-popup:not(.swal2-toast).staff-return-pickup-popup {
+  width: min(56rem, calc(100vw - 2rem)) !important;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+}
+
 .swal2-popup:not(.swal2-toast).swal2-hide {
   animation: userSwalPopupOut 0.18s ease-in;
 }
