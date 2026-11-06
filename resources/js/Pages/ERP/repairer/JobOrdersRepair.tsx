@@ -3,7 +3,6 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import Swal from "sweetalert2";
 import { Head, router, usePage } from "@inertiajs/react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
-import ParcelIncidentRecovery from '@/components/logistics/ParcelIncidentRecovery';
 import ErrorModal from "../../../components/common/ErrorModal";
 import axios from "axios";
 import { calculateRepairRevenue } from "../../../utils/deliveryRevenue";
@@ -2615,7 +2614,6 @@ export default function JobOrdersRepair() {
   return (
     <AppLayoutERP>
       <Head title="Repair Services - Solespace ERP" />
-      {!auth?.erpActor?.ownerMode && <ParcelIncidentRecovery source="repair" />}
       {error && <ErrorModal message={error} onClose={() => setError(null)} />}
       
       <div className="space-y-6">
@@ -2896,31 +2894,6 @@ export default function JobOrdersRepair() {
                           <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
                             {getRepairStatusLabel(order.status)}
                           </span>
-                          {isWaitingForPayment(order) && (
-                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
-                              Waiting for Payment
-                            </span>
-                          )}
-                          {getPaymentStatusBadgeLabel(order.payment_status) && (
-                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
-                              {getPaymentStatusBadgeLabel(order.payment_status)}
-                            </span>
-                          )}
-                          {isInShopPaymentRecorded(order) && (
-                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
-                              In-Shop Payment
-                            </span>
-                          )}
-                          {isWarrantyNoChargeOrder(order) && (
-                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
-                              Warranty
-                            </span>
-                          )}
-                          {pendingRefund && (
-                            <span className="text-sm leading-5 font-semibold text-gray-900 dark:text-white">
-                              Refund Review Pending
-                            </span>
-                          )}
                         </div>
                       </td>
                       <td className="px-5 py-5 align-top text-sm text-gray-900 dark:text-white">

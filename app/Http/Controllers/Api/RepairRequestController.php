@@ -2322,7 +2322,7 @@ class RepairRequestController extends Controller
             $services = RepairService::query()
                 ->whereIn('id', $requestedIds)
                 ->where('shop_owner_id', $repair->shop_owner_id)
-                ->whereIn('status', ['Active', 'active'])
+                ->available()
                 ->get(['id', 'name', 'category', 'price', 'duration']);
 
             if ($services->count() !== $requestedIds->count()) {

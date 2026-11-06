@@ -482,8 +482,9 @@ class RepairPackageController extends Controller
         }
 
         // Separate validation for price changes vs regular updates
-        $isPriceChange = $request->has('package_price') && 
-                        ((float)$request->package_price !== (float)$package->package_price);
+        $currentPrice = $this->resolveEffectivePackagePrice($package);
+        $isPriceChange = $request->has('package_price') &&
+                        ((float)$request->package_price !== $currentPrice);
         $shopOwner = $package->shopOwner ?: ShopOwner::query()->find($package->shop_owner_id);
         $isIndividualShop = strtolower(trim((string) ($shopOwner?->registration_type ?? ''))) === 'individual';
 
@@ -525,7 +526,6 @@ class RepairPackageController extends Controller
                 ], 422);
             }
 
-            $currentPrice = (float) $package->package_price;
             $proposedPrice = (float) $request->package_price;
             $requiresOwnerApproval = $this->shopOwnerApprovalPolicyService->requiresOwnerApprovalForPriceChange(
                 (int) $package->shop_owner_id,
@@ -535,7 +535,7 @@ class RepairPackageController extends Controller
 
             // Store the price change request for approval workflow
             $package->update($this->onlyExistingRepairPackageColumns([
-                'old_package_price' => $package->package_price,
+                'old_package_price' => $currentPrice,
                 'package_price' => $request->package_price,
                 'change_reason' => $request->reason,
                 'approval_status' => 'pending_finance', // Start approval workflow

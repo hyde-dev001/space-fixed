@@ -1120,6 +1120,7 @@ function DeliveryActions({
   if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
     if (!canUpdateStatus && !(canReportIssue && isCustomerCollection)) return null;
     const key = `pickup:${delivery.id}`;
+    const pickupReady = delivery.shipment?.purpose !== 'repair_pickup' || Boolean(arrival);
     const pickupProof = delivery.proofs
       ?.filter(({ handoff_type }) => handoff_type === 'pickup')
       .at(-1);
@@ -1130,11 +1131,12 @@ function DeliveryActions({
           disabled={mutationDisabled || pendingAction === arrivalKey}
           onClick={() => runAction(arrivalKey, () => logisticsApi.arrive(delivery.id, { arrival_type: 'pickup' }))}
           className={buttonClass}>I've arrived for pickup</button>}
-        {canUpdateStatus && delivery.requires_pickup_proof && !pickupProof && canRecordProof && <DeliveryPhotoUpload
+        {delivery.shipment?.purpose === 'repair_pickup' && arrivalSummary}
+        {pickupReady && canUpdateStatus && delivery.requires_pickup_proof && !pickupProof && canRecordProof && <DeliveryPhotoUpload
           inputId={`pickup-proof-${delivery.id}`} inputLabel="Pickup evidence" label="Pickup evidence" file={proofFile} onChange={setProofFile} required disabled={mutationDisabled} />}
         {delivery.start_blocked_reason && <p role="status" className="text-sm font-semibold">{delivery.start_blocked_reason}</p>}
-        {delivery.requires_pickup_proof && !pickupProof && !canRecordProof && <p role="status" className="text-sm font-semibold">Pickup evidence is required. Ask your manager to enable your proof permission.</p>}
-        {canUpdateStatus && (
+        {pickupReady && delivery.requires_pickup_proof && !pickupProof && !canRecordProof && <p role="status" className="text-sm font-semibold">Pickup evidence is required. Ask your manager to enable your proof permission.</p>}
+        {pickupReady && canUpdateStatus && (
           <button
             type="button"
             disabled={mutationDisabled || Boolean(delivery.start_blocked_reason) || pendingAction === key || Boolean(delivery.requires_pickup_proof && !pickupProof && (!canRecordProof || !proofFile))}
@@ -1164,7 +1166,7 @@ function DeliveryActions({
             Confirm pickup
           </button>
         )}
-        {canReportIssue && isCustomerCollection && (
+        {pickupReady && canReportIssue && isCustomerCollection && (
           <>
             <button
               type="button"

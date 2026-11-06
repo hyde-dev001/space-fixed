@@ -230,6 +230,35 @@ class RepairRefundSourceBoundaryTest extends TestCase
     }
 
     #[Test]
+    public function repairer_review_only_accepts_pending_online_refunds(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
+        $customer = User::factory()->create();
+        $repairer = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $this->clockInEmployee($repairer);
+        $repair = $this->createRepair($shop, $customer, $repairer, 'REVIEW-STATE');
+        $source = $this->createSource($shop, $customer, $repair, 'REVIEW-STATE');
+        $online = $this->createRefund($source, $repair, $customer, 'ONLINE-PENDING');
+        $pos = $this->createRefund($source, $repair, $customer, 'POS-PENDING', ['workflow_source' => 'pos']);
+        $completed = $this->createRefund($source, $repair, $customer, 'ONLINE-COMPLETED', ['status' => 'succeeded']);
+        $advanced = $this->createRefund($source, $repair, $customer, 'ONLINE-FINANCE', ['finance_status' => 'approved']);
+
+        $response = $this->actingAs($repairer, 'user')->getJson('/api/repairer/refunds')->assertOk();
+        $this->assertSame([$online->id], collect($response->json('data'))->pluck('id')->all());
+
+        foreach ([$pos, $completed, $advanced] as $refund) {
+            $this->postJson("/api/repairer/refunds/{$refund->id}/approve", [
+                'assessment_note' => 'Not awaiting repairer review', 'approved_amount' => 500,
+            ])->assertUnprocessable();
+            $this->postJson("/api/repairer/refunds/{$refund->id}/reject", [
+                'assessment_note' => 'Not awaiting repairer review', 'reason' => 'Not reviewable',
+            ])->assertUnprocessable();
+            $this->assertSame($refund->status, $refund->fresh()->status);
+            $this->assertSame('pending', $refund->fresh()->repairer_status);
+        }
+    }
+
+    #[Test]
     public function finance_repair_refund_payload_identifies_repair_source_without_retail_return_status(): void
     {
         Permission::findOrCreate('access-refund-approval', 'user');

@@ -63,6 +63,17 @@ class RepairService extends Model
             : null;
     }
 
+    public function scopeAvailable($query)
+    {
+        return $query->where(function ($query) {
+            $query->whereIn('status', ['Active', 'active'])
+                ->orWhere(function ($query) {
+                    $query->whereIn('status', ['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval', 'Rejected'])
+                        ->whereNotNull('old_price');
+                });
+        });
+    }
+
     /**
      * Get the user who created this service
      */

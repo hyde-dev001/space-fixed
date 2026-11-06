@@ -3,10 +3,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import JobOrdersRepair from '../JobOrdersRepair';
 
-it('shows parcel recovery separately from repair completion and payment', async () => {
+it('does not show or load parcel recovery on the repair job orders page', async () => {
   render(<JobOrdersRepair />);
-  await waitFor(() => expect(screen.getByRole('region', { name: 'Returned parcels requiring action' })).toBeInTheDocument());
-  expect(screen.getByText(/Receipt does not complete repair, refund or delivery/)).toBeInTheDocument();
+  await screen.findByRole('button', { name: /^Pending \(1\)$/ });
+  expect(screen.queryByRole('region', { name: 'Returned parcels requiring action' })).not.toBeInTheDocument();
+  expect(mocks.get).not.toHaveBeenCalledWith('/api/logistics/parcel-recovery');
 });
 
 const mocks = vi.hoisted(() => ({
@@ -92,7 +93,6 @@ beforeEach(() => {
   vi.stubGlobal('fetch', mocks.fetch);
   mocks.post.mockResolvedValue({ data: { success: true } });
   mocks.get.mockImplementation(async (url: string) => {
-    if (url === '/api/logistics/parcel-recovery') return { data: { recoveries: [] } };
     if (url === '/api/repairer/repairs') {
       return { data: { success: true, data: [mocks.repair] } };
     }
@@ -124,6 +124,31 @@ const openDetails = async () => {
 };
 
 describe('JobOrdersRepair intake logistics', () => {
+  it('shows the refund payment state once without stacking it in the repair status', async () => {
+    mocks.repair = { ...repair('customer_dropoff'), status: 'picked_up', payment_status: 'refunded' };
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Completed \(1\)$/ }));
+    const row = (await screen.findByText('Rina Santos')).closest('tr');
+    expect(row).not.toBeNull();
+    expect(within(row!).getByText('Received')).toBeInTheDocument();
+    expect(within(row!).getAllByText('Refunded')).toHaveLength(1);
+    expect(within(row!).queryByRole('button', { name: 'Review Refund Request' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a genuine pending online refund review available after a partial refund', async () => {
+    mocks.repair = { ...repair('customer_dropoff'), status: 'picked_up', payment_status: 'partially_refunded' };
+    const originalGet = mocks.get.getMockImplementation()!;
+    mocks.get.mockImplementation(async (url: string) => url === '/api/repairer/refunds'
+      ? { data: { success: true, data: [{ id: 9, refund_no: 'RFD-9', module_reference_id: 77, repairer_status: 'pending' }] } }
+      : originalGet(url));
+    render(<JobOrdersRepair />);
+    fireEvent.click(await screen.findByRole('button', { name: /^Completed \(1\)$/ }));
+    const row = (await screen.findByText('Rina Santos')).closest('tr');
+    expect(row).not.toBeNull();
+    expect(await within(row!).findByRole('button', { name: 'Review Refund Request' })).toBeInTheDocument();
+    expect(within(row!).getAllByText('Partially Refunded')).toHaveLength(1);
+  });
+
   it('uses the monochrome active state for repair service tabs', async () => {
     render(<JobOrdersRepair />);
 

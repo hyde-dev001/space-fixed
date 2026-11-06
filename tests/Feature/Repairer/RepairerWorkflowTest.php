@@ -287,6 +287,24 @@ class RepairerWorkflowTest extends TestCase
         $this->assertNotContains('Other Shop Service', $names);
     }
 
+    public function test_public_listing_keeps_the_approved_service_price_during_and_after_price_review(): void
+    {
+        $shop = $this->createRepairShop();
+        $service = $this->createService($shop, ['price' => 500, 'old_price' => 500, 'finance_notes' => '700']);
+
+        foreach (['Under Review', 'Pending Owner Approval', 'Pending Finance Final Approval', 'Rejected'] as $status) {
+            $service->update(['status' => $status]);
+            $this->getJson('/api/repair-services?shop_id='.$shop->id)
+                ->assertOk()
+                ->assertJsonFragment(['id' => $service->id, 'price' => '500.00'])
+                ->assertJsonMissingPath('data.0.finance_notes');
+        }
+
+        $service->update(['old_price' => null]);
+        $this->getJson('/api/repair-services?shop_id='.$shop->id)
+            ->assertOk()->assertJsonCount(0, 'data');
+    }
+
     public function test_repairer_can_process_an_assigned_service_request_through_completion(): void
     {
         $shopOwner = $this->createRepairShop();

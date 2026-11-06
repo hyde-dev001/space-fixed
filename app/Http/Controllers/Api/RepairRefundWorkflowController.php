@@ -167,6 +167,9 @@ class RepairRefundWorkflowController extends Controller
         $refunds = PosRefund::query()
             ->where('module_type', 'repair')
             ->where('shop_owner_id', (int) ($actor->shop_owner_id ?? 0))
+            ->where('workflow_source', 'online_myrepair')
+            ->where('status', 'requested')
+            ->where('finance_status', 'pending')
             ->where('repairer_status', 'pending')
             ->whereHas('repairRequest', function ($query) use ($actor): void {
                 $query->where('shop_owner_id', (int) ($actor->shop_owner_id ?? 0))

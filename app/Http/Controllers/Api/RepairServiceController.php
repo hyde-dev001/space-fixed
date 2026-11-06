@@ -48,7 +48,7 @@ class RepairServiceController extends Controller
             $query->where('shop_owner_id', $actingShopOwnerId);
         } elseif ($request->filled('shop_id')) {
             $query->where('shop_owner_id', (int) $request->shop_id)
-                ->whereIn('status', ['Active', 'active']);
+                ->available();
         } else {
             // Backoffice path: scope by authenticated actor.
             // Filter by shop_owner_id based on authentication
@@ -98,8 +98,15 @@ class RepairServiceController extends Controller
             ->with(['materialTemplateItems.inventoryItem:id,name'])
             ->orderBy('created_at', 'desc')
             ->get()
-            ->map(function (RepairService $service) {
+            ->map(function (RepairService $service) use ($request) {
                 $payload = $service->toArray();
+                if ($request->filled('shop_id')) {
+                    unset($payload['finance_notes'], $payload['rejection_reason'], $payload['change_reason'],
+                        $payload['finance_reviewed_by'], $payload['finance_reviewed_at'],
+                        $payload['owner_reviewed_by'], $payload['owner_reviewed_at'],
+                        $payload['old_price'], $payload['approval_id'], $payload['current_approval_level'],
+                        $payload['approval_workflow_version'], $payload['created_by'], $payload['updated_by']);
+                }
 
                 $payload['material_templates'] = $service->materialTemplateItems
                     ->map(function ($item) {

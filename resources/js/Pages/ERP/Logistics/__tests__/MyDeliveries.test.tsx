@@ -727,12 +727,12 @@ describe('MyDeliveries rider interactions', () => {
     });
     const view = render(<MyDeliveries />);
 
-    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Failed pickup' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Confirm pickup' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Failed pickup' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: "I've arrived for pickup" }));
     await waitFor(() => expect(mocks.arrive).toHaveBeenCalledWith(20, { arrival_type: 'pickup' }));
 
-    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [repairPickup], {
+    mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{ ...repairPickup, arrivals: arrived('pickup') }], {
       group: 'upcoming',
       business_types: ['repair'],
       business_label: 'Repair pickup',
@@ -740,7 +740,9 @@ describe('MyDeliveries rider interactions', () => {
       delivery_label: 'Repair Pickup',
     });
     view.rerender(<MyDeliveries />);
-    expect(screen.getByRole('button', { name: 'Failed pickup' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: "I've arrived for pickup" })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Failed pickup' })).toBeEnabled();
 
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{
       ...leg(21, null, 'assigned'),
@@ -790,7 +792,7 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.queryByRole('region', { name: 'GPS tracking' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Stop GPS tracking' })).not.toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Route to customer' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeVisible();
+    expect(screen.getByRole('button', { name: "I've arrived for pickup" })).toBeVisible();
   });
 
   it('tracks a repair pickup toward the shop after customer handoff', async () => {
