@@ -76,6 +76,34 @@ class RepairPackageApiTest extends TestCase
         ], $overrides));
     }
 
+    public function test_rejected_package_price_can_be_requested_again_without_losing_the_approved_price(): void
+    {
+        $this->withoutMiddleware();
+        $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
+        $repairer = User::factory()->create(['shop_owner_id' => $shop->id]);
+
+        foreach (['finance_rejected' => 1200, 'owner_rejected' => 1100] as $status => $proposedPrice) {
+            $package = RepairPackage::create([
+                'shop_owner_id' => $shop->id,
+                'name' => 'Repair bundle',
+                'status' => 'active',
+                'package_price' => 1200,
+                'old_package_price' => 1000,
+                'approval_status' => $status,
+            ]);
+
+            $this->actingAs($repairer, 'user')->putJson('/api/repair-packages/'.$package->id, [
+                'package_price' => $proposedPrice,
+                'reason' => 'Revised request',
+            ])->assertStatus(202);
+
+            $package->refresh();
+            $this->assertSame('pending_finance', $package->approval_status);
+            $this->assertEquals(1000, $package->old_package_price);
+            $this->assertEquals($proposedPrice, $package->package_price);
+        }
+    }
+
     public function test_shop_owner_repair_package_management_is_read_only(): void
     {
         $shopOwner = ShopOwner::factory()->approved()->create([

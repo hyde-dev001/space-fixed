@@ -24,6 +24,7 @@ class RepairOnlineRefundWorkflowService
             $lockedRefund = PosRefund::query()->whereKey($refund->id)
                 ->where('shop_owner_id', $refund->shop_owner_id)
                 ->where('module_reference_id', $refund->module_reference_id)->lockForUpdate()->firstOrFail();
+            $this->assertAwaitingRepairerReview($lockedRefund);
             if ($repair) {
                 $eligibility->assertRefundAllowed($repair, (string) ($lockedRefund->workflow_source ?? 'online_myrepair'), (int) $lockedRefund->id);
             }
@@ -34,12 +35,6 @@ class RepairOnlineRefundWorkflowService
 
     private function repairerApproveLocked(PosRefund $refund, int $actorId, string $assessmentNote, float $approvedAmount): PosRefund
     {
-        if ((string) $refund->repairer_status !== 'pending') {
-            throw ValidationException::withMessages([
-                'repairer_status' => ['Repairer review already completed.'],
-            ]);
-        }
-
         $refund->update([
             'repairer_status' => 'approved',
             'repairer_assessment_note' => Str::limit(trim($assessmentNote), 2000, ''),
@@ -91,12 +86,19 @@ class RepairOnlineRefundWorkflowService
 
     public function repairerReject(PosRefund $refund, int $actorId, string $assessmentNote, string $reason): PosRefund
     {
-        if ((string) $refund->repairer_status !== 'pending') {
-            throw ValidationException::withMessages([
-                'repairer_status' => ['Repairer review already completed.'],
-            ]);
-        }
+        return DB::transaction(function () use ($refund, $actorId, $assessmentNote, $reason): PosRefund {
+            app(RepairResolutionEligibilityService::class)->lockRepair((int) $refund->module_reference_id, (int) $refund->shop_owner_id);
+            $lockedRefund = PosRefund::query()->whereKey($refund->id)
+                ->where('shop_owner_id', $refund->shop_owner_id)
+                ->where('module_reference_id', $refund->module_reference_id)->lockForUpdate()->firstOrFail();
+            $this->assertAwaitingRepairerReview($lockedRefund);
 
+            return $this->repairerRejectLocked($lockedRefund, $actorId, $assessmentNote, $reason);
+        });
+    }
+
+    private function repairerRejectLocked(PosRefund $refund, int $actorId, string $assessmentNote, string $reason): PosRefund
+    {
         $refund->update([
             'repairer_status' => 'rejected',
             'repairer_assessment_note' => Str::limit(trim($assessmentNote), 2000, ''),
@@ -164,6 +166,18 @@ class RepairOnlineRefundWorkflowService
         }
 
         return $refund->fresh();
+    }
+
+    private function assertAwaitingRepairerReview(PosRefund $refund): void
+    {
+        if ($refund->workflow_source !== 'online_myrepair'
+            || $refund->status !== 'requested'
+            || $refund->finance_status !== 'pending'
+            || $refund->repairer_status !== 'pending') {
+            throw ValidationException::withMessages([
+                'repairer_status' => ['This refund is not awaiting repairer review.'],
+            ]);
+        }
     }
 
     private function isIndividualShopOwner(int $shopOwnerId): bool

@@ -88,6 +88,7 @@ class RepairOnlineRefundWorkflowTest extends TestCase
             'source_transaction_id' => $source->id,
             'module_type' => 'repair',
             'module_reference_id' => 2,
+            'workflow_source' => 'online_myrepair',
             'request_type' => 'full',
             'requested_amount' => 500,
             'reason_code' => 'service_defect',
