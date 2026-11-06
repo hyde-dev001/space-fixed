@@ -1208,6 +1208,7 @@ export default function JobOrdersPage() {
       html: `
         <div style="display:grid;gap:14px;text-align:left;">
           <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%, 18rem),1fr));gap:14px;align-items:start;">
+          <div style="display:grid;gap:10px;">
           <div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;background:#f8fafc;display:grid;gap:8px;">
             <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Order Context</p>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -1225,6 +1226,14 @@ export default function JobOrdersPage() {
               <p style="margin:2px 0 0;font-size:13px;font-weight:600;color:#111827;">${escapeHtml(customerPhone)}</p>
             </div>
           </div>
+          <div style="display:grid;gap:6px;">
+            <label style="font-size:13px;font-weight:600;color:#334155;">Delivery Method</label>
+            <select id="swal-delivery-method" style="border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;">
+              <option value="third_party">Third-party courier</option>
+              <option value="shop_owned" ${shopOwnedEligible ? '' : 'disabled'}>${escapeHtml(shopOwnedOptionLabel)}</option>
+            </select>
+          </div>
+          </div>
 
           <div style="display:grid;gap:6px;">
             <label style="font-size:13px;font-weight:700;color:#334155;">Customer Pickup Address</label>
@@ -1236,14 +1245,6 @@ export default function JobOrdersPage() {
 
            <div style="display:grid;gap:10px;">
              <p style="margin:0;font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#475569;">Courier Assignment</p>
-
-             <div style="display:grid;gap:6px;">
-               <label style="font-size:13px;font-weight:600;color:#334155;">Delivery Method</label>
-               <select id="swal-delivery-method" style="border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;">
-                 <option value="third_party">Third-party courier</option>
-                 <option value="shop_owned" ${shopOwnedEligible ? '' : 'disabled'}>${escapeHtml(shopOwnedOptionLabel)}</option>
-               </select>
-             </div>
 
              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%, 18rem),1fr));gap:10px;">
              <div class="swal-third-party-field" style="display:grid;gap:10px;">
@@ -1266,7 +1267,7 @@ export default function JobOrdersPage() {
               <input id="swal-tracking-number" class="swal2-input" placeholder="Tracking number" value="${escapeHtml(defaultTrackingNumber)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
 
-             <div class="swal-third-party-field" style="display:grid;gap:6px;">
+             <div class="swal-third-party-field" style="display:grid;gap:6px;grid-column:1 / -1;">
               <label style="font-size:13px;font-weight:600;color:#334155;">Tracking Link</label>
               <input id="swal-tracking-link" class="swal2-input" placeholder="https://..." value="${escapeHtml(defaultTrackingLink)}" style="margin:0;border-radius:10px;border:1px solid #d1d5db;padding:10px 12px;" />
             </div>
