@@ -4,7 +4,6 @@ import { Head, Link, router, usePage } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import Swal from '../Shared/UserModal';
 import RefundEligibilityTooltip from '@/components/common/RefundEligibilityTooltip';
-import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
 import type { RetailWarrantyProjection } from '@/types/retailWarranty';
   import ShipmentTrackingModal from '@/components/logistics/ShipmentTrackingModal';
   import { CustomerFooterReveal } from '../../../components/common/CustomerFooter';
@@ -200,6 +199,8 @@ const parseRefundAmount = (value: unknown): number => {
   const parsed = Number.parseFloat(String(value ?? 0).replace(/[^0-9.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+const roundCurrency = (value: number): number => Math.round(Math.max(0, value) * 100) / 100;
 
 export const resolveRefundableOrderTotal = (
   order: Pick<Order, 'total_amount' | 'shipping_fee' | 'vat_amount' | 'grand_total'>,
@@ -766,14 +767,14 @@ const MyOrders: React.FC = () => {
 
     const returnMethod = await Swal.fire({
       title: 'Return method',
-      text: 'Paano mo ibabalik ang item?',
+      text: 'How will you return the item?',
       input: 'select',
       inputOptions: {
         shop_owned: 'Shop-owned logistics (rider pickup)',
-        third_party: 'Third-party courier (ikaw ang magpapadala)',
+        third_party: 'Third-party courier (you arrange the shipment)',
       },
-      inputPlaceholder: 'Pumili ng return method',
-      inputValidator: (value) => value ? undefined : 'Pumili muna ng return method.',
+      inputPlaceholder: 'Select a return method',
+      inputValidator: (value) => value ? undefined : 'Please select a return method.',
       showCancelButton: true,
       confirmButtonText: 'Continue',
       cancelButtonText: 'Cancel',
@@ -788,10 +789,10 @@ const MyOrders: React.FC = () => {
     if (!isShopOwnedReturn) {
       const tracking = await Swal.fire({
         title: 'Ship the returned item',
-        text: 'Ilagay ang tracking number ng parcel na ibinabalik mo.',
+        text: 'Enter the tracking number for your return shipment.',
         input: 'text',
         inputPlaceholder: 'Tracking number',
-        inputValidator: (value) => value.trim() ? undefined : 'Required ang tracking number.',
+        inputValidator: (value) => value.trim() ? undefined : 'Tracking number is required.',
         showCancelButton: true,
         confirmButtonText: 'Continue',
         cancelButtonText: 'Cancel',
@@ -801,10 +802,10 @@ const MyOrders: React.FC = () => {
 
       const carrier = await Swal.fire({
         title: 'Return carrier',
-        text: 'Anong courier ang gagamitin mo sa pagbalik ng item?',
+        text: 'Which courier will you use to return the item?',
         input: 'text',
-        inputPlaceholder: 'Hal. J&T, LBC, Ninja Van',
-        inputValidator: (value) => value.trim() ? undefined : 'Required ang carrier.',
+        inputPlaceholder: 'e.g. J&T, LBC, Ninja Van',
+        inputValidator: (value) => value.trim() ? undefined : 'Carrier is required.',
         showCancelButton: true,
         confirmButtonText: 'Continue',
         cancelButtonText: 'Cancel',
@@ -816,7 +817,7 @@ const MyOrders: React.FC = () => {
     const note = await Swal.fire({
       title: 'Return note',
       input: 'textarea',
-      inputPlaceholder: 'Optional na detalye tungkol sa return...',
+      inputPlaceholder: 'Optional details about the return...',
       showCancelButton: true,
       confirmButtonText: 'Submit Return Shipment',
       cancelButtonText: 'Cancel',
@@ -844,7 +845,12 @@ const MyOrders: React.FC = () => {
         body: JSON.stringify(returnPayload),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || 'Hindi ma-update ang return shipment.');
+      if (!response.ok) {
+        const message = isShopOwnedReturn && data.message === 'Staff and Finance approvals are required before arranging a return shipment.'
+          ? 'Sorry, shop-owned logistics is currently unavailable for this return. Please choose another return method if available, or contact the shop for assistance.'
+          : data.message || 'Unable to update the return shipment.';
+        throw new Error(message);
+      }
 
       setOrders((prev) => prev.map((currentOrder) => currentOrder.id === order.id ? {
         ...currentOrder,
@@ -882,15 +888,15 @@ const MyOrders: React.FC = () => {
         icon: 'success',
         title: 'Return Shipment Submitted',
         text: isShopOwnedReturn
-          ? 'Naipasa na ang pickup request sa dispatcher. I-aassign nila ito sa rider para maibalik sa shop.'
-          : 'Na-record na ang return. Hintayin ang staff inspection bago ma-release ang refund.',
+          ? 'The pickup request was sent to the dispatcher, who will assign a rider to return the item to the shop.'
+          : 'The return has been recorded. Please wait for staff inspection before the refund is released.',
         confirmButtonColor: '#000000',
       });
     } catch (error) {
       Swal.fire({
         icon: 'error',
         title: 'Failed',
-        text: error instanceof Error ? error.message : 'Hindi ma-update ang return shipment. Subukan ulit.',
+        text: error instanceof Error ? error.message : 'Unable to update the return shipment. Please try again.',
         confirmButtonColor: '#000000',
       });
     }
@@ -2778,15 +2784,22 @@ const MyOrders: React.FC = () => {
                         );
                       })()}
 
-                      {order.product_warranty ? <div className="px-4 pb-4 sm:px-6"><RetailWarrantyPanel warranty={order.product_warranty}
-                        shopAssisted={order.is_pos_order} disabled={refundFrozen || Boolean(order.active_delivery_dispute) || ['requested', 'pending_approval', 'approved', 'processing'].includes(String(order.refund_stage?.status))}
-                        onAssess={() => {
-                          setRefundOrderId(order.id); setRefundBasis('warranty'); setRefundStep(1); setRefundReason(''); setRefundMedia([]);
-                          setRefundRequestType('partial'); initializeRefundLineQty(order.items || []); setRefundNote(''); setRefundOtherReasonNote('');
-                          setRefundDestinationType('gcash'); setRefundAccountName(''); setRefundAccountNumber(''); setRefundBankChannel(''); setShowRefundModal(true);
-                        }} /></div> : null}
                       {/* Order Actions */}
                       <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 sm:mt-6 sm:pt-6 sm:gap-3">
+                        {!order.is_pos_order && order.product_warranty?.items.some(item => item.can_assess) && (
+                          <button
+                            type="button"
+                            disabled={refundFrozen || Boolean(order.active_delivery_dispute) || ['requested', 'pending_approval', 'approved', 'processing'].includes(String(order.refund_stage?.status))}
+                            onClick={() => {
+                              setRefundOrderId(order.id); setRefundBasis('warranty'); setRefundStep(1); setRefundReason(''); setRefundMedia([]);
+                              setRefundRequestType('partial'); initializeRefundLineQty(order.items || []); setRefundNote(''); setRefundOtherReasonNote('');
+                              setRefundDestinationType('gcash'); setRefundAccountName(''); setRefundAccountNumber(''); setRefundBankChannel(''); setShowRefundModal(true);
+                            }}
+                            className={`${actionButtonBaseClass} ${actionButtonPrimaryClass} disabled:cursor-not-allowed disabled:opacity-50`}
+                          >
+                            Request Warranty Assessment
+                          </button>
+                        )}
                         {order.refund_stage?.awaiting_refund_destination === true && (
                           <div className="flex w-full flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                             <div>
