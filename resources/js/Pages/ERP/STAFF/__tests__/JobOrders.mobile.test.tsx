@@ -8,6 +8,40 @@ vi.mock('@/components/orders/RetailWarrantyPanel',()=>({default:()=>null}));
 vi.mock('sweetalert2',()=>({default:{fire:vi.fn().mockResolvedValue({isConfirmed:false})}}));
 afterEach(()=>{cleanup();vi.unstubAllGlobals()});
 describe('compact staff inspection queue',()=>{
+ it('shows staff-arranged third-party tracking in the return review', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [{
+    id: 5, order_number: 'ARRANGED', customer_name: 'Test customer', status: 'delivered',
+    product_name: 'Shoe', quantity: 1, items: [], total_amount: 100, grand_total: 100,
+    latest_refund: { id: 6, status: 'pending_approval', flow_type: 'request_approval',
+      shop_owner_status: 'approved', finance_status: 'approved', return_status: 'in_transit',
+      return_source: 'staff', return_delivery_method: 'third_party', staff_return_carrier: 'Sample Courier',
+      staff_return_tracking_number: 'SAMPLE-123' },
+  }] }));
+  render(<JobOrders />);
+  fireEvent.click(await screen.findByRole('button', { name: /All Orders/ }));
+  const queue = screen.getByRole('region', { name: 'Compact job orders' });
+  fireEvent.click(within(queue).getByRole('button', { name: 'Review return' }));
+  const Swal = (await import('sweetalert2')).default;
+  expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({
+    title: 'Review return', html: expect.stringContaining('Sample Courier'),
+  }));
+  expect(Swal.fire).toHaveBeenCalledWith(expect.objectContaining({ html: expect.stringContaining('SAMPLE-123') }));
+ });
+ it('shows arrangement, not inspection, for an unarranged customer return', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [{
+    id: 3, order_number: 'UNARRANGED', customer_name: 'Test customer', status: 'delivered',
+    product_name: 'Shoe', quantity: 1, items: [], total_amount: 100, grand_total: 100,
+    latest_refund: { id: 4, status: 'pending_approval', flow_type: 'request_approval',
+      shop_owner_status: 'approved', finance_status: 'approved', return_status: 'pending_staff_pickup',
+      return_source: 'staff' },
+  }] }));
+  render(<JobOrders />);
+  fireEvent.click(await screen.findByRole('button', { name: /All Orders/ }));
+  const queue = screen.getByRole('region', { name: 'Compact job orders' });
+  expect(within(queue).getByText('Awaiting Return Arrangement')).toBeInTheDocument();
+  expect(within(queue).getByRole('button', { name: 'Arrange return pickup' })).toBeEnabled();
+  expect(within(queue).queryByRole('button', { name: 'Review return' })).not.toBeInTheDocument();
+ });
  it('keeps the order, item, quantity and inspection action together',async()=>{
   vi.stubGlobal('fetch',vi.fn().mockResolvedValue({ok:true,json:async()=>[{id:1,order_number:'ORD-RETURN',customer_name:'Synthetic customer',status:'shipped',product_name:'Returned shoe',quantity:2,items:[],total_amount:500,grand_total:500,latest_refund:{id:2,status:'requested',reason_code:'delivery_attempts_exhausted',shop_owner_status:'approved',finance_status:'pending',return_status:'in_transit',return_source:'staff',staff_return_carrier:'Shop-owned logistics',flow_type:'request_approval'}}]}));
   render(<JobOrders/>);

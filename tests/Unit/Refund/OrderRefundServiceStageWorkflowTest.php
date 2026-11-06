@@ -500,7 +500,7 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
     }
 
     #[Test]
-    public function staff_can_confirm_return_received_from_pending_staff_pickup_state(): void
+    public function staff_cannot_confirm_return_received_from_pending_staff_pickup_state(): void
     {
         $refund = $this->makeRefund([
             'shop_owner_status' => 'approved',
@@ -512,9 +512,9 @@ final class OrderRefundServiceStageWorkflowTest extends TestCase
 
         $result = $this->service->confirmReturnReceived($refund, staffId: 88, notes: 'Collected and inspected');
 
-        $this->assertSame('received', $result['result']);
-        $this->assertSame('received', $refund->return_status);
-        $this->assertSame(88, $refund->return_confirmed_by_staff_id);
+        $this->assertSame('invalid_state', $result['result']);
+        $this->assertSame('pending_staff_pickup', $refund->return_status);
+        $this->assertNull($refund->return_confirmed_by_staff_id);
     }
 
     #[Test]

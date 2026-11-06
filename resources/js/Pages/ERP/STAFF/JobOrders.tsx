@@ -555,9 +555,7 @@ export const canConfirmReturnReceived = (order: Pick<Order, "latest_refund" | "p
     return returnStatus === 'in_transit';
   }
 
-  return returnStatus === 'in_transit'
-    || (String(latestRefund.return_source || '').toLowerCase() === 'staff'
-      && returnStatus === 'pending_staff_pickup');
+  return returnStatus === 'in_transit';
 };
 
 export const hasConfirmedParcelLoss = (order: Pick<Order, 'logistics' | 'latest_refund'>) =>
@@ -1037,7 +1035,7 @@ export default function JobOrdersPage() {
 
       if (returnStatus === 'pending_staff_pickup') {
         return {
-          label: 'Staff Pickup Scheduled',
+          label: getReturnDeliveryMethod(latestRefund) ? 'Staff Pickup Scheduled' : 'Awaiting Return Arrangement',
           className: 'bg-amber-50 text-amber-700 ring-1 ring-inset ring-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:ring-amber-700/40',
         };
       }
@@ -1541,8 +1539,7 @@ export default function JobOrdersPage() {
     const latestRefund = order.latest_refund;
     const returnMethod = getReturnDeliveryMethod(latestRefund);
     const returnSource = String(latestRefund?.return_source || '').toLowerCase();
-    const useStaffReturnFields = returnMethod === 'shop_owned'
-      || (returnSource === 'staff' && returnMethod !== 'third_party');
+    const useStaffReturnFields = returnMethod === 'shop_owned' || returnSource === 'staff';
     const returnCarrier = (useStaffReturnFields
       ? latestRefund?.staff_return_carrier
       : latestRefund?.customer_return_carrier) || '-';

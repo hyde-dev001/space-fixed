@@ -73,6 +73,17 @@ describe("staff customer refund actions", () => {
     }))).toBe(false);
   });
 
+  it('does not offer inspection before a staff return is arranged', () => {
+    for (const carrier of [null, 'Lalamove']) {
+      const order = refund({
+        status: 'pending_approval', shop_owner_status: 'approved', finance_status: 'approved',
+        return_status: 'pending_staff_pickup', return_source: 'staff', staff_return_carrier: carrier,
+      });
+      expect(canConfirmReturnReceived(order)).toBe(false);
+      if (carrier === null) expect(canArrangeReturnPickup(order)).toBe(true);
+    }
+  });
+
   it('allows third-party inspection after transport starts, but not before', () => {
     expect(canConfirmReturnReceived({
       latest_refund: {
