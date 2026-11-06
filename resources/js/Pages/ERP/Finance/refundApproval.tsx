@@ -2160,7 +2160,7 @@ export default function RefundApproval() {
 					{isVideoEvidence(activeImage) ? (
 						<video
 							src={activeImage}
-							className="max-h-[85vh] max-w-[90vw] rounded-xl shadow-2xl"
+							className="block w-full min-w-0 max-w-5xl max-h-[80vh] rounded-xl object-contain shadow-2xl"
 							controls
 							autoPlay
 						/>

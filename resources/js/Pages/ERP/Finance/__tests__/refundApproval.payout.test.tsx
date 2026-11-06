@@ -98,6 +98,29 @@ afterEach(() => {
 });
 
 describe("Finance canonical retail refund payout", () => {
+  it("keeps the evidence video open while interacting with it", async () => {
+    mocks.fetch.mockImplementation((url: string) => {
+      if (url.startsWith("/api/finance/refunds?")) return response({ data: [{
+        id: 11, orderNumber: "ORD-11", customerName: "Customer", refundAmount: "PHP 100.00",
+        refundAmountValue: 100, refundMethod: "Original Payment Method", requestedBy: "Customer",
+        requestDate: "2026-07-30", reason: "Damaged item", status: "Approved", rawStatus: "pending_approval",
+        shopOwnerStatus: "approved", financeStatus: "approved", returnStatus: "received", media: ["/evidence.mp4"],
+      }] });
+      if (url.startsWith("/api/finance/repair-refunds?") || url.startsWith("/api/finance/repair-delivery-reconciliations?")) return response({ data: [] });
+      throw new Error(`Unexpected fetch ${url}`);
+    });
+
+    render(<RefundApproval />);
+    fireEvent.click(await screen.findByTitle("View Details"));
+    fireEvent.click(await screen.findByTitle("View video"));
+    const video = document.querySelector("video[controls]");
+    if (!video) throw new Error("Video preview was not rendered");
+    fireEvent.click(video);
+    expect(document.querySelector("video[controls]")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close image preview" }));
+    expect(document.querySelector("video[controls]")).not.toBeInTheDocument();
+  });
+
   it('opens named refund details and closes with Escape', async () => {
     render(<RefundApproval />);
     const trigger=await screen.findByTitle('View Details');trigger.focus();fireEvent.click(trigger);
