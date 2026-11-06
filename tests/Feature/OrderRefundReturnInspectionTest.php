@@ -193,6 +193,29 @@ class OrderRefundReturnInspectionTest extends TestCase
         $this->assertSame(9, (int) $inventory->fresh()->available_quantity);
     }
 
+    public function test_staff_return_cannot_be_inspected_before_transport_starts(): void
+    {
+        foreach (['company', 'individual'] as $registrationType) {
+            foreach ([null, 'Lalamove'] as $carrier) {
+                [$refund, $staff, $line, $product] = $this->fixture($registrationType);
+                $refund->update([
+                    'return_status' => 'pending_staff_pickup',
+                    'return_source' => 'staff',
+                    'staff_return_carrier' => $carrier,
+                ]);
+
+                $result = app(OrderRefundService::class)->confirmReturnReceived(
+                    $refund->fresh(), $staff->id, lineDispositions: [$this->disposition($line->order_item_id)],
+                );
+
+                $this->assertSame('invalid_state', $result['result']);
+                $this->assertSame('pending_staff_pickup', $refund->fresh()->return_status);
+                $this->assertSame('pending', $line->fresh()->inspection_disposition);
+                $this->assertSame(5, (int) $product->fresh()->stock_quantity);
+            }
+        }
+    }
+
     public function test_individual_return_cannot_be_confirmed_before_customer_submits_shipment(): void
     {
         [$refund, $staff] = $this->fixture('individual');
@@ -251,7 +274,7 @@ class OrderRefundReturnInspectionTest extends TestCase
         ]);
     }
 
-    public function test_retail_individual_owner_can_confirm_a_legacy_staff_pickup_return(): void
+    public function test_retail_individual_owner_can_confirm_a_started_legacy_staff_return(): void
     {
         [$refund, , $line] = $this->fixture('individual');
         $shop = ShopOwner::query()->findOrFail($refund->shop_owner_id);
@@ -259,7 +282,7 @@ class OrderRefundReturnInspectionTest extends TestCase
         $refund->update([
             'shop_owner_status' => 'approved',
             'finance_status' => 'approved',
-            'return_status' => 'pending_staff_pickup',
+            'return_status' => 'in_transit',
             'return_source' => 'staff',
             'staff_return_carrier' => 'Lalamove',
         ]);

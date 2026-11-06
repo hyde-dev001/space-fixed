@@ -753,6 +753,34 @@ describe('MyDeliveries rider interactions', () => {
     expect(screen.queryByRole('button', { name: 'Failed pickup' })).not.toBeInTheDocument();
   });
 
+  it.each(['assigned', 'pickup_scheduled'])('requires arrival before return pickup actions for %s', async (status) => {
+    const returnPickup = {
+      ...leg(30, null, status),
+      leg_type: 'return_to_shop',
+      shipment: { id: 130, source_type: 'order_refund', source_id: 230, purpose: 'refund_return' },
+      assignments: [{ id: 230, status: 'accepted' }],
+    };
+    mocks.props.deliveryData.up_next = workItem('single', status, [returnPickup], {
+      group: 'upcoming', business_types: ['retail'], business_label: 'Retail return',
+      delivery_type: 'retail_return', delivery_label: 'Retail Return',
+    });
+    const view = render(<MyDeliveries />);
+
+    expect(screen.queryByRole('button', { name: 'Confirm pickup' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Failed pickup' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: "I've arrived for pickup" }));
+    await waitFor(() => expect(mocks.arrive).toHaveBeenCalledWith(30, { arrival_type: 'pickup' }));
+
+    mocks.props.deliveryData.up_next = workItem('single', status, [{ ...returnPickup, arrivals: arrived('pickup') }], {
+      group: 'upcoming', business_types: ['retail'], business_label: 'Retail return',
+      delivery_type: 'retail_return', delivery_label: 'Retail Return',
+    });
+    view.rerender(<MyDeliveries />);
+    expect(screen.queryByRole('button', { name: "I've arrived for pickup" })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Confirm pickup' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Failed pickup' })).toBeEnabled();
+  });
+
   it('automatically starts GPS tracking before a repair pickup is confirmed', () => {
     mocks.props.liveTrackingEnabled = true;
     mocks.props.deliveryData.up_next = workItem('single', 'assigned', [{

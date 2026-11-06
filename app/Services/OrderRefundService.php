@@ -1520,8 +1520,7 @@ class OrderRefundService
         }
 
         $returnStatus = (string) ($refund->return_status ?? 'awaiting_approval');
-        $isStaffPickup = (string) ($refund->return_source ?? '') === 'staff';
-        if ($returnStatus !== 'in_transit' && !($isStaffPickup && $returnStatus === 'pending_staff_pickup')) {
+        if ($returnStatus !== 'in_transit') {
             return [
                 'result' => 'invalid_state',
                 'message' => 'Return cannot be confirmed in the current state.',
@@ -1571,7 +1570,6 @@ class OrderRefundService
             staffId: $staffId,
             notes: $notes,
             lineDispositions: $lineDispositions,
-            allowPendingStaffPickup: true,
             invalidStateMessage: 'Return cannot be confirmed in the current state.',
         );
     }
@@ -1587,7 +1585,6 @@ class OrderRefundService
             staffId: $staffId,
             notes: $notes,
             lineDispositions: $lineDispositions,
-            allowPendingStaffPickup: false,
             invalidStateMessage: 'Wait for the returned parcel before completing the Staff inspection.',
         );
     }
@@ -1597,22 +1594,17 @@ class OrderRefundService
         ?int $staffId,
         ?string $notes,
         ?array $lineDispositions,
-        bool $allowPendingStaffPickup,
         string $invalidStateMessage,
     ): array {
-        return DB::transaction(function () use ($refund, $staffId, $notes, $lineDispositions, $allowPendingStaffPickup, $invalidStateMessage) {
+        return DB::transaction(function () use ($refund, $staffId, $notes, $lineDispositions, $invalidStateMessage) {
             $refund = OrderRefund::query()->with(['order.shopOwner', 'order.items'])->lockForUpdate()->findOrFail($refund->id);
             $returnStatus = (string) ($refund->return_status ?? 'awaiting_approval');
             $isStaffPickup = (string) ($refund->return_source ?? '') === 'staff';
             $returnDeliveryMethod = $refund->returnDeliveryMethod();
-            $staffPickupAllowed = $allowPendingStaffPickup && $isStaffPickup && $returnStatus === 'pending_staff_pickup';
             if ($returnDeliveryMethod === 'shop_owned' && !$this->hasDeliveredShopOwnedReturnShipment($refund)) {
                 return $this->invalidReturnReceipt($refund, 'Wait for the Shop-owned return delivery before completing the Staff inspection.');
             }
-            if ($returnDeliveryMethod === 'third_party' && $returnStatus !== 'in_transit' && ! $staffPickupAllowed) {
-                return $this->invalidReturnReceipt($refund, $invalidStateMessage);
-            }
-            if ($returnStatus !== 'in_transit' && ! $staffPickupAllowed) {
+            if ($returnStatus !== 'in_transit') {
                 return $this->invalidReturnReceipt($refund, $invalidStateMessage);
             }
 

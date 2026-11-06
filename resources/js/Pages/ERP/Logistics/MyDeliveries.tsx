@@ -1120,7 +1120,7 @@ function DeliveryActions({
   if (['assigned', 'pickup_scheduled'].includes(delivery.status)) {
     if (!canUpdateStatus && !(canReportIssue && isCustomerCollection)) return null;
     const key = `pickup:${delivery.id}`;
-    const pickupReady = delivery.shipment?.purpose !== 'repair_pickup' || Boolean(arrival);
+    const pickupReady = !isCustomerCollection || Boolean(arrival);
     const pickupProof = delivery.proofs
       ?.filter(({ handoff_type }) => handoff_type === 'pickup')
       .at(-1);
@@ -1131,7 +1131,7 @@ function DeliveryActions({
           disabled={mutationDisabled || pendingAction === arrivalKey}
           onClick={() => runAction(arrivalKey, () => logisticsApi.arrive(delivery.id, { arrival_type: 'pickup' }))}
           className={buttonClass}>I've arrived for pickup</button>}
-        {delivery.shipment?.purpose === 'repair_pickup' && arrivalSummary}
+        {isCustomerCollection && arrivalSummary}
         {pickupReady && canUpdateStatus && delivery.requires_pickup_proof && !pickupProof && canRecordProof && <DeliveryPhotoUpload
           inputId={`pickup-proof-${delivery.id}`} inputLabel="Pickup evidence" label="Pickup evidence" file={proofFile} onChange={setProofFile} required disabled={mutationDisabled} />}
         {delivery.start_blocked_reason && <p role="status" className="text-sm font-semibold">{delivery.start_blocked_reason}</p>}
