@@ -1624,11 +1624,12 @@ export default function ShopOwnerRegistration({
           onSuccess: () => {
             setIsSubmitting(false);
             ownerOcr.finish();
+            if (isResubmission) return;
             Swal.fire({
               icon: 'success',
-              title: isResubmission ? 'Application Resubmitted!' : 'Registration Submitted!',
+              title: 'Registration Submitted!',
               html: `
-                <p>${isResubmission ? 'Your updated application has been sent.' : 'Thank you for registering.'}</p>
+                <p>Thank you for registering.</p>
                 <p class="mt-3">Your application is now under review.</p>
                 <p class="text-sm text-gray-600 mt-3">You will receive status updates through email.</p>
               `,
@@ -1745,26 +1746,10 @@ export default function ShopOwnerRegistration({
           <div className="space-y-6">
             {currentStep === 1 && (
               <ComponentCard title="Personal Information">
-                {isResubmission && (
-                  <div className="mb-6 rounded-lg border border-gray-900 bg-white p-4">
-                    <p className="text-sm font-semibold text-gray-900">Resubmission</p>
-                    <p className="mt-1 text-sm text-gray-700">
-                      Your previous application was rejected. Update the details below, replace or add documents, then submit again.
-                    </p>
-                    <p className="mt-2 text-sm text-gray-900">
-                      <span className="font-semibold">Attempts:</span> {resubmissionUsedAttempts}/{resubmissionMaxAttempts} used, {resubmissionRemainingAttempts} remaining
-                    </p>
-                    {resubmission?.rejectionReason && (
-                      <p className="mt-2 text-sm text-gray-900">
-                        <span className="font-semibold">Rejection reason:</span> {resubmission.rejectionReason}
-                      </p>
-                    )}
-                    {resubmissionLimitReached && (
-                      <p className="mt-2 text-sm font-semibold text-red-700">
-                        Resubmission limit reached. You can no longer resubmit this application automatically.
-                      </p>
-                    )}
-                  </div>
+                {isResubmission && resubmissionLimitReached && (
+                  <p className="mb-6 text-sm font-semibold text-red-700">
+                    Resubmission limit reached. You can no longer resubmit this application automatically.
+                  </p>
                 )}
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   <div>

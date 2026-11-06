@@ -321,7 +321,7 @@ class ShopOwnerAuthController extends Controller
             );
 
             if ($statusValue === ShopOwnerStatus::PENDING->value) {
-                return $this->resubmissionResponse($request, true);
+                return $this->resubmissionResponse($request, $shopOwner, true);
             }
 
             $shopOwner = DB::transaction(function () use ($shopOwner, $validated, $request, $screeningEvidence): ShopOwner {
@@ -429,7 +429,7 @@ class ShopOwnerAuthController extends Controller
                 ]);
             }
 
-            return redirect()->route('shop-owner-register')->with('success', 'Application resubmitted successfully. Please wait for admin review.');
+            return $this->resubmissionResponse($request, $shopOwner);
         } catch (ValidationException $e) {
             if ($request->expectsJson()) {
                 return response()->json([
@@ -524,7 +524,7 @@ class ShopOwnerAuthController extends Controller
         return $validated;
     }
 
-    private function resubmissionResponse(Request $request, bool $idempotent = false)
+    private function resubmissionResponse(Request $request, ShopOwner $shopOwner, bool $idempotent = false)
     {
         $message = $idempotent
             ? 'This application is already pending review.'
@@ -539,7 +539,11 @@ class ShopOwnerAuthController extends Controller
             ]);
         }
 
-        return redirect()->route('shop-owner-register')->with('success', $message);
+        return redirect()->to(URL::temporarySignedRoute(
+            'shop-owner.pending-approval.public',
+            now()->addDays(30),
+            ['shopOwner' => $shopOwner->id],
+        ))->with('success', $message);
     }
 
     /**

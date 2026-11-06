@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
+use Inertia\Inertia;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
 
@@ -632,6 +633,28 @@ class ShopOwnerAuthRegistrationTest extends TestCase
             'resubmission_count' => 1,
         ]);
         $this->assertSame(8, ShopDocument::query()->where('shop_owner_id', $owner->id)->count());
+    }
+
+    public function test_resubmission_and_retry_redirect_to_signed_pending_approval_page(): void
+    {
+        Storage::fake('local');
+        $owner = $this->rejectedOwnerWithDocuments();
+        $submitUrl = $this->resubmissionUrl($owner);
+        $payload = $this->payload(['email' => $owner->email]);
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $response = $this->withHeaders(['X-Inertia' => 'true'])->post($submitUrl, $payload);
+            $response->assertRedirect();
+            $pendingUrl = $response->headers->get('Location');
+            $this->assertStringContainsString('/shop-owner/pending-approval/view/'.$owner->id, $pendingUrl);
+            $this->withHeaders(['X-Inertia' => 'true', 'X-Inertia-Version' => Inertia::getVersion()])
+                ->get($pendingUrl)->assertOk()
+                ->assertJsonPath('component', 'Auth/PendingApproval')
+                ->assertJsonPath('props.shopOwner.email', $owner->email)
+                ->assertJsonPath('props.shopOwner.status', 'pending');
+            $this->get($pendingUrl.'&tampered=1')->assertForbidden();
+            $this->assertSame(1, $owner->fresh()->resubmission_count);
+        }
     }
 
     public function test_resubmission_fails_closed_for_missing_and_missing_on_disk_documents(): void
