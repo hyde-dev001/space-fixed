@@ -21,6 +21,7 @@ final class FinanceSummaryService
             'executed_refunds' => 0,
             'customer_cash_receipts' => 0,
             'incurred_expenses' => 0,
+            'active_expenses' => 0,
             'paid_expenses' => 0,
         ];
         $trend = $this->emptyTrend($trendStart);
@@ -30,7 +31,7 @@ final class FinanceSummaryService
         $this->addPosTransactions($shopId, $trendStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
         $this->addStandaloneInvoices($shopId, $trendStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
         $this->addRefunds($shopId, $trendStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
-        $this->addExpenses($shopId, $trendStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
+        $this->addExpenses($shopId, $trendStart->min($yearStart), $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
 
         $netRevenue = $totals['gross_revenue'] - $totals['executed_refunds'];
         $netOperatingResult = $netRevenue - $totals['incurred_expenses'];
@@ -55,6 +56,7 @@ final class FinanceSummaryService
                 'gross_revenue' => $this->money($totals['gross_revenue']),
                 'executed_refunds' => $this->money($totals['executed_refunds']),
                 'paid_expenses' => $this->money($totals['paid_expenses']),
+                'active_expenses' => $this->money($totals['active_expenses']),
             ],
             'trend' => array_values(array_map(function (array $month): array {
                 $month['gross_revenue'] = $this->money($month['gross_revenue']);
@@ -67,7 +69,8 @@ final class FinanceSummaryService
             }, $trend)),
             'definitions' => [
                 'net_revenue' => 'Gross revenue less executed refunds, excluding VAT and non-retained delivery.',
-                'incurred_expenses' => 'Approved manual, valid procurement, and completed payroll expenses.',
+                'incurred_expenses' => 'Approved manual, valid procurement, and completed payroll expenses, including archived records.',
+                'active_expenses' => 'Approved and posted expenses that are not archived for the selected year.',
                 'net_operating_result' => 'Net revenue less incurred expenses.',
                 'net_cash_movement' => 'Customer cash receipts less executed refunds and valid expense settlements.',
             ],
@@ -304,7 +307,7 @@ final class FinanceSummaryService
             ->where('date', '>=', $from->toDateString())
             ->where('date', '<', $to->toDateString())
             ->whereIn('status', ['approved', 'posted'])
-            ->get(['id', 'amount', 'date']);
+            ->get(['id', 'amount', 'date', 'archived_at']);
 
         foreach ($rows as $row) {
             $amount = $this->cents($row->amount);
@@ -313,6 +316,9 @@ final class FinanceSummaryService
                 continue;
             }
             $this->addIncurred($row->date, $amount, $periodStart, $periodEnd, $totals, $trend);
+            if ($row->archived_at === null && $this->inPeriod($row->date, $periodStart, $periodEnd)) {
+                $totals['active_expenses'] += $amount;
+            }
         }
 
         $settlements = DB::table('finance_expense_settlements as settlements')

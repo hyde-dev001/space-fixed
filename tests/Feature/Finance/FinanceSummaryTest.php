@@ -270,6 +270,37 @@ class FinanceSummaryTest extends TestCase
         $this->assertTrue(collect($response->json('integrity_warnings'))->contains(fn (array $warning): bool => ($warning['reason'] ?? null) === 'paid_rejected_expense'));
     }
 
+    public function test_active_expenses_exclude_archived_without_changing_financial_totals(): void
+    {
+        $this->travelTo(now()->startOfYear()->addMonths(10));
+        $shop = ShopOwner::factory()->create();
+        $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $user->givePermissionTo('access-finance-dashboard');
+        $createExpense = fn (string $reference, string $amount) => Expense::create([
+            'reference' => $reference, 'date' => now()->toDateString(), 'category' => 'Supplies',
+            'amount' => $amount, 'tax_amount' => '0.00', 'status' => 'posted', 'shop_id' => $shop->id,
+        ]);
+        $active = $createExpense('ACTIVE-EXPENSE', '200.00');
+        $active->update(['date' => now()->startOfYear()->toDateString()]);
+        $archived = $createExpense('ARCHIVED-EXPENSE', '100.00');
+        $archived->archived_at = now();
+        $archived->save();
+        ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id, 'expense_id' => $archived->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT, 'amount' => '100.00',
+            'payment_method' => 'cash', 'paid_at' => now(), 'recorded_by_user_id' => $user->id,
+            'idempotency_key' => 'archived-dashboard-settlement', 'source' => ExpenseSettlement::SOURCE_MANUAL,
+        ]);
+        $response = $this->actingAs($user, 'user')->getJson('/api/finance/dashboard');
+        $response->assertOk()->assertJsonPath('primary.incurred_expenses', '300.00')
+            ->assertJsonPath('supporting.active_expenses', '200.00')
+            ->assertJsonPath('supporting.paid_expenses', '100.00')
+            ->assertJsonPath('primary.net_cash_movement', '-100.00');
+        $archived->archived_at = null;
+        $archived->save();
+        $this->getJson('/api/finance/dashboard')->assertOk()->assertJsonPath('supporting.active_expenses', '300.00');
+    }
+
     private function moneyAdd(string ...$amounts): string
     {
         $cents = array_sum(array_map(static fn (string $amount): int => (int) round(((float) $amount) * 100), $amounts));

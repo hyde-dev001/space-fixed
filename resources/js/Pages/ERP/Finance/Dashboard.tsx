@@ -25,6 +25,7 @@ interface FinanceSummary {
         gross_revenue: Money;
         executed_refunds: Money;
         paid_expenses: Money;
+        active_expenses: Money;
     };
     trend: Array<{
         month: string;
@@ -100,11 +101,12 @@ export default function FinanceDashboard() {
                         </div>
 
                         <div className="mt-6 grid gap-6 xl:grid-cols-[0.85fr_1.15fr]">
-                            <DashboardPanel eyebrow="Supporting detail" title="Financial detail" description="The source values behind the primary cards.">
+                            <DashboardPanel eyebrow="Supporting detail" title="Financial detail" description="Financial totals include archived expenses.">
                                 <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
                                     <div className="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.04]"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">Gross revenue</p><p className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{formatMoney(summary.supporting.gross_revenue)}</p></div>
                                     <div className="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.04]"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">Executed refunds</p><p className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{formatMoney(summary.supporting.executed_refunds)}</p></div>
                                     <div className="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.04]"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">Paid expenses</p><p className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{formatMoney(summary.supporting.paid_expenses)}</p></div>
+                                    <div className="rounded-xl bg-gray-50 p-4 dark:bg-white/[0.04]"><p className="text-xs font-semibold uppercase tracking-[0.14em] text-gray-500 dark:text-gray-400">Active expenses (excluding archived)</p><p className="mt-2 text-xl font-semibold text-gray-950 dark:text-white">{formatMoney(summary.supporting.active_expenses)}</p></div>
                                 </div>
                                 <details className="mt-5 text-sm text-gray-500 dark:text-gray-400">
                                     <summary className="cursor-pointer font-semibold text-gray-700 dark:text-gray-200">Metric definitions</summary>
