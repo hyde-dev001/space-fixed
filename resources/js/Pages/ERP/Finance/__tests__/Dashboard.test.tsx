@@ -29,7 +29,7 @@ const summary = {
     net_operating_result: '90.00',
     net_cash_movement: '80.00',
   },
-  supporting: { gross_revenue: '120.00', executed_refunds: '10.00', paid_expenses: '30.00' },
+  supporting: { gross_revenue: '120.00', executed_refunds: '10.00', paid_expenses: '30.00', active_expenses: '20.00' },
   trend: Array.from({ length: 6 }, (_, index) => ({ month: `2026-${String(index + 1).padStart(2, '0')}`, net_revenue: '10.00', incurred_expenses: '2.00', net_cash_movement: '8.00' })),
   definitions: { net_revenue: 'Gross revenue less executed refunds.' },
   integrity_warnings: [],
@@ -51,6 +51,8 @@ it('renders backend-owned primary and supporting metrics without client comparis
   await waitFor(() => expect(screen.getByText('₱110.00')).toBeInTheDocument());
   expect(screen.getByText('Net operating result')).toBeInTheDocument();
   expect(screen.getByText('Gross revenue')).toBeInTheDocument();
+  expect(screen.getByText('Active expenses (excluding archived)')).toBeInTheDocument();
+  expect(screen.getByText('Financial totals include archived expenses.')).toBeInTheDocument();
   expect(screen.getByTestId('trend-chart')).toBeInTheDocument();
   expect(screen.queryByText(/statutory profit/i)).not.toBeInTheDocument();
   expect(screen.queryByText(/\+15%|15%/)).not.toBeInTheDocument();
