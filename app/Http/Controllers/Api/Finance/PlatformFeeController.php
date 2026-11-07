@@ -281,6 +281,10 @@ final class PlatformFeeController extends Controller
                             ->where('order_refunds.status', 'succeeded');
                     });
             })
+            ->where(function ($query): void {
+                $query->where('source_type', '!=', 'repair')
+                    ->orWhereRaw("COALESCE((SELECT SUM(-total_delta) FROM platform_fee_adjustments WHERE platform_fee_charge_id = platform_fee_charges.id AND adjustment_type = 'refund_reversal'), 0) + COALESCE((SELECT SUM(credit_amount) FROM platform_credit_applications WHERE platform_fee_charge_id = platform_fee_charges.id), 0) < platform_fee_charges.total_charge");
+            })
             ->latest('id')
             ->limit(100)
             ->get([

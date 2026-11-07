@@ -806,7 +806,7 @@ const Expense: React.FC = () => {
           } catch (err) {
             Swal.fire({
               title: "Error",
-              text: "Failed to archive expense.",
+              text: err instanceof Error ? err.message : "Failed to archive expense.",
               icon: "error",
             });
           }
@@ -1081,7 +1081,7 @@ const Expense: React.FC = () => {
                           </button>
                         </>
                       )}
-                      {!ownerMode && !showArchived && expense.status !== "approved" && expense.status !== "posted" && (
+                      {!ownerMode && !showArchived && (
                         <button
                           className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-rose-600 dark:text-rose-400 hover:text-rose-800 dark:hover:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"
                           aria-label="Archive expense"

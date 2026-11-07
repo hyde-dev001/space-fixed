@@ -47,7 +47,8 @@ final class PlatformFeeRefundService
 
     public function reverseRepairRefund(PosRefund $refund): void
     {
-        if ((string) $refund->module_type !== 'repair') {
+        if ((string) $refund->module_type !== 'repair'
+            || (string) $refund->workflow_source === 'delivery_reconciliation') {
             return;
         }
 
@@ -81,6 +82,10 @@ final class PlatformFeeRefundService
 
         DB::transaction(function () use ($charge, $refundId, $refundSourceType, $refundAmount): void {
             $lockedCharge = PlatformFeeCharge::query()->lockForUpdate()->findOrFail($charge->id);
+            if (PlatformFeeAdjustment::query()->where('idempotency_key', "{$refundSourceType}:{$refundId}:reversal")->exists()
+                || PlatformCreditApplication::query()->where('idempotency_key', "{$refundSourceType}:{$refundId}:credit")->exists()) {
+                return;
+            }
             $originalBase = $this->decimal((string) $lockedCharge->fee_base);
             $alreadyReversedBase = $this->sum(
                 PlatformFeeAdjustment::query()

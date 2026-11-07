@@ -114,6 +114,56 @@ class PlatformBalanceApiTest extends TestCase
     }
 
     #[Test]
+    public function refunded_repair_charges_are_hidden_only_when_fully_reversed(): void
+    {
+        $shop = ShopOwner::factory()->approved()->create();
+        $finance = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $finance->givePermissionTo('access-finance-dashboard');
+        $repair = \App\Models\RepairRequest::factory()->create([
+            'shop_owner_id' => $shop->id, 'origin_channel' => 'marketplace',
+            'final_total' => 1000, 'status' => 'pending', 'payment_status' => 'completed',
+            'total_paid_amount' => 1000, 'payment_policy' => 'full_upfront',
+        ]);
+        $repair->update(['status' => 'ready_for_pickup']);
+        $transaction = \App\Models\PosTransaction::create([
+            'transaction_no' => 'TEST-REPAIR-FEE', 'shop_owner_id' => $shop->id,
+            'module_type' => 'repair', 'module_reference_id' => $repair->id,
+            'customer_type' => 'registered', 'due_type' => 'full', 'total_amount' => 1000,
+            'paid_amount' => 1000, 'status' => 'paid',
+        ]);
+        \App\Models\PosRefund::create([
+            'refund_no' => 'TEST-DELIVERY-REFUND', 'shop_owner_id' => $shop->id,
+            'source_transaction_id' => $transaction->id, 'module_type' => 'repair',
+            'module_reference_id' => $repair->id, 'request_type' => 'partial', 'workflow_source' => 'delivery_reconciliation',
+            'requested_amount' => 100, 'approved_amount' => 100, 'reason_code' => 'test', 'status' => 'succeeded',
+        ]);
+        $this->assertDatabaseCount('platform_fee_adjustments', 0);
+        $refund = \App\Models\PosRefund::create([
+            'refund_no' => 'TEST-REPAIR-REFUND', 'shop_owner_id' => $shop->id,
+            'source_transaction_id' => $transaction->id, 'module_type' => 'repair',
+            'module_reference_id' => $repair->id, 'request_type' => 'partial',
+            'requested_amount' => 500, 'approved_amount' => 500, 'reason_code' => 'test', 'status' => 'succeeded',
+        ]);
+        $this->actingAs($finance, 'user')->getJson('/api/finance/platform-balance')
+            ->assertOk()->assertJsonCount(1, 'charges')->assertJsonPath('balance.net_payable', '28.00');
+        app(\App\Services\PlatformFeeRefundService::class)->reverseRepairRefund($refund);
+        $this->assertDatabaseCount('platform_fee_adjustments', 1);
+        \App\Models\PosRefund::withoutEvents(fn () => \App\Models\PosRefund::create([
+            'refund_no' => 'TEST-REPAIR-REFUND-2', 'shop_owner_id' => $shop->id,
+            'source_transaction_id' => $transaction->id, 'module_type' => 'repair',
+            'module_reference_id' => $repair->id, 'request_type' => 'partial',
+            'requested_amount' => 500, 'approved_amount' => 500, 'reason_code' => 'test', 'status' => 'succeeded',
+        ]));
+        $this->artisan('platform-fees:reconcile-repair-refunds')->assertSuccessful();
+        $this->assertDatabaseCount('platform_fee_adjustments', 1);
+        $this->artisan('platform-fees:reconcile-repair-refunds', ['--apply' => true])->assertSuccessful();
+        $this->artisan('platform-fees:reconcile-repair-refunds', ['--apply' => true])->assertSuccessful();
+        $this->assertDatabaseCount('platform_fee_adjustments', 2);
+        $this->getJson('/api/finance/platform-balance')->assertOk()->assertJsonCount(0, 'charges')
+            ->assertJsonPath('balance.net_payable', '0.00');
+    }
+
+    #[Test]
     public function finance_read_initializes_missing_reliability_history_for_an_already_paid_business_fee(): void
     {
         $shop = ShopOwner::factory()->approved()->create(['registration_type' => 'company']);
