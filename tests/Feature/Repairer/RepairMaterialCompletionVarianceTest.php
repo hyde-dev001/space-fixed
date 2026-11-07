@@ -17,6 +17,7 @@ class RepairMaterialCompletionVarianceTest extends TestCase
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($repairer);
         /** @var User $repairer */
 
         $repair = RepairRequest::create([
@@ -60,6 +61,7 @@ class RepairMaterialCompletionVarianceTest extends TestCase
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($repairer);
         /** @var User $repairer */
 
         $repair = RepairRequest::create([
@@ -103,6 +105,7 @@ class RepairMaterialCompletionVarianceTest extends TestCase
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($repairer);
         /** @var User $repairer */
 
         $repair = RepairRequest::create([
@@ -132,6 +135,13 @@ class RepairMaterialCompletionVarianceTest extends TestCase
             'tolerance_percent' => 20,
             'variance_status' => 'within_tolerance',
             'variance_note' => null,
+        ]);
+
+        $repair->materialUsages()->create([
+            'inventory_item_id' => $item->id,
+            'quantity_used' => 2,
+            'used_by' => $repairer->id,
+            'used_at' => now(),
         ]);
 
         $blockedResponse = $this->actingAs($repairer, 'user')
@@ -164,6 +174,7 @@ class RepairMaterialCompletionVarianceTest extends TestCase
     {
         $shop = ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($repairer);
         /** @var User $repairer */
 
         $repair = RepairRequest::create([
@@ -193,6 +204,13 @@ class RepairMaterialCompletionVarianceTest extends TestCase
             'tolerance_percent' => 20,
             'variance_status' => 'within_tolerance',
             'variance_note' => null,
+        ]);
+
+        $repair->materialUsages()->create([
+            'inventory_item_id' => $item->id,
+            'quantity_used' => 2,
+            'used_by' => $repairer->id,
+            'used_at' => now(),
         ]);
 
         $blockedResponse = $this->actingAs($repairer, 'user')

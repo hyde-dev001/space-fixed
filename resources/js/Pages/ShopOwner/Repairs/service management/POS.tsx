@@ -1,12 +1,24 @@
+import MonochromeSelect from "@/components/form/Select";
+import RetailWarrantyPanel from '@/components/orders/RetailWarrantyPanel';
+import type { RetailWarrantyProjection } from '@/types/retailWarranty';
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 import Swal from "sweetalert2";
-import { computeCanPay, getPhoneDisplayForReceipt } from "../../../Repairs/posPaymentValidation";
+import {
+	computeCanPay,
+	getPhoneDisplayForReceipt,
+	isOptionalEmailValid,
+	normalizeCustomerField,
+	normalizeOptionalCustomerEmail,
+	normalizeOptionalCustomerId,
+} from "../../../Repairs/posPaymentValidation";
 import { PosMode, resolveAllowedModes } from "../../../ERP/cashier/posModeResolver";
 import { buildRepairBreakdown } from "../../../../utils/repairPricing";
 import { repairPosHistoryApi } from "../../../../services/repairPosHistoryApi";
+import { useMaintenance } from "../../../../providers/MaintenanceProvider";
 
 type PaymentMethod = "cash" | "gcash" | "card";
 type PosDueType = "deposit" | "balance" | "full";
@@ -15,6 +27,9 @@ type ManualPaymentPolicy = "deposit_50" | "full_upfront";
 type RepairOrderOption = {
 	id: string;
 	customer: string;
+	customerName: string;
+	customerPhone: string;
+	customerEmail: string;
 	customerId?: number | null;
 	paymentPolicy?: "deposit_50" | "full_upfront";
 	paymentStatus?: string;
@@ -98,6 +113,7 @@ type ReceiptRefundEntry = {
 };
 
 type ReceiptSnapshot = {
+    productWarranty?: RetailWarrantyProjection | null;
 	moduleType?: "repair" | "retail";
 	transactionId?: number;
 	repairRequestId?: number;
@@ -133,17 +149,30 @@ type ReceiptSnapshot = {
 
 type RefundQueueItem = {
 	id: number;
+	refund_reference?: string | null;
 	status: string;
+	workflow_source?: string | null;
 	finance_status?: string;
 	shop_owner_status?: string;
+	can_execute_payout?: boolean;
+	has_pos_manual_leg?: boolean;
 	requested_amount: number;
 	approved_amount?: number | null;
 	requested_at?: string | null;
 	reason_code?: string;
+	reason_notes?: string | null;
 	failure_reason?: string | null;
+	execution_channel?: string | null;
+	execution_reference?: string | null;
 	repairRequest?: {
 		request_id?: string;
 		customer_name?: string;
+		customer_email?: string | null;
+		customer_phone?: string | null;
+		shoe_type?: string | null;
+		brand?: string | null;
+		description?: string | null;
+		service_name?: string | null;
 	};
 };
 
@@ -153,7 +182,9 @@ type ManualQueueRow = {
 	id: number;
 	request_id: string;
 	customer_name: string;
+	customer_id?: number | null;
 	phone: string;
+	email?: string | null;
 	status: ManualQueueStatus;
 	latest_warranty_claim_status?: string | null;
 	warranty_claim_locked?: boolean;
@@ -484,15 +515,21 @@ const buildReceiptText = (snapshot: ReceiptSnapshot): string => {
 
 const PointOfSalePage = () => {
 	const { props } = usePage();
+	const { isRouteFrozen } = useMaintenance();
+	const repairCheckoutFrozen = isRouteFrozen("api.repair-pos.checkout");
+	const repairRefundFrozen = isRouteFrozen("api.repair-pos.refunds.store");
+	const repairRefundExecutionFrozen = isRouteFrozen("shop_owner.repair-refunds.execute");
+	const retailRefundFrozen = isRouteFrozen("api.retail-pos.refunds.store");
+	const maintenanceFreezeMessage = "Critical POS actions are paused during maintenance.";
+	const erpMode = (props as any)?.erpMode === true;
+	const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
+	const isIndividualRepairShop = String(
+		(props as any)?.auth?.shop_owner?.registration_type
+			?? (props as any)?.auth?.user?.shop_owner?.registration_type
+			?? "",
+	).toLowerCase() === "individual";
 	const cashierName = String((props as any)?.auth?.shop_owner?.name || (props as any)?.auth?.user?.name || "Shop Owner Cashier");
-	const shopRepairPaymentPolicy: ManualPaymentPolicy =
-		String(
-			(props as any)?.auth?.shop_owner?.repair_payment_policy
-			?? (props as any)?.auth?.user?.shop_owner?.repair_payment_policy
-			?? (props as any)?.shop_settings?.repair_payment_policy
-		) === "full_upfront"
-			? "full_upfront"
-			: "deposit_50";
+	const shopRepairPaymentPolicy: ManualPaymentPolicy = "full_upfront";
 	const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
 	const requestedRepairRequestId = String(urlParams.get("repair_request_id") || "");
 	const requestedDueType = normalizeDueType(urlParams.get("due_type"));
@@ -551,6 +588,7 @@ const [retailNotes, setRetailNotes] = useState<string>("");
 const [retailProcessingPayment, setRetailProcessingPayment] = useState<boolean>(false);
 const [isRetailRefundModalOpen, setIsRetailRefundModalOpen] = useState<boolean>(false);
 const [retailRefundReceipt, setRetailRefundReceipt] = useState<ReceiptSnapshot | null>(null);
+const [retailWarrantyBasis, setRetailWarrantyBasis] = useState(false);
 const [retailRefundTransactionId, setRetailRefundTransactionId] = useState<number>(0);
 const [retailRefundableBalance, setRetailRefundableBalance] = useState<number>(0);
 const [retailRefundItems, setRetailRefundItems] = useState<RetailRefundSelectableItem[]>([]);
@@ -656,6 +694,12 @@ useEffect(() => {
 								.map((serviceName: string) => serviceName.trim())
 								.filter((serviceName: string) => serviceName.length > 0);
 
+							const customerName = normalizeCustomerField(entry?.customer_name)
+								|| normalizeCustomerField(entry?.user?.name)
+								|| [entry?.user?.first_name, entry?.user?.last_name].map(normalizeCustomerField).filter(Boolean).join(' ');
+							const customerPhone = normalizeCustomerField(entry?.phone) || normalizeCustomerField(entry?.user?.phone);
+							const customerEmail = normalizeOptionalCustomerEmail(entry?.email)
+								|| normalizeOptionalCustomerEmail(entry?.user?.email);
 							const packageName = String(entry?.pricing_breakdown?.package_name ?? "").trim();
 							const primaryService = String(
 								entry?.service
@@ -667,8 +711,11 @@ useEffect(() => {
 							);
 							return {
 								id: String(entry?.id ?? `R-${index}`),
-								customer: String(entry?.customer ?? entry?.customer_name ?? "Walk-in Customer"),
-								customerId: Number.isFinite(Number(entry?.customer_id)) ? Number(entry.customer_id) : null,
+								customer: customerName || "Walk-in Customer",
+								customerId: normalizeOptionalCustomerId(entry?.customer_id ?? entry?.user_id),
+								customerName,
+								customerPhone,
+								customerEmail,
 								paymentPolicy: normalizePaymentPolicy(entry?.payment_policy_snapshot ?? entry?.payment_policy ?? entry?.shop_owner?.repair_payment_policy),
 								paymentStatus: String(entry?.payment_status ?? "pending"),
 								status: String(entry?.status ?? ""),
@@ -950,6 +997,7 @@ useEffect(() => {
 
 					return {
 						moduleType,
+						productWarranty: row?.product_warranty ?? null,
 						transactionId: Number(row?.id || 0),
 						repairRequestId: moduleType === "repair" ? Number(row?.module_reference_id || 0) : undefined,
 						repairStatus: moduleType === "repair"
@@ -993,7 +1041,7 @@ useEffect(() => {
 							minute: "2-digit",
 						}),
 						cashierName: String(row?.created_by ?? cashierName),
-						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? "Customer"),
+						customerName: String(receiptPayload?.customer?.name ?? row?.walk_in_name ?? (moduleType === 'retail' ? 'Walk-in Customer' : 'Customer')),
 						customerPhone: String(receiptPayload?.customer?.phone ?? row?.walk_in_phone ?? ""),
 						paymentReference: String(row?.payment_lines?.[0]?.provider_reference ?? "") || null,
 						paymentMethod,
@@ -1064,8 +1112,9 @@ useEffect(() => {
 		const resolvedDueType = resolveDueTypeForPolicy(targetOrder.paymentPolicy ?? "deposit_50", requestedDueType);
 		const dueAmount = computeDueAmountForOrder(targetOrder, resolvedDueType);
 		setSelectedRepairOrder(targetOrder);
-		setCustomerName(targetOrder.customer);
-		setCustomerEmail("");
+		setCustomerName(targetOrder.customerName);
+		setCustomerPhone(targetOrder.customerPhone);
+		setCustomerEmail(targetOrder.customerEmail);
 		setItems([
 			{
 				id: `order-${targetOrder.id}-${resolvedDueType}`,
@@ -1085,7 +1134,7 @@ useEffect(() => {
 		return !selectedRepairOrder && !requestedRepairRequestId;
 	}, [requestedRepairRequestId, selectedRepairOrder]);
 
-	const dueTypeForManualCheckout: PosDueType = shopRepairPaymentPolicy === "deposit_50" ? "deposit" : "full";
+	const dueTypeForManualCheckout: PosDueType = "full";
 
 	const chargeableSubtotal = useMemo(() => {
 		if (!isManualStandaloneCheckout) {
@@ -1126,22 +1175,26 @@ useEffect(() => {
 		itemsCount: items.length,
 		customerName,
 		customerPhone,
+		customerEmail,
 		paymentMethod,
 		cashReceivedInput,
 		hasInsufficientCash,
 		proofReference,
-	});
+	}) && !repairCheckoutFrozen;
 	const canPrint = isPaid;
 	const payDisableReason = useMemo(() => {
+		if (repairCheckoutFrozen) return maintenanceFreezeMessage;
 		if (isProcessingPayment) return "Processing payment...";
 		if (items.length === 0) return "Add at least one service before checkout.";
-		if (customerName.trim().length === 0) return "Customer name is required.";
-		if (paymentMethod === "cash" && !isCustomerPhoneValid) return "Cash payments require an 11-digit phone number.";
+		if (selectedRepairOrder && (customerName.trim().length === 0 || !isCustomerPhoneValid)) return 'This repair order is missing canonical customer name or phone. Update the repair record before checkout.';
+		if (customerName.trim().length === 0) return 'Customer name is required.';
+		if (!isCustomerPhoneValid) return 'Repair checkout requires an 11-digit phone number.';
+		if (!isOptionalEmailValid(customerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (paymentMethod === "cash" && !hasCashInput) return "Enter cash received for cash payments.";
 		if (paymentMethod !== "cash" && !hasProofReference) return "Enter proof reference for GCash/Card payments.";
 		if (hasInsufficientCash) return `Insufficient cash by ${formatPeso(shortValue)}.`;
 		return "";
-	}, [customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, paymentMethod, shortValue]);
+	}, [customerEmail, customerName, hasCashInput, hasInsufficientCash, hasProofReference, isCustomerPhoneValid, isProcessingPayment, items.length, maintenanceFreezeMessage, paymentMethod, repairCheckoutFrozen, selectedRepairOrder, shortValue]);
 	const effectiveDueType = useMemo(() => {
 		const policy = selectedRepairOrder?.paymentPolicy ?? "deposit_50";
 		return resolveDueTypeForPolicy(policy, requestedDueType);
@@ -1233,8 +1286,9 @@ useEffect(() => {
 			},
 		]);
 		setSelectedRepairOrder(order);
-		setCustomerName(order.customer);
-		setCustomerEmail("");
+		setCustomerName(order.customerName);
+		setCustomerPhone(order.customerPhone);
+		setCustomerEmail(order.customerEmail);
 		setOrderSearch("");
 		setIsOrderModalOpen(false);
 	};
@@ -1462,20 +1516,22 @@ useEffect(() => {
 		itemsCount: retailCart.length,
 		customerName: retailCustomerName,
 		customerPhone: retailCustomerPhone,
+		customerEmail: retailCustomerEmail,
 		paymentMethod: retailPaymentMethod,
 		cashReceivedInput: retailCashReceivedInput,
 		hasInsufficientCash: retailHasInsufficientCash,
 		proofReference: retailProofReference,
+		requireCustomerInfo: false,
 	});
 	const retailPayDisableReason = useMemo(() => {
 		if (retailProcessingPayment) return "Processing payment...";
 		if (retailCart.length === 0) return "Add at least one product before checkout.";
-		if (retailCustomerName.trim().length === 0) return "Customer name is required.";
+		if (!isOptionalEmailValid(retailCustomerEmail)) return 'Enter a valid email address or leave email blank.';
 		if (retailPaymentMethod === "cash" && retailCashReceivedInput.trim().length === 0) return "Enter cash received for cash payments.";
 		if (retailPaymentMethod !== "cash" && retailProofReference.trim().length === 0) return "Enter proof reference for GCash/Card payments.";
 		if (retailHasInsufficientCash) return `Insufficient cash by ${formatPeso(retailShortValue)}.`;
 		return "";
-	}, [retailCart.length, retailCashReceivedInput, retailCustomerName, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
+	}, [retailCart.length, retailCashReceivedInput, retailCustomerEmail, retailHasInsufficientCash, retailPaymentMethod, retailProcessingPayment, retailProofReference, retailShortValue]);
 
 	useEffect(() => {
 		if (retailPaymentMethod === "cash" && retailProofReference.length > 0) {
@@ -1653,7 +1709,7 @@ useEffect(() => {
 					idempotency_key: idempotencyKey,
 					customer_type: "walk_in",
 					customer_id: null,
-					walk_in_name: retailCustomerName.trim(),
+					walk_in_name: retailCustomerName.trim() || null,
 					walk_in_phone: retailCustomerPhone.trim() || null,
 					walk_in_email: retailCustomerEmail.trim() || null,
 					items: retailCart.map((item) => ({
@@ -1727,7 +1783,7 @@ useEffect(() => {
 					minute: "2-digit",
 				}),
 				cashierName,
-				customerName: retailCustomerName.trim(),
+				customerName: retailCustomerName.trim() || 'Walk-in Customer',
 				customerPhone: getPhoneDisplayForReceipt(retailPaymentMethod, retailCustomerPhone),
 				paymentReference: retailPaymentMethod === "cash" ? null : retailProofReference.trim(),
 				paymentMethod: retailPaymentMethod,
@@ -2035,6 +2091,10 @@ useEffect(() => {
 	};
 
 	const handlePay = async () => {
+		if (repairCheckoutFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!canPay) return;
 
 		const hasRepairReference = Boolean(selectedRepairOrder || requestedRepairRequestId);
@@ -2093,6 +2153,7 @@ useEffect(() => {
 					manual_payment_policy: hasRepairReference ? null : shopRepairPaymentPolicy,
 					manual_repair_package_id: hasRepairReference ? null : manualRepairPackageId,
 					manual_service_ids: hasRepairReference ? [] : manualServiceIds,
+					cash_received: paymentMethod === 'cash' ? Number(tenderedAmount.toFixed(2)) : null,
 					payment_lines: [
 						{
 							tender_type: mapTenderType(paymentMethod),
@@ -2207,7 +2268,11 @@ useEffect(() => {
 		window.print();
 	};
 
-	const handleRetailRefund = async (receipt: ReceiptSnapshot) => {
+	const handleRetailRefund = async (receipt: ReceiptSnapshot, basis: 'ordinary' | 'warranty' = 'ordinary') => {
+		if (retailRefundFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
+			return;
+		}
 		if (!canRequestRetailRefund(receipt)) {
 			await Swal.fire({
 				icon: "info",
@@ -2237,7 +2302,8 @@ useEffect(() => {
 				const purchasedQty = Math.max(0, Number(item.qty ?? 0));
 				const unitPrice = Math.max(0, Number(item.unitPrice ?? 0));
 				const committedQty = Math.max(0, Number(committedQtyByOrderItem.get(orderItemId) || 0));
-				const remainingQty = Math.max(0, purchasedQty - committedQty);
+				const coverage = receipt.productWarranty?.items.find(item => item.order_item_id === orderItemId && item.can_assess);
+				const remainingQty = basis === 'warranty' ? Math.min(Math.max(0, purchasedQty - committedQty), coverage?.available_quantity ?? 0) : Math.max(0, purchasedQty - committedQty);
 
 				return {
 					orderItemId,
@@ -2268,6 +2334,7 @@ useEffect(() => {
 			return acc;
 		}, {});
 
+		setRetailWarrantyBasis(basis === 'warranty');
 		setRetailRefundReceipt(receipt);
 		setRetailRefundTransactionId(transactionId);
 		setRetailRefundableBalance(refundableBalance);
@@ -2324,9 +2391,10 @@ useEffect(() => {
 				"/api/retail-pos/refunds",
 				{
 					source_transaction_id: retailRefundTransactionId,
+					request_basis: retailWarrantyBasis ? 'warranty' : 'ordinary',
 					request_type: requestType,
 					requested_amount: requestedAmount,
-					refund_lines: refundLines,
+					refund_lines: retailWarrantyBasis ? refundLines.map(line => ({ ...line, retail_warranty_id: retailRefundReceipt.productWarranty?.items.find(item => item.order_item_id === line.order_item_id)?.id })) : refundLines,
 					reason_code: "retail_pos_item_issue",
 					reason_notes: reasonNotes,
 				},
@@ -2340,6 +2408,11 @@ useEffect(() => {
 				throw new Error("Refund request was created without a valid reference.");
 			}
 
+			if (retailWarrantyBasis) {
+				setIsRetailRefundModalOpen(false); setIsHistoryModalOpen(false);
+				await Swal.fire({ icon: 'success', title: 'Warranty Assessment Submitted', text: 'The request remains subject to the existing inspection and approval process.', confirmButtonColor: '#000000' });
+				return;
+			}
 			await axios.post(
 				`/api/retail-pos/refunds/${createdRefundId}/approve`,
 				{
@@ -2426,6 +2499,10 @@ useEffect(() => {
 	const handleRequestRefund = async (receipt: ReceiptSnapshot) => {
 		if (receipt.moduleType === "retail") {
 			await handleRetailRefund(receipt);
+			return;
+		}
+		if (repairRefundFrozen) {
+			await Swal.fire({ icon: "info", title: "Maintenance in progress", text: maintenanceFreezeMessage, confirmButtonColor: "#2563eb" });
 			return;
 		}
 
@@ -2574,11 +2651,6 @@ useEffect(() => {
 							<option value="customer_delivery">Customer Delivery</option>
 						</select>
 					</div>
-					<div>
-						<label for="shop_owner_pos_warranty_images" style="display:block; font-size:12px; font-weight:700; margin-bottom:6px;">Evidence Images</label>
-						<input id="shop_owner_pos_warranty_images" type="file" accept="image/jpeg,image/jpg,image/png,image/webp" multiple style="display:block; width:100%;" />
-						<p style="margin-top:6px; font-size:11px; color:#6b7280;">Upload 1 to 10 images (JPEG/PNG/WEBP, max 20MB each).</p>
-					</div>
 				</div>
 			`,
 			showCancelButton: true,
@@ -2590,7 +2662,6 @@ useEffect(() => {
 				const reasonCode = (document.getElementById('shop_owner_pos_warranty_reason_code') as HTMLSelectElement | null)?.value?.trim() || '';
 				const reasonDetails = (document.getElementById('shop_owner_pos_warranty_reason_details') as HTMLTextAreaElement | null)?.value?.trim() || '';
 				const preferredReturnMethod = (document.getElementById('shop_owner_pos_warranty_return_method') as HTMLSelectElement | null)?.value?.trim() || 'walk_in';
-				const files = Array.from((document.getElementById('shop_owner_pos_warranty_images') as HTMLInputElement | null)?.files || []);
 
 				if (!reasonCode) {
 					Swal.showValidationMessage('Please select a reason.');
@@ -2602,21 +2673,10 @@ useEffect(() => {
 					return null;
 				}
 
-				if (files.length === 0) {
-					Swal.showValidationMessage('Please upload at least one image.');
-					return null;
-				}
-
-				if (files.length > 10) {
-					Swal.showValidationMessage('You can upload a maximum of 10 images.');
-					return null;
-				}
-
 				return {
 					reasonCode,
 					reasonDetails,
 					preferredReturnMethod: preferredReturnMethod === 'customer_delivery' ? 'customer_delivery' : 'walk_in',
-					files,
 				};
 			},
 		});
@@ -2633,7 +2693,6 @@ useEffect(() => {
 				reason_code: modal.value.reasonCode,
 				reason_details: modal.value.reasonDetails,
 				preferred_return_method: modal.value.preferredReturnMethod,
-				images: modal.value.files,
 			});
 
 			setReceiptHistory((prev) => prev.map((entry) => (
@@ -2673,25 +2732,114 @@ useEffect(() => {
 		}
 	};
 
-	const performRefundAction = async (refundId: number, action: 'approve' | 'reject' | 'execute', payload: Record<string, unknown>) => {
+	const humanizeRefundReason = (value: string | null | undefined): string => {
+		const normalized = String(value ?? '').trim();
+		if (!normalized) return 'N/A';
+
+		return normalized
+			.replace(/[_-]+/g, ' ')
+			.split(/\s+/)
+			.map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+			.join(' ');
+	};
+
+	const performRefundAction = async (refund: RefundQueueItem, action: 'approve' | 'reject' | 'execute', payload: Record<string, unknown> = {}) => {
+		if (action === 'execute' && repairRefundExecutionFrozen) {
+			await Swal.fire({
+				icon: 'warning',
+				title: 'Maintenance in progress',
+				text: 'Refund execution is temporarily paused during maintenance.',
+				confirmButtonColor: '#2563eb',
+			});
+			return;
+		}
+
 		const actionLabel = action === 'execute' ? 'execute' : action;
-		const confirmation = await Swal.fire({
-			icon: action === 'reject' ? 'warning' : 'question',
-			title: `Confirm ${actionLabel}`,
-			text: `Are you sure you want to ${actionLabel} this refund request?`,
-			showCancelButton: true,
-			confirmButtonText: `Yes, ${actionLabel}`,
-			cancelButtonText: 'Cancel',
-			confirmButtonColor: action === 'reject' ? '#dc2626' : '#2563eb',
-		});
+		let requestPayload: Record<string, unknown> | FormData = payload;
+		const requiresManualPayoutDetails = action === 'execute'
+			&& refund.has_pos_manual_leg === true;
+		const fixedRefundAmount = Number(refund.approved_amount ?? refund.requested_amount ?? 0);
+
+		const confirmation = requiresManualPayoutDetails
+			? await Swal.fire({
+				icon: 'question',
+				title: 'Execute refund payout',
+				html: `
+					<div class="text-left space-y-3">
+						<label class="block text-sm font-semibold">Refund channel
+							<select id="repair_refund_execution_channel" class="swal2-input !m-0 !w-full">
+								<option value="">Select channel</option>
+								<option value="gcash">GCash</option>
+								<option value="card">Card</option>
+								<option value="bank_transfer">Bank transfer</option>
+								<option value="manual_cash">Cash</option>
+							</select>
+						</label>
+						<label class="block text-sm font-semibold">Reference
+							<input id="repair_refund_execution_reference" class="swal2-input !m-0 !w-full" placeholder="Transaction/reference number" />
+						</label>
+						<div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+							<div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">Refund amount (fixed)</div>
+							<div class="mt-1 text-lg font-bold text-emerald-900">${formatPeso(fixedRefundAmount)}</div>
+							<div class="mt-1 text-xs text-emerald-700">Based on the approved repair refund. This amount cannot be changed.</div>
+						</div>
+						<label class="block text-sm font-semibold">Proof
+							<input id="repair_refund_execution_proof" type="file" accept=".jpg,.jpeg,.png,.webp" multiple class="swal2-file !m-0 !w-full" />
+						</label>
+					</div>
+				`,
+				showCancelButton: true,
+				confirmButtonText: 'Execute payout',
+				cancelButtonText: 'Cancel',
+				confirmButtonColor: '#059669',
+				preConfirm: () => {
+					const channel = (document.getElementById('repair_refund_execution_channel') as HTMLSelectElement | null)?.value.trim() ?? '';
+					const reference = (document.getElementById('repair_refund_execution_reference') as HTMLInputElement | null)?.value.trim() ?? '';
+					const proofInput = document.getElementById('repair_refund_execution_proof') as HTMLInputElement | null;
+
+					if (!channel || !reference || !proofInput?.files?.length) {
+						Swal.showValidationMessage('Channel, reference, and at least one proof image are required.');
+						return undefined;
+					}
+
+					return {
+						channel,
+						reference,
+						files: Array.from(proofInput.files),
+					};
+				},
+			})
+			: await Swal.fire({
+				icon: action === 'reject' ? 'warning' : 'question',
+				title: `Confirm ${actionLabel}`,
+				text: `Are you sure you want to ${actionLabel} this refund request?`,
+				showCancelButton: true,
+				confirmButtonText: `Yes, ${actionLabel}`,
+				cancelButtonText: 'Cancel',
+				confirmButtonColor: action === 'reject' ? '#dc2626' : '#2563eb',
+			});
 
 		if (!confirmation.isConfirmed) {
 			return;
 		}
 
-		setProcessingRefundId(refundId);
+		if (requiresManualPayoutDetails && confirmation.value) {
+			const formData = new FormData();
+			formData.append('execution_mode', 'manual');
+			formData.append('execution_channel', confirmation.value.channel);
+			formData.append('execution_reference', confirmation.value.reference);
+			for (const file of confirmation.value.files) {
+				formData.append('execution_proof_images[]', file);
+			}
+			requestPayload = formData;
+		}
+
+		setProcessingRefundId(refund.id);
 		try {
-			await axios.post(`/api/repair-pos/refunds/${refundId}/${action}`, payload, { withCredentials: true });
+			const endpoint = action === 'execute'
+				? `/api/shop-owner/repair-refunds/${refund.id}/execute`
+				: `/api/repair-pos/refunds/${refund.id}/${action}`;
+			await axios.post(endpoint, requestPayload, { withCredentials: true });
 			await fetchRefundQueue();
 			await Swal.fire({
 				icon: 'success',
@@ -2752,8 +2900,11 @@ useEffect(() => {
 
 		setSelectedRepairOrder({
 			id: String(row.id),
-			customer: row.customer_name,
-			customerId: null,
+			customer: normalizeCustomerField(row.customer_name) || 'Walk-in Customer',
+			customerName: normalizeCustomerField(row.customer_name),
+			customerPhone: normalizeCustomerField(row.phone),
+			customerEmail: normalizeOptionalCustomerEmail(row.email),
+			customerId: normalizeOptionalCustomerId(row.customer_id),
 			paymentPolicy: row.payment_policy,
 			paymentStatus: row.remaining_balance <= 0 ? "completed" : (row.paid > 0 ? "paid" : "unpaid"),
 			status: row.status,
@@ -2779,7 +2930,7 @@ useEffect(() => {
 	};
 
 	return (
-		<AppLayoutShopOwner hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen || isRetailRefundModalOpen}>
+		<Layout hideHeader={isOrderModalOpen || isRefundQueueOpen || isReceiptModalOpen || isHistoryModalOpen || isRetailRefundModalOpen}>
 			<Head title="Point of Sale" />
 
 			<style>{`
@@ -2825,15 +2976,7 @@ useEffect(() => {
 			<div className="space-y-6 p-4 md:p-6">
 				{!isOrderModalOpen && !isRefundQueueOpen && !isReceiptModalOpen && !isHistoryModalOpen && !isRetailRefundModalOpen && (
 				<div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
-					<div>
-						<h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
-						<p className="mt-1 text-sm text-slate-500">
-						{mode === "repair"
-							? "Manage repair cashier transactions and payment processing."
-							: "Process retail walk-in sales with the same POS design system."
-						}
-					</p>
-					</div>
+					<h1 className="sr-only">Point of Sale</h1>
 					<div className="flex flex-wrap items-center justify-start gap-2 xl:justify-end">
 						{allowedModes.includes("repair") && (
 							<button
@@ -2868,6 +3011,15 @@ useEffect(() => {
 						>
 							History
 						</button>
+						{mode === "repair" && (
+							<button
+								type="button"
+								onClick={() => setIsRefundQueueOpen(true)}
+								className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50"
+							>
+								Refund Queue
+							</button>
+						)}
 						{mode === "repair" && allowedModes.includes("repair") && (
 							<button
 								type="button"
@@ -2886,7 +3038,7 @@ useEffect(() => {
 					<section className="space-y-6 xl:col-span-8 xl:flex xl:h-full xl:flex-col xl:space-y-0 xl:gap-6">
 						<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 							<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-							<p className="mb-3 text-xs text-slate-500">Capture walk-in details before checkout.</p>
+							<p className="mb-3 text-xs text-slate-500">Optional for walk-in purchases. Add details if the customer wants them on the receipt.</p>
 							<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 								<input
 									title="Retail customer name"
@@ -3008,7 +3160,7 @@ useEffect(() => {
 													<p className="mt-3 line-clamp-2 text-xl font-semibold text-slate-900">{product.name}</p>
 													{product.variants.length > 0 && (
 														<div className="mt-2 grid grid-cols-2 gap-2">
-															<select
+															<MonochromeSelect
 																title={`Select size for ${product.name}`}
 																value={selectedSize}
 																onChange={(event) => {
@@ -3030,8 +3182,8 @@ useEffect(() => {
 																{sizeOptions.map((size) => (
 																		<option key={size} value={size}>{size}</option>
 																))}
-															</select>
-															<select
+															</MonochromeSelect>
+															<MonochromeSelect
 																title={`Select color for ${product.name}`}
 																value={selectedColor}
 																onChange={(event) => {
@@ -3053,7 +3205,7 @@ useEffect(() => {
 																{colorOptions.map((color) => (
 																		<option key={color} value={color}>{color}</option>
 																	))}
-															</select>
+															</MonochromeSelect>
 															</div>
 													)}
 													<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
@@ -3140,7 +3292,7 @@ useEffect(() => {
 
 													return (
 														<>
-															<select
+															<MonochromeSelect
 																title={`Cart size for ${item.name}`}
 																value={selectedSize}
 																onChange={(event) => {
@@ -3159,8 +3311,8 @@ useEffect(() => {
 																{sizeOptions.map((size) => (
 																		<option key={size} value={size}>{size}</option>
 																	))}
-															</select>
-															<select
+															</MonochromeSelect>
+															<MonochromeSelect
 																title={`Cart color for ${item.name}`}
 																value={selectedColor}
 																onChange={(event) => {
@@ -3179,7 +3331,7 @@ useEffect(() => {
 																{colorOptions.map((color) => (
 																		<option key={color} value={color}>{color}</option>
 																	))}
-																</select>
+																</MonochromeSelect>
 															</>
 													);
 												})()}
@@ -3215,7 +3367,7 @@ useEffect(() => {
 							</div>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
-							<select
+							<MonochromeSelect
 								title="Retail payment method"
 								value={retailPaymentMethod}
 								onChange={(event) => setRetailPaymentMethod(event.target.value as PaymentMethod)}
@@ -3224,7 +3376,7 @@ useEffect(() => {
 								<option value="cash">Cash</option>
 								<option value="gcash">GCash</option>
 								<option value="card">Card</option>
-							</select>
+							</MonochromeSelect>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 							<input
@@ -3304,10 +3456,12 @@ useEffect(() => {
 						<div className="grid grid-cols-1 gap-4">
 							<div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
 								<h2 className="mb-2 text-base font-semibold text-slate-900">Customer Information</h2>
-								<p className="mb-3 text-xs text-slate-500">Input customer name. Phone is required for cash and optional for GCash/Card. Email is optional.</p>
+								<p className="mb-3 text-xs text-slate-500">Customer Name * and Phone Number * are required for every repair checkout. Email is optional.</p>
 								<div className="grid grid-cols-1 gap-2 md:grid-cols-3">
 									<input
 										title="Customer name"
+										required
+										aria-required="true"
 										value={customerName}
 										onChange={(event) => setCustomerName(event.target.value)}
 										disabled={!!selectedRepairOrder}
@@ -3316,12 +3470,15 @@ useEffect(() => {
 									/>
 									<input
 										title="Customer phone number"
+										required
+										aria-required="true"
 										type="text"
 										inputMode="numeric"
 										pattern="[0-9]*"
 										maxLength={11}
 										value={customerPhone}
 										onChange={(event) => setCustomerPhone(toDigitsOnly(event.target.value).slice(0, 11))}
+										disabled={!!selectedRepairOrder}
 										placeholder="Phone number"
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500"
 									/>
@@ -3335,12 +3492,12 @@ useEffect(() => {
 										className="rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none transition focus:border-blue-500 disabled:bg-slate-100"
 									/>
 								</div>
-								{paymentMethod === "cash" && customerPhone.length > 0 && !isCustomerPhoneValid && (
+								{customerPhone.length > 0 && !isCustomerPhoneValid && (
 									<p className="mt-2 text-xs font-semibold text-red-600">Phone number must be exactly 11 digits.</p>
 								)}
 								<p className="mt-2 text-xs text-slate-500">These details will appear on the printed receipt.</p>
 								{selectedRepairOrder && (
-									<p className="mt-1 text-xs font-semibold text-blue-700">Customer name is locked because this order is attached from Job Order Repair.</p>
+									<p className="mt-1 text-xs font-semibold text-blue-700">Customer details are locked because this order is attached from Job Order Repair.</p>
 								)}
 							</div>
 
@@ -3466,12 +3623,13 @@ useEffect(() => {
 														key={`package-${pkg.id}`}
 														onClick={() => addPackageToOrder(pkg)}
 														disabled={!!selectedRepairOrder}
-														className="h-56 rounded-xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-300 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+														data-catalog-card="true"
+														className="h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition enabled:hover:border-black enabled:hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold uppercase text-slate-600">Package</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold uppercase text-black">Package</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -3479,13 +3637,13 @@ useEffect(() => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{pkg.name}</p>
-															<p className="mt-1 text-xs text-slate-600">{pkg.description}</p>
-															<p className="mt-2 text-xs text-slate-700">Includes {pkg.includedServices.length} services</p>
-															<p className="text-xs text-slate-700">{pkg.saveText}</p>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(pkg.price)}</p>
-																<p className="text-xs text-slate-500">Bundle offer</p>
+															<p className="mt-3 text-xl font-semibold text-black">{pkg.name}</p>
+															<p className="mt-1 text-xs text-black">{pkg.description}</p>
+															<p className="mt-2 text-xs text-black">Includes {pkg.includedServices.length} services</p>
+															<p className="text-xs text-black">{pkg.saveText}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(pkg.price)}</p>
+																<p className="text-xs text-black">Bundle offer</p>
 															</div>
 														</div>
 													</button>
@@ -3528,16 +3686,17 @@ useEffect(() => {
 														key={`service-${service.id}`}
 														onClick={() => addFromServiceCatalog(service)}
 														disabled={!canSelectService}
-														className={`h-56 rounded-xl border p-4 text-left transition ${
+														data-catalog-card="true"
+														className={`h-56 rounded-xl border border-black bg-white p-4 text-left text-black transition ${
 															canSelectService
-																? "border-slate-200 bg-slate-50 hover:border-blue-300 hover:bg-blue-50"
-																: "border-slate-200 bg-slate-100 opacity-45 grayscale cursor-not-allowed"
+																? "enabled:hover:border-black enabled:hover:bg-white"
+																: "opacity-50 grayscale cursor-not-allowed"
 														}`}
 													>
 														<div className="flex h-full flex-col">
 															<div className="flex items-start justify-between">
-																<span className="rounded-full bg-slate-200 px-2 py-1 text-[10px] font-semibold text-slate-600">{service.category}</span>
-																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-blue-500 bg-blue-500 text-white" : "border-slate-300"}`}>
+																<span className="rounded-full border border-black bg-white px-2 py-1 text-[10px] font-semibold text-black">{service.category}</span>
+																<span className={`flex h-6 w-6 items-center justify-center rounded-full border ${selected ? "border-black bg-black text-white" : "border-black bg-white text-black"}`}>
 																	{selected && (
 																		<svg viewBox="0 0 20 20" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
 																			<path d="M4 10l4 4 8-8" />
@@ -3545,18 +3704,18 @@ useEffect(() => {
 																	)}
 																</span>
 															</div>
-															<p className="mt-3 text-xl font-semibold text-slate-900">{service.name}</p>
-															<ul className="mt-2 list-disc pl-5 text-xs text-slate-600">
+															<p className="mt-3 text-xl font-semibold text-black">{service.name}</p>
+															<ul className="mt-2 list-disc pl-5 text-xs text-black">
 																<li>{service.category} service for customer request.</li>
 																<li>Estimated turnaround: {service.duration}.</li>
 															</ul>
-															<div className="mt-auto flex items-center justify-between border-t border-slate-200 pt-3">
-																<p className="text-2xl font-bold text-slate-900">{formatPeso(service.price)}</p>
-																<p className="text-xs text-slate-500">{service.duration}</p>
+															<div className="mt-auto flex items-center justify-between border-t border-black pt-3">
+																<p className="text-2xl font-bold text-black">{formatPeso(service.price)}</p>
+																<p className="text-xs text-black">{service.duration}</p>
 															</div>
-															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Included in package</span>}
-															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-700">Add-on</span>}
-															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Requested</span>}
+															{activeManualPackage && isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Included in package</span>}
+															{activeManualPackage && !isIncludedByPackage && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Add-on</span>}
+															{selectedRepairOrder && isRequestedService && <span className="text-[10px] font-semibold uppercase tracking-wider text-black">Requested</span>}
 														</div>
 													</button>
 												);
@@ -3693,7 +3852,7 @@ useEffect(() => {
 							</div>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Method</label>
-							<select
+							<MonochromeSelect
 								title="Payment method"
 								value={paymentMethod}
 								onChange={(event) => setPaymentMethod(event.target.value as PaymentMethod)}
@@ -3702,7 +3861,7 @@ useEffect(() => {
 								<option value="cash">Cash</option>
 								<option value="gcash">GCash</option>
 								<option value="card">Card</option>
-							</select>
+							</MonochromeSelect>
 
 							<label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">Cash Received</label>
 							<input
@@ -3769,7 +3928,8 @@ useEffect(() => {
 								<button
 									type="button"
 									onClick={handlePay}
-									disabled={!canPay}
+									disabled={!canPay || repairCheckoutFrozen}
+									title={repairCheckoutFrozen ? maintenanceFreezeMessage : undefined}
 									className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:bg-slate-300"
 								>
 									{isProcessingPayment ? "Processing..." : "Pay"}
@@ -3790,7 +3950,7 @@ useEffect(() => {
 			)}
 
 			{isRefundQueueOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Repair Refund Queue</h3>
@@ -3814,28 +3974,32 @@ useEffect(() => {
 											const financeStatus = String(refund.finance_status || 'pending').toLowerCase();
 											const ownerStatus = String(refund.shop_owner_status || 'pending').toLowerCase();
 											const canApprove = refund.status === 'requested' && financeStatus === 'approved_initial' && ownerStatus === 'pending';
-											const canExecute = false;
+											const canExecute = isIndividualRepairShop && refund.can_execute_payout === true;
+											const repair = refund.repairRequest;
+											const contact = [repair?.customer_phone, repair?.customer_email].filter(Boolean).join(' / ') || 'N/A';
+											const shoe = [repair?.brand, repair?.shoe_type].filter(Boolean).join(' / ') || 'N/A';
+											const service = repair?.service_name || repair?.description || 'N/A';
 											return (
 												<div key={refund.id} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
 													<div className="flex flex-wrap items-start justify-between gap-3">
 														<div>
-															<p className="text-sm font-semibold text-slate-900">#{refund.id} {refund.repairRequest?.request_id ? `- ${refund.repairRequest.request_id}` : ''}</p>
-															<p className="text-xs text-slate-600">Customer: {refund.repairRequest?.customer_name || 'N/A'}</p>
+															<p className="text-sm font-semibold text-slate-900">{refund.refund_reference || 'Repair refund'}</p>
+															<p className="text-xs text-slate-600">Customer: {repair?.customer_name || 'N/A'} · {contact}</p>
+															<p className="text-xs text-slate-600">Repair request: {repair?.request_id || 'N/A'}</p>
+															<p className="text-xs text-slate-600">Shoe: {shoe}</p>
+															<p className="text-xs text-slate-600">Service: {service}</p>
 															<p className="text-xs text-slate-600">Amount: {formatPeso(Number(refund.approved_amount ?? refund.requested_amount ?? 0))}</p>
+											<p className="text-xs text-slate-600">Reason: {humanizeRefundReason(refund.reason_code)} · Requested: {refund.requested_at ? new Date(refund.requested_at).toLocaleString('en-PH') : 'N/A'}</p>
+															{refund.reason_notes && <p className="text-xs text-slate-600">Refund details: {refund.reason_notes}</p>}
+															{(refund.execution_channel || refund.execution_reference) && <p className="text-xs text-slate-600">Execution: {[refund.execution_channel, refund.execution_reference].filter(Boolean).join(' / ')}</p>}
 															{refund.failure_reason && <p className="text-xs text-red-600">Reason: {refund.failure_reason}</p>}
 														</div>
 														<div className="flex items-center gap-2">
 															<span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${getRefundStatusClass(refund.status)}`}>{refund.status}</span>
-															{financeStatus && (
-																<span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-blue-700">F:{financeStatus}</span>
-															)}
-															{ownerStatus && (
-																<span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-violet-700">O:{ownerStatus}</span>
-															)}
 															{canApprove && (
 																<button
 																	type="button"
-																	onClick={() => performRefundAction(refund.id, 'approve', {})}
+																	onClick={() => performRefundAction(refund, 'approve')}
 																	disabled={processingRefundId === refund.id}
 																	className="rounded-lg border border-blue-300 px-3 py-1 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
 																>
@@ -3845,7 +4009,7 @@ useEffect(() => {
 															{canApprove && (
 																<button
 																	type="button"
-																	onClick={() => performRefundAction(refund.id, 'reject', { rejection_reason: 'Rejected by Shop Owner from POS queue' })}
+																	onClick={() => performRefundAction(refund, 'reject', { rejection_reason: 'Rejected by Shop Owner from POS queue' })}
 																	disabled={processingRefundId === refund.id}
 																	className="rounded-lg border border-red-300 px-3 py-1 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-40"
 																>
@@ -3855,11 +4019,11 @@ useEffect(() => {
 															{canExecute && (
 																<button
 																	type="button"
-																	onClick={() => performRefundAction(refund.id, 'execute', { execution_mode: 'manual' })}
+																	onClick={() => performRefundAction(refund, 'execute')}
 																	disabled={processingRefundId === refund.id}
 																	className="rounded-lg bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
 																>
-																	Execute
+																	Execute refund payout
 																</button>
 															)}
 														</div>
@@ -3875,7 +4039,7 @@ useEffect(() => {
 				)}
 
 				{isOrderModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Attach From Repair Orders</h3>
@@ -3926,7 +4090,7 @@ useEffect(() => {
 				)}
 
 				{isHistoryModalOpen && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt History</h3>
@@ -3980,6 +4144,7 @@ useEffect(() => {
 																{receipt.latestRefund.status}
 															</span>
 														)}
+														{receipt.moduleType === 'retail' && receipt.productWarranty?.items.some(item => item.can_assess) && canRequestRetailRefund(receipt) ? <button type="button" disabled={retailRefundFrozen} onClick={() => handleRetailRefund(receipt, 'warranty')} className="min-h-11 rounded-lg border border-gray-300 bg-white px-3 text-xs font-semibold text-black disabled:opacity-50">Warranty Assessment</button> : null}
 														{canRequestWarrantyClaimFromReceipt(receipt) && (
 															<button
 																type="button"
@@ -3994,10 +4159,11 @@ useEffect(() => {
 															</button>
 														)}
 														{(receipt.moduleType === "retail" ? canRequestRetailRefund(receipt) : canRequestRepairRefund(receipt)) && (
-															<button
-																type="button"
-																onClick={() => handleRequestRefund(receipt)}
-																title="Refund"
+									<button
+										type="button"
+										onClick={() => handleRequestRefund(receipt)}
+										disabled={receipt.moduleType === "retail" ? retailRefundFrozen : repairRefundFrozen}
+										title={(receipt.moduleType === "retail" ? retailRefundFrozen : repairRefundFrozen) ? maintenanceFreezeMessage : "Refund"}
 																aria-label="Refund"
 																className="inline-flex items-center justify-center bg-transparent p-1 text-amber-600 transition-colors hover:text-amber-700"
 															>
@@ -4038,7 +4204,7 @@ useEffect(() => {
 
 				{isRetailRefundModalOpen && retailRefundReceipt && (
 					<div
-						className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/60 px-3 py-4"
+						className="fixed inset-0 z-60 flex items-center justify-center bg-slate-950/60 px-3 py-4 erp-modal-backdrop"
 						onClick={(event) => {
 							if (event.target === event.currentTarget && !retailRefundSubmitting) {
 								resetRetailRefundModalState();
@@ -4048,7 +4214,7 @@ useEffect(() => {
 						<div className="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
 							<div className="flex items-start justify-between gap-3 border-b border-slate-200 px-5 py-4">
 								<div>
-									<h3 className="text-xl font-semibold text-slate-900">Retail Item Refund</h3>
+									<h3 className="text-xl font-semibold text-slate-900">{retailWarrantyBasis ? 'Product Warranty Assessment' : 'Retail Item Refund'}</h3>
 									<p className="mt-1 text-xs text-slate-500">
 										Receipt: {retailRefundReceipt.receiptNo} | Customer: {retailRefundReceipt.customerName}
 									</p>
@@ -4147,7 +4313,7 @@ useEffect(() => {
 
 															<div>
 																<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Inspection</label>
-																<select
+																<MonochromeSelect
 																	title={`Inspection for ${item.label}`}
 																	value={draft.inspectionDisposition}
 																	onChange={(event) => updateRetailRefundDisposition(item.orderItemId, event.target.value === "damaged" ? "damaged" : "resellable")}
@@ -4156,7 +4322,7 @@ useEffect(() => {
 																>
 																	<option value="resellable">Resellable (restock)</option>
 																	<option value="damaged">Damaged (write-off)</option>
-																</select>
+																</MonochromeSelect>
 															</div>
 														</div>
 
@@ -4244,8 +4410,9 @@ useEffect(() => {
 				)}
 
 				{isReceiptModalOpen && receiptSnapshot && (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4">
+					<div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 erp-modal-backdrop">
 						<div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+								{receiptSnapshot.productWarranty ? <div className="max-h-72 overflow-y-auto print:hidden"><RetailWarrantyPanel warranty={receiptSnapshot.productWarranty} disabled={retailRefundFrozen || !canRequestRetailRefund(receiptSnapshot)} onAssess={() => { setIsReceiptModalOpen(false); void handleRetailRefund(receiptSnapshot, 'warranty'); }} /></div> : null}
 							<div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
 								<h3 className="text-lg font-semibold text-slate-900">Receipt (Thermal)</h3>
 								<div className="flex items-center gap-2">
@@ -4326,7 +4493,7 @@ useEffect(() => {
 				)}
 
 			</div>
-		</AppLayoutShopOwner>
+		</Layout>
 	);
 };
 

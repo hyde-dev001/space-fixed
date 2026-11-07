@@ -1,24 +1,13 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useState, useEffect } from "react";
 import type { ComponentType } from "react";
 import AppLayoutShopOwner from "../../../../layout/AppLayout_shopOwner";
+import AppLayoutERP from "../../../../layout/AppLayout_ERP";
 
 type MetricColor = "success" | "warning" | "info";
-type ChangeType = "increase" | "decrease";
 
 // Icons
-const ArrowUpIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-  </svg>
-);
-
-const ArrowDownIcon = ({ className }: { className?: string }) => (
-  <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-  </svg>
-);
-
 const BoxIcon = ({ className }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
     <path d="M21 16V8l-9-5-9 5v8l9 5 9-5zM3.3 7.6L12 12l8.7-4.4M12 12v9" />
@@ -71,28 +60,6 @@ const formatCategoryLabel = (category: string) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
-const getCategoryBadgeClasses = (category: string) => {
-  const normalized = category.toLowerCase().replace(/\s+/g, "_");
-
-  if (normalized === "shoes") {
-    return "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-200";
-  }
-
-  if (normalized === "repair_materials") {
-    return "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-200";
-  }
-
-  if (normalized === "accessories") {
-    return "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200";
-  }
-
-  if (normalized === "care_products") {
-    return "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-200";
-  }
-
-  return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200";
-};
-
 const isProductItem = (item: InventoryItem) => {
   const normalized = item.category.toLowerCase().replace(/\s+/g, "_");
   return normalized === "shoes" || normalized === "product" || normalized === "products";
@@ -101,14 +68,12 @@ const isProductItem = (item: InventoryItem) => {
 interface MetricCardProps {
   title: string;
   value: number | string;
-  change: number;
-  changeType: ChangeType;
   icon: ComponentType<{ className?: string }>;
   color: MetricColor;
   description: string;
 }
 
-const MetricCard = ({ title, value, change, changeType, icon: Icon, color, description }: MetricCardProps) => {
+const MetricCard = ({ title, value, icon: Icon, color, description }: MetricCardProps) => {
   const getColorClasses = () => {
     switch (color) {
       case "success":
@@ -126,19 +91,9 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
     <div className="group relative overflow-hidden rounded-2xl border border-gray-200 bg-white p-6 shadow-sm transition-all duration-500 hover:shadow-xl hover:border-gray-300 hover:-translate-y-1 dark:border-gray-800 dark:bg-white/3 dark:hover:border-gray-700">
       <div className={`absolute inset-0 bg-linear-to-br ${getColorClasses()} opacity-0 transition-opacity duration-500 group-hover:opacity-5`} />
       <div className="relative">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4">
           <div className={`flex items-center justify-center w-14 h-14 bg-linear-to-br ${getColorClasses()} rounded-2xl shadow-lg transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
             <Icon className="text-white size-7 drop-shadow-sm" />
-          </div>
-          <div
-            className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs font-semibold transition-all duration-300 ${
-              changeType === "increase"
-                ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-                : "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            }`}
-          >
-            {changeType === "increase" ? <ArrowUpIcon className="size-3" /> : <ArrowDownIcon className="size-3" />}
-            {Math.abs(change)}%
           </div>
         </div>
         <div className="space-y-2">
@@ -153,6 +108,8 @@ const MetricCard = ({ title, value, change, changeType, icon: Icon, color, descr
 
 export default function InventoryOverview() {
   const pageProps = usePage().props as any;
+  const erpMode = pageProps?.erpMode === true;
+  const Layout = erpMode ? AppLayoutERP : AppLayoutShopOwner;
   const userRole = String(pageProps?.auth?.user?.role ?? pageProps?.auth?.user?.account_type ?? "").toLowerCase();
   const isStaffAccount = userRole.includes("staff") || window.location.pathname.toLowerCase().includes("/staff/");
 
@@ -237,24 +194,10 @@ export default function InventoryOverview() {
   };
 
   return (
-    <AppLayoutShopOwner>
+    <Layout>
       <Head title="Inventory Overview - Solespace" />
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold mb-1">Inventory Overview</h1>
-            <p className="text-gray-600 dark:text-gray-400">View all available stock and inventory levels (Read-only)</p>
-          </div>
-          <div className="flex flex-wrap items-center justify-end gap-3">
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-200">
-              Shop Owner View
-            </span>
-            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">
-              Read-Only Access
-            </span>
-          </div>
-        </div>
+        <h1 className="sr-only">Inventory Overview</h1>
 
         {/* Error State */}
         {error && (
@@ -288,8 +231,6 @@ export default function InventoryOverview() {
             <MetricCard
               title="Total Items in Stock"
               value={totalItems}
-              change={12}
-              changeType="increase"
               icon={BoxIcon}
               color="info"
               description="Across all categories"
@@ -297,8 +238,6 @@ export default function InventoryOverview() {
             <MetricCard
               title="Low Stock Items"
               value={lowStockCount}
-              change={5}
-              changeType="decrease"
               icon={AlertIcon}
               color="warning"
               description="Need attention"
@@ -306,8 +245,6 @@ export default function InventoryOverview() {
             <MetricCard
               title="Out of Stock"
               value={outOfStockCount}
-              change={2}
-              changeType="decrease"
               icon={TrendUpIcon}
               color="success"
               description="Awaiting restock"
@@ -338,7 +275,7 @@ export default function InventoryOverview() {
               />
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={categoryFilter}
                 onChange={(e) => {
                   setCategoryFilter(e.target.value);
@@ -353,10 +290,10 @@ export default function InventoryOverview() {
                     {formatCategoryLabel(category)}
                   </option>
                 ))}
-              </select>
+              </MonochromeSelect>
             </div>
             <div className="sm:w-48">
-              <select
+              <MonochromeSelect
                 value={statusFilter}
                 onChange={(e) => {
                   setStatusFilter(e.target.value);
@@ -369,7 +306,7 @@ export default function InventoryOverview() {
                 <option value="In Stock">In Stock</option>
                 <option value="Low Stock">Low Stock</option>
                 <option value="Out of Stock">Out of Stock</option>
-              </select>
+              </MonochromeSelect>
             </div>
           </div>
 
@@ -408,7 +345,7 @@ export default function InventoryOverview() {
                           </div>
                         </td>
                         <td className="py-3">
-                          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(item.category)}`}>
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
                             {formatCategoryLabel(item.category)}
                           </span>
                         </td>
@@ -416,15 +353,7 @@ export default function InventoryOverview() {
                           <span className="font-semibold text-gray-900 dark:text-gray-100">{item.quantity}</span>
                         </td>
                         <td className="py-3">
-                          <span
-                            className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                              item.status === "In Stock"
-                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                                : item.status === "Low Stock"
-                                ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                                : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                            }`}
-                          >
+                          <span className="font-medium text-gray-900 dark:text-gray-100">
                             {item.status}
                           </span>
                         </td>
@@ -482,7 +411,7 @@ export default function InventoryOverview() {
 
         {/* View Details Modal */}
         {viewModalOpen && selectedItem && (
-          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-999999 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-2xl w-full">
               <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Inventory Item Details</h2>
@@ -511,7 +440,7 @@ export default function InventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Category</p>
-                    <span className={`mt-1 inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${getCategoryBadgeClasses(selectedItem.category)}`}>
+                    <span className="mt-1 font-medium text-gray-900 dark:text-gray-100">
                       {formatCategoryLabel(selectedItem.category)}
                     </span>
                   </div>
@@ -521,15 +450,7 @@ export default function InventoryOverview() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-gray-500 dark:text-gray-400">Status</p>
-                    <span
-                      className={`inline-block px-2 py-1 rounded-full text-xs font-semibold ${
-                        selectedItem.status === "In Stock"
-                          ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-                          : selectedItem.status === "Low Stock"
-                          ? "bg-amber-50 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200"
-                          : "bg-red-50 text-red-700 dark:bg-red-900/40 dark:text-red-200"
-                      }`}
-                    >
+                    <span className="font-medium text-gray-900 dark:text-gray-100">
                       {selectedItem.status}
                     </span>
                   </div>
@@ -553,6 +474,6 @@ export default function InventoryOverview() {
           </div>
         )}
       </div>
-    </AppLayoutShopOwner>
+    </Layout>
   );
 }

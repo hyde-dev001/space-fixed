@@ -18,7 +18,6 @@ class InvoiceItem extends Model
         'unit_price',
         'tax_rate',
         'amount',
-        'account_id',
     ];
 
     protected $casts = [
@@ -33,8 +32,4 @@ class InvoiceItem extends Model
         return $this->belongsTo(Invoice::class, 'invoice_id');
     }
 
-    public function account()
-    {
-        return $this->belongsTo(Account::class, 'account_id');
-    }
 }

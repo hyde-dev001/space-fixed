@@ -15,6 +15,7 @@ class Notification extends Model
         'type',
         'priority',
         'group_key',
+        'logistics_delivery_key',
         'title',
         'message',
         'data',
@@ -113,7 +114,7 @@ class Notification extends Model
         ?string $actionUrl = null,
         ?array $data = null
     ): void {
-        $admins = \App\Models\SuperAdmin::all();
+        $admins = \App\Models\SuperAdmin::active()->get();
         foreach ($admins as $admin) {
             static::create([
                 'super_admin_id' => $admin->id,
@@ -274,4 +275,3 @@ class Notification extends Model
         return $this->type?->label() ?? ucfirst(str_replace('_', ' ', $this->type));
     }
 }
-

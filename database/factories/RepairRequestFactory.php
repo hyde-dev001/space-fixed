@@ -72,4 +72,20 @@ class RepairRequestFactory extends Factory
             'repairer_rejected_at' => now(),
         ]);
     }
+
+    public function reassignmentRequired(): static
+    {
+        return $this->state(fn (): array => [
+            'status' => 'reassignment_required',
+        ]);
+    }
+
+    public function awaitingAssignment(): static
+    {
+        return $this->state(fn (): array => [
+            'status' => 'awaiting_assignment',
+            'assigned_repairer_id' => null,
+            'assigned_at' => null,
+        ]);
+    }
 }

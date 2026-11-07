@@ -2,7 +2,11 @@ import { SidebarProvider, useSidebar } from "../context/SidebarContext";
 import AppHeader_shopOwner from "./AppHeader_shopOwner";
 import Backdrop from "./Backdrop";
 import AppSidebar_shopOwner from "./AppSidebar_shopOwner";
+import CanonicalOwnerLayout from "./CanonicalOwnerLayout";
+import { isDirectShopOwnerContext, readCanonicalOwnerShell } from "./ownerShellMetadata";
+import { usePage } from "@inertiajs/react";
 import { ReactNode } from "react";
+import OwnerSetupGuide from "../components/shop-owner/OwnerSetupGuide";
 
 interface AppLayoutShopOwnerProps {
   children: ReactNode;
@@ -14,7 +18,7 @@ const LayoutContent: React.FC<{ children: ReactNode; fullBleed?: boolean; hideHe
   const { isExpanded, isHovered, isMobileOpen } = useSidebar();
 
   return (
-    <div className="min-h-screen xl:flex">
+    <div className="erp-theme min-h-screen bg-white text-gray-900 xl:flex dark:bg-gray-950 dark:text-gray-100">
       <div>
         <AppSidebar_shopOwner />
         <Backdrop />
@@ -27,12 +31,25 @@ const LayoutContent: React.FC<{ children: ReactNode; fullBleed?: boolean; hideHe
         <div className={fullBleed ? "p-0 m-0 max-w-none" : "p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6"}>
           {children}
         </div>
+        <OwnerSetupGuide />
       </div>
     </div>
   );
 };
 
 const AppLayoutShopOwner: React.FC<AppLayoutShopOwnerProps> = ({ children, fullBleed, hideHeader }) => {
+  const page = usePage();
+  const pageProps = page.props as Record<string, unknown>;
+  const ownerShell = readCanonicalOwnerShell(pageProps.ownerShell);
+
+  if (ownerShell && isDirectShopOwnerContext(pageProps)) {
+    return (
+      <CanonicalOwnerLayout metadata={ownerShell} fullBleed={fullBleed} hideHeader={hideHeader}>
+        {children}
+      </CanonicalOwnerLayout>
+    );
+  }
+
   return (
     <SidebarProvider>
       <LayoutContent fullBleed={fullBleed} hideHeader={hideHeader}>{children}</LayoutContent>

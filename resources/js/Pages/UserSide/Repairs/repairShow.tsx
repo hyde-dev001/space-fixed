@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Head, usePage, Link } from '@inertiajs/react';
 import Navigation from '../Shared/Navigation';
 import ReportShopModal from '../../../components/ReportShopModal';
 import { navigateBackOr } from '../Shared/backNavigation';
+import CustomerAddressManager, { type CustomerAddress } from '@/components/address/CustomerAddressManager';
 
 interface ShopHours {
   day: string;
@@ -32,12 +33,15 @@ interface RepairService {
   description: string;
   category: string;
   duration: string;
+  image_url?: string | null;
 }
 
 interface RepairPackage {
   id: number;
   name: string;
   description?: string | null;
+  image_url?: string | null;
+  duration?: string | null;
   package_price: number;
   service_count: number;
   services_total_price: number;
@@ -52,7 +56,7 @@ interface RepairPackage {
 }
 
 interface Review {
-  id: number;
+  id: number | string;
   user_name: string;
   rating: number;
   comment: string;
@@ -81,6 +85,69 @@ interface Props {
   };
 }
 
+type CoverageQuote = {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  available?: boolean;
+  reason?: string | null;
+  distance_km?: number | null;
+  fee?: number | null;
+};
+
+const normalizeReviewImage = (image: unknown): string => {
+  if (typeof image !== 'string' || !image) return '';
+  if (/^(https?:|data:|blob:|\/)/i.test(image)) return image;
+  return `/storage/${image}`;
+};
+
+const normalizeReview = (review: any, source: 'repair' | 'shop'): Review => {
+  const userName = [review.user?.first_name, review.user?.last_name]
+    .filter(Boolean)
+    .join(' ');
+  const images = source === 'repair' ? review.review_images : review.images;
+
+  return {
+    id: `${source}-${review.id}`,
+    user_name: source === 'repair'
+      ? userName || review.user?.name || 'Anonymous'
+      : review.user_name || 'Anonymous',
+    rating: Number(review.rating) || 0,
+    comment: source === 'repair' ? review.review_text || '' : review.comment || '',
+    images: (Array.isArray(images) ? images : [])
+      .map(normalizeReviewImage)
+      .filter(Boolean),
+    created_at: review.created_at || '',
+    verified: source === 'repair' ? Boolean(review.is_verified) : Boolean(review.verified),
+  };
+};
+
+const calculateReviewStats = (reviewList: Review[]): ReviewStats => {
+  const ratingCounts: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let ratingTotal = 0;
+
+  reviewList.forEach((review) => {
+    const rating = Math.round(Number(review.rating));
+    if (rating >= 1 && rating <= 5) {
+      ratingCounts[rating] += 1;
+      ratingTotal += rating;
+    }
+  });
+
+  const totalReviews = reviewList.length;
+  const ratingDistribution: ReviewStats['rating_distribution'] = {};
+  for (let rating = 1; rating <= 5; rating += 1) {
+    ratingDistribution[rating] = {
+      count: ratingCounts[rating],
+      percentage: totalReviews > 0 ? Math.round((ratingCounts[rating] / totalReviews) * 100) : 0,
+    };
+  }
+
+  return {
+    average_rating: totalReviews > 0 ? Number((ratingTotal / totalReviews).toFixed(1)) : 0,
+    total_reviews: totalReviews,
+    rating_distribution: ratingDistribution,
+  };
+};
+
 const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) => {
   const { auth } = usePage().props as any;
   const isAuthenticated = !!auth?.user;
@@ -91,6 +158,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const [hoverRating, setHoverRating] = useState(0);
   const [selectedServices, setSelectedServices] = useState<number[]>([]);
   const [selectedPackageId, setSelectedPackageId] = useState<number | null>(null);
+  const [selectedAddress, setSelectedAddress] = useState<CustomerAddress | null>(null);
+  const [coverageQuote, setCoverageQuote] = useState<CoverageQuote>({ status: 'idle' });
   const [showMoreActions, setShowMoreActions] = useState(false);
   const [enlargedImage, setEnlargedImage] = useState<string | null>(null);
   const [imageUploadGroups, setImageUploadGroups] = useState<Array<{id: string; file: File | null; preview: string}>>([{id: '0', file: null, preview: ''}]);
@@ -109,6 +178,38 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   const [selectedRatingFilter, setSelectedRatingFilter] = useState<number | 'all'>('all');
   const [currentReviewPage, setCurrentReviewPage] = useState(1);
   const reviewsPerPage = 10;
+  const searchParams = new URLSearchParams(window.location.search);
+  const initialAddressId = Number(searchParams.get('address_id')) || null;
+  const reviewOrderId = Number(searchParams.get('review_order_id')) || null;
+
+  const handleAddressSelect = useCallback((address: CustomerAddress) => {
+    setSelectedAddress(address);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedAddress) {
+      setCoverageQuote({ status: 'idle' });
+      return;
+    }
+
+    const controller = new AbortController();
+    setCoverageQuote({ status: 'loading' });
+    fetch(`/api/repair/shops/${shop.id}/delivery-quote?address_id=${selectedAddress.id}`, {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error('Coverage request failed');
+        return response.json();
+      })
+      .then((quote) => setCoverageQuote({ status: 'ready', ...quote }))
+      .catch((error) => {
+        if ((error as Error).name !== 'AbortError') setCoverageQuote({ status: 'error' });
+      });
+
+    return () => controller.abort();
+  }, [selectedAddress, shop.id]);
 
   const createImageUploadGroup = () => ({
     id: Math.random().toString(36).slice(2, 11),
@@ -121,8 +222,11 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
     fetchReviews();
     if (isAuthenticated) {
       checkReviewEligibility();
+    } else {
+      setCanReview(false);
+      setReviewEligibility(null);
     }
-  }, [shop.id, isAuthenticated]);
+  }, [shop.id, isAuthenticated, reviewOrderId]);
 
   useEffect(() => {
     const handleOutsideClick = (event: MouseEvent) => {
@@ -139,41 +243,73 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
   const fetchReviews = async () => {
     try {
-      const response = await fetch(`/api/shops/${shop.id}/reviews`);
-      const data = await response.json();
-      if (data.success) {
-        setReviews(data.reviews || []);
-        setReviewStats(data.statistics || { 
-          average_rating: 0, 
-          total_reviews: 0, 
-          rating_distribution: {} 
-        });
-      }
+      const fetchJson = async (url: string) => {
+        try {
+          const response = await fetch(url);
+          return response.ok ? response.json() : null;
+        } catch {
+          return null;
+        }
+      };
+
+      const [repairData, legacyData] = await Promise.all([
+        fetchJson(`/api/shop-owners/${shop.id}/reviews?per_page=100`),
+        fetchJson(`/api/shops/${shop.id}/reviews`),
+      ]);
+
+      const repairReviewItems = Array.isArray(repairData?.reviews)
+        ? repairData.reviews
+        : repairData?.reviews?.data || [];
+      const repairReviews = repairReviewItems.map((review: any) => normalizeReview(review, 'repair'));
+      const legacyReviews = (Array.isArray(legacyData?.reviews) ? legacyData.reviews : [])
+        .map((review: any) => normalizeReview(review, 'shop'));
+      const mergedReviews = [...repairReviews, ...legacyReviews].sort(
+        (first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime(),
+      );
+
+      setReviews(mergedReviews);
+      setReviewStats(calculateReviewStats(mergedReviews));
     } catch (error) {
       console.error('Failed to fetch reviews:', error);
     }
   };
 
   const checkReviewEligibility = async () => {
+    if (!reviewOrderId) {
+      setCanReview(false);
+      setReviewEligibility({
+        success: true,
+        can_review: false,
+        reason: 'repair_selection_required',
+        message: 'Please open this page from My Repairs to review a specific repair.',
+      });
+      return;
+    }
+
     try {
       const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
       
-  
-      const response = await fetch(`/api/shops/${shop.id}/reviews/check-eligibility`, {
+
+      const response = await fetch(`/api/customer/repairs/${reviewOrderId}/can-review`, {
         credentials: 'include',
         headers: {
           'X-CSRF-TOKEN': csrfToken || '',
           'Accept': 'application/json',
         },
       });
+      if (!response.ok) throw new Error('Review eligibility request failed');
       const data = await response.json();
- 
-      if (data.success) {
-        setCanReview(data.can_review);
-        setReviewEligibility(data);
-      }
+
+      setCanReview(Boolean(data.success && data.can_review));
+      setReviewEligibility(data);
     } catch (error) {
       console.error('Failed to check review eligibility:', error);
+      setCanReview(false);
+      setReviewEligibility({
+        success: false,
+        can_review: false,
+        message: 'Unable to check this repair review right now. Please try again.',
+      });
     }
   };
 
@@ -292,14 +428,9 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   };
 
   const shopStatus = checkIfOpen();
-  const normalizedRepairPaymentPolicy = shop.repair_payment_policy === 'full_upfront' ? 'full_upfront' : 'deposit_50';
-  const paymentPolicyLabel = normalizedRepairPaymentPolicy === 'full_upfront'
-    ? 'Full Payment Upfront'
-    : '50% Deposit + 50% on Pickup';
-  const paymentPolicyHint = normalizedRepairPaymentPolicy === 'full_upfront'
-    ? 'Customer pays full amount before service starts.'
-    : 'Customer pays half upfront and half when claiming repaired shoes.';
-  const requestRepairHref = `/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}`;
+  const paymentPolicyLabel = 'Full Payment Upfront';
+  const paymentPolicyHint = 'Customer pays full amount before service starts.';
+  const requestRepairHref = `/repair-process?shop=${shop.id}${selectedPackageId ? `&package=${selectedPackageId}` : ''}${selectedServices.length > 0 ? `&services=${selectedServices.join(',')}` : ''}${selectedAddress ? `&address_id=${selectedAddress.id}` : ''}`;
   const selectionSummary = selectedPackageId
     ? '(1 package selected)'
     : selectedServices.length > 0
@@ -335,8 +466,13 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
       return;
     }
 
+    if (!reviewOrderId) {
+      alert('Please open this page from My Repairs to review a specific repair');
+      return;
+    }
+
     if (!canReview) {
-      alert(reviewEligibility?.message || 'You are not eligible to review this shop');
+      alert(reviewEligibility?.message || 'You are not eligible to review this repair');
       return;
     }
 
@@ -347,16 +483,16 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
 
       const formData = new FormData();
       formData.append('rating', userRating.toString());
-      formData.append('comment', newComment);
+      formData.append('review_text', newComment);
 
       // Add images if any
       imageUploadGroups.forEach((group) => {
         if (group.file) {
-          formData.append('images[]', group.file);
+          formData.append('review_images[]', group.file);
         }
       });
 
-      const response = await fetch(`/api/shops/${shop.id}/reviews`, {
+      const response = await fetch(`/api/customer/repairs/${reviewOrderId}/review`, {
         method: 'POST',
         credentials: 'include',
         headers: {
@@ -459,7 +595,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
   return (
     <>
       <Head title={shop.name} />
-      <div className="min-h-screen bg-white font-outfit antialiased">
+      <div className="userside-repair-shop-page min-h-screen bg-white font-outfit antialiased">
         <Navigation />
 
         <div className="max-w-6xl mx-auto px-4 xl:px-12 pt-18 xl:pt-24 pb-28 xl:py-20">
@@ -516,20 +652,58 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
             <p className="text-base xl:text-lg text-gray-700 leading-relaxed max-w-3xl">{shop.description}</p>
           </div>
 
+          {isAuthenticated && (
+            <section className="mb-8 space-y-3 xl:mb-10" aria-labelledby="repair-delivery-address-heading">
+              <div className="sr-only" id="repair-delivery-address-heading">Repair delivery address</div>
+              <CustomerAddressManager
+                onSelect={handleAddressSelect}
+                onSelectionCleared={() => setSelectedAddress(null)}
+                initialAddressId={initialAddressId}
+              />
+              {selectedAddress && (
+                <div className={`rounded-2xl border p-4 ${
+                  coverageQuote.status === 'ready' && coverageQuote.available
+                    ? 'border-green-200 bg-green-50 text-green-900'
+                    : coverageQuote.status === 'ready' && coverageQuote.reason === 'outside_coverage'
+                      ? 'border-amber-200 bg-amber-50 text-amber-900'
+                      : 'border-gray-200 bg-gray-50 text-gray-800'
+                }`} role="status" aria-live="polite">
+                  <p className="font-semibold">
+                    {coverageQuote.status === 'loading' && 'Checking shop rider coverage...'}
+                    {coverageQuote.status === 'error' && 'Coverage unavailable'}
+                    {coverageQuote.status === 'ready' && coverageQuote.available && 'Within coverage'}
+                    {coverageQuote.status === 'ready' && coverageQuote.reason === 'outside_coverage' && 'Outside coverage'}
+                    {coverageQuote.status === 'ready' && coverageQuote.reason === 'address_needs_pin' && 'Pin required'}
+                    {coverageQuote.status === 'ready' && !coverageQuote.available && !['outside_coverage', 'address_needs_pin'].includes(coverageQuote.reason ?? '') && 'Shop delivery unavailable'}
+                  </p>
+                  {coverageQuote.status === 'ready' && coverageQuote.available && (
+                    <p className="mt-1 text-sm">
+                      {coverageQuote.distance_km != null ? `${coverageQuote.distance_km} km · ` : ''}
+                      Estimated one-way fee: ₱{Number(coverageQuote.fee ?? 0).toLocaleString('en-PH')}
+                    </p>
+                  )}
+                  <p className="mt-1 text-sm">You will choose shop pickup, walk-in, or third-party delivery on the next step.</p>
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Info Grid */}
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 xl:gap-6 mb-8 xl:mb-10">
-            {/* Shop Information */}
-            <div className="bg-linear-to-br from-gray-50 to-white rounded-3xl p-4 sm:p-5 xl:p-8 border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 xl:mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 xl:w-12 xl:h-12 bg-black rounded-xl flex items-center justify-center shadow-md">
+          <section
+            className="mb-8 overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-sm xl:mb-10"
+            aria-labelledby="repair-shop-information-heading"
+            data-testid="repair-shop-info-rating"
+          >
+            <div className="flex flex-col gap-3 border-b border-gray-200 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5 xl:p-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black shadow-md xl:h-12 xl:w-12">
                     <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                       <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" /><polyline points="9 22 9 12 15 12 15 22" />
                     </svg>
-                  </div>
-                  <h3 className="text-xl xl:text-2xl font-bold text-black">Shop Information</h3>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+                <h2 id="repair-shop-information-heading" className="text-xl font-bold text-black xl:text-2xl">Shop Information</h2>
+              </div>
+              <div className="flex w-full items-center gap-2 sm:w-auto">
                   <Link
                     href={`/message/${shop.id}`}
                     className="px-4 xl:px-6 py-2.5 border border-gray-300 rounded-lg text-sm font-semibold text-black hover:bg-black hover:text-white hover:border-black transition-all flex-1 sm:flex-none text-center"
@@ -568,9 +742,12 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                       )}
                     </div>
                   )}
-                </div>
               </div>
-              <div className="space-y-3 xl:space-y-4 text-sm text-gray-700">
+            </div>
+
+            <div className="flex flex-col">
+              <div className="p-4 sm:p-5 xl:p-8">
+                <div className="space-y-3 text-sm text-gray-700 xl:space-y-4">
                 <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
                   <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3" />
@@ -582,15 +759,15 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     </div>
                   </div>
                 </div>
-                <div className="flex items-start gap-3 rounded-2xl border border-blue-100 bg-blue-50/70 p-3.5 xl:p-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-blue-700 mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-gray-50 p-3.5 xl:p-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 text-black mt-0.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 1v22" />
                     <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7H14a3.5 3.5 0 0 1 0 7H6" />
                   </svg>
                   <div className="min-w-0">
-                    <div className="font-bold text-blue-900 mb-1">Repair Payment Policy</div>
-                    <div className="text-blue-900 font-semibold leading-6">{paymentPolicyLabel}</div>
-                    <p className="text-blue-800/90 text-xs sm:text-sm mt-1 leading-5">{paymentPolicyHint}</p>
+                    <div className="font-bold text-black mb-1">Repair Payment Policy</div>
+                    <div className="text-black font-semibold leading-6">{paymentPolicyLabel}</div>
+                    <p className="text-gray-600 text-xs sm:text-sm mt-1 leading-5">{paymentPolicyHint}</p>
                   </div>
                 </div>
                 <div className="flex items-start gap-3 rounded-2xl border border-gray-100 bg-white/80 p-3.5 xl:p-4">
@@ -663,44 +840,50 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Shop Rating */}
-            <div className="bg-linear-to-br from-yellow-50 to-white rounded-2xl p-5 xl:p-8 border border-yellow-100 shadow-sm hover:shadow-md transition-shadow">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 xl:w-12 xl:h-12 bg-yellow-400 rounded-xl flex items-center justify-center shadow-md">
-                  <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white fill-white" viewBox="0 0 24 24">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                  </svg>
-                </div>
-                <h3 className="text-xl xl:text-2xl font-bold text-black">Customer Rating</h3>
               </div>
-              {reviewStats.total_reviews > 0 ? (
-                <div className="flex flex-col sm:flex-row sm:items-center gap-4 xl:gap-8">
-                  <div>
-                    <div className="flex items-baseline gap-3 mb-2">
-                      <span className="text-5xl xl:text-6xl font-bold text-black">
-                        {reviewStats.average_rating.toFixed(1)}
-                      </span>
-                      <span className="text-3xl xl:text-4xl text-yellow-400">⭐</span>
+
+              {/* Shop Rating */}
+              <div
+                data-testid="customer-rating-landscape"
+                className="border-t border-gray-200 bg-gray-50/60 p-4 sm:p-5 xl:p-8"
+              >
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-black shadow-md xl:h-12 xl:w-12">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 xl:w-6 xl:h-6 text-white fill-white" viewBox="0 0 24 24">
+                        <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                      </svg>
                     </div>
-                    <span className="text-sm text-gray-600">
-                      Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
-                    </span>
+                    <h3 className="text-xl xl:text-2xl font-bold text-black">Customer Rating</h3>
                   </div>
-                  <div className="flex flex-col gap-1">
-                    {renderStars(reviewStats.average_rating)}
-                    <span className="text-xs text-gray-500 mt-1">Excellent Service</span>
-                  </div>
+                  {reviewStats.total_reviews > 0 ? (
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center xl:gap-8">
+                      <div>
+                        <div className="flex items-baseline gap-3 mb-2">
+                          <span className="text-5xl xl:text-6xl font-bold text-black">
+                            {reviewStats.average_rating.toFixed(1)}
+                          </span>
+                          <span className="text-3xl xl:text-4xl text-yellow-400">⭐</span>
+                        </div>
+                        <span className="text-sm text-gray-600">
+                          Based on {reviewStats.total_reviews} review{reviewStats.total_reviews !== 1 ? 's' : ''}
+                        </span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {renderStars(reviewStats.average_rating)}
+                        <span className="text-xs text-gray-500 mt-1">Excellent Service</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-left sm:text-right">
+                      <p className="text-gray-400 italic mb-2">No reviews yet</p>
+                      <p className="text-sm text-gray-500">Be the first to review this shop!</p>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-gray-400 italic mb-2">No reviews yet</p>
-                  <p className="text-sm text-gray-500">Be the first to review this shop!</p>
-                </div>
-              )}
+              </div>
             </div>
-          </div>
+          </section>
 
           {/* Repair Services Section */}
           <div className="mb-10 xl:mb-12">
@@ -716,13 +899,37 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         key={pkg.id}
                         type="button"
                         onClick={() => handlePackageToggle(pkg.id)}
-                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
+                        className={`repair-package-card w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 min-h-62.5 sm:min-h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all cursor-pointer text-left snap-start ${
                           isSelected
-                            ? 'border-black shadow-md'
-                            : 'border-gray-200 hover:border-gray-300 hover:shadow-lg'
+                            ? 'repair-package-card--selected border-black shadow-md dark:border-[#7da2ff] dark:bg-[#1b2f50]'
+                            : 'border-gray-200 hover:border-gray-300 hover:shadow-lg dark:border-slate-700 dark:hover:border-slate-500'
                         }`}
                       >
                         <div className="flex flex-col h-full">
+                          <div className="relative -mx-5 -mt-5 xl:-mx-6 xl:-mt-6 mb-5 aspect-video overflow-hidden rounded-t-2xl bg-gray-100">
+                            {pkg.image_url ? (
+                              <img
+                                src={pkg.image_url}
+                                alt={`${pkg.name} package image`}
+                                loading="lazy"
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div
+                                role="img"
+                                aria-label="Package image unavailable"
+                                className="flex h-full w-full flex-col items-center justify-center bg-gray-100 text-gray-500"
+                              >
+                                <svg aria-hidden="true" className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                                  <circle cx="8.5" cy="9" r="1.5" />
+                                  <path d="m21 15-4.5-4.5L7 20" />
+                                </svg>
+                                <span className="mt-2 text-xs font-medium">No image yet</span>
+                              </div>
+                            )}
+                          </div>
+
                           <div className="flex items-start justify-between gap-2 xl:gap-3 mb-3">
                             <div className="flex-1 min-w-0">
                               <span className="text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium inline-block mb-2">
@@ -731,17 +938,18 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                               <h3 className="text-base xl:text-lg font-bold text-black leading-snug wrap-break-word">{pkg.name}</h3>
                               <p className="text-sm text-gray-600 mt-1 leading-5 wrap-break-word">{pkg.description || 'Repair package offer'}</p>
                             </div>
-                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
+                            <div className={`repair-package-selection-indicator w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
                               isSelected
-                                ? 'border-black bg-black'
-                                : 'border-gray-300'
+                                ? 'repair-package-selection-indicator--selected border-black bg-black dark:border-[#b8cdff] dark:bg-[#b8cdff]'
+                                : 'border-gray-300 dark:border-slate-600'
                             }`}>
-                              {isSelected && <span className="block w-2 h-2 rounded-full bg-white" />}
+                              {isSelected && <span className="block w-2 h-2 rounded-full bg-white dark:bg-slate-950" />}
                             </div>
                           </div>
 
                           <div className="text-sm text-gray-600 space-y-1">
                             <p>Includes {pkg.service_count} service{pkg.service_count !== 1 ? 's' : ''}</p>
+                            <p>Duration: {pkg.duration || 'Not set'}</p>
                             <p>Save ₱{Number(pkg.savings_amount || 0).toLocaleString()}</p>
                           </div>
 
@@ -778,7 +986,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                     return (
                       <div
                         key={service.id}
-                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-62.5 sm:h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all snap-start ${
+                        className={`w-75 min-w-75 sm:w-85 sm:min-w-85 xl:w-full xl:min-w-0 h-auto min-h-62.5 sm:min-h-65 xl:h-full shrink-0 bg-white rounded-2xl p-5 xl:p-6 border-2 transition-all snap-start ${
                           isSelected
                             ? 'border-black shadow-md'
                             : 'border-gray-200 hover:border-gray-300 hover:shadow-lg cursor-pointer'
@@ -786,13 +994,37 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                         onClick={() => handleServiceToggle(service.id)}
                       >
                         <div className="flex flex-col h-full">
+                          <div className="relative -mx-5 -mt-5 xl:-mx-6 xl:-mt-6 mb-5 aspect-video overflow-hidden rounded-t-2xl bg-gray-100">
+                            {service.image_url ? (
+                              <img
+                                src={service.image_url}
+                                alt={`${service.title} service`}
+                                loading="lazy"
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <div
+                                role="img"
+                                aria-label={`${service.title} service image unavailable`}
+                                className="flex h-full w-full flex-col items-center justify-center bg-gray-100 text-gray-500"
+                              >
+                                <svg aria-hidden="true" className="h-8 w-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                                  <circle cx="8.5" cy="9" r="1.5" />
+                                  <path d="m21 15-4.5-4.5L7 20" />
+                                </svg>
+                                <span className="mt-2 text-xs font-medium">No image yet</span>
+                              </div>
+                            )}
+                            <span className="absolute left-3 top-3 rounded-full bg-white/95 px-2 py-1 text-[11px] font-medium text-gray-700">
+                              {service.category}
+                            </span>
+                          </div>
+
                           <div className="flex items-start justify-between gap-2 xl:gap-3 mb-3">
                             <div className="flex-1 min-w-0">
-                              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2 mb-2">
+                              <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2 mb-2">
                                 <h3 className="text-base xl:text-lg font-bold text-black leading-snug wrap-break-word min-w-0">{service.title}</h3>
-                                <span className="text-[11px] xl:text-xs px-2 py-1 rounded-full bg-gray-100 text-gray-600 font-medium whitespace-nowrap shrink-0">
-                                  {service.category}
-                                </span>
                               </div>
                             </div>
                             <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-all ${
@@ -901,16 +1133,16 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                       <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
                       <polyline points="22 4 12 14.01 9 11.01"></polyline>
                     </svg>
-                    You are eligible to review this shop
+                    You are eligible to review this repair
                   </p>
                 </div>
               ) : isAuthenticated && reviewEligibility && !canReview ? (
-                <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                  <p className="text-amber-800">
-                    {reviewEligibility.message || "You can only review shops where you have completed a purchase or repair service"}
-                    {reviewEligibility.reason === 'already_reviewed' && reviewEligibility.existing_review && (
+                <div className="mb-6 p-4 bg-white border border-black rounded-xl">
+                  <p className="text-black">
+                    {reviewEligibility.message || "You can only review this repair after pickup"}
+                    {reviewEligibility.review && (
                       <span className="block mt-2 text-sm">
-                        You submitted a review on {new Date(reviewEligibility.existing_review.created_at).toLocaleDateString('en-US', {
+                        You submitted a review on {new Date(reviewEligibility.review.created_at).toLocaleDateString('en-US', {
                           year: 'numeric',
                           month: 'long',
                           day: 'numeric'
@@ -920,8 +1152,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   </p>
                 </div>
               ) : isAuthenticated && !reviewEligibility ? (
-                <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                  <p className="text-amber-800">
+                <div className="mb-6 p-4 bg-white border border-black rounded-xl">
+                  <p className="text-black">
                     You can only review shops where you have completed a purchase or repair service
                   </p>
                 </div>
@@ -1082,8 +1314,8 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   <div key={review.id} className="bg-linear-to-br from-white to-gray-50 rounded-2xl p-5 xl:p-8 border border-gray-100 hover:shadow-lg transition-all">
                     <div className="flex items-start gap-4 xl:gap-6">
                       {/* User Avatar */}
-                      <div className="w-14 h-14 xl:w-20 xl:h-20 rounded-2xl bg-linear-to-br from-gray-100 to-gray-200 border-2 border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
-                        <span className="text-xl xl:text-2xl font-bold text-gray-600">
+                      <div className="w-14 h-14 xl:w-20 xl:h-20 rounded-2xl bg-gray-950 dark:bg-linear-to-br dark:from-gray-100 dark:to-gray-200 border-2 border-gray-950 dark:border-gray-200 overflow-hidden shrink-0 flex items-center justify-center shadow-md">
+                        <span className="text-xl xl:text-2xl font-bold text-white dark:text-gray-600">
                           {review.user_name.charAt(0).toUpperCase()}
                         </span>
                       </div>
@@ -1175,17 +1407,23 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      aria-label="Previous page"
                       onClick={() => setCurrentReviewPage((page) => Math.max(1, page - 1))}
                       disabled={safeReviewPage === 1}
                       className="rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-[#16233b] hover:text-[#16233b] disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       Previous
                     </button>
-                    <div className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
-                      Page {safeReviewPage} of {totalReviewPages}
+                    <div
+                      aria-current="page"
+                      aria-label={`Page ${safeReviewPage} of ${totalReviewPages}`}
+                      className="min-h-11 min-w-11 rounded-full bg-[#111111] px-3 py-1.5 text-center text-sm font-semibold leading-8 text-white"
+                    >
+                      {safeReviewPage}
                     </div>
                     <button
                       type="button"
+                      aria-label="Next page"
                       onClick={() => setCurrentReviewPage((page) => Math.min(totalReviewPages, page + 1))}
                       disabled={safeReviewPage === totalReviewPages}
                       className="rounded-full border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-700 transition-colors hover:border-[#16233b] hover:text-[#16233b] disabled:cursor-not-allowed disabled:opacity-40"
@@ -1236,7 +1474,7 @@ const RepairShow: React.FC<Props> = ({ shop, repairServices, repairPackages }) =
         {/* Image Lightbox Modal */}
         {enlargedImage && (
           <div
-            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 xl:p-6 animate-fadeIn"
+            className="fixed inset-0 z-50 bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 xl:p-6 animate-fadeIn erp-modal-backdrop"
             onClick={() => setEnlargedImage(null)}
           >
             <div

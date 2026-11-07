@@ -3,6 +3,7 @@ import { Head, usePage, router } from "@inertiajs/react";
 import { createPortal } from "react-dom";
 import Swal from "sweetalert2";
 import AppLayoutShopOwner from "../../../layout/AppLayout_shopOwner";
+import PasswordRequirements from "../../../components/auth/PasswordRequirements";
 
 type ShopOwner = {
   id?: number;
@@ -122,15 +123,15 @@ const OPERATING_HOUR_ROWS = [
   { day: "Sunday", openKey: "sunday_open", closeKey: "sunday_close" },
 ] as const;
 
-const validateOperatingHours = (hours: OperatingHours): string | null => {
+export const validateOperatingHours = (hours: OperatingHours): string | null => {
   const normalizedHours = normalizeOperatingHours(hours);
 
   for (const row of OPERATING_HOUR_ROWS) {
     const open = normalizedHours[row.openKey as keyof OperatingHours];
     const close = normalizedHours[row.closeKey as keyof OperatingHours];
 
-    if (open && close && open >= close) {
-      return `${row.day}: Opening time must be before closing time`;
+    if (open && close && open === close) {
+      return `${row.day}: Opening and closing time must be different`;
     }
   }
 
@@ -199,10 +200,10 @@ const OperatingHoursModal: React.FC<{
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
       <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 shadow-2xl">
         <div className="sticky top-0 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-4 flex items-center justify-between">
-          <h3 className="text-xl font-bold text-gray-900 dark:text-white">Set Operating Hours</h3>
+          <h3 data-tour="shop-hours-modal" className="text-xl font-bold text-gray-900 dark:text-white">Set Operating Hours</h3>
           <button
             type="button"
             onClick={onClose}
@@ -411,7 +412,7 @@ const EditProfileModal: React.FC<{
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 erp-modal-backdrop">
       <div className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 shadow-2xl">
         <form onSubmit={handleSubmit}>
           {/* Modal Header */}
@@ -555,8 +556,9 @@ const EditProfileModal: React.FC<{
                 </h3>
                 <button
                   type="button"
+                  data-tour="shop-hours-open-modal"
                   onClick={() => setIsHoursModalOpen(true)}
-                  className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+                  className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800"
                 >
                   Set Time in Modal
                 </button>
@@ -586,14 +588,14 @@ const EditProfileModal: React.FC<{
               type="button"
               onClick={handleCancel}
               disabled={isSubmitting}
-              className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-semibold text-gray-900 transition-all hover:bg-gray-50 dark:border-gray-700 dark:text-white dark:hover:bg-gray-700 disabled:opacity-50"
+              className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-900 transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-700 dark:bg-gray-900 dark:text-white dark:hover:bg-gray-800 disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-all hover:bg-blue-700 disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600"
+              className="rounded-lg border border-gray-900 bg-gray-900 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gray-500 dark:border-gray-200 dark:bg-white dark:text-gray-900 dark:hover:bg-gray-200 disabled:opacity-50"
             >
               {isSubmitting ? "Saving..." : "Save Changes"}
             </button>
@@ -961,6 +963,7 @@ const ShopProfile: React.FC = () => {
       <Head title="Shop Profile - Shop Owner" />
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 dark:bg-opacity-50">
         <div className="max-w-9xl mx-auto px-0 sm:px-4 lg:px-8 py-0 sm:py-6 lg:py-8">
+          <div className="mb-3 flex justify-end px-3"><a data-tour="customer-preview" href={`/shop-profile/${shopOwner?.id}`} target="_blank" rel="noopener noreferrer" className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 hover:bg-gray-100">Preview public shop</a></div>
           <div className="lg:hidden">
             <div className="sticky top-0 z-20 border-b border-gray-200 bg-white/95 px-3 py-3 backdrop-blur-sm">
               <div className="flex items-center gap-2">
@@ -992,11 +995,11 @@ const ShopProfile: React.FC = () => {
             <div className="relative -mt-12 px-3">
               <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-md">
                 <div className="flex items-start gap-3">
-                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-blue-100 shadow-sm">
+                  <div className="relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-white bg-gray-950 dark:bg-blue-100 shadow-sm">
                     {profilePhoto ? (
                       <img src={profilePhoto} alt={displayName} className="h-full w-full object-cover" />
                     ) : (
-                      <span className="text-2xl font-bold text-blue-600">{displayName?.slice(0, 1) || "S"}</span>
+                      <span className="text-2xl font-bold text-white dark:text-blue-600">{displayName?.slice(0, 1) || "S"}</span>
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -1012,12 +1015,14 @@ const ShopProfile: React.FC = () => {
 
                 <div className="mt-4 grid grid-cols-2 gap-2">
                   <button
+                    data-tour="shop-profile-edit"
                     onClick={() => setIsEditModalOpen(true)}
                     className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900"
                   >
                     Edit Profile
                   </button>
                   <button
+                    data-tour="shop-profile-photos"
                     onClick={() => profilePhotoInputRef.current?.click()}
                     disabled={isUploadingPhoto}
                     className="inline-flex items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-900 disabled:opacity-50"
@@ -1112,12 +1117,14 @@ const ShopProfile: React.FC = () => {
                   />
                   <input
                     type="password"
+                    minLength={12}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="New password"
                     title="New password"
                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
                   />
+                  <PasswordRequirements password={newPassword} />
                   <input
                     type="password"
                     value={confirmPassword}
@@ -1172,15 +1179,7 @@ const ShopProfile: React.FC = () => {
           </div>
 
           <div className="hidden lg:block">
-            {/* Page Header */}
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-                Profile Settings
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400">
-                Manage your shop profile and personal information
-              </p>
-            </div>
+            <h1 className="sr-only">Profile Settings</h1>
 
             {/* Profile Header Card */}
             <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">
@@ -1260,6 +1259,7 @@ const ShopProfile: React.FC = () => {
                       </button>
                       <button
                         type="button"
+                        data-tour="shop-profile-photos"
                         onClick={() => profilePhotoInputRef.current?.click()}
                         disabled={isUploadingPhoto}
                         className="absolute -bottom-2 -right-2 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg border-2 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1279,6 +1279,7 @@ const ShopProfile: React.FC = () => {
                   </div>
 
                   <button
+                    data-tour="shop-profile-edit"
                     onClick={() => setIsEditModalOpen(true)}
                     className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 px-6 py-3 text-sm font-semibold text-white shadow-md hover:shadow-lg transition-all duration-200 dark:bg-blue-500 dark:hover:bg-blue-600"
                   >
@@ -1296,8 +1297,8 @@ const ShopProfile: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">
               <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 dark:bg-opacity-80 px-6 py-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-blue-100 dark:bg-blue-900 dark:bg-opacity-30 rounded-lg">
-                    <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="p-2 rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-700">
+                    <svg className="w-5 h-5 text-gray-900 dark:text-gray-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                     </svg>
                   </div>
@@ -1371,8 +1372,8 @@ const ShopProfile: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden mb-6">
               <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 dark:bg-opacity-80 px-6 py-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-green-100 dark:bg-green-900 dark:bg-opacity-30 rounded-lg">
-                    <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="p-2 rounded-lg border border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-700">
+                    <svg className="w-5 h-5 text-gray-900 dark:text-gray-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
@@ -1453,12 +1454,14 @@ const ShopProfile: React.FC = () => {
                   <div>
                     <input
                       type="password"
+                      minLength={12}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="New password"
                       title="New password"
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:border-blue-500 focus:outline-none"
                     />
+                    <PasswordRequirements password={newPassword} />
                   </div>
                   <div>
                     <input
@@ -1487,8 +1490,8 @@ const ShopProfile: React.FC = () => {
             <div className="bg-white dark:bg-gray-800 dark:bg-opacity-50 rounded-2xl shadow-lg border border-gray-200 dark:border-gray-700 dark:border-opacity-50 overflow-hidden">
               <div className="border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 dark:bg-opacity-80 px-6 py-4">
                 <div className="flex items-center gap-3">
-                  <div className="p-2 bg-purple-100 dark:bg-purple-900 dark:bg-opacity-30 rounded-lg">
-                    <svg className="w-5 h-5 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="p-2 bg-gray-100 dark:bg-purple-900 dark:bg-opacity-30 rounded-lg">
+                    <svg className="w-5 h-5 text-gray-900 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>

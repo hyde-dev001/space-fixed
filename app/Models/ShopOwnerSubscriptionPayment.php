@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ShopOwnerSubscriptionPayment extends Model
 {
@@ -13,6 +14,7 @@ class ShopOwnerSubscriptionPayment extends Model
     protected $fillable = [
         'shop_owner_id',
         'subscription_id',
+        'ledger_key',
         'source_subscription_id',
         'from_premium_plan_id',
         'to_premium_plan_id',
@@ -39,6 +41,11 @@ class ShopOwnerSubscriptionPayment extends Model
         'paid_at' => 'datetime',
     ];
 
+    public static function ledgerKeyFor(int $subscriptionId, string $paymentType): string
+    {
+        return "subscription:{$subscriptionId}:{$paymentType}";
+    }
+
     public function subscription(): BelongsTo
     {
         return $this->belongsTo(ShopOwnerSubscription::class, 'subscription_id');
@@ -57,5 +64,10 @@ class ShopOwnerSubscriptionPayment extends Model
     public function toPlan(): BelongsTo
     {
         return $this->belongsTo(PremiumPlan::class, 'to_premium_plan_id');
+    }
+
+    public function refunds(): HasMany
+    {
+        return $this->hasMany(ShopOwnerSubscriptionRefund::class, 'payment_id');
     }
 }

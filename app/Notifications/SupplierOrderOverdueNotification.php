@@ -39,12 +39,11 @@ class SupplierOrderOverdueNotification extends Notification implements ShouldQue
     {
         return (new MailMessage)
             ->subject('Overdue Supplier Order: ' . $this->supplierOrder->po_number)
-            ->warning()
             ->line('Supplier order **' . $this->supplierOrder->po_number . '** is overdue by **' . $this->daysOverdue . ' days**.')
             ->line('Supplier: **' . $this->supplierOrder->supplier->name . '**')
             ->line('Expected Delivery: **' . $this->supplierOrder->expected_delivery_date . '**')
             ->line('Order Status: **' . ucwords(str_replace('_', ' ', $this->supplierOrder->status)) . '**')
-            ->action('View Order', url('/erp/inventory/supplier-orders/' . $this->supplierOrder->id))
+            ->action('View Order', url('/erp/inventory/supplier-order-monitoring?supplier=' . rawurlencode((string) $this->supplierOrder->po_number)))
             ->line('Please follow up with the supplier to get an updated delivery timeline.');
     }
 

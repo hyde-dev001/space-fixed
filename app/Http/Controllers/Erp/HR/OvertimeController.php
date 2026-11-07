@@ -779,7 +779,7 @@ class OvertimeController extends Controller
             $recipientUserId = $employee->user?->id;
 
             if ($recipientUserId) {
-                $this->notificationService->notifyOvertimeApproved($recipientUserId, $user->shop_owner_id, [
+                $this->notificationService->notifyOvertimeAssigned($recipientUserId, $user->shop_owner_id, [
                     'overtime_id' => $overtimeRequest->id,
                     'date' => $overtimeRequest->overtime_date?->format('Y-m-d') ?? (string) $overtimeRequest->overtime_date,
                     'hours' => $overtimeRequest->hours,

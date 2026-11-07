@@ -24,8 +24,11 @@ class ConversationController extends Controller
     {
         $userShopOwnerId = $this->resolveUserShopOwnerId($user);
 
-        return $conversation->shop_owner_id === $userShopOwnerId
-            && $conversation->assigned_to_type === 'crm';
+        return (int) $conversation->shop_owner_id === (int) $userShopOwnerId
+            && (
+                $conversation->assigned_to_type === 'crm'
+                || $conversation->repairRequest()->exists()
+            );
     }
 
     /**
@@ -55,7 +58,11 @@ class ConversationController extends Controller
         ]);
 
         $query = Conversation::where('shop_owner_id', $shopOwnerId)
-            ->where('assigned_to_type', 'crm')
+            ->where(function ($conversationQuery) {
+                // Repair conversations are shared across CRM and Repairer support.
+                $conversationQuery->where('assigned_to_type', 'crm')
+                    ->orWhereHas('repairRequest');
+            })
             ->with(['customer', 'order', 'assignedTo', 'messages' => function ($q) {
                 $q->latest()->limit(1); // Only load last message
             }]);

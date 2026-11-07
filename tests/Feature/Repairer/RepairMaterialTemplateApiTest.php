@@ -64,6 +64,7 @@ class RepairMaterialTemplateApiTest extends TestCase
     {
         $shop = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = \App\Models\User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($repairer);
 
         $serviceA = \App\Models\RepairService::create([
             'shop_owner_id' => $shop->id,
@@ -101,6 +102,7 @@ class RepairMaterialTemplateApiTest extends TestCase
     {
         $shop = \App\Models\ShopOwner::factory()->approved()->create(['business_type' => 'repair']);
         $repairer = \App\Models\User::factory()->create(['shop_owner_id' => $shop->id, 'role' => 'STAFF']);
+        $this->clockInEmployee($repairer);
 
         $serviceA = \App\Models\RepairService::create([
             'shop_owner_id' => $shop->id,

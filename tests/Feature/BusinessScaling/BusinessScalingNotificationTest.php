@@ -1,0 +1,157 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Tests\Feature\BusinessScaling;
+
+use App\Enums\PrivilegedDeliveryType;
+use App\Enums\NotificationType;
+use App\Jobs\SendPrivilegedWorkflowMail;
+use App\Models\ShopOwner;
+use App\Models\ShopOwnerUpgradeRequest;
+use App\Models\SuperAdmin;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
+use Tests\Concerns\AuthenticatesPrivilegedUsers;
+use Tests\Concerns\ResetsInMemoryDatabaseState;
+use Tests\TestCase;
+
+final class BusinessScalingNotificationTest extends TestCase
+{
+    use AuthenticatesPrivilegedUsers;
+    use ResetsInMemoryDatabaseState;
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        Storage::fake('local');
+        Storage::fake('public');
+        Queue::fake();
+    }
+
+    public function test_submission_notifies_only_active_super_admins_after_commit(): void
+    {
+        $active = $this->admin('active');
+        $inactive = $this->admin('suspended');
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->post(route('shop-owner.upgrade-requests.store'), [
+                'requested_registration_type' => 'company',
+                'requested_business_type' => 'both',
+                'documents' => [
+                    'dti_registration' => UploadedFile::fake()->createWithContent('dti_registration.pdf', 'dti'),
+                    'mayors_permit' => UploadedFile::fake()->createWithContent('mayors_permit.pdf', 'permit'),
+                    'bir_certificate' => UploadedFile::fake()->createWithContent('bir_certificate.pdf', 'bir'),
+                    'valid_id' => UploadedFile::fake()->createWithContent('valid_id.pdf', 'id'),
+                ],
+            ], ['Accept' => 'application/json'])
+            ->assertCreated();
+
+        DB::commit();
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($active): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REQUESTED
+                && $job->recipientType === 'super_admin'
+                && $job->recipientId === $active->id;
+        });
+        Queue::assertNotPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($inactive): bool {
+            return $job->recipientId === $inactive->id;
+        });
+        $this->assertDatabaseHas('notifications', [
+            'super_admin_id' => $active->id,
+            'type' => NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING->value,
+            'action_url' => '/admin/business-upgrade-requests?status=pending',
+            'is_read' => false,
+        ]);
+        $this->assertDatabaseMissing('notifications', [
+            'super_admin_id' => $inactive->id,
+            'type' => NotificationType::BUSINESS_UPGRADE_REQUEST_PENDING->value,
+        ]);
+        $this->actingAsCompletedPrivileged($active)
+            ->getJson('/api/admin/notifications/unread-count')
+            ->assertOk()
+            ->assertJsonPath('count', 1);
+        $this->assertDatabaseHas('shop_owner_upgrade_requests', [
+            'shop_owner_id' => $owner->id,
+            'status' => ShopOwnerUpgradeRequest::STATUS_PENDING,
+        ]);
+    }
+
+    public function test_review_notification_contains_no_private_path_or_employee_data(): void
+    {
+        $admin = $this->admin('active');
+        $owner = ShopOwner::factory()->approved()->create([
+            'registration_type' => 'individual',
+            'business_type' => 'retail',
+        ]);
+
+        $this->actingAs($owner, 'shop_owner')
+            ->post(route('shop-owner.upgrade-requests.store'), [
+                'requested_registration_type' => 'company',
+                'requested_business_type' => 'both',
+                'documents' => [
+                    'dti_registration' => UploadedFile::fake()->createWithContent('dti_registration.pdf', 'dti'),
+                    'mayors_permit' => UploadedFile::fake()->createWithContent('mayors_permit.pdf', 'permit'),
+                    'bir_certificate' => UploadedFile::fake()->createWithContent('bir_certificate.pdf', 'bir'),
+                    'valid_id' => UploadedFile::fake()->createWithContent('valid_id.pdf', 'id'),
+                ],
+            ], ['Accept' => 'application/json'])
+            ->assertCreated();
+        DB::commit();
+
+        $request = ShopOwnerUpgradeRequest::query()->latest('id')->firstOrFail();
+        $paths = $request->documents()->pluck('path')->all();
+
+        $this->actingAsCompletedPrivileged($admin)
+            ->patchJson(route('admin.business-upgrade-requests.update', $request), ['decision' => 'rejected', 'decision_reason' => 'Please update the permit.'])
+            ->assertOk();
+
+        Queue::assertPushed(SendPrivilegedWorkflowMail::class, function (SendPrivilegedWorkflowMail $job) use ($owner): bool {
+            return $job->deliveryType === PrivilegedDeliveryType::SHOP_OWNER_UPGRADE_REVIEWED
+                && $job->recipientType === 'shop_owner'
+                && $job->recipientId === $owner->id
+                && $job->payload['decision'] === ShopOwnerUpgradeRequest::STATUS_REJECTED
+                && ! array_key_exists('path', $job->payload)
+                && ! array_key_exists('employee_id', $job->payload);
+        });
+
+        $this->assertDatabaseHas('notifications', [
+            'shop_owner_id' => $owner->id,
+            'type' => 'business_upgrade_request_rejected',
+            'title' => 'Business upgrade request rejected',
+            'action_url' => '/shop-owner/settings',
+            'is_read' => false,
+        ]);
+        $this->actingAs($owner, 'shop_owner')
+            ->getJson('/api/shop-owner/notifications')
+            ->assertOk()
+            ->assertJsonPath('data.0.title', 'Business upgrade request rejected')
+            ->assertJsonPath('data.0.message', 'Your business upgrade request was rejected. Reason: Please update the permit.')
+            ->assertJsonPath('data.0.action_url', '/shop-owner/settings');
+
+        foreach ($paths as $path) {
+            $this->assertStringNotContainsString($path, json_encode($request->fresh()->toArray()));
+        }
+    }
+
+    private function admin(string $status): SuperAdmin
+    {
+        return SuperAdmin::factory()->superAdmin()->state(['status' => $status])->create([
+            'first_name' => 'Notification',
+            'last_name' => 'Admin',
+            'email' => fake()->unique()->safeEmail(),
+            'phone' => '09170000002',
+            'password' => 'password',
+            'role' => 'super_admin',
+            'status' => $status,
+        ]);
+    }
+}

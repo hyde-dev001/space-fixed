@@ -9,11 +9,15 @@ use App\Models\PurchaseRequest;
 use App\Models\PurchaseOrder;
 use App\Models\ReplenishmentRequest;
 use App\Models\StockRequestApproval;
+use App\Models\Supplier;
+use App\Models\InventoryItem;
 use App\Policies\RepairRequestPolicy;
 use App\Policies\PurchaseRequestPolicy;
 use App\Policies\PurchaseOrderPolicy;
 use App\Policies\ReplenishmentRequestPolicy;
 use App\Policies\StockRequestApprovalPolicy;
+use App\Policies\SupplierPolicy;
+use App\Policies\InventoryItemPolicy;
 
 class AuthServiceProvider extends ServiceProvider
 {
@@ -28,6 +32,8 @@ class AuthServiceProvider extends ServiceProvider
         PurchaseOrder::class => PurchaseOrderPolicy::class,
         ReplenishmentRequest::class => ReplenishmentRequestPolicy::class,
         StockRequestApproval::class => StockRequestApprovalPolicy::class,
+        Supplier::class => SupplierPolicy::class,
+        InventoryItem::class => InventoryItemPolicy::class,
     ];
 
     /**

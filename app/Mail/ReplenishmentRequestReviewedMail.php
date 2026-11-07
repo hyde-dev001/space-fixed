@@ -51,7 +51,7 @@ class ReplenishmentRequestReviewedMail extends Mailable
                 'reviewer' => $this->replenishmentRequest->reviewer?->name ?? 'Procurement Team',
                 'reviewedDate' => $this->replenishmentRequest->reviewed_date,
                 'responseNotes' => $this->replenishmentRequest->response_notes,
-                'viewUrl' => url('/erp/procurement/replenishment-requests/' . $this->replenishmentRequest->id),
+                'viewUrl' => url('/erp/inventory/stock-request?stock_request=' . $this->replenishmentRequest->id),
             ],
         );
     }

@@ -1,0 +1,525 @@
+import { logisticsApi } from '@/services/logisticsApi';
+import { GPS_POSITION_OPTIONS, getCurrentPositionWithFallback } from '@/utils/geolocation';
+import type { DeliveryContactSnapshot, LiveTrackingRoute } from '@/types/logistics';
+import { useEffect, useRef, useState } from 'react';
+import LiveTrackingMap, { type LiveRiderLocation } from './LiveTrackingMap';
+
+type Props = {
+  legId: number;
+  enabled: boolean;
+  online: boolean;
+  destination?: Pick<DeliveryContactSnapshot, 'type' | 'name' | 'address' | 'latitude' | 'longitude'> | null;
+  destinationLabel?: string;
+  movingIntervalSeconds?: number;
+  stationaryIntervalSeconds?: number;
+  hiddenIntervalSeconds?: number;
+};
+
+type Coordinate = {
+  latitude: number;
+  longitude: number;
+};
+
+type SentPosition = Coordinate & {
+  timestamp: number;
+  accuracy_m: number | null;
+  speed_mps: number | null;
+  heading_deg: number | null;
+  source: 'browser' | 'public_ip';
+};
+
+const distanceMeters = (from: Coordinate, to: Coordinate): number => {
+  const earthRadiusMeters = 6_371_000;
+  const latitudeDelta = (to.latitude - from.latitude) * Math.PI / 180;
+  const longitudeDelta = (to.longitude - from.longitude) * Math.PI / 180;
+  const fromLatitude = from.latitude * Math.PI / 180;
+  const toLatitude = to.latitude * Math.PI / 180;
+  const a = Math.sin(latitudeDelta / 2) ** 2
+    + Math.cos(fromLatitude) * Math.cos(toLatitude) * Math.sin(longitudeDelta / 2) ** 2;
+
+  return earthRadiusMeters * 2 * Math.asin(Math.min(1, Math.sqrt(a)));
+};
+
+type LocationRequestError = {
+  code?: number;
+  response?: {
+    status?: number;
+    data?: {
+      message?: unknown;
+      errors?: Record<string, unknown>;
+    };
+  };
+};
+
+class PublicIpLocationError extends Error {
+  constructor(message = 'Unable to read a usable desktop network location.') {
+    super(message);
+    this.name = 'PublicIpLocationError';
+  }
+}
+
+const locationErrorMessage = (error: unknown): string => {
+  if (error instanceof PublicIpLocationError) return error.message;
+
+  const details = error as LocationRequestError | null;
+  const response = details?.response;
+  const validationErrors = response?.data?.errors;
+
+  if (validationErrors) {
+    for (const value of Object.values(validationErrors)) {
+      const message = Array.isArray(value) ? value[0] : value;
+      if (typeof message === 'string') return message;
+    }
+  }
+
+  if (response?.status === 422 && typeof response.data?.message === 'string') {
+    return response.data.message;
+  }
+
+  if (details?.code === 1) return 'Location permission is required to start tracking.';
+  if (details?.code === 2) return 'Your location is currently unavailable.';
+  if (details?.code === 3) return 'The location request timed out. We will try again.';
+
+  return 'Unable to read your location. We will try again.';
+};
+
+const ETA_SPEED_MPS = 8.33;
+const MAX_TRACKING_ACCURACY_M = 50_000;
+const MAX_USABLE_ACCURACY_M = 1_000;
+const MAX_CLIENT_IMPLIED_SPEED_MPS = 100;
+const PUBLIC_IP_LOCATION_URL = 'https://ipapi.co/json/';
+const PUBLIC_IP_REQUEST_TIMEOUT_MS = 5_000;
+
+const toSentPosition = (position: GeolocationPosition): SentPosition => ({
+  latitude: position.coords.latitude,
+  longitude: position.coords.longitude,
+  timestamp: Number.isFinite(position.timestamp) ? position.timestamp : Date.now(),
+  accuracy_m: Number.isFinite(position.coords.accuracy) ? position.coords.accuracy : null,
+  speed_mps: position.coords.speed !== null && Number.isFinite(position.coords.speed)
+    ? position.coords.speed
+    : null,
+  heading_deg: position.coords.heading !== null && Number.isFinite(position.coords.heading)
+    ? position.coords.heading
+    : null,
+  source: 'browser',
+});
+
+
+const finiteCoordinate = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === '') return null;
+  const coordinate = Number(value);
+  return Number.isFinite(coordinate) ? coordinate : null;
+};
+const hasValidCoordinates = (position: Coordinate): boolean => (
+  Number.isFinite(position.latitude)
+  && position.latitude >= -90
+  && position.latitude <= 90
+  && Number.isFinite(position.longitude)
+  && position.longitude >= -180
+  && position.longitude <= 180
+);
+const isUsableBrowserPosition = (position: SentPosition): boolean => (
+  hasValidCoordinates(position)
+  && (position.accuracy_m === null
+    || (position.accuracy_m >= 0 && position.accuracy_m <= MAX_USABLE_ACCURACY_M))
+);
+const getPublicIpPosition = async (timestamp?: number): Promise<SentPosition> => {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), PUBLIC_IP_REQUEST_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(PUBLIC_IP_LOCATION_URL, {
+      headers: { Accept: 'application/json' },
+      signal: controller.signal,
+    });
+
+    if (!response.ok) throw new PublicIpLocationError();
+
+    const body = await response.json() as { latitude?: unknown; longitude?: unknown };
+    const latitude = finiteCoordinate(body.latitude);
+    const longitude = finiteCoordinate(body.longitude);
+
+    if (
+      latitude === null
+      || longitude === null
+      || !hasValidCoordinates({ latitude, longitude })
+    ) {
+      throw new PublicIpLocationError();
+    }
+
+    return {
+      latitude,
+      longitude,
+      timestamp: timestamp !== undefined && Number.isFinite(timestamp) ? timestamp : Date.now(),
+      accuracy_m: null,
+      speed_mps: null,
+      heading_deg: null,
+      source: 'public_ip',
+    };
+  } catch (error) {
+    if (error instanceof PublicIpLocationError) throw error;
+    throw new PublicIpLocationError();
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+};
+
+const destinationCoordinates = (
+  destination?: Pick<DeliveryContactSnapshot, 'latitude' | 'longitude'> | null,
+): Coordinate | null => {
+  const latitude = finiteCoordinate(destination?.latitude);
+  const longitude = finiteCoordinate(destination?.longitude);
+
+  return latitude !== null && longitude !== null ? { latitude, longitude } : null;
+};
+
+const formatDistance = (meters: number): string => meters >= 1000
+  ? `${(meters / 1000).toFixed(1)} km`
+  : `${Math.round(meters)} m`;
+
+const isLiveTrackingRoute = (value: unknown): value is LiveTrackingRoute => {
+  if (!value || typeof value !== 'object') return false;
+  const route = value as { distance_m?: unknown; duration_s?: unknown; geometry?: unknown };
+  const geometry = route.geometry;
+
+  return typeof route.distance_m === 'number'
+    && Number.isFinite(route.distance_m)
+    && typeof route.duration_s === 'number'
+    && Number.isFinite(route.duration_s)
+    && Array.isArray(geometry)
+    && geometry.length >= 2
+    && geometry.every((point: unknown) => Array.isArray(point)
+      && typeof point[0] === 'number'
+      && Number.isFinite(point[0])
+      && typeof point[1] === 'number'
+      && Number.isFinite(point[1]));
+};
+
+const acceptsRoute = (current: LiveTrackingRoute | null, next: LiveTrackingRoute): boolean => {
+  if (!current) return true;
+
+  const currentVersion = current.route_version;
+  const nextVersion = next.route_version;
+  if (typeof currentVersion === 'number' && typeof nextVersion === 'number') {
+    if (nextVersion < currentVersion) return false;
+    if (nextVersion > currentVersion) return true;
+  }
+
+  const currentUpdatedAt = current.updated_at ? Date.parse(current.updated_at) : NaN;
+  const nextUpdatedAt = next.updated_at ? Date.parse(next.updated_at) : NaN;
+  return !Number.isFinite(currentUpdatedAt)
+    || !Number.isFinite(nextUpdatedAt)
+    || nextUpdatedAt >= currentUpdatedAt;
+};
+const isPermissionDenied = (error: unknown): boolean => (
+  typeof error === 'object'
+  && error !== null
+  && (error as { code?: unknown }).code === 1
+);
+
+const resolveTrackingPosition = async (): Promise<SentPosition> => {
+  let browserPosition: SentPosition;
+
+  try {
+    browserPosition = toSentPosition(await getCurrentPositionWithFallback(GPS_POSITION_OPTIONS));
+  } catch (error) {
+    if (isPermissionDenied(error)) throw error;
+    return getPublicIpPosition();
+  }
+
+  if (isUsableBrowserPosition(browserPosition)) return browserPosition;
+
+
+  return getPublicIpPosition(browserPosition.timestamp);
+};
+export default function RiderGpsTracker({
+  legId,
+  enabled,
+  online,
+  destination,
+  destinationLabel: destinationLabelProp,
+  movingIntervalSeconds = 5,
+  stationaryIntervalSeconds = 30,
+  hiddenIntervalSeconds = 60,
+}: Props) {
+  const [tracking, setTracking] = useState(enabled);
+  const [serverRoute, setServerRoute] = useState<LiveTrackingRoute | null>(null);
+  const [status, setStatus] = useState<'idle' | 'locating' | 'active' | 'offline' | 'error'>('idle');
+  const [message, setMessage] = useState<string | null>(null);
+  const [currentPosition, setCurrentPosition] = useState<SentPosition | null>(null);
+  const lastPosition = useRef<SentPosition | null>(null);
+  const latestPosition = useRef<SentPosition | null>(null);
+  const requestInFlight = useRef(false);
+
+  useEffect(() => {
+    if (enabled) {
+      setTracking(true);
+      return;
+    }
+
+    setTracking(false);
+    setCurrentPosition(null);
+    setServerRoute(null);
+    setMessage(null);
+    setStatus('idle');
+    latestPosition.current = null;
+    lastPosition.current = null;
+  }, [enabled]);
+
+  useEffect(() => {
+    if (!tracking || !enabled) return undefined;
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    let watchId: number | null = null;
+
+    const schedule = (seconds: number) => {
+      if (cancelled) return;
+      timeoutId = window.setTimeout(() => {
+        timeoutId = null;
+        void tick();
+      }, seconds * 1000);
+    };
+
+    const applyPosition = (nextPosition: SentPosition): SentPosition | null => {
+      const previousPosition = latestPosition.current;
+      if (!hasValidCoordinates(nextPosition)) {
+        setStatus('error');
+        setMessage('The location reading was invalid. We will try again.');
+        return null;
+      }
+      if (
+        previousPosition
+        && previousPosition.timestamp >= nextPosition.timestamp
+        && !(previousPosition.source === 'public_ip' && nextPosition.source === 'browser')
+      ) {
+        return previousPosition;
+      }
+
+      if (nextPosition.accuracy_m !== null && nextPosition.accuracy_m > MAX_USABLE_ACCURACY_M) {
+        setStatus('error');
+        setMessage(`GPS accuracy is too low (${formatDistance(nextPosition.accuracy_m)}). Turn on your phone's location services and try again.`);
+        return null;
+      }
+
+      if (previousPosition) {
+        const elapsedSeconds = Math.max(1, (nextPosition.timestamp - previousPosition.timestamp) / 1000);
+        const impliedSpeed = distanceMeters(previousPosition, nextPosition) / elapsedSeconds;
+        if (impliedSpeed > MAX_CLIENT_IMPLIED_SPEED_MPS) {
+          setStatus('error');
+          setMessage('GPS reading ignored because it jumped unexpectedly. We will keep the last reliable position.');
+          return null;
+        }
+      }
+
+      latestPosition.current = nextPosition;
+      setCurrentPosition(nextPosition);
+      setMessage(null);
+      setStatus(lastPosition.current ? 'active' : 'locating');
+      return nextPosition;
+    };
+    const handleBrowserPosition = (position: GeolocationPosition): void => {
+      applyPosition(toSentPosition(position));
+    };
+
+
+    const handlePositionError = (error: unknown) => {
+      if (cancelled || latestPosition.current || lastPosition.current) return;
+      setStatus('error');
+      setMessage(locationErrorMessage(error));
+    };
+
+    const tick = async () => {
+      if (cancelled) return;
+
+      if (!online || document.hidden) {
+        setStatus('offline');
+        schedule(document.hidden ? hiddenIntervalSeconds : stationaryIntervalSeconds);
+        return;
+      }
+
+      if (requestInFlight.current) {
+        schedule(stationaryIntervalSeconds);
+        return;
+      }
+
+      requestInFlight.current = true;
+      setStatus('locating');
+
+      try {
+        const nextPosition = latestPosition.current ?? applyPosition(await resolveTrackingPosition());
+        if (cancelled || !nextPosition) {
+          if (!cancelled) schedule(stationaryIntervalSeconds);
+          return;
+        }
+        const previousPosition = lastPosition.current;
+
+        if (previousPosition?.timestamp === nextPosition.timestamp) {
+          setStatus('active');
+          schedule(stationaryIntervalSeconds);
+          return;
+        }
+
+        const payload: Record<string, unknown> = {
+          latitude: nextPosition.latitude,
+          longitude: nextPosition.longitude,
+          recorded_at: new Date(nextPosition.timestamp).toISOString(),
+        };
+        if (nextPosition.accuracy_m !== null && nextPosition.accuracy_m <= MAX_TRACKING_ACCURACY_M) payload.accuracy_m = nextPosition.accuracy_m;
+        if (nextPosition.speed_mps !== null) payload.speed_mps = nextPosition.speed_mps;
+        if (nextPosition.heading_deg !== null) payload.heading_deg = nextPosition.heading_deg;
+
+        const response = await logisticsApi.recordLocation(legId, payload);
+        if (cancelled) return;
+        const responseRoute = response?.data?.route;
+        if (latestPosition.current?.timestamp === nextPosition.timestamp) {
+          const nextRoute = isLiveTrackingRoute(responseRoute) ? responseRoute : null;
+          if (nextRoute) {
+            setServerRoute((currentRoute) => acceptsRoute(currentRoute, nextRoute) ? nextRoute : currentRoute);
+          }
+        }
+
+        lastPosition.current = nextPosition;
+        setMessage(null);
+        setStatus('active');
+        const moved = !previousPosition || distanceMeters(previousPosition, nextPosition) >= 25;
+        const serverInterval = Number(response?.data?.next_poll_after_seconds);
+        schedule(moved && Number.isFinite(serverInterval) && serverInterval > 0
+          ? serverInterval
+          : moved ? movingIntervalSeconds : stationaryIntervalSeconds);
+      } catch (error) {
+        if (cancelled) return;
+
+        if ((error as { response?: { status?: number } } | null)?.response?.status === 403) {
+          setTracking(false);
+          setCurrentPosition(null);
+          setServerRoute(null);
+          latestPosition.current = null;
+          setStatus('error');
+          setMessage('Tracking stopped because this delivery is no longer active.');
+        } else {
+          setStatus('error');
+          setMessage(locationErrorMessage(error));
+          schedule(online ? stationaryIntervalSeconds : hiddenIntervalSeconds);
+        }
+      } finally {
+        requestInFlight.current = false;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (cancelled || document.hidden) return;
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      setStatus('locating');
+      void tick();
+    };
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.geolocation?.watchPosition) {
+        watchId = navigator.geolocation.watchPosition(handleBrowserPosition, handlePositionError, GPS_POSITION_OPTIONS);
+      }
+    } catch (error) {
+      handlePositionError(error);
+    }
+
+    void tick();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId !== null) window.clearTimeout(timeoutId);
+      if (watchId !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [
+    enabled,
+    hiddenIntervalSeconds,
+    legId,
+    movingIntervalSeconds,
+    online,
+    stationaryIntervalSeconds,
+    tracking,
+  ]);
+
+
+  if (!enabled) return null;
+
+  const destinationPoint = destinationCoordinates(destination);
+  const destinationLabel = destinationLabelProp ?? (destination?.type === 'shop' ? 'repair shop' : 'customer');
+  const directRoute: LiveTrackingRoute | null = currentPosition && destinationPoint ? {
+    distance_m: distanceMeters(currentPosition, destinationPoint),
+    duration_s: Math.ceil(distanceMeters(currentPosition, destinationPoint) / ETA_SPEED_MPS),
+    geometry: [
+      [currentPosition.latitude, currentPosition.longitude],
+      [destinationPoint.latitude, destinationPoint.longitude],
+    ],
+    source: 'direct',
+  } : null;
+  const route = serverRoute ?? directRoute;
+  const mapLocations: LiveRiderLocation[] = tracking && currentPosition && destinationPoint ? [{
+    leg_id: legId,
+    shipment_id: null,
+    shipment_reference: null,
+    rider: { id: null, name: 'You' },
+    status: 'active',
+    destination: {
+      type: destination?.type ?? null,
+      name: destination?.name ?? null,
+      address: destination?.address ?? null,
+      latitude: destinationPoint.latitude,
+      longitude: destinationPoint.longitude,
+    },
+    location: {
+      latitude: currentPosition.latitude,
+      longitude: currentPosition.longitude,
+      accuracy_m: currentPosition.accuracy_m,
+      speed_mps: currentPosition.speed_mps,
+      heading_deg: currentPosition.heading_deg,
+      recorded_at: new Date(currentPosition.timestamp).toISOString(),
+      received_at: null,
+    },
+    stale: status !== 'active',
+    route,
+  }] : [];
+
+  return (
+    <section
+      aria-label={'Route to ' + destinationLabel}
+      className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900"
+    >
+      {mapLocations.length > 0 ? (
+        <>
+          <LiveTrackingMap locations={mapLocations} label={destinationLabel + ' route map'} followLocation viewer="rider" />
+          <p className="border-t border-slate-200 px-4 py-3 text-xs leading-5 text-slate-500 dark:border-slate-700 dark:text-slate-400">
+            {route?.source === 'road'
+              ? 'Fastest available road route is shown on the map.'
+              : 'Road route is unavailable right now. The map shows a direct route.'}
+          </p>
+        </>
+      ) : (
+        <div className="p-4">
+          {tracking && !currentPosition && destinationPoint && (
+            <p role="status" className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              Waiting for your current location to show the route.
+            </p>
+          )}
+          {tracking && !destinationPoint && (
+            <p role="status" className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+              The {destinationLabel} map pin is unavailable right now.
+            </p>
+          )}
+        </div>
+      )}
+      {message && (
+        <p role="alert" className="border-t border-slate-200 px-4 py-3 text-sm font-semibold text-slate-900 dark:border-slate-700 dark:text-white">
+          {message}
+        </p>
+      )}
+    </section>
+  );
+}

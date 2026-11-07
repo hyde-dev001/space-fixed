@@ -8,6 +8,7 @@ use App\Models\ShopOwner;
 use App\Models\SuspensionRequest;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
 /**
@@ -37,6 +38,8 @@ class ManagerPaginationTest extends TestCase
         $this->manager = User::factory()
             ->for($this->shop)
             ->create(['role' => 'Manager']);
+        Role::findOrCreate('Manager', 'user');
+        $this->manager->assignRole('Manager');
 
         // Create 25 suspension requests for pagination testing
         for ($i = 0; $i < 25; $i++) {
@@ -50,7 +53,9 @@ class ManagerPaginationTest extends TestCase
                 ->for($this->shop)
                 ->create([
                     'email' => "employee{$i}@test.local",
-                    'name' => "Employee Test {$i}"
+                    'name' => "Employee Test {$i}",
+                    'first_name' => 'Employee',
+                    'last_name' => "Test {$i}",
                 ]);
 
             $suspension = SuspensionRequest::factory()
@@ -74,10 +79,10 @@ class ManagerPaginationTest extends TestCase
             ->getJson('/api/manager/suspension-requests');
 
         $response->assertStatus(200);
-        $this->assertCount(10, $response->json('data'));
-        $this->assertEquals(1, $response->json('current_page'));
-        $this->assertEquals(3, $response->json('last_page'));
-        $this->assertEquals(25, $response->json('total'));
+        $this->assertCount(10, $response->json('data.data'));
+        $this->assertEquals(1, $response->json('data.current_page'));
+        $this->assertEquals(3, $response->json('data.last_page'));
+        $this->assertEquals(25, $response->json('data.total'));
     }
 
     /**
@@ -89,9 +94,9 @@ class ManagerPaginationTest extends TestCase
             ->getJson('/api/manager/suspension-requests?per_page=5');
 
         $response->assertStatus(200);
-        $this->assertCount(5, $response->json('data'));
-        $this->assertEquals(5, $response->json('per_page'));
-        $this->assertEquals(5, $response->json('last_page'));
+        $this->assertCount(5, $response->json('data.data'));
+        $this->assertEquals(5, $response->json('data.per_page'));
+        $this->assertEquals(5, $response->json('data.last_page'));
     }
 
     /**
@@ -103,13 +108,13 @@ class ManagerPaginationTest extends TestCase
         $response = $this->actingAs($this->manager, 'user')
             ->getJson('/api/manager/suspension-requests?per_page=2');
 
-        $this->assertEquals(5, $response->json('per_page'));
+        $this->assertEquals(5, $response->json('data.per_page'));
 
         // Too high - should be clamped to 100
         $response = $this->actingAs($this->manager, 'user')
             ->getJson('/api/manager/suspension-requests?per_page=200');
 
-        $this->assertEquals(100, $response->json('per_page'));
+        $this->assertEquals(100, $response->json('data.per_page'));
     }
 
     /**
@@ -121,8 +126,8 @@ class ManagerPaginationTest extends TestCase
             ->getJson('/api/manager/suspension-requests?page=2&per_page=10');
 
         $response->assertStatus(200);
-        $this->assertEquals(2, $response->json('current_page'));
-        $this->assertCount(10, $response->json('data'));
+        $this->assertEquals(2, $response->json('data.current_page'));
+        $this->assertCount(10, $response->json('data.data'));
     }
 
     /**
@@ -134,8 +139,8 @@ class ManagerPaginationTest extends TestCase
             ->getJson('/api/manager/suspension-requests?page=999');
 
         $response->assertStatus(200);
-        $this->assertCount(0, $response->json('data'));
-        $this->assertEquals(999, $response->json('current_page'));
+        $this->assertCount(0, $response->json('data.data'));
+        $this->assertEquals(999, $response->json('data.current_page'));
     }
 
     /**
@@ -148,7 +153,7 @@ class ManagerPaginationTest extends TestCase
 
         $response->assertStatus(200);
         
-        $data = $response->json('data');
+        $data = $response->json('data.data');
         $this->assertGreaterThan(0, count($data));
         
         // All returned items should have pending status
@@ -167,7 +172,7 @@ class ManagerPaginationTest extends TestCase
 
         $response->assertStatus(200);
         
-        $data = $response->json('data');
+        $data = $response->json('data.data');
         // Should find "Employee Test 1", "Employee Test 10", "Employee Test 12", etc.
         $this->assertGreaterThan(0, count($data));
         
@@ -186,7 +191,7 @@ class ManagerPaginationTest extends TestCase
 
         $response->assertStatus(200);
         
-        $data = $response->json('data');
+        $data = $response->json('data.data');
         $this->assertGreaterThan(0, count($data));
         $this->assertStringContainsString('employee5', $data[0]['email']);
     }
@@ -201,7 +206,7 @@ class ManagerPaginationTest extends TestCase
 
         $response->assertStatus(200);
         
-        $data = $response->json('data');
+        $data = $response->json('data.data');
         
         // Each result should match both filters
         foreach ($data as $item) {
@@ -220,11 +225,13 @@ class ManagerPaginationTest extends TestCase
 
         $response->assertStatus(200);
         $response->assertJsonStructure([
-            'current_page',
-            'data',
-            'last_page',
-            'per_page',
-            'total',
+            'data' => [
+                'current_page',
+                'data',
+                'last_page',
+                'per_page',
+                'total',
+            ],
             'metrics' => [
                 'pending',
                 'approved',
@@ -245,7 +252,8 @@ class ManagerPaginationTest extends TestCase
         $response->assertStatus(200);
         $response->assertJsonStructure([
             'data' => [
-                '*' => [
+                'data' => [
+                    '*' => [
                     'id',
                     'name',
                     'email',
@@ -255,7 +263,8 @@ class ManagerPaginationTest extends TestCase
                     'approvedBy',
                     'approvalDate',
                     'approvalNote',
-                ]
+                    ]
+                ],
             ]
         ]);
     }
@@ -270,7 +279,7 @@ class ManagerPaginationTest extends TestCase
 
         $response->assertStatus(200);
         
-        $data = $response->json('data');
+        $data = $response->json('data.data');
         $this->assertGreaterThan(0, count($data));
         
         // Check descending order by comparing timestamps

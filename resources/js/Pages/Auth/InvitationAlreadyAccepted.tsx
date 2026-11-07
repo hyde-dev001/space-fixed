@@ -10,60 +10,52 @@ export default function InvitationAlreadyAccepted({ email }: Props) {
         <>
             <Head title="Invitation Already Accepted" />
 
-            <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-white dark:bg-gray-900 px-4 py-10">
-                <div className="pointer-events-none absolute inset-0">
-                    <div className="absolute -top-28 -left-20 h-80 w-80 rounded-full bg-blue-100/70 blur-3xl dark:bg-blue-900/20" />
-                    <div className="absolute -bottom-28 -right-20 h-96 w-96 rounded-full bg-indigo-100/70 blur-3xl dark:bg-indigo-900/20" />
-                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(15,23,42,0.04),transparent_60%)] dark:bg-[radial-gradient(circle_at_top,rgba(148,163,184,0.08),transparent_60%)]" />
-                </div>
+            <div className="userside-auth-page userside-auth-pattern relative flex min-h-screen items-center justify-center px-4 py-6 font-outfit antialiased sm:py-8">
 
-                <div className="relative max-w-md w-full rounded-3xl border border-gray-200/80 bg-white/95 dark:bg-gray-800/95 dark:border-gray-700 shadow-2xl backdrop-blur-xl p-8 text-center">
-                    {/* Success Icon */}
-                    <div className="w-16 h-16 bg-emerald-100 dark:bg-emerald-900/40 rounded-full flex items-center justify-center mx-auto mb-5 shadow-lg ring-1 ring-emerald-200/70 dark:ring-emerald-700/40">
-                        <svg className="w-10 h-10 text-emerald-600 dark:text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </div>
+                <div className="relative w-full max-w-xl rounded-3xl border border-gray-200/80 bg-white/95 p-6 text-center shadow-2xl backdrop-blur-xl dark:border-gray-700 dark:bg-gray-800/95 sm:p-7">
 
-                    <div className="mb-6">
+                    <div className="mb-4">
                         <h2 className="text-4xl font-extrabold tracking-tight text-gray-900 dark:text-white leading-none">SoleSpace</h2>
-                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Official invitation page</p>
-                        <div className="mt-4 flex items-center gap-3">
+                        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Official invitation page</p>
+                        <div className="mt-3 flex items-center gap-3">
                             <span className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
                             <span className="h-px flex-1 bg-gray-200 dark:bg-gray-700" />
                         </div>
                     </div>
 
                     {/* Title */}
-                    <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-4">
+                    <h1 className="mb-2 text-3xl font-bold text-gray-900 dark:text-white">
                         Already Activated
                     </h1>
 
                     {/* Message */}
-                    <p className="text-gray-600 dark:text-gray-400 mb-6">
+                    <p className="mx-auto mb-4 max-w-xl text-gray-600 dark:text-gray-400">
                         This account has already been activated. You can log in using your password.
                     </p>
 
-                    {/* Account Info */}
-                    <div className="bg-gray-50 dark:bg-gray-700/60 rounded-xl p-4 mb-6 border border-gray-200 dark:border-gray-700">
-                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Your account email:</p>
-                        <p className="font-semibold text-gray-900 dark:text-white">{email}</p>
-                    </div>
+                    <div className="mb-4 space-y-3 text-left">
+                        {/* Account Info */}
+                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-700 dark:bg-gray-700/60">
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Your account email:</p>
+                            <p className="break-words font-semibold text-gray-900 dark:text-white">{email}</p>
+                        </div>
 
-                    {/* Instructions */}
-                    <div className="bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-xl p-4 mb-6 text-left">
-                        <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-2 text-sm">
-                            Need help?
-                        </h3>
-                        <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1.5">
-                            <li>• If you forgot your password, use the "Forgot Password" link</li>
-                            <li>• If you're having trouble logging in, contact your manager</li>
-                            <li>• Make sure you're using the correct email address</li>
-                        </ul>
+                        {/* Instructions */}
+                        <div className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 dark:border-gray-600 dark:bg-gray-700/50">
+                            <h3 className="mb-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                Need help?
+                            </h3>
+                            <ul className="space-y-1.5 text-sm text-gray-700 dark:text-gray-300">
+                                <li>• If you forgot your password, use the "Forgot Password" link</li>
+                                <li>• If you're having trouble logging in, contact your manager</li>
+                                <li>• Make sure you're using the correct email address</li>
+                            </ul>
+                        </div>
+
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
                         <a
                             href="/login"
                             className="block w-full bg-black hover:bg-gray-900 dark:bg-white dark:text-black dark:hover:bg-gray-200 text-white font-semibold py-3 rounded-lg transition-colors"

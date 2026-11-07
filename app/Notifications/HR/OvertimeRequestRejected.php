@@ -46,7 +46,7 @@ class OvertimeRequestRejected extends Notification implements ShouldQueue
             ->line('Hours: ' . $this->overtimeRequest->hours . ' hour(s)')
             ->line('Reason: ' . $this->reason)
             ->line('Rejected by: ' . $this->rejector->name)
-            ->action('View Attendance', url('/erp/hr/self-service/attendance'))
+            ->action('View Attendance', url('/erp/time-in?overtime=' . $this->overtimeRequest->id))
             ->line('Please contact HR/Manager if you need clarification.');
     }
 
@@ -64,7 +64,7 @@ class OvertimeRequestRejected extends Notification implements ShouldQueue
             'hours' => $this->overtimeRequest->hours,
             'rejection_reason' => $this->reason,
             'rejected_by' => $this->rejector->name,
-            'action_url' => '/erp/hr/self-service/attendance',
+            'action_url' => '/erp/time-in?overtime=' . $this->overtimeRequest->id,
             'priority' => 'high',
         ];
     }

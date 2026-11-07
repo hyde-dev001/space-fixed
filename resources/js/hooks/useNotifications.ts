@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNotificationIdentity } from './useNotificationIdentity';
 
 const DEFAULT_NOTIFICATION_API_BASE = '/api/notifications';
 
@@ -83,12 +84,14 @@ export function useNotifications(
     search?: string
 ) {
     const normalizedBasePath = normalizeBasePath(basePath);
+    const { identity } = useNotificationIdentity();
 
     return useQuery({
-        queryKey: ['notifications', normalizedBasePath, { 
+        enabled: identity !== null,
+        queryKey: ['notifications', identity, normalizedBasePath, {
             unreadOnly, page, category, actionRequired, priority, archived, startDate, endDate, search 
         }],
-        queryFn: async () => {
+        queryFn: async ({ signal }) => {
             const params = new URLSearchParams({
                 page: page.toString(),
                 unread_only: unreadOnly.toString(),
@@ -104,6 +107,7 @@ export function useNotifications(
 
             const response = await fetch(`${normalizedBasePath}?${params}`, {
                 credentials: 'include',
+                signal,
             });
 
             if (!response.ok) {
@@ -134,12 +138,15 @@ export function useNotifications(
  */
 export function useUnreadCount(basePath: string = DEFAULT_NOTIFICATION_API_BASE) {
     const normalizedBasePath = normalizeBasePath(basePath);
+    const { identity } = useNotificationIdentity();
 
     return useQuery({
-        queryKey: ['notifications', normalizedBasePath, 'unread-count'],
-        queryFn: async () => {
+        enabled: identity !== null,
+        queryKey: ['notifications', identity, normalizedBasePath, 'unread-count'],
+        queryFn: async ({ signal }) => {
             const response = await fetch(`${normalizedBasePath}/unread-count`, {
                 credentials: 'include',
+                signal,
             });
 
             if (response.status === 429) {
@@ -165,12 +172,15 @@ export function useRecentNotifications(
     basePath: string = DEFAULT_NOTIFICATION_API_BASE
 ) {
     const normalizedBasePath = normalizeBasePath(basePath);
+    const { identity } = useNotificationIdentity();
 
     return useQuery({
-        queryKey: ['notifications', normalizedBasePath, 'recent', limit],
-        queryFn: async () => {
+        enabled: identity !== null,
+        queryKey: ['notifications', identity, normalizedBasePath, 'recent', limit],
+        queryFn: async ({ signal }) => {
             const response = await fetch(`${normalizedBasePath}/recent?limit=${limit}`, {
                 credentials: 'include',
+                signal,
             });
 
             if (response.status === 429) {
@@ -193,12 +203,15 @@ export function useRecentNotifications(
  */
 export function useNotificationStats(basePath: string = DEFAULT_NOTIFICATION_API_BASE) {
     const normalizedBasePath = normalizeBasePath(basePath);
+    const { identity } = useNotificationIdentity();
 
     return useQuery({
-        queryKey: ['notifications', normalizedBasePath, 'stats'],
-        queryFn: async () => {
+        enabled: identity !== null,
+        queryKey: ['notifications', identity, normalizedBasePath, 'stats'],
+        queryFn: async ({ signal }) => {
             const response = await fetch(`${normalizedBasePath}/stats`, {
                 credentials: 'include',
+                signal,
             });
 
             if (!response.ok) {
@@ -216,9 +229,12 @@ export function useNotificationStats(basePath: string = DEFAULT_NOTIFICATION_API
 export function useMarkAsRead(basePath: string = DEFAULT_NOTIFICATION_API_BASE) {
     const queryClient = useQueryClient();
     const normalizedBasePath = normalizeBasePath(basePath);
+    const { identity, isCurrent } = useNotificationIdentity();
 
     return useMutation({
+        onMutate: () => identity,
         mutationFn: async (notificationId: number) => {
+            if (!isCurrent(identity)) throw new Error('Notification session changed');
             const response = await fetch(`${normalizedBasePath}/${notificationId}/read`, {
                 method: 'POST',
                 credentials: 'include',
@@ -234,8 +250,8 @@ export function useMarkAsRead(basePath: string = DEFAULT_NOTIFICATION_API_BASE) 
 
             return response.json();
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notifications', normalizedBasePath] });
+        onSuccess: (_data, _variables, requestIdentity) => {
+            if (isCurrent(requestIdentity)) queryClient.invalidateQueries({ queryKey: ['notifications', requestIdentity, normalizedBasePath] });
         },
     });
 }
@@ -250,9 +266,12 @@ export function useMarkAllAsRead(
     const queryClient = useQueryClient();
     const normalizedBasePath = normalizeBasePath(basePath);
     const normalizedMarkAllPath = markAllPath.replace(/^\//, '');
+    const { identity, isCurrent } = useNotificationIdentity();
 
     return useMutation({
+        onMutate: () => identity,
         mutationFn: async () => {
+            if (!isCurrent(identity)) throw new Error('Notification session changed');
             const response = await fetch(`${normalizedBasePath}/${normalizedMarkAllPath}`, {
                 method: 'POST',
                 credentials: 'include',
@@ -268,8 +287,8 @@ export function useMarkAllAsRead(
 
             return response.json();
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notifications', normalizedBasePath] });
+        onSuccess: (_data, _variables, requestIdentity) => {
+            if (isCurrent(requestIdentity)) queryClient.invalidateQueries({ queryKey: ['notifications', requestIdentity, normalizedBasePath] });
         },
     });
 }
@@ -280,9 +299,12 @@ export function useMarkAllAsRead(
 export function useDeleteNotification(basePath: string = DEFAULT_NOTIFICATION_API_BASE) {
     const queryClient = useQueryClient();
     const normalizedBasePath = normalizeBasePath(basePath);
+    const { identity, isCurrent } = useNotificationIdentity();
 
     return useMutation({
+        onMutate: () => identity,
         mutationFn: async (notificationId: number) => {
+            if (!isCurrent(identity)) throw new Error('Notification session changed');
             const response = await fetch(`${normalizedBasePath}/${notificationId}`, {
                 method: 'DELETE',
                 credentials: 'include',
@@ -297,8 +319,8 @@ export function useDeleteNotification(basePath: string = DEFAULT_NOTIFICATION_AP
 
             return response.json();
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notifications', normalizedBasePath] });
+        onSuccess: (_data, _variables, requestIdentity) => {
+            if (isCurrent(requestIdentity)) queryClient.invalidateQueries({ queryKey: ['notifications', requestIdentity, normalizedBasePath] });
         },
     });
 }
@@ -309,9 +331,12 @@ export function useDeleteNotification(basePath: string = DEFAULT_NOTIFICATION_AP
 export function useUnarchiveNotification(basePath: string = DEFAULT_NOTIFICATION_API_BASE) {
     const queryClient = useQueryClient();
     const normalizedBasePath = normalizeBasePath(basePath);
+    const { identity, isCurrent } = useNotificationIdentity();
 
     return useMutation({
+        onMutate: () => identity,
         mutationFn: async (notificationId: number) => {
+            if (!isCurrent(identity)) throw new Error('Notification session changed');
             const response = await fetch(`${normalizedBasePath}/${notificationId}/unarchive`, {
                 method: 'POST',
                 credentials: 'include',
@@ -326,8 +351,8 @@ export function useUnarchiveNotification(basePath: string = DEFAULT_NOTIFICATION
 
             return response.json();
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['notifications', normalizedBasePath] });
+        onSuccess: (_data, _variables, requestIdentity) => {
+            if (isCurrent(requestIdentity)) queryClient.invalidateQueries({ queryKey: ['notifications', requestIdentity, normalizedBasePath] });
         },
     });
 }
@@ -337,12 +362,15 @@ export function useUnarchiveNotification(basePath: string = DEFAULT_NOTIFICATION
  */
 export function useNotificationPreferences(basePath: string = DEFAULT_NOTIFICATION_API_BASE) {
     const normalizedBasePath = normalizeBasePath(basePath);
+    const { identity } = useNotificationIdentity();
 
     return useQuery({
-        queryKey: ['notification-preferences', normalizedBasePath],
-        queryFn: async () => {
+        enabled: identity !== null,
+        queryKey: ['notification-preferences', identity, normalizedBasePath],
+        queryFn: async ({ signal }) => {
             const response = await fetch(`${normalizedBasePath}/preferences`, {
                 credentials: 'include',
+                signal,
             });
 
             if (!response.ok) {
@@ -360,9 +388,11 @@ export function useNotificationPreferences(basePath: string = DEFAULT_NOTIFICATI
 export function useUpdatePreferences(basePath: string = DEFAULT_NOTIFICATION_API_BASE) {
     const queryClient = useQueryClient();
     const normalizedBasePath = normalizeBasePath(basePath);
+    const { identity, isCurrent } = useNotificationIdentity();
 
     return useMutation({
         mutationFn: async (preferences: Record<string, any>) => {
+            if (!isCurrent(identity)) throw new Error('Notification session changed');
             const response = await fetch(`${normalizedBasePath}/preferences`, {
                 method: 'PUT',
                 credentials: 'include',
@@ -379,15 +409,17 @@ export function useUpdatePreferences(basePath: string = DEFAULT_NOTIFICATION_API
 
             return response.json();
         },
-        onMutate: async (newPreferences) => {
+        onMutate: async () => {
             // Cancel any outgoing refetches to avoid overwriting our update
-            await queryClient.cancelQueries({ queryKey: ['notification-preferences', normalizedBasePath] });
+            await queryClient.cancelQueries({ queryKey: ['notification-preferences', identity, normalizedBasePath] });
+            return identity;
         },
-        onSuccess: (data, variables) => {
+        onSuccess: (data, variables, requestIdentity) => {
+            if (!isCurrent(requestIdentity)) return;
             const serverPreferences = data && data.preferences ? data.preferences : {};
 
             queryClient.setQueryData(
-                ['notification-preferences', normalizedBasePath],
+                ['notification-preferences', requestIdentity, normalizedBasePath],
                 (current: any) => ({
                     ...(current || {}),
                     ...(serverPreferences || {}),

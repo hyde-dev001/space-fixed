@@ -1,9 +1,11 @@
+import MonochromeSelect from "@/components/form/Select";
 import { Head, usePage } from "@inertiajs/react";
 import { useEffect, useMemo, useState } from "react";
 import type { ComponentType } from "react";
 import AppLayoutERP from "../../../layout/AppLayout_ERP";
 import { stockMovementAPI } from "@/services/inventoryAPI";
 import type { StockMovement as ApiStockMovement } from "@/types/inventory";
+import { erpUrl } from "@/utils/erpCapabilities";
 
 type MovementTrack = "Stock IN" | "Stock OUT" | "Adjustments" | "Returns" | "Repairs usage";
 
@@ -136,7 +138,8 @@ const formatQuantity = (quantity: number) => {
 };
 
 export default function StockMovement() {
-	const { initialData } = usePage().props as any;
+	const { initialData, auth, erpCapabilities } = usePage().props as any;
+	const ownerMode = auth?.erpActor?.ownerMode === true;
 	const [movements, setMovements] = useState<StockMovementItem[]>(
 		() => (initialData?.data ?? []).map(mapApiMovement)
 	);
@@ -150,7 +153,10 @@ export default function StockMovement() {
 		setLoading(true);
 		setLoadError(null);
 		try {
-			const response = await stockMovementAPI.getAll({ per_page: 200 });
+			const movementsUrl = erpUrl(erpCapabilities, "GET:inventory.movements.index");
+			if (ownerMode && !movementsUrl) return;
+
+			const response = await stockMovementAPI.getAll({ per_page: 200 }, movementsUrl ?? undefined);
 			setMovements((response.data ?? []).map(mapApiMovement));
 		} catch {
 			setLoadError("Could not refresh stock movements.");
@@ -189,24 +195,7 @@ export default function StockMovement() {
 			<Head title="Stock Movement - Solespace" />
 
 			<div className="p-6 space-y-6">
-				<div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div>
-						<h1 className="text-2xl font-semibold mb-1">Stock Movement</h1>
-						<p className="text-gray-600 dark:text-gray-400">Track stock changes across purchase/restock, sales, adjustments, returns, and repair materials usage</p>
-					</div>
-					<div className="flex flex-wrap items-center justify-end gap-3">
-						<button
-							type="button"
-							onClick={() => {
-								void loadMovements();
-							}}
-							className="px-3 py-1 text-xs font-semibold rounded-full border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800"
-						>
-							Refresh
-						</button>
-						<span className="px-3 py-1 text-xs font-semibold rounded-full bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200">Inventory Tracking</span>
-					</div>
-				</div>
+				<h1 className="sr-only">Stock Movement</h1>
 
 				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 					<MetricCard title="Stock IN" value={stockInCount} description="Purchase and restock entries" icon={ArrowUpIcon} color="success" />
@@ -234,7 +223,7 @@ export default function StockMovement() {
 							/>
 						</div>
 						<div className="sm:w-56">
-							<select
+							<MonochromeSelect
 								title="Filter by movement action type"
 								aria-label="Filter stock movement by action type"
 								value={trackFilter}
@@ -250,7 +239,7 @@ export default function StockMovement() {
 								<option value="Adjustments">Adjustments</option>
 								<option value="Returns">Returns</option>
 								<option value="Repairs usage">Repairs usage (materials used)</option>
-							</select>
+							</MonochromeSelect>
 						</div>
 					</div>
 

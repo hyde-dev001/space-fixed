@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { route as ziggyRoute } from 'ziggy-js';
 import { Ziggy } from './ziggy';
+import { installEmployeeClockInFeedback, showEmployeeClockInFeedback } from './utils/employeeClockInFeedback';
 window.axios = axios;
 
 window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
@@ -19,13 +20,22 @@ window.axios.interceptors.request.use(config => {
 window.axios.interceptors.response.use(
     response => response,
     error => {
+        const response = error.response;
+        showEmployeeClockInFeedback(response);
+        const code = response?.data?.code;
+        if (response?.status === 503 && code === 'MAINTENANCE_ACTIVE') {
+            window.dispatchEvent(new CustomEvent('solespace:maintenance-active'));
+        }
+
         // Don't redirect on API errors, let the component handle it
-        if (error.response?.status === 419) {
+        if (response?.status === 419) {
             console.error('CSRF token mismatch. Please refresh the page.');
         }
         return Promise.reject(error);
     }
 );
+
+installEmployeeClockInFeedback();
 
 // Backward-compatible route() wrapper:
 // some legacy pages pass URL paths into route(), which Ziggy rejects.
@@ -51,6 +61,7 @@ if (typeof window !== 'undefined') {
             if (!runtimeZiggy?.routes?.[trimmed]) {
                 const fallbackNamedRoutes = {
                     'password.request': '/forgot-password',
+                    'admin.business-upgrade-requests.index': '/admin/business-upgrade-requests',
                     'admin.suspension-appeals': '/admin/appeals',
                 };
 

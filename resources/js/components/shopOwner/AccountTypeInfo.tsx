@@ -59,12 +59,12 @@ export default function AccountTypeInfo() {
             }`}>
                 <div className="flex items-start gap-3">
                     <div className={`p-2 rounded-lg ${
-                        isIndividual ? 'bg-blue-100 dark:bg-blue-800' : 'bg-purple-100 dark:bg-purple-800'
+                        isIndividual ? 'bg-gray-100 dark:bg-blue-800' : 'bg-gray-100 dark:bg-purple-800'
                     }`}>
                         {isIndividual ? (
-                            <User className="w-5 h-5 text-blue-600 dark:text-blue-300" />
+                            <User className="w-5 h-5 text-gray-900 dark:text-blue-300" />
                         ) : (
-                            <Building2 className="w-5 h-5 text-purple-600 dark:text-purple-300" />
+                            <Building2 className="w-5 h-5 text-gray-900 dark:text-purple-300" />
                         )}
                     </div>
                     <div className="flex-1">

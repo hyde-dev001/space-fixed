@@ -4,6 +4,8 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use App\Support\Finance\FinanceShopContext;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
@@ -17,6 +19,10 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class ShopIsolationMiddleware
 {
+    public function __construct(private readonly FinanceShopContext $financeShopContext)
+    {
+    }
+
     /**
      * Handle an incoming request.
      *
@@ -24,30 +30,41 @@ class ShopIsolationMiddleware
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $user = $request->user();
+        $user = $request->user('user');
+        $shopOwner = $request->user('shop_owner');
 
         // If user is not authenticated, deny access
-        if (!$user) {
+        if (! $user && ! $shopOwner) {
             return $next($request);
         }
 
-        // Determine the current shop context
-        // - For ERP users (auth:user), use their assigned shop_owner_id
-        // - For authenticated shop owners (auth:shop_owner), use their own id
-        $currentShopId = $user->shop_owner_id ?? ($request->user('shop_owner')?->id);
+        // Resolve the tenant from the guard selected by the route's auth
+        // middleware. A request can retain another authenticated guard (for
+        // example, a customer user while a shop-owner endpoint is called),
+        // so the presence of a user-guard session must not override the
+        // active shop-owner route context.
+        $currentShopId = match (Auth::getDefaultDriver()) {
+            'shop_owner' => $shopOwner?->getKey(),
+            'user' => $user ? $this->financeShopContext->id($request) : null,
+            default => $user
+                ? $this->financeShopContext->id($request)
+                : $shopOwner?->getKey(),
+        };
 
-        if (!$currentShopId) {
+        if (! is_numeric($currentShopId) || (int) $currentShopId < 1) {
             return response()->json([
-                'message' => 'User is not assigned to any shop',
-                'error' => 'SHOP_NOT_ASSIGNED'
+                'message' => 'A Finance shop context is required.',
+                'error' => 'TENANT_CONTEXT_REQUIRED',
             ], Response::HTTP_FORBIDDEN);
         }
+
+        $currentShopId = (int) $currentShopId;
 
         // Check if shop_id in request matches user's shop_owner_id
         if ($request->has('shop_id') || $request->route('shop_id')) {
             $requestedShopId = $request->input('shop_id') ?? $request->route('shop_id');
             
-            if ($requestedShopId && (int) $requestedShopId !== (int) $user->shop_owner_id) {
+            if ($requestedShopId && (int) $requestedShopId !== $currentShopId) {
                 return response()->json([
                     'message' => 'You do not have access to this shop',
                     'error' => 'UNAUTHORIZED_SHOP_ACCESS'

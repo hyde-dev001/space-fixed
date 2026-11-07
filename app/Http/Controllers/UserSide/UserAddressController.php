@@ -4,11 +4,16 @@ namespace App\Http\Controllers\UserSide;
 
 use App\Http\Controllers\Controller;
 use App\Models\UserAddress;
+use App\Services\AddressCoordinateService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class UserAddressController extends Controller
 {
+    public function __construct(private AddressCoordinateService $coordinates)
+    {
+    }
+
     /**
      * Get all addresses for authenticated user
      */
@@ -44,7 +49,7 @@ class UserAddressController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'phone' => 'required|string|max:20',
+            'phone' => 'required|digits_between:7,20',
             'region' => 'required|string|max:255',
             'province' => 'required|string|max:255',
             'city' => 'required|string|max:255',
@@ -52,7 +57,14 @@ class UserAddressController extends Controller
             'postal_code' => 'nullable|string|max:10',
             'address_line' => 'required|string|max:500',
             'is_default' => 'boolean',
+            'latitude' => 'nullable|required_with:longitude|numeric|between:4.5,21.5',
+            'longitude' => 'nullable|required_with:latitude|numeric|between:116,127',
+            'delivery_instructions' => 'nullable|string|max:1000',
         ]);
+
+        if (!array_key_exists('latitude', $validated)) {
+            $validated += $this->coordinates->geocode($validated) ?? ['latitude' => null, 'longitude' => null];
+        }
 
         $validated['user_id'] = $user->id;
 
@@ -90,7 +102,7 @@ class UserAddressController extends Controller
 
         $validated = $request->validate([
             'name' => 'required|string|max:255',
-            'phone' => 'required|string|max:20',
+            'phone' => 'required|digits_between:7,20',
             'region' => 'required|string|max:255',
             'province' => 'required|string|max:255',
             'city' => 'required|string|max:255',
@@ -98,7 +110,16 @@ class UserAddressController extends Controller
             'postal_code' => 'nullable|string|max:10',
             'address_line' => 'required|string|max:500',
             'is_default' => 'boolean',
+            'latitude' => 'nullable|required_with:longitude|numeric|between:4.5,21.5',
+            'longitude' => 'nullable|required_with:latitude|numeric|between:116,127',
+            'delivery_instructions' => 'nullable|string|max:1000',
         ]);
+
+        $addressFields = ['region', 'province', 'city', 'barangay', 'postal_code', 'address_line'];
+        $addressChanged = collect($addressFields)->contains(fn ($field) => (string) $address->{$field} !== (string) ($validated[$field] ?? null));
+        if (!array_key_exists('latitude', $validated) && $addressChanged) {
+            $validated += $this->coordinates->geocode($validated) ?? ['latitude' => null, 'longitude' => null];
+        }
 
         // If this is set as default, unset other defaults
         if ($validated['is_default'] ?? false) {

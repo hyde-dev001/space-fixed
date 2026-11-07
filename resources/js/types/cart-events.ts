@@ -1,7 +1,18 @@
 // Cart Event Types
+export interface CartAddedItem {
+  name?: string | null;
+  price?: number | null;
+  image?: string | null;
+  size?: string | null;
+  color?: string | null;
+  quantity?: number;
+}
+
 export interface CartAddedEventDetail {
   added?: number;
   total: number;
+  openDrawer?: boolean;
+  item?: CartAddedItem;
 }
 
 export interface CartGuestAddAttemptEventDetail {

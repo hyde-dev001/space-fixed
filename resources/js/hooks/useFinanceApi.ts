@@ -25,10 +25,28 @@ interface ApiResponse<T = any> {
   message?: string;
 }
 
+const isPaginatedPayload = (
+  value: unknown,
+): value is { data: unknown[]; current_page: number; last_page: number } => {
+  if (typeof value !== 'object' || value === null) return false;
+
+  const payload = value as { data?: unknown; current_page?: unknown; last_page?: unknown };
+  return Array.isArray(payload.data)
+    && typeof payload.current_page === 'number'
+    && typeof payload.last_page === 'number';
+};
+
 export function useFinanceApi() {
   const { auth } = usePage().props as any;
   const isAuthenticated = Boolean(auth && auth.user);
+  const ownerMode = auth?.erpActor?.type === 'shop_owner' && auth.erpActor.ownerMode === true;
   const csrfReady = useRef(false);
+
+  const resolveUrl = useCallback((url: string): string => {
+    if (!ownerMode) return url;
+
+    return url.replace(/^\/api\/finance(?:\/session)?(?=\/|$)/, '/api/shop-owner/finance');
+  }, [ownerMode]);
 
   /**
    * Ensure CSRF cookie is set
@@ -63,7 +81,7 @@ export function useFinanceApi() {
       'X-Requested-With': 'XMLHttpRequest',
     };
 
-    // Prefer Sanctum/XSRF cookie token for web/session routes.
+    // Finance mutations use the authenticated browser session and CSRF token.
     const xsrfCookie = document.cookie
       .split('; ')
       .find((entry) => entry.startsWith('XSRF-TOKEN='))
@@ -79,26 +97,16 @@ export function useFinanceApi() {
       headers['X-CSRF-TOKEN'] = csrfToken;
     }
 
-    // Try Bearer token first (for API auth)
-    try {
-      const token = localStorage.getItem('auth_token');
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-    } catch (e) {
-      // localStorage may not be available
-    }
-
     return headers;
   }, []);
 
   /**
    * Get base URL for session-based vs public endpoints
    */
-  const getBaseUrl = useCallback((skipAuth: boolean = false): string => {
-    if (skipAuth) return '/api/finance';
-    return isAuthenticated ? '/api/finance/session' : '/api/finance';
-  }, [isAuthenticated]);
+  const getBaseUrl = useCallback((_skipAuth: boolean = false): string => {
+    if (ownerMode) return '/api/shop-owner/finance';
+    return '/api/finance';
+  }, [ownerMode]);
 
   /**
    * Core fetch wrapper with error handling
@@ -122,16 +130,18 @@ export function useFinanceApi() {
         ...(customHeaders as Record<string, string>),
       };
 
+      const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+
       // Add Content-Type for body requests
-      if (body && !headers['Content-Type']) {
+      if (body && !isFormData && !headers['Content-Type']) {
         headers['Content-Type'] = 'application/json';
       }
 
-      const response = await fetch(url, {
+      const response = await fetch(resolveUrl(url), {
         method,
         headers,
         credentials: skipAuth ? 'omit' : 'include',
-        body: body ? JSON.stringify(body) : undefined,
+        body: body ? (isFormData ? body : JSON.stringify(body)) : undefined,
         ...restOptions,
       });
 
@@ -162,7 +172,7 @@ export function useFinanceApi() {
       return {
         ok: true,
         status: response.status,
-        data: data?.data || data, // Unwrap Laravel API response format
+        data: isPaginatedPayload(data) ? data : data?.data || data, // Preserve paginator metadata.
       };
     } catch (error) {
       console.error('API request failed:', error);
@@ -172,7 +182,7 @@ export function useFinanceApi() {
         error: error instanceof Error ? error.message : 'Network error',
       };
     }
-  }, [ensureCsrf, getAuthHeaders]);
+  }, [ensureCsrf, getAuthHeaders, resolveUrl]);
 
   /**
    * GET request
@@ -236,6 +246,8 @@ export function useFinanceApi() {
     ensureCsrf,
     getAuthHeaders,
     getBaseUrl,
+    resolveUrl,
     isAuthenticated,
+    ownerMode,
   };
 }

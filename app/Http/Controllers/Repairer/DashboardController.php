@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Repairer;
 
 use App\Http\Controllers\Controller;
 use App\Models\RepairRequest;
+use App\Support\Erp\ErpActorContext;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -19,10 +20,7 @@ class DashboardController extends Controller
     public function getDashboardData(): JsonResponse
     {
         try {
-            $user = Auth::user();
-        
-        // Get shop_owner_id from authenticated user
-        $shopOwnerId = $user->shop_owner_id ?? $user->id;
+        $shopOwnerId = $this->shopOwnerId();
         
         if (!$shopOwnerId) {
             return response()->json(['error' => 'User not associated with a shop'], 403);
@@ -113,19 +111,26 @@ class DashboardController extends Controller
             ->map(function ($group, $serviceName) {
                 $requests = $group->count();
                 
-                // Calculate average turnaround for completed repairs
                 $completedRepairs = $group->filter(function ($item) {
                     return $item['request']->completed_at !== null;
                 });
-                
-                $avgDays = 0;
-                if ($completedRepairs->count() > 0) {
-                    $totalHours = $completedRepairs->sum(function ($item) {
-                        return Carbon::parse($item['request']->created_at)
-                            ->diffInHours($item['request']->completed_at);
-                    });
-                    $avgDays = round($totalHours / $completedRepairs->count() / 24, 1);
-                }
+
+                $completedMinutes = $completedRepairs
+                    ->map(function ($item) {
+                        $startedAt = $item['request']->started_at ?? $item['request']->created_at;
+
+                        return Carbon::parse($startedAt)->diffInMinutes($item['request']->completed_at);
+                    })
+                    ->filter(fn ($minutes) => $minutes >= 0);
+                $averageMinutes = $completedMinutes->isNotEmpty()
+                    ? $completedMinutes->average()
+                    : null;
+                $estimatedDuration = trim((string) ($group->first()['service']->duration ?? ''));
+                $avgTurnaround = $averageMinutes !== null
+                    ? ($averageMinutes >= 1440
+                        ? round($averageMinutes / 1440, 1) . ' days'
+                        : '<1 day')
+                    : ($estimatedDuration !== '' ? 'Est. ' . $estimatedDuration : 'N/A');
                 
                 $lastRequested = Carbon::parse($group->max(function ($item) {
                     return $item['request']->created_at;
@@ -134,7 +139,7 @@ class DashboardController extends Controller
                 return [
                     'service' => $serviceName,
                     'requests' => $requests,
-                    'avgTurnaround' => $avgDays > 0 ? $avgDays . ' days' : 'N/A',
+                    'avgTurnaround' => $avgTurnaround,
                     'lastRequested' => $lastRequested->isToday() 
                         ? 'Today, ' . $lastRequested->format('g:i A')
                         : ($lastRequested->isYesterday() 
@@ -263,7 +268,7 @@ class DashboardController extends Controller
         
         } catch (\Exception $e) {
             Log::error('Repairer Dashboard Error: ' . $e->getMessage(), [
-                'user_id' => Auth::id(),
+                'user_id' => Auth::guard('user')->id(),
                 'trace' => $e->getTraceAsString()
             ]);
             
@@ -307,5 +312,17 @@ class DashboardController extends Controller
         $realizedRatio = min(1, $netCollected / $grossOrderTotal);
 
         return round($netOrderTotal * $realizedRatio, 2);
+    }
+
+    private function shopOwnerId(): ?int
+    {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return (int) $context->tenantOwner()->getKey();
+        }
+
+        $user = Auth::guard('user')->user();
+
+        return $user ? (int) ($user->shop_owner_id ?? $user->id) : null;
     }
 }

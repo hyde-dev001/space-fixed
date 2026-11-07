@@ -318,6 +318,8 @@ class BusinessAccessControlService
             'CASHIER', 'Cashier',
             'INVENTORY', 'Inventory', 'INVENTORY_MANAGER', 'Inventory Manager',
             'PROCUREMENT', 'Procurement', 'PROCUREMENT_MANAGER', 'Procurement Manager',
+            'LOGISTICS_DISPATCHER', 'Logistics Dispatcher',
+            'LOGISTICS_RIDER', 'Logistics Rider',
         ];
 
         if ($businessType === self::BUSINESS_TYPE_RETAIL) {

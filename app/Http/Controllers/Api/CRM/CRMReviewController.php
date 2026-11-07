@@ -14,6 +14,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
+use App\Support\Erp\ErpActorContext;
 use Inertia\Inertia;
 
 class CRMReviewController extends Controller
@@ -22,6 +23,11 @@ class CRMReviewController extends Controller
 
     private function shopOwnerIds(): array
     {
+        $context = request()->attributes->get('erp.actor_context');
+        if ($context instanceof ErpActorContext) {
+            return [(int) $context->tenantOwner()->getKey()];
+        }
+
         $user = Auth::guard('user')->user() ?? Auth::user();
         if (! $user) {
             return [];
@@ -31,10 +37,6 @@ class CRMReviewController extends Controller
 
         if (!empty($user->shop_owner_id)) {
             $ids[] = (int) $user->shop_owner_id;
-        }
-
-        if (!empty($user->id)) {
-            $ids[] = (int) $user->id;
         }
 
         return array_values(array_unique(array_filter($ids)));
@@ -122,13 +124,16 @@ class CRMReviewController extends Controller
                 ];
             });
 
+        $reportedKeys = ReviewReport::reportedReviewKeys($shopOwnerIds);
+
         return $productReviews
             ->concat($repairReviews)
             ->concat($shopReviews)
             ->sortByDesc('createdAtTs')
             ->values()
-            ->map(function (array $item) {
+            ->map(function (array $item) use ($reportedKeys) {
                 unset($item['createdAtTs']);
+                $item['is_reported'] = $reportedKeys->has($item['reviewId']);
                 return $item;
             });
     }
@@ -156,8 +161,9 @@ class CRMReviewController extends Controller
     public function indexPage()
     {
         $user = Auth::guard('user')->user();
+        $context = request()->attributes->get('erp.actor_context');
 
-        if ($user?->force_password_change) {
+        if (! $context instanceof ErpActorContext && $user?->force_password_change) {
             return redirect()->route('erp.profile');
         }
 
@@ -354,18 +360,7 @@ class CRMReviewController extends Controller
             ];
         }
 
-        $existing = ReviewReport::query()
-            ->where('review_type', $type)
-            ->where('review_id', $reviewId)
-            ->where('shop_owner_id', $actingShopOwnerId)
-            ->whereNotIn('status', ['dismissed'])
-            ->first();
-
-        if ($existing) {
-            return response()->json(['error' => 'You have already reported this review.'], 409);
-        }
-
-        $report = ReviewReport::create([
+        $report = ReviewReport::createForReview($review, [
             'review_type' => $type,
             'review_id' => $reviewId,
             'shop_owner_id' => $actingShopOwnerId,
@@ -386,13 +381,14 @@ class CRMReviewController extends Controller
             type: NotificationType::REVIEW_REPORTED,
             title: 'Malicious Review Reported',
             message: "{$shopName} reported a customer review for: {$reasonLabel}",
-            actionUrl: '/superAdmin/flagged-accounts',
+            actionUrl: '/admin/flagged-accounts',
             data: ['review_report_id' => $report->id],
         );
 
         return response()->json([
             'message' => 'Review reported successfully. Our team will review it shortly.',
             'report' => $report->only(['id', 'status']),
+            'is_reported' => true,
         ]);
     }
 }

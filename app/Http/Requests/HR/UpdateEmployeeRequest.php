@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests\HR;
 
+use App\Enums\EmployeeStatus;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
@@ -63,7 +64,7 @@ class UpdateEmployeeRequest extends FormRequest
             'position' => ['sometimes', 'required', 'string', 'max:100'],
             'hire_date' => ['sometimes', 'required', 'date', 'before_or_equal:today'],
             'employment_type' => ['sometimes', 'required', 'in:full_time,part_time,contract,intern'],
-            'status' => ['sometimes', 'required', 'in:active,suspended,on_leave'],
+            'status' => ['sometimes', 'required', Rule::enum(EmployeeStatus::class)],
             
             // Compensation
             'salary' => ['sometimes', 'required', 'numeric', 'min:0', 'max:9999999.99'],

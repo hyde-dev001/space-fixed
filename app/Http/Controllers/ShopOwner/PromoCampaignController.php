@@ -5,6 +5,8 @@ namespace App\Http\Controllers\ShopOwner;
 use App\Http\Controllers\Controller;
 use App\Models\Product;
 use App\Models\PromoCampaign;
+use App\Models\ShopOwner;
+use App\Services\ShopModuleAccessService;
 use Illuminate\Support\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,11 +17,16 @@ use Illuminate\Support\Facades\Schema;
 
 class PromoCampaignController extends Controller
 {
+    public function __construct(
+        private readonly ShopModuleAccessService $shopModuleAccess,
+    ) {}
+
     private function promoTablesReady(): bool
     {
         return Schema::hasTable('promo_campaigns')
             && Schema::hasTable('promo_campaign_products')
-            && Schema::hasTable('voucher_claims');
+            && Schema::hasTable('voucher_claims')
+            && Schema::hasColumn('promo_campaigns', 'discount_target');
     }
 
     private function promoTablesUnavailableResponse(): JsonResponse
@@ -47,7 +54,22 @@ class PromoCampaignController extends Controller
             ->latest('id')
             ->get();
 
-        return response()->json(['success' => true, 'data' => $promos]);
+        $logisticsDecision = $this->shopModuleAccess->decide($shopOwner, 'logistics');
+        $logisticsModule = $shopOwner->modules()
+            ->where('module_key', 'logistics')
+            ->first();
+
+        return response()->json([
+            'success' => true,
+            'data' => $promos,
+            'logistics' => [
+                'eligible' => $this->shopModuleAccess->isEligible($shopOwner, 'logistics'),
+                'enabled' => $logisticsModule !== null && (bool) $logisticsModule->enabled,
+                'accessible' => $logisticsDecision->allowed,
+                'code' => $logisticsDecision->code,
+                'reason' => $logisticsDecision->allowed ? null : $logisticsDecision->message,
+            ],
+        ]);
     }
 
     public function store(Request $request): JsonResponse
@@ -64,6 +86,7 @@ class PromoCampaignController extends Controller
 
         $validated = $request->validate([
             'kind' => 'required|in:voucher,sale',
+            'discount_target' => 'nullable|in:items,shipping',
             'scope' => 'required|in:shop_wide,product_specific',
             'name' => 'required|string|max:255',
             'code' => 'nullable|string|max:100',
@@ -76,6 +99,17 @@ class PromoCampaignController extends Controller
             'product_ids' => 'nullable|array',
             'product_ids.*' => 'integer|exists:products,id',
         ]);
+
+        $validated['discount_target'] = $validated['discount_target'] ?? 'items';
+        $ruleError = $this->validateDiscountTarget(
+            $shopOwner,
+            $validated['kind'],
+            $validated['discount_target'],
+            $validated['scope'],
+        );
+        if ($ruleError !== null) {
+            return $ruleError;
+        }
 
         if ($validated['kind'] === 'voucher' && empty($validated['code'])) {
             return response()->json(['success' => false, 'message' => 'Voucher code is required.'], 422);
@@ -121,6 +155,7 @@ class PromoCampaignController extends Controller
 
         $validated = $request->validate([
             'kind' => 'sometimes|in:voucher,sale',
+            'discount_target' => 'sometimes|in:items,shipping',
             'scope' => 'sometimes|in:shop_wide,product_specific',
             'name' => 'sometimes|string|max:255',
             'code' => 'nullable|string|max:100',
@@ -135,7 +170,13 @@ class PromoCampaignController extends Controller
         ]);
 
         $nextKind = $validated['kind'] ?? $campaign->kind;
+        $nextTarget = $validated['discount_target'] ?? ($campaign->discount_target ?: 'items');
         $nextScope = $validated['scope'] ?? $campaign->scope;
+
+        $ruleError = $this->validateDiscountTarget($shopOwner, $nextKind, $nextTarget, $nextScope);
+        if ($ruleError !== null) {
+            return $ruleError;
+        }
 
         if ($nextKind === 'voucher' && array_key_exists('code', $validated) && empty($validated['code'])) {
             return response()->json(['success' => false, 'message' => 'Voucher code is required.'], 422);
@@ -267,5 +308,35 @@ class PromoCampaignController extends Controller
             ->all();
 
         $campaign->products()->sync($ownedProductIds);
+    }
+
+    private function validateDiscountTarget(
+        ShopOwner $shopOwner,
+        string $kind,
+        string $discountTarget,
+        string $scope,
+    ): ?JsonResponse {
+        if ($discountTarget === 'shipping' && $kind !== 'voucher') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Shipping discounts are available as vouchers only.',
+            ], 422);
+        }
+
+        if ($discountTarget === 'shipping' && $scope !== 'shop_wide') {
+            return response()->json([
+                'success' => false,
+                'message' => 'Shipping vouchers must be shop-wide.',
+            ], 422);
+        }
+
+        if ($discountTarget === 'shipping' && ! $this->shopModuleAccess->canAccess($shopOwner, 'logistics')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Shipping vouchers require accessible Shop-owned Logistics.',
+            ], 422);
+        }
+
+        return null;
     }
 }

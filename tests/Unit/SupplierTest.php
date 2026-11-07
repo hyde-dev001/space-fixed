@@ -2,9 +2,9 @@
 
 namespace Tests\Unit;
 
-use App\Models\InventoryItem;
 use App\Models\ShopOwner;
 use App\Models\Supplier;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -57,21 +57,26 @@ class SupplierTest extends TestCase
     public function it_can_have_multiple_orders()
     {
         $supplier = Supplier::factory()->create();
+        $user = User::factory()->create(['shop_owner_id' => $supplier->shop_owner_id]);
         
         $supplier->orders()->create([
-            'order_number' => 'PO-001',
-            'status' => 'pending',
+            'shop_owner_id' => $supplier->shop_owner_id,
+            'po_number' => 'PO-001',
+            'status' => 'draft',
+            'order_date' => now(),
             'total_amount' => 1000,
             'expected_delivery_date' => now()->addDays(7),
-            'created_by' => 1,
+            'created_by' => $user->id,
         ]);
 
         $supplier->orders()->create([
-            'order_number' => 'PO-002',
+            'shop_owner_id' => $supplier->shop_owner_id,
+            'po_number' => 'PO-002',
             'status' => 'confirmed',
+            'order_date' => now(),
             'total_amount' => 2000,
             'expected_delivery_date' => now()->addDays(10),
-            'created_by' => 1,
+            'created_by' => $user->id,
         ]);
 
         $this->assertCount(2, $supplier->orders);

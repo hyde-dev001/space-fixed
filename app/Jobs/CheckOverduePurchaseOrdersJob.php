@@ -18,7 +18,7 @@ class CheckOverduePurchaseOrdersJob implements ShouldQueue
     /**
      * Create a new job instance.
      */
-    public function __construct()
+    public function __construct(private ?int $shopOwnerId = null)
     {
         //
     }
@@ -28,11 +28,16 @@ class CheckOverduePurchaseOrdersJob implements ShouldQueue
      */
     public function handle(): void
     {
+        if (!$this->shopOwnerId) {
+            return;
+        }
+
         try {
             Log::info('Starting overdue PO check job');
 
             // Get count of overdue POs
             $overdueCount = PurchaseOrder::where('status', '!=', 'completed')
+                ->where('shop_owner_id', $this->shopOwnerId)
                 ->where('status', '!=', 'cancelled')
                 ->whereNotNull('expected_delivery_date')
                 ->where('expected_delivery_date', '<', now())
@@ -41,7 +46,7 @@ class CheckOverduePurchaseOrdersJob implements ShouldQueue
             if ($overdueCount > 0) {
                 // Trigger notification listener
                 $listener = new NotifyOverduePOs();
-                $listener->handle();
+                $listener->handle($this->shopOwnerId);
 
                 Log::info('Overdue PO check completed', [
                     'overdue_count' => $overdueCount,

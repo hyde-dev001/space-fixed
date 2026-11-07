@@ -22,9 +22,8 @@ class UpdatePurchaseOrderStatusRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'status' => 'required|in:sent,confirmed,in_transit,delivered,completed',
+            'status' => 'required|in:sent,confirmed,in_transit,completed',
             'notes' => 'nullable|string|max:1000',
-            'actual_delivery_date' => 'nullable|date',
         ];
     }
 
@@ -35,8 +34,7 @@ class UpdatePurchaseOrderStatusRequest extends FormRequest
     {
         return [
             'status.required' => 'Status is required.',
-            'status.in' => 'Status must be one of: sent, confirmed, in_transit, delivered, completed.',
-            'actual_delivery_date.date' => 'Actual delivery date must be a valid date.',
+            'status.in' => 'Status must be one of: sent, confirmed, in_transit, completed.',
             'notes.max' => 'Notes cannot exceed 1000 characters.',
         ];
     }
