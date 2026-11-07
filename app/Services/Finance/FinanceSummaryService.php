@@ -2,6 +2,8 @@
 
 namespace App\Services\Finance;
 
+use Brick\Math\BigDecimal;
+use Brick\Math\RoundingMode;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -16,6 +18,7 @@ final class FinanceSummaryService
         $yearStart = $now->startOfYear();
         $yearEnd = $yearStart->addYear();
         $trendStart = $now->startOfMonth()->subMonths(5);
+        $sourceStart = $trendStart->min($yearStart);
         $totals = [
             'gross_revenue' => 0,
             'executed_refunds' => 0,
@@ -27,11 +30,11 @@ final class FinanceSummaryService
         $trend = $this->emptyTrend($trendStart);
         $warnings = [];
 
-        $this->addOrders($shopId, $trendStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
-        $this->addPosTransactions($shopId, $trendStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
-        $this->addStandaloneInvoices($shopId, $trendStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
-        $this->addRefunds($shopId, $trendStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
-        $this->addExpenses($shopId, $trendStart->min($yearStart), $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
+        $this->addOrders($shopId, $sourceStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
+        $this->addPosTransactions($shopId, $sourceStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
+        $this->addStandaloneInvoices($shopId, $sourceStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
+        $this->addRefunds($shopId, $sourceStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
+        $this->addExpenses($shopId, $sourceStart, $yearEnd, $yearStart, $yearEnd, $totals, $trend, $warnings);
 
         $netRevenue = $totals['gross_revenue'] - $totals['executed_refunds'];
         $netOperatingResult = $netRevenue - $totals['incurred_expenses'];
@@ -168,13 +171,19 @@ final class FinanceSummaryService
         $rows = DB::table('finance_invoices')
             ->where('shop_id', $shopId)
             ->whereNull('job_order_id')
+            ->whereNotExists(fn ($query) => $query->selectRaw('1')
+                ->from('finance_invoice_payments')
+                ->whereColumn('finance_invoice_payments.invoice_id', 'finance_invoices.id'))
             ->where('status', 'paid')
             ->whereNotNull('payment_date')
             ->where('payment_date', '>=', $from->toDateString())
             ->where('payment_date', '<', $to->toDateString())
-            ->get(['id', 'total', 'tax_amount', 'payment_date']);
+            ->get(['id', 'total', 'tax_amount', 'payment_date', 'meta']);
 
         foreach ($rows as $row) {
+            if ($this->isOperationalInvoice($row->meta)) {
+                continue;
+            }
             $total = $this->cents($row->total);
             $tax = $this->cents($row->tax_amount);
             $basis = $total - $tax;
@@ -185,7 +194,61 @@ final class FinanceSummaryService
             $this->addRevenue($row->payment_date, $basis, $total, $periodStart, $periodEnd, $totals, $trend);
         }
 
+        $payments = DB::table('finance_invoice_payments as payments')
+            ->join('finance_invoices as invoices', 'invoices.id', '=', 'payments.invoice_id')
+            ->where('payments.shop_owner_id', $shopId)
+            ->where('invoices.shop_id', $shopId)
+            ->whereNull('invoices.job_order_id')
+            ->where(function ($query): void {
+                $query->where('payments.source', '!=', 'legacy_migration')
+                    ->orWhereNotExists(fn ($manual) => $manual->selectRaw('1')
+                        ->from('finance_invoice_payments as manual_payments')
+                        ->whereColumn('manual_payments.invoice_id', 'payments.invoice_id')
+                        ->where('manual_payments.entry_type', 'payment')
+                        ->where('manual_payments.source', '!=', 'legacy_migration'));
+            })
+            ->whereNotNull('payments.received_at')
+            ->where('payments.received_at', '<', $to)
+            ->orderBy('payments.received_at')->orderBy('payments.id')
+            ->get(['payments.id', 'payments.invoice_id', 'payments.entry_type', 'payments.amount',
+                'payments.received_at', 'payments.reverses_payment_id', 'invoices.total', 'invoices.tax_amount', 'invoices.meta']);
+        $paidByInvoice = [];
+        foreach ($payments as $payment) {
+            if ($this->isOperationalInvoice($payment->meta)) {
+                continue;
+            }
+            $total = $this->cents($payment->total);
+            $tax = $this->cents($payment->tax_amount);
+            $amount = $this->cents($payment->amount);
+            if ($total <= 0 || $tax < 0 || $tax > $total || $amount <= 0
+                || ! in_array($payment->entry_type, ['payment', 'reversal'], true)
+                || ($payment->entry_type === 'reversal' && ! $payment->reverses_payment_id)) {
+                $warnings[] = $this->warning('inconsistent_invoice_basis', 'invoice', $payment->invoice_id);
+                continue;
+            }
+            $previous = $paidByInvoice[$payment->invoice_id] ?? 0;
+            $cash = $payment->entry_type === 'payment' ? $amount : -$amount;
+            $current = $previous + $cash;
+            $paidByInvoice[$payment->invoice_id] = $current;
+            if ($current < 0 || $current > $total) {
+                $warnings[] = $this->warning('invalid_invoice_payment_balance', 'invoice', $payment->invoice_id);
+            }
+            $basis = $total - $tax;
+            $before = max(0, min($total, $previous));
+            $after = max(0, min($total, $current));
+            $revenue = BigDecimal::of($after)->multipliedBy($basis)->dividedBy($total, 0, RoundingMode::DOWN)->toInt()
+                - BigDecimal::of($before)->multipliedBy($basis)->dividedBy($total, 0, RoundingMode::DOWN)->toInt();
+            $this->addRevenue($payment->received_at, $revenue, $cash, $periodStart, $periodEnd, $totals, $trend);
+        }
+
         $this->addLinkedLegacyFallbacks($shopId, $from, $to, $periodStart, $periodEnd, $totals, $trend, $warnings);
+    }
+
+    private function isOperationalInvoice(?string $metadata): bool
+    {
+        $source = data_get(json_decode($metadata ?? '', true), 'source');
+
+        return in_array($source, ['repair_request', 'retail_order', 'retail_pos'], true);
     }
 
     /** @param array<string,int> $totals @param array<string,array<string,mixed>> $trend @param array<int,array<string,mixed>> $warnings */

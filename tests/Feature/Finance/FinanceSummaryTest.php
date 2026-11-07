@@ -270,6 +270,95 @@ class FinanceSummaryTest extends TestCase
         $this->assertTrue(collect($response->json('integrity_warnings'))->contains(fn (array $warning): bool => ($warning['reason'] ?? null) === 'paid_rejected_expense'));
     }
 
+    public function test_current_year_revenue_includes_orders_before_six_month_trend(): void
+    {
+        $this->travelTo(now()->startOfYear()->addMonths(10));
+        $shop = ShopOwner::factory()->create();
+        $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $user->givePermissionTo('access-finance-dashboard');
+        \App\Models\Order::factory()->create([
+            'shop_owner_id' => $shop->id, 'total_amount' => '100.00', 'shipping_fee' => 0,
+            'vat_amount' => '12.00', 'status' => 'delivered', 'payment_status' => 'paid',
+            'paid_at' => now()->startOfYear()->addDay(),
+        ]);
+        $this->actingAs($user, 'user')->getJson('/api/finance/dashboard')->assertOk()
+            ->assertJsonPath('primary.net_revenue', '100.00')->assertJsonPath('primary.net_cash_movement', '112.00');
+    }
+
+    public function test_manual_invoice_ledger_drives_revenue_cash_and_reversals(): void
+    {
+        $this->travelTo(now()->startOfYear()->addMonths(10));
+        $shop = ShopOwner::factory()->create();
+        $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $user->givePermissionTo('access-finance-dashboard');
+        $invoice = \App\Models\Finance\Invoice::create([
+            'reference' => 'INV-SUMMARY-MANUAL', 'customer_name' => 'Customer',
+            'date' => now()->startOfYear(), 'total' => '112.00', 'tax_amount' => '12.00',
+            'status' => 'sent', 'shop_id' => $shop->id,
+        ]);
+        $service = app(\App\Services\Finance\InvoicePaymentService::class);
+        $first = $service->record($invoice, $user, [
+            'amount' => '56.00', 'payment_method' => 'cash',
+            'received_at' => now()->startOfYear()->addDay(), 'idempotency_key' => 'summary-invoice-first',
+        ]);
+        $this->actingAs($user, 'user')->getJson('/api/finance/dashboard')->assertOk()
+            ->assertJsonPath('primary.net_revenue', '50.00')->assertJsonPath('primary.net_cash_movement', '56.00');
+        $service->record($invoice->fresh(), $user, [
+            'amount' => '56.00', 'payment_method' => 'cash',
+            'received_at' => now(), 'idempotency_key' => 'summary-invoice-second',
+        ]);
+        $this->assertNull($invoice->fresh()->payment_date);
+        $this->getJson('/api/finance/dashboard')->assertOk()
+            ->assertJsonPath('primary.net_revenue', '100.00')->assertJsonPath('primary.net_cash_movement', '112.00');
+        $service->reverse($first['payment'], $user, 'Payment correction');
+        $this->getJson('/api/finance/dashboard')->assertOk()
+            ->assertJsonPath('primary.net_revenue', '50.00')->assertJsonPath('primary.net_cash_movement', '56.00');
+    }
+
+    public function test_legacy_invoice_fallback_does_not_double_count_payment_ledger(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $user->givePermissionTo('access-finance-dashboard');
+        $invoice = \App\Models\Finance\Invoice::create([
+            'reference' => 'INV-SUMMARY-LEGACY', 'customer_name' => 'Customer',
+            'date' => now()->toDateString(), 'total' => '112.00', 'tax_amount' => '12.00',
+            'status' => 'paid', 'payment_date' => now()->toDateString(), 'shop_id' => $shop->id,
+        ]);
+        $this->actingAs($user, 'user')->getJson('/api/finance/dashboard')->assertOk()
+            ->assertJsonPath('primary.net_revenue', '100.00')->assertJsonPath('primary.net_cash_movement', '112.00');
+        \App\Models\Finance\InvoicePayment::create([
+            'shop_owner_id' => $shop->id, 'invoice_id' => $invoice->id, 'entry_type' => 'payment',
+            'amount' => '112.00', 'payment_method' => 'cash', 'received_at' => now(),
+            'idempotency_key' => 'summary-legacy-payment', 'source' => 'legacy_migration',
+        ]);
+        $this->getJson('/api/finance/dashboard')->assertOk()->assertJsonPath('primary.net_revenue', '100.00');
+    }
+
+    public function test_operational_repair_invoices_are_not_counted_as_manual_revenue(): void
+    {
+        $shop = ShopOwner::factory()->create();
+        $user = User::factory()->create(['shop_owner_id' => $shop->id]);
+        $user->givePermissionTo('access-finance-dashboard');
+        foreach (['legacy', 'ledger'] as $kind) {
+            $invoice = \App\Models\Finance\Invoice::create([
+                'reference' => 'REPAIR-INV-'.$kind, 'customer_name' => 'Customer',
+                'date' => now()->toDateString(), 'total' => '112.00', 'tax_amount' => '12.00',
+                'status' => 'paid', 'payment_date' => now()->toDateString(), 'shop_id' => $shop->id,
+                'meta' => ['source' => 'repair_request'],
+            ]);
+            if ($kind === 'ledger') {
+                \App\Models\Finance\InvoicePayment::create([
+                    'shop_owner_id' => $shop->id, 'invoice_id' => $invoice->id, 'entry_type' => 'payment',
+                    'amount' => '112.00', 'payment_method' => 'cash', 'received_at' => now(),
+                    'idempotency_key' => 'repair-ledger-exclusion', 'source' => 'legacy_migration',
+                ]);
+            }
+        }
+        $this->actingAs($user, 'user')->getJson('/api/finance/dashboard')->assertOk()
+            ->assertJsonPath('primary.net_revenue', '0.00')->assertJsonPath('primary.net_cash_movement', '0.00');
+    }
+
     public function test_active_expenses_exclude_archived_without_changing_financial_totals(): void
     {
         $this->travelTo(now()->startOfYear()->addMonths(10));
