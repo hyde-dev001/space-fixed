@@ -427,6 +427,48 @@ class ExpenseSettlementTest extends TestCase
         $this->travelBack();
     }
 
+    public function test_paid_expense_can_be_archived_and_restored_without_changing_its_settlement(): void
+    {
+        [$shop, $expense, $user] = $this->makeExpenseContext();
+        $user->givePermissionTo('access-finance-expenses');
+        $expense->update(['status' => 'posted']);
+        ExpenseSettlement::create([
+            'shop_owner_id' => $shop->id, 'expense_id' => $expense->id,
+            'entry_type' => ExpenseSettlement::ENTRY_SETTLEMENT, 'amount' => '100.00',
+            'payment_method' => 'cash', 'paid_at' => now(), 'recorded_by_user_id' => $user->id,
+            'idempotency_key' => 'archive-paid-expense', 'source' => ExpenseSettlement::SOURCE_MANUAL,
+        ]);
+        $this->actingAs($user, 'user')->deleteJson("/api/finance/expenses/{$expense->id}")->assertOk();
+        $this->assertNull($expense->fresh()->deleted_at);
+        $this->assertNotNull($expense->fresh()->archived_at);
+        $this->assertSame('100.00', $expense->fresh()->validSettledAmount());
+        $this->getJson('/api/finance/expenses?archived=0')->assertOk()->assertJsonMissing(['id' => $expense->id]);
+        $this->getJson('/api/finance/expenses?archived=1')->assertOk()->assertJsonFragment(['id' => $expense->id]);
+        $this->postJson("/api/finance/expenses/{$expense->id}/restore")->assertOk();
+        $this->assertNull($expense->fresh()->archived_at);
+        $this->assertSame('100.00', $expense->fresh()->validSettledAmount());
+    }
+
+    public function test_legacy_archived_expense_can_be_restored(): void
+    {
+        [, $expense, $user] = $this->makeExpenseContext();
+        $user->givePermissionTo('access-finance-expenses');
+        $expense->delete();
+        $this->actingAs($user, 'user')->getJson('/api/finance/expenses?archived=1')
+            ->assertOk()->assertJsonFragment(['id' => $expense->id]);
+        $this->postJson("/api/finance/expenses/{$expense->id}/restore")->assertOk();
+        $this->assertNotNull(Expense::find($expense->id));
+    }
+
+    public function test_cannot_archive_another_shops_expense(): void
+    {
+        [, $expense] = $this->makeExpenseContext();
+        [, , $otherUser] = $this->makeExpenseContext();
+        $otherUser->givePermissionTo('access-finance-expenses');
+        $this->actingAs($otherUser, 'user')->deleteJson("/api/finance/expenses/{$expense->id}")->assertNotFound();
+        $this->assertNull($expense->fresh()->archived_at);
+    }
+
     private function makeExpenseContext(): array
     {
         $shop = ShopOwner::factory()->create();

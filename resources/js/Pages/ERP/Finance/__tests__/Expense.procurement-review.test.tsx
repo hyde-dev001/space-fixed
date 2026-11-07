@@ -152,6 +152,14 @@ afterEach(() => {
 });
 
 describe("Finance procurement expenses", () => {
+    it("offers archive for posted expenses and restore in the archived view", () => {
+        mocks.status = "posted";
+        render(<Expense />);
+        expect(screen.getByRole("button", { name: "Archive expense" })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Show Archived" }));
+        expect(screen.queryByRole("button", { name: "Archive expense" })).not.toBeInTheDocument();
+        expect(screen.getByRole("button", { name: "Restore expense" })).toBeInTheDocument();
+    });
 	it("uses the server business date as the expense date limit and displays validation feedback", async () => {
 		mocks.reviewRelease.mockResolvedValue({ ok: false, status: 422, error: 'Validation failed.', data: { errors: { date: ['The date must be on or before 2026-10-06.'] } } });
 		render(<Expense />);

@@ -54,10 +54,11 @@ class ExpenseController extends Controller
             return response()->json(['message' => 'No shop association found for this account.'], 403);
         }
 
-        $query = Expense::where('shop_id', $shopId)
-            ->when($request->boolean('archived'), function ($builder) {
-                $builder->onlyTrashed();
-            });
+        $query = Expense::withTrashed()->where('shop_id', $shopId)
+            ->when($request->boolean('archived'),
+                fn ($builder) => $builder->where(fn ($query) => $query->whereNotNull('archived_at')->orWhereNotNull('deleted_at')),
+                fn ($builder) => $builder->whereNull('archived_at')->whereNull('deleted_at'),
+            );
 
         $expenses = QueryBuilder::for($query)
             ->allowedFilters([
@@ -927,18 +928,7 @@ class ExpenseController extends Controller
 
         $expense = Expense::where('shop_id', $shopId)->findOrFail($id);
 
-        if (!in_array($expense->status, ['draft', 'submitted', 'rejected', 'approved'])) {
-            return response()->json(['message' => 'Only unfinalized expenses can be deleted'], 422);
-        }
-
-        if ((float) $expense->validSettledAmount() > 0) {
-            return response()->json([
-                'message' => 'Settled expenses cannot be archived until the cash settlement is reversed.',
-                'code' => 'SETTLEMENT_REQUIRES_RESOLUTION',
-            ], 422);
-        }
-
-        // Store expense details before deletion for logging
+        // Store expense details for logging
         $expenseDetails = [
             'reference' => $expense->reference,
             'category' => $expense->category,
@@ -948,14 +938,15 @@ class ExpenseController extends Controller
             'date' => $expense->date,
         ];
 
-        // Activity log before deletion
+        // Activity log before archiving
         activity()
             ->causedBy(Auth::user())
             ->performedOn($expense)
             ->withProperties($expenseDetails)
             ->log('Expense archived');
 
-        $expense->delete();
+        $expense->archived_at = now();
+        $expense->save();
         $this->audit('archive_expense', $expense->id, ['status' => $expense->status]);
 
         return response()->json(['message' => 'Expense archived']);
@@ -973,7 +964,7 @@ class ExpenseController extends Controller
 
         $expense = Expense::withTrashed()
             ->where('shop_id', $shopId)
-            ->onlyTrashed()
+            ->where(fn ($query) => $query->whereNotNull('archived_at')->orWhereNotNull('deleted_at'))
             ->where('id', $id)
             ->firstOrFail();
 
@@ -992,7 +983,11 @@ class ExpenseController extends Controller
             ->withProperties($expenseDetails)
             ->log('Expense restored');
 
-        $expense->restore();
+        if ($expense->trashed()) {
+            $expense->restore();
+        }
+        $expense->archived_at = null;
+        $expense->save();
         $this->audit('restore_expense', $expense->id, ['status' => $expense->status]);
 
         return response()->json([
