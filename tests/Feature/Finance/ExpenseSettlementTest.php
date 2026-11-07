@@ -145,6 +145,34 @@ class ExpenseSettlementTest extends TestCase
         $this->assertDatabaseCount('finance_expense_settlements', 1);
     }
 
+    public function test_recorded_expense_notifies_authorized_finance_users_once(): void
+    {
+        [$shop, $expense, $creator] = $this->makeExpenseContext();
+        $expense->forceDelete();
+        $creator->givePermissionTo('access-finance-expenses');
+        $colleague = User::factory()->create(['shop_owner_id' => $shop->id, 'status' => 'active']);
+        $colleague->givePermissionTo('access-finance-expenses');
+        $outsider = User::factory()->create(['shop_owner_id' => ShopOwner::factory()->create()->id, 'status' => 'active']);
+        $outsider->givePermissionTo('access-finance-expenses');
+        $payload = [
+            'date' => now()->subDay()->toDateString(), 'category' => 'Supplies', 'amount' => '100.00',
+            'payment_mode' => 'paid_now', 'payment_method' => 'cash', 'idempotency_key' => 'notification-expense-test',
+        ];
+        $response = $this->actingAs($creator, 'user')->postJson('/api/finance/expenses', $payload)->assertCreated();
+        $expenseId = $response->json('id');
+        $this->postJson('/api/finance/expenses', $payload)->assertOk();
+        foreach ([$creator, $colleague] as $recipient) {
+            $this->assertDatabaseHas('notifications', [
+                'user_id' => $recipient->id, 'shop_id' => $shop->id, 'title' => 'Expense Recorded',
+                'type' => 'expense_submitted', 'requires_action' => false,
+                'action_url' => "/finance?section=expense-tracking&expense={$expenseId}",
+            ]);
+        }
+        $this->assertDatabaseMissing('notifications', ['user_id' => $outsider->id, 'title' => 'Expense Recorded']);
+        $this->assertSame(2, \App\Models\Notification::query()->where('group_key', "expense-recorded-{$expenseId}")->count());
+        $this->assertDatabaseHas('notifications', ['shop_owner_id' => $shop->id, 'title' => 'Expense Recorded']);
+    }
+
     public function test_pay_later_expense_has_no_initial_settlement(): void
     {
         [$shop, $expense, $user] = $this->makeExpenseContext();

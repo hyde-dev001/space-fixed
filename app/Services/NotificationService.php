@@ -1155,6 +1155,24 @@ class NotificationService
         );
     }
 
+    /** Notify Finance when a manual expense has been recorded. */
+    public function notifyExpenseRecordedToFinance(int $shopId, array $expenseData): void
+    {
+        $this->sendToErpRole(
+            roleName: 'Finance',
+            shopId: $shopId,
+            type: NotificationType::EXPENSE_SUBMITTED,
+            title: 'Expense Recorded',
+            message: "Expense {$expenseData['reference']} of PHP {$expenseData['amount']} ({$expenseData['category']}) has been recorded.",
+            data: $expenseData,
+            actionUrl: $this->financeExpenseActionUrl($expenseData),
+            priority: 'low',
+            groupKey: 'expense-recorded-'.(int) $expenseData['expense_id'],
+            requiresAction: false,
+            requiredPermission: 'access-finance-expenses',
+        );
+    }
+
     /** Notify the Shop Owner that Finance recorded a manual expense for review. */
     public function notifyExpenseRecordedToShopOwner(int $shopId, array $expenseData): void
     {

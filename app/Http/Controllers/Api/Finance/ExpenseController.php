@@ -536,16 +536,18 @@ class ExpenseController extends Controller
 
             DB::commit();
 
-            // Manual expenses are final records; notify the Shop Owner for review only.
+            // Manual expenses are final records, so notifications are informational.
+            $notificationData = [
+                'expense_id' => $expense->id,
+                'reference' => $expense->reference ?? "EXP-{$expense->id}",
+                'amount' => number_format((float) $expense->amount, 2),
+                'category' => $expense->category ?? 'General',
+            ];
             try {
-                $this->notificationService->notifyExpenseRecordedToShopOwner($shopId, [
-                    'expense_id' => $expense->id,
-                    'reference'  => $expense->reference ?? "EXP-{$expense->id}",
-                    'amount'     => number_format((float) $expense->amount, 2),
-                    'category'   => $expense->category ?? 'General',
-                ]);
+                $this->notificationService->notifyExpenseRecordedToShopOwner($shopId, $notificationData);
+                $this->notificationService->notifyExpenseRecordedToFinance($shopId, $notificationData);
             } catch (\Exception $e) {
-                Log::error('Failed to notify Shop Owner about recorded expense', ['error' => $e->getMessage()]);
+                Log::error('Failed to send recorded expense notification', ['error' => $e->getMessage()]);
             }
 
             return response()->json($expense, 201);
