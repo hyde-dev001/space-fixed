@@ -56,6 +56,19 @@ describe('Finance COD remittance supplements', () => {
     mocks.error.mockResolvedValue(undefined);
   });
 
+  it('requires a reason and submits an audited overage correction', async () => {
+    mocks.get.mockResolvedValue({ data: { data: [{ ...remittance, received_amount: '1000.00', variance_amount: '900.00', supplements: [] }] } });
+    mocks.post.mockResolvedValue({ data: { remittance: { status: 'settled' } } });
+    render(<CodRemittances />);
+    const button = await screen.findByRole('button', { name: 'Correct cash amount' });
+    expect(button).toBeDisabled();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Reason for correction (required)' }), { target: { value: 'Recounted cash' } });
+    fireEvent.click(button);
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith('/api/finance/cod-remittances/21/correct-overage', {
+      received_amount: '100.00', reason: 'Recounted cash',
+    }));
+  });
+
   it('prevents confirming more cash than the rider submitted', async () => {
     mocks.get.mockResolvedValue({ data: { data: [{ ...remittance, status: 'submitted', supplements: [] }] } });
     render(<CodRemittances />);

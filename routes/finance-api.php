@@ -246,6 +246,8 @@ Route::prefix('api/finance')->middleware(['web', 'auth:user', 'shop.isolation'])
         Route::post('/{remittance}/confirm', [CodRemittanceController::class, 'confirm'])
             ->whereNumber('remittance')
             ->name('finance.cod-remittances.confirm');
+        Route::post('/{remittance}/correct-overage', [CodRemittanceController::class, 'correctOverage'])
+            ->whereNumber('remittance')->name('finance.cod-remittances.correct-overage');
         Route::post('/{remittance}/supplements/{supplement}/confirm', [CodRemittanceController::class, 'confirmSupplement'])
             ->whereNumber('remittance')
             ->whereNumber('supplement')

@@ -369,6 +369,53 @@ final class CodRemittanceService
         }, 3);
     }
 
+    /** @return array{remittance: array<string, mixed>} */
+    public function correctOverage(CodRemittance $remittance, User $actor, array $data): array
+    {
+        $shopId = (int) ($actor->shop_owner_id ?? 0);
+        $amount = $this->normalizeAmount($data['received_amount'] ?? null);
+        $reason = trim((string) ($data['reason'] ?? ''));
+
+        return DB::transaction(function () use ($remittance, $actor, $shopId, $amount, $reason): array {
+            $locked = CodRemittance::query()->whereKey($remittance->getKey())->lockForUpdate()->firstOrFail();
+            if ($shopId <= 0 || (int) $locked->shop_owner_id !== $shopId) {
+                throw new FinanceDomainException('The COD remittance is not available in this shop.', 'FORBIDDEN', 403);
+            }
+            if ($reason === '' || (string) $locked->status !== CodRemittance::STATUS_DISPUTED
+                || $this->toCents($locked->received_amount) <= $this->toCents($locked->expected_amount)
+                || $locked->supplements()->exists()) {
+                throw new FinanceDomainException('Only an overage dispute without supplements can be corrected.', 'INVALID_STATE', 422);
+            }
+            $receivedCents = $this->toCents($amount);
+            $expectedCents = $this->toCents($locked->expected_amount);
+            if ($receivedCents > $expectedCents || $receivedCents > $this->toCents($locked->submitted_amount)) {
+                throw new FinanceDomainException('Corrected cash cannot exceed the amount submitted by the rider.', 'INVALID_STATE', 422);
+            }
+            $collections = $this->collectionsForSettlement($locked, $shopId);
+            $oldAmount = (string) $locked->received_amount;
+            $attributes = [
+                'received_amount' => $amount,
+                'variance_amount' => $this->fromCents($receivedCents - $expectedCents),
+                'confirmed_at' => now(),
+                'confirmed_by_user_id' => $actor->id,
+                'dispute_reason' => $reason,
+            ];
+            activity()->causedBy($actor)->performedOn($locked)->withProperties([
+                'shop_owner_id' => $shopId, 'remittance_id' => $locked->id,
+                'previous_received_amount' => $oldAmount, 'corrected_received_amount' => $amount,
+                'previous_dispute_reason' => $locked->dispute_reason, 'reason' => $reason,
+            ])->log('COD remittance overage corrected');
+            if ($receivedCents === $expectedCents) {
+                $this->settleRemittance($locked, $actor, $collections, $amount, $attributes);
+            } else {
+                $locked->update($attributes);
+                $this->notifyRemittance($locked, 'disputed');
+            }
+
+            return ['remittance' => $this->remittancePayload($locked->fresh())];
+        }, 3);
+    }
+
     /** @return array{remittance: array<string, mixed>, replayed: bool} */
     public function confirmSupplement(CodRemittance $remittance, CodRemittanceSupplement $supplement, User $actor, array $data): array
     {

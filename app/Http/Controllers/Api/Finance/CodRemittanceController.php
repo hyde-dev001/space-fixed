@@ -11,6 +11,7 @@ use App\Services\CodRemittanceService;
 use App\Support\Finance\FinanceDomainException;
 use App\Support\Finance\FinanceErrorResponse;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class CodRemittanceController extends Controller
@@ -59,6 +60,25 @@ class CodRemittanceController extends Controller
             return FinanceErrorResponse::json($exception, 'cod.remittance.confirm', 500, [
                 'record_id' => $remittance->id,
             ]);
+        }
+    }
+
+    public function correctOverage(Request $request, CodRemittance $remittance): JsonResponse
+    {
+        $data = $request->validate([
+            'received_amount' => ['required', 'numeric', 'min:0', 'decimal:0,2'],
+            'reason' => ['required', 'string', 'min:3', 'max:1000'],
+        ]);
+        $actor = Auth::guard('user')->user();
+        if (! $actor) {
+            return response()->json(['message' => 'Unauthorized', 'code' => 'FORBIDDEN'], 401);
+        }
+        try {
+            return response()->json($this->remittances->correctOverage($remittance, $actor, $data));
+        } catch (FinanceDomainException $exception) {
+            return FinanceErrorResponse::json($exception, 'cod.remittance.correct_overage', $exception->httpStatus, ['record_id' => $remittance->id]);
+        } catch (\Throwable $exception) {
+            return FinanceErrorResponse::json($exception, 'cod.remittance.correct_overage', 500, ['record_id' => $remittance->id]);
         }
     }
 
