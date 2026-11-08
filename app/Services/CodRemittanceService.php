@@ -326,6 +326,9 @@ final class CodRemittanceService
             }
 
             $receivedCents = $this->toCents($receivedAmount);
+            if ($receivedCents > $this->toCents($lockedRemittance->submitted_amount) || $receivedCents > $expectedCents) {
+                throw new FinanceDomainException('Received cash cannot exceed the amount submitted by the rider.', 'INVALID_STATE', 422);
+            }
             $varianceCents = $receivedCents - $expectedCents;
             if ($varianceCents !== 0) {
                 $lockedRemittance->update([

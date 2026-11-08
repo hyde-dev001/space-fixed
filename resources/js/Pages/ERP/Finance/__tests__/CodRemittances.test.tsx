@@ -56,6 +56,17 @@ describe('Finance COD remittance supplements', () => {
     mocks.error.mockResolvedValue(undefined);
   });
 
+  it('prevents confirming more cash than the rider submitted', async () => {
+    mocks.get.mockResolvedValue({ data: { data: [{ ...remittance, status: 'submitted', supplements: [] }] } });
+    render(<CodRemittances />);
+    const input = await screen.findByRole('spinbutton', { name: 'Physical cash received' });
+    const button = screen.getByRole('button', { name: 'Confirm physical cash' });
+    fireEvent.change(input, { target: { value: '1000' } });
+    expect(button).toBeDisabled();
+    fireEvent.change(input, { target: { value: '96' } });
+    expect(button).toBeEnabled();
+  });
+
   it('does not call a failed ledger read empty and lets Finance retry safely',async()=>{
     mocks.get.mockRejectedValueOnce(new Error('Synthetic unavailable read'));render(<CodRemittances/>);
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded');

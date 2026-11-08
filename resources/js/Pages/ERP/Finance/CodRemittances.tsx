@@ -232,6 +232,7 @@ export default function CodRemittances({ children }: PropsWithChildren) {
                       <input
                         type="number"
                         min="0"
+                        max={remittance.submitted_amount}
                         step="0.01"
                         value={received[remittance.id] ?? remittance.expected_amount}
                         onChange={(event) => setReceived((current) => ({ ...current, [remittance.id]: event.target.value }))}
@@ -251,7 +252,7 @@ export default function CodRemittances({ children }: PropsWithChildren) {
                     <button
                       type="button"
                       onClick={() => void confirm(remittance)}
-                      disabled={busyId === remittance.id}
+                      disabled={busyId === remittance.id || Number(received[remittance.id] ?? remittance.expected_amount) < 0 || Number(received[remittance.id] ?? remittance.expected_amount) > Number(remittance.submitted_amount)}
                       className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {busyId === remittance.id ? 'Confirming…' : 'Confirm physical cash'}

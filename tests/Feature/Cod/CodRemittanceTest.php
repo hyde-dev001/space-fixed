@@ -130,6 +130,18 @@ class CodRemittanceTest extends TestCase
         ]);
     }
 
+    public function test_finance_cannot_confirm_more_cash_than_the_rider_submitted(): void
+    {
+        [, $rider, $finance, $collection] = $this->makeContext();
+        $collection = $this->submit($rider, $collection);
+        $remittance = $collection->getRelation('remittance');
+        $this->actingAs($finance, 'user')->postJson("/api/finance/cod-remittances/{$remittance->id}/confirm", [
+            'received_amount' => '1000.00', 'dispute_reason' => 'Mistyped amount',
+        ])->assertUnprocessable();
+        $this->assertDatabaseHas('cod_remittances', ['id' => $remittance->id, 'status' => 'submitted', 'received_amount' => null]);
+        $this->assertDatabaseCount('finance_invoice_payments', 0);
+    }
+
     public function test_rider_can_submit_and_finance_can_confirm_a_disputed_shortage_once(): void
     {
         [$shop, $rider, $finance, $collection] = $this->makeContext();
