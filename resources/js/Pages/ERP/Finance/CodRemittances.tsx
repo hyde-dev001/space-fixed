@@ -77,6 +77,29 @@ export default function CodRemittances({ children }: PropsWithChildren) {
     }
   };
 
+  const correctOverage = async (remittance: CodRemittanceView) => {
+    const amount = received[remittance.id] ?? remittance.expected_amount;
+    const reason = (reasons[remittance.id] ?? '').trim();
+    if (reason.length < 3 || Number(amount) < 0 || Number(amount) > Number(remittance.submitted_amount)) return;
+    const confirmation = await workflowFeedback.confirm({
+      title: 'Correct recorded cash?',
+      text: `Record ${money(amount)} as the recounted cash for ${remittance.reference}. The original amount and reason remain in the audit log.`,
+      confirmButtonText: 'Correct cash amount',
+    });
+    if (!confirmation.isConfirmed) return;
+    setBusyId(remittance.id);
+    try {
+      const response = await axios.post(`/api/finance/cod-remittances/${remittance.id}/correct-overage`, { received_amount: amount, reason });
+      await workflowFeedback.success({ title: response.data.remittance?.status === 'settled' ? 'Remittance settled' : 'Cash amount corrected', text: 'The correction was recorded.' });
+      await load();
+    } catch (requestError) {
+      const message = axios.isAxiosError(requestError) ? requestError.response?.data?.message : null;
+      await workflowFeedback.error(message || 'The cash amount could not be corrected.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const confirmSupplement = async (remittance: CodRemittanceView, supplement: CodRemittanceSupplementView) => {
     const receivedAmount = supplementReceived[supplement.id] ?? supplement.submitted_amount;
     const confirmation = await workflowFeedback.confirm({
@@ -169,6 +192,29 @@ export default function CodRemittances({ children }: PropsWithChildren) {
                   <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-800">{remittance.dispute_reason}</p>
                 )}
 
+                {!loading && !error && remittance.status === 'disputed' && Number(remittance.variance_amount) > 0 && (remittance.supplements ?? []).length === 0 && (
+                  <div className="mt-5 grid gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto] sm:items-end">
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Recounted cash received
+                      <input type="number" min="0" max={remittance.submitted_amount} step="0.01"
+                        value={received[remittance.id] ?? remittance.expected_amount}
+                        onChange={(event) => setReceived((current) => ({ ...current, [remittance.id]: event.target.value }))}
+                        className="mt-1 block min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+                    </label>
+                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                      Reason for correction (required)
+                      <input type="text" value={reasons[remittance.id] ?? ''}
+                        onChange={(event) => setReasons((current) => ({ ...current, [remittance.id]: event.target.value }))}
+                        className="mt-1 block min-h-11 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-white" />
+                    </label>
+                    <button type="button" onClick={() => void correctOverage(remittance)}
+                      disabled={busyId === remittance.id || (reasons[remittance.id] ?? '').trim().length < 3 || Number(received[remittance.id] ?? remittance.expected_amount) < 0 || Number(received[remittance.id] ?? remittance.expected_amount) > Number(remittance.submitted_amount)}
+                      className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+                      Correct cash amount
+                    </button>
+                  </div>
+                )}
+
                 {remittance.supplements && remittance.supplements.length > 0 && (
                   <section className="mt-4 border-t border-gray-200 pt-4 dark:border-gray-700" aria-label={`Additional cash for ${remittance.reference}`}>
                     <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Additional cash submissions</h3>
@@ -232,6 +278,7 @@ export default function CodRemittances({ children }: PropsWithChildren) {
                       <input
                         type="number"
                         min="0"
+                        max={remittance.submitted_amount}
                         step="0.01"
                         value={received[remittance.id] ?? remittance.expected_amount}
                         onChange={(event) => setReceived((current) => ({ ...current, [remittance.id]: event.target.value }))}
@@ -251,7 +298,7 @@ export default function CodRemittances({ children }: PropsWithChildren) {
                     <button
                       type="button"
                       onClick={() => void confirm(remittance)}
-                      disabled={busyId === remittance.id}
+                      disabled={busyId === remittance.id || Number(received[remittance.id] ?? remittance.expected_amount) < 0 || Number(received[remittance.id] ?? remittance.expected_amount) > Number(remittance.submitted_amount)}
                       className="min-h-11 rounded-lg bg-gray-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {busyId === remittance.id ? 'Confirming…' : 'Confirm physical cash'}

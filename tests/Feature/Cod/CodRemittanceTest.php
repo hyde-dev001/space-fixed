@@ -130,6 +130,72 @@ class CodRemittanceTest extends TestCase
         ]);
     }
 
+    public function test_rider_cannot_inflate_a_remittance_with_a_forged_amount(): void
+    {
+        [, $rider, , $collection] = $this->makeContext();
+        $this->actingAs($rider, 'user')->postJson('/api/logistics/cod/remittances', [
+            'collection_ids' => [$collection->id], 'idempotency_key' => 'forged-remittance-amount',
+            'submitted_amount' => '100000.00', 'amount' => '100000.00',
+        ])->assertCreated()->assertJsonPath('remittance.submitted_amount', '100.00');
+    }
+
+    public function test_finance_can_correct_legacy_overage_with_an_audit_and_settle_once(): void
+    {
+        [$shop, $rider, $finance, $collection] = $this->makeContext();
+        $order = Order::query()->findOrFail($collection->order_id);
+        $order->update(['status' => 'delivered']);
+        $collection = $this->submit($rider, $collection);
+        $remittance = $collection->getRelation('remittance');
+        $remittance->update(['status' => 'disputed', 'received_amount' => '1000.00', 'variance_amount' => '900.00', 'dispute_reason' => 'Original note']);
+        $path = "/api/finance/cod-remittances/{$remittance->id}/correct-overage";
+        $this->actingAs($finance, 'user')->postJson($path, ['received_amount' => '100.00'])->assertUnprocessable();
+        $this->actingAs($rider, 'user')->postJson($path, ['received_amount' => '100.00', 'reason' => 'Recounted'])->assertForbidden();
+        $otherShop = ShopOwner::factory()->create();
+        $otherFinance = User::factory()->create(['shop_owner_id' => $otherShop->id]);
+        $otherFinance->givePermissionTo('access-cod-remittances');
+        $this->clockInEmployee($otherFinance);
+        $this->actingAs($otherFinance, 'user')->postJson($path, ['received_amount' => '100.00', 'reason' => 'Recounted'])->assertForbidden();
+        $this->actingAs($finance, 'user')->postJson($path, ['received_amount' => '101.00', 'reason' => 'Recounted'])->assertUnprocessable();
+        $this->postJson($path, ['received_amount' => '100.00', 'reason' => 'Recounted'])->assertOk()->assertJsonPath('remittance.status', 'settled');
+        $this->assertDatabaseHas('activity_log', ['description' => 'COD remittance overage corrected', 'causer_id' => $finance->id]);
+        $log = \Spatie\Activitylog\Models\Activity::query()->where('description', 'COD remittance overage corrected')->firstOrFail();
+        $this->assertSame('1000.00', $log->properties['previous_received_amount']);
+        $this->assertSame('100.00', $log->properties['corrected_received_amount']);
+        $this->assertSame('Recounted', $log->properties['reason']);
+        $this->assertDatabaseHas('platform_fee_charges', ['shop_id' => $shop->id, 'source_type' => 'order', 'source_id' => $order->id]);
+        $this->postJson($path, ['received_amount' => '100.00', 'reason' => 'Recounted'])->assertUnprocessable();
+        $this->assertDatabaseCount('finance_invoice_payments', 1);
+    }
+
+    public function test_overage_correction_to_shortage_allows_rider_supplement(): void
+    {
+        [, $rider, $finance, $collection] = $this->makeContext();
+        $collection = $this->submit($rider, $collection);
+        $remittance = $collection->getRelation('remittance');
+        $remittance->update(['status' => 'disputed', 'received_amount' => '1000.00', 'variance_amount' => '900.00']);
+        $this->actingAs($finance, 'user')->postJson("/api/finance/cod-remittances/{$remittance->id}/correct-overage", [
+            'received_amount' => '96.00', 'reason' => 'Recounted cash',
+        ])->assertOk()->assertJsonPath('remittance.remaining_shortage_amount', '4.00');
+        $this->actingAs($rider, 'user')->postJson("/api/logistics/cod/remittances/{$remittance->id}/supplements", [
+            'amount' => '5.00', 'idempotency_key' => 'recount-over-shortage',
+        ])->assertUnprocessable();
+        $this->postJson("/api/logistics/cod/remittances/{$remittance->id}/supplements", [
+            'amount' => '4.00', 'idempotency_key' => 'recount-shortage',
+        ])->assertCreated();
+    }
+
+    public function test_finance_cannot_confirm_more_cash_than_the_rider_submitted(): void
+    {
+        [, $rider, $finance, $collection] = $this->makeContext();
+        $collection = $this->submit($rider, $collection);
+        $remittance = $collection->getRelation('remittance');
+        $this->actingAs($finance, 'user')->postJson("/api/finance/cod-remittances/{$remittance->id}/confirm", [
+            'received_amount' => '1000.00', 'dispute_reason' => 'Mistyped amount',
+        ])->assertUnprocessable();
+        $this->assertDatabaseHas('cod_remittances', ['id' => $remittance->id, 'status' => 'submitted', 'received_amount' => null]);
+        $this->assertDatabaseCount('finance_invoice_payments', 0);
+    }
+
     public function test_rider_can_submit_and_finance_can_confirm_a_disputed_shortage_once(): void
     {
         [$shop, $rider, $finance, $collection] = $this->makeContext();
